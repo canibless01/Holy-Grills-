@@ -11,6 +11,8 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = 3600
     JWT_REFRESH_TOKEN_EXPIRES = 2592000
 
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
     SUPABASE_URL = os.environ["SUPABASE_URL"]
     SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
