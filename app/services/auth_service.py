@@ -31,18 +31,17 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
 
     if referred_by_code:
     try:
-        referrer = (
+        referrers = (
             db.table("profiles")
             .select("id")
             .eq("referral_code", referred_by_code.upper())
             .execute()
         )
-        if referrer and len(referrer) > 0:
-            referred_by_user_id = referrer[0]["id"]
+        if referrers and len(referrers) > 0:
+            referred_by_user_id = referrers[0]["id"]
     except Exception:
-        # No referrer found with that code
         pass
-
+        
     profile_data = {
         "id": user_id,
         "full_name": full_name,
