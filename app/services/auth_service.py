@@ -36,12 +36,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                 .select("id")
                 .eq("referral_code", referred_by_code.upper())
                 .execute()
-        )
-        if referrers and len(referrers) > 0:
-            referred_by_user_id = referrers[0]["id"]
-    except Exception:
-        pass
-        
+            )
+            if referrers and len(referrers) > 0:
+                referred_by_user_id = referrers[0]["id"]
+        except Exception:
+            pass
+
     profile_data = {
         "id": user_id,
         "full_name": full_name,
