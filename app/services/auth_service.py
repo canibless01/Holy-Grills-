@@ -16,16 +16,40 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     """
     db = get_db()
 
-    auth_result = db.auth_sign_up(
-        email=email,
-        password=password,
-        user_metadata={"full_name": full_name},
-    )
+    # ✅ STEP 1: Check if user already exists in profiles
+    existing = db.table("profiles").select("id").eq("email", email).execute()
+    if existing and len(existing) > 0:
+        raise ValueError("Account already registered. Please login instead.")
+
+    # ✅ STEP 2: Check if user exists in auth (orphan cleanup)
+    try:
+        # Try to find user in auth
+        auth_users = db.table("auth.users").select("id").eq("email", email).execute()
+        if auth_users and len(auth_users) > 0:
+            # User exists in auth but not in profiles — raise clear error
+            raise ValueError("Account exists but is incomplete. Please contact support.")
+    except Exception:
+        # Table might not be accessible — skip this check
+        pass
+
+    # ✅ STEP 3: Create Auth user
+    try:
+        auth_result = db.auth_sign_up(
+            email=email,
+            password=password,
+            user_metadata={"full_name": full_name},
+        )
+    except SupabaseError as e:
+        error_msg = str(e).lower()
+        if "user already registered" in error_msg or "duplicate" in error_msg:
+            raise ValueError("Account already exists. Please login.")
+        raise ValueError(f"Registration failed: {error_msg}")
 
     user_id = auth_result.get("user", {}).get("id") or auth_result.get("id")
     if not user_id:
         raise ValueError("Registration failed: no user ID returned")
 
+    # ✅ STEP 4: Generate referral code
     referral_code = _generate_referral_code(full_name)
     referred_by_user_id = None
 
@@ -42,6 +66,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         except Exception:
             pass
 
+    # ✅ STEP 5: Create profile
     profile_data = {
         "id": user_id,
         "email": email,
@@ -59,24 +84,35 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     try:
         db.table("profiles").insert(profile_data)
     except SupabaseError as e:
-        if "duplicate" not in str(e).lower():
-            raise
+        # Profile creation failed — Auth user is orphaned
+        # Log for admin to handle
+        print(f"⚠️ ORPHANED USER CREATED: {user_id} - {email} - Error: {e}")
+        raise ValueError("Registration failed. Please try again.")
 
-    db.table("wallets").insert({
-        "user_id": user_id,
-        "balance": 0,
-        "currency": "NGN",
-    })
-
-    if referred_by_user_id:
-        db.table("referrals").insert({
-            "referrer_id": referred_by_user_id,
-            "referred_user_id": user_id,
-            "hp_awarded": 0,
+    # ✅ STEP 6: Create wallet
+    try:
+        db.table("wallets").insert({
+            "user_id": user_id,
+            "balance": 0,
+            "currency": "NGN",
         })
+    except SupabaseError as e:
+        # Wallet may already exist — log and continue
+        print(f"⚠️ Wallet creation warning: {e}")
+
+    # ✅ STEP 7: Create referral record
+    if referred_by_user_id:
+        try:
+            db.table("referrals").insert({
+                "referrer_id": referred_by_user_id,
+                "referred_user_id": user_id,
+                "hp_awarded": 0,
+            })
+        except SupabaseError as e:
+            # Referral may already exist — log and continue
+            print(f"⚠️ Referral creation warning: {e}")
 
     return auth_result
-
 
 def login(email: str, password: str) -> dict:
     db = get_db()
