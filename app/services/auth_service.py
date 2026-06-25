@@ -30,12 +30,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     referred_by_user_id = None
 
     if referred_by_code:
-    try:
-        referrers = (
-            db.table("profiles")
-            .select("id")
-            .eq("referral_code", referred_by_code.upper())
-            .execute()
+        try:
+            referrers = (
+                db.table("profiles")
+                .select("id")
+                .eq("referral_code", referred_by_code.upper())
+                .execute()
         )
         if referrers and len(referrers) > 0:
             referred_by_user_id = referrers[0]["id"]
