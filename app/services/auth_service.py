@@ -30,15 +30,18 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     referred_by_user_id = None
 
     if referred_by_code:
+    try:
         referrer = (
             db.table("profiles")
             .select("id")
             .eq("referral_code", referred_by_code.upper())
-            .single()
             .execute()
         )
-        if referrer:
-            referred_by_user_id = referrer["id"]
+        if referrer and len(referrer) > 0:
+            referred_by_user_id = referrer[0]["id"]
+    except Exception:
+        # No referrer found with that code
+        pass
 
     profile_data = {
         "id": user_id,
