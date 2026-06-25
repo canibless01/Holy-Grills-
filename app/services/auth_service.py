@@ -44,6 +44,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
 
     profile_data = {
         "id": user_id,
+        "email": email,
         "full_name": full_name,
         "phone": phone,
         "date_of_birth": date_of_birth,
