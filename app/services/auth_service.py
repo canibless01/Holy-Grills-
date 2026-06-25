@@ -39,6 +39,8 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             password=password,
             user_metadata={"full_name": full_name},
         )
+        print(f"🔍 Auth result: {auth_result}")
+        
     except SupabaseError as e:
         error_msg = str(e).lower()
         if "user already registered" in error_msg or "duplicate" in error_msg:
