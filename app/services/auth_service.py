@@ -156,7 +156,7 @@ def get_current_user(access_token: str) -> dict:
     )
     wallet = (
         db.table("wallets")
-        .select("balance,virtual_account_number,virtual_account_bank")
+        .select("balance,currency")
         .eq("user_id", user_id)
         .single()
         .execute()
@@ -164,17 +164,15 @@ def get_current_user(access_token: str) -> dict:
     tier_info = _get_tier(user_id)
 
     return {
-        "id": user_id,
+    "id": user_id,
         "email": auth_user.get("email"),
         "profile": profile,
-        "wallet_balance": float(wallet.get("balance", 0)) if wallet else 0.0,
-        "virtual_account": {
-            "number": wallet.get("virtual_account_number") if wallet else None,
-            "bank": wallet.get("virtual_account_bank") if wallet else None,
+        "wallet": {
+            "balance": float(wallet.get("balance", 0)) if wallet else 0.0,
+            "currency": wallet.get("currency", "NGN") if wallet else "NGN",
         },
         "tier": tier_info,
     }
-
 
 def update_profile(user_id: str, data: dict) -> dict:
     db = get_db()
