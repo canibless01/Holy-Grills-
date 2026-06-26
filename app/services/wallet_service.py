@@ -9,22 +9,11 @@ from app.services.hp_service import award_active_hp
 from flask import current_app
 
 def get_wallet(user_id: str) -> dict:
-    db = get_db()
-
-    try:
-        wallet = (
-            db.table("wallets")
-            .select("*")
-            .eq("user_id", user_id)
-            .single()
-            .execute()
-        )
-        return wallet
-
-    except Exception as e:
-        print("GET WALLET ERROR:", e)
-        raise
-
+    return {
+        "balance": 0,
+        "currency": "NGN"
+    }
+    
 def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None) -> dict:
     """
     Credit ₦ to wallet (e.g., after Paystack webhook confirms payment).
