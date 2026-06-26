@@ -1,6 +1,6 @@
 """Referral routes — tracking, milestones, HP awards."""
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.services.hp_service import award_active_hp
 from app.db import get_db
