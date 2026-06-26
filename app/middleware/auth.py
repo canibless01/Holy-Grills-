@@ -13,6 +13,8 @@ from app.db import get_db, SupabaseError
 
 
 def _decode_token(token: str) -> dict:
+    print(jwt.get_unverified_header(token))
+
     try:
         payload = jwt.decode(
             token,
@@ -21,10 +23,10 @@ def _decode_token(token: str) -> dict:
             options={"verify_aud": False},
         )
         return payload
-    except jwt.ExpiredSignatureError:
-        abort(401, "Token has expired")
-    except jwt.InvalidTokenError as e:
-        abort(401, f"Invalid token: {e}")
+
+    except Exception as e:
+        print("JWT ERROR:", e)
+        raise
 
 
 def _get_token_from_header() -> str:
