@@ -147,9 +147,7 @@ def my_referrals():
 
         return jsonify({
             "referral_code": referral_code,
-            "referral_link": f"{current_app.config['FRONTEND_URL']}?ref={referral_code}",
-                if referral_code else None
-            ),
+            "referral_link": f"{current_app.config['FRONTEND_URL']}?ref={referral_code}" if referral_code else None,
             "total_referrals": len(enriched_referrals),
             "completed_referrals": len(completed),
             "total_hp_earned": total_hp,
