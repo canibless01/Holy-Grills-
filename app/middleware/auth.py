@@ -35,37 +35,25 @@ def _get_token_from_header() -> str:
         abort(401, "Missing or malformed Authorization header")
     return auth_header.split(" ", 1)[1]
 
-
 def require_auth(f):
-    """Verify Supabase JWT and load user profile into g.user and g.user_id."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = _get_token_from_header()
-        payload = _decode_token(token)
-        g.user_id = payload.get("sub")
-        g.jwt_token = token
-        g.jwt_payload = payload
 
-        db = get_db()
         try:
-            profile = (
-                db.table("profiles")
-                .select("id,full_name,role,is_active,phone,date_of_birth,referral_code,referred_by")
-                .eq("id", g.user_id)
-                .single()
-                .execute()
-            )
-        except SupabaseError as e:
-            abort(401, "User profile not found")
+            auth_response = get_db().auth.get_user(token)
 
-        if not profile.get("is_active", True):
-            abort(403, "Account is deactivated")
+            if not auth_response.user:
+                abort(401, "Invalid token")
 
-        g.user = profile
-        g.user_role = profile.get("role", "student")
+            g.user_id = auth_response.user.id
+
+        except Exception as e:
+            abort(401, f"Supabase auth failed: {str(e)}")
+
         return f(*args, **kwargs)
-    return decorated
 
+    return decorated
 
 def require_role(*roles):
     """Require one of the given roles. Must be used after @require_auth."""
