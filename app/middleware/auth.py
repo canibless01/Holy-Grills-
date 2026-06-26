@@ -14,12 +14,10 @@ from app.db import get_db, SupabaseError
 
 def _decode_token(token: str) -> dict:
     try:
-        # ⚠️ TEMPORARY: Hardcode the secret
-        SECRET = "Nymj51uUVpBEQTSSj3/ysoQg0ZhDaDbrhWgjonoBOV/Y8glHeQYct9tj+IyHmRezFh9fjyAI+Tx7k0TKJZSZKA=="
         payload = jwt.decode(
             token,
-            SECRET,
-            algorithms=["HS256"],
+            current_app.config["JWT_SECRET"],
+            algorithms=[current_app.config["JWT_ALGORITHM"]],
             options={"verify_aud": False},
         )
         return payload
@@ -27,7 +25,8 @@ def _decode_token(token: str) -> dict:
         abort(401, "Token has expired")
     except jwt.InvalidTokenError as e:
         abort(401, f"Invalid token: {e}")
-        
+
+
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -136,4 +135,3 @@ def optional_auth(f):
 
         return f(*args, **kwargs)
     return decorated
-                
