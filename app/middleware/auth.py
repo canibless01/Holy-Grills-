@@ -14,27 +14,18 @@ from app.db import get_db, SupabaseError
 
 def _decode_token(token: str) -> dict:
     try:
-        # 🔍 DEBUG: Print what's being used
-        print(f"🔍 JWT_SECRET loaded: {current_app.config['JWT_SECRET'][:20]}...")
-        print(f"🔍 JWT_ALGORITHM: {current_app.config.get('JWT_ALGORITHM', 'NOT SET')}")
-        
-        # 🔍 DEBUG: Decode the header to see what alg is in the token
-        import jwt
-        header = jwt.get_unverified_header(token)
-        print(f"🔍 Token alg: {header.get('alg')}")
-        print(f"🔍 Token kid: {header.get('kid')}")
-        
+        # ⚠️ TEMPORARY: Hardcode the secret
+        SECRET = "Nymj51uUVpBEQTSSj3/ysoQg0ZhDaDbrhWgjonoBOV/Y8glHeQYct9tj+IyHmRezFh9fjyAI+Tx7k0TKJZSZKA=="
         payload = jwt.decode(
             token,
-            current_app.config["JWT_SECRET"],
-            algorithms=[current_app.config["JWT_ALGORITHM"]],
+            SECRET,
+            algorithms=["HS256"],
             options={"verify_aud": False},
         )
         return payload
     except jwt.ExpiredSignatureError:
         abort(401, "Token has expired")
     except jwt.InvalidTokenError as e:
-        print(f"🔍 JWT Error: {e}")  # 🔍 Debug
         abort(401, f"Invalid token: {e}")
         
 def _get_token_from_header() -> str:
