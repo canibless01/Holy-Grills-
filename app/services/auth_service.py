@@ -81,6 +81,9 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         "is_active": True,
         "email_notifications": True,
         "push_enabled": False,
+        "hp_balance": 0,
+        "wallet_balance": 0,
+        "preferences": {},
     }
 
     try:
