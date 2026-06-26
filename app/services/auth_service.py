@@ -84,6 +84,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     }
 
     try:
+        print(f"🔍 Inserting profile: {profile_data}")
         db.table("profiles").insert(profile_data)
     except SupabaseError as e:
         # Profile creation failed — Auth user is orphaned
