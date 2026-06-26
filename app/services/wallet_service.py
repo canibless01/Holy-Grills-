@@ -78,7 +78,7 @@ def get_wallet_transactions(user_id: str, limit: int = 50, offset: int = 0) -> l
     db = get_db()
     return (
         db.table("wallet_transactions")
-        .select("*")
+        .select("id")
         .eq("user_id", user_id)
         .order("created_at", ascending=False)
         .limit(limit)
