@@ -10,15 +10,20 @@ from flask import current_app
 
 def get_wallet(user_id: str) -> dict:
     db = get_db()
-    wallet = (
-        db.table("wallets")
-        .select("*")
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-    )
-    return wallet
 
+    try:
+        wallet = (
+            db.table("wallets")
+            .select("*")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        return wallet
+
+    except Exception as e:
+        print("GET WALLET ERROR:", e)
+        raise
 
 def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None) -> dict:
     """
