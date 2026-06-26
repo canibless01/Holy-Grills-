@@ -8,8 +8,8 @@ from app.db import get_db, SupabaseError
 from app.services.hp_service import award_active_hp
 from flask import current_app
 
-
 def get_wallet(user_id: str) -> dict:
+    return {"balance": 0, "currency": "NGN"}
     db = get_db()
     wallet = (
         db.table("wallets")
