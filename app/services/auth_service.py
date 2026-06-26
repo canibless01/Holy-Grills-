@@ -87,12 +87,16 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     }
 
     try:
-        print(f"🔍 Inserting profile: {profile_data}")
-        db.table("profiles").insert(profile_data)
+        existing_profile = db.table("profiles").select("id").eq("id", user_id).execute()
+        
+        if existing_profile and len(existing_profile) > 0:
+            print(f"✅ Profile already exists for user: {user_id}")
+        else:
+            print(f"🔍 Inserting profile: {profile_data}")
+            db.table("profiles").insert(profile_data)
+    
     except SupabaseError as e:
-        # Profile creation failed — Auth user is orphaned
-        # Log for admin to handle
-        print(f"⚠️ ORPHANED USER CREATED: {user_id} - {email} - Error: {e}")
+        print(f"⚠️ Profile error: {e}")
         raise ValueError("Registration failed. Please try again.")
 
     # ✅ STEP 6: Create wallet
