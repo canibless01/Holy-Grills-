@@ -14,10 +14,20 @@ from app.db import get_db, SupabaseError
 
 def _decode_token(token: str) -> dict:
     try:
+        import requests
+        import jwt
+        import os
+        
+        # Get public key from Supabase
+        supabase_url = os.environ.get("SUPABASE_URL")
+        jwks_url = f"{supabase_url}/auth/v1/jwks"
+        response = requests.get(jwks_url)
+        jwks = response.json()
+        
         payload = jwt.decode(
             token,
-            current_app.config["JWT_SECRET"],
-            algorithms=[current_app.config["JWT_ALGORITHM"]],
+            jwks,
+            algorithms=["ES256"],
             options={"verify_aud": False},
         )
         return payload
@@ -25,8 +35,9 @@ def _decode_token(token: str) -> dict:
         abort(401, "Token has expired")
     except jwt.InvalidTokenError as e:
         abort(401, f"Invalid token: {e}")
-
-
+    except Exception as e:
+        abort(401, f"Invalid token: {e}")
+        
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
