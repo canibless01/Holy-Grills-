@@ -27,9 +27,6 @@ def get_balance():
     return jsonify({
         "balance": float(wallet.get("balance", 0)),
         "currency": wallet.get("currency", "NGN"),
-        "virtual_account_number": wallet.get("virtual_account_number"),
-        "virtual_account_bank": wallet.get("virtual_account_bank"),
-        "virtual_account_name": wallet.get("virtual_account_name"),
     }), 200
 
 
