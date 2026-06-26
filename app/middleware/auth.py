@@ -27,7 +27,7 @@ def _decode_token(token: str) -> dict:
         payload = jwt.decode(
             token,
             jwks,
-            algorithms=["ES256"],
+            algorithms=["HS256"],
             options={"verify_aud": False},
         )
         return payload
