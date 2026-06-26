@@ -11,9 +11,9 @@ from flask import current_app
 def get_wallet(user_id: str) -> dict:
     db = get_db()
 
-    wallet = (
+    return (
         db.table("wallets")
-        .select("id,user_id,balance,currency")
+        .select("user_id,balance,currency,created_at,updated_at")
         .eq("user_id", user_id)
         .single()
         .execute()
