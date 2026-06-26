@@ -139,11 +139,12 @@ def refresh_token(refresh_token: str) -> dict:
         raise ValueError(result.get("error_description", "Token refresh failed"))
     return result
 
-
 def get_current_user(access_token: str) -> dict:
     db = get_db()
+
     auth_user = db.auth_get_user(access_token)
     user_id = auth_user.get("id")
+
     if not user_id:
         raise ValueError("Could not retrieve user")
 
@@ -154,6 +155,7 @@ def get_current_user(access_token: str) -> dict:
         .single()
         .execute()
     )
+
     wallet = (
         db.table("wallets")
         .select("balance,currency")
@@ -161,17 +163,16 @@ def get_current_user(access_token: str) -> dict:
         .single()
         .execute()
     )
-    tier_info = _get_tier(user_id)
 
     return {
-    "id": user_id,
+        "id": user_id,
         "email": auth_user.get("email"),
         "profile": profile,
         "wallet": {
-            "balance": float(wallet.get("balance", 0)) if wallet else 0.0,
-            "currency": wallet.get("currency", "NGN") if wallet else "NGN",
+            "balance": float(wallet.get("balance", 0)),
+            "currency": wallet.get("currency", "NGN"),
         },
-        "tier": tier_info,
+        "tier": _get_tier(user_id),
     }
 
 def update_profile(user_id: str, data: dict) -> dict:
