@@ -92,36 +92,75 @@ def my_referrals():
       200:
         description: Referral stats and history
     """
-    db = get_db()
-    profile = (
-        db.table("profiles")
-        .select("referral_code")
-        .eq("id", g.user_id)
-        .single()
-        .execute()
-    )
-    referral_code = profile.get("referral_code") if profile else None
+    try:
+        db = get_db()
 
-    referrals = (
-        db.table("referrals")
-        .select("*,profiles!referred_user_id(full_name,created_at)")
-        .eq("referrer_id", g.user_id)
-        .order("created_at", ascending=False)
-        .execute()
-    )
+        # Get user's referral code
+        profile = (
+            db.table("profiles")
+            .select("referral_code")
+            .eq("id", g.user_id)
+            .single()
+            .execute()
+        )
 
-    total_hp = sum(r.get("hp_awarded", 0) or 0 for r in referrals)
-    completed = [r for r in referrals if r.get("hp_awarded", 0) > 0]
+        referral_code = profile.get("referral_code") if profile else None
 
-    return jsonify({
-        "referral_code": referral_code,
-        "referral_link": f"{current_app.config['FRONTEND_URL']}?ref={referral_code}",
-        "total_referrals": len(referrals),
-        "completed_referrals": len(completed),
-        "total_hp_earned": total_hp,
-        "referrals": referrals,
-    }), 200
+        # Fetch referrals WITHOUT joins first
+        referrals = (
+            db.table("referrals")
+            .select("*")
+            .eq("referrer_id", g.user_id)
+            .order("created_at", ascending=False)
+            .execute()
+        )
 
+        # Enrich each referral with referred user's name (optional)
+        enriched_referrals = []
+
+        for referral in referrals:
+            referred_user = None
+
+            referred_user_id = referral.get("referred_user_id")
+
+            if referred_user_id:
+                try:
+                    referred_user = (
+                        db.table("profiles")
+                        .select("full_name,created_at")
+                        .eq("id", referred_user_id)
+                        .single()
+                        .execute()
+                    )
+                except Exception:
+                    referred_user = None
+
+            referral["referred_user"] = referred_user
+            enriched_referrals.append(referral)
+
+        total_hp = sum(r.get("hp_awarded", 0) or 0 for r in enriched_referrals)
+
+        completed = [
+            r for r in enriched_referrals
+            if (r.get("hp_awarded") or 0) > 0
+        ]
+
+        return jsonify({
+            "referral_code": referral_code,
+            "referral_link": f"{current_app.config['FRONTEND_URL']}?ref={referral_code}",
+                if referral_code else None
+            ),
+            "total_referrals": len(enriched_referrals),
+            "completed_referrals": len(completed),
+            "total_hp_earned": total_hp,
+            "referrals": enriched_referrals,
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__
+        }), 500
 
 @referrals_bp.route("/complete", methods=["POST"])
 def complete_referral():
