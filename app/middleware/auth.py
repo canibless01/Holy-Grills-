@@ -11,6 +11,19 @@ from functools import wraps
 from flask import request, g, current_app, abort
 from app.db import get_db, SupabaseError
 
+@app.route("/jwt-debug")
+def jwt_debug():
+    import jwt
+
+    auth = request.headers.get("Authorization", "")
+    token = auth.replace("Bearer ", "")
+
+    return {
+        "token_header": jwt.get_unverified_header(token),
+        "jwt_algorithm_config": current_app.config["JWT_ALGORITHM"],
+        "secret_exists": bool(current_app.config.get("JWT_SECRET")),
+        "secret_length": len(current_app.config.get("JWT_SECRET", ""))
+    }
 
 def _decode_token(token: str) -> dict:
     print(jwt.get_unverified_header(token))
@@ -40,16 +53,38 @@ def require_auth(f):
     def decorated(*args, **kwargs):
         token = _get_token_from_header()
 
+        db = get_db()
+
         try:
-            auth_response = get_db().auth.get_user(token)
+            auth_user = db.auth_get_user(token)
 
-            if not auth_response.user:
-                abort(401, "Invalid token")
-
-            g.user_id = auth_response.user.id
+            g.user_id = auth_user["id"]
+            g.jwt_token = token
+            g.jwt_payload = auth_user
 
         except Exception as e:
-            abort(401, f"Supabase auth failed: {str(e)}")
+            abort(401, f"Token validation failed: {str(e)}")
+
+        try:
+            profile = (
+                db.table("profiles")
+                .select(
+                    "id,full_name,role,is_active,phone,"
+                    "date_of_birth,referral_code,referred_by"
+                )
+                .eq("id", g.user_id)
+                .single()
+                .execute()
+            )
+
+        except SupabaseError:
+            abort(401, "User profile not found")
+
+        if not profile.get("is_active", True):
+            abort(403, "Account is deactivated")
+
+        g.user = profile
+        g.user_role = profile.get("role", "student")
 
         return f(*args, **kwargs)
 
