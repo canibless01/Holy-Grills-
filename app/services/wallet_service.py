@@ -9,11 +9,18 @@ from app.services.hp_service import award_active_hp
 from flask import current_app
 
 def get_wallet(user_id: str) -> dict:
-    return {
-        "balance": 0,
-        "currency": "NGN"
-    }
-    
+    db = get_db()
+
+    wallet = (
+        db.table("wallets")
+        .select("id,user_id,balance,currency")
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+
+    return wallet
+
 def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None) -> dict:
     """
     Credit ₦ to wallet (e.g., after Paystack webhook confirms payment).
