@@ -14,12 +14,18 @@ from app.db import get_db, SupabaseError
 
 def _decode_token(token: str) -> dict:
     try:
-        from app.db import get_db
-        db = get_db()
-        user = db.auth_get_user(token)
-        return {"sub": user.get("id"), "email": user.get("email")}
-    except Exception as e:
-        abort(401, f"Invalid token: {str(e)}")
+        payload = jwt.decode(
+            token,
+            current_app.config["JWT_SECRET"],
+            algorithms=[current_app.config["JWT_ALGORITHM"]],
+            options={"verify_aud": False},
+        )
+        return payload
+    except jwt.ExpiredSignatureError:
+        abort(401, "Token has expired")
+    except jwt.InvalidTokenError as e:
+        abort(401, f"Invalid token: {e}")
+
 
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
@@ -129,3 +135,4 @@ def optional_auth(f):
 
         return f(*args, **kwargs)
     return decorated
+                
