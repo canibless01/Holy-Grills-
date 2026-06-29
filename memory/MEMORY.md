@@ -1,0 +1,3 @@
+- [DB column reality](db-column-reality.md) — actual prod column names differ from assumptions; critical reference for future endpoints.
+- [Missing tables](missing-tables.md) — 4 tables absent from prod DB; migration SQL at migrations/001_missing_tables.sql; endpoints handle their absence gracefully.
+- [Order status machine](order-status-machine.md) — VALID_TRANSITIONS in order_service.py; refunded was added to all non-terminal states so admin refund works from any active status.
