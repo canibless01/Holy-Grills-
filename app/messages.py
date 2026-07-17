@@ -815,5 +815,35 @@ class MSG:
     EVENT_DELETED                  = "Event '{title}' deleted"
 
 
+
 # Short alias
 M = MSG
+
+
+# ── Message resolver ──────────────────────────────────────────────────────────
+import os as _os
+
+
+class _PassthroughDict(dict):
+    """Return '{key}' for any missing key so unrelated placeholders pass through."""
+    def __missing__(self, key):
+        return '{' + key + '}'
+
+
+def resolve_msg(text: str, **kwargs) -> str:
+    """Resolve {currency} and {platform} from env, plus caller-supplied kwargs.
+
+    Unknown placeholders (e.g. {order_id}, {name}) are left as-is so the
+    caller doesn't need to supply every placeholder in advance.
+
+    Usage (replaces raw MSG.CONSTANT.format(...) calls in route/service code):
+        resolve_msg(MSG.HP_INSUFFICIENT, have=bal, need=cost)
+    """
+    if '{' not in text:
+        return text
+    defaults = {
+        'currency': _os.environ.get('HP_CURRENCY_NAME', 'HP'),
+        'platform': _os.environ.get('APP_NAME', 'Holy Grills'),
+    }
+    defaults.update(kwargs)
+    return text.format_map(_PassthroughDict(defaults))

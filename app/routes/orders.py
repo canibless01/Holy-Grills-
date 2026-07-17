@@ -6,7 +6,7 @@ from app.middleware.rate_limit import rate_limit
 from app.services import order_service
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db
-from app.messages import MSG
+from app.messages import MSG, resolve_msg
 from datetime import datetime, timezone
 
 orders_bp = Blueprint("orders", __name__)
@@ -1186,7 +1186,7 @@ def record_order_share(order_id):
         update_monthly_tracker(g.user_id, actual_hp)
 
     return jsonify({
-        "message": MSG.SHARE_PROMPT_HP_TITLE.format(hp=actual_hp) if actual_hp else MSG.SHARE_PROMPT_ALREADY_TODAY,
+        "message": resolve_msg(MSG.SHARE_PROMPT_HP_TITLE, hp=actual_hp) if actual_hp else MSG.SHARE_PROMPT_ALREADY_TODAY,
         "hp_awarded": actual_hp,
         "platform": platform,
     }), 200

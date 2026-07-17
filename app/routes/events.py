@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, SupabaseError
-from app.messages import MSG
+from app.messages import MSG, resolve_msg
 from app.utils.validators import (
     validate_choice, validate_non_negative_number, validate_uuid,
     validate_datetime_order, sanitize_string,
@@ -505,11 +505,11 @@ def register_for_event(event_id):
         if hp_required > 0 and user_hp >= hp_required:
             hp_to_spend  = hp_required
             naira_to_pay = cash_price
-            _payment_msg = MSG.PAID_EVENT_HP_USED.format(hp=hp_to_spend, cash=naira_to_pay)
+            _payment_msg = resolve_msg(MSG.PAID_EVENT_HP_USED, hp=hp_to_spend, cash=naira_to_pay)
         else:
             hp_to_spend  = 0
             naira_to_pay = total_value
-            _payment_msg = MSG.PAID_EVENT_CASH_ONLY.format(total=naira_to_pay)
+            _payment_msg = resolve_msg(MSG.PAID_EVENT_CASH_ONLY, total=naira_to_pay)
 
         if naira_to_pay > 0 and payment_method == "wallet":
             _debit(g.user_id, naira_to_pay, event_id, "event_ticket",

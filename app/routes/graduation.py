@@ -13,7 +13,7 @@ POST /graduation/claim
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.db import get_db
-from app.messages import MSG
+from app.messages import MSG, resolve_msg
 from app.services.hp_service import award_active_hp
 from datetime import datetime, timezone
 
@@ -117,7 +117,7 @@ def claim_graduation():
         pass
 
     return jsonify({
-        "message": MSG.GRADUATION_CLAIMED_OK,
+        "message": resolve_msg(MSG.GRADUATION_CLAIMED_OK),
         "hp_awarded": award_result.get("awarded", graduation_hp),
         "academic_level": user_level,
     }), 200

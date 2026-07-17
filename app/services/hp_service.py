@@ -393,8 +393,8 @@ def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, 
     """Deduct HP from active balance. Raises ValueError if insufficient."""
     balance = get_hp_balance(user_id)
     if balance["active"] < amount:
-        from app.messages import MSG
-        raise ValueError(MSG.HP_INSUFFICIENT.format(have=balance["active"], need=amount))
+        from app.messages import MSG, resolve_msg
+        raise ValueError(resolve_msg(MSG.HP_INSUFFICIENT, have=balance["active"], need=amount))
 
     txn_type = _resolve_txn_type(reference_type, is_spend=True)
     _record_hp_transaction(
@@ -627,8 +627,8 @@ def process_flash_redeem(reward_id: str, user_id: str) -> dict:
 
     balance = get_hp_balance(user_id)
     if balance["active"] < discounted_cost:
-        from app.messages import MSG
-        raise ValueError(MSG.HP_FLASH_INSUFFICIENT.format(need=discounted_cost, have=balance["active"]))
+        from app.messages import MSG, resolve_msg
+        raise ValueError(resolve_msg(MSG.HP_FLASH_INSUFFICIENT, need=discounted_cost, have=balance["active"]))
 
     redemption = db.table("reward_redemptions").insert({
         "user_id": user_id,

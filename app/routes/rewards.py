@@ -5,7 +5,7 @@ from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import spend_hp, get_hp_balance, get_user_tier
 from app.services.notification_service import send_notification
 from app.db import get_db
-from app.messages import MSG
+from app.messages import MSG, resolve_msg
 import uuid
 from datetime import datetime, timezone
 
@@ -122,7 +122,7 @@ def redeem_reward(reward_id):
     hp_cost = reward["hp_cost"]
     balance = get_hp_balance(g.user_id)
     if balance["active"] < hp_cost:
-        return jsonify({"error": MSG.REWARD_INSUFFICIENT_HP.format(need=hp_cost, have=balance["active"])}), 400
+        return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
 
     redemption = db.table("reward_redemptions").insert({
         "user_id": g.user_id,

@@ -6,7 +6,7 @@ from app.services.hp_service import (
     get_hp_balance, get_user_tier, spend_hp, earn_pending_hp, award_active_hp
 )
 from app.db import get_db
-from app.messages import MSG
+from app.messages import MSG, resolve_msg
 
 hp_bp = Blueprint("hp", __name__)
 
@@ -285,7 +285,7 @@ def purchase_hp_bundle():
 
     min_purchase = int(current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))
     if hp_amount < min_purchase:
-        return jsonify({"error": MSG.HP_BUNDLE_MIN.format(min_hp=min_purchase)}), 400
+        return jsonify({"error": resolve_msg(MSG.HP_BUNDLE_MIN, min_hp=min_purchase)}), 400
     if not reference:
         return jsonify({"error": MSG.HP_BUNDLE_REF_REQUIRED}), 400
 
@@ -354,7 +354,7 @@ def spin_wheel():
     if spin_cost > 0:
         bal = get_hp_balance(g.user_id)
         if bal.get("active", 0) < spin_cost:
-            return jsonify({"error": MSG.HP_SPIN_INSUFFICIENT.format(cost=spin_cost)}), 400
+            return jsonify({"error": resolve_msg(MSG.HP_SPIN_INSUFFICIENT, cost=spin_cost)}), 400
         spend_hp(g.user_id, spin_cost, None, "spin_wheel", f"Extra spin #{spin_count_today + 1} today")
 
     prizes = current_app.config.get("SPIN_PRIZES") or [
@@ -462,10 +462,10 @@ def transfer_hp():
 
     min_transfer = int(current_app.config.get("HP_TRANSFER_MIN_AMOUNT", 10))
     if amount < min_transfer:
-        return jsonify({"error": MSG.HP_TRANSFER_MIN.format(min=min_transfer)}), 400
+        return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_MIN, min=min_transfer)}), 400
 
     if recipient_id == g.user_id:
-        return jsonify({"error": MSG.HP_TRANSFER_SELF}), 400
+        return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_SELF)}), 400
 
     db = get_db()
 
@@ -491,7 +491,7 @@ def transfer_hp():
         completed_count = 0
     if completed_count < min_orders:
         return jsonify({
-            "error": MSG.HP_TRANSFER_MIN_ORDERS.format(min_orders=min_orders, completed=completed_count),
+            "error": resolve_msg(MSG.HP_TRANSFER_MIN_ORDERS, min_orders=min_orders, completed=completed_count),
             "min_orders_required": min_orders,
             "completed_orders": completed_count,
         }), 400
@@ -507,7 +507,7 @@ def transfer_hp():
     balance = get_hp_balance(g.user_id)
     if balance.get("active", 0) < amount:
         return jsonify({
-            "error": MSG.HP_TRANSFER_INSUFFICIENT.format(have=balance.get("active", 0), need=amount)
+            "error": resolve_msg(MSG.HP_TRANSFER_INSUFFICIENT, have=balance.get("active", 0), need=amount)
         }), 400
 
     transfer_note = notes or f"HP transfer from {sender_name}"
@@ -533,7 +533,7 @@ def transfer_hp():
         pass
 
     return jsonify({
-        "message": MSG.HP_TRANSFER_OK,
+        "message": resolve_msg(MSG.HP_TRANSFER_OK),
         "amount": amount,
         "recipient_id": recipient_id,
         "recipient_name": recipient_name,
