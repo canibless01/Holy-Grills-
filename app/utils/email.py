@@ -29,7 +29,7 @@ Estimated delivery: {d.get('window_label', 'your selected window')}
 
 Track your order in the app.
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "hp_earned": {
@@ -37,11 +37,11 @@ Track your order in the app.
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-You earned {d.get('hp', 0)} HP on your recent order. Keep ordering to build your balance and unlock rewards!
+You earned {d.get('hp', 0)} {d.get('currency', 'HP')} on your recent order. Keep ordering to build your {d.get('currency', 'HP')} balance and unlock rewards!
 
-Your balance: {d.get('active_hp', 0)} HP active | {d.get('pending_hp', 0)} HP pending
+Your balance: {d.get('active_hp', 0)} {d.get('currency', 'HP')} active | {d.get('pending_hp', 0)} {d.get('currency', 'HP')} pending
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "tier_upgrade": {
@@ -56,7 +56,7 @@ Your new benefits:
 
 Keep earning to maintain your status.
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "wallet_funded": {
@@ -64,11 +64,11 @@ Keep earning to maintain your status.
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-Your {d.get('app_name', 'Holy Grills')} wallet has been credited with ₦{d.get('amount', 0):,.0f}.
+Your {d.get('app_name', '')} wallet has been credited with ₦{d.get('amount', 0):,.0f}.
 
 New balance: ₦{d.get('new_balance', 0):,.0f}
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "password_reset": {
@@ -82,7 +82,7 @@ We received a request to reset your password. Click the link below:
 
 This link expires in 1 hour. If you didn't request this, ignore this email.
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "birthday_bonus": {
@@ -90,11 +90,11 @@ This link expires in 1 hour. If you didn't request this, ignore this email.
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-Happy Birthday! As a gift, we've added {d.get('hp', 150)} HP to your account.
+Happy Birthday! As a gift, we've added {d.get('hp', 150)} {d.get('currency', 'HP')} to your account.
 
 Head to the app and treat yourself on us!
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "referral_completed": {
@@ -102,11 +102,11 @@ Head to the app and treat yourself on us!
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-Great news — a friend you referred just placed their first order on {d.get('app_name', 'Holy Grills')}.
+Great news — a friend you referred just placed their first order on {d.get('app_name', '')}.
 
-You've earned {d.get('hp', 75)} HP (active, no monthly cap). Spend it on your next order!
+You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} (active, no monthly cap). Spend it on your next order!
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "abandoned_cart": {
@@ -114,11 +114,11 @@ You've earned {d.get('hp', 75)} HP (active, no monthly cap). Spend it on your ne
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-You left some items in your cart. Come back and complete your order — your HP is waiting!
+You left some items in your cart. Come back and complete your order — your {d.get('currency', 'HP')} is waiting!
 
 {d.get('items_summary', '')}
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "reward_redeemed": {
@@ -126,11 +126,11 @@ You left some items in your cart. Come back and complete your order — your HP 
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-You redeemed: {d.get('reward_name', '')} for {d.get('hp_spent', 0)} HP.
+You redeemed: {d.get('reward_name', '')} for {d.get('hp_spent', 0)} {d.get('currency', 'HP')}.
 
 Our team will fulfil your reward within {d.get('fulfilment_time', '24 hours')}.
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "tier_grace_period": {
@@ -138,10 +138,10 @@ Our team will fulfil your reward within {d.get('fulfilment_time', '24 hours')}.
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-Your HP activity has dipped below the {d.get('tier_name', 'your tier')} threshold.
+Your {d.get('currency', 'HP')} activity has dipped below the {d.get('tier_name', 'your tier')} threshold.
 You have {d.get('grace_days', 7)} days to place an order and keep your tier status.
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "tier_dropped": {
@@ -152,7 +152,7 @@ Hi {d.get('name', 'there')},
 Your grace period has ended and your tier has been updated.
 Keep ordering to climb back up!
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "hp_expired": {
@@ -160,10 +160,10 @@ Keep ordering to climb back up!
         "body": lambda d: f"""
 Hi {d.get('name', 'there')},
 
-{d.get('amount', 0)} HP has decayed due to {d.get('inactivity_days', 120)} days of inactivity.
+{d.get('amount', 0)} {d.get('currency', 'HP')} has decayed due to {d.get('inactivity_days', 120)} days of inactivity.
 Place an order to protect your remaining balance!
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
     "monthly_birthday_report": {
@@ -171,7 +171,7 @@ Place an order to protect your remaining balance!
         "body": lambda d: f"""
 Hi {d.get('name', 'Admin')},
 
-Here are the {d.get('app_name', 'Holy Grills')} users with birthdays in {d.get('month', 'this month')}:
+Here are the {d.get('app_name', '')} users with birthdays in {d.get('month', 'this month')}:
 
 {d.get('summary_text', 'No birthdays this month.')}
 
@@ -179,7 +179,7 @@ Total: {d.get('count', 0)} user{'s' if d.get('count', 0) != 1 else ''}
 
 You can use this list to send birthday wishes, create flyers, or DM them directly.
 
-— {d.get('app_tagline', 'Holy Grills FUTA')}
+— {d.get('app_tagline', '')}
 """,
     },
 }

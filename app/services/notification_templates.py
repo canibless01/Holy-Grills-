@@ -16,6 +16,7 @@ Rendering pipeline (render_notification_template):
 Critical vs non-critical definition matches the spec in RUN 4.
 """
 
+import os
 import re
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -33,7 +34,7 @@ NON_CRITICAL_FALLBACKS: dict = {
     "gift_sender":    "someone",
     "batch_id":       "your batch",
     "platform":       "social media",
-    "currency":       "HP",
+    "currency":       os.environ.get("HP_CURRENCY_NAME", "HP"),
     "referral_count": "your referrals",
     # Additional MSG-placeholder non-critical fallbacks
     "from_tier":      "your previous tier",

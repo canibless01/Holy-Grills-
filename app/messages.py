@@ -51,7 +51,7 @@ class MSG:
     SATISFACTION_CHECK_TITLE     = "How was your meal? 😊"
     SATISFACTION_CHECK_BODY      = "We'd love your feedback — rate your {platform} experience and help us improve."
     REENGAGEMENT_NUDGE_TITLE     = "Ready for another round? 🍖"
-    REENGAGEMENT_NUDGE_BODY      = "It's been a day since your last order. Come back and earn HP with every bite!"
+    REENGAGEMENT_NUDGE_BODY      = "It's been a day since your last order. Come back and earn {currency} with every bite!"
 
     ORDER_DELIVERY_ATTEMPTED_TITLE = "Delivery Attempted"
     ORDER_DELIVERY_ATTEMPTED_BODY  = "We tried to reach you. Please respond within 30 minutes."
@@ -68,9 +68,9 @@ class MSG:
     ORDER_REFUND_SUCCESS         = "Refund processed"
 
     # ── Holy Points (HP) ──────────────────────────────────────────────────────
-    HP_EARNED_TITLE          = "+{total_hp} HP Earned!"
-    HP_UNLOCKED_TITLE        = "+{unlocked_hp} HP Unlocked!"
-    HP_UNLOCKED_BODY         = "Your food order unlocked {unlocked_hp} HP from your pending pool."
+    HP_EARNED_TITLE          = "+{total_hp} {currency} Earned!"
+    HP_UNLOCKED_TITLE        = "+{unlocked_hp} {currency} Unlocked!"
+    HP_UNLOCKED_BODY         = "Your food order unlocked {unlocked_hp} {currency} from your pending pool."
 
     # ── Tier ──────────────────────────────────────────────────────────────────
     TIER_UPGRADE_TITLE       = "You reached {tier_name}!"
@@ -78,11 +78,11 @@ class MSG:
     TIER_DROPPED_TITLE       = "Tier Update \u2014 {from_tier} \u2192 {to_tier}"
     TIER_DROPPED_BODY        = "Your grace period has ended. Keep ordering to climb back up!"
     TIER_GRACE_TITLE         = "{grace_days}-Day Grace Period Started \u2014 {tier_name}"
-    TIER_GRACE_BODY          = "Your HP is below the {tier_name} maintenance threshold. Order within {grace_days} days to keep your tier!"
+    TIER_GRACE_BODY          = "Your {currency} is below the {tier_name} maintenance threshold. Order within {grace_days} days to keep your tier!"
 
     # ── Birthday ──────────────────────────────────────────────────────────────
     BIRTHDAY_TITLE           = "Happy Birthday, {name}!"
-    BIRTHDAY_BODY            = "You've received {hp} HP as a birthday gift! Valid for 30 days. Enjoy your special day."
+    BIRTHDAY_BODY            = "You've received {hp} {currency} as a birthday gift! Valid for 30 days. Enjoy your special day."
     BIRTHDAY_REPORT_TITLE    = "\U0001f382 {count} Birthday{plural} This Month ({month})"
 
     # ── Abandoned Cart ───────────────────────────────────────────────────────
@@ -92,10 +92,10 @@ class MSG:
     # ── Events ────────────────────────────────────────────────────────────────
 
     EVENT_CHECKIN_SUCCESS    = "Check-in successful"
-    EVENT_HP_PENDING_TITLE   = "+{hp} HP Pending!"
-    EVENT_HP_PENDING_BODY    = "You earned HP for attending {event_title}. Order food to unlock it!"
+    EVENT_HP_PENDING_TITLE   = "+{hp} {currency} Pending!"
+    EVENT_HP_PENDING_BODY    = "You earned {currency} for attending {event_title}. Order food to unlock it!"
     EVENT_REGISTERED_TITLE   = "You're registered for {title}!"
-    EVENT_REGISTERED_BODY    = "Show your ticket QR code at the door to check in and earn HP."
+    EVENT_REGISTERED_BODY    = "Show your ticket QR code at the door to check in and earn {currency}."
     EVENT_CATERING_TITLE     = "New Catering Request"
     EVENT_CATERING_BODY      = "{organizer} submitted a catering request for '{event_name}'"
     EVENT_CATERING_NOT_FOUND = "Catering request not found"
@@ -131,7 +131,7 @@ class MSG:
     REFERRAL_NOT_FOUND       = "No referral found"
     REFERRAL_ALREADY_DONE    = "Referral already completed"
     REFERRAL_HP_EARNED_TITLE = "Referral Bonus!"
-    REFERRAL_HP_EARNED_BODY  = "A friend you referred just placed their first order. You've earned {hp} HP!"
+    REFERRAL_HP_EARNED_BODY  = "A friend you referred just placed their first order. You've earned {hp} {currency}!"
 
     # ── Storefront ────────────────────────────────────────────────────────────
     STOREFRONT_ALREADY_SUBSCRIBED = "Already subscribed"
@@ -147,12 +147,12 @@ class MSG:
     EMAIL_WALLET_FUNDED      = "Wallet funded successfully"
     EMAIL_PASSWORD_RESET     = "Reset your {platform} password"
     EMAIL_BIRTHDAY_BONUS     = "Happy Birthday from {platform}! \U0001f382"
-    EMAIL_REFERRAL_COMPLETED = "Your referral earned you HP!"
+    EMAIL_REFERRAL_COMPLETED = "Your referral earned you {currency}!"
     EMAIL_ABANDONED_CART     = "Your cart is waiting for you"
     EMAIL_REWARD_REDEEMED    = "Reward redemption confirmed"
     EMAIL_TIER_GRACE         = "Your tier grace period has started"
     EMAIL_TIER_DROPPED       = "Your tier has changed"
-    EMAIL_HP_EXPIRED         = "Some of your HP has expired"
+    EMAIL_HP_EXPIRED         = "Some of your {currency} has expired"
 
     # ── Admin ─────────────────────────────────────────────────────────────────
     ADMIN_USER_DEACTIVATED       = "User deactivated"
@@ -164,7 +164,7 @@ class MSG:
     ADMIN_WINDOW_REOPENED        = "Window reopened"
     ADMIN_RECOVERY_NUDGE_SENT    = "Recovery nudge sent"
     ADMIN_NUDGE_TITLE            = "You left something behind!"
-    ADMIN_NUDGE_BODY             = "Your cart is still waiting \u2014 and so is your HP. Complete your order today."
+    ADMIN_NUDGE_BODY             = "Your cart is still waiting \u2014 and so is your {currency}. Complete your order today."
     ADMIN_JOB_RUNNING            = "Running in background \u2014 check server logs for result"
 
     # ── Wallet ────────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ class MSG:
     REWARD_NEW_TITLE             = "🎁 New Reward Available!"
     REWARD_NEW_BODY              = "'{name}' is now in the rewards store. Redeem it with your {currency}!"
     REWARD_REDEEMED_TITLE        = "Reward Redeemed: {name}"
-    REWARD_REDEEMED_BODY         = "You spent {hp} HP. Our team will fulfil your reward shortly."
+    REWARD_REDEEMED_BODY         = "You spent {hp} {currency}. Our team will fulfil your reward shortly."
     REWARD_FULFILLED_TITLE       = "Reward Fulfilled"
     REWARD_STATUS_TITLE          = "Reward Update"
     REWARD_STATUS_BODY           = "Your '{name}' redemption has been {status}."
@@ -225,7 +225,7 @@ class MSG:
     REWARD_OUT_OF_STOCK          = "Reward is out of stock"
     REWARD_EXPIRED               = "Reward has expired"
     REWARD_TIER_TOO_LOW          = "Your tier is not high enough to redeem this reward"
-    REWARD_INSUFFICIENT_HP       = "Insufficient HP. Need {need}, have {have}"
+    REWARD_INSUFFICIENT_HP       = "Insufficient {currency}. Need {need}, have {have}"
     REWARD_DEACTIVATED           = "Reward deactivated"
     REWARD_REDEMPTION_NOT_FOUND  = "Redemption not found"
     REWARD_REDEMPTION_INVALID_STATUS = "status must be 'fulfilled' or 'rejected'"
@@ -235,21 +235,21 @@ class MSG:
 
     # ── HP bundles / spin ────────────────────────────────────────────────────
     HP_ADMIN_REQUIRED_FIELDS     = "user_id and amount are required"
-    HP_BUNDLE_MIN                = "Minimum bundle purchase is {min_hp} HP"
+    HP_BUNDLE_MIN                = "Minimum bundle purchase is {min_hp} {currency}"
     HP_BUNDLE_REF_REQUIRED       = "paystack_reference is required"
     HP_PAYMENT_NOT_CONFIRMED     = "Payment not confirmed. Transaction status: {status}"
     HP_PAYMENT_MISMATCH          = "Payment amount mismatch. Expected \u20a6{expected:.0f}, received \u20a6{received:.0f}"
     HP_PAYMENT_VERIFY_FAILED     = "Payment verification failed: {error}"
-    HP_SPIN_INSUFFICIENT         = "Insufficient HP. Need {cost} HP for extra spins today."
+    HP_SPIN_INSUFFICIENT         = "Insufficient {currency}. Need {cost} {currency} for extra spins today."
 
     # ── Challenges ────────────────────────────────────────────────────────────
     CHALLENGE_NOT_FOUND          = "Challenge not found or inactive"
     CHALLENGE_ENDED              = "Challenge has ended"
     CHALLENGE_MAX_REACHED        = "Challenge already completed (max completions reached)"
-    CHALLENGE_HP_EXCEEDS_MAX     = "HP reward cannot exceed {max_hp} HP per challenge"
+    CHALLENGE_HP_EXCEEDS_MAX     = "{currency} reward cannot exceed {max_hp} {currency} per challenge"
     CHALLENGE_CREATE_FAILED      = "Failed to create challenge: {error}"
     CHALLENGE_COMPLETE_TITLE     = "Challenge Complete: {title}"
-    CHALLENGE_COMPLETE_BODY      = "You earned {hp} HP (pending). Order food to unlock!"
+    CHALLENGE_COMPLETE_BODY      = "You earned {hp} {currency} (pending). Order food to unlock!"
     CHALLENGE_DEACTIVATED        = "Challenge deactivated"
 
     # ── Riders ────────────────────────────────────────────────────────────────
@@ -272,11 +272,11 @@ class MSG:
 
     # ── Referral milestone ────────────────────────────────────────────────────
     REFERRAL_MILESTONE_TITLE     = "Milestone! {count} Referral{plural} Completed 🎉"
-    REFERRAL_MILESTONE_BODY      = "You earned {hp} bonus HP for referring {count} friend{plural}!"
+    REFERRAL_MILESTONE_BODY      = "You earned {hp} bonus {currency} for referring {count} friend{plural}!"
 
     # ── Leaderboard ───────────────────────────────────────────────────────────
     LEADERBOARD_RANK_TITLE       = "You Made the Top 10! 🏆"
-    LEADERBOARD_RANK_BODY        = "You finished #{rank} on the {period} leaderboard with {hp} HP earned. Keep going!"
+    LEADERBOARD_RANK_BODY        = "You finished #{rank} on the {period} leaderboard with {hp} {currency} earned. Keep going!"
 
     # ── Order cancellation / placement window ─────────────────────────────────
     ORDER_CANCEL_WINDOW_CLOSED     = "Orders cannot be cancelled once the ordering window has closed"
@@ -311,7 +311,7 @@ class MSG:
     LISTING_NOT_FOUND            = "Listing not found"
     LISTING_NOT_AVAILABLE        = "Listing not available"
     LISTING_OUT_OF_STOCK         = "Listing is out of stock"
-    LISTING_INSUFFICIENT_HP      = "Insufficient HP: need {need}, have {have}"
+    LISTING_INSUFFICIENT_HP      = "Insufficient {currency}: need {need}, have {have}"
     LISTING_NO_CODES             = "No codes available. Listing is now out of stock."
     LISTING_VENDOR_UNAVAILABLE   = "Vendor listing requests are not currently available. Please contact us directly."
     MARKETPLACE_REQUEST_SUBMITTED = "Your listing request has been submitted for review."
@@ -330,7 +330,7 @@ class MSG:
 
     # ── Orders ────────────────────────────────────────────────────────────────
     ORDER_WALLET_LOGIN_REQUIRED  = "Wallet payment requires a logged-in account"
-    ORDER_HP_LOGIN_REQUIRED      = "HP redemption requires a logged-in account"
+    ORDER_HP_LOGIN_REQUIRED      = "{currency} redemption requires a logged-in account"
     ORDER_CREATE_FAILED          = "Order creation failed"
     ORDER_NOT_FOUND              = "Order not found"
     ORDER_ACCESS_DENIED          = "Access denied"
@@ -396,9 +396,9 @@ class MSG:
     REQUIRED_FIELD_MISSING   = "Required field(s) missing"
 
     # ── HP transfer ───────────────────────────────────────────────────────────
-    HP_TRANSFER_OK           = "HP transferred successfully"
-    HP_TRANSFER_INSUFFICIENT = "Insufficient active HP. Have {have}, need {need}"
-    HP_TRANSFER_SELF         = "Cannot transfer HP to yourself"
+    HP_TRANSFER_OK           = "{currency} transferred successfully"
+    HP_TRANSFER_INSUFFICIENT = "Insufficient active {currency}. Have {have}, need {need}"
+    HP_TRANSFER_SELF         = "Cannot transfer {currency} to yourself"
     HP_TRANSFER_USER_NOT_FOUND = "Recipient not found"
 
     # ── Saved For Later ────────────────────────────────────────────────────────
@@ -426,12 +426,12 @@ class MSG:
     ORDER_LOCK_EXPIRY_BODY       = "Your locked order date ({date}) has passed. The lock has expired."
     ORDER_LOCK_REDEEMED_TITLE    = "🔒 Order Lock Discount Applied!"
     ORDER_LOCK_REDEEMED_BODY     = "Your {pct:.0f}% locked-date discount saved you ₦{saved:.0f} on this order!"
-    ORDER_LOCK_REDEEMED_HP_TITLE = "🔒 Order Lock HP Reward!"
-    ORDER_LOCK_REDEEMED_HP_BODY  = "You earned {hp} HP for placing your order on your locked date!"
-    ORDER_LOCK_REMINDER_BODY_HP  = "Your {hp} HP reward is waiting for {date}. Place an order to claim it!"
-    ORDER_LOCK_HP_AWARDED_NOTES  = "Order lock HP reward — {hp} HP awarded on locked-date order"
+    ORDER_LOCK_REDEEMED_HP_TITLE = "🔒 Order Lock {currency} Reward!"
+    ORDER_LOCK_REDEEMED_HP_BODY  = "You earned {hp} {currency} for placing your order on your locked date!"
+    ORDER_LOCK_REMINDER_BODY_HP  = "Your {hp} {currency} reward is waiting for {date}. Place an order to claim it!"
+    ORDER_LOCK_HP_AWARDED_NOTES  = "Order lock {currency} reward — {hp} {currency} awarded on locked-date order"
     BIRTHDAY_BLAST_TITLE         = "🎂 It's {name}'s Birthday Today!"
-    BIRTHDAY_BLAST_BODY          = "Celebrate {name}'s birthday — tap to send them HP as a gift! 🎉"
+    BIRTHDAY_BLAST_BODY          = "Celebrate {name}'s birthday — tap to send them {currency} as a gift! 🎉"
 
     # ── First-Order Gift ───────────────────────────────────────────────────────
     GIFT_NOT_FOUND               = "Gift not found"
@@ -450,42 +450,42 @@ class MSG:
 
     # ── Login Streak ───────────────────────────────────────────────────────────
     LOGIN_STREAK_TITLE           = "🔥 {streak}-Day Login Streak!"
-    LOGIN_STREAK_BODY            = "You've logged in {streak} days in a row. Keep it up — you earned {hp} HP!"
+    LOGIN_STREAK_BODY            = "You've logged in {streak} days in a row. Keep it up — you earned {hp} {currency}!"
     LOGIN_STREAK_RESET_TITLE     = "Streak Reset"
     LOGIN_STREAK_RESET_BODY      = "Your login streak reset to 1. Log in every day to build it back up!"
 
     # ── Order Share Prompt ─────────────────────────────────────────────────────
-    SHARE_PROMPT_HP_TITLE        = "+{hp} HP for Sharing!"
-    SHARE_PROMPT_HP_BODY         = "Thanks for sharing your order! {hp} HP added to your pending pool."
+    SHARE_PROMPT_HP_TITLE        = "+{hp} {currency} for Sharing!"
+    SHARE_PROMPT_HP_BODY         = "Thanks for sharing your order! {hp} {currency} added to your pending pool."
     SHARE_PROMPT_ALREADY_TODAY   = "Share reward already claimed today. Come back tomorrow!"
     SHARE_PROMPT_ORDER_NOT_FOUND = "Order not found or not yours"
 
     # ── Squad HP Split ─────────────────────────────────────────────────────────
-    SQUAD_HP_SPLIT_TITLE         = "Squad HP Earned!"
-    SQUAD_HP_SPLIT_BODY          = "You earned {hp} HP from the squad order placed by {organizer}."
+    SQUAD_HP_SPLIT_TITLE         = "Squad {currency} Earned!"
+    SQUAD_HP_SPLIT_BODY          = "You earned {hp} {currency} from the squad order placed by {organizer}."
     SQUAD_ORDER_ADDED_BODY       = "{organizer} added you to a squad order."
     SQUAD_INVITE_SUBJECT         = "You've been invited to join {platform}!"
-    SQUAD_INVITE_BODY            = "{organizer} added you to a squad order. Create an account to start earning HP!"
+    SQUAD_INVITE_BODY            = "{organizer} added you to a squad order. Create an account to start earning {currency}!"
 
     # ── Monthly HP Cap ─────────────────────────────────────────────────────────
-    MONTHLY_HP_CAP_REACHED       = "Monthly free-activity HP cap reached. Cap resets on the 1st of next month."
+    MONTHLY_HP_CAP_REACHED       = "Monthly free-activity {currency} cap reached. Cap resets on the 1st of next month."
 
     # ── Dormancy Win-Back ──────────────────────────────────────────────────────
     WINBACK_DAY70_TITLE          = "We miss you! 👋"
-    WINBACK_DAY70_BODY           = "It's been a while! Come back and place an order to protect your HP balance."
-    WINBACK_DAY95_TITLE          = "Your HP is at risk ⚠️"
-    WINBACK_DAY95_BODY           = "You haven't ordered in a while. HP decay starts in {days} days — place an order now!"
-    WINBACK_DAY118_TITLE         = "⏰ Last chance — HP decay starts in 2 days"
+    WINBACK_DAY70_BODY           = "It's been a while! Come back and place an order to protect your {currency} balance."
+    WINBACK_DAY95_TITLE          = "Your {currency} is at risk ⚠️"
+    WINBACK_DAY95_BODY           = "You haven't ordered in a while. {currency} decay starts in {days} days — place an order now!"
+    WINBACK_DAY118_TITLE         = "⏰ Last chance — {currency} decay starts in 2 days"
     WINBACK_DAY118_BODY          = "Your {currency} will start decaying in 2 days. Place an order to protect them!"
-    WINBACK_DECAY_TITLE          = "📉 HP Decay Started"
-    WINBACK_DECAY_BODY           = "Your HP balance has decreased by {amount} HP due to inactivity. Place an order to stop further decay."
+    WINBACK_DECAY_TITLE          = "📉 {currency} Decay Started"
+    WINBACK_DECAY_BODY           = "Your {currency} balance has decreased by {amount} {currency} due to inactivity. Place an order to stop further decay."
 
     # ── HP Decay ──────────────────────────────────────────────────────────────
-    HP_DECAY_TITLE               = "HP Decay — {amount} HP Reduced"
-    HP_DECAY_BODY                = "Your HP decreased by {amount} due to {days} days of inactivity. Stay active to stop decay!"
+    HP_DECAY_TITLE               = "{currency} Decay — {amount} {currency} Reduced"
+    HP_DECAY_BODY                = "Your {currency} decreased by {amount} due to {days} days of inactivity. Stay active to stop decay!"
 
     # ── HP Transfer ──────────────────────────────────────────────────────────────
-    HP_TRANSFER_MIN          = "Minimum HP transfer is {min} HP"
+    HP_TRANSFER_MIN          = "Minimum {currency} transfer is {min} {currency}"
 
     # ── Password change (all devices) ─────────────────────────────────────────
     PASSWORD_CHANGED_LOGGED_OUT = "Password changed. All other sessions have been signed out."
@@ -541,12 +541,12 @@ class MSG:
 
     # ── Paid event ticket ─────────────────────────────────────────────────────
     PAID_EVENT_PAYMENT_REQUIRED  = "payment_method is required for paid events (wallet or card)"
-    PAID_EVENT_HP_USED           = "Ticket issued. {hp} HP deducted, ₦{cash:.0f} charged."
-    PAID_EVENT_CASH_ONLY         = "Ticket issued. Full price ₦{total:.0f} charged (insufficient HP)."
+    PAID_EVENT_HP_USED           = "Ticket issued. {hp} {currency} deducted, ₦{cash:.0f} charged."
+    PAID_EVENT_CASH_ONLY         = "Ticket issued. Full price ₦{total:.0f} charged (insufficient {currency})."
 
     # ── HP Transfer — recipient notification ──────────────────────────────────
-    HP_TRANSFER_RECEIVED_TITLE   = "You received {amount} HP! 🎉"
-    HP_TRANSFER_RECEIVED_BODY    = "{sender} sent you {amount} HP."
+    HP_TRANSFER_RECEIVED_TITLE   = "You received {amount} {currency}! 🎉"
+    HP_TRANSFER_RECEIVED_BODY    = "{sender} sent you {amount} {currency}."
 
     # ── Social follow milestone ───────────────────────────────────────────────
     SOCIAL_FOLLOW_NOT_CONFIGURED = "Social follow milestone not configured"
@@ -554,21 +554,21 @@ class MSG:
 
     # ── Graduation ────────────────────────────────────────────────────────────
     GRADUATION_PROFILE_NOT_FOUND = "Profile not found"
-    GRADUATION_ALREADY_CLAIMED   = "Graduation HP has already been claimed"
+    GRADUATION_ALREADY_CLAIMED   = "Graduation {currency} has already been claimed"
     GRADUATION_LEVEL_REQUIRED    = "Graduation claim requires academic_level {required}+. Your level: {actual}."
     GRADUATION_BONUS_TITLE       = "🎓 Graduation Bonus Claimed!"
-    GRADUATION_BONUS_BODY        = "{name}, you've earned {hp} HP for reaching Level {level}!"
-    GRADUATION_CLAIMED_OK        = "Graduation HP claimed successfully"
+    GRADUATION_BONUS_BODY        = "{name}, you've earned {hp} {currency} for reaching Level {level}!"
+    GRADUATION_CLAIMED_OK        = "Graduation {currency} claimed successfully"
 
     # ── HP flash sale ─────────────────────────────────────────────────────────
     HP_FLASH_NO_ACTIVE_SALE      = "No active flash sale for this reward"
     HP_FLASH_WINDOW_CLOSED       = "Flash sale window has closed"
     HP_FLASH_LIMIT_REACHED       = "Flash sale limit of {qty} redemptions reached"
-    HP_INSUFFICIENT              = "Insufficient HP: have {have}, need {need}"
-    HP_FLASH_INSUFFICIENT        = "Insufficient HP for flash deal: need {need}, have {have}"
+    HP_INSUFFICIENT              = "Insufficient {currency}: have {have}, need {need}"
+    HP_FLASH_INSUFFICIENT        = "Insufficient {currency} for flash deal: need {need}, have {have}"
 
     # ── HP Transfer (min orders) ──────────────────────────────────────────────
-    HP_TRANSFER_MIN_ORDERS       = "HP transfer requires at least {min_orders} completed orders. You have {completed}."
+    HP_TRANSFER_MIN_ORDERS       = "{currency} transfer requires at least {min_orders} completed orders. You have {completed}."
 
     # ── Hall of Fame ──────────────────────────────────────────────────────────
     HALL_OF_FAME_TITLE           = "🏛️ Hall of Fame!"
@@ -577,11 +577,11 @@ class MSG:
     # ── Membership Anniversary ────────────────────────────────────────────────
     ANNIVERSARY_FALLBACK_NAME    = "Valued Member"
     ANNIVERSARY_TITLE            = "🎉 {months}-Month Anniversary!"
-    ANNIVERSARY_BODY             = "Happy {months}-month anniversary, {name}! You've earned {hp} HP as a thank-you."
+    ANNIVERSARY_BODY             = "Happy {months}-month anniversary, {name}! You've earned {hp} {currency} as a thank-you."
 
     # ── Login streak week ─────────────────────────────────────────────────────
     LOGIN_STREAK_WEEK_COMPLETE_TITLE = "Week {week} Streak Complete! 🔥"
-    LOGIN_STREAK_WEEK_COMPLETE_BODY  = "You earned {hp} HP for completing your check-in week. Keep it going!"
+    LOGIN_STREAK_WEEK_COMPLETE_BODY  = "You earned {hp} {currency} for completing your check-in week. Keep it going!"
 
     # ── Login streak reclaim ──────────────────────────────────────────────────
     LOGIN_STREAK_RECLAIM_TITLE       = "Missed Day Recovered ✅"
@@ -590,18 +590,18 @@ class MSG:
 
     # ── Order streak ──────────────────────────────────────────────────────────
     ORDER_STREAK_TITLE               = "Order Streak: {weeks} Week{plural}! 🔥"
-    ORDER_STREAK_BODY                = "You earned {hp} HP for ordering every week for {weeks} week{plural}!"
+    ORDER_STREAK_BODY                = "You earned {hp} {currency} for ordering every week for {weeks} week{plural}!"
     LOGIN_STREAK_CYCLE_FAILED_TITLE  = "💔 Check-In Cycle Reset"
     LOGIN_STREAK_CYCLE_FAILED_BODY   = "Too many missed days this week — you're back to Week 1. Fresh start! 💪"
-    MULTIPLIER_LIVE_TITLE            = "🔥 HP Multiplier Is LIVE!"
-    MULTIPLIER_LIVE_BODY             = "Earn {multiplier}x HP on all food orders right now — don't miss it!"
+    MULTIPLIER_LIVE_TITLE            = "🔥 {currency} Multiplier Is LIVE!"
+    MULTIPLIER_LIVE_BODY             = "Earn {multiplier}x {currency} on all food orders right now — don't miss it!"
     MARKETPLACE_PURCHASE_STATUS_TITLE = "🛒 Purchase Update"
     MARKETPLACE_PURCHASE_STATUS_BODY  = "Your {title} order is now marked as {status}."
 
     # ── Milestone / Badge notifications ───────────────────────────────────────
     MILESTONE_BADGE_TITLE        = "Badge Unlocked! 🏆"
     MILESTONE_CHALLENGE_TITLE    = "Challenge Unlocked! 🏆"
-    MILESTONE_HP_SUFFIX          = " — {hp} HP earned!"
+    MILESTONE_HP_SUFFIX          = " — {hp} {currency} earned!"
 
     # ── Validation — generic field-level ─────────────────────────────────────
     FIELD_MUST_BE_INTEGER        = "{field} must be an integer"
@@ -650,37 +650,37 @@ class MSG:
 
     # Reviews (personalized)
     REVIEW_REQUEST_TITLE       = "How was your order? \u2b50"
-    REVIEW_REQUEST_BODY        = "Order #{order_id} is delivered! Leave a review and earn HP."
+    REVIEW_REQUEST_BODY        = "Order #{order_id} is delivered! Leave a review and earn {currency}."
     REVIEW_SUBMITTED_TITLE     = "Review Submitted"
     REVIEW_SUBMITTED_BODY      = "Thanks for your feedback, {name}! Your review on order #{order_id} is live."
 
     # HP Earned — source-specific (personalized)
-    HP_EARNED_FOOD_BODY        = "You earned {hp} HP from your food order, {name}. Keep ordering to unlock more!"
+    HP_EARNED_FOOD_BODY        = "You earned {hp} {currency} from your food order, {name}. Keep ordering to unlock more!"
     HP_EARNED_WELCOME_TITLE    = "Welcome Bonus!"
-    HP_EARNED_WELCOME_BODY     = "You earned {hp} HP for your first order delivery. Welcome to {platform}, {name}!"
-    HP_EARNED_TOPUP_TITLE      = "+{hp} HP Earned!"
-    HP_EARNED_TOPUP_BODY       = "You earned {hp} HP for topping up your wallet, {name}."
-    HP_EARNED_CHALLENGE_BODY   = "You completed a challenge and earned {hp} HP, {name}!"
-    HP_EARNED_BADGE_TITLE      = "+{hp} HP for Your Badge!"
-    HP_EARNED_BADGE_BODY       = "You earned {hp} HP for unlocking a badge, {name}!"
-    HP_EARNED_ANNIVERSARY_BODY = "Membership anniversary bonus — {hp} HP added to your account, {name}!"
-    HP_EARNED_SOCIAL_TITLE     = "+{hp} HP for Following Us!"
-    HP_EARNED_SOCIAL_BODY      = "Thanks for following us on {platform}, {name}! {hp} HP has been added to your account."
-    HP_EARNED_LOGIN_BODY       = "You earned {hp} HP for your login streak, {name}. Keep checking in!"
+    HP_EARNED_WELCOME_BODY     = "You earned {hp} {currency} for your first order delivery. Welcome to {platform}, {name}!"
+    HP_EARNED_TOPUP_TITLE      = "+{hp} {currency} Earned!"
+    HP_EARNED_TOPUP_BODY       = "You earned {hp} {currency} for topping up your wallet, {name}."
+    HP_EARNED_CHALLENGE_BODY   = "You completed a challenge and earned {hp} {currency}, {name}!"
+    HP_EARNED_BADGE_TITLE      = "+{hp} {currency} for Your Badge!"
+    HP_EARNED_BADGE_BODY       = "You earned {hp} {currency} for unlocking a badge, {name}!"
+    HP_EARNED_ANNIVERSARY_BODY = "Membership anniversary bonus — {hp} {currency} added to your account, {name}!"
+    HP_EARNED_SOCIAL_TITLE     = "+{hp} {currency} for Following Us!"
+    HP_EARNED_SOCIAL_BODY      = "Thanks for following us on {platform}, {name}! {hp} {currency} has been added to your account."
+    HP_EARNED_LOGIN_BODY       = "You earned {hp} {currency} for your login streak, {name}. Keep checking in!"
 
     # HP Gift (personalized)
-    HP_GIFT_RECEIVED_TITLE     = "\U0001f381 HP Gift Received!"
-    HP_GIFT_RECEIVED_BODY      = "{gift_sender} sent you {hp} HP as a gift, {name}!"
-    HP_GIFT_SENT_TITLE         = "HP Gift Sent"
-    HP_GIFT_SENT_BODY          = "You sent {hp} HP to a friend successfully."
+    HP_GIFT_RECEIVED_TITLE     = "\U0001f381 {currency} Gift Received!"
+    HP_GIFT_RECEIVED_BODY      = "{gift_sender} sent you {hp} {currency} as a gift, {name}!"
+    HP_GIFT_SENT_TITLE         = "{currency} Gift Sent"
+    HP_GIFT_SENT_BODY          = "You sent {hp} {currency} to a friend successfully."
 
     # Flash sale (personalized)
     FLASH_REDEEMED_TITLE       = "Flash Deal Redeemed!"
     FLASH_REDEEMED_BODY        = "You redeemed a {discount_pct}% discount on your order, {name}. Enjoy!"
 
     # HP Decay warning (personalized, separate from winback body copy)
-    HP_DECAY_WARNING_TITLE     = "\u26a0\ufe0f Your HP is at Risk, {name}"
-    HP_DECAY_WARNING_BODY      = "Place an order soon to protect your HP balance — decay starts in {days} days!"
+    HP_DECAY_WARNING_TITLE     = "\u26a0\ufe0f Your {currency} is at Risk, {name}"
+    HP_DECAY_WARNING_BODY      = "Place an order soon to protect your {currency} balance — decay starts in {days} days!"
 
     # Tier (personalized)
     TIER_GRACE_ENDED_TITLE     = "Grace Period Ended — Tier Changed"
@@ -736,7 +736,7 @@ class MSG:
 
     # Challenges / Gamification (personalized)
     CHALLENGE_PROGRESS_TITLE       = "Challenge Progress \U0001f4aa"
-    CHALLENGE_PROGRESS_BODY        = "Great work, {name}! Keep going to complete the challenge and earn HP."
+    CHALLENGE_PROGRESS_BODY        = "Great work, {name}! Keep going to complete the challenge and earn {currency}."
     BADGE_EARNED_TITLE             = "Badge Unlocked! \U0001f3c6"
     BADGE_EARNED_BODY              = "You unlocked the {badge_name} badge, {name}!"
     MILESTONE_ACHIEVED_TITLE       = "Milestone Reached! \U0001f389"
@@ -762,21 +762,21 @@ class MSG:
 
     # Graduation (personalized)
     GRADUATION_DECLARED_TITLE      = "\U0001f393 Graduation Declared!"
-    GRADUATION_DECLARED_BODY       = "Hi {name}, you've declared graduation. Complete the process to claim your HP bonus."
+    GRADUATION_DECLARED_BODY       = "Hi {name}, you've declared graduation. Complete the process to claim your {currency} bonus."
 
     # Share (personalized)
     SHARE_COMPLETED_TITLE          = "Share Recorded!"
     SHARE_COMPLETED_BODY           = "Thanks for sharing your {platform} experience, {name}!"
 
     # Multiplier events (personalized)
-    MULTIPLIER_EXPIRES_TITLE       = "\u23f0 HP Multiplier Ending Soon!"
-    MULTIPLIER_EXPIRES_BODY        = "The HP multiplier event ends soon, {name}. Place an order now to earn bonus HP!"
-    MULTIPLIER_REMINDER_TITLE      = "\U0001f525 HP Multiplier Is Still LIVE!"
-    MULTIPLIER_REMINDER_BODY       = "Don't forget, {name} — you're still earning {multiplier}x HP on food orders!"
+    MULTIPLIER_EXPIRES_TITLE       = "\u23f0 {currency} Multiplier Ending Soon!"
+    MULTIPLIER_EXPIRES_BODY        = "The {currency} multiplier event ends soon, {name}. Place an order now to earn bonus {currency}!"
+    MULTIPLIER_REMINDER_TITLE      = "\U0001f525 {currency} Multiplier Is Still LIVE!"
+    MULTIPLIER_REMINDER_BODY       = "Don't forget, {name} — you're still earning {multiplier}x {currency} on food orders!"
 
     # Scheduled content — now personalized (moved from non-personalized)
     DAILY_GREETING_TITLE           = "Good Morning, {name}! \u2600\ufe0f"
-    DAILY_GREETING_BODY            = "Start your day right — check out today's menu and earn HP with every order!"
+    DAILY_GREETING_BODY            = "Start your day right — check out today's menu and earn {currency} with every order!"
     WEEKLY_PRAYER_TITLE            = "\U0001f64f Weekly Prayer"
     WEEKLY_PRAYER_BODY             = "May this week bring you blessings, good food, and great opportunities, {name}. Have a wonderful week!"
 
@@ -794,7 +794,7 @@ class MSG:
 
     # Non-personalized notifications (include_name=False)
     NOTIF_WELCOME_TITLE            = "Welcome to {platform}!"
-    NOTIF_WELCOME_BODY             = "You're in! Start exploring the menu and earn HP with every order."
+    NOTIF_WELCOME_BODY             = "You're in! Start exploring the menu and earn {currency} with every order."
     NOTIF_EMAIL_VERIFY_TITLE       = "Verify Your Email"
     NOTIF_EMAIL_VERIFY_BODY        = "Click the link in your email to activate your {platform} account."
     NOTIF_PASSWORD_RESET_TITLE     = "Password Reset Request"
