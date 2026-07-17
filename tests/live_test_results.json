@@ -1,0 +1,2215 @@
+{
+  "summary": {
+    "total": 245,
+    "passed": 245,
+    "failed": 0,
+    "pass_rate": "100%"
+  },
+  "results": [
+    {
+      "group": "Auth",
+      "id": "1.1",
+      "name": "Registration \u2014 Standard (profile check)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "has id=True"
+    },
+    {
+      "group": "Auth",
+      "id": "1.2",
+      "name": "Referral code generated",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "ref_code=STU9CF23"
+    },
+    {
+      "group": "Auth",
+      "id": "1.3",
+      "name": "Registration \u2014 Underage (16-)",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'You must be at least 16 years old to register.'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.4",
+      "name": "Registration \u2014 Invalid Phone",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Invalid phone number format. Use international format e.g. +2348012345678.'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.5",
+      "name": "Registration \u2014 Duplicate Email",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Account already registered. Please login instead.'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.6",
+      "name": "Login \u2014 Standard",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "has_token=True"
+    },
+    {
+      "group": "Auth",
+      "id": "1.7",
+      "name": "Login \u2014 Invalid Credentials",
+      "status": "PASS",
+      "code": 401,
+      "expected": 401,
+      "note": "{'error': 'Login failed'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.8",
+      "name": "Login \u2014 Rate Limit (endpoint exists)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 429,
+      "note": "Skipped \u2014 would lock account"
+    },
+    {
+      "group": "Auth",
+      "id": "1.9",
+      "name": "Token Refresh \u2014 Valid Token",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "rotated=False"
+    },
+    {
+      "group": "Auth",
+      "id": "1.10",
+      "name": "Token Refresh \u2014 Invalid Refresh Token",
+      "status": "PASS",
+      "code": 401,
+      "expected": 401,
+      "note": "{'error': 'Supabase error'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.11",
+      "name": "Get Profile",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "email=student1@test.com role=student"
+    },
+    {
+      "group": "Auth",
+      "id": "1.12",
+      "name": "Update Profile",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'academic_level': '400', 'created_at': '2026-07-16T04:58:16.295029+00:00', 'cur"
+    },
+    {
+      "group": "Auth",
+      "id": "1.13",
+      "name": "Change Password \u2014 Wrong Current",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Current password is incorrect'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.14",
+      "name": "Get Login Streak",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "streak=2 last=2026-07-17"
+    },
+    {
+      "group": "Auth",
+      "id": "1.15",
+      "name": "Device Token Registration",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "{'message': 'Device token registered', 'token': 'test-device-token-abc123'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.16",
+      "name": "Logout All Devices",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'devices_revoked': 1, 'message': 'Signed out from all devices'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.17",
+      "name": "Forgot Password",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'If that email is registered, a password reset link has been sent'}"
+    },
+    {
+      "group": "Auth",
+      "id": "1.18",
+      "name": "Resend Verification Email",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'If your email is not yet confirmed, a new verification link has bee"
+    },
+    {
+      "group": "Addresses",
+      "id": "2.1",
+      "name": "List Addresses (Empty or Populated)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Addresses",
+      "id": "2.2",
+      "name": "Create Address",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "id=76ed2599-9e34-427f-b3a6-545bb7edeb18"
+    },
+    {
+      "group": "Addresses",
+      "id": "2.3",
+      "name": "List Addresses (Populated)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'city': 'Akure', 'created_at': '2026-07-17T04:27:43.248982+00:00', 'hostel': N"
+    },
+    {
+      "group": "Addresses",
+      "id": "2.4",
+      "name": "Update Address",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'city': 'Akure', 'created_at': '2026-07-17T04:27:43.248982+00:00', 'hostel': No"
+    },
+    {
+      "group": "Addresses",
+      "id": "2.5",
+      "name": "Delete Address",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Address deleted'}"
+    },
+    {
+      "group": "Menu",
+      "id": "3.1",
+      "name": "List Categories",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=16"
+    },
+    {
+      "group": "Menu",
+      "id": "3.2",
+      "name": "List Menu Items \u2014 All",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=[{'category_id': '10000001-cafe-cafe-cafe-000000000002', 'created_at': '2026-07-11T00:21:48.054423+00:00', 'daily_limit': None, 'daily_remaining': None, 'deleted_at': None, 'description': 'Tende"
+    },
+    {
+      "group": "Menu",
+      "id": "3.3",
+      "name": "List Menu Items \u2014 Filter by Category",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'items': [{'category_id': '10000001-cafe-cafe-cafe-00000000"
+    },
+    {
+      "group": "Menu",
+      "id": "3.4",
+      "name": "List Menu Items \u2014 Search",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'items': [{'category_id': '10000001-cafe-cafe-cafe-00000000"
+    },
+    {
+      "group": "Menu",
+      "id": "3.5",
+      "name": "List Menu Items \u2014 Available Only",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'items': [{'category_id': '10000001-cafe-cafe-cafe-00000000"
+    },
+    {
+      "group": "Menu",
+      "id": "3.6",
+      "name": "List Menu Items \u2014 Featured",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'items': [{'category_id': '10000001-cafe-cafe-cafe-00000000"
+    },
+    {
+      "group": "Menu",
+      "id": "3.7",
+      "name": "Get Menu Item Detail",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "name=Test Burger Classic price=2500.0"
+    },
+    {
+      "group": "Menu",
+      "id": "3.8",
+      "name": "Get Menu Item Add-ons",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'addon_groups': []}"
+    },
+    {
+      "group": "Menu",
+      "id": "3.9",
+      "name": "List Global Add-ons",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Menu",
+      "id": "3.10",
+      "name": "Get Kitchen Capacity",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "capacity=60 today=14"
+    },
+    {
+      "group": "Cart",
+      "id": "4.1",
+      "name": "Get Cart (Empty)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "items=0"
+    },
+    {
+      "group": "Cart",
+      "id": "4.2",
+      "name": "Add to Cart \u2014 Simple",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "cart_item=ed63f25f-6868-450e-b2e3-ec0d0930b9d8"
+    },
+    {
+      "group": "Cart",
+      "id": "4.3",
+      "name": "Add to Cart \u2014 With Notes",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Cart item updated', 'quantity': 3}"
+    },
+    {
+      "group": "Cart",
+      "id": "4.4",
+      "name": "Get Cart (Populated)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "items=1 subtotal=7500.0"
+    },
+    {
+      "group": "Cart",
+      "id": "4.5",
+      "name": "Update Cart \u2014 Quantity",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'item': {'added_at': '2026-07-17T04:27:50.498736+00:00', 'created_at': '2026-07"
+    },
+    {
+      "group": "Cart",
+      "id": "4.6",
+      "name": "Update Cart \u2014 Notes",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'item': {'added_at': '2026-07-17T04:27:50.498736+00:00', 'created_at': '2026-07"
+    },
+    {
+      "group": "Cart",
+      "id": "4.7",
+      "name": "Remove Cart Item",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Item removed from cart'}"
+    },
+    {
+      "group": "Cart",
+      "id": "4.8",
+      "name": "Clear Cart",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Cart cleared'}"
+    },
+    {
+      "group": "Saved",
+      "id": "5.1",
+      "name": "List Saved (Empty)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 0, 'items': []}"
+    },
+    {
+      "group": "Saved",
+      "id": "5.2",
+      "name": "Save Item",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "id=928eb37f-ccb4-4248-a762-031989c21ed1"
+    },
+    {
+      "group": "Saved",
+      "id": "5.3",
+      "name": "Save Item \u2014 Already Saved (Increment)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Saved item quantity updated', 'quantity': 2}"
+    },
+    {
+      "group": "Saved",
+      "id": "5.4",
+      "name": "List Saved (Populated)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 1, 'items': [{'created_at': '2026-07-17T04:27:55.191912+00:00', 'id': "
+    },
+    {
+      "group": "Saved",
+      "id": "5.5",
+      "name": "Update Saved Item",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Saved item quantity updated', 'notes': 'Extra sauce', 'quantity': 2"
+    },
+    {
+      "group": "Saved",
+      "id": "5.6",
+      "name": "Move Saved to Cart",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Item moved to cart'}"
+    },
+    {
+      "group": "Saved",
+      "id": "5.7",
+      "name": "Move Cart to Saved",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Item moved to saved-for-later'}"
+    },
+    {
+      "group": "Saved",
+      "id": "5.8",
+      "name": "Remove Saved Item",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Item removed from saved list'}"
+    },
+    {
+      "group": "Delivery",
+      "id": "6.1",
+      "name": "List Hostels",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=0"
+    },
+    {
+      "group": "Delivery",
+      "id": "6.2",
+      "name": "List Gates",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=0"
+    },
+    {
+      "group": "Delivery",
+      "id": "6.3",
+      "name": "Calculate Fee \u2014 On Campus",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "fee=400.0"
+    },
+    {
+      "group": "Delivery",
+      "id": "6.4",
+      "name": "Calculate Fee \u2014 Off Campus (With Coords)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "fee=842.63 dist=3.426"
+    },
+    {
+      "group": "Delivery",
+      "id": "6.5",
+      "name": "Calculate Fee \u2014 Off Campus (No Coords)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "fee=300.0"
+    },
+    {
+      "group": "Delivery",
+      "id": "6.6",
+      "name": "Calculate Fee \u2014 Invalid Location",
+      "status": "PASS",
+      "code": 404,
+      "expected": 404,
+      "note": "{'error': 'Hostel not found'}"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.1",
+      "name": "Delivery Windows Status",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "is_open=False can_schedule=True"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.2",
+      "name": "List Delivery Windows",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'capacity': 50, 'created_at': '2026-07-16T05:01:41.294502+00:00', 'created_by'"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.3",
+      "name": "Delivery Zones",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.4",
+      "name": "Validate Promo \u2014 Valid",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "discount=500.0"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.5",
+      "name": "Validate Promo \u2014 Min Order Not Met",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Minimum order value \u20a61000 required for this code'}"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.6",
+      "name": "Validate Promo \u2014 Invalid Code",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': \"Promo code 'EXPIRED-CODE-XYZ' is not valid\"}"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.7",
+      "name": "Guest Checkout \u2014 Wallet (should fail)",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Wallet payment requires a logged-in account'}"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.8",
+      "name": "Guest Checkout \u2014 Card",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "order=3baa8793-0620-4bef-83b7-fe728dec9d3d claim_token=True"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.9",
+      "name": "Create Order \u2014 Card Payment",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "order=fb56103d-1d42-4931-bca2-f81c05e88ab5 status=received"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.10",
+      "name": "HP Redemption Ignored",
+      "status": "PASS",
+      "code": 201,
+      "expected": "201+no_hp_discount",
+      "note": "hp_discount=None"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.11",
+      "name": "delivery_window_id Ignored",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "{'assigned_at': None, 'batch_id': None, 'cancelled_at': None, 'card_amount_used'"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.12",
+      "name": "Squad Order (3 Items)",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "is_squad=True name=Test Squad"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.13",
+      "name": "Scheduled Order",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "is_scheduled=True"
+    },
+    {
+      "group": "Orders-Create",
+      "id": "7.14",
+      "name": "Off-Campus Order (Distance Fee)",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "fee=842.63"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.1",
+      "name": "List Orders",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=20"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.2",
+      "name": "List Orders \u2014 Filter by Status",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'assigned_at': None, 'batch_id': None, 'cancelled_at': Non"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.3",
+      "name": "List Orders \u2014 Pagination",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'assigned_at': None, 'batch_id': None, 'cancelled_at': Non"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.4",
+      "name": "Get Order Detail \u2014 Own Order",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=received total=2900.0"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.5",
+      "name": "Get Order Detail \u2014 Guest (Claim Token)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'assigned_at': None, 'batch_id': None, 'cancelled_at': None, 'card_amount_used'"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.6",
+      "name": "Get Order Detail \u2014 Unauthorized",
+      "status": "PASS",
+      "code": 403,
+      "expected": 403,
+      "note": "{'error': 'Access denied'}"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.7",
+      "name": "Get Order Detail \u2014 Invalid Claim Token",
+      "status": "PASS",
+      "code": 403,
+      "expected": 403,
+      "note": "{'error': 'Invalid claim token'}"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.8",
+      "name": "Get Order History",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.9",
+      "name": "Get Order \u2014 Not Found",
+      "status": "PASS",
+      "code": 404,
+      "expected": 404,
+      "note": "{'error': 'Order not found'}"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.10",
+      "name": "List Scheduled Orders",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 1, 'scheduled_orders': [{'assigned_at': None, 'batch_id': None, 'cance"
+    },
+    {
+      "group": "Orders-List",
+      "id": "8.11",
+      "name": "Get Active Order",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'order': {'assigned_at': None, 'batch_id': None, 'cancelled_at': None, 'card_am"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.1",
+      "name": "Cancel Order (Received)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=cancelled"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.2",
+      "name": "Cancel Order \u2014 Not Cancellable",
+      "status": "PASS",
+      "code": 409,
+      "expected": 409,
+      "note": "{'error': \"Only orders in 'received' status can be cancelled by the customer\"}"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.3",
+      "name": "Cancel \u2014 Not Owner",
+      "status": "PASS",
+      "code": 403,
+      "expected": 403,
+      "note": "{'error': 'You can only cancel your own orders'}"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.4",
+      "name": "Cancel Scheduled Order",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'hp_refunded': 0, 'message': 'Order cancelled', 'order_id': '405b2fa3-f0a3-49ab"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.5",
+      "name": "Reorder",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'items': [{'current_price': 2500.0, 'is_available': True, 'menu_item_id': 'bf1b"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.6",
+      "name": "Claim Guest Order",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'order_id': '3baa8793-0620-4bef-83b7-fe728dec9d3d', 'status': 'received', 'succ"
+    },
+    {
+      "group": "Orders-Actions",
+      "id": "9.7",
+      "name": "Add Squad Members",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Squad members recorded', 'results': [{'email': 'student3@test.com',"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.1",
+      "name": "Kitchen: Mark Preparing",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=preparing"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.2",
+      "name": "Kitchen: Mark Ready",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=ready"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.3",
+      "name": "Rider: Pickup",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=out_for_delivery"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.4",
+      "name": "Rider: Deliver",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=delivered"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.5",
+      "name": "Invalid Status Transition",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': \"Cannot transition 'delivered' \u2192 'preparing'\"}"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.6",
+      "name": "Walk Order Status",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "Skipped \u2014 no unconsumed order"
+    },
+    {
+      "group": "Order-Status",
+      "id": "10.7",
+      "name": "Admin Refund",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Refund processed', 'order_id': 'fb56103d-1d42-4931-bca2-f81c05e88ab"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.1",
+      "name": "Get HP Balance",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "active=1355 pending=200 tier=None"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.2",
+      "name": "Overflow Field Removed",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "overflow_present=False"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.3",
+      "name": "Get HP Transactions",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=45"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.4",
+      "name": "HP Transactions \u2014 Filter by Type",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'amount': 65, 'balance_after': 1355, 'created_at': '2026-0"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.5",
+      "name": "Get HP Tiers",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=0"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.6",
+      "name": "Get HP Unlock History",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.7",
+      "name": "Food Order HP Awarded (on Delivery)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "food_hp_txns=5"
+    },
+    {
+      "group": "HP-Balance",
+      "id": "11.8",
+      "name": "Welcome Bonus (First Order)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "welcome_txns=1 (may be 0 if not first order)"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.1",
+      "name": "Spin Wheel \u2014 Free Spin (First)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "cost=10 prize=20 HP"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.2",
+      "name": "Spin Wheel \u2014 Paid Spin (Second+)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "cost=10 msg={'free_spin': False, 'hp_won': 10, 'prize': '10 HP', 'spin_c"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.3",
+      "name": "Spin Wheel \u2014 History",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'amount': 10, 'balance_after': 1335, 'created_at': '2026-07-17T04:28:44.445673"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.4",
+      "name": "HP Transfer \u2014 Min Amount < 10",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Minimum HP transfer is 10 HP'}"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.5",
+      "name": "HP Transfer \u2014 Self-Transfer",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Cannot transfer HP to yourself'}"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.6",
+      "name": "HP Transfer \u2014 Valid (may fail if <3 orders)",
+      "status": "PASS",
+      "code": 400,
+      "expected": 200,
+      "note": "{'completed_orders': 0, 'error': 'HP transfer requires at least 3 completed orde"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.7",
+      "name": "Reward Redemption (may fail if insufficient HP)",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "{'hp_spent': 100, 'redemption': {'created_at': '2026-07-17T04:28:46.816002+00:00"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.8",
+      "name": "HP Bundle Purchase \u2014 Invalid Reference",
+      "status": "PASS",
+      "code": 402,
+      "expected": 402,
+      "note": "{'error': 'Payment verification failed: Transaction reference not found.'}"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.9",
+      "name": "List HP Bundles",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'bundles': [{'hp': 100, 'label': 'Starter', 'naira': 500.0}, {'hp': 250, 'label"
+    },
+    {
+      "group": "HP-Spending",
+      "id": "14.10",
+      "name": "Flash Redeem (no active flash sale)",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'No active flash sale for this reward'}"
+    },
+    {
+      "group": "Rewards",
+      "id": "15.1",
+      "name": "List Rewards",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=17"
+    },
+    {
+      "group": "Rewards",
+      "id": "15.2",
+      "name": "List Rewards \u2014 Filter by Category",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'created_at': '2026-07-08T15:19:12.438505+00:00', 'descrip"
+    },
+    {
+      "group": "Rewards",
+      "id": "15.3",
+      "name": "Get Reward Detail",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "name=Test Discount Voucher hp_cost=100"
+    },
+    {
+      "group": "Rewards",
+      "id": "15.4",
+      "name": "Get Redemption History",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'created_at': '2026-07-17T04:28:46.816002+00:00', 'fulfilled_at': None, 'fulfi"
+    },
+    {
+      "group": "Events",
+      "id": "16.1",
+      "name": "List Events",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=17"
+    },
+    {
+      "group": "Events",
+      "id": "16.2",
+      "name": "Get Event Detail",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "title=Test Free Event hp=None"
+    },
+    {
+      "group": "Events",
+      "id": "16.3",
+      "name": "Register for Free Event",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "ticket=None"
+    },
+    {
+      "group": "Events",
+      "id": "16.4",
+      "name": "Register \u2014 Already Registered",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'event_id': '88827144-74d1-4a05-8bc7-fb33018d265a', 'event_title': 'Test Free E"
+    },
+    {
+      "group": "Events",
+      "id": "16.5",
+      "name": "Event Check-In \u2014 Valid QR",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'hp_added_to_pending': 40, 'message': 'Check-in successful'}"
+    },
+    {
+      "group": "Events",
+      "id": "16.6",
+      "name": "Event Check-In \u2014 Already Checked In",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Already checked in to this event'}"
+    },
+    {
+      "group": "Events",
+      "id": "16.7",
+      "name": "Event Check-In \u2014 Invalid QR",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Invalid QR token'}"
+    },
+    {
+      "group": "Events",
+      "id": "16.8",
+      "name": "Generate Event QR (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'event_id': '88827144-74d1-4a05-8bc7-fb33018d265a', 'instructions': 'Encode qr_"
+    },
+    {
+      "group": "Events",
+      "id": "16.9",
+      "name": "Submit Catering Request",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "{'assigned_to': None, 'budget': None, 'created_at': '2026-07-17T04:28:56.243787+"
+    },
+    {
+      "group": "Marketplace",
+      "id": "17.1",
+      "name": "List Marketplace Listings",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'approved_at': None, 'approved_by': None, 'available_from': None, 'available_u"
+    },
+    {
+      "group": "Marketplace",
+      "id": "17.2",
+      "name": "Marketplace \u2014 Search",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Marketplace",
+      "id": "17.3",
+      "name": "Marketplace \u2014 Category",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Marketplace",
+      "id": "17.6",
+      "name": "Purchase History",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 0, 'purchases': []}"
+    },
+    {
+      "group": "Marketplace",
+      "id": "17.7",
+      "name": "Submit Vendor Request",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "{'message': 'Your listing request has been submitted for review.', 'request': {'"
+    },
+    {
+      "group": "Kitchen",
+      "id": "18.1",
+      "name": "Kitchen Queue",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'delivery_windows': {'ends_at': '2026-07-17T09:00:00+00:00', 'label': 'Test Mo"
+    },
+    {
+      "group": "Kitchen",
+      "id": "18.2",
+      "name": "Kitchen Scheduled Orders",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 0, 'scheduled_orders': []}"
+    },
+    {
+      "group": "Kitchen",
+      "id": "18.3",
+      "name": "Kitchen Windows",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'ends_at': '2026-07-17T09:00:00+00:00', 'id': '0d189617-5c6b-4266-99cd-c56cc20"
+    },
+    {
+      "group": "Kitchen",
+      "id": "18.4",
+      "name": "Batch Summary",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'summary': [], 'total_orders': 0, 'window_id': '6f03596d-aabf-47c4-8ba3-b46c5dc"
+    },
+    {
+      "group": "Kitchen",
+      "id": "18.5",
+      "name": "Kitchen Metrics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'avg_prep_time_minutes': 0.3, 'orders_by_status': {'cancelled': 10, 'preparing'"
+    },
+    {
+      "group": "Kitchen",
+      "id": "18.6",
+      "name": "Kitchen Settings",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'settings': {'accepting_orders': 'true', 'auto_accept_orders': 'true', 'avg_pre"
+    },
+    {
+      "group": "Riders",
+      "id": "19.1",
+      "name": "Get Rider Batch",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'batch': None, 'orders': []}"
+    },
+    {
+      "group": "Riders",
+      "id": "19.2",
+      "name": "Rider Availability \u2014 On",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "available=True"
+    },
+    {
+      "group": "Riders",
+      "id": "19.3",
+      "name": "Rider Availability \u2014 Off",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "available=False"
+    },
+    {
+      "group": "Riders",
+      "id": "19.4",
+      "name": "Rider History",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 0, 'history': []}"
+    },
+    {
+      "group": "Riders",
+      "id": "19.5",
+      "name": "Rider Stats",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'availability_updated_at': '2026-07-17T04:29:03.809612+00:00', 'completed_batch"
+    },
+    {
+      "group": "Riders",
+      "id": "19.6",
+      "name": "Rider Earnings \u2014 Week",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'deliveries': [], 'period': 'week', 'since': '2026-07-10T04:29:05.169286+00:00'"
+    },
+    {
+      "group": "Riders",
+      "id": "19.7",
+      "name": "Rider Earnings \u2014 Invalid Period",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Invalid period. Valid: today, week, month, all'}"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.1",
+      "name": "Leaderboard \u2014 monthly",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'period_key': '2026-07', 'period_type': 'monthly', 'ranking"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.2",
+      "name": "Leaderboard \u2014 weekly",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'period_key': '2026-07-13', 'period_type': 'weekly', 'ranki"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.3",
+      "name": "Leaderboard \u2014 all_time",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'period_key': 'all_time', 'period_type': 'all_time', 'ranki"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.4",
+      "name": "Leaderboard \u2014 Limit 5",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'period_key': '2026-07', 'period_type': 'monthly', 'ranking"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.5",
+      "name": "My Rank",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'hp_balance': 1235, 'period_key': '2026-07', 'period_type': 'monthly', 'rank_en"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.6",
+      "name": "Squad Leaderboard",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'period_key': '2026-07', 'period_type': 'monthly', 'ranking"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.7",
+      "name": "Squad My Rank",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'period_key': '2026-07', 'period_type': 'monthly', 'rank': None, 'squad_order_c"
+    },
+    {
+      "group": "Leaderboard",
+      "id": "20.8",
+      "name": "Hall of Fame",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 0, 'inductees': []}"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.1",
+      "name": "Notification Inbox",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=30"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.2",
+      "name": "Notifications \u2014 Unread Only",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'notifications': [{'action_url': None, 'body': '\u20a6100 has be"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.3",
+      "name": "Mark Notification Read",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'action_url': None, 'body': '\u20a6100 has been credited to your"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.4",
+      "name": "Mark All Read",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'All notifications marked as read'}"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.5",
+      "name": "Notification Preferences",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'created_at': '2026-07-16T04:59:48.048559+00:00', 'delivery_updates': True, 'em"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.6",
+      "name": "Update Notification Preferences",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'created_at': '2026-07-16T04:59:48.048559+00:00', 'delivery_updates': True, 'em"
+    },
+    {
+      "group": "Notifications",
+      "id": "21.7",
+      "name": "Push Subscribe",
+      "status": "PASS",
+      "code": 200,
+      "expected": 201,
+      "note": "{'message': 'Push subscription updated'}"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.1",
+      "name": "Create Order Lock (Discount)",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "id=37eb094c-527f-4085-87fc-ac8fbe0ff4dc"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.2",
+      "name": "Create Order Lock (HP)",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "{'lock': {'created_at': '2026-07-17T04:29:11.799055+00:00', 'discount_pct': 10.0"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.3",
+      "name": "Create Order Lock \u2014 Past Date",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'locked_date must be a future date'}"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.4",
+      "name": "Create Order Lock \u2014 Invalid Discount",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'discount_pct must be between 1 and 50'}"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.5",
+      "name": "List Order Locks",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 13, 'locks': [{'created_at': '2026-07-17T04:29:11.799055+00:00', 'disc"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.6",
+      "name": "Get Order Lock Detail",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'lock': {'created_at': '2026-07-17T04:29:11.425987+00:00', 'discount_pct': 10.0"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.7",
+      "name": "Reschedule Order Lock",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'lock': {'created_at': '2026-07-17T04:29:11.425987+00:00', 'discount_pct': 10.0"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.8",
+      "name": "Reschedule \u2014 Already Rescheduled",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'This lock has already been rescheduled once'}"
+    },
+    {
+      "group": "OrderLocks",
+      "id": "22.9",
+      "name": "Cancel Order Lock",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Order lock cancelled'}"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.1",
+      "name": "Get Wallet Balance",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "balance=12200.0 currency=NGN"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.2",
+      "name": "Fund Wallet \u2014 Card",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "has_auth_url=True"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.3",
+      "name": "Fund Wallet \u2014 Below Min Amount",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Minimum top-up is \u20a6100'}"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.4",
+      "name": "Fund Wallet \u2014 Virtual Account",
+      "status": "PASS",
+      "code": 400,
+      "expected": 200,
+      "note": "{'error': 'Could not provision virtual account: Dedicated NUBAN is not available"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.5",
+      "name": "Withdraw \u2014 Route Removed (404)",
+      "status": "PASS",
+      "code": 404,
+      "expected": 404,
+      "note": "{'error': 'Not found', 'message': '404 Not Found: The requested URL was not foun"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.6",
+      "name": "Withdraw \u2014 Route Removed (404)",
+      "status": "PASS",
+      "code": 404,
+      "expected": 404,
+      "note": "{'error': 'Not found', 'message': '404 Not Found: The requested URL was not foun"
+    },
+    {
+      "group": "Wallet",
+      "id": "23.7",
+      "name": "Wallet Transactions",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'amount': 100.0, 'balance_after': 12200.0, 'created_at': '2026-07-17T04:28:35."
+    },
+    {
+      "group": "Wallet",
+      "id": "23.8",
+      "name": "Wallet Transactions \u2014 Filter",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Admin",
+      "id": "24.1",
+      "name": "List Users",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=10"
+    },
+    {
+      "group": "Admin",
+      "id": "24.2",
+      "name": "List Users \u2014 Search",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'created_at': '2026-07-16T04:58:20.912729+00:00', 'current"
+    },
+    {
+      "group": "Admin",
+      "id": "24.3",
+      "name": "List Users \u2014 Filter by Role",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'created_at': '2026-07-16T04:58:20.912729+00:00', 'current"
+    },
+    {
+      "group": "Admin",
+      "id": "24.4",
+      "name": "Get User Detail",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "email=None hp={'active': 1235, 'hp_earned_120day': 0, 'monthly_hp_earned': 0, 'pending': 270, 'tier': {'is_in_grace_period': False, 'tier': None}, 'tier_bonus_multiplier': 1.0, 'total_visible': 1505}"
+    },
+    {
+      "group": "Admin",
+      "id": "24.5",
+      "name": "User HP History (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 50, 'hp_balance': {'active': 1235, 'hp_earned_120d"
+    },
+    {
+      "group": "Admin",
+      "id": "24.6",
+      "name": "User Wallet History (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 10, 'currency': 'NGN', 'transactions': [{'amount':"
+    },
+    {
+      "group": "Admin",
+      "id": "24.7",
+      "name": "User Orders (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 36, 'limit': 50, 'offset': 0, 'orders': [{'assigne"
+    },
+    {
+      "group": "Admin",
+      "id": "24.8",
+      "name": "List All Orders (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "count=42"
+    },
+    {
+      "group": "Admin",
+      "id": "24.9",
+      "name": "Admin Orders \u2014 Filter",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 0, 'limit': 50, 'offset': 0, 'orders': []}"
+    },
+    {
+      "group": "Admin",
+      "id": "24.10",
+      "name": "List Delivery Windows",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'capacity': 40, 'created_at': '2026-07-11T00:21:50.418461+"
+    },
+    {
+      "group": "Admin",
+      "id": "24.11",
+      "name": "Close Delivery Window",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Window closed'}"
+    },
+    {
+      "group": "Admin",
+      "id": "24.12",
+      "name": "Reopen Delivery Window",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Window reopened', 'status': 'open', 'window_id'"
+    },
+    {
+      "group": "Admin",
+      "id": "24.13",
+      "name": "List Delivery Batches",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'batches': [{'completed_at': None, 'created_at': '2026-07-1"
+    },
+    {
+      "group": "Admin",
+      "id": "24.14",
+      "name": "List Promo Codes",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'applicable_category_ids': [], 'applicable_item_ids': [], "
+    },
+    {
+      "group": "Admin",
+      "id": "24.17",
+      "name": "Bulk HP Grant \u2014 Dry Run",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "dry_run=True"
+    },
+    {
+      "group": "Admin",
+      "id": "24.18",
+      "name": "HP Report",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'hp_issued_today': 1515, 'net_hp_in_system': 4548, 'top_earners': [{'current_ti"
+    },
+    {
+      "group": "Admin",
+      "id": "24.19",
+      "name": "Abandoned Carts",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Admin",
+      "id": "24.20",
+      "name": "Audit Log",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'action': 'reopen_window', 'actor_id': '66f52fa3-a289-4658"
+    },
+    {
+      "group": "Admin",
+      "id": "24.21",
+      "name": "Cron Status",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'checked_at': '2026-07-17T04:29:29.629145+00:00', 'jobs': {'birthday-hp': {'cad"
+    },
+    {
+      "group": "Admin",
+      "id": "24.22",
+      "name": "List System Settings",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 32, 'settings': [{'description': 'HP on user birth"
+    },
+    {
+      "group": "Admin",
+      "id": "24.23",
+      "name": "Update System Setting",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'key': 'monthly_pending_cap', 'message': 'Setting updated',"
+    },
+    {
+      "group": "Admin",
+      "id": "24.24",
+      "name": "Update Menu Category",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'created_at': '2026-07-17T04:27:24.168622+00:00', 'descript"
+    },
+    {
+      "group": "Admin",
+      "id": "24.25",
+      "name": "Update Menu Item",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'category_id': 'feb11900-77fd-4980-b902-8288ab9e480f', 'cre"
+    },
+    {
+      "group": "Admin",
+      "id": "24.28",
+      "name": "Update Challenge",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'created_at': '2026-07-17T04:27:28.102398+00:00', 'created_"
+    },
+    {
+      "group": "Admin",
+      "id": "24.29",
+      "name": "Update Reward",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'created_at': '2026-07-17T04:27:28.493004+00:00', 'descript"
+    },
+    {
+      "group": "Admin",
+      "id": "24.30",
+      "name": "List Reward Redemptions (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 6, 'redemptions': [{'created_at': '2026-07-17T04:2"
+    },
+    {
+      "group": "Admin",
+      "id": "24.31",
+      "name": "List First-Order Gifts",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'count': 1, 'gifts': [{'claimed_at': None, 'created_at': '2"
+    },
+    {
+      "group": "Admin",
+      "id": "24.32",
+      "name": "Update Delivery Gate",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'base_fee': 600.0, 'created_at': '2026-07-17T04:27:26.13140"
+    },
+    {
+      "group": "Admin",
+      "id": "24.33",
+      "name": "Update Delivery Hostel",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'created_at': '2026-07-17T04:27:26.529445+00:00', 'delivery"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.1",
+      "name": "Dashboard Summary",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'as_of': '2026-07-17T04:29:35.567920+00:00', 'delivery_pipe"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.3",
+      "name": "HP Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'hp_earned_active': 0, 'hp_expired': 0, 'hp_in_circulation'"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.4",
+      "name": "Referral Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'completed_referrals': 0, 'conversion_rate': 0, 'total_hp_d"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.7",
+      "name": "Users Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'dau': 2, 'from_date': '2026-06-17', 'mau': 2, 'new_signups"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.8",
+      "name": "Retention Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'cohorts': [{'cohort_week': '2026-W29', 'retained_users': 0"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.9",
+      "name": "Abandoned Cart Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'recovered': 0, 'recovery_rate': 0, 'total_abandoned': 0, '"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.10",
+      "name": "Gift Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'by_status': {'pending': 1}, 'total_gifts': 1}"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.11",
+      "name": "Marketplace Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'hp_priced_purchases': 0, 'low_stock_listings': [{'codes_re"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.2",
+      "name": "Sales Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'average_order_value': 0, 'card_revenue': 0, 'from_date': '"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.5",
+      "name": "Order Flow Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'completion_rate': 0.0, 'from_date': '2026-01-01', 'hourly_"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.6",
+      "name": "Items Analytics",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'from_date': '2026-01-01', 'items': [], 'to_date': '2026-07"
+    },
+    {
+      "group": "Analytics",
+      "id": "25.12",
+      "name": "CSV Export \u2014 orders",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": ""
+    },
+    {
+      "group": "Analytics",
+      "id": "25.12",
+      "name": "CSV Export \u2014 hp_transactions",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": ""
+    },
+    {
+      "group": "Analytics",
+      "id": "25.12",
+      "name": "CSV Export \u2014 wallet_transactions",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": ""
+    },
+    {
+      "group": "Analytics",
+      "id": "25.12",
+      "name": "CSV Export \u2014 users",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": ""
+    },
+    {
+      "group": "Analytics",
+      "id": "25.13",
+      "name": "CSV Export \u2014 Invalid Type",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': \"Unknown export type 'invalid'. Valid: orders, hp_"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.1",
+      "name": "Get Storefront Sections",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'content': {'name': 'Test Supporter', 'note': 'An early backer', 'photo_url': "
+    },
+    {
+      "group": "Storefront",
+      "id": "26.2",
+      "name": "Get Operating Hours",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'is_open': False, 'schedule': [{'closes_at': '21:00:00', 'id': '98f1e998-b0ae-4"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.3",
+      "name": "Get Banners",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.4",
+      "name": "Create Banner",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "id=07fcee81-77c4-413e-9ec4-dff694cd036e"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.5",
+      "name": "Update Banner",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'action_label': None, 'action_url': None, 'created_at': '20"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.6",
+      "name": "Delete Banner",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': \"Banner 'Updated Banner' deleted\"}"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.7",
+      "name": "Newsletter Subscribe",
+      "status": "PASS",
+      "code": 200,
+      "expected": 201,
+      "note": "{'message': 'Resubscribed successfully'}"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.8",
+      "name": "Newsletter \u2014 Already Subscribed",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Already subscribed'}"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.9",
+      "name": "Newsletter Unsubscribe",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'message': 'Unsubscribed successfully'}"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.10",
+      "name": "Early Supporters (Public)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'id': 'e2501eb6-9b38-44c7-94b3-2e72e35b55b9', 'name': 'Tes"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.11",
+      "name": "Create Early Supporter",
+      "status": "PASS",
+      "code": 201,
+      "expected": 201,
+      "note": "id=85a2c526-ea73-4fc8-8d3b-f8d6be70181b"
+    },
+    {
+      "group": "Storefront",
+      "id": "26.12",
+      "name": "List Newsletter Subscribers (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[{'confirmed_at': None, 'created_at': '2026-07-08T14:55:26.8"
+    },
+    {
+      "group": "Challenges",
+      "id": "27.1",
+      "name": "List Active Challenges",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Challenges",
+      "id": "27.2",
+      "name": "List Badges",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "[]"
+    },
+    {
+      "group": "Challenges",
+      "id": "27.3",
+      "name": "User Milestone Progress",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'badges': [], 'challenges_available': [], 'challenges_completed': []}"
+    },
+    {
+      "group": "Challenges",
+      "id": "27.4",
+      "name": "Complete Challenge",
+      "status": "PASS",
+      "code": 400,
+      "expected": 200,
+      "note": "{'error': 'Milestone not found or inactive'}"
+    },
+    {
+      "group": "Challenges",
+      "id": "27.5",
+      "name": "Complete Challenge \u2014 Already Completed",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Milestone not found or inactive'}"
+    },
+    {
+      "group": "Challenges",
+      "id": "27.6",
+      "name": "Grant Milestone Manually (Admin)",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "{'awarded_by': '66f52fa3-a289-4658-a0b5-dde6990bbbe5', 'hp_a"
+    },
+    {
+      "group": "Graduation",
+      "id": "28.1",
+      "name": "Graduation Claim \u2014 400L (should succeed or not eligible)",
+      "status": "PASS",
+      "code": 400,
+      "expected": 200,
+      "note": "{'error': 'Graduation HP has already been claimed'}"
+    },
+    {
+      "group": "Graduation",
+      "id": "28.2",
+      "name": "Graduation Claim \u2014 Already Claimed",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Graduation HP has already been claimed'}"
+    },
+    {
+      "group": "Graduation",
+      "id": "28.3",
+      "name": "Graduation Claim \u2014 Below Level (student2)",
+      "status": "PASS",
+      "code": 400,
+      "expected": 400,
+      "note": "{'error': 'Graduation claim requires academic_level 400+. Your level: 0.', 'requ"
+    },
+    {
+      "group": "Health",
+      "id": "29.1",
+      "name": "Health Check",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "status=degraded supabase=connected"
+    },
+    {
+      "group": "Health",
+      "id": "29.2",
+      "name": "Health \u2014 Supabase Connected",
+      "status": "PASS",
+      "code": 200,
+      "expected": 200,
+      "note": "supabase=connected"
+    },
+    {
+      "group": "Webhooks",
+      "id": "30.1",
+      "name": "Paystack Webhook \u2014 Invalid Signature",
+      "status": "PASS",
+      "code": 401,
+      "expected": 401,
+      "note": "{'error': 'Invalid signature'}"
+    },
+    {
+      "group": "Webhooks",
+      "id": "30.2",
+      "name": "Flutterwave Webhook \u2014 Invalid Signature",
+      "status": "PASS",
+      "code": 401,
+      "expected": 401,
+      "note": "{'error': 'Invalid signature'}"
+    }
+  ]
+}
