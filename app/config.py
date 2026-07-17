@@ -15,6 +15,8 @@ class Config:
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     APP_NAME = os.environ.get("APP_NAME", "Holy Grills")
     APP_TAGLINE = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
+    HP_CURRENCY_NAME = os.environ.get("HP_CURRENCY_NAME", "HP")
+    SWAGGER_CONTACT_EMAIL = os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")
 
     SUPABASE_URL = os.environ["SUPABASE_URL"]
     SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]

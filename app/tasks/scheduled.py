@@ -121,7 +121,7 @@ def reset_monthly_leaderboard(self):
                             db.table("hall_of_fame_inductees").insert({
                                 "user_id": uid,
                                 "inducted_at": now.isoformat(),
-                                "full_name": _hof_profile.get("full_name") or "Holy Grills Member",
+                                "full_name": _hof_profile.get("full_name") or (current_app.config.get("APP_NAME", "App") + " Member"),
                                 "tier_at_induction": _hof_profile.get("current_tier"),
                                 "top4_finish_count": new_count,
                             })

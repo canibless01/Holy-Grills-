@@ -56,13 +56,15 @@ def create_app(config_class=Config):
         "swagger_ui": True,
         "specs_route": "/api/docs/",
     }
+    import os as _os
+    _app_name = _os.environ.get("APP_NAME", "Holy Grills")
     swagger_template = {
         "swagger": "2.0",
         "info": {
-            "title": "Holy Grills API",
-            "description": "Backend API for the Holy Grills Student Participation Engine — HP ecosystem, food ordering, marketplace, events, wallet, and admin operations.",
+            "title": f"{_app_name} API",
+            "description": f"Backend API for the {_app_name} platform — HP economy, food ordering, marketplace, events, wallet, and admin operations.",
             "version": "1.0.0",
-            "contact": {"email": "dev@holygrills.ng"},
+            "contact": {"email": _os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")},
         },
         "securityDefinitions": {
             "BearerAuth": {

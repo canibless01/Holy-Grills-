@@ -142,7 +142,7 @@ class MSG:
 
     # ── Email subjects ────────────────────────────────────────────────────────
     EMAIL_ORDER_CONFIRMED    = "Your {platform} order is confirmed!"
-    EMAIL_HP_EARNED          = "You just earned Holy Points!"
+    EMAIL_HP_EARNED          = "You just earned {currency}!"
     EMAIL_TIER_UPGRADE       = "You levelled up on {platform}!"
     EMAIL_WALLET_FUNDED      = "Wallet funded successfully"
     EMAIL_PASSWORD_RESET     = "Reset your {platform} password"
@@ -187,7 +187,7 @@ class MSG:
 
     # ── Rewards ───────────────────────────────────────────────────────────────
     REWARD_NEW_TITLE             = "🎁 New Reward Available!"
-    REWARD_NEW_BODY              = "'{name}' is now in the rewards store. Redeem it with your Holy Points!"
+    REWARD_NEW_BODY              = "'{name}' is now in the rewards store. Redeem it with your {currency}!"
     REWARD_REDEEMED_TITLE        = "Reward Redeemed: {name}"
     REWARD_REDEEMED_BODY         = "You spent {hp} HP. Our team will fulfil your reward shortly."
     REWARD_FULFILLED_TITLE       = "Reward Fulfilled"
@@ -476,7 +476,7 @@ class MSG:
     WINBACK_DAY95_TITLE          = "Your HP is at risk ⚠️"
     WINBACK_DAY95_BODY           = "You haven't ordered in a while. HP decay starts in {days} days — place an order now!"
     WINBACK_DAY118_TITLE         = "⏰ Last chance — HP decay starts in 2 days"
-    WINBACK_DAY118_BODY          = "Your Holy Points will start decaying in 2 days. Place an order to protect them!"
+    WINBACK_DAY118_BODY          = "Your {currency} will start decaying in 2 days. Place an order to protect them!"
     WINBACK_DECAY_TITLE          = "📉 HP Decay Started"
     WINBACK_DECAY_BODY           = "Your HP balance has decreased by {amount} HP due to inactivity. Place an order to stop further decay."
 

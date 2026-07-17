@@ -33,6 +33,7 @@ NON_CRITICAL_FALLBACKS: dict = {
     "gift_sender":    "someone",
     "batch_id":       "your batch",
     "platform":       "social media",
+    "currency":       "HP",
     "referral_count": "your referrals",
     # Additional MSG-placeholder non-critical fallbacks
     "from_tier":      "your previous tier",

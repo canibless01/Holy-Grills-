@@ -204,6 +204,7 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
     data.setdefault("name", to_name)
     data.setdefault("app_tagline", os.environ.get("APP_TAGLINE", "Holy Grills FUTA"))
     data.setdefault("app_name", os.environ.get("APP_NAME", "Holy Grills"))
+    data.setdefault("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
 
     from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
     from_name = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
@@ -213,12 +214,17 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
 
     body_text = template["body"](data)
 
-    # Resolve {platform} placeholder in subject/body (RUN 1)
+    # Resolve {platform} and {currency} placeholders
     _app_name = data.get("app_name", os.environ.get("APP_NAME", "Holy Grills"))
+    _currency  = data.get("currency",  os.environ.get("HP_CURRENCY_NAME", "HP"))
     if isinstance(subject, str) and "{platform}" in subject:
         subject = subject.replace("{platform}", _app_name)
     if "{platform}" in body_text:
         body_text = body_text.replace("{platform}", _app_name)
+    if isinstance(subject, str) and "{currency}" in subject:
+        subject = subject.replace("{currency}", _currency)
+    if "{currency}" in body_text:
+        body_text = body_text.replace("{currency}", _currency)
 
     body_html = body_text.replace("\n", "<br>")
 

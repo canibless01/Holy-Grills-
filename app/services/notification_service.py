@@ -276,15 +276,21 @@ def send_notification(
         )
         return []
 
-    # Resolve {platform} placeholder in title/body → APP_NAME from config (RUN 1)
+    # Resolve {platform} and {currency} placeholders → APP_NAME / HP_CURRENCY_NAME from config
     try:
-        _app_name = current_app.config.get("APP_NAME", "Holy Grills")
+        _app_name = current_app.config.get("APP_NAME", os.environ.get("APP_NAME", "Holy Grills"))
+        _currency = current_app.config.get("HP_CURRENCY_NAME", os.environ.get("HP_CURRENCY_NAME", "HP"))
     except RuntimeError:
         _app_name = os.environ.get("APP_NAME", "Holy Grills")
+        _currency = os.environ.get("HP_CURRENCY_NAME", "HP")
     if "{platform}" in title:
         title = title.replace("{platform}", _app_name)
     if "{platform}" in body:
         body = body.replace("{platform}", _app_name)
+    if "{currency}" in title:
+        title = title.replace("{currency}", _currency)
+    if "{currency}" in body:
+        body = body.replace("{currency}", _currency)
 
     if channels is None:
         channels = ["push", "in_app"]
