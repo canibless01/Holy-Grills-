@@ -81,6 +81,7 @@ CRITICAL_FIELDS: frozenset = frozenset({
     "reward_name",
     "discount_pct",
     "lock_date",
+    "milestone_hp",  # <--- PASTE HERE
     # Actual MSG placeholder names that map to critical spec fields
     "pct",          # MSG templates use {pct} for discount percentage
     "unlocked_hp",  # MSG uses {unlocked_hp} in HP_UNLOCKED_TITLE/BODY
@@ -508,6 +509,12 @@ NOTIFICATION_TEMPLATES: dict = {
         "include_name": True,
         "channels":     None,
     },
+"referral_milestone": {  # <--- PASTE HERE
+    "title":        MSG.REFERRAL_MILESTONE_TITLE,
+    "body":         MSG.REFERRAL_MILESTONE_BODY,
+    "include_name": True,
+    "channels":     None,
+},
     "referral_signup": {
         "title":        MSG.REFERRAL_SIGNUP_TITLE,
         "body":         MSG.REFERRAL_SIGNUP_BODY,
@@ -579,6 +586,12 @@ NOTIFICATION_TEMPLATES: dict = {
         "include_name": True,
         "channels":     None,
     },
+"hp_spin_extra": {  # <--- PASTE HERE
+    "title":        MSG.HP_SPIN_EXTRA_TITLE,
+    "body":         MSG.HP_SPIN_EXTRA_BODY,
+    "include_name": True,
+    "channels":     None,
+},
 
     # ── HP Decay / Win-Back ────────────────────────────────────────────────────
     "hp_decay_warning": {
@@ -786,6 +799,26 @@ NOTIFICATION_TEMPLATES: dict = {
         "channels":     None,
     },
 
+# ── Challenges / Gamification ──────────────────────────────────────────────  <--- PASTE SECTION HERE
+"challenge_complete": {
+    "title":        MSG.CHALLENGE_COMPLETE_TITLE,
+    "body":         MSG.CHALLENGE_COMPLETE_BODY,
+    "include_name": True,
+    "channels":     None,
+},
+"challenge_progress": {
+    "title":        MSG.CHALLENGE_PROGRESS_TITLE,
+    "body":         MSG.CHALLENGE_PROGRESS_BODY,
+    "include_name": True,
+    "channels":     None,
+},
+"milestone_achieved": {  # <--- PASTE HERE
+    "title":        MSG.MILESTONE_ACHIEVED_TITLE,
+    "body":         MSG.MILESTONE_ACHIEVED_BODY,
+    "include_name": True,
+    "channels":     None,
+},
+
     # ── Leaderboard ────────────────────────────────────────────────────────────
     "leaderboard_rank": {
         "title":        MSG.LEADERBOARD_RANK_TITLE,
@@ -869,6 +902,12 @@ NOTIFICATION_TEMPLATES: dict = {
         "include_name": True,
         "channels":     None,
     },
+"order_streak_threshold": {  # <--- PASTE HERE
+    "title":        MSG.ORDER_STREAK_THRESHOLD_TITLE,
+    "body":         MSG.ORDER_STREAK_THRESHOLD_BODY,
+    "include_name": True,
+    "channels":     None,
+},
     "order_streak_broken": {
         "title":        MSG.ORDER_STREAK_BROKEN_TITLE,
         "body":         MSG.ORDER_STREAK_BROKEN_BODY,
