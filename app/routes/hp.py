@@ -430,6 +430,16 @@ def transfer_hp():
     except Exception:
         pass
 
+    # Fire first_hp_gift_sent badge trigger
+    try:
+        from app.services.milestone_service import check_milestone_trigger
+        # Count HP transfers sent by this user
+        transfers = db.table("hp_transactions").select("id").eq("user_id", g.user_id).eq("reference_type", "hp_transfer").eq("source", "hp_transfer").execute()
+        transfer_count = len(transfers or [])
+        check_milestone_trigger(g.user_id, "first_hp_gift_sent", transfer_count)
+    except Exception:
+        pass
+
     return jsonify({
         "message": resolve_msg(MSG.HP_TRANSFER_OK),
         "amount": amount,

@@ -184,6 +184,14 @@ def checkin(event_id):
             notes=f"Event check-in HP: {event.get('title', '') if event else ''}",
         )
 
+        # Fire first_event badge trigger
+        try:
+            from app.services.milestone_service import check_milestone_trigger
+            check_milestone_trigger(g.user_id, "first_event", 1)
+            check_milestone_trigger(g.user_id, "event_checkins", 1)
+        except Exception:
+            pass
+
         from app.services.notification_service import send_notification
         send_notification(
             user_id=g.user_id,

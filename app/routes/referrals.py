@@ -40,6 +40,22 @@ def _complete_referral_award(referral: dict, order_id: str):
         "trigger_order_id": order_id,
     })
 
+    # Fire badge trigger for referral_count milestones
+    try:
+        from app.services.milestone_service import check_milestone_trigger
+        completed_rows = (
+            db.table("referrals")
+            .select("id")
+            .eq("referrer_id", referrer_id)
+            .eq("status", "completed")
+            .execute()
+        ) or []
+        completed_count = len(completed_rows)
+        check_milestone_trigger(referrer_id, "referral_count", completed_count)
+        check_milestone_trigger(referrer_id, "first_referral", completed_count)
+    except Exception:
+        pass
+
     return hp_result
 
 
