@@ -33,7 +33,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "hp_earned", "hp_unlocked", "hp_decay",
     "tier_upgrade", "tier_dropped", "tier_grace_period",
     "wallet_funded", "payment_confirmed",
-    "referral_completed",
+    "referral_completed", "referral_milestone",  # <--- PASTE HERE
     "birthday_bonus", "graduation_hp", "hall_of_fame",
     "membership_anniversary", "order_lock_redeemed",
     "first_order_gift", "checkin_streak_week", "order_streak",

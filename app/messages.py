@@ -259,6 +259,10 @@ class MSG:
     REFERRAL_SIGNUP_TITLE        = "Someone Used Your Referral!"
     REFERRAL_SIGNUP_BODY         = "A new user just signed up with your referral link. They need to place their first order to complete the referral."
 
+    # ── Referral milestone ────────────────────────────────────────────────────
+    REFERRAL_MILESTONE_TITLE     = "Milestone! {count} Referral{plural} Completed 🎉"
+    REFERRAL_MILESTONE_BODY      = "You earned {hp} bonus {currency} for referring {count} friend{plural}!"
+
     # ── Leaderboard ───────────────────────────────────────────────────────────
     LEADERBOARD_RANK_TITLE       = "You Made the Top 10! 🏆"
     LEADERBOARD_RANK_BODY        = "You finished #{rank} on the {period} leaderboard with {hp} {currency} earned. Keep going!"
@@ -316,6 +320,17 @@ class MSG:
     SPIN_SUCCESS                 = "You spun and won: {prize}"
     SPIN_BOUGHT                  = "Extra spin purchased successfully"
     SPIN_EXPIRED                 = "Your exclusive spin has expired"
+    HP_SPIN_INSUFFICIENT         = "Insufficient {currency}. Need {cost} {currency} for extra spins today."
+
+    # ── Challenges ────────────────────────────────────────────────────────────
+    CHALLENGE_NOT_FOUND          = "Challenge not found or inactive"
+    CHALLENGE_ENDED              = "Challenge has ended"
+    CHALLENGE_MAX_REACHED        = "Challenge already completed (max completions reached)"
+    CHALLENGE_HP_EXCEEDS_MAX     = "{currency} reward cannot exceed {max_hp} {currency} per challenge"
+    CHALLENGE_CREATE_FAILED      = "Failed to create challenge: {error}"
+    CHALLENGE_COMPLETE_TITLE     = "Challenge Complete: {title}"
+    CHALLENGE_COMPLETE_BODY      = "You earned {hp} {currency} (pending). Order food to unlock!"
+    CHALLENGE_DEACTIVATED        = "Challenge deactivated"
 
     # ── Feature Flags ─────────────────────────────────────────────────────────
     FEATURE_FLAG_NOT_FOUND       = "Feature flag not found"
@@ -571,6 +586,10 @@ class MSG:
     HP_TRANSFER_RECEIVED_TITLE   = "You received {amount} {currency}! 🎉"
     HP_TRANSFER_RECEIVED_BODY    = "{sender} sent you {amount} {currency}."
 
+    # ── Social follow milestone ───────────────────────────────────────────────
+    SOCIAL_FOLLOW_NOT_CONFIGURED = "Social follow milestone not configured"
+    SOCIAL_FOLLOW_ALREADY_DONE   = "Social follow already recorded"
+
     # ── Graduation ────────────────────────────────────────────────────────────
     GRADUATION_PROFILE_NOT_FOUND = "Profile not found"
     GRADUATION_ALREADY_CLAIMED   = "Graduation {currency} has already been claimed"
@@ -627,11 +646,18 @@ class MSG:
     MARKETPLACE_PURCHASE_STATUS_TITLE = "🛒 Purchase Update"
     MARKETPLACE_PURCHASE_STATUS_BODY  = "Your {title} order is now marked as {status}."
 
+    # ── Milestone / Badge notifications ───────────────────────────────────────
+    MILESTONE_ACHIEVED_TITLE     = "Milestone Reached! 🎉"
+    MILESTONE_ACHIEVED_BODY      = "Congratulations, {name}! You've hit a new milestone."
+    MILESTONE_CHALLENGE_TITLE    = "Challenge Unlocked! 🏆"
+    MILESTONE_HP_SUFFIX          = " — {hp} {currency} earned!"
+
     # ── Validation — generic field-level ─────────────────────────────────────
     FIELD_MUST_BE_INTEGER        = "{field} must be an integer"
     FIELD_MUST_BE_NONEMPTY_STR   = "{field} must be a non-empty string"
     MARKETPLACE_STATUS_INVALID   = "'status' must be one of: active, rejected, archived"
     MARKETPLACE_APPROVE_REJECT   = "'status' must be 'approved' or 'rejected'"
+    CHALLENGE_TIME_WINDOW_INVALID = "time_window must be 'weekly', 'monthly', or omitted (badge)"  # <--- PASTE HERE
 
     # ── Wallet / Payment errors ───────────────────────────────────────────────
     ORDER_WALLET_INSUFFICIENT    = "Insufficient wallet balance: need ₦{need:.2f}"
@@ -681,6 +707,7 @@ class MSG:
     HP_EARNED_FOOD_BODY        = "You earned {hp} {currency} from your food order, {name}. Keep ordering to unlock more!"
     HP_EARNED_WELCOME_TITLE    = "Welcome Bonus!"
     HP_EARNED_WELCOME_BODY     = "You earned {hp} {currency} for your first order delivery. Welcome to {platform}, {name}!"
+    HP_EARNED_CHALLENGE_BODY   = "You completed a challenge and earned {hp} {currency}, {name}!"  # <--- PASTE HERE
     HP_EARNED_TOPUP_TITLE      = "+{hp} {currency} Earned!"
     HP_EARNED_TOPUP_BODY       = "You earned {hp} {currency} for topping up your wallet, {name}."
     HP_EARNED_ANNIVERSARY_BODY = "Membership anniversary bonus — {hp} {currency} added to your account, {name}!"
@@ -698,6 +725,8 @@ class MSG:
     # Flash sale (personalized)
     FLASH_REDEEMED_TITLE       = "Flash Deal Redeemed!"
     FLASH_REDEEMED_BODY        = "You redeemed a {discount_pct}% discount on your order, {name}. Enjoy!"
+    HP_SPIN_EXTRA_TITLE          = "Extra Spin Purchased! 🎡"  # <--- PASTE HERE
+    HP_SPIN_EXTRA_BODY           = "You bought an extra exclusive spin, {name}. Good luck!"  # <--- PASTE HERE
 
     # HP Decay warning (personalized, separate from winback body copy)
     HP_DECAY_WARNING_TITLE     = "\u26a0\ufe0f Your {currency} is at Risk, {name}"
@@ -766,6 +795,8 @@ class MSG:
     # Order streak (personalized)
     ORDER_STREAK_BROKEN_TITLE      = "Order Streak Broken \U0001f494"
     ORDER_STREAK_BROKEN_BODY       = "Your order streak has ended, {name}. Start a new one today!"
+    ORDER_STREAK_THRESHOLD_TITLE   = "Order Streak Milestone! 🔥"  # <--- PASTE HERE
+    ORDER_STREAK_THRESHOLD_BODY    = "You've hit a new order streak milestone, {name}. Keep it up!"  # <--- PASTE HERE
 
     # Graduation (personalized)
     GRADUATION_DECLARED_TITLE      = "\U0001f393 Graduation Declared!"
@@ -811,6 +842,10 @@ class MSG:
     NOTIF_SQUAD_INVITE_TITLE       = "You've Been Invited!"
     NOTIF_SQUAD_INVITE_BODY        = "You've been invited to join a {platform} squad order. Check the app to join."
     NOTIF_SQUAD_MEMBER_ADDED_TITLE = "You're in a Squad Order!"
+
+    # ── Challenges / Gamification (personalized) ─────────────────────────────
+    CHALLENGE_PROGRESS_TITLE       = "Challenge Progress 💪"
+    CHALLENGE_PROGRESS_BODY        = "Great work, {name}! Keep going to complete the challenge and earn {currency}."
 
     # ── Admin API errors ──────────────────────────────────────────────────────
     ADMIN_INVALID_ROLE             = "Invalid role. Must be one of: {roles}"
