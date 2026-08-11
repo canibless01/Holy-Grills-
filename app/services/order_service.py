@@ -1067,6 +1067,22 @@ def _handle_delivery_rewards(order: dict):
     except Exception as _se:
         logger.warning("_handle_delivery_rewards: streak hooks failed for %s: %s", user_id, _se)
 
+    # Fire first_order badge trigger
+    try:
+        from app.services.milestone_service import check_milestone_trigger
+        delivered_count_rows = (
+            get_db().table("orders")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("status", "delivered")
+            .execute()
+        ) or []
+        delivered_count = len(delivered_count_rows)
+        check_milestone_trigger(user_id, "first_order", delivered_count)
+        check_milestone_trigger(user_id, "order_count", delivered_count)
+    except Exception as _me:
+        logger.warning("_handle_delivery_rewards: milestone trigger failed for %s: %s", user_id, _me)
+
     _trigger_referral_completion(user_id, order_id)
 
     # First-order gift check — runs async so it doesn't add latency

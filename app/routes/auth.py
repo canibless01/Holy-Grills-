@@ -147,6 +147,10 @@ def login():
         from app.services.streak_service import process_login_streak as _pls
         _t.Thread(target=lambda: _pls(user_id), daemon=True).start()
 
+        # ADD: Auto check-in on login
+        from app.routes.daily_checkin import record_checkin as _record_checkin
+        _t.Thread(target=lambda: _record_checkin(user_id), daemon=True).start()
+
     return jsonify(result), 200
 
 
