@@ -76,6 +76,14 @@ def get_user(user_id):
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
 
+    # Explicit safe fields filtering to prevent sensitive column exposure (e.g. password_hash, secrets, etc.)
+    safe_fields = [
+        "id", "email", "full_name", "role", "is_active", "phone",
+        "date_of_birth", "referral_code", "referred_by", "created_at", "updated_at",
+        "hp_balance", "wallet_balance", "current_tier_id", "academic_level_id", "department_id"
+    ]
+    profile = {k: v for k, v in profile.items() if k in safe_fields}
+
     from app.services.hp_service import get_hp_balance, get_user_tier
     balance = get_hp_balance(user_id)
     tier = get_user_tier(user_id)

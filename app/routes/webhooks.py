@@ -9,7 +9,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app
-from app.db import get_db
+from app.db import get_db, SupabaseError
 from app.messages import MSG
 from app.services.order_service import confirm_order_payment
 from app.services.wallet_service import credit_wallet
@@ -51,24 +51,36 @@ def paystack_webhook():
         return jsonify({"error": MSG.WEBHOOK_INVALID_JSON}), 400
 
     event_type = payload.get("event")
-    data = payload.get("data", {})
-    reference = data.get("reference") or data.get("transfer_code", "")
+    data = payload.get("data") or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    reference = data.get("reference") or data.get("transfer_code")
+    if not reference:
+        if data.get("id"):
+            reference = f"id_{data.get('id')}"
+        elif payload.get("id"):
+            reference = f"evt_{payload.get('id')}"
+        elif payload.get("event_id"):
+            reference = f"evt_{payload.get('event_id')}"
+        else:
+            # Fallback to stable SHA-256 hash of raw payload bytes to ensure idempotency when all references are missing
+            reference = "hash_" + hashlib.sha256(payload_bytes).hexdigest()
 
     # Atomic Idempotency Claim
-    if reference:
-        try:
-            get_db().table("webhook_events").insert({
-                "provider": "paystack",
-                "event_type": event_type,
-                "reference": reference,
-                "payload": payload,
-                "status": "processing",
-            })
-        except SupabaseError as err:
-            err_str = str(err)
-            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-            raise
+    try:
+        get_db().table("webhook_events").insert({
+            "provider": "paystack",
+            "event_type": event_type,
+            "reference": reference,
+            "payload": payload,
+            "status": "processing",
+        })
+    except SupabaseError as err:
+        err_str = str(err)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
+        raise
 
     try:
         if event_type == "charge.success":
@@ -139,23 +151,33 @@ def flutterwave_webhook():
     data = payload.get("data") or {}
     if not isinstance(data, dict):
         data = {}
-    reference = data.get("tx_ref") or data.get("flw_ref", "")
+
+    reference = data.get("tx_ref") or data.get("flw_ref")
+    if not reference:
+        if data.get("id"):
+            reference = f"id_{data.get('id')}"
+        elif payload.get("id"):
+            reference = f"evt_{payload.get('id')}"
+        elif payload.get("event_id"):
+            reference = f"evt_{payload.get('event_id')}"
+        else:
+            # Fallback to stable SHA-256 hash of raw payload bytes to ensure idempotency when all references are missing
+            reference = "hash_" + hashlib.sha256(payload_bytes).hexdigest()
 
     # Atomic Idempotency Claim
-    if reference:
-        try:
-            get_db().table("webhook_events").insert({
-                "provider": "flutterwave",
-                "event_type": event_type,
-                "reference": reference,
-                "payload": payload,
-                "status": "processing",
-            })
-        except SupabaseError as err:
-            err_str = str(err)
-            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-            raise
+    try:
+        get_db().table("webhook_events").insert({
+            "provider": "flutterwave",
+            "event_type": event_type,
+            "reference": reference,
+            "payload": payload,
+            "status": "processing",
+        })
+    except SupabaseError as err:
+        err_str = str(err)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
+        raise
 
     try:
         if event_type == "charge.completed" and data.get("status") == "successful":
@@ -189,19 +211,48 @@ def _handle_flutterwave_charge_success(data: dict):
     - Order payment confirmation if meta.type == 'order_payment'
     - Wallet top-up if meta.type == 'wallet_topup'
     """
+    currency = data.get("currency")
+    if currency and currency != "NGN":
+        raise ValueError(f"Invalid currency: {currency}")
+
     reference = data.get("tx_ref") or data.get("flw_ref")
     meta = data.get("meta") or data.get("metadata") or {}
-    amount_naira = data.get("amount", 0)
+    amount_naira = float(data.get("amount", 0))
 
     payment_type = meta.get("type")
     user_id = meta.get("user_id")
 
+    db = get_db()
+
     if payment_type == "order_payment":
         order_id = meta.get("order_id")
-        if order_id:
-            confirm_order_payment(order_id, reference, provider_response=data)
+        if not order_id:
+            raise ValueError("Missing order_id in metadata")
+
+        order = db.table("orders").select("id,user_id,total_amount,status,payment_status").eq("id", order_id).single().execute()
+        if not order:
+            raise ValueError(f"Order {order_id} not found")
+
+        if order.get("user_id") and str(order.get("user_id")) != str(user_id):
+            raise ValueError("Order user mismatch")
+
+        expected_amount = float(order.get("total_amount") or 0)
+        if abs(amount_naira - expected_amount) > 0.01:
+            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
+
+        if order.get("status") in ("cancelled", "refunded"):
+            raise ValueError(f"Order is already {order.get('status')}")
+
+        confirm_order_payment(order_id, reference, provider_response=data)
 
     elif payment_type == "wallet_topup" and user_id:
+        if amount_naira <= 0:
+            raise ValueError(f"Invalid top-up amount: {amount_naira}")
+
+        profile = db.table("profiles").select("id").eq("id", user_id).single().execute()
+        if not profile:
+            raise ValueError(f"User {user_id} not found for wallet top-up")
+
         credit_wallet(
             user_id=user_id,
             amount=amount_naira,
@@ -224,6 +275,10 @@ def _handle_charge_success(data: dict):
     - Order payment confirmation if metadata.type == 'order_payment'
     - Wallet top-up if metadata.type == 'wallet_topup'
     """
+    currency = data.get("currency")
+    if currency and currency != "NGN":
+        raise ValueError(f"Invalid currency: {currency}")
+
     reference = data.get("reference")
     metadata = data.get("metadata", {})
     amount_kobo = data.get("amount", 0)
@@ -232,12 +287,37 @@ def _handle_charge_success(data: dict):
     payment_type = metadata.get("type")
     user_id = metadata.get("user_id")
 
+    db = get_db()
+
     if payment_type == "order_payment":
         order_id = metadata.get("order_id")
-        if order_id:
-            confirm_order_payment(order_id, reference, provider_response=data)
+        if not order_id:
+            raise ValueError("Missing order_id in metadata")
+
+        order = db.table("orders").select("id,user_id,total_amount,status,payment_status").eq("id", order_id).single().execute()
+        if not order:
+            raise ValueError(f"Order {order_id} not found")
+
+        if order.get("user_id") and str(order.get("user_id")) != str(user_id):
+            raise ValueError("Order user mismatch")
+
+        expected_amount = float(order.get("total_amount") or 0)
+        if abs(amount_naira - expected_amount) > 0.01:
+            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
+
+        if order.get("status") in ("cancelled", "refunded"):
+            raise ValueError(f"Order is already {order.get('status')}")
+
+        confirm_order_payment(order_id, reference, provider_response=data)
 
     elif payment_type == "wallet_topup" and user_id:
+        if amount_naira <= 0:
+            raise ValueError(f"Invalid top-up amount: {amount_naira}")
+
+        profile = db.table("profiles").select("id").eq("id", user_id).single().execute()
+        if not profile:
+            raise ValueError(f"User {user_id} not found for wallet top-up")
+
         credit_wallet(
             user_id=user_id,
             amount=amount_naira,
