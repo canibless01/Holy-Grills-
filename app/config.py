@@ -52,7 +52,7 @@ class Config:
 
     # ── Registration / validation ──────────────────────────────────────────────
     MINIMUM_AGE = int(os.environ.get("MINIMUM_AGE", "16"))
-    PHONE_REGEX_PATTERN = os.environ.get("PHONE_REGEX_PATTERN", r"^(\+234|0)[789]\d{9}$")
+    PHONE_REGEX_PATTERN = os.environ.get("PHONE_REGEX_PATTERN", r"^\+234\d{10}$")
 
     # ── Ordering window ────────────────────────────────────────────────────────
     ORDERING_WINDOW_OPEN_TIME  = os.environ.get("ORDERING_WINDOW_OPEN_TIME", "08:00")

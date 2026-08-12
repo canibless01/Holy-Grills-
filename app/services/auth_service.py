@@ -95,6 +95,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     # Populate department / level if provided at sign-up (RUN 9)
     if department:
         profile_data["department"] = department.strip()
+        try:
+            dept_row = db.table("departments").select("faculty").eq("name", department.strip()).limit(1).execute()
+            if dept_row:
+                profile_data["faculty"] = dept_row[0].get("faculty")
+        except Exception:
+            pass
     if academic_level:
         profile_data["academic_level"] = str(academic_level).strip()
 
@@ -228,15 +234,25 @@ def get_current_user(access_token: str) -> dict:
 def update_profile(user_id: str, data: dict) -> dict:
     db = get_db()
     # department, academic_level, faculty are live columns on profiles (confirmed against DB).
-    # faculty is derived from department mapping but can also be set directly here.
+    # faculty is derived from department mapping.
     allowed = {
         "full_name", "phone", "date_of_birth",
         "push_enabled", "push_subscription", "email_notifications",
-        "department", "academic_level", "faculty",
+        "department", "academic_level",
     }
     update_data = {k: v for k, v in data.items() if k in allowed}
     if not update_data:
         raise ValueError("No valid fields to update")
+
+    # Securely derive faculty from department mapping
+    dept_name = update_data.get("department")
+    if dept_name:
+        try:
+            dept_row = db.table("departments").select("faculty").eq("name", dept_name).limit(1).execute()
+            if dept_row:
+                update_data["faculty"] = dept_row[0].get("faculty")
+        except Exception:
+            pass
 
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     updated = db.table("profiles").eq("id", user_id).update(update_data)

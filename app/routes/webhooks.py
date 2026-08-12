@@ -54,23 +54,21 @@ def paystack_webhook():
     data = payload.get("data", {})
     reference = data.get("reference") or data.get("transfer_code", "")
 
-    # Idempotency guard: covers all event types with a payment reference to prevent double processing
+    # Atomic Idempotency Claim
     if reference:
         try:
-            already = (
-                get_db()
-                .table("webhook_events")
-                .select("id")
-                .eq("reference", reference)
-                .eq("event_type", event_type)
-                .eq("status", "processed")
-                .limit(1)
-                .execute()
-            )
-            if already:
+            get_db().table("webhook_events").insert({
+                "provider": "paystack",
+                "event_type": event_type,
+                "reference": reference,
+                "payload": payload,
+                "status": "processing",
+            })
+        except SupabaseError as err:
+            err_str = str(err)
+            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
                 return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-        except Exception:
-            pass
+            raise
 
     try:
         if event_type == "charge.success":
@@ -79,12 +77,26 @@ def paystack_webhook():
             _handle_dva_assign(data)
         elif event_type == "transfer.success":
             _handle_transfer(data)
-    except Exception as e:
-        _audit_webhook_event(event_type, reference, payload, error=str(e))
-        _notify_admin_webhook_failure(event_type, reference, str(e))
-        return jsonify({"error": str(e)}), 500
 
-    _audit_webhook_event(event_type, reference, payload)
+        # Mark as processed
+        if reference:
+            get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update({
+                "status": "processed",
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception as e:
+        # Mark as failed
+        if reference:
+            try:
+                get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update({
+                    "status": "failed",
+                    "error": str(e),
+                })
+            except Exception:
+                pass
+        _notify_admin_webhook_failure(event_type, reference, str(e))
+        return jsonify({"error": "Webhook processing failed"}), 500
+
     return jsonify({"message": MSG.WEBHOOK_OK}), 200
 
 
@@ -129,33 +141,45 @@ def flutterwave_webhook():
         data = {}
     reference = data.get("tx_ref") or data.get("flw_ref", "")
 
-    # Idempotency guard: covers all event types with a payment reference to prevent double processing
+    # Atomic Idempotency Claim
     if reference:
         try:
-            already = (
-                get_db()
-                .table("webhook_events")
-                .select("id")
-                .eq("reference", reference)
-                .eq("event_type", event_type)
-                .eq("status", "processed")
-                .limit(1)
-                .execute()
-            )
-            if already:
+            get_db().table("webhook_events").insert({
+                "provider": "flutterwave",
+                "event_type": event_type,
+                "reference": reference,
+                "payload": payload,
+                "status": "processing",
+            })
+        except SupabaseError as err:
+            err_str = str(err)
+            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
                 return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-        except Exception:
-            pass
+            raise
 
     try:
         if event_type == "charge.completed" and data.get("status") == "successful":
             _handle_flutterwave_charge_success(data)
-    except Exception as e:
-        _audit_webhook_event(event_type, reference, payload, error=str(e))
-        _notify_admin_webhook_failure(event_type, reference, str(e))
-        return jsonify({"error": str(e)}), 500
 
-    _audit_webhook_event(event_type, reference, payload)
+        # Mark as processed
+        if reference:
+            get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update({
+                "status": "processed",
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception as e:
+        # Mark as failed
+        if reference:
+            try:
+                get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update({
+                    "status": "failed",
+                    "error": str(e),
+                })
+            except Exception:
+                pass
+        _notify_admin_webhook_failure(event_type, reference, str(e))
+        return jsonify({"error": "Webhook processing failed"}), 500
+
     return jsonify({"message": MSG.WEBHOOK_OK}), 200
 
 
