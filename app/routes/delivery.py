@@ -23,6 +23,28 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def validate_coordinates(lat, lon):
+    """
+    Validate that coordinates are floats, are within standard spherical bounds,
+    and fall inside the Nigerian geographic bounding box.
+    """
+    if lat is None or lon is None:
+        return None, None
+    try:
+        f_lat = float(lat)
+        f_lon = float(lon)
+    except (ValueError, TypeError):
+        raise ValueError("Latitude and Longitude must be valid numbers")
+
+    if not (-90.0 <= f_lat <= 90.0) or not (-180.0 <= f_lon <= 180.0):
+        raise ValueError("Latitude and Longitude must be within standard bounds")
+
+    # Nigerian geographical bounding box (generous bounds)
+    if not (4.0 <= f_lat <= 14.0) or not (2.5 <= f_lon <= 15.0):
+        raise ValueError("Coordinates are outside the supported region")
+    return f_lat, f_lon
+
+
 def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[float, float | None]:
     """
     Calculate off-campus delivery fee for a given gate.
@@ -38,11 +60,12 @@ def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[
     if (user_lat is not None and user_lon is not None
             and gate_lat is not None and gate_lon is not None):
         try:
+            user_lat, user_lon = validate_coordinates(user_lat, user_lon)
             dist = haversine_km(gate_lat, gate_lon, user_lat, user_lon)
             fee = base_fee + (dist * rate_per_km)
             return round(max(fee, min_fee), 2), round(dist, 3)
-        except Exception:
-            pass
+        except Exception as e:
+            raise ValueError(f"Coordinate validation failed: {str(e)}")
     return round(min_fee, 2), None
 
 
@@ -154,6 +177,12 @@ def calculate_fee():
 
     user_lat = data.get("lat")
     user_lon = data.get("lon")
+
+    if user_lat is not None or user_lon is not None:
+        try:
+            user_lat, user_lon = validate_coordinates(user_lat, user_lon)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
     try:
         if delivery_type == "on_campus":

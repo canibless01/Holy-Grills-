@@ -108,18 +108,28 @@ def redeem_free_side():
     if not credits:
         return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS}), 400
 
-    # Use oldest-expiring credit first
-    credit_row = credits[0]
-    new_remaining = credit_row["credits_remaining"] - 1
+    # Use oldest-expiring credit first, try to update atomically using Optimistic Concurrency Control (OCC)
+    success = False
+    new_remaining = 0
+    for credit_row in credits:
+        try:
+            res = db.table("free_side_credits") \
+                .eq("id", credit_row["id"]) \
+                .eq("credits_remaining", credit_row["credits_remaining"]) \
+                .update({
+                    "credits_remaining": credit_row["credits_remaining"] - 1,
+                    "used_at": datetime.now(timezone.utc).isoformat(),
+                })
+            if res:
+                success = True
+                new_remaining = credit_row["credits_remaining"] - 1
+                break
+        except Exception as e:
+            logger.error("redeem_free_side OCC update failed for credit row %s: %s", credit_row["id"], e)
+            pass
 
-    try:
-        db.table("free_side_credits").eq("id", credit_row["id"]).update({
-            "credits_remaining": new_remaining,
-            "used_at": datetime.now(timezone.utc).isoformat(),
-        })
-    except Exception as e:
-        logger.error("redeem_free_side: update failed for user %s: %s", user_id, e)
-        return jsonify({"error": "Could not redeem credit — please try again"}), 500
+    if not success:
+        return jsonify({"error": "No credits available or concurrent update occurred. Please try again."}), 409
 
     return jsonify({
         "message": MSG.FREE_SIDE_REDEEMED,

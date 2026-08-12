@@ -145,7 +145,7 @@ def dashboard_summary():
 
     orders_today = (
         db.table("orders")
-        .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at")
+        .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used")
         .gte("created_at", today_start)
         .lte("created_at", today_end)
         .execute()
@@ -189,7 +189,19 @@ def dashboard_summary():
 
     payment_split = {}
     for o in orders_today:
-        pm = o.get("payment_method", "unknown")
+        w_amt = float(o.get("wallet_amount_used") or 0)
+        c_amt = float(o.get("card_amount_used") or 0)
+        tot = float(o.get("total_amount") or 0)
+        if w_amt > 0 and c_amt > 0:
+            pm = "split"
+        elif w_amt > 0:
+            pm = "wallet"
+        elif c_amt > 0:
+            pm = "card"
+        elif tot == 0:
+            pm = "free"
+        else:
+            pm = "unknown"
         payment_split[pm] = payment_split.get(pm, 0) + 1
 
     return jsonify({
@@ -529,7 +541,7 @@ def items_analytics():
         chunk = order_ids[i:i + chunk_size]
         rows = (
             db.table("order_items")
-            .select("name_snapshot,quantity,unit_price")
+            .select("name_snapshot,quantity,price_snapshot")
             .in_("order_id", chunk)
             .execute()
         ) or []
@@ -541,7 +553,7 @@ def items_analytics():
     for item in all_items:
         name = item.get("name_snapshot") or "Unknown"
         qty = int(item.get("quantity") or 1)
-        price = float(item.get("unit_price") or 0)
+        price = float(item.get("price_snapshot") or 0)
         agg[name]["qty"] += qty
         agg[name]["revenue"] += price * qty
 

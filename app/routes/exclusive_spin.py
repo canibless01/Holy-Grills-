@@ -133,15 +133,25 @@ def do_spin():
     if not spins:
         return jsonify({"error": MSG.SPIN_NO_CREDITS}), 400
 
-    # Use oldest-expiring spin first
-    spin_row = spins[0]
-    new_count = spin_row["spin_count"] - 1
+    # Use oldest-expiring spin first, try to update atomically using Optimistic Concurrency Control (OCC)
+    success = False
+    new_count = 0
+    for spin_row in spins:
+        try:
+            res = db.table("exclusive_spins") \
+                .eq("id", spin_row["id"]) \
+                .eq("spin_count", spin_row["spin_count"]) \
+                .update({"spin_count": spin_row["spin_count"] - 1})
+            if res:
+                success = True
+                new_count = spin_row["spin_count"] - 1
+                break
+        except Exception as e:
+            logger.error("do_spin OCC update failed for spin row %s: %s", spin_row["id"], e)
+            pass
 
-    try:
-        db.table("exclusive_spins").eq("id", spin_row["id"]).update({"spin_count": new_count})
-    except Exception as e:
-        logger.error("do_spin: update failed for user %s: %s", user_id, e)
-        return jsonify({"error": "Could not record spin — please try again"}), 500
+    if not success:
+        return jsonify({"error": "No spin credits available or concurrent update occurred. Please try again."}), 409
 
     prizes = _spin_prizes()
     prize  = _draw_prize(prizes)
