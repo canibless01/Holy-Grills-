@@ -23,38 +23,33 @@ def get_wallet(user_id: str) -> dict:
 def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None) -> dict:
     """
     Credit ₦ to wallet (e.g., after Paystack webhook confirms payment).
-    Awards HP if top-up meets minimum threshold. Uses optimistic locking.
+    Awards HP if top-up meets minimum threshold. Uses atomic database-level RPC.
     """
     db = get_db()
     config = current_app.config
 
-    wallet = get_wallet(user_id)
-    if not wallet:
-        raise ValueError("Wallet not found for user")
-
-    current_balance = float(wallet.get("balance", 0))
-    new_balance = current_balance + amount
-
-    updated = db.table("wallets").eq("user_id", user_id).eq("balance", current_balance).update({
-        "balance": new_balance,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+    res = db.rpc("credit_wallet_atomic", {
+        "p_user_id": user_id,
+        "p_amount": amount,
+        "p_reason": notes or f"Wallet credit ({reference_type})",
+        "p_reference_type": reference_type,
+        "p_reference_id": reference_id,
+        "p_provider": "paystack",
+        "p_provider_reference": payment_reference,
+        "p_metadata": provider_response or {},
     })
 
-    if not updated:
-        raise ValueError("Concurrent wallet modification detected. Please try again.")
+    if isinstance(res, dict) and res.get("error"):
+        raise ValueError(res["error"])
 
-    txn = db.table("wallet_transactions").insert({
-        "user_id": user_id,
-        "type": "credit",
-        "amount": amount,
-        "balance_after": new_balance,
-        "reason": notes or f"Wallet credit ({reference_type})",
-        "reference_type": reference_type,
-        "reference_id": reference_id or None,
-        "provider": "paystack",
-        "provider_reference": payment_reference,
-        "metadata": provider_response or {},
-    })
+    # Fetch transaction row for backward compatibility
+    txn_id = res.get("transaction_id") if isinstance(res, dict) else None
+    txn = None
+    if txn_id:
+        try:
+            txn = db.table("wallet_transactions").select("*").eq("id", txn_id).single().execute()
+        except Exception:
+            pass
 
     if amount >= config.get("WALLET_TOPUP_MIN", 3000) and reference_type in ("topup", "bank_transfer"):
         try:
@@ -69,44 +64,35 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         except Exception:
             pass
 
-    return txn[0] if isinstance(txn, list) else txn
+    return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else amount}
 
 
 def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type: str, notes: str = "") -> dict:
     """
-    Deduct ₦ from wallet. Raises if insufficient balance. Uses optimistic locking.
+    Deduct ₦ from wallet. Uses atomic database-level RPC.
     """
     db = get_db()
-    wallet = get_wallet(user_id)
-    if not wallet:
-        raise ValueError("Wallet not found for user")
-
-    balance = float(wallet.get("balance", 0))
-    if balance < amount:
-        raise ValueError(f"Insufficient wallet balance: have ₦{balance:.2f}, need ₦{amount:.2f}")
-
-    new_balance = balance - amount
-
-    updated = db.table("wallets").eq("user_id", user_id).eq("balance", balance).update({
-        "balance": new_balance,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+    res = db.rpc("debit_wallet_atomic", {
+        "p_user_id": user_id,
+        "p_amount": amount,
+        "p_reason": notes or f"Wallet debit ({reference_type})",
+        "p_reference_type": reference_type,
+        "p_reference_id": reference_id,
+        "p_metadata": {},
     })
 
-    if not updated:
-        raise ValueError("Concurrent wallet modification detected. Please try again.")
+    if isinstance(res, dict) and res.get("error"):
+        raise ValueError(res["error"])
 
-    txn = db.table("wallet_transactions").insert({
-        "user_id": user_id,
-        "type": "debit",
-        "amount": amount,
-        "balance_after": new_balance,
-        "reason": notes or f"Wallet debit ({reference_type})",
-        "reference_type": reference_type,
-        "reference_id": reference_id,
-        "metadata": {},
-    })
+    txn_id = res.get("transaction_id") if isinstance(res, dict) else None
+    txn = None
+    if txn_id:
+        try:
+            txn = db.table("wallet_transactions").select("*").eq("id", txn_id).single().execute()
+        except Exception:
+            pass
 
-    return txn[0] if isinstance(txn, list) else txn
+    return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else 0.0}
 
 
 def get_wallet_transactions(user_id: str, limit: int = 50, offset: int = 0, tx_type: str = None) -> list:

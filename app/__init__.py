@@ -159,7 +159,7 @@ def create_app(config_class=Config):
     def internal_error(e):
         rid = getattr(request, "request_id", "-")
         _logger.error("[%s] 500 Internal Server Error: %s %s — %s", rid, request.method, request.path, e)
-        return {"error": "Internal server error", "message": str(e), "request_id": rid}, 500
+        return {"error": "Internal server error", "message": "An unexpected error occurred. Please contact support.", "request_id": rid}, 500
 
     @app.errorhandler(Exception)
     def unhandled_exception(e):

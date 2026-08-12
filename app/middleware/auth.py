@@ -138,6 +138,8 @@ def optional_auth(f):
                         .single()
                         .execute()
                     )
+                    if profile and not profile.get("is_active", True):
+                        abort(403, "Account is deactivated")
                     g.user = profile
                     g.user_role = profile.get("role", "student")
                 except SupabaseError:

@@ -250,10 +250,7 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
     """
     Unlock pending HP proportional to food spend — FIFO.
     Formula: floor(food_spend × HP_PER_NAIRA_FOOD × HP_UNLOCK_RATE_PCT)
-    = 30% of the order's BASE food HP (no tier bonus, no multiplier).
-
-    Converts the oldest pending HP transactions to active status (FIFO).
-    Updates profiles.hp_balance for each converted amount.
+    = 30% of the order's BASE food HP. Uses atomic database-level RPC.
     """
     config = current_app.config
     amount_to_unlock = math.floor(
@@ -263,70 +260,25 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
         return {"unlocked": 0}
 
     db = get_db()
+    res = db.rpc("unlock_pending_hp_fifo_atomic", {
+        "p_user_id": user_id,
+        "p_order_id": order_id,
+        "p_amount_to_unlock": amount_to_unlock,
+    })
 
-    # Fetch oldest pending transactions (FIFO order)
-    try:
-        pending_txns = (
-            db.table("hp_transactions")
-            .select("id,amount")
-            .eq("user_id", user_id)
-            .eq("status", "pending")
-            .order("created_at", ascending=True)
-            .execute()
-        ) or []
-    except Exception:
-        pending_txns = []
+    if isinstance(res, dict) and res.get("error"):
+        logger.warning("unlock_pending_hp failed: %s", res["error"])
+        return {"unlocked": 0}
 
-    remaining = amount_to_unlock
-    total_unlocked = 0
-    now = datetime.now(timezone.utc).isoformat()
+    unlocked_amount = res.get("unlocked_amount", 0) if isinstance(res, dict) else 0
 
-    for txn in pending_txns:
-        if remaining <= 0:
-            break
-        txn_amount = int(txn.get("amount", 0))
-        if txn_amount <= 0:
-            continue
-
-        try:
-            if txn_amount <= remaining:
-                # Convert entire pending transaction → active
-                db.table("hp_transactions").eq("id", txn["id"]).update({"status": "active"})
-                # Increment profile balance
-                profile = db.table("profiles").select("hp_balance").eq("id", user_id).single().execute()
-                current_bal = int((profile or {}).get("hp_balance") or 0)
-                new_bal = max(0, current_bal + txn_amount)
-                db.table("profiles").eq("id", user_id).update({"hp_balance": new_bal})
-                total_unlocked += txn_amount
-                remaining -= txn_amount
-            else:
-                # Split: create a new active transaction for `remaining`, shrink the pending one
-                new_pending_amount = txn_amount - remaining
-                db.table("hp_transactions").eq("id", txn["id"]).update({"amount": new_pending_amount})
-                # Record the unlocked portion as a new active transaction
-                _record_hp_transaction(
-                    user_id=user_id,
-                    amount=remaining,
-                    txn_type="earn",
-                    reference_id=order_id,
-                    reference_type="order",
-                    source_type="unlock",
-                    notes=f"Pending HP unlocked (FIFO split): {remaining} HP → active",
-                    status="active",
-                )
-                total_unlocked += remaining
-                remaining = 0
-        except Exception as e:
-            logger.warning("unlock_pending_hp: FIFO convert error for txn %s: %s", txn.get("id"), e)
-            continue
-
-    if total_unlocked > 0:
+    if unlocked_amount > 0:
         try:
             recalculate_tier(user_id)
         except Exception:
             pass
 
-    return {"unlocked": total_unlocked}
+    return {"unlocked": unlocked_amount}
 
 
 import logging as _logging
@@ -719,67 +671,23 @@ def _record_hp_transaction(
     issued_by_admin_id: str = None,
 ):
     db = get_db()
-    balance = get_hp_balance(user_id)
-
-    # Pending HP does NOT change the active balance — only active/spend/expire do
-    if status == "pending":
-        balance_after = max(0, balance["active"])
-    elif txn_type == "spend" or (amount < 0):
-        balance_after = max(0, balance["active"] - abs(amount))
-    else:
-        balance_after = max(0, balance["active"] + abs(amount))
-
     resolved_source = source_type or reference_type or "system"
-    record = {
-        "user_id": user_id,
-        "amount": abs(amount),
-        "type": txn_type,
-        "status": status,
-        "balance_after": balance_after,
-        "source": resolved_source,
-        "metadata": {"notes": notes} if notes else {},
-    }
-    if reference_id:
-        record["reference_id"] = reference_id
-    if reference_type:
-        record["reference_type"] = reference_type
-    if issued_by_admin_id:
-        record["issued_by_admin_id"] = issued_by_admin_id
 
-    try:
-        db.table("hp_transactions").insert(record)
-    except SupabaseError:
-        # Fallback without metadata in case that column has a type mismatch
-        basic = {
-            "user_id": user_id,
-            "amount": abs(amount),
-            "type": txn_type,
-            "status": status,
-            "balance_after": balance_after,
-            "source": resolved_source,
-        }
-        if reference_id:
-            basic["reference_id"] = reference_id
-        if reference_type:
-            basic["reference_type"] = reference_type
-        if issued_by_admin_id:
-            basic["issued_by_admin_id"] = issued_by_admin_id
-        try:
-            db.table("hp_transactions").insert(basic)
-        except SupabaseError:
-            pass
+    # Call atomic RPC function to mutate profiles.hp_balance and insert hp_transactions in one transaction
+    res = db.rpc("record_hp_transaction_atomic", {
+        "p_user_id": user_id,
+        "p_amount": int(amount),
+        "p_type": txn_type,
+        "p_status": status,
+        "p_source": resolved_source,
+        "p_reference_type": reference_type,
+        "p_reference_id": reference_id,
+        "p_issued_by_admin_id": issued_by_admin_id,
+        "p_notes": notes,
+    })
 
-    # Only update profiles.hp_balance when this is an active change
-    if status != "pending":
-        try:
-            # Optimistic HP Locking
-            profile = _get_profile_hp_fields(user_id)
-            current_hp = int(profile.get("hp_balance") or 0)
-            updated = db.table("profiles").eq("id", user_id).eq("hp_balance", current_hp).update({"hp_balance": balance_after})
-            if not updated:
-                logger.warning("_record_hp_transaction: concurrent HP update detected for %s", user_id)
-        except Exception as e:
-            logger.warning("_record_hp_transaction: failed to update HP balance for %s: %s", user_id, e)
+    if isinstance(res, dict) and res.get("error"):
+        raise ValueError(res["error"])
 
     # Recalculate tier whenever active HP changes
     if status != "pending":
