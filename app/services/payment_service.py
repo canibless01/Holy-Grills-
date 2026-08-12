@@ -125,3 +125,27 @@ def verify_webhook_signature(payload_bytes: bytes, signature: str) -> bool:
     secret = current_app.config["PAYSTACK_WEBHOOK_SECRET"].encode()
     computed = hmac.new(secret, payload_bytes, hashlib.sha512).hexdigest()
     return hmac.compare_digest(computed, signature)
+
+
+def refund_paystack_charge(transaction_reference: str, amount_naira: float = None, reason: str = "") -> dict:
+    """
+    Refund a transaction charge via Paystack Refund API.
+    If amount_naira is omitted, refunds the full amount.
+    """
+    payload = {
+        "transaction": transaction_reference,
+    }
+    if amount_naira is not None:
+        payload["amount"] = int(amount_naira * 100) # naira to kobo
+    if reason:
+        payload["customer_note"] = reason
+
+    resp = _paystack_post(
+        f"{PAYSTACK_BASE}/refund",
+        headers=_paystack_headers(),
+        payload=payload,
+    )
+    data = resp.json()
+    if not data.get("status"):
+        raise ValueError(data.get("message", "Paystack refund failed"))
+    return data["data"]

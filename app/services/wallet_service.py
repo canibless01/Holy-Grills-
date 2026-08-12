@@ -23,7 +23,7 @@ def get_wallet(user_id: str) -> dict:
 def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None) -> dict:
     """
     Credit ₦ to wallet (e.g., after Paystack webhook confirms payment).
-    Awards HP if top-up meets minimum threshold.
+    Awards HP if top-up meets minimum threshold. Uses optimistic locking.
     """
     db = get_db()
     config = current_app.config
@@ -32,12 +32,16 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
     if not wallet:
         raise ValueError("Wallet not found for user")
 
-    new_balance = float(wallet.get("balance", 0)) + amount
+    current_balance = float(wallet.get("balance", 0))
+    new_balance = current_balance + amount
 
-    db.table("wallets").eq("user_id", user_id).update({
+    updated = db.table("wallets").eq("user_id", user_id).eq("balance", current_balance).update({
         "balance": new_balance,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+
+    if not updated:
+        raise ValueError("Concurrent wallet modification detected. Please try again.")
 
     txn = db.table("wallet_transactions").insert({
         "user_id": user_id,
@@ -70,7 +74,7 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
 
 def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type: str, notes: str = "") -> dict:
     """
-    Deduct ₦ from wallet. Raises if insufficient balance.
+    Deduct ₦ from wallet. Raises if insufficient balance. Uses optimistic locking.
     """
     db = get_db()
     wallet = get_wallet(user_id)
@@ -83,10 +87,13 @@ def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type:
 
     new_balance = balance - amount
 
-    db.table("wallets").eq("user_id", user_id).update({
+    updated = db.table("wallets").eq("user_id", user_id).eq("balance", balance).update({
         "balance": new_balance,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+
+    if not updated:
+        raise ValueError("Concurrent wallet modification detected. Please try again.")
 
     txn = db.table("wallet_transactions").insert({
         "user_id": user_id,

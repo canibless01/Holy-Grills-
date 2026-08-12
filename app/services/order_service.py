@@ -344,11 +344,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if not raw_items:
         raise ValueError(MSG.ORDER_ITEMS_EMPTY)
 
-    # Pre-fetch today's order IDs once for daily-limit checks
+    # Pre-fetch today's active order IDs once for daily-limit checks (excludes cancelled/refunded)
     today_orders = (
         db.table("orders")
         .select("id")
         .gte("created_at", _today_start_iso())
+        .not_.in_("status", ["cancelled", "refunded"])
         .execute()
     ) or []
     today_order_ids = {o["id"] for o in today_orders}

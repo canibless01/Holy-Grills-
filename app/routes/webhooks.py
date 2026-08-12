@@ -54,23 +54,23 @@ def paystack_webhook():
     data = payload.get("data", {})
     reference = data.get("reference") or data.get("transfer_code", "")
 
-    # Idempotency guard: reject duplicate webhook deliveries for events that carry
-    # a payment reference. Paystack retries on 5xx, so a transient server error
-    # could cause the same charge.success / transfer.success to arrive twice.
-    if reference and event_type in ("charge.success", "transfer.success"):
+    # Idempotency guard: covers all event types with a payment reference to prevent double processing
+    if reference:
         try:
             already = (
                 get_db()
-                .table("payments")
+                .table("webhook_events")
                 .select("id")
                 .eq("reference", reference)
+                .eq("event_type", event_type)
+                .eq("status", "processed")
                 .limit(1)
                 .execute()
             )
             if already:
                 return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
         except Exception:
-            pass  # If the idempotency check itself fails, allow processing to continue
+            pass
 
     try:
         if event_type == "charge.success":
@@ -129,14 +129,16 @@ def flutterwave_webhook():
         data = {}
     reference = data.get("tx_ref") or data.get("flw_ref", "")
 
-    # Idempotency guard, mirrors the Paystack handler above.
-    if reference and event_type == "charge.completed":
+    # Idempotency guard: covers all event types with a payment reference to prevent double processing
+    if reference:
         try:
             already = (
                 get_db()
-                .table("payments")
+                .table("webhook_events")
                 .select("id")
                 .eq("reference", reference)
+                .eq("event_type", event_type)
+                .eq("status", "processed")
                 .limit(1)
                 .execute()
             )
