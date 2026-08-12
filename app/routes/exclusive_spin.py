@@ -167,3 +167,71 @@ def do_spin():
     }), 200
 
 
+@exclusive_spin_bp.route("/buy", methods=["POST"])
+@require_auth
+def buy_spin():
+    """
+    Buy an extra exclusive spin using HP.
+    ---
+    tags: [ExclusiveSpin]
+    responses:
+      201:
+        description: Spin purchased successfully
+      400:
+        description: Insufficient HP
+    """
+    user_id = g.user_id
+    db = get_db()
+
+    # Read cost from system_settings or config
+    try:
+        cost_row = db.table("system_settings").select("value").eq("key", "exclusive_spin_extra_cost").single().execute()
+        cost = int(float((cost_row or {}).get("value", "500") or "500"))
+    except Exception:
+        cost = current_app.config.get("EXCLUSIVE_SPIN_EXTRA_COST", 500)
+
+    from app.services.hp_service import spend_hp
+    try:
+        spend_hp(user_id, cost, user_id, "exclusive_spin_purchase", f"Purchased extra exclusive spin for {cost} HP")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    now = datetime.now(timezone.utc)
+    try:
+        val_days = int(current_app.config.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", 30))
+    except Exception:
+        val_days = 30
+    expires_at = (now + timedelta(days=val_days)).isoformat()
+
+    # Insert a new spin record or increment existing
+    try:
+        # Check if an active leaderboard_prize spin already exists to merge
+        existing = db.table("exclusive_spins").select("id,spin_count").eq("user_id", user_id).eq("source", "leaderboard_prize").gte("expires_at", now.isoformat()).execute()
+        if existing:
+            row = existing[0]
+            db.table("exclusive_spins").eq("id", row["id"]).update({"spin_count": row["spin_count"] + 1})
+        else:
+            db.table("exclusive_spins").insert({
+                "user_id": user_id,
+                "spin_count": 1,
+                "source": "leaderboard_prize",
+                "expires_at": expires_at,
+            })
+    except Exception as e:
+        logger.error("buy_spin: insert/update failed: %s", e)
+        return jsonify({"error": "Failed to record purchase"}), 500
+
+    try:
+        from app.services.notification_service import send_notification
+        send_notification(
+            user_id=user_id,
+            notif_type="hp_spin_extra",
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "message": resolve_msg(MSG.SPIN_BOUGHT),
+        "cost": cost,
+        "expires_at": expires_at,
+    }), 201

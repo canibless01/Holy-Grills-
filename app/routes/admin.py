@@ -1484,6 +1484,26 @@ def hp_report():
     }), 200
 
 
+@admin_bp.route("/campuses", methods=["GET"])
+@require_role("admin")
+def list_campuses():
+    """
+    List all campuses (admin only).
+    ---
+    tags: [Admin]
+    responses:
+      200:
+        description: List of campuses
+    """
+    db = get_db()
+    try:
+        campuses = db.table("campuses").select("*").order("name").execute() or []
+    except Exception as e:
+        logger.error("list_campuses: failed to read campuses: %s", e)
+        campuses = []
+    return jsonify(campuses), 200
+
+
 def _audit(actor_id, table, target_id, action, after_data=None):
     db = get_db()
     try:

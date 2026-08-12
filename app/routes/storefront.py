@@ -9,6 +9,30 @@ from datetime import datetime, timezone
 storefront_bp = Blueprint("storefront", __name__)
 
 
+@storefront_bp.route("/config/public", methods=["GET"])
+def get_public_config():
+    """
+    Get public system settings and configs (e.g. WhatsApp, etc).
+    ---
+    tags: [Storefront]
+    security: []
+    responses:
+      200:
+        description: Public system configuration
+    """
+    db = get_db()
+    try:
+        settings = db.table("system_settings").select("key,value").eq("is_public", True).execute() or []
+        # Fallback if no public settings marked yet: read key public configs
+        if not settings:
+            keys = ["whatsapp_link", "platform_name", "launch_window_end_date"]
+            settings = db.table("system_settings").select("key,value").in_("key", keys).execute() or []
+        config_dict = {row["key"]: row["value"] for row in settings if row.get("key")}
+    except Exception:
+        config_dict = {}
+    return jsonify(config_dict), 200
+
+
 @storefront_bp.route("/sections", methods=["GET"])
 def list_sections():
     """

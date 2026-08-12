@@ -772,9 +772,14 @@ def _record_hp_transaction(
     # Only update profiles.hp_balance when this is an active change
     if status != "pending":
         try:
-            db.table("profiles").eq("id", user_id).update({"hp_balance": balance_after})
-        except Exception:
-            pass
+            # Optimistic HP Locking
+            profile = _get_profile_hp_fields(user_id)
+            current_hp = int(profile.get("hp_balance") or 0)
+            updated = db.table("profiles").eq("id", user_id).eq("hp_balance", current_hp).update({"hp_balance": balance_after})
+            if not updated:
+                logger.warning("_record_hp_transaction: concurrent HP update detected for %s", user_id)
+        except Exception as e:
+            logger.warning("_record_hp_transaction: failed to update HP balance for %s: %s", user_id, e)
 
     # Recalculate tier whenever active HP changes
     if status != "pending":
