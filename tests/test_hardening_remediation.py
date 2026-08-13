@@ -333,3 +333,73 @@ def test_purchase_hp_bundle_payment_reference_replay(mock_get_db, client):
     data = resp.get_json()
     assert data["message"] == "Payment already processed"
     assert data["idempotent"] is True
+
+
+# ── 8. Guest Order IDOR/BOLA Access Restrictions ─────────────────────────────
+
+@patch("app.routes.orders.get_db")
+def test_get_order_guest_without_token_rejected(mock_get_db, client):
+    """GET /api/orders/<id> must reject guest order access if claim_token is missing/wrong."""
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+
+    # Case A: Logged-in user tries to access guest order without claim token
+    mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+        # auth user profile lookup
+        {"id": "user-123", "role": "student", "is_active": True},
+        # order lookup (user_id is None, meaning guest order)
+        {"id": "order-123", "user_id": None, "claim_token": "token-xyz"}
+    ]
+
+    with patch("app.middleware.auth.get_db", return_value=mock_db):
+        headers = {"Authorization": "Bearer fake-jwt-token"}
+        resp = client.get("/api/orders/00000000-0000-0000-0000-000000000000", headers=headers)
+    assert resp.status_code == 403
+    assert "claim" in resp.get_json()["error"].lower()
+
+    # Case B: Guest tries to access guest order with wrong token
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+        # order lookup (user_id is None)
+        {"id": "order-123", "user_id": None, "claim_token": "token-xyz"}
+    ]
+    resp = client.get("/api/orders/00000000-0000-0000-0000-000000000000?claim_token=wrong-token")
+    assert resp.status_code == 403
+    assert "claim" in resp.get_json()["error"].lower()
+
+
+@patch("app.routes.orders.get_db")
+def test_get_order_guest_with_token_allowed(mock_get_db, client):
+    """GET /api/orders/<id> must allow guest order access if claim_token matches."""
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+
+    # Guest tries to access guest order with matching token
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+        # order lookup (user_id is None)
+        {"id": "order-123", "user_id": None, "claim_token": "token-xyz", "delivery_batches": []}
+    ]
+    resp = client.get("/api/orders/00000000-0000-0000-0000-000000000000?claim_token=token-xyz")
+    assert resp.status_code == 200
+    assert resp.get_json()["id"] == "order-123"
+
+
+@patch("app.routes.orders.get_db")
+def test_get_order_authenticated_mismatch_rejected(mock_get_db, client):
+    """GET /api/orders/<id> must reject authenticated users trying to access other user's order."""
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+
+    mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+        # auth user profile lookup
+        {"id": "user-123", "role": "student", "is_active": True},
+        # order lookup (owned by user-456)
+        {"id": "order-123", "user_id": "user-456", "claim_token": None}
+    ]
+
+    with patch("app.middleware.auth.get_db", return_value=mock_db):
+        headers = {"Authorization": "Bearer fake-jwt-token"}
+        resp = client.get("/api/orders/00000000-0000-0000-0000-000000000000", headers=headers)
+    assert resp.status_code == 403
+    assert "denied" in resp.get_json()["error"].lower()

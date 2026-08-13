@@ -221,18 +221,17 @@ def get_order(order_id):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     claim_token = request.args.get("claim_token")
-    if g.user_id:
-        if order.get("user_id") and order["user_id"] != g.user_id:
+    if order.get("user_id"):
+        if not g.user_id or order["user_id"] != g.user_id:
             return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
-    elif claim_token:
-        if order.get("claim_token") != claim_token:
-            return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
     else:
-        return jsonify({"error": MSG.ORDER_AUTH_REQUIRED}), 403
+        # Guest order (user_id is None)
+        if not claim_token or order.get("claim_token") != claim_token:
+            return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
     # Resolve the assigned rider from the persisted batch/profile relation.
     # No phone number is embedded in the response or codebase.
-    if g.user_id:
+    if g.user_id or claim_token:
         rider = _assigned_rider_contact(db, order)
         if rider:
             order["assigned_rider"] = rider
