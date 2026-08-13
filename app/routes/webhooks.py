@@ -212,12 +212,14 @@ def _handle_flutterwave_charge_success(data: dict):
     - Wallet top-up if meta.type == 'wallet_topup'
     """
     currency = data.get("currency")
-    if currency and currency != "NGN":
+    if currency and str(currency).upper() != "NGN":
         raise ValueError(f"Invalid currency: {currency}")
 
     reference = data.get("tx_ref") or data.get("flw_ref")
     meta = data.get("meta") or data.get("metadata") or {}
     amount_naira = float(data.get("amount", 0))
+    if amount_naira <= 0:
+        raise ValueError("Invalid payment amount")
 
     payment_type = meta.get("type")
     user_id = meta.get("user_id")
@@ -276,13 +278,15 @@ def _handle_charge_success(data: dict):
     - Wallet top-up if metadata.type == 'wallet_topup'
     """
     currency = data.get("currency")
-    if currency and currency != "NGN":
+    if currency and str(currency).upper() != "NGN":
         raise ValueError(f"Invalid currency: {currency}")
 
     reference = data.get("reference")
     metadata = data.get("metadata", {})
     amount_kobo = data.get("amount", 0)
     amount_naira = amount_kobo / 100
+    if amount_naira <= 0:
+        raise ValueError("Invalid payment amount")
 
     payment_type = metadata.get("type")
     user_id = metadata.get("user_id")

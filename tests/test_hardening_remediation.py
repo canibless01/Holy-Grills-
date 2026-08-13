@@ -56,8 +56,13 @@ def test_order_locks_ignores_client_provided_values(mock_get_db, client, app):
     with client.session_transaction() as sess:
         pass
 
-    with patch("app.middleware.auth.get_db", return_value=mock_db), \
-         patch("app.middleware.auth.jwt.decode", return_value={"sub": "user-123", "role": "student"}):
+    # Mock auth_get_user on the DB client mock
+    mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+        "id": "user-123", "role": "student", "is_active": True
+    }
+
+    with patch("app.middleware.auth.get_db", return_value=mock_db):
 
         headers = {"Authorization": "Bearer fake-jwt-token"}
         resp = client.post("/api/order-locks", json={
@@ -70,6 +75,143 @@ def test_order_locks_ignores_client_provided_values(mock_get_db, client, app):
     data = resp.get_json()
     assert "lock" in data
     # The insert must have been made with the setting value (12.0) and not the client-provided 99.0
+
+
+# ── 6. Guest checkout and Authenticated override tests ───────────────────────
+
+@patch("app.routes.orders.get_db")
+def test_create_order_authenticated_identity_cannot_be_overridden(mock_get_db, client):
+    """POST /api/orders for authenticated user must ignore client-supplied user_id, guest info and use g.user_id."""
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+
+    # Mock auth_get_user and profile lookup
+    mock_db.auth_get_user.return_value = {"id": "real-user-id", "role": "student"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+        "id": "real-user-id", "role": "student", "is_active": True
+    }
+
+    # Mock order creation service call
+    from unittest.mock import patch as _patch
+    with _patch("app.middleware.auth.get_db", return_value=mock_db), \
+         _patch("app.services.order_service.create_order") as mock_create_order:
+        mock_create_order.return_value = {"id": "order-123"}
+
+        headers = {"Authorization": "Bearer fake-jwt-token"}
+        resp = client.post("/api/orders", json={
+            "items": [{"menu_item_id": "item-1", "quantity": 1}],
+            "payment_method": "card",
+            "user_id": "malicious-victim-id",
+            "guest_name": "Guest Impersonator",
+            "guest_phone": "08012345678"
+        }, headers=headers)
+
+        assert resp.status_code == 201
+        # Confirm create_order was called with the authenticated g.user_id and guest params were removed
+        mock_create_order.assert_called_once()
+        passed_user_id, passed_payload = mock_create_order.call_args[0]
+        assert passed_user_id == "real-user-id"
+        assert passed_payload["user_id"] == "real-user-id"
+        assert "guest_name" not in passed_payload
+        assert "guest_phone" not in passed_payload
+
+
+@patch("app.routes.orders.get_db")
+def test_create_order_guest_cannot_impersonate_or_use_wallet(mock_get_db, client):
+    """POST /api/orders for guest must reject wallet payments and ignore client-supplied user_id."""
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+
+    # Wallet checkout should be rejected for guest
+    resp = client.post("/api/orders", json={
+        "items": [{"menu_item_id": "item-1", "quantity": 1}],
+        "payment_method": "wallet",
+        "guest_name": "John Guest",
+        "guest_phone": "08012345678",
+        "guest_email": "john@guest.com"
+    })
+    assert resp.status_code == 400
+    assert "Wallet payment requires a logged-in account" in resp.get_json()["error"]
+
+    # Missing guest fields should be rejected
+    resp = client.post("/api/orders", json={
+        "items": [{"menu_item_id": "item-1", "quantity": 1}],
+        "payment_method": "card",
+        "guest_name": "John Guest"
+        # guest_phone/guest_email missing
+    })
+    assert resp.status_code == 400
+    assert "required for guest checkout" in resp.get_json()["error"]
+
+    # Successful guest creation call should strip user_id
+    from unittest.mock import patch as _patch
+    with _patch("app.services.order_service.create_order") as mock_create_order:
+        mock_create_order.return_value = {"id": "order-123"}
+        resp = client.post("/api/orders", json={
+            "items": [{"menu_item_id": "item-1", "quantity": 1}],
+            "payment_method": "card",
+            "guest_name": "John Guest",
+            "guest_phone": "08012345678",
+            "guest_email": "john@guest.com",
+            "user_id": "hijack-user-id"
+        })
+        assert resp.status_code == 201
+        mock_create_order.assert_called_once()
+        passed_user_id, passed_payload = mock_create_order.call_args[0]
+        assert passed_user_id is None
+        assert "user_id" not in passed_payload
+
+
+# ── 7. Guest Order Claiming restrictions ──────────────────────────────────────
+
+@patch("app.routes.orders.get_db")
+def test_claim_guest_order_unauthenticated(mock_get_db, client):
+    """POST /api/orders/<id>/claim must reject unauthenticated requests."""
+    resp = client.post("/api/orders/00000000-0000-0000-0000-000000000000/claim", json={
+        "claim_token": "token-123"
+    })
+    assert resp.status_code == 401
+
+
+@patch("app.routes.orders.get_db")
+def test_claim_guest_order_validations(mock_get_db, client):
+    """POST /api/orders/<id>/claim must strictly validate ownership and claim token matching."""
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+
+    # Mock auth_get_user and profile lookup
+    mock_db.auth_get_user.return_value = {"id": "real-user-id", "role": "student"}
+
+    # We will patch get_db in the auth middleware as well
+    from unittest.mock import patch as _patch
+    with _patch("app.middleware.auth.get_db", return_value=mock_db):
+        # Case A: Order already claimed/owned
+        mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+            # auth user profile lookup
+            {"id": "real-user-id", "role": "student", "is_active": True},
+            # order lookup
+            {"id": "order-123", "user_id": "another-owner-id", "claim_token": "token-123"}
+        ]
+
+        headers = {"Authorization": "Bearer fake-jwt-token"}
+        resp = client.post("/api/orders/00000000-0000-0000-0000-000000000000/claim", json={
+            "claim_token": "token-123"
+        }, headers=headers)
+        assert resp.status_code == 400
+        assert "already owned" in resp.get_json()["error"]
+
+        # Case B: Claim token mismatch
+        mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+            # auth user profile lookup
+            {"id": "real-user-id", "role": "student", "is_active": True},
+            # order lookup (order is guest-owned, but token is different)
+            {"id": "order-123", "user_id": None, "claim_token": "correct-token-456"}
+        ]
+        resp = client.post("/api/orders/00000000-0000-0000-0000-000000000000/claim", json={
+            "claim_token": "wrong-token-123"
+        }, headers=headers)
+    assert resp.status_code == 403
+    assert "claim" in resp.get_json()["error"].lower()
 
 
 # ── 3. Coordinate Bounds and Geographical Checks ──────────────────────────────
@@ -112,8 +254,13 @@ def test_free_sides_redeem_occ_failure(mock_get_db, client):
     # Mock the OCC atomic update to fail (concurrency collision, e.g. return empty list or fail)
     mock_db.table.return_value.eq.return_value.eq.return_value.update.return_value = []
 
-    with patch("app.middleware.auth.get_db", return_value=mock_db), \
-         patch("app.middleware.auth.jwt.decode", return_value={"sub": "user-123", "role": "student"}):
+    # Mock auth_get_user on the DB client mock
+    mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+        "id": "user-123", "role": "student", "is_active": True
+    }
+
+    with patch("app.middleware.auth.get_db", return_value=mock_db):
 
         headers = {"Authorization": "Bearer fake-jwt-token"}
         resp = client.post("/api/free-sides/redeem", json={
@@ -138,8 +285,13 @@ def test_exclusive_spin_occ_success(mock_get_db, client):
     # Mock OCC update success (returns updated row)
     mock_db.table.return_value.eq.return_value.eq.return_value.update.return_value = [{"id": "spin-1", "spin_count": 0}]
 
+    # Mock auth_get_user on the DB client mock
+    mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+        "id": "user-123", "role": "student", "is_active": True
+    }
+
     with patch("app.middleware.auth.get_db", return_value=mock_db), \
-         patch("app.middleware.auth.jwt.decode", return_value={"sub": "user-123", "role": "student"}), \
          patch("app.routes.exclusive_spin._apply_prize") as mock_apply:
 
         headers = {"Authorization": "Bearer fake-jwt-token"}
@@ -163,8 +315,13 @@ def test_purchase_hp_bundle_payment_reference_replay(mock_get_db, client):
         {"id": "purchase-1", "hp_amount": 500, "provider_reference": "ref-123", "status": "completed"}
     ]
 
-    with patch("app.middleware.auth.get_db", return_value=mock_db), \
-         patch("app.middleware.auth.jwt.decode", return_value={"sub": "host-123", "role": "host"}):
+    # Mock auth_get_user on the DB client mock
+    mock_db.auth_get_user.return_value = {"id": "host-123", "role": "host"}
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+        "id": "host-123", "role": "host", "is_active": True
+    }
+
+    with patch("app.middleware.auth.get_db", return_value=mock_db):
 
         headers = {"Authorization": "Bearer fake-jwt-token"}
         resp = client.post("/api/hp/bundles/purchase", json={

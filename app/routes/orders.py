@@ -46,6 +46,20 @@ def _assigned_rider_contact(db, order: dict) -> dict | None:
 @optional_auth
 @rate_limit("RATE_LIMIT_ORDERS_REQUESTS", "RATE_LIMIT_ORDERS_WINDOW")
 def create_order():
+    data = request.get_json(force=True) or {}
+
+    # Authenticated vs guest order identity override checks (Secure from client-supplied manipulation)
+    user_id = g.user_id
+    if user_id:
+        # Authenticated checkout must always use the authenticated identity, client-supplied IDs ignored/overridden
+        data["user_id"] = user_id
+        # Authenticated users cannot accidentally or maliciously create guest orders by removing or passing empty guest values
+        data.pop("guest_name", None)
+        data.pop("guest_phone", None)
+        data.pop("guest_email", None)
+    else:
+        # Guest orders cannot supply or hijack an authenticated user ID
+        data.pop("user_id", None)
     """
     Create a new order. Supports authenticated and guest checkout.
     ---
@@ -113,9 +127,6 @@ def create_order():
       400:
         description: Validation error
     """
-    data = request.get_json(force=True)
-    user_id = g.user_id
-
     if not data.get("items"):
         return jsonify({"error": MSG.ORDER_ITEMS_REQUIRED}), 400
     if not data.get("payment_method"):
@@ -126,10 +137,10 @@ def create_order():
 
     is_guest = user_id is None
     if is_guest:
-        for field in ["guest_name", "guest_phone"]:
+        for field in ["guest_name", "guest_phone", "guest_email"]:
             if not data.get(field):
                 return jsonify({"error": f"'{field}' required for guest checkout"}), 400
-        if data.get("payment_method") == "wallet":
+        if data.get("payment_method") in ("wallet", "split"):
             return jsonify({"error": MSG.ORDER_WALLET_LOGIN_REQUIRED}), 400
     try:
         order = order_service.create_order(user_id, data)
@@ -489,13 +500,32 @@ def claim_guest_order(order_id):
       200:
         description: Order linked to account
     """
+    import uuid as _uuid
+    try:
+        _uuid.UUID(order_id)
+    except ValueError:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+
     data = request.get_json(force=True) or {}
     claim_token = data.get("claim_token")
     if not claim_token:
         return jsonify({"error": MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
 
+    db = get_db()
+
+    # Pre-claim validations on Python side to enforce business policies perfectly
+    order = db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
+    if not order:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+
+    if order.get("user_id"):
+        return jsonify({"error": "Order is already owned or claimed"}), 400
+
+    if not order.get("claim_token") or order["claim_token"] != claim_token:
+        return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
+
     try:
-        result = get_db().rpc("claim_guest_order", {
+        result = db.rpc("claim_guest_order", {
             "p_order_id": order_id,
             "p_user_id": g.user_id,
             "p_claim_token": claim_token,
