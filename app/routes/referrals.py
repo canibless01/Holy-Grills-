@@ -1,7 +1,7 @@
 """Referral routes — tracking and HP awards."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth
+from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import award_active_hp
 from app.db import get_db
 from app.services.notification_service import send_notification
@@ -175,6 +175,8 @@ def referral_stats():
 
 
 @referrals_bp.route("/complete", methods=["POST"])
+@require_auth
+@require_role("admin")
 def complete_referral():
     """
     Internal endpoint called when a referred user completes their first order.
@@ -182,7 +184,7 @@ def complete_referral():
     No monthly cap — refer as many as you like.
     ---
     tags: [Referrals]
-    security: []
+    security: [{"Bearer": []}]
     parameters:
       - in: body
         name: body

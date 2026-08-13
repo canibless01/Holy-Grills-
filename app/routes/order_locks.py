@@ -12,8 +12,9 @@ GET    /admin/order-locks/pending-gifts — admin: list pending first-order gift
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
-from app.db import get_db
+from app.db import get_db, SupabaseError
 from app.messages import MSG
+from app.utils.settings import get_validated_setting, SettingError
 from datetime import datetime, timezone, date, timedelta
 
 order_locks_bp = Blueprint("order_locks", __name__)
@@ -55,33 +56,47 @@ def create_lock():
     if locked_date <= date.today():
         return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
 
-    # reward_type: 'discount' (default) or 'hp'; resolve BEFORE discount_pct so
-    # validation can be skipped for the HP path.
+    # reward_type: 'discount' (default) or 'hp'
     reward_type = (data.get("reward_type") or "discount").lower()
     if reward_type not in ("discount", "hp"):
         return jsonify({"error": "reward_type must be 'discount' or 'hp'"}), 400
-    reward_hp_amount = None
-    if reward_type == "hp":
-        try:
-            reward_hp_amount = int(data.get("reward_hp_amount") or 0)
-        except (TypeError, ValueError):
-            return jsonify({"error": "reward_hp_amount must be an integer when reward_type='hp'"}), 400
-        if reward_hp_amount <= 0:
-            return jsonify({"error": "reward_hp_amount must be positive when reward_type='hp'"}), 400
 
-    # Only parse and validate discount_pct for the 'discount' reward type
+    # Retrieve values strictly from system settings (client-provided values are strictly ignored)
     discount_pct = None
-    if reward_type == "discount":
-        max_discount = float(_get_setting(db, "order_lock_max_discount",
-                                          str(current_app.config.get("ORDER_LOCK_MAX_DISCOUNT_PCT", 50))))
-        default_discount = current_app.config.get("ORDER_LOCK_DEFAULT_DISCOUNT_PCT", 10.0)
-        raw_discount = data.get("discount_pct", default_discount)
-        try:
-            discount_pct = float(raw_discount)
-        except (TypeError, ValueError):
-            return jsonify({"error": "discount_pct must be a number"}), 400
-        if not (1 <= discount_pct <= max_discount):
-            return jsonify({"error": MSG.ORDER_LOCK_DISCOUNT_RANGE.format(max=int(max_discount))}), 400
+    reward_hp_amount = None
+
+    try:
+        if reward_type == "discount":
+            # order_lock_default_discount: default 10.0
+            discount_pct = get_validated_setting(
+                db,
+                "order_lock_default_discount",
+                default=10.0,
+                minimum=1.0,
+                maximum=100.0,
+                required=False
+            )
+        elif reward_type == "hp":
+            # order_lock_max_hp setting
+            max_hp_setting = get_validated_setting(
+                db,
+                "order_lock_max_hp",
+                default=1000.0,
+                minimum=1.0,
+                maximum=10000.0,
+                required=False
+            )
+            # order_lock_default_hp: default 100
+            reward_hp_amount = int(get_validated_setting(
+                db,
+                "order_lock_default_hp",
+                default=100,
+                minimum=1,
+                maximum=int(max_hp_setting),
+                required=False
+            ))
+    except SettingError as e:
+        return jsonify({"error": f"Configuration error: {str(e)}"}), 500
 
     now = datetime.now(timezone.utc).isoformat()
     insert_data = {
@@ -100,11 +115,16 @@ def create_lock():
         insert_data["reward_type"] = reward_type
         insert_data["reschedule_count"] = 0
         result = db.table("order_locks").insert(insert_data)
-    except Exception:
-        # Fallback: strip columns that may not exist yet in older schemas
-        fallback = {k: v for k, v in insert_data.items()
-                    if k not in ("reward_type", "reward_hp_amount", "reschedule_count")}
-        result = db.table("order_locks").insert(fallback)
+    except SupabaseError as exc:
+        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
+        is_missing_col = "column" in err_msg and "does not exist" in err_msg
+        if is_missing_col:
+            # Fallback: strip columns that may not exist yet in older schemas
+            fallback = {k: v for k, v in insert_data.items()
+                        if k not in ("reward_type", "reward_hp_amount", "reschedule_count")}
+            result = db.table("order_locks").insert(fallback)
+        else:
+            raise
     row = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.ORDER_LOCK_CREATED, "lock": row}), 201
 

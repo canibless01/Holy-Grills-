@@ -455,8 +455,13 @@ class TestFeatureFlagsAuth:
 # ── 15. Event Tiers Public Access ────────────────────────────────────────────
 
 class TestEventTiersPublicAccess:
-    def test_list_tiers_is_public(self, client):
+    @patch("app.routes.events.get_db")
+    def test_list_tiers_is_public(self, mock_get_db, client):
         """GET /api/events/<id>/tiers should be accessible without auth (returns 404 for unknown event)."""
+        mock_db = MagicMock()
+        mock_get_db.return_value = mock_db
+        mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = None
+
         resp = client.get("/api/events/00000000-0000-0000-0000-000000000000/tiers")
         # 404 = route found, event not found — correct behavior
         assert resp.status_code in (200, 404)
