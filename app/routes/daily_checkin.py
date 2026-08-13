@@ -7,7 +7,7 @@ GET  /api/checkin/history  — return check-in history for authenticated user
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, SupabaseError
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 from datetime import datetime, timezone, date
@@ -69,9 +69,13 @@ def record_checkin():
             "user_id": user_id,
             "checkin_date": today,
         })
+    except SupabaseError as e:
+        if e.details and e.details.get("code") == "23505":
+            return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
+        logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
-        # If unique constraint, someone beat us (race); return 200
         return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
 
     # Award HP if configured

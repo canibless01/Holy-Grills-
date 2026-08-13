@@ -1512,6 +1512,139 @@ def list_campuses():
     return jsonify(campuses), 200
 
 
+@admin_bp.route("/reviews", methods=["GET"])
+@require_role("admin")
+def list_reviews():
+    """List all order reviews with filters"""
+    db = get_db()
+
+    # Validation of query parameters to return 400 Bad Request if invalid
+    try:
+        limit_val = request.args.get("limit", "50")
+        if not limit_val.isdigit():
+            return jsonify({"error": "limit must be a non-negative integer"}), 400
+        limit = int(limit_val)
+        if limit < 0 or limit > 200:
+            return jsonify({"error": "limit must be between 0 and 200"}), 400
+
+        offset_val = request.args.get("offset", "0")
+        if not offset_val.isdigit():
+            return jsonify({"error": "offset must be a non-negative integer"}), 400
+        offset = int(offset_val)
+        if offset < 0:
+            return jsonify({"error": "offset must be >= 0"}), 400
+
+        rating_val = request.args.get("rating")
+        if rating_val:
+            if not rating_val.isdigit() or not (1 <= int(rating_val) <= 5):
+                return jsonify({"error": "rating must be an integer between 1 and 5"}), 400
+            rating = int(rating_val)
+        else:
+            rating = None
+
+        kitchen_rating_val = request.args.get("kitchen_rating")
+        if kitchen_rating_val:
+            if not kitchen_rating_val.isdigit() or not (1 <= int(kitchen_rating_val) <= 5):
+                return jsonify({"error": "kitchen_rating must be an integer between 1 and 5"}), 400
+            kitchen_rating = int(kitchen_rating_val)
+        else:
+            kitchen_rating = None
+
+        rider_rating_val = request.args.get("rider_rating")
+        if rider_rating_val:
+            if not rider_rating_val.isdigit() or not (1 <= int(rider_rating_val) <= 5):
+                return jsonify({"error": "rider_rating must be an integer between 1 and 5"}), 400
+            rider_rating = int(rider_rating_val)
+        else:
+            rider_rating = None
+    except Exception as e:
+        return jsonify({"error": f"Invalid query parameters: {str(e)}"}), 400
+
+    # Build counting query to compute correct total matching active filters
+    count_q = db.table("order_reviews").select("id")
+    if rating is not None:
+        count_q = count_q.eq("rating", rating)
+    if kitchen_rating is not None:
+        count_q = count_q.eq("kitchen_rating", kitchen_rating)
+    if rider_rating is not None:
+        count_q = count_q.eq("rider_rating", rider_rating)
+
+    try:
+        total_res = count_q.execute()
+        total = len(total_res) if total_res else 0
+    except Exception as e:
+        logger.error("list_reviews: count query failed: %s", e)
+        total = 0
+
+    # Build fetching query
+    q = db.table("order_reviews").select(
+        "*,profiles!user_id(full_name,email),orders!order_id(id,status,total_amount)"
+    )
+    if rating is not None:
+        q = q.eq("rating", rating)
+    if kitchen_rating is not None:
+        q = q.eq("kitchen_rating", kitchen_rating)
+    if rider_rating is not None:
+        q = q.eq("rider_rating", rider_rating)
+
+    try:
+        # Try PostgREST nested relationship fetch
+        reviews = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    except Exception as e:
+        logger.warning("list_reviews: nested relation fetch failed, falling back to manual enrichment: %s", e)
+        # Fallback to manual two-step enrichment
+        raw_q = db.table("order_reviews").select("*")
+        if rating is not None:
+            raw_q = raw_q.eq("rating", rating)
+        if kitchen_rating is not None:
+            raw_q = raw_q.eq("kitchen_rating", kitchen_rating)
+        if rider_rating is not None:
+            raw_q = raw_q.eq("rider_rating", rider_rating)
+
+        try:
+            raw_reviews = raw_q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+        except Exception as re:
+            logger.error("list_reviews: fallback fetch failed: %s", re)
+            raw_reviews = []
+
+        if not raw_reviews:
+            reviews = []
+        else:
+            user_ids = list({r["user_id"] for r in raw_reviews if r.get("user_id")})
+            order_ids = list({r["order_id"] for r in raw_reviews if r.get("order_id")})
+
+            profiles_map = {}
+            if user_ids:
+                try:
+                    profiles = []
+                    for i in range(0, len(user_ids), 50):
+                        chunk = user_ids[i:i+50]
+                        profiles.extend(db.table("profiles").select("id,full_name,email").in_("id", chunk).execute() or [])
+                    profiles_map = {p["id"]: p for p in profiles}
+                except Exception as pe:
+                    logger.warning("list_reviews fallback profiles failed: %s", pe)
+
+            orders_map = {}
+            if order_ids:
+                try:
+                    orders = []
+                    for i in range(0, len(order_ids), 50):
+                        chunk = order_ids[i:i+50]
+                        orders.extend(db.table("orders").select("id,status,total_amount").in_("id", chunk).execute() or [])
+                    orders_map = {o["id"]: o for o in orders}
+                except Exception as oe:
+                    logger.warning("list_reviews fallback orders failed: %s", oe)
+
+            reviews = []
+            for r in raw_reviews:
+                enriched = dict(r)
+                enriched["profiles"] = profiles_map.get(r.get("user_id"))
+                enriched["orders"] = orders_map.get(r.get("order_id"))
+                reviews.append(enriched)
+
+    return jsonify({"reviews": reviews, "total": total, "limit": limit, "offset": offset}), 200
+
+
 def _audit(actor_id, table, target_id, action, after_data=None):
     db = get_db()
     try:

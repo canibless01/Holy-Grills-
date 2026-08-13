@@ -149,6 +149,19 @@ def redeem_reward(reward_id):
     if balance["active"] < hp_cost:
         return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
 
+    # Atomic decrement of reward stock using Optimistic Concurrency Control (OCC)
+    if stock is not None:
+        try:
+            res = db.table("rewards") \
+                .eq("id", reward_id) \
+                .eq("stock_quantity", stock) \
+                .update({"stock_quantity": stock - 1})
+            if not res:
+                return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
+        except Exception as e:
+            logger.error("redeem_reward OCC stock decrement failed for reward %s: %s", reward_id, e)
+            return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
+
     redemption = db.table("reward_redemptions").insert({
         "user_id": g.user_id,
         "reward_id": reward_id,
@@ -168,10 +181,16 @@ def redeem_reward(reward_id):
         )
     except ValueError as e:
         db.table("reward_redemptions").eq("id", redemption_id).delete()
+        if stock is not None:
+            try:
+                # Fetch current stock and increment back by 1 (safe fallback revert)
+                current_reward = db.table("rewards").select("stock_quantity").eq("id", reward_id).single().execute()
+                if current_reward:
+                    curr_stock = current_reward.get("stock_quantity", 0)
+                    db.table("rewards").eq("id", reward_id).update({"stock_quantity": curr_stock + 1})
+            except Exception as re:
+                logger.error("Failed to revert stock for reward %s: %s", reward_id, re)
         return jsonify({"error": str(e)}), 400
-
-    if stock is not None:
-        db.table("rewards").eq("id", reward_id).update({"stock_quantity": stock - 1})
 
     send_notification(
         user_id=g.user_id,

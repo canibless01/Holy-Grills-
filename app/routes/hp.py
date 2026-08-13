@@ -7,6 +7,9 @@ from app.services.hp_service import (
 )
 from app.db import get_db
 from app.messages import MSG, resolve_msg
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 hp_bp = Blueprint("hp", __name__)
 
@@ -278,6 +281,7 @@ def purchase_hp_bundle():
       400:
         description: Validation error
     """
+    db = get_db()
     from app.services.hp_service import process_hp_bundle_purchase
     data = request.get_json(force=True)
     hp_amount = int(data.get("hp_amount", 0))
@@ -291,6 +295,21 @@ def purchase_hp_bundle():
 
     price_per_hp = float(current_app.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
     naira_paid = hp_amount * price_per_hp
+
+    # Idempotency check: see if this reference has already been successfully processed
+    try:
+        existing = db.table("hp_bundle_purchases").select("*").eq("provider", "paystack").eq("provider_reference", reference).execute()
+        if existing:
+            record = existing[0]
+            return jsonify({
+                "message": "Payment already processed",
+                "hp_credited_to_pending": int(record.get("hp_amount", 0)),
+                "hp_to_overflow": 0,
+                "idempotent": True,
+            }), 201
+    except Exception as ie:
+        # Ignore exception if columns are missing in live schema
+        logger.warning("purchase_hp_bundle: idempotency check query failed: %s", ie)
 
     try:
         from app.services.payment_service import verify_payment
@@ -309,9 +328,19 @@ def purchase_hp_bundle():
             event_host_id=g.user_id,
             hp_amount=hp_amount,
             naira_paid=naira_paid,
+            provider="paystack",
+            provider_reference=reference,
         )
         return jsonify(result), 201
     except Exception as e:
+        if "already processed" in str(e):
+            # Concurrent race condition safety fallback
+            return jsonify({
+                "message": "Payment already processed",
+                "hp_credited_to_pending": hp_amount,
+                "hp_to_overflow": 0,
+                "idempotent": True,
+            }), 201
         return jsonify({"error": str(e)}), 400
 
 

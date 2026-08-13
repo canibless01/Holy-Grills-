@@ -531,9 +531,37 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     # ── Delivery location fee resolution ──────────────────────────────────────
     delivery_type = payload.get("delivery_type")  # "on_campus" | "off_campus" | None
+    if delivery_type is not None and delivery_type not in ("on_campus", "off_campus"):
+        raise ValueError("Invalid delivery type")
+
     delivery_location_id = payload.get("delivery_location_id")
     delivery_location_lat = payload.get("delivery_location_lat")
     delivery_location_lon = payload.get("delivery_location_lon")
+
+    # If delivery_address_id is provided, verify ownership and retrieve coordinates
+    delivery_address_id = payload.get("delivery_address_id")
+    if delivery_address_id and user_id:
+        try:
+            addr = db.table("user_addresses").eq("id", delivery_address_id).single().execute()
+            if addr:
+                if addr.get("user_id") != user_id:
+                    raise ValueError("Unauthorized address access")
+                if addr.get("latitude") is not None and addr.get("longitude") is not None:
+                    delivery_location_lat = float(addr["latitude"])
+                    delivery_location_lon = float(addr["longitude"])
+                if addr.get("delivery_location_id"):
+                    delivery_location_id = addr["delivery_location_id"]
+                if addr.get("delivery_type"):
+                    delivery_type = addr["delivery_type"]
+        except ValueError as ve:
+            if "Unauthorized" in str(ve):
+                raise
+        except Exception:
+            pass
+
+    from app.routes.delivery import validate_coordinates
+    if delivery_location_lat is not None or delivery_location_lon is not None:
+        delivery_location_lat, delivery_location_lon = validate_coordinates(delivery_location_lat, delivery_location_lon)
 
     if delivery_type == "on_campus" and delivery_location_id:
         try:
@@ -566,7 +594,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     delivery_location_lat,
                     delivery_location_lon,
                 )
-        except Exception:
+        except Exception as e:
+            if "Coordinate" in str(e):
+                raise ValueError(str(e))
             pass  # Table may not exist yet — fee stays 0
 
     from decimal import Decimal
@@ -611,8 +641,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     wallet_amount_used = float(wallet_amount_used_dec)
     card_amount_used = float(card_amount_used_dec)
 
-    # Pre-check wallet balance before inserting order
-    if payment_method == "wallet" and user_id:
+    # Pre-check wallet balance before inserting order (for both wallet and split payment methods)
+    if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
         wallet = db.table("wallets").select("balance").eq("user_id", user_id).single().execute()
         if not wallet or float(wallet.get("balance", 0)) < wallet_amount_used:
             raise ValueError(MSG.ORDER_WALLET_INSUFFICIENT.format(need=wallet_amount_used))
@@ -667,29 +697,49 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     try:
         created = db.table("orders").insert(order_record)
-    except Exception:
-        # is_scheduled column may not exist yet — retry without it first
-        no_scheduled_flag = {k: v for k, v in order_record.items() if k != "is_scheduled"}
-        try:
-            created = db.table("orders").insert(no_scheduled_flag)
-        except Exception:
-            # claim_token column may not exist yet — retry without it too
-            no_claim = {k: v for k, v in no_scheduled_flag.items() if k != "claim_token"}
+    except SupabaseError as exc:
+        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
+        is_missing_col = "column" in err_msg and "does not exist" in err_msg
+        if is_missing_col:
+            # is_scheduled column may not exist yet — retry without it first
+            no_scheduled_flag = {k: v for k, v in order_record.items() if k != "is_scheduled"}
             try:
-                created = db.table("orders").insert(no_claim)
-            except Exception:
-                # delivery_location columns may not exist — strip those too
-                no_delivery_loc = {k: v for k, v in no_claim.items() if k not in _DELIVERY_LOCATION_COLS}
-                try:
-                    created = db.table("orders").insert(no_delivery_loc)
-                except Exception:
-                    # Squad-order columns may also not exist — strip those too and retry
-                    safe_record = {k: v for k, v in no_delivery_loc.items()
-                                   if k not in ("is_squad_order", "squad_discount_amount", "squad_item_count")}
-                    safe_record["discount_amount"] = round(promo_discount + order_lock_discount, 2)
-                    safe_record["total_amount"] = max(0.0, round(
-                        subtotal - promo_discount - hp_discount - squad_discount - order_lock_discount + delivery_fee, 2))
-                    created = db.table("orders").insert(safe_record)
+                created = db.table("orders").insert(no_scheduled_flag)
+            except SupabaseError as exc2:
+                err_msg = str(exc2.details.get("message", "")) if exc2.details else str(exc2)
+                is_missing_col = "column" in err_msg and "does not exist" in err_msg
+                if is_missing_col:
+                    # claim_token column may not exist yet — retry without it too
+                    no_claim = {k: v for k, v in no_scheduled_flag.items() if k != "claim_token"}
+                    try:
+                        created = db.table("orders").insert(no_claim)
+                    except SupabaseError as exc3:
+                        err_msg = str(exc3.details.get("message", "")) if exc3.details else str(exc3)
+                        is_missing_col = "column" in err_msg and "does not exist" in err_msg
+                        if is_missing_col:
+                            # delivery_location columns may not exist — strip those too
+                            no_delivery_loc = {k: v for k, v in no_claim.items() if k not in _DELIVERY_LOCATION_COLS}
+                            try:
+                                created = db.table("orders").insert(no_delivery_loc)
+                            except SupabaseError as exc4:
+                                err_msg = str(exc4.details.get("message", "")) if exc4.details else str(exc4)
+                                is_missing_col = "column" in err_msg and "does not exist" in err_msg
+                                if is_missing_col:
+                                    # Squad-order columns may also not exist — strip those too and retry
+                                    safe_record = {k: v for k, v in no_delivery_loc.items()
+                                                   if k not in ("is_squad_order", "squad_discount_amount", "squad_item_count")}
+                                    safe_record["discount_amount"] = round(promo_discount + order_lock_discount, 2)
+                                    safe_record["total_amount"] = max(0.0, round(
+                                        subtotal - promo_discount - hp_discount - squad_discount - order_lock_discount + delivery_fee, 2))
+                                    created = db.table("orders").insert(safe_record)
+                                else:
+                                    raise
+                        else:
+                            raise
+                else:
+                    raise
+        else:
+            raise
 
     order = created[0] if isinstance(created, list) else created
     order_id = order["id"]
@@ -770,18 +820,19 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 user_id, order_lock.get("id"), _lock_err,
             )
 
-    # Deduct wallet now that we have the real order_id
-    if payment_method == "wallet" and user_id:
+    # Deduct wallet now that we have the real order_id (handles both wallet and split payment methods)
+    if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
         try:
             debit_wallet(
                 user_id=user_id,
                 amount=wallet_amount_used,
                 reference_id=order_id,
                 reference_type="order",
-                notes=f"Wallet payment for order {order_id[:8].upper()}",
+                notes=f"Wallet payment component for order {order_id[:8].upper()}",
             )
-            db.table("orders").eq("id", order_id).update({"payment_status": "paid"})
-            order["payment_status"] = "paid"
+            if payment_method == "wallet":
+                db.table("orders").eq("id", order_id).update({"payment_status": "paid"})
+                order["payment_status"] = "paid"
         except ValueError as e:
             db.table("orders").eq("id", order_id).update({"status": "cancelled"})
             raise ValueError(MSG.ORDER_WALLET_PAYMENT_FAILED.format(error=e))

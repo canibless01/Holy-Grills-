@@ -628,7 +628,7 @@ def process_flash_redeem(reward_id: str, user_id: str) -> dict:
     }
 
 
-def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: float) -> dict:
+def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: float, provider: str = "paystack", provider_reference: str = None) -> dict:
     """Event hosts purchase HP bundles at ₦5/HP. HP credited to pending pool."""
     config = current_app.config
     price_per_hp = config.get("HP_BUNDLE_PRICE_PER_HP", 5.0)
@@ -643,9 +643,36 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
             "hp_amount": hp_amount,
             "naira_paid": naira_paid,
             "price_per_hp": price_per_hp,
+            "provider": provider,
+            "provider_reference": provider_reference,
         })
+    except SupabaseError as exc:
+        if exc.details and exc.details.get("code") == "23505":
+            raise ValueError("Payment reference already processed") from exc
+        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
+        is_missing_col = "column" in err_msg and "does not exist" in err_msg
+        if is_missing_col:
+            try:
+                db.table("hp_bundle_purchases").insert({
+                    "event_host_id": event_host_id,
+                    "hp_amount": hp_amount,
+                    "naira_paid": naira_paid,
+                    "price_per_hp": price_per_hp,
+                })
+            except Exception:
+                pass
+        else:
+            raise
     except Exception:
-        pass
+        try:
+            db.table("hp_bundle_purchases").insert({
+                "event_host_id": event_host_id,
+                "hp_amount": hp_amount,
+                "naira_paid": naira_paid,
+                "price_per_hp": price_per_hp,
+            })
+        except Exception:
+            pass
 
     result = earn_pending_hp(
         user_id=event_host_id,
