@@ -140,16 +140,21 @@ def login():
     except Exception as e:
         return jsonify({"error": MSG.AUTH_LOGIN_FAILED, "detail": str(e)}), 500
 
-    # Process login streak asynchronously so it doesn't slow login response
+    # Process login streak synchronously so it doesn't fail if process restarts
     user_id = (result.get("user") or {}).get("id")
     if user_id:
-        import threading as _t
-        from app.services.streak_service import process_login_streak as _pls
-        _t.Thread(target=lambda: _pls(user_id), daemon=True).start()
+        try:
+            from app.services.streak_service import process_login_streak as _pls
+            _pls(user_id)
+        except Exception:
+            pass
 
-        # ADD: Auto check-in on login
-        from app.routes.daily_checkin import record_checkin as _record_checkin
-        _t.Thread(target=lambda: _record_checkin(user_id), daemon=True).start()
+        # Auto check-in on login (synchronous)
+        try:
+            from app.routes.daily_checkin import record_checkin as _record_checkin
+            _record_checkin(user_id)
+        except Exception:
+            pass
 
     return jsonify(result), 200
 

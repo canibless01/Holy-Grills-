@@ -17,6 +17,7 @@ HP Flow on Delivery:
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from flask import current_app
 from app.db import get_db, SupabaseError
 from app.services import hp_service
@@ -390,11 +391,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             if qty > remaining:
                 raise ValueError(MSG.ORDER_MENU_ITEM_SOLD_OUT_TODAY.format(name=menu_item["name"], remaining=remaining))
 
-        unit_price = float(menu_item["price"])
+        from decimal import Decimal
+        unit_price = Decimal(str(menu_item["price"]))
 
         # Resolve variation selections and add any price deltas
         selected_variations = item.get("selected_variations", [])
-        variation_price_delta = 0.0
+        variation_price_delta = Decimal("0.0")
         resolved_variations = []
         for sel in selected_variations:
             option = (
@@ -407,7 +409,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             if option and not option.get("is_available", True):
                 raise ValueError(MSG.ORDER_VARIATION_UNAVAILABLE.format(name=option.get("name", "")))
             if option:
-                variation_price_delta += float(option.get("price_delta", 0))
+                variation_price_delta += Decimal(str(option.get("price_delta", 0)))
                 resolved_variations.append({
                     "variation_group_id": option["variation_group_id"],
                     "option_id": option["id"],
@@ -418,8 +420,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         # Resolve required/optional per-item add-on group selections
         selected_addons = item.get("selected_addons", [])
         addon_price_delta, resolved_addon_selections = _resolve_item_addons(db, menu_item, selected_addons)
+        addon_price_delta_dec = Decimal(str(addon_price_delta))
 
-        effective_unit_price = round(unit_price + variation_price_delta + addon_price_delta, 2)
+        effective_unit_price = unit_price + variation_price_delta + addon_price_delta_dec
+        effective_unit_price = effective_unit_price.quantize(Decimal("0.01"))
         try:
             hp_multiplier = float(menu_item.get("hp_multiplier") or 1.0)
         except (TypeError, ValueError):
@@ -427,19 +431,21 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if hp_multiplier not in (0.5, 1.0, 2.0):
             hp_multiplier = 1.0
 
+        line_total = (effective_unit_price * Decimal(str(qty))).quantize(Decimal("0.01"))
+
         order_items.append({
             "menu_item_id": menu_item["id"],
             "name_snapshot": menu_item["name"],
             "quantity": qty,
-            "price_snapshot": effective_unit_price,
+            "price_snapshot": float(effective_unit_price),
             "hp_earn_snapshot": menu_item.get("hp_earn_value") or menu_item.get("hp_earn") or 0,
             "hp_multiplier_snapshot": hp_multiplier,
-            "line_total": round(effective_unit_price * qty, 2),
+            "line_total": float(line_total),
             "selected_variations": resolved_variations,
             "is_addon": False,
             "_addon_selections": resolved_addon_selections,
         })
-        subtotal += effective_unit_price * qty
+        subtotal += float(line_total)
 
     # Resolve order-level add-ons
     for addon_entry in payload.get("addons", []):
@@ -455,21 +461,22 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if not addon.get("is_available"):
             raise ValueError(f"Add-on '{addon['name']}' is not currently available")
         addon_qty = max(1, int(addon_entry.get("quantity", 1)))
-        addon_price = float(addon["price"])
+        addon_price = Decimal(str(addon["price"]))
+        line_total = (addon_price * Decimal(str(addon_qty))).quantize(Decimal("0.01"))
         order_items.append({
             "menu_item_id": None,
             "addon_id": addon["id"],
             "name_snapshot": addon["name"],
             "quantity": addon_qty,
-            "price_snapshot": addon_price,
+            "price_snapshot": float(addon_price),
             "hp_earn_snapshot": 0,
-            "line_total": round(addon_price * addon_qty, 2),
+            "line_total": float(line_total),
             "selected_variations": [],
             "is_addon": True,
         })
-        subtotal += addon_price * addon_qty
+        subtotal += float(line_total)
 
-    subtotal = round(subtotal, 2)
+    subtotal = float(Decimal(str(subtotal)).quantize(Decimal("0.01")))
 
     # ── Order Lock check (detect active lock for today before computing total) ──
     # Must run before total is calculated so the discount is baked into the order.
@@ -592,30 +599,47 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 raise ValueError(str(e))
             pass  # Table may not exist yet — fee stays 0
 
+    from decimal import Decimal
     # Apply squad delivery-fee discount
+    delivery_fee_dec = Decimal(str(delivery_fee))
     if is_squad_order and config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True):
-        pct = float(config.get("SQUAD_DELIVERY_DISCOUNT_PCT", 100))
-        squad_delivery_discount = round(delivery_fee * pct / 100.0, 2)
-        delivery_fee = max(0.0, delivery_fee - squad_delivery_discount)
+        pct = Decimal(str(config.get("SQUAD_DELIVERY_DISCOUNT_PCT", 100)))
+        squad_delivery_discount_dec = (delivery_fee_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
+        squad_delivery_discount = float(squad_delivery_discount_dec)
+        delivery_fee_dec = max(Decimal("0.0"), delivery_fee_dec - squad_delivery_discount_dec)
+        delivery_fee = float(delivery_fee_dec)
 
     # Apply squad subtotal discount
+    subtotal_dec = Decimal(str(subtotal))
     if is_squad_order and config.get("SQUAD_ORDER_DISCOUNT_ENABLED", False):
-        pct = float(config.get("SQUAD_ORDER_DISCOUNT_PCT", 10))
-        squad_discount = round(subtotal * pct / 100.0, 2)
+        pct = Decimal(str(config.get("SQUAD_ORDER_DISCOUNT_PCT", 10)))
+        squad_discount_dec = (subtotal_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
+        squad_discount = float(squad_discount_dec)
 
-    total = max(0.0, round(subtotal - promo_discount - hp_discount - squad_discount - order_lock_discount + delivery_fee, 2))
+    subtotal_dec = Decimal(str(subtotal))
+    promo_discount_dec = Decimal(str(promo_discount))
+    hp_discount_dec = Decimal(str(hp_discount))
+    squad_discount_dec = Decimal(str(squad_discount))
+    order_lock_discount_dec = Decimal(str(order_lock_discount))
+
+    total_dec = subtotal_dec - promo_discount_dec - hp_discount_dec - squad_discount_dec - order_lock_discount_dec + delivery_fee_dec
+    total_dec = max(Decimal("0.0"), total_dec.quantize(Decimal("0.01")))
+    total = float(total_dec)
 
     payment_method = payload.get("payment_method", "card")
-    wallet_amount_used = 0.0
-    card_amount_used = 0.0
+    wallet_amount_used_dec = Decimal("0.0")
+    card_amount_used_dec = Decimal("0.0")
 
     if payment_method == "wallet":
-        wallet_amount_used = total
+        wallet_amount_used_dec = total_dec
     elif payment_method == "card":
-        card_amount_used = total
+        card_amount_used_dec = total_dec
     elif payment_method == "split":
-        wallet_amount_used = min(float(payload.get("wallet_amount", 0)), total)
-        card_amount_used = round(total - wallet_amount_used, 2)
+        wallet_amount_used_dec = min(Decimal(str(payload.get("wallet_amount", 0))), total_dec)
+        card_amount_used_dec = (total_dec - wallet_amount_used_dec).quantize(Decimal("0.01"))
+
+    wallet_amount_used = float(wallet_amount_used_dec)
+    card_amount_used = float(card_amount_used_dec)
 
     # Pre-check wallet balance before inserting order (for both wallet and split payment methods)
     if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
@@ -935,8 +959,17 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
-    if order.get("payment_status") == "paid":
+
+    current_pay_status = order.get("payment_status")
+    if current_pay_status == "paid":
         return order  # idempotent
+
+    # Enforce strict transition policies
+    if current_pay_status in ("refunded", "cancelled"):
+        raise ValueError(f"Cannot transition payment status from '{current_pay_status}' to 'paid'")
+
+    if order.get("status") in ("cancelled", "refunded"):
+        raise ValueError(f"Cannot transition payment status because order is already '{order.get('status')}'")
 
     # §Spec: HP-to-₦ conversion removed. No HP deduction on payment confirmation.
     update_data = {
@@ -1137,19 +1170,12 @@ def _handle_delivery_rewards(order: dict):
 
     _trigger_referral_completion(user_id, order_id)
 
-    # First-order gift check — runs async so it doesn't add latency
-    def _check_gift():
-        try:
-            from app.services.gift_service import maybe_grant_first_order_gift
-        except ImportError:
-            return
-        try:
-            maybe_grant_first_order_gift(user_id, order_id)
-        except Exception as _ge:
-            logger.warning("first_order_gift check failed for order %s: %s", order_id, _ge)
-
-    import threading as _tg
-    _tg.Thread(target=_check_gift, daemon=True).start()
+    # First-order gift check — runs synchronously to prevent critical order mutation loss
+    try:
+        from app.services.gift_service import maybe_grant_first_order_gift
+        maybe_grant_first_order_gift(user_id, order_id)
+    except Exception as _ge:
+        logger.warning("first_order_gift check failed for order %s: %s", order_id, _ge)
 
     # Update last_activity_at for decay-onset tracking
     try:

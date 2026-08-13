@@ -6,30 +6,18 @@ Supabase issues JWTs that are verified using the JWT_SECRET (your Supabase JWT s
 The decoded payload contains the user's UUID as 'sub' and role in app_metadata.
 """
 
-import jwt
 from functools import wraps
-from flask import request, g, current_app, abort
+from flask import request, g, abort
 from app.db import get_db, SupabaseError
-
-def _decode_token(token: str) -> dict:
-    try:
-        payload = jwt.decode(
-            token,
-            current_app.config["JWT_SECRET"],
-            algorithms=[current_app.config["JWT_ALGORITHM"]],
-            options={"verify_aud": False},
-        )
-        return payload
-
-    except Exception as e:
-        raise
-
 
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         abort(401, "Missing or malformed Authorization header")
-    return auth_header.split(" ", 1)[1]
+    parts = auth_header.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        abort(401, "Missing or malformed Authorization header")
+    return parts[1].strip()
 
 def require_auth(f):
     """Verify Supabase token via Supabase Auth API and load user profile."""
@@ -116,36 +104,53 @@ def optional_auth(f):
     """Try to load user from JWT if present, but don't fail if missing (for guest flows)."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
+        auth_header = request.headers.get("Authorization")
         g.user_id = None
         g.user = None
         g.user_role = None
         g.jwt_token = None
+        g.jwt_payload = None
 
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ", 1)[1]
+        if auth_header is not None:
+            # An Authorization header is supplied. We must parse and validate it.
+            if not auth_header.startswith("Bearer "):
+                abort(401, "Malformed Bearer header")
+
+            parts = auth_header.split(" ", 1)
+            if len(parts) < 2 or not parts[1].strip():
+                abort(401, "Malformed Bearer header")
+
+            token = parts[1].strip()
+            db = get_db()
             try:
-                db = get_db()
                 auth_user = db.auth_get_user(token)
-                g.user_id = auth_user["id"]
-                g.jwt_token = token
-                g.jwt_payload = auth_user
-                try:
-                    profile = (
-                        db.table("profiles")
-                        .select("id,full_name,role,is_active")
-                        .eq("id", g.user_id)
-                        .single()
-                        .execute()
-                    )
-                    if profile and not profile.get("is_active", True):
-                        abort(403, "Account is deactivated")
-                    g.user = profile
-                    g.user_role = profile.get("role", "student")
-                except SupabaseError:
-                    g.user_id = None
             except Exception:
-                pass
+                # Any invalid or expired token must produce a 401 error instead of silently becoming guest
+                abort(401, "Invalid or expired token")
+
+            g.user_id = auth_user["id"]
+            g.jwt_token = token
+            g.jwt_payload = auth_user
+
+            try:
+                profile = (
+                    db.table("profiles")
+                    .select("id,full_name,role,is_active")
+                    .eq("id", g.user_id)
+                    .single()
+                    .execute()
+                )
+            except SupabaseError:
+                abort(401, "User profile not found")
+
+            if not profile:
+                abort(401, "User profile not found")
+
+            if not profile.get("is_active", True):
+                abort(403, "Account is deactivated")
+
+            g.user = profile
+            g.user_role = profile.get("role", "student")
 
         return f(*args, **kwargs)
     return decorated
