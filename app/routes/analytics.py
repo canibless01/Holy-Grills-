@@ -77,8 +77,8 @@ def hp_analytics():
     db = get_db()
     EARN_TYPES = {"earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
                   "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                  "earn_squad_bonus", "earn_streak"}
-    SPEND_TYPES = {"spend_reward", "spend_marketplace", "spend_order_discount"}
+                  "earn_squad_bonus", "earn_streak", "earn"}
+    SPEND_TYPES = {"spend_reward", "spend_marketplace", "spend_order_discount", "spend"}
     hp_txns = db.table("hp_transactions").select("amount,type,status").execute()
     earned = sum(t["amount"] for t in hp_txns if t.get("type") in EARN_TYPES and t["amount"] > 0)
     spent = abs(sum(t["amount"] for t in hp_txns if t.get("type") in SPEND_TYPES and t["amount"] < 0))

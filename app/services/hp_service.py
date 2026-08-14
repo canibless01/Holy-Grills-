@@ -73,16 +73,17 @@ TXN_TYPE_MAP = {
 }
 
 def _resolve_txn_type(source_type: str, is_spend: bool = False, is_unlock: bool = False) -> str:
-    """Map a source_type to a DB-valid type: 'earn' | 'spend' | 'expire'.
+    """Map any transaction type or source_type to a DB-valid type: 'earn' | 'spend' | 'expire'.
     'unlock' is not a valid DB enum value — treated as 'earn'.
     """
-    if source_type in {"expiry", "expire"}:
+    if not source_type:
+        return "spend" if is_spend else "earn"
+    s_lower = str(source_type).lower()
+    if s_lower in {"expiry", "expire", "decay"}:
         return "expire"
-    if is_spend or source_type in {
-        "spend_reward", "reward_redemption", "flash_reward_redemption",
-        "spend_marketplace", "marketplace_purchase",
-        "spend_order_discount", "order_hp_redemption",
-        "spin_cost",
+    if is_spend or s_lower.startswith("spend") or s_lower in {
+        "reward_redemption", "flash_reward_redemption",
+        "marketplace_purchase", "order_hp_redemption", "spin_cost",
     }:
         return "spend"
     return "earn"
@@ -723,13 +724,16 @@ def _record_hp_transaction(
     issued_by_admin_id: str = None,
 ):
     db = get_db()
-    resolved_source = source_type or reference_type or "system"
+    # Preserves the specific business context concept (e.g. earn_order, earn_referral) in the source/context field
+    resolved_source = source_type or reference_type or txn_type or "system"
+    # Enforce that p_type passed to the DB atomic RPC is strictly a valid enum value ('earn' | 'spend' | 'expire')
+    db_type = _resolve_txn_type(txn_type or resolved_source)
 
     # Call atomic RPC function to mutate profiles.hp_balance and insert hp_transactions in one transaction
     res = db.rpc("record_hp_transaction_atomic", {
         "p_user_id": user_id,
         "p_amount": int(amount),
-        "p_type": txn_type,
+        "p_type": db_type,
         "p_status": status,
         "p_source": resolved_source,
         "p_reference_type": reference_type,

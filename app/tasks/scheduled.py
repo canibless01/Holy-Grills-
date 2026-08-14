@@ -41,7 +41,7 @@ def reset_monthly_leaderboard(self):
 
         EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
                       "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                      "earn_squad_bonus", "earn_streak"]
+                      "earn_squad_bonus", "earn_streak", "earn"]
         month_txns = (
             db.table("hp_transactions")
             .select("user_id,amount")
@@ -261,7 +261,7 @@ def recalculate_120day_hp(self):
 
         EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
                       "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                      "earn_squad_bonus", "earn_streak"]
+                      "earn_squad_bonus", "earn_streak", "earn"]
 
         from app.services.hp_service import recalculate_tier
 
