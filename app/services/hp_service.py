@@ -169,23 +169,10 @@ def _get_hp_multiplier() -> float:
         return 1.0
 
 
-def award_food_order_hp(
-    user_id: str,
-    order_id: str,
-    order_total: float,
-    tier_slug: str = "ember",
-    order_items: list | None = None,
-) -> dict:
-    """
-    Award HP for a completed food order.
-    ALL food HP goes to ACTIVE balance.
-    Applies HP multiplier if active.
-    Also triggers FIFO pending-pool unlock.
-
-    Returns: base_hp, tier_bonus_hp, total_hp, unlocked_pending_hp
-    """
+def calculate_delivery_hp(order_total, tier_slug, order_items) -> int:
+    """Pure calculation — no DB writes. Extracted from award_food_order_hp."""
     config = current_app.config
-    tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(tier_slug.lower(), 1.0)
+    tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
     if order_items:
         base_hp = 0
         multiplied_base_hp = 0
@@ -208,15 +195,53 @@ def award_food_order_hp(
             multiplied_line_hp = round(line_base_hp * item_multiplier)
             multiplied_base_hp += multiplied_line_hp
             total_hp += round(multiplied_line_hp * tier_multiplier)
-        tier_bonus_hp = total_hp - multiplied_base_hp
-        event_multiplier = 1.0
     else:
-        # Legacy callers without line snapshots retain the historical
-        # order-level behavior until all delivery paths pass order_items.
         base_hp = int(order_total * config["HP_PER_NAIRA_FOOD"])
         tier_bonus_hp = round(base_hp * (tier_multiplier - 1.0))
         event_multiplier = _get_hp_multiplier()
         total_hp = round(base_hp * event_multiplier) + tier_bonus_hp
+
+    return total_hp
+
+
+def award_food_order_hp(
+    user_id: str,
+    order_id: str,
+    order_total: float,
+    tier_slug: str = "ember",
+    order_items: list | None = None,
+) -> dict:
+    """Thin wrapper kept for any other existing callers."""
+    total_hp = calculate_delivery_hp(order_total, tier_slug, order_items)
+
+    config = current_app.config
+    tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
+    if order_items:
+        base_hp = 0
+        multiplied_base_hp = 0
+        for item in order_items:
+            if item.get("is_addon") or not item.get("price_snapshot"):
+                continue
+            line_base_hp = int(
+                float(item.get("price_snapshot") or 0)
+                * int(item.get("quantity") or 1)
+                * config["HP_PER_NAIRA_FOOD"]
+            )
+            base_hp += line_base_hp
+            try:
+                item_multiplier = float(item.get("hp_multiplier_snapshot") or 1.0)
+            except (TypeError, ValueError):
+                item_multiplier = 1.0
+            if item_multiplier not in (0.5, 1.0, 2.0):
+                item_multiplier = 1.0
+            multiplied_line_hp = round(line_base_hp * item_multiplier)
+            multiplied_base_hp += multiplied_line_hp
+        tier_bonus_hp = total_hp - multiplied_base_hp
+        event_multiplier = 1.0
+    else:
+        base_hp = int(order_total * config["HP_PER_NAIRA_FOOD"])
+        tier_bonus_hp = round(base_hp * (tier_multiplier - 1.0))
+        event_multiplier = _get_hp_multiplier()
 
     if total_hp > 0:
         _record_hp_transaction(
@@ -725,39 +750,18 @@ def _record_hp_transaction(
 
 
 def _update_earned_counters(user_id: str, amount: int):
-    """
-    Increment the current month's HP earned counter in monthly_hp_tracker.
-    Uses read-then-upsert: reads current total, adds amount, then upserts.
-    The monthly_hp_tracker table must have a UNIQUE constraint on (user_id, month)
-    (see sql_migrations.sql) so concurrent upserts resolve cleanly.
-    Used for: monthly leaderboard accuracy, per-user monthly HP cap enforcement.
-    Skips gracefully if the table doesn't exist yet.
-    """
     if amount <= 0:
         return
     db = get_db()
-    now = datetime.now(timezone.utc)
-    month = now.strftime("%Y-%m")
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
     try:
-        existing = (
-            db.table("monthly_hp_tracker")
-            .select("id,total_earned")
-            .eq("user_id", user_id)
-            .eq("month", month)
-            .single()
-            .execute()
-        )
-        current_total = int((existing or {}).get("total_earned") or 0)
-        new_total = current_total + amount
-        # Upsert on the unique (user_id, month) constraint — avoids duplicate rows
-        db.table("monthly_hp_tracker").upsert({
-            "user_id": user_id,
-            "month": month,
-            "total_earned": new_total,
-            "updated_at": now.isoformat(),
-        }, on_conflict="user_id,month")
-    except Exception:
-        pass
+        db.rpc("increment_monthly_hp_tracker", {
+            "p_user_id": user_id,
+            "p_month": month,
+            "p_amount": amount
+        })
+    except Exception as e:
+        logger.warning("_update_earned_counters: failed for %s: %s", user_id, e)
 
 
 def _get_profile_hp_fields(user_id: str) -> dict:

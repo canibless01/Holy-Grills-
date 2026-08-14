@@ -261,3 +261,62 @@ def complete_referral():
         "hp_destination": "active",
         "completed_referral_count": completed_count,
     }), 200
+
+
+def get_referrer_id(user_id: str) -> str | None:
+    db = get_db()
+    try:
+        referral = (
+            db.table("referrals")
+            .select("referrer_id")
+            .eq("referred_user_id", user_id)
+            .single()
+            .execute()
+        )
+        return referral.get("referrer_id") if referral else None
+    except Exception:
+        return None
+
+
+class SimpleMilestone:
+    def __init__(self, threshold, hp_amount):
+        self.threshold = threshold
+        self.hp_amount = hp_amount
+
+
+def get_next_uncredited_milestone(user_id: str):
+    db = get_db()
+    try:
+        referrer_id = get_referrer_id(user_id)
+        if not referrer_id:
+            return None
+        completed = (
+            db.table("referrals")
+            .select("id")
+            .eq("referrer_id", referrer_id)
+            .eq("status", "completed")
+            .execute()
+        ) or []
+        completed_count = len(completed)
+        milestones = (
+            db.table("milestones")
+            .select("id,trigger_value,hp_awarded")
+            .eq("trigger_type", "referral_count")
+            .eq("is_active", True)
+            .order("trigger_value", ascending=True)
+            .execute()
+        ) or []
+        credited = (
+            db.table("user_milestones")
+            .select("milestone_id")
+            .eq("user_id", referrer_id)
+            .execute()
+        ) or []
+        credited_ids = {c["milestone_id"] for c in credited if "milestone_id" in c}
+        for m in milestones:
+            val = int(m.get("trigger_value") or 0)
+            if completed_count >= val and m.get("id") not in credited_ids:
+                return SimpleMilestone(val, int(m.get("hp_awarded") or 0))
+    except Exception:
+        pass
+    return None

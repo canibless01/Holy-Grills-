@@ -192,6 +192,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
       items[].selected_variations  — list of {variation_group_id, option_id}
       addons                       — list of {addon_id, quantity}
     """
+    idempotency_key = str(uuid.uuid4())
+
     db = get_db()
 
     # Reject if kitchen is already at daily capacity
@@ -649,100 +651,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     is_guest = user_id is None
     claim_token = str(uuid.uuid4()) if is_guest else None
-    order_record = {
-        "user_id": user_id,
-        "guest_name": payload.get("guest_name"),
-        "guest_phone": payload.get("guest_phone"),
-        "guest_email": payload.get("guest_email"),
-        "delivery_window_id": window_id,
-        "delivery_address_snapshot": payload.get("delivery_address") or "",
-        # NOTE: The DB order_status enum does not include 'scheduled'.
-        # Scheduled orders are identified by is_scheduled=True + received_at=None.
-        "status": "received",
-        "payment_status": "pending",
-        "subtotal": subtotal,
-        "delivery_fee": delivery_fee,
-        "discount_amount": round(promo_discount + squad_discount + order_lock_discount, 2),
-        "total_amount": total,
-        "wallet_amount_used": wallet_amount_used,
-        "card_amount_used": card_amount_used,
-        "hp_redeemed": 0,
-        "promo_code_id": promo_code_id,
-        "notes": payload.get("notes", ""),
-        # received_at is set now for immediate orders; scheduled orders get it
-        # stamped by update_order_status when transitioning scheduled → received.
-        "received_at": None if is_scheduled else datetime.now(timezone.utc).isoformat(),
-        "is_squad_order": is_squad_order,
-        "squad_discount_amount": squad_discount,
-        "squad_item_count": squad_item_count,
-        "is_scheduled": is_scheduled,
-        "scheduled_for": scheduled_for,
-        "squad_name": payload.get("squad_name"),
-    }
 
-    if claim_token:
-        order_record["claim_token"] = claim_token
+    # Calculate variables for RPC payload
+    total_discount = round(promo_discount + squad_discount + order_lock_discount, 2)
+    delivery_address_snapshot = payload.get("delivery_address") or ""
 
-    # Delivery location fields (new columns — stripped on fallback if they don't exist)
-    if delivery_type:
-        order_record["delivery_type"] = delivery_type
-    if delivery_location_id:
-        order_record["delivery_location_id"] = delivery_location_id
-    if delivery_location_lat is not None:
-        order_record["delivery_location_lat"] = delivery_location_lat
-    if delivery_location_lon is not None:
-        order_record["delivery_location_lon"] = delivery_location_lon
-
-    _DELIVERY_LOCATION_COLS = {"delivery_type", "delivery_location_id", "delivery_location_lat", "delivery_location_lon"}
-
-    try:
-        created = db.table("orders").insert(order_record)
-    except SupabaseError as exc:
-        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
-        is_missing_col = "column" in err_msg and "does not exist" in err_msg
-        if is_missing_col:
-            # is_scheduled column may not exist yet — retry without it first
-            no_scheduled_flag = {k: v for k, v in order_record.items() if k != "is_scheduled"}
-            try:
-                created = db.table("orders").insert(no_scheduled_flag)
-            except SupabaseError as exc2:
-                err_msg = str(exc2.details.get("message", "")) if exc2.details else str(exc2)
-                is_missing_col = "column" in err_msg and "does not exist" in err_msg
-                if is_missing_col:
-                    # claim_token column may not exist yet — retry without it too
-                    no_claim = {k: v for k, v in no_scheduled_flag.items() if k != "claim_token"}
-                    try:
-                        created = db.table("orders").insert(no_claim)
-                    except SupabaseError as exc3:
-                        err_msg = str(exc3.details.get("message", "")) if exc3.details else str(exc3)
-                        is_missing_col = "column" in err_msg and "does not exist" in err_msg
-                        if is_missing_col:
-                            # delivery_location columns may not exist — strip those too
-                            no_delivery_loc = {k: v for k, v in no_claim.items() if k not in _DELIVERY_LOCATION_COLS}
-                            try:
-                                created = db.table("orders").insert(no_delivery_loc)
-                            except SupabaseError as exc4:
-                                err_msg = str(exc4.details.get("message", "")) if exc4.details else str(exc4)
-                                is_missing_col = "column" in err_msg and "does not exist" in err_msg
-                                if is_missing_col:
-                                    # Squad-order columns may also not exist — strip those too and retry
-                                    safe_record = {k: v for k, v in no_delivery_loc.items()
-                                                   if k not in ("is_squad_order", "squad_discount_amount", "squad_item_count")}
-                                    safe_record["discount_amount"] = round(promo_discount + order_lock_discount, 2)
-                                    safe_record["total_amount"] = max(0.0, round(
-                                        subtotal - promo_discount - hp_discount - squad_discount - order_lock_discount + delivery_fee, 2))
-                                    created = db.table("orders").insert(safe_record)
-                                else:
-                                    raise
-                        else:
-                            raise
-                else:
-                    raise
-        else:
-            raise
-
-    order = created[0] if isinstance(created, list) else created
-    order_id = order["id"]
+    # Pre-calculate hp_preview
     hp_preview_items = []
     hp_preview_total = 0
     hp_preview_base = 0
@@ -764,131 +678,61 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             "base_hp": base_line,
             "hp": line_hp,
         })
-    order["hp_preview"] = {
+    hp_preview = {
         "base_hp": hp_preview_base,
         "total_hp": hp_preview_total,
         "items": hp_preview_items,
     }
-    # Surface squad/scheduling info even when DB columns don't exist
-    order.setdefault("is_squad_order", is_squad_order)
-    order.setdefault("squad_discount_amount", squad_discount)
-    order.setdefault("squad_item_count", squad_item_count)
-    order.setdefault("is_scheduled", is_scheduled)
-    order.setdefault("scheduled_for", scheduled_for)
 
-    # ── Redeem active order lock if one was found for today ───────────────────
-    if order_lock and user_id:
-        try:
-            reward_type = order_lock.get("reward_type", "discount")
-            if reward_type == "hp":
-                hp_amount = int(order_lock.get("reward_hp_amount") or 0)
-                if hp_amount > 0:
-                    hp_service.award_active_hp(
-                        user_id=user_id,
-                        amount=hp_amount,
-                        txn_type="earn_order_lock",
-                        reference_id=order_lock["id"],
-                        reference_type="order_lock",
-                        notes=MSG.ORDER_LOCK_HP_AWARDED_NOTES.format(hp=hp_amount),
-                        apply_multiplier=False,
-                    )
-                    send_notification(
-                        user_id=user_id,
-                        notif_type="order_lock_redeemed_hp",
-                        template_data={"hp": hp_amount},
-                    )
-            elif reward_type == "discount" and order_lock_discount > 0:
-                send_notification(
-                    user_id=user_id,
-                    notif_type="order_lock_redeemed_discount",
-                    template_data={
-                        "pct": float(order_lock.get("discount_pct", 10)),
-                        "saved": order_lock_discount,
-                    },
-                )
-            # Mark lock as used regardless of reward type
-            db.table("order_locks").eq("id", order_lock["id"]).update({
-                "status": "used",
-                "order_id": order_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-            order["order_lock_applied"] = True
-            order["order_lock_discount"] = order_lock_discount
-        except Exception as _lock_err:
-            logger.warning(
-                "create_order: order lock redemption failed for user %s (lock %s): %s",
-                user_id, order_lock.get("id"), _lock_err,
-            )
+    rpc_payload = {
+        "p_user_id": user_id,
+        "p_guest_name": payload.get("guest_name"),
+        "p_guest_email": payload.get("guest_email"),
+        "p_guest_phone": payload.get("guest_phone"),
+        "p_claim_token": claim_token,
+        "p_status": "received",
+        "p_payment_status": "pending",
+        "p_subtotal": subtotal,
+        "p_delivery_fee": delivery_fee,
+        "p_discount_amount": total_discount,
+        "p_total_amount": total,
+        "p_wallet_amount_used": wallet_amount_used,
+        "p_card_amount_used": card_amount_used,
+        "p_hp_redeemed": 0,
+        "p_delivery_type": delivery_type,
+        "p_delivery_location_id": delivery_location_id,
+        "p_delivery_location_lat": delivery_location_lat,
+        "p_delivery_location_lon": delivery_location_lon,
+        "p_delivery_address_snapshot": delivery_address_snapshot,
+        "p_delivery_window_id": window_id,
+        "p_is_scheduled": is_scheduled,
+        "p_scheduled_for": scheduled_for,
+        "p_is_squad_order": is_squad_order,
+        "p_squad_name": payload.get("squad_name"),
+        "p_squad_discount_amount": squad_discount,
+        "p_squad_item_count": squad_item_count,
+        "p_notes": payload.get("notes", ""),
+        "p_gift_included": False,
+        "p_idempotency_key": idempotency_key,
+        "p_promo_code_id": promo_code_id,
+        "p_items": order_items,
+        "p_order_lock_id": order_lock.get("id") if order_lock else None
+    }
 
-    # Deduct wallet now that we have the real order_id (handles both wallet and split payment methods)
-    if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
-        try:
-            debit_wallet(
-                user_id=user_id,
-                amount=wallet_amount_used,
-                reference_id=order_id,
-                reference_type="order",
-                notes=f"Wallet payment component for order {order_id[:8].upper()}",
-            )
-            if payment_method == "wallet":
-                db.table("orders").eq("id", order_id).update({"payment_status": "paid"})
-                order["payment_status"] = "paid"
-        except ValueError as e:
-            db.table("orders").eq("id", order_id).update({"status": "cancelled"})
-            raise ValueError(MSG.ORDER_WALLET_PAYMENT_FAILED.format(error=e))
-
-    addon_selections_by_index = [oi.pop("_addon_selections", []) for oi in order_items]
-    for oi in order_items:
-        oi["order_id"] = order_id
     try:
-        inserted_items = db.table("order_items").insert(order_items)
-    except SupabaseError as exc:
-        # Keep local/pre-migration environments usable until the additive
-        # migration has been applied; production uses the snapshot column.
-        if "hp_multiplier_snapshot" not in str(exc):
-            raise
-        inserted_items = db.table("order_items").insert([
-            {k: v for k, v in row.items() if k != "hp_multiplier_snapshot"}
-            for row in order_items
-        ])
-    if not isinstance(inserted_items, list):
-        inserted_items = [inserted_items] if inserted_items else []
+        result = db.rpc("hg_create_order_atomic", rpc_payload)
+    except Exception as exc:
+        result = {"error": str(exc)}
 
-    # Persist per-item required/optional add-on selections
-    selection_rows = []
-    for oi_row, selections in zip(inserted_items, addon_selections_by_index):
-        for sel in selections:
-            selection_rows.append({
-                "order_item_id": oi_row["id"],
-                "addon_id": sel["addon_id"],
-                "group_id": sel["group_id"],
-                "name_snapshot": sel["name_snapshot"],
-                "price_delta_snapshot": sel["price_delta_snapshot"],
-                "quantity": sel["quantity"],
-            })
-    if selection_rows:
-        try:
-            db.table("order_addon_selections").insert(selection_rows)
-        except Exception as e:
-            logger.warning(f"Failed to persist order_addon_selections for order {order_id}: {e}")
+    if result is None:
+        result = {}
 
-    # Record promo code use
-    if promo_code_id and user_id:
-        try:
-            db.table("promo_code_uses").insert({
-                "promo_code_id": promo_code_id,
-                "user_id": user_id,
-                "order_id": order_id,
-                "discount_amount": promo_discount,
-            })
-            current_promo = db.table("promo_codes").select("used_count").eq("id", promo_code_id).single().execute()
-            new_used_count = int((current_promo or {}).get("used_count") or 0) + 1
-            db.table("promo_codes").eq("id", promo_code_id).update({
-                "used_count": new_used_count
-            })
-        except Exception:
-            pass
+    if result.get("error"):
+        raise ValueError(result["error"])
 
+    order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
+    if not result.get("idempotent"):
+        order["hp_preview"] = hp_preview
     return order
 
 
@@ -971,14 +815,64 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     if order.get("status") in ("cancelled", "refunded"):
         raise ValueError(f"Cannot transition payment status because order is already '{order.get('status')}'")
 
-    # §Spec: HP-to-₦ conversion removed. No HP deduction on payment confirmation.
-    update_data = {
-        "payment_status": "paid",
-        "payment_reference": payment_reference,
-        "payment_confirmed_at": datetime.now(timezone.utc).isoformat(),
-    }
+    # Call the existing RPC rather than a direct table update
+    provider = "paystack"
 
-    updated = db.table("orders").eq("id", order_id).update(update_data)
+    try:
+        payment_result = db.rpc("hg_mark_order_paid", {
+            "p_order_id": order_id,
+            "p_provider": provider,
+            "p_provider_reference": payment_reference,
+            "p_amount": order["total_amount"],
+            "p_metadata": provider_response or {},
+        })
+    except Exception as exc:
+        payment_result = {"error": str(exc)}
+
+    if not payment_result:
+        raise ValueError("Failed to mark order as paid")
+
+    if isinstance(payment_result, dict) and payment_result.get("error"):
+        raise ValueError(payment_result["error"])
+
+    # Complete the referral atomically on the same successful payment transition.
+    if order.get("user_id"):
+        try:
+            paid_orders = (
+                db.table("orders")
+                .select("id")
+                .eq("user_id", order["user_id"])
+                .eq("payment_status", "paid")
+                .execute()
+            ) or []
+
+            if len(paid_orders) == 1:
+                from app.routes.referrals import _complete_referral_award
+
+                referral = (
+                    db.table("referrals")
+                    .select("*")
+                    .eq("referred_user_id", order["user_id"])
+                    .single()
+                    .execute()
+                )
+
+                if referral and not referral.get("hp_awarded", 0):
+                    _complete_referral_award(referral, order_id)
+        except Exception as exc:
+            logger.error(
+                "Referral completion failed for order %s: %s",
+                order_id,
+                exc,
+            )
+
+    updated_order = (
+        db.table("orders")
+        .select("*")
+        .eq("id", order_id)
+        .single()
+        .execute()
+    )
 
     if order.get("user_id"):
         send_notification(
@@ -989,7 +883,7 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
             reference_type="order",
         )
 
-    return updated[0] if isinstance(updated, list) else updated
+    return updated_order
 
 
 def update_order_status(order_id: str, new_status: str, changed_by: str = None, notes: str = "") -> dict:
@@ -1054,11 +948,10 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
 def _handle_delivery_rewards(order: dict):
     """
     Full HP award sequence on order delivery:
-    1. Food HP + tier bonus → active
-    2. Unlock pending HP
-    3. Welcome bonus (first order)
-    4. Referral completion trigger
-    5. Tier recalculation
+    1. Food HP + tier bonus (using calculate_delivery_hp)
+    2. Atomic unconditional credit via hg_credit_delivery_hp_atomic RPC
+    3. Welcome bonus
+    4. Tier recalculation
     """
     user_id = order["user_id"]
     order_id = order["id"]
@@ -1088,20 +981,41 @@ def _handle_delivery_rewards(order: dict):
                 .execute()
             ) or []
 
-    hp_result = hp_service.award_food_order_hp(
-        user_id=user_id,
-        order_id=order_id,
+    # Step 1: Calculate HP in Python (business logic) — may be zero
+    hp_amount = hp_service.calculate_delivery_hp(
         order_total=subtotal,
         tier_slug=tier_slug,
         order_items=order_items,
     )
+
+    # Step 2: Atomically credit via Supabase RPC — call for EVERY eligible
+    # delivery, zero-HP included, so the idempotency marker always gets set
+    try:
+        result = db.rpc("hg_credit_delivery_hp_atomic", {
+            "p_order_id": order_id,
+            "p_user_id": user_id,
+            "p_hp_amount": hp_amount,
+            "p_tier_name": tier_slug,
+            "p_source_type": "food_order"
+        })
+    except Exception as exc:
+        result = {"error": str(exc)}
+
+    if result is None:
+        result = {}
+
+    if result.get("already_credited"):
+        return
+    if result.get("error"):
+        logger.error(f"Failed to credit HP for order {order_id}: {result['error']}")
+        return
 
     welcome_result = hp_service.award_welcome_bonus(user_id, order_id)
 
     tier_change = hp_service.recalculate_tier(user_id)
 
     order_updates = {
-        "hp_earned": hp_result["total_hp"],
+        "hp_earned": hp_amount,
         "hp_credited_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1115,7 +1029,7 @@ def _handle_delivery_rewards(order: dict):
     # daemon threads so they don't add latency to the status-update response.
     import threading as _t
 
-    total_hp_awarded = hp_result["total_hp"] + welcome_result.get("awarded", 0)
+    total_hp_awarded = hp_amount + welcome_result.get("awarded", 0)
 
     def _send_delivery_notifications():
         if total_hp_awarded > 0:
@@ -1126,11 +1040,12 @@ def _handle_delivery_rewards(order: dict):
                 reference_id=order_id,
                 reference_type="order",
             )
-        if hp_result["unlocked_pending_hp"] > 0:
+        unlocked = int(result.get("unlocked_hp") or 0)
+        if unlocked > 0:
             send_notification(
                 user_id=user_id,
                 notif_type="hp_unlocked",
-                template_data={"unlocked_hp": hp_result["unlocked_pending_hp"]},
+                template_data={"unlocked_hp": unlocked},
             )
         if tier_change.get("changed") and tier_change.get("tier"):
             tier_name = tier_change["tier"].get("name", "new tier")
@@ -1168,8 +1083,6 @@ def _handle_delivery_rewards(order: dict):
     except Exception as _me:
         logger.warning("_handle_delivery_rewards: milestone trigger failed for %s: %s", user_id, _me)
 
-    _trigger_referral_completion(user_id, order_id)
-
     # First-order gift check — runs synchronously to prevent critical order mutation loss
     try:
         from app.services.gift_service import maybe_grant_first_order_gift
@@ -1182,32 +1095,6 @@ def _handle_delivery_rewards(order: dict):
         get_db().table("profiles").eq("id", user_id).update({
             "last_activity_at": datetime.now(timezone.utc).isoformat()
         })
-    except Exception:
-        pass
-
-
-def _trigger_referral_completion(user_id: str, order_id: str):
-    """Check if this is the user's first order and complete any pending referral."""
-    db = get_db()
-    try:
-        all_delivered = (
-            db.table("orders")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("status", "delivered")
-            .execute()
-        )
-        if len(all_delivered) == 1:  # This is their first completed order
-            referral = (
-                db.table("referrals")
-                .select("*")
-                .eq("referred_user_id", user_id)
-                .single()
-                .execute()
-            )
-            if referral and not referral.get("hp_awarded", 0):
-                from app.routes.referrals import _complete_referral_award
-                _complete_referral_award(referral, order_id)
     except Exception:
         pass
 
