@@ -192,6 +192,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
       items[].selected_variations  — list of {variation_group_id, option_id}
       addons                       — list of {addon_id, quantity}
     """
+    idempotency_key = payload.get("idempotency_key")
+    if not idempotency_key:
+        raise ValueError("idempotency_key is required")
+
     db = get_db()
 
     # Reject if kitchen is already at daily capacity
@@ -814,48 +818,63 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         raise ValueError(f"Cannot transition payment status because order is already '{order.get('status')}'")
 
     # Call the existing RPC rather than a direct table update
-    amount = float(order.get("total_amount") or 0)
     provider = "paystack"
-    metadata = provider_response or {}
 
     try:
-        result = db.rpc("hg_mark_order_paid", {
+        payment_result = db.rpc("hg_mark_order_paid", {
             "p_order_id": order_id,
             "p_provider": provider,
             "p_provider_reference": payment_reference,
-            "p_amount": amount,
+            "p_amount": order["total_amount"],
             "p_metadata": provider_response or {},
         })
     except Exception as exc:
-        result = {"error": str(exc)}
+        payment_result = {"error": str(exc)}
 
-    if result is None:
-        result = {}
+    if not payment_result:
+        raise ValueError("Failed to mark order as paid")
 
-    if result.get("error"):
-        raise ValueError(result["error"])
+    if isinstance(payment_result, dict) and payment_result.get("error"):
+        raise ValueError(payment_result["error"])
 
     # Complete the referral atomically on the same successful payment transition.
     if order.get("user_id"):
         try:
-            referral_result = db.rpc("hg_complete_referral_atomic", {
-                "p_referred_user_id": order["user_id"],
-                "p_trigger_order_id": order_id,
-            })
+            paid_orders = (
+                db.table("orders")
+                .select("id")
+                .eq("user_id", order["user_id"])
+                .eq("payment_status", "paid")
+                .execute()
+            ) or []
+
+            if len(paid_orders) == 1:
+                from app.routes.referrals import _complete_referral_award
+
+                referral = (
+                    db.table("referrals")
+                    .select("*")
+                    .eq("referred_user_id", order["user_id"])
+                    .single()
+                    .execute()
+                )
+
+                if referral and not referral.get("hp_awarded", 0):
+                    _complete_referral_award(referral, order_id)
         except Exception as exc:
-            referral_result = {"error": str(exc)}
-
-        if referral_result is None:
-            referral_result = {}
-
-        if referral_result.get("error"):
             logger.error(
                 "Referral completion failed for order %s: %s",
                 order_id,
-                referral_result["error"],
+                exc,
             )
 
-    updated_order = db.table("orders").select("*").eq("id", order_id).single().execute()
+    updated_order = (
+        db.table("orders")
+        .select("*")
+        .eq("id", order_id)
+        .single()
+        .execute()
+    )
 
     if order.get("user_id"):
         send_notification(
