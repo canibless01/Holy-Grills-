@@ -824,7 +824,7 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
             "p_provider": provider,
             "p_provider_reference": payment_reference,
             "p_amount": amount,
-            "p_metadata": metadata,
+            "p_metadata": provider_response or {},
         })
     except Exception as exc:
         result = {"error": str(exc)}
@@ -834,6 +834,26 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
 
     if result.get("error"):
         raise ValueError(result["error"])
+
+    # Complete the referral atomically on the same successful payment transition.
+    if order.get("user_id"):
+        try:
+            referral_result = db.rpc("hg_complete_referral_atomic", {
+                "p_referred_user_id": order["user_id"],
+                "p_trigger_order_id": order_id,
+            })
+        except Exception as exc:
+            referral_result = {"error": str(exc)}
+
+        if referral_result is None:
+            referral_result = {}
+
+        if referral_result.get("error"):
+            logger.error(
+                "Referral completion failed for order %s: %s",
+                order_id,
+                referral_result["error"],
+            )
 
     updated_order = db.table("orders").select("*").eq("id", order_id).single().execute()
 
