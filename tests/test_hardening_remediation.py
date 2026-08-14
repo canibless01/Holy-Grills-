@@ -103,8 +103,7 @@ def test_create_order_authenticated_identity_cannot_be_overridden(mock_get_db, c
             "payment_method": "card",
             "user_id": "malicious-victim-id",
             "guest_name": "Guest Impersonator",
-            "guest_phone": "08012345678",
-            "idempotency_key": "test-key-1"
+            "guest_phone": "08012345678"
         }, headers=headers)
 
         assert resp.status_code == 201
@@ -129,8 +128,7 @@ def test_create_order_guest_cannot_impersonate_or_use_wallet(mock_get_db, client
         "payment_method": "wallet",
         "guest_name": "John Guest",
         "guest_phone": "08012345678",
-        "guest_email": "john@guest.com",
-        "idempotency_key": "test-key-2"
+        "guest_email": "john@guest.com"
     })
     assert resp.status_code == 400
     assert "Wallet payment requires a logged-in account" in resp.get_json()["error"]
@@ -139,8 +137,7 @@ def test_create_order_guest_cannot_impersonate_or_use_wallet(mock_get_db, client
     resp = client.post("/api/orders", json={
         "items": [{"menu_item_id": "item-1", "quantity": 1}],
         "payment_method": "card",
-        "guest_name": "John Guest",
-        "idempotency_key": "test-key-3"
+        "guest_name": "John Guest"
         # guest_phone/guest_email missing
     })
     assert resp.status_code == 400
@@ -156,8 +153,7 @@ def test_create_order_guest_cannot_impersonate_or_use_wallet(mock_get_db, client
             "guest_name": "John Guest",
             "guest_phone": "08012345678",
             "guest_email": "john@guest.com",
-            "user_id": "hijack-user-id",
-            "idempotency_key": "test-key-4"
+            "user_id": "hijack-user-id"
         })
         assert resp.status_code == 201
         mock_create_order.assert_called_once()

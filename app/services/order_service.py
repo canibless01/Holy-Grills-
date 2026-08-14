@@ -192,9 +192,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
       items[].selected_variations  — list of {variation_group_id, option_id}
       addons                       — list of {addon_id, quantity}
     """
-    idempotency_key = payload.get("idempotency_key")
-    if not idempotency_key:
-        raise ValueError("idempotency_key is required")
+    idempotency_key = str(uuid.uuid4())
 
     db = get_db()
 
@@ -715,7 +713,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "p_squad_item_count": squad_item_count,
         "p_notes": payload.get("notes", ""),
         "p_gift_included": False,
-        "p_idempotency_key": payload.get("idempotency_key"),  # MUST come from client
+        "p_idempotency_key": idempotency_key,
         "p_promo_code_id": promo_code_id,
         "p_items": order_items,
         "p_order_lock_id": order_lock.get("id") if order_lock else None
@@ -952,9 +950,8 @@ def _handle_delivery_rewards(order: dict):
     Full HP award sequence on order delivery:
     1. Food HP + tier bonus (using calculate_delivery_hp)
     2. Atomic unconditional credit via hg_credit_delivery_hp_atomic RPC
-    3. Milestone referrals via hg_credit_referral_milestone_atomic RPC
-    4. Welcome bonus
-    5. Tier recalculation
+    3. Welcome bonus
+    4. Tier recalculation
     """
     user_id = order["user_id"]
     order_id = order["id"]
@@ -1012,20 +1009,6 @@ def _handle_delivery_rewards(order: dict):
     if result.get("error"):
         logger.error(f"Failed to credit HP for order {order_id}: {result['error']}")
         return
-
-    # Step 3: Referral milestones — explicit call site, right after HP credit
-    from app.routes import referrals
-    if user_id:
-        milestone = referrals.get_next_uncredited_milestone(user_id)  # 5, 10, 20, 50...
-        if milestone:
-            referral_result = db.rpc("hg_credit_referral_milestone_atomic", {
-                "p_referrer_id": referrals.get_referrer_id(user_id),
-                "p_milestone_threshold": milestone.threshold,
-                "p_hp_amount": milestone.hp_amount,
-                "p_order_id": order_id,
-            })
-            if referral_result and referral_result.get("error"):
-                logger.error(f"Referral milestone credit failed for order {order_id}: {referral_result['error']}")
 
     welcome_result = hp_service.award_welcome_bonus(user_id, order_id)
 
