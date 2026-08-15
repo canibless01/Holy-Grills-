@@ -1153,6 +1153,18 @@ def cancel_order(order_id):
         except Exception:
             pass
 
+    # Restore order lock if one was used
+    try:
+        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        if lock:
+            db.table("order_locks").eq("id", lock["id"]).update({
+                "status": "active",
+                "order_id": None,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception:
+        pass
+
     from app.services.notification_service import send_notification
     try:
         send_notification(

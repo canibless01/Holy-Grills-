@@ -56,7 +56,7 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
             award_active_hp(
                 user_id=user_id,
                 amount=config.get("WALLET_TOPUP_HP", 50),
-                txn_type="earn_admin_grant",
+                txn_type="earn",
                 reference_id=payment_reference,
                 reference_type="wallet_topup",
                 notes=f"HP bonus for wallet top-up of ₦{amount:.0f}",

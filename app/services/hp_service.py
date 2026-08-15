@@ -36,42 +36,6 @@ from app.db import get_db, SupabaseError
 from flask import current_app
 
 
-# ── Enum type mapping (source_type → hp_transaction_type enum value) ─────────
-TXN_TYPE_MAP = {
-    "food":             "earn_order",
-    "order":            "earn_order",
-    "welcome":          "earn_first_order",
-    "welcome_bonus":    "earn_first_order",
-    "first_order":      "earn_first_order",
-    "referral":         "earn_referral",
-    "event":            "earn_event_checkin",
-    "event_checkin":    "earn_event_checkin",
-    "review":           "earn_review",
-    "birthday":         "earn_birthday",
-    "challenge":        "earn_challenge",
-    "admin_grant":      "earn_admin_grant",
-    "bundle_purchase":  "earn_admin_grant",
-    "squad_bonus":      "earn_squad_bonus",
-    "streak":           "earn_streak",
-    "wallet_topup":     "earn_admin_grant",
-    "newsletter":       "earn_admin_grant",
-    "social":           "earn_challenge",
-    "unlock":           "unlock",
-    "overflow_to_pending": "overflow_to_pending",
-    # transfers
-    "hp_transfer":           "earn_admin_grant",
-    "earn_transfer":         "earn_admin_grant",
-    # spending
-    "spend_reward":          "spend_reward",
-    "reward_redemption":     "spend_reward",
-    "flash_reward_redemption": "spend_reward",
-    "spend_marketplace":     "spend_marketplace",
-    "marketplace_purchase":  "spend_marketplace",
-    "spend_order_discount":  "spend_order_discount",
-    "order_hp_redemption":   "spend_order_discount",
-    "expiry":                "expire",
-}
-
 def _resolve_txn_type(source_type: str, is_spend: bool = False, is_unlock: bool = False) -> str:
     """Map any transaction type or source_type to a DB-valid type: 'earn' | 'spend' | 'expire'.
     'unlock' is not a valid DB enum value — treated as 'earn'.
@@ -149,14 +113,14 @@ def get_hp_balance(user_id: str) -> dict:
 def _get_hp_multiplier() -> float:
     """
     Read the active HP earn multiplier from system_settings.
-    Only the supported 2x event is accepted. Returns 1.0 if disabled,
-    expired, or if a stale/invalid value (including 0.5) is found.
+    Supported multiplier event values are 0.5, 1.0, and 2.0.
+    Returns 1.0 if disabled, expired, or invalid.
     """
     try:
         db = get_db()
         m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").single().execute()
         multiplier = float((m_row or {}).get("value", "1") or "1")
-        if multiplier != 2.0:
+        if multiplier not in (0.5, 1.0, 2.0):
             return 1.0
         # Check expiry
         exp_row = db.table("system_settings").select("value").eq("key", "multiplier_expires_at").single().execute()

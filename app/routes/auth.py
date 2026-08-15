@@ -563,6 +563,11 @@ def delete_account():
     })
 
     try:
+        _revoke_all_sessions(g.user_id)
+    except Exception:
+        pass
+
+    try:
         db.auth_sign_out(g.jwt_token)
     except Exception:
         pass

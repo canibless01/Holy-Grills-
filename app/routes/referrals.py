@@ -13,36 +13,34 @@ referrals_bp = Blueprint("referrals", __name__)
 
 def _complete_referral_award(referral: dict, order_id: str):
     """
-    Internal helper: award ACTIVE HP to referrer for a completed referral.
-    Called by order_service when a referred user's first order is delivered.
-    HP goes directly to active — no pending, no unlock required.
-
-    Handles the base referral HP award.
+    Complete referral via atomic database function, then handle Python milestones.
+    Supabase owns atomic completion (75 HP to referrer), Python owns milestone logic.
     """
     db = get_db()
     referrer_id = referral["referrer_id"]
-    hp_amount = int(current_app.config.get("REFERRAL_HP", 75))
 
-    hp_result = award_active_hp(
-        user_id=referrer_id,
-        amount=hp_amount,
-        txn_type="earn_referral",
-        reference_id=referral.get("id"),
-        reference_type="referral",
-        source_type="referral",
-        notes="Referral HP — friend placed first order",
-        apply_multiplier=True,
-    )
-
-    db.table("referrals").eq("id", referral["id"]).update({
-        "hp_awarded": hp_amount,
-        "status": "completed",
-        "trigger_order_id": order_id,
-    })
-
-    # Fire badge trigger for referral_count milestones
+    # 1. Call atomic DB function for base referral award (75 HP to referrer only)
     try:
-        from app.services.milestone_service import check_milestone_trigger
+        result = db.rpc("hg_complete_referral_atomic", {
+            "p_referred_user_id": referral["referred_user_id"],
+            "p_trigger_order_id": order_id
+        })
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).error("hg_complete_referral_atomic failed for referred_user %s: %s",
+                                   referral["referred_user_id"], e)
+        return {"hp_awarded": 0, "error": str(e)}
+
+    # 2. Handle idempotent case
+    if result.get("already_completed"):
+        return {
+            "hp_awarded": result.get("hp_awarded", 0),
+            "already_completed": True,
+            "referral_id": result.get("referral_id")
+        }
+
+    # 3. Python-owned milestone logic (5, 10, 20 referrals → bonus HP)
+    try:
         completed_rows = (
             db.table("referrals")
             .select("id")
@@ -51,12 +49,19 @@ def _complete_referral_award(referral: dict, order_id: str):
             .execute()
         ) or []
         completed_count = len(completed_rows)
+
+        from app.services.milestone_service import check_milestone_trigger
         check_milestone_trigger(referrer_id, "referral_count", completed_count)
         check_milestone_trigger(referrer_id, "first_referral", completed_count)
-    except Exception:
-        pass
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).warning("Referral milestone trigger failed for user %s: %s", referrer_id, e)
 
-    return hp_result
+    return {
+        "hp_awarded": result.get("hp_awarded", 0),
+        "referral_id": result.get("referral_id"),
+        "transaction_id": result.get("transaction_id"),
+    }
 
 
 @referrals_bp.route("", methods=["GET"])

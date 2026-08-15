@@ -27,17 +27,27 @@ _ONESIGNAL_BASE = os.environ.get("ONESIGNAL_BASE_URL", "https://api.onesignal.co
 # Critical notification types — operational / transactional: never throttled.
 # Everything else is subject to the 6-hour same-type gap and daily cap.
 _CRITICAL_NOTIF_TYPES = frozenset({
+    # Order
     "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
     "order_cancelled", "order_refunded", "order_unclaimed",
+    "order_thank_you", "satisfaction_check", "reengagement_nudge",
+    # HP
     "hp_earned", "hp_unlocked", "hp_decay",
+    # Tier
     "tier_upgrade", "tier_dropped", "tier_grace_period",
-    "wallet_funded", "payment_confirmed",
-    "referral_completed", "referral_milestone",  # <--- PASTE HERE
+    # Wallet
+    "wallet_funded", "wallet_funded_card", "wallet_funded_bank",
+    "payment_confirmed",
+    # Referrals
+    "referral_completed", "referral_milestone",
+    # Rewards
     "birthday_bonus", "graduation_hp", "hall_of_fame",
     "membership_anniversary", "order_lock_redeemed",
+    "flash_sale_redeemed", "exclusive_spin_won",
+    # Streaks
     "first_order_gift", "checkin_streak_week", "order_streak",
-    "checkin_reclaimed", "hp_unlocked",
+    "checkin_reclaimed",
 })
 
 
@@ -459,18 +469,22 @@ def send_blast(blast_id: str) -> dict:
         profiles = [p for p in profiles if _hp_ok(p)]
         user_ids = {p["id"] for p in profiles}
 
-    # Pending HP — check monthly_hp_tracker for current month > 0
+    # Pending HP — check hp_transactions with status='pending'
     if segment.get("has_pending_hp") is not None and user_ids:
         want = bool(segment["has_pending_hp"])
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-        tracker_rows = (
-            db.table("monthly_hp_tracker")
-            .select("user_id,total_earned")
+        pending_rows = (
+            db.table("hp_transactions")
+            .select("user_id, amount")
             .in_("user_id", list(user_ids))
-            .eq("month", current_month)
+            .eq("status", "pending")
             .execute() or []
         )
-        pending_uids = {r["user_id"] for r in tracker_rows if int(r.get("total_earned") or 0) > 0}
+        # Aggregate pending HP per user
+        pending_agg = {}
+        for r in pending_rows:
+            uid = r["user_id"]
+            pending_agg[uid] = pending_agg.get(uid, 0) + r.get("amount", 0)
+        pending_uids = {uid for uid, amt in pending_agg.items() if amt > 0}
         _shrink(pending_uids if want else user_ids - pending_uids)
 
     # Has graduated — real column is graduation_claimed on profiles
@@ -584,7 +598,7 @@ def send_blast(blast_id: str) -> dict:
         _shrink(share_uids if want else user_ids - share_uids)
 
     # Event attendance band
-    # event_checkins has no user_id — join through event_tickets (ticket_id → user_id)
+    # event_checks has no user_id — join through event_tickets (ticket_id → user_id)
     event_attendance = segment.get("event_attendance")
     if event_attendance and str(event_attendance) != "any" and user_ids:
         # Step A: get ticket_id → user_id for users in our set
@@ -596,7 +610,7 @@ def send_blast(blast_id: str) -> dict:
         ticket_to_user = {r["id"]: r["user_id"] for r in ticket_rows}
         # Step B: count check-ins per user via ticket ownership
         checkin_rows = (
-            db.table("event_checkins").select("ticket_id")
+            db.table("event_checks").select("ticket_id")
             .in_("ticket_id", list(ticket_to_user.keys()))
             .execute() or []
         ) if ticket_to_user else []

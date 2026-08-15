@@ -654,7 +654,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     # Calculate variables for RPC payload
     total_discount = round(promo_discount + squad_discount + order_lock_discount, 2)
-    delivery_address_snapshot = payload.get("delivery_address") or ""
+    delivery_address_snapshot = payload.get("delivery_address") or {}
 
     # Pre-calculate hp_preview
     hp_preview_items = []
