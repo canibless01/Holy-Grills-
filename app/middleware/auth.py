@@ -50,11 +50,15 @@ def require_auth(f):
         except SupabaseError:
             abort(401, "User profile not found")
 
+        if not profile:
+            abort(401, "User profile not found")
+
         if not profile.get("is_active", True):
             abort(403, "Account is deactivated")
 
         g.user = profile
         g.user_role = profile.get("role", "student")
+        g.campus_id = profile.get("campus_id")
 
         return f(*args, **kwargs)
 
@@ -87,6 +91,9 @@ def require_role(*roles):
             except SupabaseError:
                 abort(401, "User profile not found")
 
+            if not profile:
+                abort(401, "User profile not found")
+
             if not profile.get("is_active", True):
                 abort(403, "Account is deactivated")
 
@@ -95,6 +102,7 @@ def require_role(*roles):
 
             g.user = profile
             g.user_role = profile.get("role")
+            g.campus_id = profile.get("campus_id")
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -110,6 +118,7 @@ def optional_auth(f):
         g.user_role = None
         g.jwt_token = None
         g.jwt_payload = None
+        g.campus_id = None
 
         if auth_header is not None:
             # An Authorization header is supplied. We must parse and validate it.
@@ -151,6 +160,7 @@ def optional_auth(f):
 
             g.user = profile
             g.user_role = profile.get("role", "student")
+            g.campus_id = profile.get("campus_id")
 
         return f(*args, **kwargs)
     return decorated

@@ -83,6 +83,15 @@ def register():
     if len(data["password"]) < 8:
         return jsonify({"error": MSG.AUTH_PASSWORD_TOO_SHORT}), 400
 
+    campus_id = data.get("campus_id")
+    if not campus_id:
+        try:
+            db = get_db()
+            default = db.table("campuses").select("id").eq("is_default", "true").single().execute()
+            campus_id = default.get("id") if default else None
+        except Exception:
+            campus_id = None
+
     try:
         result = auth_service.register(
             email=data["email"],
@@ -93,6 +102,7 @@ def register():
             referred_by_code=data.get("referred_by_code"),
             department=data.get("department"),
             academic_level=data.get("academic_level"),
+            campus_id=campus_id,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
