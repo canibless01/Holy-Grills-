@@ -113,7 +113,7 @@ def admin_grant():
         result = award_active_hp(
             user_id=data["user_id"],
             amount=int(data["amount"]),
-            txn_type="earn_admin_grant",
+            txn_type="earn",
             notes=data.get("notes", "Admin-issued HP"),
             issued_by_admin_id=g.user_id,
         )
@@ -216,7 +216,7 @@ def unlock_history():
         db.table("hp_transactions")
         .select("*")
         .eq("user_id", g.user_id)
-        .eq("type", "unlock")
+        .eq("source", "unlock")
         .order("created_at", ascending=False)
         .limit(limit)
         .offset(offset)

@@ -96,8 +96,9 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     if department:
         profile_data["department"] = department.strip()
         try:
-            dept_row = db.table("departments").select("faculty").eq("name", department.strip()).limit(1).execute()
+            dept_row = db.table("departments").select("id, faculty").eq("name", department.strip()).limit(1).execute()
             if dept_row:
+                profile_data["department_id"] = dept_row[0]["id"]
                 profile_data["faculty"] = dept_row[0].get("faculty")
         except Exception:
             pass
@@ -123,6 +124,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             # Always persist department/level on the trigger path too (RUN 9)
             if department:
                 patch["department"] = department.strip()
+                try:
+                    dept_row = db.table("departments").select("id").eq("name", department.strip()).limit(1).execute()
+                    if dept_row:
+                        patch["department_id"] = dept_row[0]["id"]
+                except Exception:
+                    pass
             if academic_level:
                 patch["academic_level"] = str(academic_level).strip()
             try:
@@ -244,12 +251,13 @@ def update_profile(user_id: str, data: dict) -> dict:
     if not update_data:
         raise ValueError("No valid fields to update")
 
-    # Securely derive faculty from department mapping
+    # Securely derive faculty and department_id from department mapping
     dept_name = update_data.get("department")
     if dept_name:
         try:
-            dept_row = db.table("departments").select("faculty").eq("name", dept_name).limit(1).execute()
+            dept_row = db.table("departments").select("id, faculty").eq("name", dept_name).limit(1).execute()
             if dept_row:
+                update_data["department_id"] = dept_row[0]["id"]
                 update_data["faculty"] = dept_row[0].get("faculty")
         except Exception:
             pass

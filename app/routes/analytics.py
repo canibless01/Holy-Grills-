@@ -75,13 +75,14 @@ def hp_analytics():
         description: HP analytics
     """
     db = get_db()
-    EARN_TYPES = {"earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
-                  "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                  "earn_squad_bonus", "earn_streak", "earn"}
-    SPEND_TYPES = {"spend_reward", "spend_marketplace", "spend_order_discount", "spend"}
-    hp_txns = db.table("hp_transactions").select("amount,type,status").execute()
-    earned = sum(t["amount"] for t in hp_txns if t.get("type") in EARN_TYPES and t["amount"] > 0)
-    spent = abs(sum(t["amount"] for t in hp_txns if t.get("type") in SPEND_TYPES and t["amount"] < 0))
+    EARN_SOURCES = {"food_order", "welcome", "referral", "review", "event_checkin",
+                    "birthday", "challenge", "admin_grant", "squad_bonus", "streak",
+                    "signup", "wallet_topup", "social", "daily_checkin", "food", "order"}
+    SPEND_SOURCES = {"reward_redemption", "flash_reward_redemption", "marketplace_purchase",
+                     "order_hp_redemption", "spin_cost", "hp_transfer", "spend_reward", "spend_marketplace", "spend_order_discount"}
+    hp_txns = db.table("hp_transactions").select("amount,type,status,source").execute()
+    earned = sum(t["amount"] for t in hp_txns if t.get("source") in EARN_SOURCES and t["amount"] > 0)
+    spent = abs(sum(t["amount"] for t in hp_txns if t.get("source") in SPEND_SOURCES and t["amount"] < 0))
     expired = abs(sum(t["amount"] for t in hp_txns if t.get("type") == "expire" and t["amount"] < 0))
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
 

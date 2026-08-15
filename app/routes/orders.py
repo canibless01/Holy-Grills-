@@ -814,7 +814,7 @@ def cancel_scheduled_order(order_id):
             award_active_hp(
                 user_id=g.user_id,
                 amount=hp_redeemed,
-                txn_type="earn_order",
+                txn_type="earn",
                 reference_id=order_id,
                 reference_type="order_cancel_hp_refund",
                 source_type="order",
@@ -823,6 +823,18 @@ def cancel_scheduled_order(order_id):
             hp_refunded = hp_redeemed
         except Exception:
             pass
+
+    # Restore order lock if one was used
+    try:
+        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        if lock:
+            db.table("order_locks").eq("id", lock["id"]).update({
+                "status": "active",
+                "order_id": None,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception:
+        pass
 
     return jsonify({
         "message": MSG.ORDER_CANCELLED_OK,
@@ -1143,7 +1155,7 @@ def cancel_order(order_id):
             award_active_hp(
                 user_id=g.user_id,
                 amount=hp_redeemed,
-                txn_type="earn_order",
+                txn_type="earn",
                 reference_id=order_id,
                 reference_type="order_cancel_hp_refund",
                 source_type="order",
@@ -1152,6 +1164,18 @@ def cancel_order(order_id):
             hp_refunded = hp_redeemed
         except Exception:
             pass
+
+    # Restore order lock if one was used
+    try:
+        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        if lock:
+            db.table("order_locks").eq("id", lock["id"]).update({
+                "status": "active",
+                "order_id": None,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception:
+        pass
 
     from app.services.notification_service import send_notification
     try:

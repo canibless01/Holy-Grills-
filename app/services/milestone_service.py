@@ -361,7 +361,7 @@ def _compute_trigger_progress(
             return len(rows or [])
 
         elif trigger_type == "first_review" or trigger_type == "review_count":
-            q = db.table("reviews").select("id").eq("user_id", user_id)
+            q = db.table("order_reviews").select("id").eq("user_id", user_id)
             if period_start:
                 q = q.gte("created_at", period_start)
             rows = q.execute()
