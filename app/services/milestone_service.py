@@ -389,7 +389,7 @@ def _compute_trigger_progress(
             if not tickets:
                 return 0
             ticket_ids = [t["id"] for t in tickets]
-            q = db.table("event_checks").select("id").in_("ticket_id", ticket_ids)
+            q = db.table("event_checkins").select("id").in_("ticket_id", ticket_ids)
             if period_start:
                 q = q.gte("checked_in_at", period_start)
             rows = q.execute()

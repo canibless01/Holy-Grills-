@@ -81,8 +81,8 @@ def hp_analytics():
     SPEND_SOURCES = {"reward_redemption", "flash_reward_redemption", "marketplace_purchase",
                      "order_hp_redemption", "spin_cost", "hp_transfer", "spend_reward", "spend_marketplace", "spend_order_discount"}
     hp_txns = db.table("hp_transactions").select("amount,type,status,source").execute()
-    earned = sum(t["amount"] for t in hp_txns if (t.get("source") in EARN_SOURCES or t.get("type") == "earn") and t["amount"] > 0)
-    spent = abs(sum(t["amount"] for t in hp_txns if (t.get("source") in SPEND_SOURCES or t.get("type") == "spend") and t["amount"] < 0))
+    earned = sum(t["amount"] for t in hp_txns if t.get("source") in EARN_SOURCES and t["amount"] > 0)
+    spent = abs(sum(t["amount"] for t in hp_txns if t.get("source") in SPEND_SOURCES and t["amount"] < 0))
     expired = abs(sum(t["amount"] for t in hp_txns if t.get("type") == "expire" and t["amount"] < 0))
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
 

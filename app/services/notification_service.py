@@ -598,7 +598,7 @@ def send_blast(blast_id: str) -> dict:
         _shrink(share_uids if want else user_ids - share_uids)
 
     # Event attendance band
-    # event_checks has no user_id — join through event_tickets (ticket_id → user_id)
+    # event_checkins has no user_id — join through event_tickets (ticket_id → user_id)
     event_attendance = segment.get("event_attendance")
     if event_attendance and str(event_attendance) != "any" and user_ids:
         # Step A: get ticket_id → user_id for users in our set
@@ -610,7 +610,7 @@ def send_blast(blast_id: str) -> dict:
         ticket_to_user = {r["id"]: r["user_id"] for r in ticket_rows}
         # Step B: count check-ins per user via ticket ownership
         checkin_rows = (
-            db.table("event_checks").select("ticket_id")
+            db.table("event_checkins").select("ticket_id")
             .in_("ticket_id", list(ticket_to_user.keys()))
             .execute() or []
         ) if ticket_to_user else []

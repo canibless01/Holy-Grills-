@@ -67,7 +67,7 @@ def get_event(event_id):
         tickets = db.table("event_tickets").select("id").eq("event_id", event_id).execute()
         ticket_ids = [t["id"] for t in (tickets or [])]
         if ticket_ids:
-            checkins = db.table("event_checks").select("id").in_("ticket_id", ticket_ids).execute()
+            checkins = db.table("event_checkins").select("id").in_("ticket_id", ticket_ids).execute()
             event["checkin_count"] = len(checkins or [])
         else:
             event["checkin_count"] = 0
@@ -145,7 +145,7 @@ def checkin(event_id):
             if ticket_id_str != qr_token:
                 return jsonify({"error": MSG.EVENT_INVALID_QR}), 400
             existing_checkin = (
-                db.table("event_checks")
+                db.table("event_checkins")
                 .select("id")
                 .eq("ticket_id", ticket_id_str)
                 .execute()
@@ -156,7 +156,7 @@ def checkin(event_id):
             # that both pass the read check above don't produce a 500 — treat
             # as "already checked in" instead.
             try:
-                db.table("event_checks").insert({
+                db.table("event_checkins").insert({
                     "ticket_id": ticket_id_str,
                     "checked_in_by": g.user_id,
                     "qr_code": qr_token,
@@ -359,7 +359,7 @@ def delete_event(event_id):
         ticket_ids = [t["id"] for t in tickets]
         if ticket_ids:
             for tid in ticket_ids:
-                db.table("event_checks").eq("ticket_id", tid).delete()
+                db.table("event_checkins").eq("ticket_id", tid).delete()
         db.table("event_tickets").eq("event_id", event_id).delete()
     except Exception:
         pass
@@ -1109,7 +1109,7 @@ def list_event_registrants(event_id):
     ticket_ids = [t["id"] for t in tickets]
     checkins = {}
     if ticket_ids:
-        ci_rows = db.table("event_checks").select("ticket_id,checked_in_at").in_("ticket_id", ticket_ids).execute() or []
+        ci_rows = db.table("event_checkins").select("ticket_id,checked_in_at").in_("ticket_id", ticket_ids).execute() or []
         checkins = {r["ticket_id"]: r["checked_in_at"] for r in ci_rows}
 
     enriched = []
