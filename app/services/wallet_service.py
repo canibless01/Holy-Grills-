@@ -95,9 +95,9 @@ def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type:
     return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else 0.0}
 
 
-def get_wallet_transactions(user_id: str, limit: int = 50, offset: int = 0, tx_type: str = None) -> list:
+def get_wallet_transactions(user_id: str, limit: int = 50, offset: int = 0, reference_type: str = None) -> list:
     db = get_db()
     q = db.table("wallet_transactions").select("*").eq("user_id", user_id)
-    if tx_type:
-        q = q.eq("reference_type", tx_type)
+    if reference_type:
+        q = q.eq("reference_type", reference_type)
     return q.order("created_at", ascending=False).limit(limit).offset(offset).execute()

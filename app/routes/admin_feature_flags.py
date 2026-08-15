@@ -44,6 +44,7 @@ def create_feature_flag():
         "feature_name": flag_name,
         "is_active": bool(data.get("is_active", False)),
         "description": data.get("description"),
+        "campus_id": data.get("campus_id"),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": g.user_id,
     }
@@ -129,7 +130,7 @@ def update_feature_flag(flag_name):
     admin_id = g.user_id
 
     if existing:
-        ALLOWED = {"is_active", "description"}
+        ALLOWED = {"is_active", "description", "campus_id"}
         safe = {k: v for k, v in data.items() if k in ALLOWED}
         safe["updated_at"] = now_iso
         safe["updated_by"] = admin_id
@@ -140,6 +141,7 @@ def update_feature_flag(flag_name):
             "feature_name": flag_name,
             "is_active": data.get("is_active", False),
             "description": data.get("description"),
+            "campus_id": data.get("campus_id"),
             "updated_at": now_iso,
             "updated_by": admin_id,
         }

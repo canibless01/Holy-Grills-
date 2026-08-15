@@ -90,10 +90,7 @@ def update_first_order_gift(gift_id):
     if new_status not in ("fulfilled", "cancelled", "claimed", "redeemed", "returned"):
         return jsonify({"error": MSG.GIFT_INVALID_STATUS}), 400
 
-    now = datetime.now(timezone.utc).isoformat()
     update_payload = {"status": new_status}
-    if new_status in ("fulfilled", "claimed"):
-        update_payload["claimed_at"] = now
 
     db.table("first_order_gifts").eq("id", gift_id).update(update_payload)
     return jsonify({"message": MSG.GIFT_UPDATED, "status": new_status}), 200
@@ -164,10 +161,10 @@ def update_setting(key):
         return jsonify({"error": MSG.SETTING_VALUE_REQUIRED}), 400
     if key == "hp_multiplier":
         try:
-            if float(str(value)) not in (1.0, 2.0):
-                return jsonify({"error": "hp_multiplier must be 1 or 2"}), 400
+            if float(str(value)) not in (0.5, 1.0, 2.0):
+                return jsonify({"error": "hp_multiplier must be 0.5, 1.0, or 2.0"}), 400
         except (TypeError, ValueError):
-            return jsonify({"error": "hp_multiplier must be 1 or 2"}), 400
+            return jsonify({"error": "hp_multiplier must be 0.5, 1.0, or 2.0"}), 400
 
     update_payload = {
         "value": str(value),

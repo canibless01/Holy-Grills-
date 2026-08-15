@@ -524,11 +524,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         promo_discount = promo["discount"]
         promo_code_id = promo["promo_code_id"]
 
-    hp_discount = 0.0
-    hp_points_used = 0
-    # §Spec: HP-to-₦ conversion removed from ordering flow.
-    # hp_points_to_redeem is no longer accepted.
-
     delivery_fee = 0.0
 
     # ── Delivery location fee resolution ──────────────────────────────────────
@@ -1121,6 +1116,18 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
         raise ValueError(MSG.STOREFRONT_PROMO_LIMIT)
     if order_subtotal < float(promo.get("min_order_amount") or 0):
         raise ValueError(MSG.ORDER_PROMO_MIN_ORDER.format(min_amount=float(promo.get("min_order_amount", 0))))
+
+    if promo.get("max_uses_per_user") and user_id:
+        user_uses = (
+            db.table("orders")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("promo_code_id", promo["id"])
+            .neq("status", "cancelled")
+            .execute()
+        )
+        if len(user_uses or []) >= int(promo["max_uses_per_user"]):
+            raise ValueError("You have already used this promo code the maximum number of times")
 
     if promo["discount_type"] == "percentage":
         discount = order_subtotal * float(promo["discount_value"]) / 100

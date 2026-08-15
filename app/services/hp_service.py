@@ -633,36 +633,11 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
             "hp_amount": hp_amount,
             "naira_paid": naira_paid,
             "price_per_hp": price_per_hp,
-            "provider": provider,
-            "provider_reference": provider_reference,
         })
     except SupabaseError as exc:
         if exc.details and exc.details.get("code") == "23505":
             raise ValueError("Payment reference already processed") from exc
-        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
-        is_missing_col = "column" in err_msg and "does not exist" in err_msg
-        if is_missing_col:
-            try:
-                db.table("hp_bundle_purchases").insert({
-                    "event_host_id": event_host_id,
-                    "hp_amount": hp_amount,
-                    "naira_paid": naira_paid,
-                    "price_per_hp": price_per_hp,
-                })
-            except Exception:
-                pass
-        else:
-            raise
-    except Exception:
-        try:
-            db.table("hp_bundle_purchases").insert({
-                "event_host_id": event_host_id,
-                "hp_amount": hp_amount,
-                "naira_paid": naira_paid,
-                "price_per_hp": price_per_hp,
-            })
-        except Exception:
-            pass
+        raise
 
     result = earn_pending_hp(
         user_id=event_host_id,
@@ -732,27 +707,3 @@ def _update_earned_counters(user_id: str, amount: int):
         logger.warning("_update_earned_counters: failed for %s: %s", user_id, e)
 
 
-def _get_profile_hp_fields(user_id: str) -> dict:
-    db = get_db()
-    try:
-        return (
-            db.table("profiles")
-            .select("hp_balance")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        ) or {}
-    except Exception:
-        return {}
-
-
-def _safe_update_profile(user_id: str, updates: dict):
-    """Update profile, stripping unknown columns on failure."""
-    db = get_db()
-    safe_fields = {"hp_balance", "updated_at"}
-    safe_updates = {k: v for k, v in updates.items() if k in safe_fields}
-    if safe_updates:
-        try:
-            db.table("profiles").eq("id", user_id).update(safe_updates)
-        except Exception:
-            pass

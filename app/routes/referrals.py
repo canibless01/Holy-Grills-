@@ -6,7 +6,10 @@ from app.services.hp_service import award_active_hp
 from app.db import get_db
 from app.services.notification_service import send_notification
 from app.messages import MSG
+from app.utils.logger import get_logger
 from datetime import datetime, timezone
+
+logger = get_logger(__name__)
 
 referrals_bp = Blueprint("referrals", __name__)
 
@@ -26,9 +29,8 @@ def _complete_referral_award(referral: dict, order_id: str):
             "p_trigger_order_id": order_id
         })
     except Exception as e:
-        from app.utils.logger import get_logger
-        get_logger(__name__).error("hg_complete_referral_atomic failed for referred_user %s: %s",
-                                   referral["referred_user_id"], e)
+        logger.error("hg_complete_referral_atomic failed for referred_user %s: %s",
+                     referral["referred_user_id"], e)
         return {"hp_awarded": 0, "error": str(e)}
 
     # 2. Handle idempotent case
@@ -54,8 +56,7 @@ def _complete_referral_award(referral: dict, order_id: str):
         check_milestone_trigger(referrer_id, "referral_count", completed_count)
         check_milestone_trigger(referrer_id, "first_referral", completed_count)
     except Exception as e:
-        from app.utils.logger import get_logger
-        get_logger(__name__).warning("Referral milestone trigger failed for user %s: %s", referrer_id, e)
+        logger.warning("Referral milestone trigger failed for user %s: %s", referrer_id, e)
 
     return {
         "hp_awarded": result.get("hp_awarded", 0),
@@ -185,23 +186,7 @@ def referral_stats():
 def complete_referral():
     """
     Internal endpoint called when a referred user completes their first order.
-    Awards HP directly to ACTIVE balance — no pending, no unlock required.
-    No monthly cap — refer as many as you like.
-    ---
-    tags: [Referrals]
-    security: [{"Bearer": []}]
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [referred_user_id, order_id]
-          properties:
-            referred_user_id: {type: string}
-            order_id: {type: string}
-    responses:
-      200:
-        description: Referral HP awarded
+    Uses the same atomic RPC as the automatic flow.
     """
     db = get_db()
     data = request.get_json(force=True)
@@ -224,47 +209,25 @@ def complete_referral():
     if referral.get("hp_awarded", 0) > 0:
         return jsonify({"message": MSG.REFERRAL_ALREADY_DONE}), 200
 
-    referrer_id = referral["referrer_id"]
-    now = datetime.now(timezone.utc)
-    hp_amount = int(current_app.config.get("REFERRAL_HP", 75))
+    result = _complete_referral_award(referral, order_id)
 
-    hp_result = award_active_hp(
-        user_id=referrer_id,
-        amount=hp_amount,
-        txn_type="earn_referral",
-        reference_id=referral["id"],
-        reference_type="referral",
-        source_type="referral",
-        notes="Referral HP — friend placed first order",
-    )
+    if result.get("error"):
+        return jsonify({"error": result["error"]}), 400
 
-    db.table("referrals").eq("id", referral["id"]).update({
-        "hp_awarded": hp_amount,
-        "status": "completed",
-        "trigger_order_id": order_id,
-    })
-
-    send_notification(
-        user_id=referrer_id,
-        notif_type="referral_completed",
-        template_data={"hp": hp_amount},
-        reference_id=referral["id"],
-        reference_type="referral",
-    )
-
-    completed_count = (
-        db.table("referrals")
-        .select("id")
-        .eq("referrer_id", referrer_id)
-        .gt("hp_awarded", 0)
-        .execute()
-    )
-    completed_count = len(completed_count or [])
+    try:
+        send_notification(
+            user_id=referral["referrer_id"],
+            notif_type="referral_completed",
+            template_data={"hp": result.get("hp_awarded", 0)},
+            reference_id=referral["id"],
+            reference_type="referral",
+        )
+    except Exception:
+        pass
 
     return jsonify({
-        "hp_awarded": hp_amount,
+        "hp_awarded": result.get("hp_awarded", 0),
         "hp_destination": "active",
-        "completed_referral_count": completed_count,
     }), 200
 
 
@@ -281,47 +244,3 @@ def get_referrer_id(user_id: str) -> str | None:
         return referral.get("referrer_id") if referral else None
     except Exception:
         return None
-
-
-class SimpleMilestone:
-    def __init__(self, threshold, hp_amount):
-        self.threshold = threshold
-        self.hp_amount = hp_amount
-
-
-def get_next_uncredited_milestone(user_id: str):
-    db = get_db()
-    try:
-        referrer_id = get_referrer_id(user_id)
-        if not referrer_id:
-            return None
-        completed = (
-            db.table("referrals")
-            .select("id")
-            .eq("referrer_id", referrer_id)
-            .eq("status", "completed")
-            .execute()
-        ) or []
-        completed_count = len(completed)
-        milestones = (
-            db.table("milestones")
-            .select("id,trigger_value,hp_awarded")
-            .eq("trigger_type", "referral_count")
-            .eq("is_active", True)
-            .order("trigger_value", ascending=True)
-            .execute()
-        ) or []
-        credited = (
-            db.table("user_milestones")
-            .select("milestone_id")
-            .eq("user_id", referrer_id)
-            .execute()
-        ) or []
-        credited_ids = {c["milestone_id"] for c in credited if "milestone_id" in c}
-        for m in milestones:
-            val = int(m.get("trigger_value") or 0)
-            if completed_count >= val and m.get("id") not in credited_ids:
-                return SimpleMilestone(val, int(m.get("hp_awarded") or 0))
-    except Exception:
-        pass
-    return None
