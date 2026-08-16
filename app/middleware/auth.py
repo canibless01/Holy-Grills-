@@ -41,7 +41,8 @@ def require_auth(f):
                 db.table("profiles")
                 .select(
                     "id,full_name,role,is_active,"
-                    "phone,date_of_birth,referral_code,referred_by"
+                    "phone,date_of_birth,referral_code,referred_by,"
+                    "campus_id"
                 )
                 .eq("id", g.user_id)
                 .single()
@@ -55,6 +56,10 @@ def require_auth(f):
 
         g.user = profile
         g.user_role = profile.get("role", "student")
+        g.campus_id = profile.get("campus_id")
+        if not g.campus_id:
+            default = db.table("campuses").select("id").eq("is_default", True).single().execute()
+            g.campus_id = default.get("id") if default else None
 
         return f(*args, **kwargs)
 
@@ -79,12 +84,19 @@ def require_role(*roles):
             try:
                 profile = (
                     db.table("profiles")
-                    .select("id,full_name,role,is_active")
+                    .select(
+                        "id,full_name,role,is_active,"
+                        "phone,date_of_birth,referral_code,referred_by,"
+                        "campus_id"
+                    )
                     .eq("id", g.user_id)
                     .single()
                     .execute()
                 )
             except SupabaseError:
+                abort(401, "User profile not found")
+
+            if not profile:
                 abort(401, "User profile not found")
 
             if not profile.get("is_active", True):
@@ -95,6 +107,10 @@ def require_role(*roles):
 
             g.user = profile
             g.user_role = profile.get("role")
+            g.campus_id = profile.get("campus_id")
+            if not g.campus_id:
+                default = db.table("campuses").select("id").eq("is_default", True).single().execute()
+                g.campus_id = default.get("id") if default else None
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -135,7 +151,11 @@ def optional_auth(f):
             try:
                 profile = (
                     db.table("profiles")
-                    .select("id,full_name,role,is_active")
+                    .select(
+                        "id,full_name,role,is_active,"
+                        "phone,date_of_birth,referral_code,referred_by,"
+                        "campus_id"
+                    )
                     .eq("id", g.user_id)
                     .single()
                     .execute()
@@ -151,6 +171,10 @@ def optional_auth(f):
 
             g.user = profile
             g.user_role = profile.get("role", "student")
+            g.campus_id = profile.get("campus_id")
+            if not g.campus_id:
+                default = db.table("campuses").select("id").eq("is_default", True).single().execute()
+                g.campus_id = default.get("id") if default else None
 
         return f(*args, **kwargs)
     return decorated

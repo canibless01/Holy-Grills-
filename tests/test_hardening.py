@@ -405,8 +405,8 @@ def test_refund_split_and_partial_validations():
                     def mock_single():
                         single_mock = MagicMock()
                         def mock_execute():
-                            if fields == "id,full_name,role,is_active":
-                                return {"id": "admin-1", "role": "admin", "is_active": True}
+                            if "role" in fields:
+                                return {"id": "admin-1", "role": "admin", "is_active": True, "campus_id": "campus-1"}
                             elif fields == "id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes":
                                 return {
                                     "id": "order-1",
@@ -458,9 +458,9 @@ def test_refund_exceeds_refundable_amount():
                     def mock_single():
                         single_mock = MagicMock()
                         def mock_execute():
-                            if fields == "id,full_name,role,is_active":
-                                return {"id": "admin-1", "role": "admin", "is_active": True}
-                            elif fields == "id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes":
+                            if "role" in fields:
+                                return {"id": "admin-1", "role": "admin", "is_active": True, "campus_id": "campus-1"}
+                            elif "total_amount" in fields:
                                 return {
                                     "id": "order-1",
                                     "user_id": "user-1",
@@ -513,9 +513,9 @@ def test_refund_paystack_provider_failure_halts_local_mutation():
                     def mock_single():
                         single_mock = MagicMock()
                         def mock_execute():
-                            if fields == "id,full_name,role,is_active":
-                                return {"id": "admin-1", "role": "admin", "is_active": True}
-                            elif fields == "id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes":
+                            if "role" in fields:
+                                return {"id": "admin-1", "role": "admin", "is_active": True, "campus_id": "campus-1"}
+                            elif "total_amount" in fields:
                                 return {
                                     "id": "order-1",
                                     "user_id": "user-1",
@@ -589,8 +589,8 @@ def test_data_exposure_safe_fields_filter():
                     def mock_single():
                         single_mock = MagicMock()
                         def mock_execute():
-                            if fields == "id,full_name,role,is_active":
-                                return {"id": "admin-1", "role": "admin", "is_active": True}
+                            if "role" in fields and "password_hash" not in fields:
+                                return {"id": "admin-1", "role": "admin", "is_active": True, "campus_id": "campus-1"}
                             elif fields == "*":
                                 # Profile record containing sensitive fields (like password_hash)
                                 return {
