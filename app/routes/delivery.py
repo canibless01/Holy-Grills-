@@ -87,13 +87,11 @@ def list_hostels():
     """
     db = get_db()
     try:
-        hostels = (
-            db.table("hostels")
-            .select("*,gates(name,lat,lon)")
-            .eq("is_active", "true")
-            .order("name")
-            .execute()
-        ) or []
+        q = db.table("hostels").select("*,gates(name,lat,lon)").eq("is_active", "true")
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        hostels = q.order("name").execute() or []
     except Exception:
         # Table may not exist yet — return empty list gracefully
         hostels = []
@@ -114,13 +112,11 @@ def list_gates():
     """
     db = get_db()
     try:
-        gates = (
-            db.table("gates")
-            .select("*")
-            .eq("is_active", "true")
-            .order("name")
-            .execute()
-        ) or []
+        q = db.table("gates").select("*").eq("is_active", "true")
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        gates = q.order("name").execute() or []
     except Exception:
         gates = []
     return jsonify({"gates": gates}), 200

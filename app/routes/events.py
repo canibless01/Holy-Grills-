@@ -30,14 +30,16 @@ def list_events():
     """
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
-    events = (
+    q = (
         db.table("events")
         .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured")
         .eq("is_published", "true")
         .gte("starts_at", now)
-        .order("starts_at")
-        .execute()
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    events = q.order("starts_at").execute()
     return jsonify(events or []), 200
 
 
@@ -62,6 +64,9 @@ def get_event(event_id):
     db = get_db()
     event = db.table("events").select("*").eq("id", event_id).single().execute()
     if not event:
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and event.get("campus_id") != campus_id:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     try:
         tickets = db.table("event_tickets").select("id").eq("event_id", event_id).execute()

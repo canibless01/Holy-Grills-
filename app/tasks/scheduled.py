@@ -31,209 +31,211 @@ def reset_monthly_leaderboard(self):
         return {"skipped": "Lock not acquired"}
 
     try:
-        now = datetime.now(timezone.utc)
-        last_month = (now.replace(day=1) - timedelta(days=1))
-        period = last_month.strftime("%Y-%m")
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            now = datetime.now(timezone.utc)
+            last_month = (now.replace(day=1) - timedelta(days=1))
+            period = last_month.strftime("%Y-%m")
 
-        # Compute top earners for last month from hp_transactions
-        month_start = last_month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        month_end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            month_start = last_month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            month_end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
-                      "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                      "earn_squad_bonus", "earn_streak", "earn"]
-        month_txns = (
-            db.table("hp_transactions")
-            .select("user_id,amount")
-            .in_("type", EARN_TYPES)
-            .gte("created_at", month_start.isoformat())
-            .lt("created_at", month_end.isoformat())
-            .execute()
-        )
-
-        # Aggregate HP earned per user
-        from collections import defaultdict
-        user_hp = defaultdict(int)
-        for t in (month_txns or []):
-            if t.get("amount", 0) > 0:
-                user_hp[t["user_id"]] += t["amount"]
-
-        sorted_users = sorted(user_hp.items(), key=lambda x: x[1], reverse=True)[:10]
-
-        if sorted_users:
-            # Fetch display names for top users
-            top_ids = [uid for uid, _ in sorted_users]
-            profiles_data = (
-                db.table("profiles")
-                .select("id,full_name")
-                .in_("id", top_ids)
+            EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
+                          "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
+                          "earn_squad_bonus", "earn_streak", "earn"]
+            month_txns = (
+                db.table("hp_transactions")
+                .select("user_id,amount")
+                .in_("type", EARN_TYPES)
+                .gte("created_at", month_start.isoformat())
+                .lt("created_at", month_end.isoformat())
+                .eq("campus_id", campus_id)
                 .execute()
             )
-            profile_map = {p["id"]: p for p in (profiles_data or [])}
 
-            entries = []
-            for i, (user_id, hp_earned) in enumerate(sorted_users):
-                entries.append({
-                    "rank": i + 1,
-                    "user_id": user_id,
-                    "full_name": profile_map.get(user_id, {}).get("full_name"),
-                    "hp_earned": hp_earned,
-                })
+            from collections import defaultdict
+            user_hp = defaultdict(int)
+            for t in (month_txns or []):
+                if t.get("amount", 0) > 0:
+                    user_hp[t["user_id"]] += t["amount"]
 
-            try:
-                db.table("leaderboard_snapshots").insert({
-                    "ranking_type": "monthly",
-                    "period_key": period,
-                    "entries": entries,
-                })
-            except Exception as e:
-                logger.error("reset_monthly_leaderboard: snapshot insert failed: %s", e)
+            sorted_users = sorted(user_hp.items(), key=lambda x: x[1], reverse=True)[:10]
 
-            # Notify top-10 users of their placement
-            from app.services.notification_service import send_notification
-            for entry in entries[:10]:
-                uid = entry.get("user_id")
-                rank = entry.get("rank", "?")
-                hp = entry.get("hp_earned", 0)
-                if not uid:
-                    continue
+            if sorted_users:
+                top_ids = [uid for uid, _ in sorted_users]
+                profiles_data = (
+                    db.table("profiles")
+                    .select("id,full_name")
+                    .in_("id", top_ids)
+                    .eq("campus_id", campus_id)
+                    .execute()
+                )
+                profile_map = {p["id"]: p for p in (profiles_data or [])}
+
+                entries = []
+                for i, (user_id, hp_earned) in enumerate(sorted_users):
+                    entries.append({
+                        "rank": i + 1,
+                        "user_id": user_id,
+                        "full_name": profile_map.get(user_id, {}).get("full_name"),
+                        "hp_earned": hp_earned,
+                        "campus_id": campus_id,
+                    })
+
                 try:
-                    send_notification(
-                        user_id=uid,
-                        notif_type="leaderboard_rank",
-                        template_data={"rank": rank, "hp": hp, "period": period},
-                    )
+                    db.table("leaderboard_snapshots").insert({
+                        "ranking_type": "monthly",
+                        "period_key": period,
+                        "entries": entries,
+                        "campus_id": campus_id,
+                    })
                 except Exception as e:
-                    logger.warning("reset_monthly_leaderboard: notify failed for user %s: %s", uid, e)
+                    logger.error("reset_monthly_leaderboard: snapshot insert failed for campus %s: %s", campus_id, e)
 
-            # §Spec: Track top-3 finishes; induct to hall_of_fame_inductees at count=3
-            top3_ids = [uid for uid, _ in sorted_users[:3]]
-            for uid in top3_ids:
-                try:
-                    profile = db.table("profiles").select("top4_finish_count").eq("id", uid).single().execute()
-                    current_count = int((profile or {}).get("top4_finish_count") or 0)
-                    new_count = current_count + 1
-                    db.table("profiles").eq("id", uid).update({"top4_finish_count": new_count})
-                    if new_count == 3:
-                        # Induct to Hall of Fame
-                        try:
-                            _hof_profile = db.table("profiles").select("full_name,current_tier").eq("id", uid).single().execute() or {}
-                            db.table("hall_of_fame_inductees").insert({
-                                "user_id": uid,
-                                "inducted_at": now.isoformat(),
-                                "full_name": _hof_profile.get("full_name") or ("Platform Member"),
-                                "tier_at_induction": _hof_profile.get("current_tier"),
-                                "top4_finish_count": new_count,
-                            })
-                            # Create pending reward record for admin to fulfil
+                from app.services.notification_service import send_notification
+                for entry in entries[:10]:
+                    uid = entry.get("user_id")
+                    rank = entry.get("rank", "?")
+                    hp = entry.get("hp_earned", 0)
+                    if not uid:
+                        continue
+                    try:
+                        send_notification(
+                            user_id=uid,
+                            notif_type="leaderboard_rank",
+                            template_data={"rank": rank, "hp": hp, "period": period},
+                        )
+                    except Exception as e:
+                        logger.warning("reset_monthly_leaderboard: notify failed for user %s: %s", uid, e)
+
+                top3_ids = [uid for uid, _ in sorted_users[:3]]
+                for uid in top3_ids:
+                    try:
+                        profile = db.table("profiles").select("top4_finish_count").eq("id", uid).eq("campus_id", campus_id).single().execute()
+                        current_count = int((profile or {}).get("top4_finish_count") or 0)
+                        new_count = current_count + 1
+                        db.table("profiles").eq("id", uid).update({"top4_finish_count": new_count})
+                        if new_count == 3:
                             try:
-                                db.table("hall_of_fame_rewards").insert({
+                                _hof_profile = db.table("profiles").select("full_name,current_tier").eq("id", uid).single().execute() or {}
+                                db.table("hall_of_fame_inductees").insert({
                                     "user_id": uid,
                                     "inducted_at": now.isoformat(),
-                                    "status": "pending",
+                                    "full_name": _hof_profile.get("full_name") or ("Platform Member"),
+                                    "tier_at_induction": _hof_profile.get("current_tier"),
+                                    "top4_finish_count": new_count,
+                                    "campus_id": campus_id,
                                 })
+                                try:
+                                    db.table("hall_of_fame_rewards").insert({
+                                        "user_id": uid,
+                                        "inducted_at": now.isoformat(),
+                                        "status": "pending",
+                                        "campus_id": campus_id,
+                                    })
+                                except Exception:
+                                    pass
+                            except Exception as _hof_err:
+                                logger.warning("reset_monthly_leaderboard: hall_of_fame insert failed for %s: %s", uid, _hof_err)
+                            try:
+                                send_notification(
+                                    user_id=uid,
+                                    notif_type="hall_of_fame",
+                                    template_data={},
+                                )
                             except Exception:
                                 pass
-                        except Exception as _hof_err:
-                            logger.warning("reset_monthly_leaderboard: hall_of_fame insert failed for %s: %s", uid, _hof_err)
+                            try:
+                                _admin_ids = db.table("profiles").select("id").eq("role", "admin").eq("campus_id", campus_id).execute() or []
+                                _hof_name = (db.table("profiles").select("full_name").eq("id", uid).single().execute() or {}).get("full_name", "A user")
+                                for _adm in _admin_ids:
+                                    try:
+                                        send_notification(
+                                            user_id=_adm["id"],
+                                            notif_type="admin_hof_induction",
+                                            template_data={"inducted_name": _hof_name, "user_id": uid},
+                                        )
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logger.warning("reset_monthly_leaderboard: top3 tracking failed for %s: %s", uid, e)
+
+                try:
+                    from flask import current_app as _capp
+                    _free_days = _capp.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60)
+                    _spin_days  = _capp.config.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", 30)
+                    from datetime import timezone as _tz
+                    _now = datetime.now(_tz.utc)
+                    _free_expires = (_now + timedelta(days=_free_days)).isoformat()
+                    _spin_expires  = (_now + timedelta(days=_spin_days)).isoformat()
+
+                    FREE_SIDE_COUNTS = {1: 5, 2: 3, 3: 1}
+
+                    for entry in entries[:10]:
+                        _uid = entry.get("user_id")
+                        _rank = entry.get("rank", 0)
+                        if not _uid:
+                            continue
+
                         try:
+                            db.table("exclusive_spins").insert({
+                                "user_id": _uid,
+                                "spin_count": 1,
+                                "source": "leaderboard_prize",
+                                "month": period,
+                                "expires_at": _spin_expires,
+                                "campus_id": campus_id,
+                            })
+                        except Exception as _es:
+                            logger.warning("reset_monthly_leaderboard: exclusive_spin insert failed for %s: %s", _uid, _es)
+
+                        _credits = FREE_SIDE_COUNTS.get(_rank, 0)
+                        if _credits > 0:
+                            try:
+                                db.table("free_side_credits").insert({
+                                    "user_id": _uid,
+                                    "credits_remaining": _credits,
+                                    "source": "leaderboard_prize",
+                                    "month": period,
+                                    "expires_at": _free_expires,
+                                    "campus_id": campus_id,
+                                })
+                            except Exception as _fsc:
+                                logger.warning("reset_monthly_leaderboard: free_side_credits insert failed for %s: %s", _uid, _fsc)
+
+                        try:
+                            db.table("leaderboard_reward_fulfillments").insert({
+                                "user_id": _uid,
+                                "rank": _rank,
+                                "month": period,
+                                "reward_type": "leaderboard_prize",
+                                "status": "pending",
+                                "campus_id": campus_id,
+                            })
+                        except Exception:
+                            pass
+
+                        try:
+                            _prize_desc = f"{FREE_SIDE_COUNTS.get(_rank, 0)} free sides + 1 exclusive spin" if _rank <= 3 else "1 exclusive spin"
                             send_notification(
-                                user_id=uid,
-                                notif_type="hall_of_fame",
-                                template_data={},
+                                user_id=_uid,
+                                notif_type="leaderboard_prize",
+                                template_data={"rank": _rank, "prize": _prize_desc, "period": period},
                             )
                         except Exception:
                             pass
-                        # Notify all admins of new inductee
-                        try:
-                            _admin_ids = db.table("profiles").select("id").eq("role", "admin").execute() or []
-                            _hof_name = (db.table("profiles").select("full_name").eq("id", uid).single().execute() or {}).get("full_name", "A user")
-                            for _adm in _admin_ids:
-                                try:
-                                    send_notification(
-                                        user_id=_adm["id"],
-                                        notif_type="admin_hof_induction",
-                                        template_data={"inducted_name": _hof_name, "user_id": uid},
-                                    )
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                except Exception as e:
-                    logger.warning("reset_monthly_leaderboard: top3 tracking failed for %s: %s", uid, e)
+                except Exception as _prize_err:
+                    logger.warning("reset_monthly_leaderboard: prize assignment failed: %s", _prize_err)
+            else:
+                entries = []
 
-            # §Spec: Assign leaderboard prizes — free-side credits (#1-#3) + exclusive spin (#1-#10)
-            try:
-                from flask import current_app as _capp
-                _free_days = _capp.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60)
-                _spin_days  = _capp.config.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", 30)
-                from datetime import timezone as _tz
-                _now = datetime.now(_tz.utc)
-                _free_expires = (_now + timedelta(days=_free_days)).isoformat()
-                _spin_expires  = (_now + timedelta(days=_spin_days)).isoformat()
+            results[campus_id] = {"period": period, "top_count": len(entries)}
 
-                FREE_SIDE_COUNTS = {1: 5, 2: 3, 3: 1}  # rank → credit count
-
-                for entry in entries[:10]:
-                    _uid = entry.get("user_id")
-                    _rank = entry.get("rank", 0)
-                    if not _uid:
-                        continue
-
-                    # Award exclusive spin to all top-10
-                    try:
-                        db.table("exclusive_spins").insert({
-                            "user_id": _uid,
-                            "spin_count": 1,
-                            "source": "leaderboard_prize",
-                            "month": period,
-                            "expires_at": _spin_expires,
-                        })
-                    except Exception as _es:
-                        logger.warning("reset_monthly_leaderboard: exclusive_spin insert failed for %s: %s", _uid, _es)
-
-                    # Award free-side credits to #1-#3
-                    _credits = FREE_SIDE_COUNTS.get(_rank, 0)
-                    if _credits > 0:
-                        try:
-                            db.table("free_side_credits").insert({
-                                "user_id": _uid,
-                                "credits_remaining": _credits,
-                                "source": "leaderboard_prize",
-                                "month": period,
-                                "expires_at": _free_expires,
-                            })
-                        except Exception as _fsc:
-                            logger.warning("reset_monthly_leaderboard: free_side_credits insert failed for %s: %s", _uid, _fsc)
-
-                    # Create fulfillment tracking record
-                    try:
-                        db.table("leaderboard_reward_fulfillments").insert({
-                            "user_id": _uid,
-                            "rank": _rank,
-                            "month": period,
-                            "reward_type": "leaderboard_prize",
-                            "status": "pending",
-                        })
-                    except Exception:
-                        pass
-
-                    # Notify user of their prize
-                    try:
-                        _prize_desc = f"{FREE_SIDE_COUNTS.get(_rank, 0)} free sides + 1 exclusive spin" if _rank <= 3 else "1 exclusive spin"
-                        send_notification(
-                            user_id=_uid,
-                            notif_type="leaderboard_prize",
-                            template_data={"rank": _rank, "prize": _prize_desc, "period": period},
-                        )
-                    except Exception:
-                        pass
-            except Exception as _prize_err:
-                logger.warning("reset_monthly_leaderboard: prize assignment failed: %s", _prize_err)
-        else:
-            entries = []
-
-        return {"period": period, "top_count": len(entries)}
+        return results
     finally:
         db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
 
@@ -255,49 +257,53 @@ def recalculate_120day_hp(self):
         return {"skipped": "Lock not acquired"}
 
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
-        profiles = db.table("profiles").select("id").eq("is_active", "true").execute()
-        updated = 0
-
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        from app.services.hp_service import recalculate_tier
         EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
                       "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
                       "earn_squad_bonus", "earn_streak", "earn"]
 
-        from app.services.hp_service import recalculate_tier
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+            profiles = db.table("profiles").select("id").eq("is_active", "true").eq("campus_id", campus_id).execute()
+            updated = 0
 
-        for profile in profiles:
-            user_id = profile["id"]
-            try:
-                txns = (
-                    db.table("hp_transactions")
-                    .select("amount")
-                    .eq("user_id", user_id)
-                    .in_("type", EARN_TYPES)
-                    .eq("status", "active")
-                    .gte("created_at", cutoff)
-                    .execute()
-                )
-                earned_120 = sum(t["amount"] for t in (txns or []) if t.get("amount", 0) > 0)
-
-                # Persist to profiles so recalculate_tier() and get_hp_balance() can read it
+            for profile in (profiles or []):
+                user_id = profile["id"]
                 try:
-                    db.table("profiles").eq("id", user_id).update({
-                        "hp_earned_120day": earned_120,
-                    })
+                    txns = (
+                        db.table("hp_transactions")
+                        .select("amount")
+                        .eq("user_id", user_id)
+                        .eq("campus_id", campus_id)
+                        .in_("type", EARN_TYPES)
+                        .eq("status", "active")
+                        .gte("created_at", cutoff)
+                        .execute()
+                    )
+                    earned_120 = sum(t["amount"] for t in (txns or []) if t.get("amount", 0) > 0)
+
+                    try:
+                        db.table("profiles").eq("id", user_id).update({
+                            "hp_earned_120day": earned_120,
+                        })
+                    except Exception as e:
+                        logger.warning("recalculate_120day_hp: profile update failed for user %s: %s", user_id, e)
+
+                    try:
+                        recalculate_tier(user_id)
+                    except Exception as e:
+                        logger.warning("recalculate_120day_hp: tier recalc failed for user %s: %s", user_id, e)
+
+                    updated += 1
                 except Exception as e:
-                    logger.warning("recalculate_120day_hp: profile update failed for user %s: %s", user_id, e)
+                    logger.error("recalculate_120day_hp: failed for user %s: %s", user_id, e)
 
-                # Trigger tier recalculation based on new 120-day figure
-                try:
-                    recalculate_tier(user_id)
-                except Exception as e:
-                    logger.warning("recalculate_120day_hp: tier recalc failed for user %s: %s", user_id, e)
+            results[campus_id] = {"updated": updated}
 
-                updated += 1
-            except Exception as e:
-                logger.error("recalculate_120day_hp: failed for user %s: %s", user_id, e)
-
-        return {"updated": updated}
+        return results
     finally:
         db.rpc("release_cron_lock", {"p_job_name": "recalculate_120day_hp"})
 
@@ -320,106 +326,108 @@ def tier_grace_period_check(self):
 
     try:
         from flask import current_app
+        from app.services.notification_service import send_notification
         now = datetime.now(timezone.utc)
         grace_days = current_app.config.get("TIER_GRACE_PERIOD_DAYS", 7)
 
-        tiers = db.table("hp_tiers").select("*").order("sort_order").execute()
-        base_tier = tiers[0] if tiers else None
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
 
-        # Build tier lookup by id
-        tier_map = {t["id"]: t for t in tiers}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            tiers = db.table("hp_tiers").select("*").eq("campus_id", campus_id).order("sort_order").execute() or []
+            if not tiers:
+                tiers = db.table("hp_tiers").select("*").order("sort_order").execute() or []
+            base_tier = tiers[0] if tiers else None
+            tier_map = {t["id"]: t for t in tiers}
 
-        # Find all active students with a current tier set
-        profiles_in_tier = (
-            db.table("profiles")
-            .select("id,hp_earned_120day,current_tier_id,tier_grace_ends_at,tier_grace_started_at")
-            .eq("is_active", "true")
-            .eq("role", "student")
-            .not_.is_("current_tier_id", "null")
-            .execute()
-        )
+            profiles_in_tier = (
+                db.table("profiles")
+                .select("id,hp_earned_120day,current_tier_id,tier_grace_ends_at,tier_grace_started_at")
+                .eq("is_active", "true")
+                .eq("role", "student")
+                .eq("campus_id", campus_id)
+                .not_.is_("current_tier_id", "null")
+                .execute()
+            )
 
-        started_grace = 0
-        dropped_tier = 0
+            started_grace = 0
+            dropped_tier = 0
 
-        from app.services.notification_service import send_notification
+            for profile in (profiles_in_tier or []):
+                user_id = profile["id"]
+                current_tier_id = profile.get("current_tier_id")
+                tier = tier_map.get(current_tier_id, {})
+                maintenance = tier.get("maintenance_points", 0)
+                if maintenance == 0:
+                    continue
 
-        for profile in (profiles_in_tier or []):
-            user_id = profile["id"]
-            current_tier_id = profile.get("current_tier_id")
-            tier = tier_map.get(current_tier_id, {})
-            maintenance = tier.get("maintenance_points", 0)
-            if maintenance == 0:
-                continue
+                hp_earned_120day = profile.get("hp_earned_120day", 0) or 0
+                grace_ends = profile.get("tier_grace_ends_at")
 
-            # Use hp_earned_120day (rolling 120-day) for tier maintenance check
-            hp_earned_120day = profile.get("hp_earned_120day", 0) or 0
-            grace_ends = profile.get("tier_grace_ends_at")
-
-            if hp_earned_120day >= maintenance:
-                # User met maintenance — clear any grace period
-                if grace_ends:
-                    db.table("profiles").eq("id", user_id).update({
-                        "tier_grace_started_at": None,
-                        "tier_grace_ends_at": None,
-                    })
-                continue
-
-            if grace_ends:
-                # Already in grace period — check if elapsed
-                if grace_ends < now.isoformat():
-                    # Grace over — find the highest tier they qualify for
-                    new_tier = base_tier
-                    for t in reversed(tiers):
-                        if hp_earned_120day >= t.get("min_points", 0):
-                            new_tier = t
-                            break
-
-                    new_tier_id = new_tier["id"] if new_tier else None
-                    db.table("profiles").eq("id", user_id).update({
-                        "current_tier_id": new_tier_id,
-                        "tier_grace_started_at": None,
-                        "tier_grace_ends_at": None,
-                    })
-
-                    if new_tier_id:
-                        db.table("user_tiers").insert({
-                            "user_id": user_id,
-                            "tier_id": new_tier_id,
-                            "previous_tier_id": current_tier_id,
-                            "event": "downgrade",
-                            "hp_at_event": hp_earned_120day,
+                if hp_earned_120day >= maintenance:
+                    if grace_ends:
+                        db.table("profiles").eq("id", user_id).update({
+                            "tier_grace_started_at": None,
+                            "tier_grace_ends_at": None,
                         })
+                    continue
+
+                if grace_ends:
+                    if grace_ends < now.isoformat():
+                        new_tier = base_tier
+                        for t in reversed(tiers):
+                            if hp_earned_120day >= t.get("min_points", 0):
+                                new_tier = t
+                                break
+
+                        new_tier_id = new_tier["id"] if new_tier else None
+                        db.table("profiles").eq("id", user_id).update({
+                            "current_tier_id": new_tier_id,
+                            "tier_grace_started_at": None,
+                            "tier_grace_ends_at": None,
+                        })
+
+                        if new_tier_id:
+                            db.table("user_tiers").insert({
+                                "user_id": user_id,
+                                "tier_id": new_tier_id,
+                                "previous_tier_id": current_tier_id,
+                                "event": "downgrade",
+                                "hp_at_event": hp_earned_120day,
+                                "campus_id": campus_id,
+                            })
+
+                        send_notification(
+                            user_id=user_id,
+                            notif_type="tier_downgrade",
+                            template_data={
+                                "from_tier": tier.get("name", "tier"),
+                                "to_tier": new_tier.get("name", "") if new_tier else "Base",
+                            },
+                        )
+                        dropped_tier += 1
+                else:
+                    grace_start = now.isoformat()
+                    grace_end = (now + timedelta(days=grace_days)).isoformat()
+                    db.table("profiles").eq("id", user_id).update({
+                        "tier_grace_started_at": grace_start,
+                        "tier_grace_ends_at": grace_end,
+                    })
 
                     send_notification(
                         user_id=user_id,
-                        notif_type="tier_downgrade",
+                        notif_type="tier_grace_period",
                         template_data={
-                            "from_tier": tier.get("name", "tier"),
-                            "to_tier": new_tier.get("name", "") if new_tier else "Base",
+                            "grace_days": grace_days,
+                            "tier_name": tier.get("name", "your tier"),
                         },
                     )
-                    dropped_tier += 1
-            else:
-                # Start grace period (days from config)
-                grace_start = now.isoformat()
-                grace_end = (now + timedelta(days=grace_days)).isoformat()
-                db.table("profiles").eq("id", user_id).update({
-                    "tier_grace_started_at": grace_start,
-                    "tier_grace_ends_at": grace_end,
-                })
+                    started_grace += 1
 
-                send_notification(
-                    user_id=user_id,
-                    notif_type="tier_grace_period",
-                    template_data={
-                        "grace_days": grace_days,
-                        "tier_name": tier.get("name", "your tier"),
-                    },
-                )
-                started_grace += 1
+            results[campus_id] = {"started_grace": started_grace, "dropped_tier": dropped_tier}
 
-        return {"started_grace": started_grace, "dropped_tier": dropped_tier}
+        return results
     finally:
         db.rpc("release_cron_lock", {"p_job_name": "tier_grace_period_check"})
 
@@ -439,94 +447,101 @@ def birthday_hp_awards(self):
     today = datetime.now(timezone.utc)
     today_md = today.strftime("%m-%d")
 
-    profiles = (
-        db.table("profiles")
-        .select("id,full_name,date_of_birth")
-        .eq("is_active", "true")
-        .execute()
-    )
-
-    awarded = 0
+    campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+    results = {}
     from app.services.hp_service import award_active_hp
     from app.services.notification_service import send_notification
 
-    for profile in profiles:
-        dob = profile.get("date_of_birth")
-        if not dob:
-            continue
-        try:
-            dob_md = str(dob)[5:][:5]
-            if dob_md == today_md:
-                already = (
-                    db.table("hp_transactions")
-                    .select("id")
-                    .eq("user_id", profile["id"])
-                    .eq("reference_type", "birthday")
-                    .gte("created_at", today.replace(month=today.month, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat())
-                    .execute()
-                )
-                if already:
-                    continue
+    for campus in (campuses if isinstance(campuses, list) else []):
+        campus_id = campus["id"]
+        profiles = (
+            db.table("profiles")
+            .select("id,full_name,date_of_birth,faculty,department")
+            .eq("is_active", "true")
+            .eq("campus_id", campus_id)
+            .execute()
+        ) or []
 
-                award_active_hp(
-                    user_id=profile["id"],
-                    amount=birthday_hp,
-                    txn_type="earn_birthday",
-                    reference_type="birthday",
-                    notes=f"Birthday HP — {today.strftime('%B %d, %Y')}",
-                    apply_multiplier=False,  # Birthday HP is fixed — not subject to event multiplier
-                )
+        awarded = 0
+        for profile in profiles:
+            dob = profile.get("date_of_birth")
+            if not dob:
+                continue
+            try:
+                dob_md = str(dob)[5:][:5]
+                if dob_md == today_md:
+                    already = (
+                        db.table("hp_transactions")
+                        .select("id")
+                        .eq("user_id", profile["id"])
+                        .eq("campus_id", campus_id)
+                        .eq("reference_type", "birthday")
+                        .gte("created_at", today.replace(month=today.month, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat())
+                        .execute()
+                    )
+                    if already:
+                        continue
 
-                # Blast faculty/dept notification with tap-to-HP-transfer link
-                name = (profile.get("full_name") or "").split()[0]
-                faculty = profile.get("faculty", "")
-                dept = profile.get("department", "")
-                transfer_link = f"/hp/transfer?recipient_id={profile['id']}"
-                send_notification(
-                    user_id=profile["id"],
-                    notif_type="birthday_bonus",
-                    template_data={"name": name, "hp": birthday_hp},
-                    metadata={"transfer_link": transfer_link, "faculty": faculty, "department": dept},
-                )
+                    award_active_hp(
+                        user_id=profile["id"],
+                        amount=birthday_hp,
+                        txn_type="earn_birthday",
+                        reference_type="birthday",
+                        notes=f"Birthday HP — {today.strftime('%B %d, %Y')}",
+                        apply_multiplier=False,
+                    )
 
-                # Blast to faculty/dept peers so they can send HP as a gift
-                if faculty or dept:
-                    try:
-                        peer_query = (
-                            db.table("profiles")
-                            .select("id")
-                            .eq("is_active", "true")
-                            .neq("id", profile["id"])
-                        )
-                        if faculty:
-                            peer_query = peer_query.eq("faculty", faculty)
-                        if dept:
-                            peer_query = peer_query.eq("department", dept)
-                        peers = peer_query.execute() or []
-                        for peer in peers:
-                            try:
-                                send_notification(
-                                    user_id=peer["id"],
-                                    notif_type="birthday_blast",
-                                    template_data={"name": name},
-                                    metadata={"transfer_link": transfer_link, "celebrant_id": profile["id"]},
-                                )
-                            except Exception as _pe:
-                                logger.warning(
-                                    "birthday_hp_awards: peer blast failed for peer %s: %s",
-                                    peer["id"], _pe,
-                                )
-                    except Exception as _be:
-                        logger.warning(
-                            "birthday_hp_awards: peer blast query failed for celebrant %s: %s",
-                            profile["id"], _be,
-                        )
+                    name = (profile.get("full_name") or "").split()[0]
+                    faculty = profile.get("faculty", "")
+                    dept = profile.get("department", "")
+                    transfer_link = f"/hp/transfer?recipient_id={profile['id']}"
+                    send_notification(
+                        user_id=profile["id"],
+                        notif_type="birthday_bonus",
+                        template_data={"name": name, "hp": birthday_hp},
+                        metadata={"transfer_link": transfer_link, "faculty": faculty, "department": dept},
+                    )
 
-                awarded += 1
-        except Exception as e:
-            logger.error("birthday_hp_awards: failed for user %s: %s", profile["id"], e)
+                    if faculty or dept:
+                        try:
+                            peer_query = (
+                                db.table("profiles")
+                                .select("id")
+                                .eq("is_active", "true")
+                                .eq("campus_id", campus_id)
+                                .neq("id", profile["id"])
+                            )
+                            if faculty:
+                                peer_query = peer_query.eq("faculty", faculty)
+                            if dept:
+                                peer_query = peer_query.eq("department", dept)
+                            peers = peer_query.execute() or []
+                            for peer in peers:
+                                try:
+                                    send_notification(
+                                        user_id=peer["id"],
+                                        notif_type="birthday_blast",
+                                        template_data={"name": name},
+                                        metadata={"transfer_link": transfer_link, "celebrant_id": profile["id"]},
+                                    )
+                                except Exception as _pe:
+                                    logger.warning(
+                                        "birthday_hp_awards: peer blast failed for peer %s: %s",
+                                        peer["id"], _pe,
+                                    )
+                        except Exception as _be:
+                            logger.warning(
+                                "birthday_hp_awards: peer blast query failed for celebrant %s: %s",
+                                profile["id"], _be,
+                            )
 
-    return {"awarded": awarded, "date": today_md}
+                    awarded += 1
+            except Exception as e:
+                logger.error("birthday_hp_awards: failed for user %s: %s", profile["id"], e)
+
+        results[campus_id] = {"awarded": awarded, "date": today_md}
+
+    return results
 
 
 @celery_app.task(name="app.tasks.scheduled.monthly_birthday_report", bind=True, max_retries=2)
@@ -546,95 +561,99 @@ def monthly_birthday_report(self):
         lock_acquired = True
 
     try:
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
         now = datetime.now(timezone.utc)
         current_month = now.month
-
-        profiles = (
-            db.table("profiles")
-            .select("id,full_name,date_of_birth,phone")
-            .eq("is_active", "true")
-            .execute()
-        )
-
-        birthday_users = []
-        for p in (profiles or []):
-            dob = p.get("date_of_birth")
-            if not dob:
-                continue
-            try:
-                dob_str = str(dob)
-                month = int(dob_str[5:7])
-                if month == current_month:
-                    day = int(dob_str[8:10])
-                    birthday_users.append({
-                        "name": p.get("full_name") or "Unknown",
-                        "date": dob_str[5:10],
-                        "phone": p.get("phone") or "N/A",
-                        "user_id": p["id"],
-                    })
-            except Exception:
-                continue
-
-        birthday_users.sort(key=lambda x: x["date"])
         month_name = now.strftime("%B %Y")
-        count = len(birthday_users)
-
-        admins = (
-            db.table("profiles")
-            .select("id,email,full_name")
-            .eq("role", "admin")
-            .eq("is_active", "true")
-            .execute()
-        )
-
-        if not admins:
-            return {"birthday_count": count, "month": month_name, "notified_admins": 0}
-
-        summary_lines = [
-            f"• {u['name']} — {u['date']} (📞 {u['phone']})"
-            for u in birthday_users
-        ]
-        summary_text = "\n".join(summary_lines) if summary_lines else "No birthdays this month."
-
-        notif_body = (
-            f"Users with birthdays in {month_name}:\n\n{summary_text}"
-            if birthday_users
-            else f"No users have birthdays in {month_name}."
-        )
 
         from app.services.notification_service import send_notification
         from app.utils.email import send_email
 
-        for admin in admins:
-            # birthday_report body is dynamically assembled from a user list — passed directly.
-            send_notification(
-                user_id=admin["id"],
-                notif_type="birthday_report",
-                title=MSG.BIRTHDAY_REPORT_TITLE.format(
-                    count=count,
-                    plural="s" if count != 1 else "",
-                    month=month_name,
-                ),
-                body=notif_body,
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            profiles = (
+                db.table("profiles")
+                .select("id,full_name,date_of_birth,phone")
+                .eq("is_active", "true")
+                .eq("campus_id", campus_id)
+                .execute()
             )
-            if admin.get("email"):
-                send_email(
-                    to_email=admin["email"],
-                    to_name=admin.get("full_name") or "Admin",
-                    template_key="monthly_birthday_report",
-                    data={
-                        "month": month_name,
-                        "count": count,
-                        "birthday_list": birthday_users,
-                        "summary_text": summary_text,
-                    },
+
+            birthday_users = []
+            for p in (profiles or []):
+                dob = p.get("date_of_birth")
+                if not dob:
+                    continue
+                try:
+                    dob_str = str(dob)
+                    month = int(dob_str[5:7])
+                    if month == current_month:
+                        birthday_users.append({
+                            "name": p.get("full_name") or "Unknown",
+                            "date": dob_str[5:10],
+                            "phone": p.get("phone") or "N/A",
+                            "user_id": p["id"],
+                        })
+                except Exception:
+                    continue
+
+            birthday_users.sort(key=lambda x: x["date"])
+            count = len(birthday_users)
+
+            admins = (
+                db.table("profiles")
+                .select("id,email,full_name")
+                .eq("role", "admin")
+                .eq("is_active", "true")
+                .eq("campus_id", campus_id)
+                .execute()
+            )
+
+            if admins:
+                summary_lines = [
+                    f"• {u['name']} — {u['date']} (📞 {u['phone']})"
+                    for u in birthday_users
+                ]
+                summary_text = "\n".join(summary_lines) if summary_lines else "No birthdays this month."
+
+                notif_body = (
+                    f"Users with birthdays in {month_name}:\n\n{summary_text}"
+                    if birthday_users
+                    else f"No users have birthdays in {month_name}."
                 )
 
-        return {
-            "birthday_count": count,
-            "month": month_name,
-            "notified_admins": len(admins),
-        }
+                for admin in admins:
+                    send_notification(
+                        user_id=admin["id"],
+                        notif_type="birthday_report",
+                        title=MSG.BIRTHDAY_REPORT_TITLE.format(
+                            count=count,
+                            plural="s" if count != 1 else "",
+                            month=month_name,
+                        ),
+                        body=notif_body,
+                    )
+                    if admin.get("email"):
+                        send_email(
+                            to_email=admin["email"],
+                            to_name=admin.get("full_name") or "Admin",
+                            template_key="monthly_birthday_report",
+                            data={
+                                "month": month_name,
+                                "count": count,
+                                "birthday_list": birthday_users,
+                                "summary_text": summary_text,
+                            },
+                        )
+
+            results[campus_id] = {
+                "birthday_count": count,
+                "month": month_name,
+                "notified_admins": len(admins or []),
+            }
+
+        return results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "monthly_birthday_report"})

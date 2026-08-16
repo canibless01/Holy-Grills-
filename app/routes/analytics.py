@@ -35,14 +35,17 @@ def sales_analytics():
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
     to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
 
-    orders = (
+    q = (
         db.table("orders")
         .select("id,total_amount,subtotal,status,payment_status,created_at,wallet_amount_used")
         .gte("created_at", from_date)
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
-        .execute()
     )
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    orders = q.execute()
 
     delivered = [o for o in orders if o.get("status") == "delivered"]
     total_revenue = sum(float(o.get("total_amount", 0)) for o in delivered)
@@ -80,7 +83,11 @@ def hp_analytics():
                     "signup", "wallet_topup", "social", "daily_checkin", "food", "order"}
     SPEND_SOURCES = {"reward_redemption", "flash_reward_redemption", "marketplace_purchase",
                      "order_hp_redemption", "spin_cost", "hp_transfer", "spend_reward", "spend_marketplace", "spend_order_discount"}
-    hp_txns = db.table("hp_transactions").select("amount,type,status,source").execute()
+    q = db.table("hp_transactions").select("amount,type,status,source")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    hp_txns = q.execute()
     earned = sum(t["amount"] for t in hp_txns if t.get("source") in EARN_SOURCES and t["amount"] > 0)
     spent = abs(sum(t["amount"] for t in hp_txns if t.get("source") in SPEND_SOURCES and t["amount"] < 0))
     expired = abs(sum(t["amount"] for t in hp_txns if t.get("type") == "expire" and t["amount"] < 0))
@@ -115,7 +122,11 @@ def referral_analytics():
         description: Referral stats
     """
     db = get_db()
-    all_referrals = db.table("referrals").select("id,hp_awarded").execute()
+    q = db.table("referrals").select("id,hp_awarded")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    all_referrals = q.execute()
     completed = [r for r in all_referrals if r.get("hp_awarded", 0) > 0]
     total_hp = sum(r.get("hp_awarded", 0) for r in completed)
 
@@ -144,13 +155,16 @@ def dashboard_summary():
     today_start = f"{today}T00:00:00Z"
     today_end   = f"{today}T23:59:59Z"
 
-    orders_today = (
+    q = (
         db.table("orders")
         .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used")
         .gte("created_at", today_start)
         .lte("created_at", today_end)
-        .execute()
     )
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    orders_today = q.execute()
     orders_today = orders_today if isinstance(orders_today, list) else []
 
     status_counts = {}
@@ -248,13 +262,16 @@ def orders_analytics():
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat())
     to_date   = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
 
-    orders = (
+    q = (
         db.table("orders")
         .select("id,status,delivery_window_id,batch_id,created_at,total_amount")
         .gte("created_at", from_date)
         .lte("created_at", to_date + "T23:59:59Z")
-        .execute()
     )
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    orders = q.execute()
     orders = orders if isinstance(orders, list) else []
 
     status_funnel = {}
@@ -348,49 +365,52 @@ def export_csv():
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
     to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
 
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+
     if export_type == "orders":
-        rows = (
+        q = (
             db.table("orders")
             .select("id,status,payment_status,total_amount,subtotal,delivery_fee,discount_amount,wallet_amount_used,card_amount_used,created_at,user_id,guest_phone")
             .gte("created_at", from_date)
             .lte("created_at", to_date + "T23:59:59Z")
-            .order("created_at", ascending=False)
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        rows = q.order("created_at", ascending=False).execute() or []
         fieldnames = ["id", "status", "payment_status", "total_amount", "subtotal", "delivery_fee", "discount_amount", "wallet_amount_used", "card_amount_used", "user_id", "guest_phone", "created_at"]
         filename = f"orders_{from_date}_{to_date}.csv"
 
     elif export_type == "hp_transactions":
-        rows = (
+        q = (
             db.table("hp_transactions")
             .select("id,user_id,amount,type,status,source,reference_type,reference_id,created_at")
             .gte("created_at", from_date)
             .lte("created_at", to_date + "T23:59:59Z")
-            .order("created_at", ascending=False)
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        rows = q.order("created_at", ascending=False).execute() or []
         fieldnames = ["id", "user_id", "amount", "type", "status", "source", "reference_type", "reference_id", "created_at"]
         filename = f"hp_transactions_{from_date}_{to_date}.csv"
 
     elif export_type == "wallet_transactions":
-        rows = (
+        q = (
             db.table("wallet_transactions")
             .select("id,user_id,type,amount,balance_after,reason,reference_type,provider_reference,created_at")
             .gte("created_at", from_date)
             .lte("created_at", to_date + "T23:59:59Z")
-            .order("created_at", ascending=False)
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        rows = q.order("created_at", ascending=False).execute() or []
         fieldnames = ["id", "user_id", "type", "amount", "balance_after", "reason", "reference_type", "provider_reference", "created_at"]
         filename = f"wallet_transactions_{from_date}_{to_date}.csv"
 
     elif export_type == "users":
-        rows = (
-            db.table("profiles")
-            .select("id,full_name,phone,role,is_active,hp_balance,wallet_balance,current_tier_id,created_at")
-            .order("created_at", ascending=False)
-            .execute()
-        ) or []
+        q = db.table("profiles").select("id,full_name,phone,role,is_active,hp_balance,wallet_balance,current_tier_id,created_at")
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        rows = q.order("created_at", ascending=False).execute() or []
         fieldnames = ["id", "full_name", "phone", "role", "is_active", "hp_balance", "wallet_balance", "current_tier_id", "created_at"]
         filename = f"users_{datetime.now(timezone.utc).date().isoformat()}.csv"
 
@@ -422,7 +442,11 @@ def gifts_analytics():
         description: Gift stats by status
     """
     db = get_db()
-    gifts = db.table("first_order_gifts").select("id,status,created_at").execute() or []
+    q = db.table("first_order_gifts").select("id,status,created_at")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    gifts = q.execute() or []
     status_counts = {}
     for g in gifts:
         s = g.get("status", "unknown")
@@ -446,7 +470,11 @@ def abandoned_carts_analytics():
         description: Abandoned cart stats
     """
     db = get_db()
-    carts = db.table("abandoned_carts").select("id,is_recovered,created_at").execute() or []
+    q = db.table("abandoned_carts").select("id,is_recovered,created_at")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    carts = q.execute() or []
     recovered = [c for c in carts if c.get("is_recovered")]
     unrecovered = [c for c in carts if not c.get("is_recovered")]
 
@@ -470,11 +498,18 @@ def marketplace_analytics():
         description: Marketplace stats
     """
     db = get_db()
-    purchases = db.table("marketplace_purchases").select("id,wallet_amount,card_amount").execute()
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    q_p = db.table("marketplace_purchases").select("id,wallet_amount,card_amount")
+    if campus_id:
+        q_p = q_p.eq("campus_id", campus_id)
+    purchases = q_p.execute()
     total_revenue = sum(float(p.get("wallet_amount", 0)) + float(p.get("card_amount", 0)) for p in purchases)
     hp_discount_count = 0
 
-    listings = db.table("marketplace_listings").select("id,title,is_out_of_stock,listing_type").execute()
+    q_l = db.table("marketplace_listings").select("id,title,is_out_of_stock,listing_type")
+    if campus_id:
+        q_l = q_l.eq("campus_id", campus_id)
+    listings = q_l.execute()
     low_stock = []
     low_stock_threshold = current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5)
     for l in listings:
@@ -521,14 +556,17 @@ def items_analytics():
     limit = min(int(request.args.get("limit", 50)), 200)
 
     # Fetch delivered orders in range
-    orders = (
+    q = (
         db.table("orders")
         .select("id,subtotal")
         .eq("status", "delivered")
         .gte("delivered_at", from_date)
         .lte("delivered_at", to_date + "T23:59:59Z")
-        .execute()
-    ) or []
+    )
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    orders = q.execute() or []
 
     if not orders:
         return jsonify({"from_date": from_date, "to_date": to_date, "items": [], "total_items_found": 0}), 200
@@ -593,48 +631,56 @@ def users_analytics():
 
     # DAU: unique users who placed or received an order today
     today_str = now.date().isoformat()
-    daily_orders = (
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+
+    today_str = now.date().isoformat()
+    q_daily = (
         db.table("orders")
         .select("user_id")
         .gte("created_at", today_str)
         .lte("created_at", today_str + "T23:59:59Z")
         .not_.is_("user_id", "null")
-        .execute()
-    ) or []
+    )
+    if campus_id:
+        q_daily = q_daily.eq("campus_id", campus_id)
+    daily_orders = q_daily.execute() or []
     dau = len({o["user_id"] for o in daily_orders})
 
-    # MAU: unique users active in the last 30 days
     mau_cutoff = (now - timedelta(days=30)).isoformat()
-    monthly_orders = (
+    q_monthly = (
         db.table("orders")
         .select("user_id")
         .gte("created_at", mau_cutoff)
         .not_.is_("user_id", "null")
-        .execute()
-    ) or []
+    )
+    if campus_id:
+        q_monthly = q_monthly.eq("campus_id", campus_id)
+    monthly_orders = q_monthly.execute() or []
     mau = len({o["user_id"] for o in monthly_orders})
 
-    # New signups in the range
-    new_users = (
+    q_users = (
         db.table("profiles")
         .select("id")
         .gte("created_at", from_date)
         .lte("created_at", to_date + "T23:59:59Z")
         .eq("role", "student")
-        .execute()
-    ) or []
+    )
+    if campus_id:
+        q_users = q_users.eq("campus_id", campus_id)
+    new_users = q_users.execute() or []
 
-    # Tier distribution
     tiers = db.table("hp_tiers").select("id,name,slug").execute() or []
     tier_map = {t["id"]: t.get("name", t.get("slug", "unknown")) for t in tiers}
 
-    all_profiles = (
+    q_prof = (
         db.table("profiles")
         .select("current_tier_id")
         .eq("is_active", "true")
         .eq("role", "student")
-        .execute()
-    ) or []
+    )
+    if campus_id:
+        q_prof = q_prof.eq("campus_id", campus_id)
+    all_profiles = q_prof.execute() or []
 
     from collections import defaultdict
     tier_counts: dict = defaultdict(int)
@@ -678,13 +724,16 @@ def retention_analytics():
     cutoff = (now - timedelta(weeks=weeks)).isoformat()
 
     # Get all student profiles signed up in the window
-    profiles = (
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    q_prof = (
         db.table("profiles")
         .select("id,created_at")
         .eq("role", "student")
         .gte("created_at", cutoff)
-        .execute()
-    ) or []
+    )
+    if campus_id:
+        q_prof = q_prof.eq("campus_id", campus_id)
+    profiles = q_prof.execute() or []
 
     if not profiles:
         return jsonify({"cohorts": [], "weeks": weeks}), 200

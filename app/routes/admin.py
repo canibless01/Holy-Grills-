@@ -43,7 +43,10 @@ def list_users():
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
 
-    q = db.table("profiles").select("id,full_name,phone,role,is_active,created_at,referral_code,hp_balance,wallet_balance,current_tier_id")
+    q = db.table("profiles").select("id,full_name,phone,role,is_active,created_at,referral_code,hp_balance,wallet_balance,current_tier_id,campus_id")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     role_filter = request.args.get("role")
     if role_filter:
         q = q.eq("role", role_filter)
@@ -80,7 +83,8 @@ def get_user(user_id):
     safe_fields = [
         "id", "email", "full_name", "role", "is_active", "phone",
         "date_of_birth", "referral_code", "referred_by", "created_at", "updated_at",
-        "hp_balance", "wallet_balance", "current_tier_id", "academic_level_id", "department_id"
+        "hp_balance", "wallet_balance", "current_tier_id", "academic_level_id", "department_id",
+        "campus_id"
     ]
     profile = {k: v for k, v in profile.items() if k in safe_fields}
 
@@ -151,6 +155,9 @@ def list_all_orders():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
 
     status = request.args.get("status")
     if status:

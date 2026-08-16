@@ -121,8 +121,11 @@ def live_queue():
         db.table("orders")
         .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
         .in_("status", ["received", "preparing"])
-        .order("received_at")
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    q = q.order("received_at")
     window_id = request.args.get("window_id")
     if window_id:
         q = q.eq("delivery_window_id", window_id)
@@ -200,8 +203,11 @@ def scheduled_orders():
         )
         .eq("is_scheduled", "true")
         .eq("status", "received")
-        .order("scheduled_for", ascending=True)
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    q = q.order("scheduled_for", ascending=True)
     window_id = request.args.get("window_id")
     if window_id:
         q = q.eq("delivery_window_id", window_id)
@@ -228,6 +234,9 @@ def kitchen_metrics():
     """
     db = get_db()
     q = db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
 
     window_id = request.args.get("window_id")
     if window_id:
