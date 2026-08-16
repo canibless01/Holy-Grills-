@@ -188,7 +188,7 @@ def test_claim_guest_order_validations(mock_get_db, client):
         # Case A: Order already claimed/owned
         mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
             # auth user profile lookup
-            {"id": "real-user-id", "role": "student", "is_active": True},
+            {"id": "real-user-id", "role": "student", "is_active": True, "campus_id": "c1"},
             # order lookup
             {"id": "order-123", "user_id": "another-owner-id", "claim_token": "token-123"}
         ]
@@ -203,7 +203,7 @@ def test_claim_guest_order_validations(mock_get_db, client):
         # Case B: Claim token mismatch
         mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
             # auth user profile lookup
-            {"id": "real-user-id", "role": "student", "is_active": True},
+            {"id": "real-user-id", "role": "student", "is_active": True, "campus_id": "c1"},
             # order lookup (order is guest-owned, but token is different)
             {"id": "order-123", "user_id": None, "claim_token": "correct-token-456"}
         ]
@@ -278,6 +278,9 @@ def test_exclusive_spin_occ_success(mock_get_db, client):
     mock_get_db.return_value = mock_db
 
     # Pre-select returns a spin credit
+    mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.gt.return_value.gte.return_value.eq.return_value.order.return_value.execute.return_value = [
+        {"id": "spin-1", "spin_count": 1, "expires_at": "2030-12-12"}
+    ]
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.gt.return_value.gte.return_value.order.return_value.execute.return_value = [
         {"id": "spin-1", "spin_count": 1, "expires_at": "2030-12-12"}
     ]
@@ -288,7 +291,7 @@ def test_exclusive_spin_occ_success(mock_get_db, client):
     # Mock auth_get_user on the DB client mock
     mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
     mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
-        "id": "user-123", "role": "student", "is_active": True
+        "id": "user-123", "role": "student", "is_active": True, "campus_id": "c1"
     }
 
     with patch("app.middleware.auth.get_db", return_value=mock_db), \
@@ -347,7 +350,7 @@ def test_get_order_guest_without_token_rejected(mock_get_db, client):
     mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
     mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
         # auth user profile lookup
-        {"id": "user-123", "role": "student", "is_active": True},
+        {"id": "user-123", "role": "student", "is_active": True, "campus_id": "c1"},
         # order lookup (user_id is None, meaning guest order)
         {"id": "order-123", "user_id": None, "claim_token": "token-xyz"}
     ]
@@ -393,7 +396,7 @@ def test_get_order_authenticated_mismatch_rejected(mock_get_db, client):
     mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
     mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
         # auth user profile lookup
-        {"id": "user-123", "role": "student", "is_active": True},
+        {"id": "user-123", "role": "student", "is_active": True, "campus_id": "c1"},
         # order lookup (owned by user-456)
         {"id": "order-123", "user_id": "user-456", "claim_token": None}
     ]
