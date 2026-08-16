@@ -773,90 +773,95 @@ def win_back_notifications(self):
         day118 = current_app.config.get("WINBACK_DAY3", 118)
         decay_onset_default = current_app.config.get("HP_DECAY_ONSET_DAYS", 120)
 
-        # Load onset days from system_settings if available
-        try:
-            onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
-            decay_onset = int(onset_row.get("value", decay_onset_default)) if onset_row else decay_onset_default
-        except Exception:
-            decay_onset = decay_onset_default
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        campus_results = {}
 
-        # We need users where last_activity_at is within our target bands
-        results = {"day70": 0, "day95": 0, "day118": 0}
-
-        def _is_in_band(days_inactive: int, target: int, tolerance: int = 1) -> bool:
-            return target <= days_inactive <= target + tolerance
-
-        profiles = (
-            db.table("profiles")
-            .select("id,hp_balance,last_activity_at")
-            .eq("is_active", "true")
-            .eq("role", "student")
-            .not_.is_("last_activity_at", "null")
-            .execute()
-        ) or []
-
-        for profile in profiles:
-            user_id = profile["id"]
-            hp_balance = int(profile.get("hp_balance") or 0)
-            if hp_balance <= 0:
-                continue
-
-            last_activity = profile.get("last_activity_at")
-            if not last_activity:
-                continue
-
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
             try:
-                last_dt = datetime.fromisoformat(str(last_activity).replace("Z", "+00:00"))
-                days_inactive = (now - last_dt.replace(tzinfo=timezone.utc)).days
+                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
+                decay_onset = int(onset_row.get("value", decay_onset_default)) if onset_row else decay_onset_default
             except Exception:
-                continue
+                decay_onset = decay_onset_default
 
-            # Check dedup window (7 days) per notification type
-            def _already_sent(notif_type: str) -> bool:
+            results = {"day70": 0, "day95": 0, "day118": 0}
+
+            def _is_in_band(days_inactive: int, target: int, tolerance: int = 1) -> bool:
+                return target <= days_inactive <= target + tolerance
+
+            profiles = (
+                db.table("profiles")
+                .select("id,hp_balance,last_activity_at")
+                .eq("is_active", "true")
+                .eq("role", "student")
+                .eq("campus_id", campus_id)
+                .not_.is_("last_activity_at", "null")
+                .execute()
+            ) or []
+
+            for profile in profiles:
+                user_id = profile["id"]
+                hp_balance = int(profile.get("hp_balance") or 0)
+                if hp_balance <= 0:
+                    continue
+
+                last_activity = profile.get("last_activity_at")
+                if not last_activity:
+                    continue
+
                 try:
-                    existing = (
-                        db.table("notifications")
-                        .select("id")
-                        .eq("user_id", user_id)
-                        .eq("type", notif_type)
-                        .gte("created_at", (now - timedelta(days=7)).isoformat())
-                        .limit(1)
-                        .execute()
-                    )
-                    return bool(existing)
+                    last_dt = datetime.fromisoformat(str(last_activity).replace("Z", "+00:00"))
+                    days_inactive = (now - last_dt.replace(tzinfo=timezone.utc)).days
                 except Exception:
-                    return False
+                    continue
 
-            try:
-                if _is_in_band(days_inactive, day118):
-                    if not _already_sent("winback_118"):
-                        send_notification(
-                            user_id=user_id,
-                            notif_type="winback_118",
-                            template_data={},
+                def _already_sent(notif_type: str) -> bool:
+                    try:
+                        existing = (
+                            db.table("notifications")
+                            .select("id")
+                            .eq("user_id", user_id)
+                            .eq("type", notif_type)
+                            .gte("created_at", (now - timedelta(days=7)).isoformat())
+                            .limit(1)
+                            .execute()
                         )
-                        results["day118"] += 1
-                elif _is_in_band(days_inactive, day95):
-                    days_to_decay = decay_onset - days_inactive
-                    if not _already_sent("winback_95"):
-                        send_notification(
-                            user_id=user_id,
-                            notif_type="winback_95",
-                            template_data={"days": max(0, days_to_decay)},
-                        )
-                        results["day95"] += 1
-                elif _is_in_band(days_inactive, day70):
-                    if not _already_sent("winback_70"):
-                        send_notification(
-                            user_id=user_id,
-                            notif_type="winback_70",
-                            template_data={},
-                        )
-                        results["day70"] += 1
-            except Exception as e:
-                logger.warning("win_back_notifications: error for user %s: %s", user_id, e)
+                        return bool(existing)
+                    except Exception:
+                        return False
 
-        return results
+                try:
+                    if _is_in_band(days_inactive, day118):
+                        if not _already_sent("winback_118"):
+                            send_notification(
+                                user_id=user_id,
+                                notif_type="winback_118",
+                                template_data={},
+                            )
+                            results["day118"] += 1
+                    elif _is_in_band(days_inactive, day95):
+                        days_to_decay = decay_onset - days_inactive
+                        if not _already_sent("winback_95"):
+                            send_notification(
+                                user_id=user_id,
+                                notif_type="winback_95",
+                                template_data={"days": max(0, days_to_decay)},
+                            )
+                            results["day95"] += 1
+                    elif _is_in_band(days_inactive, day70):
+                        if not _already_sent("winback_70"):
+                            send_notification(
+                                user_id=user_id,
+                                notif_type="winback_70",
+                                template_data={},
+                            )
+                            results["day70"] += 1
+                except Exception as e:
+                    logger.warning("win_back_notifications: error for user %s: %s", user_id, e)
+
+            campus_results[campus_id] = results
+
+        return campus_results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "win_back_notifications"})
@@ -888,69 +893,74 @@ def hp_decay_check(self):
         onset_days_default = current_app.config.get("HP_DECAY_ONSET_DAYS", 120)
         decay_rate_default = current_app.config.get("HP_DECAY_RATE_MONTHLY", 0.10)
 
-        # Load from system_settings (live editable)
-        try:
-            onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
-            onset_days = int(onset_row.get("value", onset_days_default)) if onset_row else onset_days_default
-        except Exception:
-            onset_days = onset_days_default
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        campus_results = {}
 
-        try:
-            rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").single().execute()
-            decay_rate = float(rate_row.get("value", decay_rate_default)) if rate_row else decay_rate_default
-        except Exception:
-            decay_rate = decay_rate_default
-
-        # Monthly rate → daily rate approximation (compound: apply daily = monthly^(1/30))
-        daily_rate = (1 + decay_rate) ** (1 / 30) - 1
-
-        profiles = (
-            db.table("profiles")
-            .select("id,hp_balance,last_activity_at")
-            .eq("is_active", "true")
-            .eq("role", "student")
-            .not_.is_("last_activity_at", "null")
-            .execute()
-        ) or []
-
-        decayed = 0
-        for profile in profiles:
-            user_id = profile["id"]
-            hp_balance = int(profile.get("hp_balance") or 0)
-            if hp_balance <= 0:
-                continue
-
-            last_activity = profile.get("last_activity_at")
-            if not last_activity:
-                continue
-
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
             try:
-                last_dt = datetime.fromisoformat(str(last_activity).replace("Z", "+00:00"))
-                days_inactive = (now - last_dt.replace(tzinfo=timezone.utc)).days
+                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
+                onset_days = int(onset_row.get("value", onset_days_default)) if onset_row else onset_days_default
             except Exception:
-                continue
+                onset_days = onset_days_default
 
-            if days_inactive < onset_days:
-                continue
-
-            # Apply daily compound decay
-            decay_amount = max(1, int(hp_balance * daily_rate))
             try:
-                expire_hp(
-                    user_id,
-                    decay_amount,
-                    f"HP decay — {days_inactive} days inactivity (daily rate {daily_rate:.4f})",
-                )
-                send_notification(
-                    user_id=user_id,
-                    notif_type="hp_decay_applied",
-                    template_data={"amount": decay_amount, "days": days_inactive},
-                )
-                decayed += 1
-            except Exception as e:
-                logger.warning("hp_decay_check: error for user %s: %s", user_id, e)
+                rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").single().execute()
+                decay_rate = float(rate_row.get("value", decay_rate_default)) if rate_row else decay_rate_default
+            except Exception:
+                decay_rate = decay_rate_default
 
-        return {"users_decayed": decayed, "onset_days": onset_days, "daily_rate": round(daily_rate, 5)}
+            daily_rate = (1 + decay_rate) ** (1 / 30) - 1
+
+            profiles = (
+                db.table("profiles")
+                .select("id,hp_balance,last_activity_at")
+                .eq("is_active", "true")
+                .eq("role", "student")
+                .eq("campus_id", campus_id)
+                .not_.is_("last_activity_at", "null")
+                .execute()
+            ) or []
+
+            decayed = 0
+            for profile in profiles:
+                user_id = profile["id"]
+                hp_balance = int(profile.get("hp_balance") or 0)
+                if hp_balance <= 0:
+                    continue
+
+                last_activity = profile.get("last_activity_at")
+                if not last_activity:
+                    continue
+
+                try:
+                    last_dt = datetime.fromisoformat(str(last_activity).replace("Z", "+00:00"))
+                    days_inactive = (now - last_dt.replace(tzinfo=timezone.utc)).days
+                except Exception:
+                    continue
+
+                if days_inactive < onset_days:
+                    continue
+
+                decay_amount = max(1, int(hp_balance * daily_rate))
+                try:
+                    expire_hp(
+                        user_id,
+                        decay_amount,
+                        f"HP decay — {days_inactive} days inactivity (daily rate {daily_rate:.4f})",
+                    )
+                    send_notification(
+                        user_id=user_id,
+                        notif_type="hp_decay_applied",
+                        template_data={"amount": decay_amount, "days": days_inactive},
+                    )
+                    decayed += 1
+                except Exception as e:
+                    logger.warning("hp_decay_check: error for user %s: %s", user_id, e)
+
+            campus_results[campus_id] = {"users_decayed": decayed, "onset_days": onset_days, "daily_rate": round(daily_rate, 5)}
+
+        return campus_results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "hp_decay_check"})
@@ -978,89 +988,95 @@ def check_order_locks(self):
         now = datetime.now(timezone.utc)
         today = now.date()
 
-        active_locks = (
-            db.table("order_locks")
-            .select("*")
-            .eq("status", "active")
-            .execute()
-        ) or []
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        campus_results = {}
 
-        reminded = 0
-        expired = 0
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            active_locks = (
+                db.table("order_locks")
+                .select("*")
+                .eq("status", "active")
+                .eq("campus_id", campus_id)
+                .execute()
+            ) or []
 
-        for lock in active_locks:
-            try:
-                locked_date = date.fromisoformat(str(lock.get("locked_date", ""))[:10])
-            except Exception:
-                continue
+            reminded = 0
+            expired = 0
 
-            days_until = (locked_date - today).days
-
-            if days_until < 0:
-                # Lock date passed — expire it
-                db.table("order_locks").eq("id", lock["id"]).update({
-                    "status": "expired",
-                    "updated_at": now.isoformat(),
-                })
-                expired += 1
-                continue
-
-            user_id = lock.get("user_id")
-            if not user_id:
-                continue
-
-            # Reminder schedule: 7-10 days, 3 days, 1 day before
-            should_remind = days_until in (10, 7, 3, 1)
-            if not should_remind:
-                continue
-
-            last_reminder = lock.get("reminder_sent_at")
-            if last_reminder:
+            for lock in active_locks:
                 try:
-                    last_r_dt = datetime.fromisoformat(str(last_reminder).replace("Z", "+00:00"))
-                    if (now - last_r_dt.replace(tzinfo=timezone.utc)).days < 1:
-                        continue
+                    locked_date = date.fromisoformat(str(lock.get("locked_date", ""))[:10])
                 except Exception:
-                    pass
+                    continue
 
-            reward_type = lock.get("reward_type", "discount")
-            try:
-                _plural = "s" if days_until != 1 else ""
-                if reward_type == "hp":
-                    hp_amount = int(lock.get("reward_hp_amount") or 0)
-                    send_notification(
-                        user_id=user_id,
-                        notif_type="order_lock_reminder_hp",
-                        template_data={
-                            "days": days_until,
-                            "plural": _plural,
-                            "hp": hp_amount,
-                            "date": locked_date.strftime("%B %d"),
-                        },
-                        channels=["push", "in_app"],
-                    )
-                else:
-                    discount_pct = float(lock.get("discount_pct", 10))
-                    send_notification(
-                        user_id=user_id,
-                        notif_type="order_lock_reminder",
-                        template_data={
-                            "days": days_until,
-                            "plural": _plural,
-                            "pct": discount_pct,
-                            "date": locked_date.strftime("%B %d"),
-                        },
-                        channels=["push", "in_app"],
-                    )
-                db.table("order_locks").eq("id", lock["id"]).update({
-                    "reminder_sent_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                })
-                reminded += 1
-            except Exception as e:
-                logger.warning("check_order_locks: reminder failed for lock %s: %s", lock["id"], e)
+                days_until = (locked_date - today).days
 
-        return {"reminders_sent": reminded, "expired": expired}
+                if days_until < 0:
+                    db.table("order_locks").eq("id", lock["id"]).update({
+                        "status": "expired",
+                        "updated_at": now.isoformat(),
+                    })
+                    expired += 1
+                    continue
+
+                user_id = lock.get("user_id")
+                if not user_id:
+                    continue
+
+                should_remind = days_until in (10, 7, 3, 1)
+                if not should_remind:
+                    continue
+
+                last_reminder = lock.get("reminder_sent_at")
+                if last_reminder:
+                    try:
+                        last_r_dt = datetime.fromisoformat(str(last_reminder).replace("Z", "+00:00"))
+                        if (now - last_r_dt.replace(tzinfo=timezone.utc)).days < 1:
+                            continue
+                    except Exception:
+                        pass
+
+                reward_type = lock.get("reward_type", "discount")
+                try:
+                    _plural = "s" if days_until != 1 else ""
+                    if reward_type == "hp":
+                        hp_amount = int(lock.get("reward_hp_amount") or 0)
+                        send_notification(
+                            user_id=user_id,
+                            notif_type="order_lock_reminder_hp",
+                            template_data={
+                                "days": days_until,
+                                "plural": _plural,
+                                "hp": hp_amount,
+                                "date": locked_date.strftime("%B %d"),
+                            },
+                            channels=["push", "in_app"],
+                        )
+                    else:
+                        discount_pct = float(lock.get("discount_pct", 10))
+                        send_notification(
+                            user_id=user_id,
+                            notif_type="order_lock_reminder",
+                            template_data={
+                                "days": days_until,
+                                "plural": _plural,
+                                "pct": discount_pct,
+                                "date": locked_date.strftime("%B %d"),
+                            },
+                            channels=["push", "in_app"],
+                        )
+                    db.table("order_locks").eq("id", lock["id"]).update({
+                        "reminder_sent_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    })
+                    reminded += 1
+                except Exception as e:
+                    logger.warning("check_order_locks: reminder failed for lock %s: %s", lock["id"], e)
+
+            campus_results[campus_id] = {"reminders_sent": reminded, "expired": expired}
+
+        return campus_results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "check_order_locks"})
@@ -1084,15 +1100,21 @@ def reset_monthly_hp_tracker(self):
         return {"skipped": "Lock not acquired"}
 
     try:
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
         now = datetime.now(timezone.utc)
         prev_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
-        # Delete previous month rows to keep the table lean
-        try:
-            db.table("monthly_hp_tracker").eq("month", prev_month).delete()
-        except Exception as e:
-            logger.warning("reset_monthly_hp_tracker: delete failed: %s", e)
 
-        return {"reset_for_month": prev_month}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            try:
+                db.table("monthly_hp_tracker").eq("month", prev_month).eq("campus_id", campus_id).delete()
+            except Exception as e:
+                logger.warning("reset_monthly_hp_tracker: delete failed for campus %s: %s", campus_id, e)
+
+            results[campus_id] = {"reset_for_month": prev_month}
+
+        return results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_hp_tracker"})
@@ -1120,84 +1142,97 @@ def membership_anniversary_awards(self):
         now = datetime.now(timezone.utc)
         today = now.date()
 
-        # Load milestone config from DB
-        rewards = (
-            db.table("membership_rewards")
-            .select("months,hp_awarded")
-            .execute()
-        ) or []
-        if not rewards:
-            return {"skipped": "No membership_rewards configured"}
-
-        reward_map = {int(r["months"]): int(r["hp_awarded"]) for r in rewards}
-        month_milestones = set(reward_map.keys())
-
-        # Fetch all active students
-        profiles = (
-            db.table("profiles")
-            .select("id,full_name,created_at")
-            .eq("is_active", "true")
-            .eq("role", "student")
-            .execute()
-        ) or []
-
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
         from app.services.hp_service import award_active_hp
         from app.services.notification_service import send_notification
 
-        awarded = 0
-        for profile in profiles:
-            created_at_str = profile.get("created_at")
-            if not created_at_str:
-                continue
-            try:
-                created_dt = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
-                months_member = (now - created_dt).days // 30
-            except Exception:
-                continue
-
-            if months_member not in month_milestones:
-                continue
-
-            # Check the signup day matches today (prevent re-triggering every day)
-            signup_day = created_dt.day
-            if today.day != signup_day:
-                continue
-
-            hp_amount = reward_map[months_member]
-
-            # Dedup: check if we already awarded this milestone this month
-            already = (
-                db.table("hp_transactions")
-                .select("id")
-                .eq("user_id", profile["id"])
-                .eq("reference_type", "membership_anniversary")
-                .gte("created_at", f"{today.year}-{today.month:02d}-01T00:00:00+00:00")
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            rewards = (
+                db.table("membership_rewards")
+                .select("months,hp_awarded")
+                .eq("campus_id", campus_id)
                 .execute()
-            )
-            if already:
+            ) or []
+            if not rewards:
+                rewards = (
+                    db.table("membership_rewards")
+                    .select("months,hp_awarded")
+                    .execute()
+                ) or []
+
+            if not rewards:
+                results[campus_id] = {"skipped": "No membership_rewards configured"}
                 continue
 
-            try:
-                award_active_hp(
-                    user_id=profile["id"],
-                    amount=hp_amount,
-                    txn_type="earn_membership",
-                    reference_type="membership_anniversary",
-                    notes=f"Membership anniversary — {months_member} months",
-                    apply_multiplier=False,
-                )
-                from app.messages import MSG
-                name = (profile.get("full_name") or "").split()[0] or MSG.ANNIVERSARY_FALLBACK_NAME
-                send_notification(
-                    user_id=profile["id"],
-                    notif_type="membership_anniversary",
-                    template_data={"months": months_member, "name": name, "hp": hp_amount},
-                )
-                awarded += 1
-            except Exception as e:
-                logger.warning("membership_anniversary_awards: failed for user %s: %s", profile["id"], e)
+            reward_map = {int(r["months"]): int(r["hp_awarded"]) for r in rewards}
+            month_milestones = set(reward_map.keys())
 
-        return {"awarded": awarded, "date": today.isoformat()}
+            profiles = (
+                db.table("profiles")
+                .select("id,full_name,created_at")
+                .eq("is_active", "true")
+                .eq("role", "student")
+                .eq("campus_id", campus_id)
+                .execute()
+            ) or []
+
+            awarded = 0
+            for profile in profiles:
+                created_at_str = profile.get("created_at")
+                if not created_at_str:
+                    continue
+                try:
+                    created_dt = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
+                    months_member = (now - created_dt).days // 30
+                except Exception:
+                    continue
+
+                if months_member not in month_milestones:
+                    continue
+
+                signup_day = created_dt.day
+                if today.day != signup_day:
+                    continue
+
+                hp_amount = reward_map[months_member]
+
+                already = (
+                    db.table("hp_transactions")
+                    .select("id")
+                    .eq("user_id", profile["id"])
+                    .eq("campus_id", campus_id)
+                    .eq("reference_type", "membership_anniversary")
+                    .gte("created_at", f"{today.year}-{today.month:02d}-01T00:00:00+00:00")
+                    .execute()
+                )
+                if already:
+                    continue
+
+                try:
+                    award_active_hp(
+                        user_id=profile["id"],
+                        amount=hp_amount,
+                        txn_type="earn_membership",
+                        reference_type="membership_anniversary",
+                        notes=f"Membership anniversary — {months_member} months",
+                        apply_multiplier=False,
+                    )
+                    from app.messages import MSG
+                    name = (profile.get("full_name") or "").split()[0] or MSG.ANNIVERSARY_FALLBACK_NAME
+                    send_notification(
+                        user_id=profile["id"],
+                        notif_type="membership_anniversary",
+                        template_data={"months": months_member, "name": name, "hp": hp_amount},
+                    )
+                    awarded += 1
+                except Exception as e:
+                    logger.warning("membership_anniversary_awards: failed for user %s: %s", profile["id"], e)
+
+            results[campus_id] = {"awarded": awarded, "date": today.isoformat()}
+
+        return results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "membership_anniversary_awards"})
@@ -1211,143 +1246,105 @@ def send_scheduled_notifications(self):
     Runs: Every 15 minutes.
     Delivers admin-created scheduled notification campaigns whose
     next_send_at has passed and is_active=True.
-
-    Audience targeting via target_segment:
-      'all'                  → all active users
-      'tier:<slug>'          → users on that HP tier
-      'faculty:<name>'       → users with matching faculty
-      'department:<name>'    → users with matching department
-      'user:<user_id>'       → single user
-
-    After delivery:
-      frequency='once'    → set is_active=False, update last_sent_at
-      frequency='daily'   → update last_sent_at, compute next next_send_at (+1 day)
-      frequency='weekly'  → update last_sent_at, compute next next_send_at (+7 days)
     """
     db = get_db()
     now = datetime.now(timezone.utc)
 
     try:
-        pending = (
-            db.table("scheduled_notifications")
-            .select("*")
-            .eq("is_active", True)
-            .lte("next_send_at", now.isoformat())
-            .execute()
-        ) or []
-    except Exception as e:
-        logger.error("send_scheduled_notifications: query failed: %s", e)
-        return {"error": str(e)}
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        from app.services.notification_service import send_notification
+        from datetime import timedelta
 
-    if not pending:
-        return {"sent": 0, "checked_at": now.isoformat()}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            pending = (
+                db.table("scheduled_notifications")
+                .select("*")
+                .eq("is_active", True)
+                .eq("campus_id", campus_id)
+                .lte("next_send_at", now.isoformat())
+                .execute()
+            ) or []
 
-    from app.services.notification_service import send_notification
-    from datetime import timedelta
-    sent_count = 0
+            sent_count = 0
+            for campaign in pending:
+                campaign_id = campaign.get("id")
+                segment   = campaign.get("target_segment", "all")
+                title     = campaign.get("title", "")
+                body      = campaign.get("body", "")
+                channels  = campaign.get("channels") or ["push", "in_app"]
+                notif_type = campaign.get("notif_type", "campaign")
+                frequency  = campaign.get("frequency", "once")
+                send_time  = campaign.get("send_time", "09:00")
 
-    for campaign in pending:
-        campaign_id = campaign.get("id")
-        # Column is target_segment in the schema
-        segment   = campaign.get("target_segment", "all")
-        title     = campaign.get("title", "")
-        body      = campaign.get("body", "")
-        channels  = campaign.get("channels") or ["push", "in_app"]
-        notif_type = campaign.get("notif_type", "campaign")
-        frequency  = campaign.get("frequency", "once")
-        send_time  = campaign.get("send_time", "09:00")
-
-        try:
-            # ── Resolve recipient list ────────────────────────────────────────
-            if segment == "all":
-                recipients = (
-                    db.table("profiles").select("id").eq("is_active", "true").execute()
-                ) or []
-                user_ids = [r["id"] for r in recipients]
-
-            elif segment.startswith("tier:"):
-                tier_slug = segment[5:]
-                tier_row = (
-                    db.table("hp_tiers").select("id").eq("slug", tier_slug).single().execute()
-                )
-                if not tier_row:
-                    logger.warning("send_scheduled_notifications: unknown tier '%s' for campaign %s",
-                                   tier_slug, campaign_id)
-                    user_ids = []
-                else:
-                    profs = (
-                        db.table("profiles")
-                        .select("id")
-                        .eq("current_tier_id", tier_row["id"])
-                        .eq("is_active", "true")
-                        .execute()
-                    ) or []
-                    user_ids = [p["id"] for p in profs]
-
-            elif segment.startswith("faculty:"):
-                faculty_val = segment[8:]
-                profs = (
-                    db.table("profiles")
-                    .select("id")
-                    .eq("faculty", faculty_val)
-                    .eq("is_active", "true")
-                    .execute()
-                ) or []
-                user_ids = [p["id"] for p in profs]
-
-            elif segment.startswith("department:"):
-                dept_val = segment[11:]
-                profs = (
-                    db.table("profiles")
-                    .select("id")
-                    .eq("department", dept_val)
-                    .eq("is_active", "true")
-                    .execute()
-                ) or []
-                user_ids = [p["id"] for p in profs]
-
-            elif segment.startswith("user:"):
-                user_ids = [segment[5:]]
-
-            else:
-                logger.warning("send_scheduled_notifications: unknown segment '%s' for campaign %s",
-                               segment, campaign_id)
-                user_ids = []
-
-            # ── Deliver ───────────────────────────────────────────────────────
-            for uid in user_ids:
                 try:
-                    send_notification(
-                        user_id=uid,
-                        notif_type=notif_type,
-                        title=title,
-                        body=body,
-                        reference_id=campaign_id,
-                        reference_type="scheduled_notification",
-                        channels=channels,
-                    )
+                    if segment == "all":
+                        recipients = (
+                            db.table("profiles").select("id").eq("is_active", "true").eq("campus_id", campus_id).execute()
+                        ) or []
+                        user_ids = [r["id"] for r in recipients]
+
+                    elif segment.startswith("tier:"):
+                        tier_slug = segment[5:]
+                        tier_row = (
+                            db.table("hp_tiers").select("id").eq("slug", tier_slug).single().execute()
+                        )
+                        if not tier_row:
+                            user_ids = []
+                        else:
+                            profs = (
+                                db.table("profiles")
+                                .select("id")
+                                .eq("current_tier_id", tier_row["id"])
+                                .eq("is_active", "true")
+                                .eq("campus_id", campus_id)
+                                .execute()
+                            ) or []
+                            user_ids = [p["id"] for p in profs]
+
+                    elif segment.startswith("user:"):
+                        user_ids = [segment[5:]]
+
+                    else:
+                        user_ids = []
+
+                    for uid in user_ids:
+                        try:
+                            send_notification(
+                                user_id=uid,
+                                notif_type=notif_type,
+                                title=title,
+                                body=body,
+                                reference_id=campaign_id,
+                                reference_type="scheduled_notification",
+                                channels=channels,
+                            )
+                        except Exception as e:
+                            logger.warning("send_scheduled_notifications: notify failed for user %s: %s", uid, e)
+
+                    update_payload: dict = {"last_sent_at": now.isoformat()}
+                    if frequency == "once":
+                        update_payload["is_active"] = False
+                    elif frequency == "daily":
+                        next_dt = now + timedelta(days=1)
+                        update_payload["next_send_at"] = next_dt.strftime(f"%Y-%m-%dT{send_time}:00+00:00")
+                    elif frequency == "weekly":
+                        next_dt = now + timedelta(weeks=1)
+                        update_payload["next_send_at"] = next_dt.strftime(f"%Y-%m-%dT{send_time}:00+00:00")
+
+                    db.table("scheduled_notifications").eq("id", campaign_id).update(update_payload)
+                    sent_count += 1
+
                 except Exception as e:
-                    logger.warning("send_scheduled_notifications: notify failed for user %s "
-                                   "campaign %s: %s", uid, campaign_id, e)
+                    logger.error("send_scheduled_notifications: campaign %s failed: %s", campaign_id, e)
 
-            # ── Update campaign state ─────────────────────────────────────────
-            update_payload: dict = {"last_sent_at": now.isoformat()}
-            if frequency == "once":
-                update_payload["is_active"] = False
-            elif frequency == "daily":
-                next_dt = now + timedelta(days=1)
-                update_payload["next_send_at"] = next_dt.strftime(f"%Y-%m-%dT{send_time}:00+00:00")
-            elif frequency == "weekly":
-                next_dt = now + timedelta(weeks=1)
-                update_payload["next_send_at"] = next_dt.strftime(f"%Y-%m-%dT{send_time}:00+00:00")
+            results[campus_id] = {"sent": sent_count, "checked_at": now.isoformat()}
 
-            db.table("scheduled_notifications").eq("id", campaign_id).update(update_payload)
-            sent_count += 1
-
-        except Exception as e:
-            logger.error("send_scheduled_notifications: campaign %s failed: %s", campaign_id, e)
-
-    return {"sent": sent_count, "checked_at": now.isoformat()}
+        return results
+    except Exception as e:
+        logger.error("send_scheduled_notifications error: %s", e)
+        return {"error": str(e)}
 
 
 @celery_app.task(name="app.tasks.scheduled.scan_abandoned_carts", bind=True)
@@ -1359,129 +1356,136 @@ def scan_abandoned_carts(self):
     db = get_db()
     from datetime import datetime, timezone, timedelta
     from flask import current_app
+    from app.services.notification_service import send_notification
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(minutes=current_app.config.get("ABANDONED_CART_MINUTES", 60))).isoformat()
 
-    # Find all unrecovered abandoned carts that are past the inactivity threshold
-    abandoned = (
-        db.table("abandoned_carts")
-        .select("id,user_id")
-        .eq("is_recovered", "false")
-        .lt("updated_at", cutoff)
-        .execute()
-    ) or []
+    campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+    results = {}
 
-    from app.services.notification_service import send_notification
-    notified = 0
-    for cart in abandoned:
-        user_id = cart.get("user_id")
-        if not user_id:
-            continue
-
-        # Avoid spamming — only send one recovery nudge per user per 24 hours
-        already_notified = (
-            db.table("notifications")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("type", "abandoned_cart")
-            .gte("created_at", (now - timedelta(hours=24)).isoformat())
-            .limit(1)
+    for campus in (campuses if isinstance(campuses, list) else []):
+        campus_id = campus["id"]
+        abandoned = (
+            db.table("abandoned_carts")
+            .select("id,user_id")
+            .eq("is_recovered", "false")
+            .eq("campus_id", campus_id)
+            .lt("updated_at", cutoff)
             .execute()
-        )
-        if already_notified:
-            continue
+        ) or []
 
-        send_notification(
-            user_id=user_id,
-            notif_type="abandoned_cart",
-            template_data={},
-        )
-        notified += 1
+        notified = 0
+        for cart in abandoned:
+            user_id = cart.get("user_id")
+            if not user_id:
+                continue
 
-    return {"scanned": len(abandoned), "notified": notified, "cutoff": cutoff}
+            already_notified = (
+                db.table("notifications")
+                .select("id")
+                .eq("user_id", user_id)
+                .eq("type", "abandoned_cart")
+                .gte("created_at", (now - timedelta(hours=24)).isoformat())
+                .limit(1)
+                .execute()
+            )
+            if already_notified:
+                continue
+
+            send_notification(
+                user_id=user_id,
+                notif_type="abandoned_cart",
+                template_data={},
+            )
+            notified += 1
+
+        results[campus_id] = {"scanned": len(abandoned), "notified": notified, "cutoff": cutoff}
+
+    return results
 
 
 @celery_app.task(name="app.tasks.scheduled.check_post_delivery_nudges", bind=True, max_retries=3)
 def check_post_delivery_nudges(self):
     """
     Runs: Every 30 minutes.
-
     RUN 8 post-delivery notification sequence:
       8.2  satisfaction_check  — sent ~2 hours after delivery  (in-app + push)
       8.3  reengagement_nudge  — sent ~24 hours after delivery  (in-app only)
-
-    Uses order_status_logs to find when each order was delivered.
-    Checks notifications table to avoid re-sending on each run.
     """
     db = get_db()
     now = datetime.now(timezone.utc)
 
-    results = {"satisfaction_check": 0, "reengagement_nudge": 0, "errors": 0}
+    campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+    campus_results = {}
 
-    # Windows (min, max) around delivery timestamp for each nudge type
     windows = {
         "satisfaction_check": (timedelta(hours=1, minutes=30), timedelta(hours=2, minutes=30)),
         "reengagement_nudge": (timedelta(hours=23), timedelta(hours=25)),
     }
 
-    for notif_type, (min_delta, max_delta) in windows.items():
-        earliest = (now - max_delta).isoformat()
-        latest   = (now - min_delta).isoformat()
+    for campus in (campuses if isinstance(campuses, list) else []):
+        campus_id = campus["id"]
+        results = {"satisfaction_check": 0, "reengagement_nudge": 0, "errors": 0}
 
-        # Find orders whose delivered status log falls in this window
-        delivered_logs = (
-            db.table("order_status_logs")
-            .select("order_id,created_at")
-            .eq("status", "delivered")
-            .gte("created_at", earliest)
-            .lte("created_at", latest)
-            .execute()
-        ) or []
+        for notif_type, (min_delta, max_delta) in windows.items():
+            earliest = (now - max_delta).isoformat()
+            latest   = (now - min_delta).isoformat()
 
-        for log in delivered_logs:
-            order_id = log["order_id"]
-            try:
-                # Fetch the order to get the user_id
-                order = (
-                    db.table("orders")
-                    .select("user_id,status")
-                    .eq("id", order_id)
-                    .single()
-                    .execute()
-                )
-                if not order:
-                    continue
-                user_id = order.get("user_id")
-                if not user_id:
-                    continue
+            delivered_logs = (
+                db.table("order_status_logs")
+                .select("order_id,created_at")
+                .eq("status", "delivered")
+                .gte("created_at", earliest)
+                .lte("created_at", latest)
+                .execute()
+            ) or []
 
-                # Skip if this nudge was already sent for this order
-                already_sent = (
-                    db.table("notifications")
-                    .select("id")
-                    .eq("user_id", user_id)
-                    .eq("type", notif_type)
-                    .eq("reference_id", order_id)
-                    .limit(1)
-                    .execute()
-                )
-                if already_sent:
-                    continue
+            for log in delivered_logs:
+                order_id = log["order_id"]
+                try:
+                    order = (
+                        db.table("orders")
+                        .select("user_id,status")
+                        .eq("id", order_id)
+                        .eq("campus_id", campus_id)
+                        .single()
+                        .execute()
+                    )
+                    if not order:
+                        continue
+                    user_id = order.get("user_id")
+                    if not user_id:
+                        continue
 
-                send_notification(
-                    user_id=user_id,
-                    notif_type=notif_type,
-                    template_data={},
-                    reference_id=order_id,
-                    reference_type="order",
-                )
-                results[notif_type] += 1
+                    already_sent = (
+                        db.table("notifications")
+                        .select("id")
+                        .eq("user_id", user_id)
+                        .eq("type", notif_type)
+                        .eq("reference_id", order_id)
+                        .limit(1)
+                        .execute()
+                    )
+                    if already_sent:
+                        continue
 
-            except Exception as e:
-                logger.warning(
-                    "check_post_delivery_nudges: error for order %s / %s: %s",
-                    order_id, notif_type, e,
-                )
-                results["errors"] += 1
+                    from app.services.notification_service import send_notification
+                    send_notification(
+                        user_id=user_id,
+                        notif_type=notif_type,
+                        template_data={},
+                        reference_id=order_id,
+                        reference_type="order",
+                    )
+                    results[notif_type] += 1
 
-    return results
+                except Exception as e:
+                    logger.warning(
+                        "check_post_delivery_nudges: error for order %s / %s: %s",
+                        order_id, notif_type, e,
+                    )
+                    results["errors"] += 1
+
+        campus_results[campus_id] = results
+
+    return campus_results
