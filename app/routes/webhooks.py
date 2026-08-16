@@ -20,6 +20,8 @@ webhooks_bp = Blueprint("webhooks", __name__)
 
 @webhooks_bp.route("/paystack", methods=["POST"])
 def paystack_webhook():
+    from flask import g
+    campus_id = getattr(g, 'campus_id', None)
     """
     Paystack webhook handler.
     Handles: charge.success, transfer.success, dedicatedaccount.assign.success

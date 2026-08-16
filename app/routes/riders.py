@@ -36,15 +36,11 @@ def my_batch():
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
-    batches = (
-        db.table("delivery_batches")
-        .select("id,window_id,zone,status,created_at")
-        .eq("rider_id", g.user_id)
-        .in_("status", ["assigned", "in_progress"])
-        .order("created_at", ascending=False)
-        .limit(1)
-        .execute()
-    )
+    q = db.table("delivery_batches").select("id,window_id,zone,status,created_at").eq("rider_id", g.user_id).in_("status", ["assigned", "in_progress"])
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    batches = q.order("created_at", ascending=False).limit(1).execute()
 
     if not batches:
         return jsonify({"batch": None, "orders": []}), 200
@@ -291,16 +287,11 @@ def delivery_history():
     limit = min(int(request.args.get("limit", 20)), 100)
     offset = int(request.args.get("offset", 0))
 
-    batches = (
-        db.table("delivery_batches")
-        .select("id,window_id,zone,status,created_at")
-        .eq("rider_id", g.user_id)
-        .in_("status", ["completed", "delivered"])
-        .order("created_at", ascending=False)
-        .limit(limit)
-        .offset(offset)
-        .execute()
-    ) or []
+    q = db.table("delivery_batches").select("id,window_id,zone,status,created_at").eq("rider_id", g.user_id).in_("status", ["completed", "delivered"])
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    batches = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
 
     result = []
     for batch in batches:

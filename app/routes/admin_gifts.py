@@ -37,12 +37,14 @@ def list_first_order_gifts():
     q = (
         db.table("first_order_gifts")
         .select("*,profiles(full_name,email,phone),orders(id,total_amount,created_at)")
-        .order("created_at", ascending=False)
     )
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
-    gifts = q.execute() or []
+    gifts = q.order("created_at", ascending=False).execute() or []
     return jsonify({"gifts": gifts, "count": len(gifts)}), 200
 
 

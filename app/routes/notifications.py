@@ -147,6 +147,9 @@ def my_notifications():
     db = get_db()
     limit = min(int(request.args.get("limit", 30)), 100)
     q = db.table("notifications").select("*").eq("user_id", g.user_id).eq("channel", "in_app")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
 
     unread_only = request.args.get("unread_only", "false").lower() == "true"
     if unread_only:
@@ -350,6 +353,9 @@ def list_blasts():
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("notification_blasts").select("*")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)

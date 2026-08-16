@@ -68,8 +68,11 @@ def list_feature_flags():
         description: Feature flag list
     """
     db = get_db()
-    q = db.table("feature_flags").select("*").order("feature_name")
-    rows = q.execute() or []
+    q = db.table("feature_flags").select("*")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.order("feature_name").execute() or []
     return jsonify(rows), 200
 
 
