@@ -768,14 +768,49 @@ def walk_order_to_status(
     """
     Walk an order through every intermediate state until it reaches target_status.
     Uses BFS on VALID_TRANSITIONS to find the shortest legal path.
+    Validates rider and kitchen caller permissions prior to walking states.
 
     Returns:
         {"steps": ["preparing", "ready", ...], "final": <order dict>}
     """
+    from flask import has_app_context, g
     db = get_db()
-    order = db.table("orders").select("status").eq("id", order_id).single().execute()
+    order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
+
+    if changed_by:
+        caller_role = None
+        caller_campus = None
+        if has_app_context() and getattr(g, 'user_id', None) == changed_by:
+            caller_role = getattr(g, 'user_role', None)
+            caller_campus = getattr(g, 'campus_id', None)
+        else:
+            try:
+                c_prof = db.table("profiles").select("role,campus_id").eq("id", changed_by).single().execute()
+                if c_prof:
+                    caller_role = c_prof.get("role")
+                    caller_campus = c_prof.get("campus_id")
+            except Exception:
+                pass
+
+        if caller_role == "rider":
+            batch_id = order.get("batch_id")
+            assigned_rider_id = None
+            if batch_id:
+                try:
+                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
+                    if batch:
+                        assigned_rider_id = batch.get("rider_id")
+                except Exception:
+                    pass
+            if not assigned_rider_id or assigned_rider_id != changed_by:
+                raise ValueError("Unauthorized: Rider is not assigned to this order")
+
+        elif caller_role == "kitchen":
+            order_campus = order.get("campus_id")
+            if caller_campus and order_campus and caller_campus != order_campus:
+                raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
 
     path = _find_status_path(order["status"], target_status)
     if path is None:
@@ -947,7 +982,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     if ts_field:
         update_data[ts_field] = now
 
-    updated = db.table("orders").eq("id", order_id).update(update_data)
+    updated = db.table("orders").eq("id", order_id).update(update_data).execute()
     _log_status_change(order_id, current_status, new_status, changed_by, notes)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery
@@ -1057,7 +1092,7 @@ def _handle_delivery_rewards(order: dict):
     }
 
     try:
-        db.table("orders").eq("id", order_id).update(order_updates)
+        db.table("orders").eq("id", order_id).update(order_updates).execute()
     except Exception:
         pass
 
@@ -1131,7 +1166,7 @@ def _handle_delivery_rewards(order: dict):
     try:
         get_db().table("profiles").eq("id", user_id).update({
             "last_activity_at": datetime.now(timezone.utc).isoformat()
-        })
+        }).execute()
     except Exception:
         pass
 
@@ -1188,7 +1223,7 @@ def _log_status_change(order_id: str, from_status: str, to_status: str, changed_
             "changed_by": changed_by,
             "note": notes or f"{from_status} → {to_status}",
             "metadata": {"from_status": from_status},
-        })
+        }).execute()
     except Exception:
         pass
 

@@ -52,6 +52,20 @@ def test_rider_order_status_bypass_denied():
             update_order_status("order-123", "out_for_delivery", changed_by="rider-2")
 
 
+def test_rider_walk_order_status_bypass_denied():
+    from app.services.order_service import walk_order_to_status
+    mock_db = MagicMock()
+    mock_db.table().select().eq().single().execute.side_effect = [
+        {"id": "order-123", "status": "ready", "campus_id": "campus-1", "batch_id": "batch-1"},
+        {"role": "rider", "campus_id": "campus-1"},
+        {"rider_id": "rider-1"},
+    ]
+
+    with patch("app.services.order_service.get_db", return_value=mock_db):
+        with pytest.raises(ValueError, match="Unauthorized: Rider is not assigned to this order"):
+            walk_order_to_status("order-123", "out_for_delivery", changed_by="rider-2")
+
+
 def test_kitchen_order_status_bypass_campus_mismatch():
     mock_db = MagicMock()
     mock_db.table().select().eq().single().execute.side_effect = [

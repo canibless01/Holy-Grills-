@@ -544,12 +544,12 @@ def recalculate_tier(user_id: str) -> dict:
             "previous_tier_id": current_tier_id,
             "event": event,
             "hp_at_event": hp_earned_120day,
-        })
+        }).execute()
     except Exception:
         pass
 
     try:
-        db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]})
+        db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]}).execute()
     except Exception:
         pass
 
@@ -613,7 +613,7 @@ def process_flash_redeem(reward_id: str, user_id: str) -> dict:
         "reward_id": reward_id,
         "hp_cost_snapshot": discounted_cost,
         "status": "pending",
-    })
+    }).execute()
     redemption_row = redemption[0] if isinstance(redemption, list) else redemption
 
     spend_hp(user_id, discounted_cost, redemption_row["id"], "flash_reward_redemption",
@@ -642,7 +642,7 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
             "hp_amount": hp_amount,
             "naira_paid": naira_paid,
             "price_per_hp": price_per_hp,
-        })
+        }).execute()
     except SupabaseError as exc:
         if exc.details and exc.details.get("code") == "23505":
             raise ValueError("Payment reference already processed") from exc

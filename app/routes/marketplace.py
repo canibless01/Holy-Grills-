@@ -149,7 +149,7 @@ def purchase(listing_id):
             .execute()
         )
         if not available_codes or len(available_codes) == 0:
-            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True})
+            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True}).execute()
             return jsonify({"error": MSG.LISTING_NO_CODES}), 400
 
         cand_code = available_codes[0]
@@ -210,7 +210,7 @@ def purchase(listing_id):
     if reserved_code_id:
         purchase_record["metadata"] = {"code_id": reserved_code_id}
 
-    saved = db.table("marketplace_purchases").insert(purchase_record)
+    saved = db.table("marketplace_purchases").insert(purchase_record).execute()
     purchase_row = saved[0] if isinstance(saved, list) else saved
 
     from flask import current_app
@@ -238,7 +238,7 @@ def purchase(listing_id):
                 "status": "assigned",
                 "assigned_purchase_id": purchase_row.get("id") if isinstance(purchase_row, dict) else None,
                 "assigned_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }).execute()
 
     from app.services.notification_service import send_notification
     _purchase_body = MSG.MARKETPLACE_PURCHASE_BODY.format(title=listing["title"])
@@ -402,7 +402,7 @@ def admin_update_purchase(purchase_id):
     if data.get("admin_note"):
         update_payload["admin_note"] = data["admin_note"]
 
-    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload)
+    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload).execute()
 
     # Notify buyer on every escrow state transition
     listing_info = purchase.get("marketplace_listings") or {}
@@ -557,7 +557,7 @@ def admin_create_listing():
     safe["slug"] = f"{base_slug}-{_uuid.uuid4().hex[:5]}"
 
     try:
-        result = db.table("marketplace_listings").insert(safe)
+        result = db.table("marketplace_listings").insert(safe).execute()
     except Exception as exc:
         from app.db import SupabaseError
         # Only intercept DB check-constraint violations that mention the listing_type column.
@@ -590,7 +590,7 @@ def update_listing_image(listing_id):
     db.table("marketplace_listings").eq("id", listing_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
 
     return jsonify({"image_url": image_url}), 200
 
@@ -668,7 +668,7 @@ def admin_update_listing(listing_id):
         return jsonify({"error": MSG.FIELD_MUST_BE_NONEMPTY_STR.format(field="title")}), 400
 
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("marketplace_listings").eq("id", listing_id).update(safe)
+    result = db.table("marketplace_listings").eq("id", listing_id).update(safe).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -749,7 +749,7 @@ def submit_listing_request():
         "status": "pending",
     }
     try:
-        result = db.table("marketplace_requests").insert(record)
+        result = db.table("marketplace_requests").insert(record).execute()
     except Exception:
         # Table not provisioned yet on this environment — degrade gracefully
         # instead of a raw 500. See migrations/new_features.sql.
@@ -855,7 +855,7 @@ def admin_respond_to_request(request_id):
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    result = db.table("marketplace_requests").eq("id", request_id).update(update)
+    result = db.table("marketplace_requests").eq("id", request_id).update(update).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -891,12 +891,12 @@ def upload_codes(listing_id):
         return jsonify({"error": MSG.MARKETPLACE_CODES_REQUIRED}), 400
 
     records = [{"listing_id": listing_id, "code": c, "status": "available"} for c in codes]
-    db.table("marketplace_access_codes").insert(records)
+    db.table("marketplace_access_codes").insert(records).execute()
 
     db.table("marketplace_listings").eq("id", listing_id).update({
         "is_out_of_stock": False,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
     return jsonify({"uploaded": len(records)}), 201
 
 

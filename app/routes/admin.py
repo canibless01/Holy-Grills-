@@ -278,7 +278,7 @@ def change_user_role(user_id):
     VALID_ROLES = {"student", "admin", "kitchen", "rider", "super_admin"}
     if new_role not in VALID_ROLES:
         return jsonify({"error": MSG.ADMIN_INVALID_ROLE.format(roles=", ".join(sorted(VALID_ROLES)))}), 400
-    result = db.table("profiles").eq("id", user_id).update({"role": new_role})
+    result = db.table("profiles").eq("id", user_id).update({"role": new_role}).execute()
     _audit(g.user_id, "profiles", user_id, "change_role",
            {"from": profile.get("role"), "to": new_role})
     return jsonify({"user_id": user_id, "role": new_role, "full_name": profile.get("full_name")}), 200
@@ -418,7 +418,7 @@ def deactivate_user(user_id):
         "is_active": False,
         "deactivated_at": datetime.now(timezone.utc).isoformat(),
         "deactivated_by": g.user_id,
-    })
+    }).execute()
     _audit(g.user_id, "profiles", user_id, "deactivate_account")
     return jsonify({"message": MSG.ADMIN_USER_DEACTIVATED, "user_id": user_id}), 200
 
@@ -452,7 +452,7 @@ def activate_user(user_id):
         "is_active": True,
         "deactivated_at": None,
         "deactivated_by": None,
-    })
+    }).execute()
     _audit(g.user_id, "profiles", user_id, "activate_account")
     return jsonify({"message": MSG.ADMIN_USER_REACTIVATED, "user_id": user_id}), 200
 
@@ -533,7 +533,7 @@ def create_window():
         safe["campus_id"] = g.campus_id
     safe["status"] = "open"
     safe["created_by"] = g.user_id
-    result = db.table("delivery_windows").insert(safe)
+    result = db.table("delivery_windows").insert(safe).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -562,7 +562,7 @@ def close_window(window_id):
     if window.get("status") == "closed":
         return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED, "status": "closed"}), 200
 
-    db.table("delivery_windows").eq("id", window_id).update({"status": "closed"})
+    db.table("delivery_windows").eq("id", window_id).update({"status": "closed"}).execute()
     _audit(g.user_id, "delivery_windows", window_id, "close_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED}), 200
 
@@ -591,7 +591,7 @@ def reopen_window(window_id):
         return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
     if window.get("status") == "open":
         return jsonify({"message": MSG.ADMIN_WINDOW_ALREADY_OPEN, "status": "open"}), 200
-    db.table("delivery_windows").eq("id", window_id).update({"status": "open"})
+    db.table("delivery_windows").eq("id", window_id).update({"status": "open"}).execute()
     _audit(g.user_id, "delivery_windows", window_id, "reopen_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_REOPENED, "window_id": window_id, "status": "open"}), 200
 
@@ -752,12 +752,12 @@ def create_batch():
         "rider_id": rider_id,
         "zone": data.get("zone", ""),
         "status": "assigned",
-    })
+    }).execute()
     batch_row = batch[0] if isinstance(batch, list) else batch
     batch_id = batch_row["id"]
 
     for oid in order_ids:
-        db.table("orders").eq("id", oid).update({"batch_id": batch_id, "status": "assigned"})
+        db.table("orders").eq("id", oid).update({"batch_id": batch_id, "status": "assigned"}).execute()
 
     return jsonify(batch_row), 201
 
@@ -802,7 +802,7 @@ def update_batch(batch_id):
         return jsonify({"error": MSG.ADMIN_BATCH_INVALID_STATUS}), 400
     if safe.get("status") == "completed":
         safe["completed_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("delivery_batches").eq("id", batch_id).update(safe)
+    result = db.table("delivery_batches").eq("id", batch_id).update(safe).execute()
     _audit(g.user_id, "delivery_batches", batch_id, "update_batch", safe)
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
@@ -829,10 +829,10 @@ def cancel_batch(batch_id):
     existing = db.table("delivery_batches").select("id,status").eq("id", batch_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-    db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
+    db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"}).execute()
     orders = db.table("orders").select("id").eq("batch_id", batch_id).execute() or []
     for o in orders:
-        db.table("orders").eq("id", o["id"]).update({"batch_id": None, "status": "ready"})
+        db.table("orders").eq("id", o["id"]).update({"batch_id": None, "status": "ready"}).execute()
     _audit(g.user_id, "delivery_batches", batch_id, "cancel_batch")
     return jsonify({
         "message": MSG.ADMIN_BATCH_CANCELLED,
@@ -932,7 +932,7 @@ def create_promo():
         "description", "applicable_item_ids", "applicable_category_ids",
     }
     safe = {k: v for k, v in data.items() if k in KNOWN_COLUMNS}
-    result = db.table("promo_codes").insert(safe)
+    result = db.table("promo_codes").insert(safe).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -1027,7 +1027,7 @@ def update_promo(promo_id):
     if "is_active" in safe and not isinstance(safe["is_active"], bool):
         return jsonify({"error": "is_active must be a boolean"}), 400
 
-    result = db.table("promo_codes").eq("id", promo_id).update(safe)
+    result = db.table("promo_codes").eq("id", promo_id).update(safe).execute()
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.ADMIN_PROMO_UPDATED, "promo_code": updated}), 200
 
@@ -1126,7 +1126,7 @@ def nudge_cart(cart_id):
     db.table("abandoned_carts").eq("id", cart_id).update({
         "recovery_attempts": (cart.get("recovery_attempts") or 0) + 1,
         "last_recovery_sent_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
     return jsonify({"message": MSG.ADMIN_RECOVERY_NUDGE_SENT}), 200
 
 
@@ -1731,6 +1731,6 @@ def _audit(actor_id, table, target_id, action, after_data=None):
             "entity_id": target_id,
             "action": action,
             "after_value": after_data,
-        })
+        }).execute()
     except Exception:
         pass

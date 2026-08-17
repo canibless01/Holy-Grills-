@@ -77,7 +77,7 @@ def paystack_webhook():
             "reference": reference,
             "payload": payload,
             "status": "processing",
-        })
+        }).execute()
     except SupabaseError as err:
         err_str = str(err)
         if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
@@ -97,7 +97,7 @@ def paystack_webhook():
             get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update({
                 "status": "processed",
                 "processed_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }).execute()
     except Exception as e:
         # Mark as failed
         if reference:
@@ -105,7 +105,7 @@ def paystack_webhook():
                 get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update({
                     "status": "failed",
                     "error": str(e),
-                })
+                }).execute()
             except Exception:
                 pass
         _notify_admin_webhook_failure(event_type, reference, str(e))
@@ -174,7 +174,7 @@ def flutterwave_webhook():
             "reference": reference,
             "payload": payload,
             "status": "processing",
-        })
+        }).execute()
     except SupabaseError as err:
         err_str = str(err)
         if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
@@ -190,7 +190,7 @@ def flutterwave_webhook():
             get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update({
                 "status": "processed",
                 "processed_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }).execute()
     except Exception as e:
         # Mark as failed
         if reference:
@@ -198,7 +198,7 @@ def flutterwave_webhook():
                 get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update({
                     "status": "failed",
                     "error": str(e),
-                })
+                }).execute()
             except Exception:
                 pass
         _notify_admin_webhook_failure(event_type, reference, str(e))
@@ -435,7 +435,7 @@ def _audit_webhook_event(event_type: str, reference: str, payload: dict, error: 
             "payload": payload,
             "error": error,
             "status": "failed" if error else "processed",
-        })
+        }).execute()
     except Exception:
         pass
 
