@@ -203,6 +203,9 @@ def request_virtual_account():
 def admin_wallet_transactions():
     """
     List wallet transactions across all users (admin only).
+    SECURITY / MULTI-TENANCY NOTE:
+      Intentionally has no campus_id filter to adhere to the admin-is-global multi-tenant pattern,
+      allowing global administrators full visibility over system-wide financial transactions.
     ---
     tags: [Wallet]
     parameters:
