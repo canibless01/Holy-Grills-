@@ -263,24 +263,38 @@ def change_user_role(user_id):
         schema:
           required: [role]
           properties:
-            role: {type: string, enum: [user, admin, kitchen, rider, super_admin]}
+            role: {type: string, enum: [student, admin, kitchen, rider, super_admin]}
     responses:
       200:
         description: Role updated
       400:
         description: Invalid role
+      403:
+        description: Forbidden
       404:
         description: User not found
     """
     db = get_db()
+    if user_id == getattr(g, "user_id", None):
+        return jsonify({"error": "Cannot change your own role"}), 403
+
     profile = db.table("profiles").select("id,full_name,role").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
     data = request.get_json(force=True) or {}
     new_role = data.get("role", "").strip()
     VALID_ROLES = {"student", "admin", "kitchen", "rider", "super_admin"}
     if new_role not in VALID_ROLES:
         return jsonify({"error": MSG.ADMIN_INVALID_ROLE.format(roles=", ".join(sorted(VALID_ROLES)))}), 400
+
+    caller_role = getattr(g, "user_role", None)
+    if not caller_role and hasattr(g, "user") and isinstance(g.user, dict):
+        caller_role = g.user.get("role")
+
+    if new_role == "super_admin" and caller_role != "super_admin":
+        return jsonify({"error": "Only super_admin can assign super_admin role"}), 403
+
     result = db.table("profiles").eq("id", user_id).update({"role": new_role})
     _audit(g.user_id, "profiles", user_id, "change_role",
            {"from": profile.get("role"), "to": new_role})
@@ -397,15 +411,33 @@ def deactivate_user(user_id):
     responses:
       200:
         description: User deactivated
+      400:
+        description: Self-deactivation prohibited
+      403:
+        description: Insufficient privileges
+      404:
+        description: User not found
     """
+    if user_id == g.user_id:
+        return jsonify({"error": "You cannot deactivate your own account"}), 400
+
     db = get_db()
+    target_profile = db.table("profiles").select("id,role,is_active,full_name").eq("id", user_id).single().execute()
+    if not target_profile:
+        return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    target_role = target_profile.get("role")
+    caller_role = getattr(g, "user_role", None)
+    if target_role == "super_admin" and caller_role != "super_admin":
+        return jsonify({"error": "Only super_admin users can deactivate a super_admin account"}), 403
+
     db.table("profiles").eq("id", user_id).update({
         "is_active": False,
         "deactivated_at": datetime.now(timezone.utc).isoformat(),
         "deactivated_by": g.user_id,
-    })
+    }).execute()
     _audit(g.user_id, "profiles", user_id, "deactivate_account")
-    return jsonify({"message": MSG.ADMIN_USER_DEACTIVATED}), 200
+    return jsonify({"message": MSG.ADMIN_USER_DEACTIVATED, "user_id": user_id}), 200
 
 
 @admin_bp.route("/users/<user_id>/activate", methods=["POST"])
@@ -437,7 +469,7 @@ def activate_user(user_id):
         "is_active": True,
         "deactivated_at": None,
         "deactivated_by": None,
-    })
+    }).execute()
     _audit(g.user_id, "profiles", user_id, "activate_account")
     return jsonify({"message": MSG.ADMIN_USER_REACTIVATED, "user_id": user_id}), 200
 
@@ -530,7 +562,7 @@ def create_window():
 
     safe["status"] = "open"
     safe["created_by"] = g.user_id
-    result = db.table("delivery_windows").insert(safe)
+    result = db.table("delivery_windows").insert(safe).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -549,9 +581,17 @@ def close_window(window_id):
     responses:
       200:
         description: Window closed
+      404:
+        description: Window not found
     """
     db = get_db()
-    db.table("delivery_windows").eq("id", window_id).update({"status": "closed"})
+    window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
+    if not window:
+        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+    if window.get("status") == "closed":
+        return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED, "status": "closed"}), 200
+
+    db.table("delivery_windows").eq("id", window_id).update({"status": "closed"}).execute()
     _audit(g.user_id, "delivery_windows", window_id, "close_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED}), 200
 
@@ -580,7 +620,7 @@ def reopen_window(window_id):
         return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
     if window.get("status") == "open":
         return jsonify({"message": MSG.ADMIN_WINDOW_ALREADY_OPEN, "status": "open"}), 200
-    db.table("delivery_windows").eq("id", window_id).update({"status": "open"})
+    db.table("delivery_windows").eq("id", window_id).update({"status": "open"}).execute()
     _audit(g.user_id, "delivery_windows", window_id, "reopen_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_REOPENED, "window_id": window_id, "status": "open"}), 200
 
@@ -690,22 +730,63 @@ def create_batch():
     responses:
       201:
         description: Batch created and orders assigned
+      400:
+        description: Validation failure (invalid rider role, window missing, ineligible order)
+      404:
+        description: Window or rider not found
     """
     db = get_db()
     data = request.get_json(force=True) or {}
-    if not data.get("window_id") or not data.get("rider_id"):
+    window_id = data.get("window_id")
+    rider_id = data.get("rider_id")
+    if not window_id or not rider_id:
         return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
+
+    # 1. Verify window exists
+    window = db.table("delivery_windows").select("id").eq("id", window_id).single().execute()
+    if not window:
+        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+
+    # 2. Verify rider exists, is active, and has 'rider' role
+    rider_profile = db.table("profiles").select("id,role,is_active").eq("id", rider_id).single().execute()
+    if not rider_profile:
+        return jsonify({"error": "Rider user profile not found"}), 404
+    if not rider_profile.get("is_active"):
+        return jsonify({"error": "Rider account is deactivated"}), 400
+    if rider_profile.get("role") != "rider":
+        return jsonify({"error": f"User {rider_id} does not have the 'rider' role"}), 400
+
+    order_ids = data.get("order_ids", [])
+    if order_ids:
+        # 3. Validate each order_id
+        orders = db.table("orders").select("id,delivery_window_id,status,batch_id").in_("id", order_ids).execute() or []
+        fetched_ids = {o["id"] for o in orders}
+        missing_ids = set(order_ids) - fetched_ids
+        if missing_ids:
+            return jsonify({"error": f"Orders not found: {', '.join(missing_ids)}"}), 404
+
+        for o in orders:
+            # Verify order belongs to the batch's window
+            if o.get("delivery_window_id") and o.get("delivery_window_id") != window_id:
+                return jsonify({"error": f"Order {o['id']} belongs to delivery window {o['delivery_window_id']}, not batch window {window_id}"}), 400
+            # Verify order is in an eligible status (e.g., 'ready' or 'assigned')
+            if o.get("status") in ("cancelled", "refunded", "delivered", "unclaimed"):
+                return jsonify({"error": f"Order {o['id']} is in inelastic/terminal status '{o['status']}' and cannot be batched"}), 400
+            # Prevent order already assigned to another batch
+            if o.get("batch_id"):
+                return jsonify({"error": f"Order {o['id']} is already assigned to batch {o['batch_id']}"}), 400
+
     batch = db.table("delivery_batches").insert({
-        "window_id": data["window_id"],
-        "rider_id": data["rider_id"],
+        "window_id": window_id,
+        "rider_id": rider_id,
         "zone": data.get("zone", ""),
         "status": "assigned",
-    })
+    }).execute()
     batch_row = batch[0] if isinstance(batch, list) else batch
     batch_id = batch_row["id"]
 
-    for order_id in data.get("order_ids", []):
-        db.table("orders").eq("id", order_id).update({"batch_id": batch_id})
+    for oid in order_ids:
+        db.table("orders").eq("id", oid).update({"batch_id": batch_id, "status": "assigned"}).execute()
 
     return jsonify(batch_row), 201
 
@@ -750,7 +831,7 @@ def update_batch(batch_id):
         return jsonify({"error": MSG.ADMIN_BATCH_INVALID_STATUS}), 400
     if safe.get("status") == "completed":
         safe["completed_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("delivery_batches").eq("id", batch_id).update(safe)
+    result = db.table("delivery_batches").eq("id", batch_id).update(safe).execute()
     _audit(g.user_id, "delivery_batches", batch_id, "update_batch", safe)
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
@@ -777,10 +858,10 @@ def cancel_batch(batch_id):
     existing = db.table("delivery_batches").select("id,status").eq("id", batch_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-    db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
+    db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"}).execute()
     orders = db.table("orders").select("id").eq("batch_id", batch_id).execute() or []
     for o in orders:
-        db.table("orders").eq("id", o["id"]).update({"batch_id": None, "status": "ready"})
+        db.table("orders").eq("id", o["id"]).update({"batch_id": None, "status": "ready"}).execute()
     _audit(g.user_id, "delivery_batches", batch_id, "cancel_batch")
     return jsonify({
         "message": MSG.ADMIN_BATCH_CANCELLED,
@@ -979,7 +1060,7 @@ def update_promo(promo_id):
     if "is_active" in safe and not isinstance(safe["is_active"], bool):
         return jsonify({"error": "is_active must be a boolean"}), 400
 
-    result = db.table("promo_codes").eq("id", promo_id).update(safe)
+    result = db.table("promo_codes").eq("id", promo_id).update(safe).execute()
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.ADMIN_PROMO_UPDATED, "promo_code": updated}), 200
 
@@ -1078,7 +1159,7 @@ def nudge_cart(cart_id):
     db.table("abandoned_carts").eq("id", cart_id).update({
         "recovery_attempts": (cart.get("recovery_attempts") or 0) + 1,
         "last_recovery_sent_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
     return jsonify({"message": MSG.ADMIN_RECOVERY_NUDGE_SENT}), 200
 
 
@@ -1086,7 +1167,7 @@ def nudge_cart(cart_id):
 @require_role("admin")
 def audit_log():
     """
-    View admin audit log (admin only).
+    View admin audit log with pagination support (admin only).
     ---
     tags: [Admin]
     parameters:
@@ -1094,14 +1175,19 @@ def audit_log():
         name: limit
         type: integer
         default: 50
+      - in: query
+        name: offset
+        type: integer
+        default: 0
     responses:
       200:
-        description: Audit log entries
+        description: Audit log entries with pagination metadata
     """
     db = get_db()
     limit = min(int(request.args.get("limit", 50)), 200)
-    logs = db.table("admin_audit_logs").select("*").order("created_at", ascending=False).limit(limit).execute()
-    return jsonify(logs), 200
+    offset = int(request.args.get("offset", 0))
+    logs = db.table("admin_audit_logs").select("*").order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    return jsonify({"logs": logs, "count": len(logs), "limit": limit, "offset": offset}), 200
 
 
 @admin_bp.route("/cron/<job_name>", methods=["POST"])
@@ -1155,6 +1241,8 @@ def run_cron_job(job_name):
         process_scheduled_orders,
     )
 
+    from app.tasks.scheduled import check_post_delivery_nudges
+
     task_map = {
         "birthday-hp":                  birthday_hp_awards,
         "reset-monthly-leaderboard":    reset_monthly_leaderboard,
@@ -1169,6 +1257,7 @@ def run_cron_job(job_name):
         "membership-anniversary-awards": membership_anniversary_awards,
         "send-scheduled-notifications": send_scheduled_notifications,
         "process-scheduled-orders":     process_scheduled_orders,
+        "check-post-delivery-nudges":   check_post_delivery_nudges,
     }
 
     task_fn = task_map.get(job_name)
@@ -1235,6 +1324,7 @@ def cron_status():
         "membership-anniversary-awards",
         "send-scheduled-notifications",
         "process-scheduled-orders",
+        "check-post-delivery-nudges",
     ]
 
     EXPECTED_CADENCE = {
@@ -1251,6 +1341,7 @@ def cron_status():
         "membership-anniversary-awards": "daily @ 06:00 WAT",
         "send-scheduled-notifications": "every 15 minutes",
         "process-scheduled-orders":     "every 5 minutes",
+        "check-post-delivery-nudges":   "every 30 minutes",
     }
 
     try:
@@ -1478,6 +1569,7 @@ def bulk_grant_hp():
 def hp_report():
     """
     HP loyalty program health report — totals, tier distribution, top earners.
+    Optimized to use RPC aggregations or bounded query limits.
     ---
     tags: [Admin]
     responses:
@@ -1486,26 +1578,40 @@ def hp_report():
     """
     db = get_db()
 
-    issued_rows = db.table("hp_transactions").select("amount").gt("amount", 0).execute() or []
-    spent_rows  = db.table("hp_transactions").select("amount").lt("amount", 0).execute() or []
-    total_issued = sum(int(r.get("amount", 0)) for r in issued_rows)
-    total_spent  = abs(sum(int(r.get("amount", 0)) for r in spent_rows))
-
     today = datetime.now(timezone.utc).date().isoformat()
-    issued_today_rows = (
-        db.table("hp_transactions")
-        .select("amount")
-        .gt("amount", 0)
-        .gte("created_at", f"{today}T00:00:00Z")
-        .execute()
-    ) or []
-    issued_today = sum(int(r.get("amount", 0)) for r in issued_today_rows)
 
-    tier_rows = db.table("profiles").select("current_tier_id").execute() or []
-    tier_counts = {}
-    for r in tier_rows:
-        tid = r.get("current_tier_id") or "none"
-        tier_counts[tid] = tier_counts.get(tid, 0) + 1
+    try:
+        # DB RPC aggregation fallback to bounded queries
+        summary = db.rpc("get_hp_program_report_summary", {"p_today_date": today})
+        if summary and isinstance(summary, dict):
+            total_issued = int(summary.get("total_issued", 0))
+            total_spent = int(summary.get("total_spent", 0))
+            issued_today = int(summary.get("issued_today", 0))
+            tier_counts = summary.get("users_by_tier", {})
+        else:
+            raise Exception("RPC summary empty")
+    except Exception:
+        # Bounded query fallback (max 1000 latest rows per category)
+        issued_rows = db.table("hp_transactions").select("amount").gt("amount", 0).limit(1000).execute() or []
+        spent_rows  = db.table("hp_transactions").select("amount").lt("amount", 0).limit(1000).execute() or []
+        total_issued = sum(int(r.get("amount", 0)) for r in issued_rows)
+        total_spent  = abs(sum(int(r.get("amount", 0)) for r in spent_rows))
+
+        issued_today_rows = (
+            db.table("hp_transactions")
+            .select("amount")
+            .gt("amount", 0)
+            .gte("created_at", f"{today}T00:00:00Z")
+            .limit(1000)
+            .execute()
+        ) or []
+        issued_today = sum(int(r.get("amount", 0)) for r in issued_today_rows)
+
+        tier_rows = db.table("profiles").select("current_tier_id").limit(1000).execute() or []
+        tier_counts = {}
+        for r in tier_rows:
+            tid = r.get("current_tier_id") or "none"
+            tier_counts[tid] = tier_counts.get(tid, 0) + 1
 
     top_rows = (
         db.table("profiles")
@@ -1530,6 +1636,8 @@ def hp_report():
 def list_campuses():
     """
     List all campuses (admin only).
+    SECURITY NOTE:
+      Non-admin users cannot access this list. Admin access is global to manage multi-tenant campuses.
     ---
     tags: [Admin]
     responses:
@@ -1688,6 +1796,6 @@ def _audit(actor_id, table, target_id, action, after_data=None):
             "entity_id": target_id,
             "action": action,
             "after_value": after_data,
-        })
+        }).execute()
     except Exception:
         pass

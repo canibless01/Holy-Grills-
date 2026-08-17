@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import spend_hp, get_hp_balance, award_active_hp
 from app.services.wallet_service import debit_wallet
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from app.utils.validators import validate_choice, validate_non_negative_number
 from datetime import datetime, timezone
@@ -106,7 +106,7 @@ def purchase(listing_id):
       400:
         description: Validation error
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     listing = db.table("marketplace_listings").select("*").eq("id", listing_id).eq("status", "active").single().execute()
     if not listing:
@@ -134,21 +134,67 @@ def purchase(listing_id):
         naira_to_pay = total_value
         use_hp = False
 
+    # Bug 1 & 2 Fixes: Move code reservation BEFORE any wallet debit or HP spend, and use atomic claim
+    reserved_code_id = None
+    reserved_code_val = None
+
+    if listing.get("listing_type") == "code":
+        # Check and claim access code atomically
+        available_codes = (
+            db.table("marketplace_access_codes")
+            .select("id,code")
+            .eq("listing_id", listing_id)
+            .eq("status", "available")
+            .limit(1)
+            .execute()
+        )
+        if not available_codes or len(available_codes) == 0:
+            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True}).execute()
+            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
+
+        cand_code = available_codes[0]
+        # Atomically mark as assigned/reserved
+        now_iso = datetime.now(timezone.utc).isoformat()
+        claimed = (
+            db.table("marketplace_access_codes")
+            .eq("id", cand_code["id"])
+            .eq("status", "available")
+            .update({"status": "assigned", "assigned_at": now_iso})
+            .execute()
+        )
+        if not claimed or (isinstance(claimed, list) and len(claimed) == 0):
+            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
+
+        reserved_code_id = cand_code["id"]
+        reserved_code_val = cand_code["code"]
+
     wallet_amount = 0.0
     card_amount = 0.0
-    if payment_method == "wallet":
-        wallet_amount = naira_to_pay
-        if wallet_amount > 0:
-            debit_wallet(g.user_id, wallet_amount, listing_id, "marketplace", f"Purchase: {listing['title']}")
-    elif payment_method == "card":
-        card_amount = naira_to_pay
-    elif payment_method == "split":
-        wallet_amount = float(data.get("wallet_amount", 0))
-        if wallet_amount > naira_to_pay:
+    try:
+        if payment_method == "wallet":
             wallet_amount = naira_to_pay
-        card_amount = naira_to_pay - wallet_amount
-        if wallet_amount > 0:
-            debit_wallet(g.user_id, wallet_amount, listing_id, "marketplace", f"Wallet portion: {listing['title']}")
+            if wallet_amount > 0:
+                debit_wallet(g.user_id, wallet_amount, listing_id, "marketplace", f"Purchase: {listing['title']}")
+        elif payment_method == "card":
+            card_amount = naira_to_pay
+        elif payment_method == "split":
+            wallet_amount = float(data.get("wallet_amount", 0))
+            if wallet_amount > naira_to_pay:
+                wallet_amount = naira_to_pay
+            card_amount = naira_to_pay - wallet_amount
+            if wallet_amount > 0:
+                debit_wallet(g.user_id, wallet_amount, listing_id, "marketplace", f"Wallet portion: {listing['title']}")
+
+        if hp_to_spend > 0:
+            spend_hp(g.user_id, hp_to_spend, listing_id, "marketplace_purchase", f"HP discount on: {listing['title']}")
+    except Exception as exc:
+        # Revert claimed code if payment or HP spend fails
+        if reserved_code_id:
+            try:
+                db.table("marketplace_access_codes").eq("id", reserved_code_id).update({"status": "available", "assigned_at": None}).execute()
+            except Exception:
+                pass
+        return jsonify({"error": str(exc)}), 400
 
     purchase_record = {
         "user_id": g.user_id,
@@ -161,6 +207,8 @@ def purchase(listing_id):
         "quantity": 1,
         "status": "pending",
     }
+    if reserved_code_id:
+        purchase_record["metadata"] = {"code_id": reserved_code_id}
 
     if listing.get("listing_type") == "code":
         available_codes = (
@@ -275,7 +323,7 @@ def my_purchases():
       200:
         description: User's purchase history
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 20)), 100)
     offset = int(request.args.get("offset", 0))
     rows = (
@@ -391,7 +439,7 @@ def admin_update_purchase(purchase_id):
     if data.get("admin_note"):
         update_payload["admin_note"] = data["admin_note"]
 
-    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload)
+    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload).execute()
 
     # Notify buyer on every escrow state transition
     listing_info = purchase.get("marketplace_listings") or {}
@@ -546,7 +594,7 @@ def admin_create_listing():
     safe["slug"] = f"{base_slug}-{_uuid.uuid4().hex[:5]}"
 
     try:
-        result = db.table("marketplace_listings").insert(safe)
+        result = db.table("marketplace_listings").insert(safe).execute()
     except Exception as exc:
         from app.db import SupabaseError
         # Only intercept DB check-constraint violations that mention the listing_type column.
@@ -579,7 +627,7 @@ def update_listing_image(listing_id):
     db.table("marketplace_listings").eq("id", listing_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
 
     return jsonify({"image_url": image_url}), 200
 
@@ -657,7 +705,7 @@ def admin_update_listing(listing_id):
         return jsonify({"error": MSG.FIELD_MUST_BE_NONEMPTY_STR.format(field="title")}), 400
 
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("marketplace_listings").eq("id", listing_id).update(safe)
+    result = db.table("marketplace_listings").eq("id", listing_id).update(safe).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -738,14 +786,14 @@ def submit_listing_request():
         "status": "pending",
     }
     try:
-        result = db.table("marketplace_requests").insert(record)
+        result = db.table("marketplace_requests").insert(record).execute()
     except Exception:
         # Table not provisioned yet on this environment — degrade gracefully
         # instead of a raw 500. See migrations/new_features.sql.
         return jsonify({"error": MSG.LISTING_VENDOR_UNAVAILABLE}), 503
     saved = result[0] if isinstance(result, list) else result
 
-    admins = db.table("profiles").select("id").eq("role", "admin").execute() or []
+    admins = db.table("profiles").select("id").in_("role", ["admin", "super_admin"]).execute() or []
     from app.services.notification_service import send_notification
     for admin in admins:
         send_notification(
@@ -844,7 +892,7 @@ def admin_respond_to_request(request_id):
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    result = db.table("marketplace_requests").eq("id", request_id).update(update)
+    result = db.table("marketplace_requests").eq("id", request_id).update(update).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -880,19 +928,19 @@ def upload_codes(listing_id):
         return jsonify({"error": MSG.MARKETPLACE_CODES_REQUIRED}), 400
 
     records = [{"listing_id": listing_id, "code": c, "status": "available"} for c in codes]
-    db.table("marketplace_access_codes").insert(records)
+    db.table("marketplace_access_codes").insert(records).execute()
 
     db.table("marketplace_listings").eq("id", listing_id).update({
         "is_out_of_stock": False,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
     return jsonify({"uploaded": len(records)}), 201
 
 
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
     from app.db import get_db
     db = get_db()
-    admins = db.table("profiles").select("id").eq("role", "admin").execute()
+    admins = db.table("profiles").select("id").in_("role", ["admin", "super_admin"]).execute()
     from app.services.notification_service import send_notification
     for admin in admins:
         send_notification(

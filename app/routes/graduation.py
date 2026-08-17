@@ -12,7 +12,7 @@ POST /graduation/claim
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.services.hp_service import award_active_hp
 from datetime import datetime, timezone
@@ -39,7 +39,7 @@ def claim_graduation():
       400:
         description: Not eligible or already claimed
     """
-    db = get_db()
+    db = get_user_client()
 
     # Fetch user profile
     profile = (

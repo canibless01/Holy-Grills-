@@ -5,7 +5,7 @@ from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import (
     get_hp_balance, get_user_tier, spend_hp, earn_pending_hp, award_active_hp
 )
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 
@@ -57,7 +57,7 @@ def transactions():
       200:
         description: HP transaction list
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
@@ -212,7 +212,7 @@ def unlock_history():
       200:
         description: HP unlock log entries
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
@@ -279,7 +279,7 @@ def purchase_hp_bundle():
       400:
         description: Validation error
     """
-    db = get_db()
+    db = get_user_client()
     from app.services.hp_service import process_hp_bundle_purchase
     data = request.get_json(force=True)
     hp_amount = int(data.get("hp_amount", 0))
@@ -388,7 +388,7 @@ def transfer_hp():
     if recipient_id == g.user_id:
         return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_SELF)}), 400
 
-    db = get_db()
+    db = get_user_client()
 
     # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
     # min_orders is read from system_settings first (admin-editable), falling back to

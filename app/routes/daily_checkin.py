@@ -7,7 +7,7 @@ GET  /api/checkin/history  — return check-in history for authenticated user
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 from datetime import datetime, timezone, date
@@ -48,7 +48,7 @@ def record_checkin():
         description: Already checked in today
     """
     user_id = g.user_id
-    db = get_db()
+    db = get_user_client()
     today = date.today().isoformat()
 
     # Idempotency check
@@ -127,7 +127,7 @@ def checkin_history():
         description: Check-in history list
     """
     user_id = g.user_id
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 30)), 90)
     offset = int(request.args.get("offset", 0))
 

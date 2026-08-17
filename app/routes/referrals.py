@@ -3,7 +3,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import award_active_hp
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.services.notification_service import send_notification
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -80,7 +80,7 @@ def my_referrals():
         description: Referral stats and history
     """
     try:
-        db = get_db()
+        db = get_user_client()
 
         profile = (
             db.table("profiles")
@@ -147,7 +147,7 @@ def referral_stats():
         description: Referral summary stats
     """
     try:
-        db = get_db()
+        db = get_user_client()
 
         profile = (
             db.table("profiles")

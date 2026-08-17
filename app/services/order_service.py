@@ -1,6 +1,17 @@
 """
 Order Service — handles order creation, status transitions, and HP award flow.
 
+DEPRECATION NOTICE:
+  Legacy order creation database function `hg_place_order` is DEPRECATED and
+  MUST NOT be used. All order creation logic routes through `create_order()`,
+  which uses the authoritative, atomic `hg_create_order_atomic` RPC to ensure
+  safe lock claiming, wallet debits, and item creation without race conditions.
+
+LEGACY FIELD DOCUMENTATION:
+  - `order_items.options_snapshot` is a legacy column and is NOT the real customization
+    snapshotting field. Real item variations and add-ons are snapshot in `selected_variations`
+    and `_addon_selections` within the order item payload.
+
 Order Status Machine:
   received → preparing → ready → assigned → out_for_delivery → delivered
                                                               → delivery_attempted → unclaimed
@@ -248,8 +259,8 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
     # Enforce required-group and min/max constraints
     for group in groups:
         count = counts_by_group.get(group["id"], 0)
-        min_select = int(group.get("min_select", 0))
-        max_select = int(group.get("max_select", 1))
+        min_select = int(group.get("min_select") if group.get("min_select") is not None else group.get("min_selections", 0))
+        max_select = int(group.get("max_select") if group.get("max_select") is not None else group.get("max_selections", 1))
         if (group.get("is_required") or min_select > 0) and count < min_select:
             raise ValueError(MSG.ORDER_ADDON_GROUP_REQUIRED.format(
                 group_name=group["name"], min_select=min_select, item_name=menu_item["name"]
@@ -510,7 +521,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         })
         subtotal += float(line_total)
 
-    # Resolve order-level add-ons
+    # Resolve order-level add-ons (group_id IS NULL flat add-ons)
     for addon_entry in payload.get("addons", []):
         addon = (
             db.table("menu_addons")
@@ -521,7 +532,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         )
         if not addon:
             raise ValueError(f"Add-on {addon_entry.get('addon_id')} not found")
-        if not addon.get("is_available"):
+        if not addon.get("is_available") or addon.get("is_archived"):
             raise ValueError(f"Add-on '{addon['name']}' is not currently available")
         addon_qty = max(1, int(addon_entry.get("quantity", 1)))
         addon_price = Decimal(str(addon["price"]))
@@ -823,14 +834,49 @@ def walk_order_to_status(
     """
     Walk an order through every intermediate state until it reaches target_status.
     Uses BFS on VALID_TRANSITIONS to find the shortest legal path.
+    Validates rider and kitchen caller permissions prior to walking states.
 
     Returns:
         {"steps": ["preparing", "ready", ...], "final": <order dict>}
     """
+    from flask import has_app_context, g
     db = get_db()
-    order = db.table("orders").select("status").eq("id", order_id).single().execute()
+    order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
+
+    if changed_by:
+        caller_role = None
+        caller_campus = None
+        if has_app_context() and getattr(g, 'user_id', None) == changed_by:
+            caller_role = getattr(g, 'user_role', None)
+            caller_campus = getattr(g, 'campus_id', None)
+        else:
+            try:
+                c_prof = db.table("profiles").select("role,campus_id").eq("id", changed_by).single().execute()
+                if c_prof:
+                    caller_role = c_prof.get("role")
+                    caller_campus = c_prof.get("campus_id")
+            except Exception:
+                pass
+
+        if caller_role == "rider":
+            batch_id = order.get("batch_id")
+            assigned_rider_id = None
+            if batch_id:
+                try:
+                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
+                    if batch:
+                        assigned_rider_id = batch.get("rider_id")
+                except Exception:
+                    pass
+            if not assigned_rider_id or assigned_rider_id != changed_by:
+                raise ValueError("Unauthorized: Rider is not assigned to this order")
+
+        elif caller_role == "kitchen":
+            order_campus = order.get("campus_id")
+            if caller_campus and order_campus and caller_campus != order_campus:
+                raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
 
     path = _find_status_path(order["status"], target_status)
     if path is None:
@@ -952,11 +998,44 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     is not held up by sequential Supabase notification inserts.
     """
     import threading as _threading
-    from flask import current_app as _app
+    from flask import current_app as _app, has_app_context, g
     db = get_db()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
+
+    if changed_by:
+        caller_role = None
+        caller_campus = None
+        if has_app_context() and getattr(g, 'user_id', None) == changed_by:
+            caller_role = getattr(g, 'user_role', None)
+            caller_campus = getattr(g, 'campus_id', None)
+        else:
+            try:
+                c_prof = db.table("profiles").select("role,campus_id").eq("id", changed_by).single().execute()
+                if c_prof:
+                    caller_role = c_prof.get("role")
+                    caller_campus = c_prof.get("campus_id")
+            except Exception:
+                pass
+
+        if caller_role == "rider":
+            batch_id = order.get("batch_id")
+            assigned_rider_id = None
+            if batch_id:
+                try:
+                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
+                    if batch:
+                        assigned_rider_id = batch.get("rider_id")
+                except Exception:
+                    pass
+            if not assigned_rider_id or assigned_rider_id != changed_by:
+                raise ValueError("Unauthorized: Rider is not assigned to this order")
+
+        elif caller_role == "kitchen":
+            order_campus = order.get("campus_id")
+            if caller_campus and order_campus and caller_campus != order_campus:
+                raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
 
     current_status = order["status"]
     allowed = VALID_TRANSITIONS.get(current_status, [])
@@ -969,7 +1048,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     if ts_field:
         update_data[ts_field] = now
 
-    updated = db.table("orders").eq("id", order_id).update(update_data)
+    updated = db.table("orders").eq("id", order_id).update(update_data).execute()
     _log_status_change(order_id, current_status, new_status, changed_by, notes)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery
@@ -1089,7 +1168,7 @@ def _handle_delivery_rewards(order: dict):
     }
 
     try:
-        db.table("orders").eq("id", order_id).update(order_updates)
+        db.table("orders").eq("id", order_id).update(order_updates).execute()
     except Exception:
         pass
 
@@ -1163,7 +1242,7 @@ def _handle_delivery_rewards(order: dict):
     try:
         get_db().table("profiles").eq("id", user_id).update({
             "last_activity_at": datetime.now(timezone.utc).isoformat()
-        })
+        }).execute()
     except Exception:
         pass
 
@@ -1220,7 +1299,7 @@ def _log_status_change(order_id: str, from_status: str, to_status: str, changed_
             "changed_by": changed_by,
             "note": notes or f"{from_status} → {to_status}",
             "metadata": {"from_status": from_status},
-        })
+        }).execute()
     except Exception:
         pass
 

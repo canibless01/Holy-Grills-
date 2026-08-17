@@ -8,7 +8,7 @@ POST /api/exclusive-spin/spin     — consume one reward spin credit and return 
 import random
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 from datetime import datetime, timezone, timedelta
@@ -106,7 +106,7 @@ def my_spins():
         description: Spin summary
     """
     user_id = g.user_id
-    db = get_db()
+    db = get_user_client()
     spins = _available_spins(db, user_id)
     total = sum(s.get("spin_count", 0) for s in spins)
 
@@ -129,7 +129,7 @@ def do_spin():
         description: No spin credits available
     """
     user_id = g.user_id
-    db = get_db()
+    db = get_user_client()
     spins = _available_spins(db, user_id)
 
     if not spins:

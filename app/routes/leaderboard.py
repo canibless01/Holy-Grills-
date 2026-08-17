@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import date, timedelta, datetime, timezone
 
 leaderboard_bp = Blueprint("leaderboard", __name__)
@@ -258,7 +258,7 @@ def my_rank():
       200:
         description: User's rank and stats
     """
-    db = get_db()
+    db = get_user_client()
     period_type = request.args.get("period_type", "monthly")
     if period_type not in ("monthly", "weekly", "all_time"):
         period_type = "monthly"
@@ -354,14 +354,17 @@ def squad_leaderboard():
     today = date.today()
 
     try:
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         # Fetch delivered squad orders
-        squad_orders = (
+        q = (
             db.table("orders")
             .select("id,user_id,hp_earned,created_at")
             .eq("is_squad_order", "true")
             .eq("status", "delivered")
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        squad_orders = q.execute() or []
 
         # Filter by period
         if period_type == "monthly":
@@ -456,7 +459,7 @@ def squad_my_rank():
       200:
         description: User's squad rank and HP stats
     """
-    db = get_db()
+    db = get_user_client()
     period_type = request.args.get("period_type", "monthly")
     if period_type not in ("monthly", "weekly", "all_time"):
         period_type = "monthly"
@@ -464,13 +467,16 @@ def squad_my_rank():
     today = date.today()
 
     try:
-        squad_orders = (
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+        q = (
             db.table("orders")
             .select("id,user_id,hp_earned,created_at")
             .eq("is_squad_order", "true")
             .eq("status", "delivered")
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        squad_orders = q.execute() or []
 
         if period_type == "monthly":
             prefix = today.strftime("%Y-%m")

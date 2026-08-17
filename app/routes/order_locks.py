@@ -12,7 +12,7 @@ GET    /admin/order-locks/pending-gifts — admin: list pending first-order gift
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.settings import get_validated_setting, SettingError
 from datetime import datetime, timezone, date, timedelta
@@ -42,7 +42,7 @@ def create_lock():
       400:
         description: Validation error
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     locked_date_str = (data.get("locked_date") or "").strip()
     if not locked_date_str:
@@ -161,7 +161,7 @@ def list_locks():
       200:
         description: List of locks
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("order_locks").select("*").eq("user_id", g.user_id)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -191,7 +191,7 @@ def get_lock(lock_id):
       404:
         description: Lock not found
     """
-    db = get_db()
+    db = get_user_client()
     lock = (
         db.table("order_locks")
         .select("*")
@@ -232,7 +232,7 @@ def reschedule_lock(lock_id):
       404:
         description: Lock not found
     """
-    db = get_db()
+    db = get_user_client()
     lock = (
         db.table("order_locks")
         .select("*")
@@ -291,7 +291,7 @@ def cancel_lock(lock_id):
       404:
         description: Lock not found
     """
-    db = get_db()
+    db = get_user_client()
     lock = (
         db.table("order_locks")
         .select("id,status")

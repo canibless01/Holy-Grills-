@@ -5,7 +5,7 @@ from app.middleware.auth import require_auth, require_role, optional_auth
 from app.middleware.rate_limit import rate_limit
 from app.services import order_service
 from app.services.hp_service import earn_pending_hp
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from datetime import datetime, timezone
 
@@ -174,7 +174,7 @@ def list_orders():
       200:
         description: Order list
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("orders").select("*,order_items(*)").eq("user_id", g.user_id)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -218,7 +218,7 @@ def get_order(order_id):
     except ValueError:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
@@ -253,7 +253,7 @@ def call_assigned_rider(order_id):
     except (ValueError, AttributeError):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id,delivery_batches(rider_id,status)")
@@ -388,7 +388,7 @@ def add_review_images(order_id):
     if not image_urls or not isinstance(image_urls, list):
         return jsonify({"error": "image_urls is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("order_reviews").eq("order_id", order_id).eq("user_id", g.user_id).update({
         "image_urls": image_urls,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -426,7 +426,7 @@ def submit_review(order_id):
       400:
         description: Already reviewed or order not yet delivered
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
 
     order = db.table("orders").select("user_id,status").eq("id", order_id).single().execute()
@@ -532,7 +532,7 @@ def claim_guest_order(order_id):
     if not claim_token:
         return jsonify({"error": MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
 
     # Pre-claim validations on Python side to enforce business policies perfectly
     order = db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
@@ -743,7 +743,7 @@ def list_scheduled_orders():
       200:
         description: User's pending scheduled orders
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 20)), 100)
     offset = int(request.args.get("offset", 0))
     orders = (
@@ -792,7 +792,7 @@ def cancel_scheduled_order(order_id):
       404:
         description: Order not found
     """
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id,status,is_scheduled,total_amount,wallet_amount_used,hp_redeemed,payment_status")
@@ -880,7 +880,7 @@ def active_order():
       200:
         description: Active order or null
     """
-    db = get_db()
+    db = get_user_client()
     TERMINAL = ["delivered", "cancelled", "refunded"]
     rows = (
         db.table("orders")
@@ -1105,7 +1105,7 @@ def cancel_order(order_id):
       404:
         description: Order not found
     """
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id,status,total_amount,wallet_amount_used,card_amount_used,hp_redeemed,payment_status")
@@ -1250,7 +1250,7 @@ def reorder(order_id):
     except (ValueError, AttributeError):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id")
@@ -1324,7 +1324,7 @@ def record_order_share(order_id):
       404:
         description: Order not found
     """
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id,status")
@@ -1419,7 +1419,7 @@ def add_squad_members(order_id):
       404:
         description: Order not found or not yours
     """
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id,status,hp_earned")
@@ -1591,7 +1591,7 @@ def order_status_history(order_id):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     from app.middleware.auth import require_role as _rr
-    db = get_db()
+    db = get_user_client()
     order = (
         db.table("orders")
         .select("id,user_id,guest_phone")
@@ -1604,7 +1604,7 @@ def order_status_history(order_id):
 
     is_owner = (
         order.get("user_id") == g.user_id or
-        getattr(g, "user_role", None) in ("admin", "kitchen", "rider")
+        getattr(g, "user_role", None) in ("admin", "super_admin", "kitchen", "rider")
     )
     if not is_owner:
         return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
