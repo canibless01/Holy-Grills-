@@ -107,6 +107,23 @@ class MSG:
     EVENT_HP_REWARD_INVALID  = "hp_reward must be a non-negative integer"
     NO_VALID_FIELDS          = "No valid fields to update"
 
+    GUEST_REGISTRATION_SUCCESS        = "Registration successful! Check your email for QR code."
+    GUEST_ACCOUNT_PROMPT              = "Create an account to earn HP for this event!"
+    GUEST_EMAIL_REQUIRED              = "Email is required for guest registration."
+    GUEST_NAME_REQUIRED               = "Full name is required for guest registration."
+    GUEST_PHONE_REQUIRED              = "Phone number is required for guest registration."
+    GUEST_ALREADY_REGISTERED          = "This email is already registered for this event."
+    TIER_FEATURES_INVALID             = "Features must be an array of strings."
+    TIER_TERMS_INVALID                = "Terms must be an array of strings."
+    TIER_EARLY_BIRD_DEADLINE_REQUIRED = "Early bird deadline is required when is_early_bird is true."
+    REGISTRATION_FIELD_INVALID        = "Invalid registration field configuration."
+    REGISTRATION_FIELD_REQUIRED       = "{field} is required."
+    REGISTRATION_SELECT_OPTIONS_REQUIRED = "Select fields must have options array."
+    REGISTRATION_FIELD_TYPE_INVALID   = "Invalid field type. Allowed: text, email, tel, textarea, select, number, date."
+    TICKET_NOT_FOUND                  = "Ticket not found."
+    TICKET_ALREADY_CHECKED_IN        = "This ticket has already been used for check-in."
+    TICKET_LINKED_TO_ACCOUNT          = "Your guest ticket has been linked to your account. HP awarded!"
+
     # ── Marketplace ───────────────────────────────────────────────────────────
     MARKETPLACE_PURCHASE_TITLE           = "Purchase Confirmed"
     MARKETPLACE_PURCHASE_BODY            = "Purchase confirmed: {title}."

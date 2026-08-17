@@ -375,6 +375,25 @@ def walk_order_status(order_id):
         return jsonify({"error": str(e)}), 400
 
 
+@orders_bp.route("/<order_id>/review/images", methods=["POST"])
+@require_auth
+def add_review_images(order_id):
+    """Add images to an order review."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_urls = data.get("image_urls")
+
+    if not image_urls or not isinstance(image_urls, list):
+        return jsonify({"error": "image_urls is required"}), 400
+
+    db = get_db()
+    db.table("order_reviews").eq("order_id", order_id).eq("user_id", g.user_id).update({
+        "image_urls": image_urls,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"image_urls": image_urls}), 200
+
+
 @orders_bp.route("/<order_id>/review", methods=["POST"])
 @require_auth
 def submit_review(order_id):

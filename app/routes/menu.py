@@ -754,6 +754,25 @@ def create_item():
     return jsonify(created), 201
 
 
+@menu_bp.route("/items/<item_id>/image", methods=["POST"])
+@require_role("admin")
+def update_menu_item_image(item_id):
+    """Update menu item image with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = data.get("image_url")
+
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    db = get_db()
+    db.table("menu_items").eq("id", item_id).update({
+        "image_url": image_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"image_url": image_url}), 200
+
+
 @menu_bp.route("/items/<item_id>", methods=["PATCH"])
 @require_role("admin")
 def update_item(item_id):

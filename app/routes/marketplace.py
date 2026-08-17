@@ -535,6 +535,26 @@ def admin_create_listing():
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
+@marketplace_bp.route("/listings/<listing_id>/image", methods=["POST"])
+@marketplace_bp.route("/admin/listings/<listing_id>/image", methods=["POST"])
+@require_role("admin")
+def update_listing_image(listing_id):
+    """Update marketplace listing image with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = data.get("image_url")
+
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    db = get_db()
+    db.table("marketplace_listings").eq("id", listing_id).update({
+        "image_url": image_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"image_url": image_url}), 200
+
+
 @marketplace_bp.route("/admin/listings/<listing_id>", methods=["PATCH"])
 @require_role("admin")
 def admin_update_listing(listing_id):

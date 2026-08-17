@@ -367,6 +367,25 @@ def create_reward():
     return jsonify(created), 201
 
 
+@rewards_bp.route("/<reward_id>/image", methods=["POST"])
+@require_role("admin")
+def update_reward_image(reward_id):
+    """Update reward image with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = data.get("image_url")
+
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    db = get_db()
+    db.table("rewards").eq("id", reward_id).update({
+        "image_url": image_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"image_url": image_url}), 200
+
+
 @rewards_bp.route("/<reward_id>", methods=["PATCH"])
 @require_role("admin")
 def update_reward(reward_id):
