@@ -633,7 +633,6 @@ def users_analytics():
     today_str = now.date().isoformat()
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
 
-    today_str = now.date().isoformat()
     q_daily = (
         db.table("orders")
         .select("user_id")
@@ -746,13 +745,15 @@ def retention_analytics():
     chunk_size = 200
     for i in range(0, len(user_ids), chunk_size):
         chunk = user_ids[i:i + chunk_size]
-        rows = (
+        q_orders = (
             db.table("orders")
             .select("user_id,created_at")
             .in_("user_id", chunk)
             .eq("status", "delivered")
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q_orders = q_orders.eq("campus_id", campus_id)
+        rows = q_orders.execute() or []
         all_orders.extend(rows)
 
     # Count orders per user
