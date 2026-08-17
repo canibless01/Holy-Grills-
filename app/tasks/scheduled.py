@@ -337,6 +337,8 @@ def tier_grace_period_check(self):
             campus_id = campus["id"]
             tiers = db.table("hp_tiers").select("*").eq("campus_id", campus_id).order("sort_order").execute() or []
             if not tiers:
+                # Intentional global-tier fallback: if a campus has no campus-specific hp_tiers
+                # configured, fall back to global hp_tiers so grace period checks can proceed.
                 tiers = db.table("hp_tiers").select("*").order("sort_order").execute() or []
             base_tier = tiers[0] if tiers else None
             tier_map = {t["id"]: t for t in tiers}

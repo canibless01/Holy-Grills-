@@ -43,6 +43,9 @@ def _complete_referral_award(referral: dict, order_id: str):
 
     # 3. Python-owned milestone logic (5, 10, 20 referrals → bonus HP)
     try:
+        # NOTE: referrals.status is a free-text field in Supabase (no DB check constraint).
+        # Any code writing to referrals.status should maintain consistent string values
+        # ("pending", "completed") for clean filtering across the application.
         completed_rows = (
             db.table("referrals")
             .select("id")

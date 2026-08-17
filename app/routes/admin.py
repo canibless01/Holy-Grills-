@@ -519,8 +519,15 @@ def create_window():
         return jsonify({"error": "is_active must be a boolean"}), 400
 
     # Only insert columns that exist in delivery_windows
-    WINDOW_COLS = {"label", "starts_at", "ends_at", "capacity", "is_active"}
+    WINDOW_COLS = {"label", "starts_at", "ends_at", "capacity", "is_active", "campus_id", "zone_id"}
     safe = {k: v for k, v in data.items() if k in WINDOW_COLS}
+    campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
+    zone_id = data.get("zone_id") or getattr(g, 'zone_id', None)
+    if zone_id and "zone_id" not in safe:
+        safe["zone_id"] = zone_id
+
     safe["status"] = "open"
     safe["created_by"] = g.user_id
     result = db.table("delivery_windows").insert(safe)

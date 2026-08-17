@@ -610,6 +610,8 @@ def refund_order(order_id):
 
     notes_str = order.get("notes") or ""
     import re
+    # NOTE: Parsing regex over orders.notes for card refund tracking is fragile.
+    # A dedicated card_refund_total column on orders is recommended for future schema iterations.
     card_refunds_in_notes = re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
     already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
 
