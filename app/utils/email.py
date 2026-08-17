@@ -196,6 +196,24 @@ Total registrants: {d.get('count', 0)}
 — {d.get('app_tagline', '')}
 """,
     },
+    "event_ticket_qr": {
+        "subject": lambda d: f"🎟️ Your Ticket for {d.get('event_title', 'Event')}",
+        "body": lambda d: f"""
+Hi {d.get('name', 'there')},
+
+Here is your ticket for {d.get('event_title', '')}!
+
+Date: {d.get('event_date', 'TBA')}
+Location: {d.get('event_location', 'TBA')}
+Ticket ID: {d.get('ticket_id', '')}
+
+Please show your QR code at the door to check in.
+
+Create an account to earn HP for this event!
+
+— {d.get('app_tagline', '')}
+""",
+    },
 }
 
 
@@ -349,3 +367,52 @@ def get_user_email_and_name(user_id: str) -> tuple:
         return "", ""
     except Exception:
         return "", ""
+
+
+def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str, event_id: str, event_date: str = "", event_location: str = "") -> bool:
+    """
+    Send QR ticket email to guest or registered user.
+    Generates QR code payload (hg-event:{event_id}:{ticket_id}) and sends HTML email.
+    """
+    qr_payload = f"hg-event:{event_id}:{ticket_id}"
+    qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={qr_payload}"
+
+    qr_img_tag = f'<img src="{qr_img_url}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px 0;" />'
+    try:
+        import qrcode
+        import io, base64
+        qr = qrcode.QRCode(version=1, box_size=10, border=2)
+        qr.add_data(qr_payload)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px 0;" />'
+    except Exception as e:
+        logger.debug("Failed to generate local base64 QR code, fallback to qrserver URL: %s", e)
+
+    app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
+    subject = f"🎟️ Your Ticket for {event_title}"
+
+    html_body = (
+        f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
+        f"<h2>🎟️ Your Ticket for {event_title}</h2>"
+        f"<p>Hi {name or 'there'},</p>"
+        f"<p>Thank you for registering! Here are your official ticket details:</p>"
+        f"<ul>"
+        f"<li><strong>Event:</strong> {event_title}</li>"
+        f"<li><strong>Date:</strong> {event_date or 'TBA'}</li>"
+        f"<li><strong>Location:</strong> {event_location or 'TBA'}</li>"
+        f"<li><strong>Ticket ID:</strong> <code>{ticket_id}</code></li>"
+        f"</ul>"
+        f"<p>Present this QR code at the door for check-in:</p>"
+        f"{qr_img_tag}"
+        f"<div style='background-color:#f0f8ff;border-left:4px solid #0080ff;padding:12px;margin:20px 0;'>"
+        f"<strong>Earn Rewards!</strong> Create an account with {email} to earn HP for this event and unlock exclusive perks!"
+        f"</div>"
+        f"<br><p style='color:#888;font-size:12px'>— {app_tagline}</p>"
+        f"</body></html>"
+    )
+
+    return send_email_raw(to_email=email, to_name=name, subject=subject, html_body=html_body)

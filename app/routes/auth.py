@@ -9,6 +9,7 @@ from app.services import auth_service
 from app.utils.retry import with_retry
 from app.db import get_db, SupabaseError
 from app.messages import MSG
+from datetime import datetime, timezone
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -278,6 +279,25 @@ def me():
         return jsonify(user), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@auth_bp.route("/profile/photo", methods=["POST"])
+@require_auth
+def update_profile_photo():
+    """Update user profile photo with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    photo_url = data.get("photo_url")
+
+    if not photo_url:
+        return jsonify({"error": "photo_url is required"}), 400
+
+    db = get_db()
+    db.table("profiles").eq("id", g.user_id).update({
+        "photo_url": photo_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"photo_url": photo_url}), 200
 
 
 @auth_bp.route("/profile", methods=["PATCH"])

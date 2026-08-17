@@ -490,6 +490,29 @@ def delete_early_supporter(section_id):
     return jsonify({"message": "Early supporter removed", "id": section_id}), 200
 
 
+@storefront_bp.route("/early-supporters/<section_id>/photo", methods=["POST"])
+@require_role("admin")
+def update_early_supporter_photo(section_id):
+    """Update early supporter photo with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    photo_url = data.get("photo_url")
+
+    if not photo_url:
+        return jsonify({"error": "photo_url is required"}), 400
+
+    db = get_db()
+    section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
+    content = (section.get("content") or {}) if isinstance(section, dict) else {}
+    content["photo_url"] = photo_url
+
+    db.table("storefront_sections").eq("id", section_id).update({
+        "content": content,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"photo_url": photo_url}), 200
+
+
 @storefront_bp.route("/sections", methods=["POST"])
 @require_role("admin")
 def create_section():
@@ -558,6 +581,29 @@ def delete_section(section_id):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
     return jsonify({"message": MSG.SECTION_DEACTIVATED, "section_id": section_id}), 200
+
+
+@storefront_bp.route("/sections/<section_id>/image", methods=["POST"])
+@require_role("admin")
+def update_section_image(section_id):
+    """Update storefront section image with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = data.get("image_url")
+
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    db = get_db()
+    section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
+    content = (section.get("content") or {}) if isinstance(section, dict) else {}
+    content["image_url"] = image_url
+
+    db.table("storefront_sections").eq("id", section_id).update({
+        "content": content,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"image_url": image_url}), 200
 
 
 @storefront_bp.route("/banners", methods=["GET"])
@@ -725,6 +771,30 @@ def update_banner(banner_id):
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = db.table("banners").eq("id", banner_id).update(update)
     return jsonify(result[0] if isinstance(result, list) else result), 200
+
+
+@storefront_bp.route("/banners/<banner_id>/image", methods=["POST"])
+@require_role("admin")
+def update_banner_image(banner_id):
+    """Update banner image with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = data.get("image_url")
+    mobile_image_url = data.get("mobile_image_url")
+
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    db = get_db()
+    update_data = {
+        "image_url": image_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if mobile_image_url is not None:
+        update_data["mobile_image_url"] = mobile_image_url
+
+    db.table("banners").eq("id", banner_id).update(update_data)
+
+    return jsonify({"image_url": image_url}), 200
 
 
 @storefront_bp.route("/newsletter", methods=["POST"])

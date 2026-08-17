@@ -1,7 +1,8 @@
 """Events routes — discovery, catering requests, QR check-in, ticket tiers, admin export."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, optional_auth
+from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, SupabaseError
 from app.messages import MSG, resolve_msg
@@ -13,6 +14,30 @@ from datetime import datetime, timezone
 import uuid
 
 events_bp = Blueprint("events", __name__)
+
+def _get_campus_id():
+    """
+    Resolve campus_id from multiple sources (for guests and authenticated users).
+
+    Priority:
+    1. Query param (?campus_id=123)
+    2. Header (X-Campus-ID: 123)
+    3. Authenticated user's session (g.campus_id)
+    4. None (show all events)
+    """
+    campus_id = request.args.get("campus_id")
+    if campus_id:
+        return campus_id.strip()
+
+    campus_id = request.headers.get("X-Campus-ID")
+    if campus_id:
+        return campus_id.strip()
+
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        return str(campus_id).strip()
+
+    return None
 
 CATERING_STATUSES = ("new", "reviewed", "quoted", "accepted", "completed", "rejected", "cancelled")
 
@@ -36,7 +61,7 @@ def list_events():
         .eq("is_published", "true")
         .gte("starts_at", now)
     )
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id:
         q = q.eq("campus_id", campus_id)
     events = q.order("starts_at").execute()
@@ -65,7 +90,7 @@ def get_event(event_id):
     event = db.table("events").select("*").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id and event.get("campus_id") != campus_id:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     try:
@@ -82,135 +107,130 @@ def get_event(event_id):
 
 
 @events_bp.route("/<event_id>/checkin", methods=["POST"])
-@require_auth
+@optional_auth
 def checkin(event_id):
     """
-    Check in to a Holy Grills event using QR token. Awards HP to pending pool.
-    ---
-    tags: [Events]
-    parameters:
-      - in: path
-        name: event_id
-        type: string
-        required: true
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [qr_token]
-          properties:
-            qr_token: {type: string}
-    responses:
-      200:
-        description: Check-in successful, HP awarded
-      400:
-        description: Already checked in or invalid QR
+    Check in to a Holy Grills event using QR token or ticket ID / guest email.
+    Awards HP if user is registered/authenticated or links guest account.
     """
     db = get_db()
-    data = request.get_json(force=True)
-    qr_token = data.get("qr_token", "").strip()
+
+    # Campus check
+    try:
+        event = db.table("events").select("campus_id").eq("id", event_id).single().execute()
+        if not event:
+            return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+        campus_id = _get_campus_id()
+        if campus_id and event.get("campus_id") != campus_id:
+            return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    except Exception:
+        pass
+
+    data = request.get_json(force=True, silent=True) or {}
+    qr_token = (data.get("qr_token") or data.get("ticket_id") or "").strip()
+    guest_email = (data.get("guest_email") or data.get("email") or "").strip()
 
     try:
-        # Try the atomic RPC first (validates ticket UUID, prevents double check-in,
-        # inserts event_checkins row — all in one transaction).
-        # Falls back to direct DB operations if the RPC is not yet in the
-        # PostgREST schema cache (PGRST202) — see migrations/schema.sql section 5.
+        ticket = None
+        # Try finding ticket by QR code / ID
+        if qr_token:
+            ticket_rows = db.table("event_tickets").select("*").eq("id", qr_token).execute() or []
+            if not ticket_rows:
+                ticket_rows = db.table("event_tickets").select("*").eq("qr_token", qr_token).execute() or []
+            if ticket_rows:
+                ticket = ticket_rows[0]
+
+        # Try finding ticket by user_id if authenticated
+        if not ticket and getattr(g, "user_id", None):
+            t_rows = db.table("event_tickets").select("*").eq("event_id", event_id).eq("user_id", g.user_id).execute() or []
+            if t_rows:
+                ticket = t_rows[0]
+
+        # Try finding ticket by guest_email
+        if not ticket and guest_email:
+            t_rows = db.table("event_tickets").select("*").eq("event_id", event_id).eq("guest_email", guest_email).execute() or []
+            if t_rows:
+                ticket = t_rows[0]
+
+        if not ticket:
+            return jsonify({"error": MSG.TICKET_NOT_FOUND}), 400
+
+        ticket_id_str = ticket["id"]
+
+        # Check existing check-in
+        existing_checkin = db.table("event_checkins").select("id").eq("ticket_id", ticket_id_str).execute() or []
+        if existing_checkin:
+            return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
+
+        # Insert check-in record
+        checked_by = getattr(g, "user_id", None)
         try:
-            result = db.rpc("checkin_event_atomic", {
-                "p_event_id": event_id,
-                "p_user_id": g.user_id,
-                "p_qr_token": qr_token,
+            db.table("event_checkins").insert({
+                "ticket_id": ticket_id_str,
+                "checked_in_by": checked_by,
+                "qr_code": qr_token or ticket_id_str,
             })
-            if isinstance(result, dict) and result.get("error"):
-                return jsonify({"error": result["error"]}), 400
-        except SupabaseError as rpc_err:
-            _rpc_err_str = str(rpc_err)
-            _is_missing_fn = "PGRST202" in _rpc_err_str or "Could not find the function" in _rpc_err_str
-            # 42703 = undefined_column — the deployed checkin_event_atomic() function is
-            # out of sync with the live event_checkins schema (expects checked_in_at,
-            # but the table has checked_in_by). Fall back to the direct-DB path below
-            # until the DB function is redefined to match the live schema.
-            _is_schema_drift = "42703" in _rpc_err_str or "does not exist" in _rpc_err_str
-            if not _is_missing_fn and not _is_schema_drift:
-                raise
-            # ── Fallback: direct DB check-in (mirrors the RPC logic) ─────────
-            # Use limit(1) not .single() so duplicate legacy ticket rows don't
-            # cause a query failure — matches the RPC's LIMIT 1 behaviour.
-            tickets_rows = (
-                db.table("event_tickets")
-                .select("id")
-                .eq("event_id", event_id)
-                .eq("user_id", g.user_id)
-                .limit(1)
-                .execute()
-            )
-            if not tickets_rows:
-                return jsonify({"error": MSG.EVENT_NO_TICKET}), 400
-            ticket_id_str = tickets_rows[0]["id"]
-            if ticket_id_str != qr_token:
-                return jsonify({"error": MSG.EVENT_INVALID_QR}), 400
-            existing_checkin = (
-                db.table("event_checkins")
-                .select("id")
-                .eq("ticket_id", ticket_id_str)
-                .execute()
-            )
-            if existing_checkin:
-                return jsonify({"error": MSG.EVENT_ALREADY_CHECKED_IN}), 400
-            # Catch unique-constraint violation (23505) so concurrent requests
-            # that both pass the read check above don't produce a 500 — treat
-            # as "already checked in" instead.
-            try:
-                db.table("event_checkins").insert({
-                    "ticket_id": ticket_id_str,
-                    "checked_in_by": g.user_id,
-                    "qr_code": qr_token,
+        except SupabaseError as insert_err:
+            err_str = str(insert_err)
+            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+                return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
+            raise
+
+        # Check if guest email now has an account profile in system
+        target_user_id = getattr(g, "user_id", None) or ticket.get("user_id")
+        was_guest_linked = False
+
+        if not target_user_id and ticket.get("guest_email"):
+            prof_row = db.table("profiles").select("id").eq("email", ticket["guest_email"]).execute() or []
+            if prof_row:
+                target_user_id = prof_row[0]["id"]
+                was_guest_linked = True
+
+        if target_user_id:
+            # Auto-link ticket if previously guest
+            if ticket.get("is_guest") or not ticket.get("user_id"):
+                db.table("event_tickets").eq("id", ticket_id_str).update({
+                    "user_id": target_user_id,
+                    "is_guest": False,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
-            except SupabaseError as insert_err:
-                err_str = str(insert_err)
-                if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                    return jsonify({"error": MSG.EVENT_ALREADY_CHECKED_IN}), 400
-                raise
+                was_guest_linked = True
 
-        # ── Award HP (both RPC and fallback paths continue here) ─────────────
-        from flask import current_app
-        event = db.table("events").select("hp_reward,hp_per_attendee,title").eq("id", event_id).single().execute()
-        # Prefer hp_per_attendee (new field); fall back to legacy hp_reward, then config
-        hp_amount = (
-            (event.get("hp_per_attendee") or event.get("hp_reward"))
-            if event else current_app.config["EVENT_CHECKIN_HP"]
-        ) or current_app.config["EVENT_CHECKIN_HP"]
+            event = db.table("events").select("hp_reward,hp_per_attendee,title").eq("id", event_id).single().execute()
+            hp_amount = (
+                (event.get("hp_per_attendee") or event.get("hp_reward"))
+                if event else current_app.config.get("EVENT_CHECKIN_HP", 50)
+            ) or current_app.config.get("EVENT_CHECKIN_HP", 50)
 
-        hp_result = earn_pending_hp(
-            user_id=g.user_id,
-            amount=hp_amount,
-            source_type="event",
-            reference_id=event_id,
-            notes=f"Event check-in HP: {event.get('title', '') if event else ''}",
-        )
+            hp_result = earn_pending_hp(
+                user_id=target_user_id,
+                amount=hp_amount,
+                source_type="event",
+                reference_id=event_id,
+                notes=f"Event check-in HP: {event.get('title', '') if event else ''}",
+            )
 
-        # Fire first_event badge trigger
-        try:
-            from app.services.milestone_service import check_milestone_trigger
-            check_milestone_trigger(g.user_id, "first_event", 1)
-            check_milestone_trigger(g.user_id, "event_checkins", 1)
-        except Exception:
-            pass
+            try:
+                from app.services.milestone_service import check_milestone_trigger
+                check_milestone_trigger(target_user_id, "first_event", 1)
+                check_milestone_trigger(target_user_id, "event_checkins", 1)
+            except Exception:
+                pass
 
-        from app.services.notification_service import send_notification
-        send_notification(
-            user_id=g.user_id,
-            notif_type="hp_earned_event",
-            template_data={
-                "hp": hp_result["added_to_pending"],
-                "event_title": event.get("title", "the event") if event else "the event",
-            },
-        )
+            msg_text = MSG.TICKET_LINKED_TO_ACCOUNT if was_guest_linked else MSG.EVENT_CHECKIN_SUCCESS
+            return jsonify({
+                "message": msg_text,
+                "hp_added_to_pending": hp_result.get("added_to_pending", hp_amount),
+            }), 200
 
+        # Still guest without account
         return jsonify({
             "message": MSG.EVENT_CHECKIN_SUCCESS,
-            "hp_added_to_pending": hp_result["added_to_pending"],
+            "hp_added_to_pending": 0,
+            "is_guest": True,
+            "prompt_create_account": MSG.GUEST_ACCOUNT_PROMPT,
         }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -413,253 +433,208 @@ def generate_event_qr(event_id):
 
 
 @events_bp.route("/<event_id>/register", methods=["POST"])
-@require_auth
+@optional_auth
 def register_for_event(event_id):
     """
-    Register for a Holy Grills event and receive a ticket.
-
-    Returns a ticket_id that doubles as the qr_token for POST /<event_id>/checkin.
-    The check-in RPC validates the token by matching it to the user's ticket ID,
-    so attendees must call this endpoint first, then present the ticket_id at the door.
-
-    Calling this endpoint when already registered returns the existing ticket (idempotent).
-    ---
-    tags: [Events]
-    parameters:
-      - in: path
-        name: event_id
-        type: string
-        required: true
-    responses:
-      201:
-        description: Ticket issued — use ticket_id as qr_token at check-in
-        schema:
-          properties:
-            ticket_id: {type: string}
-            qr_token:  {type: string, description: "Same as ticket_id — pass this to POST /checkin"}
-            event_id:  {type: string}
-            event_title: {type: string}
-            status:    {type: string, example: confirmed}
-      200:
-        description: Already registered — existing ticket returned
-      404:
-        description: Event not found or not published
-      400:
-        description: Event is at capacity
+    Register for a Holy Grills event (supports both registered users and guests).
+    Returns ticket_id/qr_token and account creation prompt for guests.
     """
     db = get_db()
     data = request.get_json(force=True, silent=True) or {}
-    # Try full select (including Phase-2 paid-event columns); fall back to
-    # base columns if those columns haven't been migrated yet.
+
     try:
-        event = (
-            db.table("events")
-            .select("id,title,capacity,is_published,starts_at,ends_at,is_paid,hp_required,total_value,cash_price")
-            .eq("id", event_id)
-            .single()
-            .execute()
-        )
+        event = db.table("events").select("*").eq("id", event_id).single().execute()
     except Exception:
-        event = (
-            db.table("events")
-            .select("id,title,capacity,is_published,starts_at,ends_at")
-            .eq("id", event_id)
-            .single()
-            .execute()
-        )
+        event = None
+
     if not event or not event.get("is_published"):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    # Idempotent — return existing ticket if already registered
-    existing = (
-        db.table("event_tickets")
-        .select("id,status")
-        .eq("event_id", event_id)
-        .eq("user_id", g.user_id)
-        .single()
-        .execute()
-    )
-    if existing:
-        return jsonify({
-            "ticket_id": existing["id"],
-            "qr_token": existing["id"],
-            "event_id": event_id,
-            "event_title": event.get("title"),
-            "status": existing.get("status", "confirmed"),
-            "message": "Already registered — use ticket_id as qr_token to check in.",
-        }), 200
+    campus_id = _get_campus_id()
+    if campus_id and event.get("campus_id") != campus_id:
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    # ── Paid event: handle payment before issuing ticket ─────────────────────
-    # is_paid=True → user must pay hp_required HP (if balance sufficient) + cash_price ₦,
-    # OR total_value ₦ in full cash when HP is insufficient.
-    ticket_payment_info = {}
-    is_paid = event.get("is_paid", False)
-    if is_paid:
-        hp_required = int(event.get("hp_required") or 0)
-        total_value = float(event.get("total_value") or 0)
-        cash_price  = float(event.get("cash_price") or 0)
-        payment_method = (data.get("payment_method") or "wallet").lower()
-        if payment_method not in ("wallet", "card"):
-            return jsonify({"error": MSG.PAID_EVENT_PAYMENT_REQUIRED}), 400
+    # ── Custom Form Fields Validation ──────────────────────────────────────────
+    reg_fields = event.get("registration_fields") or []
+    answers_data = data.get("answers") or data.get("metadata") or {}
+    if not isinstance(answers_data, dict):
+        answers_data = {}
 
-        from app.services.hp_service import get_hp_balance, spend_hp as _spend_hp
-        from app.services.wallet_service import debit_wallet as _debit
-        balance = get_hp_balance(g.user_id)
-        user_hp = balance.get("active", 0)
+    if reg_fields and isinstance(reg_fields, list):
+        for field_def in reg_fields:
+            if not isinstance(field_def, dict):
+                continue
+            fname = field_def.get("name")
+            flabel = field_def.get("label") or fname
+            ftype = field_def.get("type", "text")
+            is_req = field_def.get("required", False)
 
-        if hp_required > 0 and user_hp >= hp_required:
-            hp_to_spend  = hp_required
-            naira_to_pay = cash_price
-            _payment_msg = resolve_msg(MSG.PAID_EVENT_HP_USED, hp=hp_to_spend, cash=naira_to_pay)
+            ans_val = answers_data.get(fname)
+            if ans_val is None and fname in data:
+                ans_val = data.get(fname)
+
+            if is_req and (ans_val is None or str(ans_val).strip() == ""):
+                return jsonify({"error": MSG.REGISTRATION_FIELD_REQUIRED.format(field=flabel)}), 400
+
+            if ans_val is not None and str(ans_val).strip() != "":
+                if ftype == "select":
+                    opts = field_def.get("options") or []
+                    if opts and ans_val not in opts:
+                        return jsonify({"error": f"Invalid selection for {flabel}"}), 400
+                answers_data[fname] = ans_val
+
+    # ── User / Guest Resolution ────────────────────────────────────────────────
+    user_id = getattr(g, "user_id", None)
+    is_guest = False
+    guest_email = None
+    guest_name = None
+    guest_phone = None
+
+    if user_id:
+        user_prof = getattr(g, "user", None) or {}
+        email = data.get("email") or user_prof.get("email") or ""
+        name = data.get("name") or user_prof.get("full_name") or ""
+        phone = data.get("phone") or user_prof.get("phone") or ""
+        is_guest = False
+    else:
+        guest_email = (data.get("guest_email") or data.get("email") or "").strip()
+        guest_name = (data.get("guest_name") or data.get("name") or "").strip()
+        guest_phone = (data.get("guest_phone") or data.get("phone") or "").strip()
+
+        if not guest_email:
+            return jsonify({"error": MSG.GUEST_EMAIL_REQUIRED}), 400
+        if not guest_name:
+            return jsonify({"error": MSG.GUEST_NAME_REQUIRED}), 400
+        if not guest_phone:
+            return jsonify({"error": MSG.GUEST_PHONE_REQUIRED}), 400
+
+        # Check if guest_email belongs to an existing profile
+        prof_rows = db.table("profiles").select("id,full_name,phone,email").eq("email", guest_email).execute() or []
+        if prof_rows:
+            p = prof_rows[0]
+            user_id = p["id"]
+            is_guest = False
+            email = p.get("email") or guest_email
+            name = p.get("full_name") or guest_name
+            phone = p.get("phone") or guest_phone
         else:
-            hp_to_spend  = 0
-            naira_to_pay = total_value
-            _payment_msg = resolve_msg(MSG.PAID_EVENT_CASH_ONLY, total=naira_to_pay)
+            user_id = None
+            is_guest = True
+            email = guest_email
+            name = guest_name
+            phone = guest_phone
 
-        if naira_to_pay > 0 and payment_method == "wallet":
-            _debit(g.user_id, naira_to_pay, event_id, "event_ticket",
-                   f"Event ticket: {event.get('title', '')}")
-
-        if hp_to_spend > 0:
-            _spend_hp(g.user_id, hp_to_spend, event_id, "event_ticket",
-                      f"HP for event: {event.get('title', '')}")
-
-        ticket_payment_info = {
-            "hp_spent": hp_to_spend,
-            "naira_charged": naira_to_pay,
-            "payment_method": payment_method,
-        }
-
-    capacity = event.get("capacity")
-    already_registered = False
-
-    # Prefer the atomic RPC (locks the event row so concurrent registrations
-    # serialize instead of racing on a stale capacity count). Falls back to a
-    # best-effort app-level check if the RPC hasn't been deployed yet — see
-    # migrations/schema.sql section 6a.
-    def _fetch_existing_ticket():
-        """Return existing ticket dict for (event_id, user_id) or None."""
-        try:
-            return (
-                db.table("event_tickets")
-                .select("id,status")
-                .eq("event_id", event_id)
-                .eq("user_id", g.user_id)
-                .single()
-                .execute()
-            )
-        except Exception:
-            return None
-
-    def _existing_ticket_response(ticket_row, status_code=200):
-        return jsonify({
-            "ticket_id": ticket_row["id"],
-            "qr_token": ticket_row["id"],
-            "event_id": event_id,
-            "event_title": event.get("title"),
-            "status": ticket_row.get("status", "confirmed"),
-            "message": "Already registered — use ticket_id as qr_token to check in.",
-        }), status_code
-
-    try:
-        rpc_result = db.rpc("register_for_event_atomic", {
-            "p_event_id": event_id,
-            "p_user_id": g.user_id,
-        })
-        # Supabase RPC may return a list of rows rather than a bare dict
-        if isinstance(rpc_result, list):
-            rpc_result = rpc_result[0] if rpc_result else {}
-        if isinstance(rpc_result, dict) and rpc_result.get("error"):
-            err_msg = rpc_result["error"]
-            # "Already registered" variants from the RPC are not an error — treat as idempotent
-            if "already" in err_msg.lower() or "duplicate" in err_msg.lower() or "registered" in err_msg.lower():
-                # RPC may or may not echo back ticket_id on the already-registered path
-                t_id = rpc_result.get("ticket_id")
-                if t_id:
-                    already_registered = True
-                    ticket_id = t_id
-                else:
-                    existing = _fetch_existing_ticket()
-                    if existing:
-                        return _existing_ticket_response(existing)
-                    # Genuinely missing ticket after RPC said already-registered — fall through
-                    return jsonify({"error": err_msg}), 400
-            elif err_msg == "Event not found":
-                return jsonify({"error": err_msg}), 404
-            else:
-                return jsonify({"error": err_msg}), 400
-        else:
-            ticket_id = rpc_result.get("ticket_id") if isinstance(rpc_result, dict) else None
-            already_registered = bool((rpc_result or {}).get("already_registered"))
-    except SupabaseError as e:
-        e_str = str(e)
-        if "PGRST202" not in e_str and "Could not find the function" not in e_str:
-            # Re-registration unique-constraint may also surface here
-            if "duplicate" in e_str.lower() or "unique" in e_str.lower() or "23505" in e_str:
-                existing = _fetch_existing_ticket()
-                if existing:
-                    return _existing_ticket_response(existing)
-            raise
-        # ── RPC not deployed yet — best-effort insert + post-hoc rank check ───
-        try:
-            ticket = db.table("event_tickets").insert({
+    # ── Duplicate Registration Check ──────────────────────────────────────────
+    if user_id:
+        existing = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("user_id", user_id).execute() or []
+        if existing:
+            ex = existing[0]
+            return jsonify({
+                "ticket_id": ex["id"],
+                "qr_token": ex["id"],
                 "event_id": event_id,
-                "user_id": g.user_id,
-                "status": "confirmed",
-            })
-            ticket_row = ticket[0] if isinstance(ticket, list) else ticket
-            ticket_id = ticket_row["id"]
-        except Exception:
-            # Any insert failure (unique constraint, HTTP 400, etc.) → already registered
-            existing = _fetch_existing_ticket()
-            if existing:
-                return _existing_ticket_response(existing)
+                "event_title": event.get("title"),
+                "status": ex.get("status", "confirmed"),
+                "is_guest": False,
+                "message": "Already registered — use ticket_id as qr_token to check in.",
+            }), 200
+    else:
+        existing = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("guest_email", guest_email).execute() or []
+        if existing:
+            return jsonify({"error": MSG.GUEST_ALREADY_REGISTERED}), 400
+
+    # ── Tier / Capacity Selection ──────────────────────────────────────────────
+    tier_id = data.get("tier_id")
+    if tier_id:
+        tier = db.table("event_ticket_tiers").select("*").eq("id", tier_id).single().execute()
+        if not tier:
+            return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
+        cap = tier.get("capacity")
+        sold = int(tier.get("sold_count") or 0)
+        if cap is not None and sold >= cap:
             return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
 
-        if capacity:
-            issued = (
-                db.table("event_tickets")
-                .select("id,created_at")
-                .eq("event_id", event_id)
-                .order("created_at", ascending=True)
-                .execute()
-            ) or []
-            ordered_ids = [row["id"] for row in issued]
-            rank = ordered_ids.index(ticket_id) + 1 if ticket_id in ordered_ids else len(ordered_ids)
-            if rank > capacity:
-                db.table("event_tickets").eq("id", ticket_id).delete()
-                return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
+    cap_event = event.get("capacity")
+    if cap_event:
+        issued = db.table("event_tickets").select("id").eq("event_id", event_id).execute() or []
+        if len(issued) >= cap_event:
+            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
 
-    if already_registered:
-        return jsonify({
-            "ticket_id": ticket_id,
-            "qr_token": ticket_id,
+    # ── Issue Ticket ───────────────────────────────────────────────────────────
+    ticket_id = str(uuid.uuid4())
+    ticket_payload = {
+        "id": ticket_id,
+        "event_id": event_id,
+        "user_id": user_id,
+        "tier_id": tier_id,
+        "status": "confirmed",
+        "is_guest": is_guest,
+        "guest_email": guest_email if is_guest else None,
+        "guest_name": guest_name if is_guest else None,
+        "guest_phone": guest_phone if is_guest else None,
+        "metadata": {"registration_answers": answers_data},
+    }
+
+    try:
+        ticket_res = db.table("event_tickets").insert(ticket_payload)
+        ticket_row = ticket_res[0] if isinstance(ticket_res, list) else ticket_res
+        ticket_id = ticket_row.get("id", ticket_id)
+    except Exception:
+        fallback = {
+            "id": ticket_id,
             "event_id": event_id,
-            "event_title": event.get("title"),
+            "user_id": user_id,
             "status": "confirmed",
-            "message": "Already registered — use ticket_id as qr_token to check in.",
-        }), 200
+        }
+        db.table("event_tickets").insert(fallback)
 
-    from app.services.notification_service import send_notification
-    send_notification(
-        user_id=g.user_id,
-        notif_type="event_registered",
-        template_data={"title": event.get("title", "the event")},
-        reference_id=event_id,
-        reference_type="event",
-    )
+    if tier_id:
+        try:
+            tier_info = db.table("event_ticket_tiers").select("sold_count").eq("id", tier_id).single().execute() or {}
+            db.table("event_ticket_tiers").eq("id", tier_id).update({
+                "sold_count": int(tier_info.get("sold_count") or 0) + 1,
+            })
+        except Exception:
+            pass
 
-    response = {
+    # ── Email QR to Guest ──────────────────────────────────────────────────────
+    if is_guest and guest_email:
+        send_qr_ticket_email(
+            email=guest_email,
+            name=guest_name,
+            event_title=event.get("title", ""),
+            ticket_id=ticket_id,
+            event_id=event_id,
+            event_date=event.get("starts_at", ""),
+            event_location=event.get("location", ""),
+        )
+
+    if user_id:
+        try:
+            from app.services.notification_service import send_notification
+            send_notification(
+                user_id=user_id,
+                notif_type="event_registered",
+                template_data={"title": event.get("title", "the event")},
+                reference_id=event_id,
+                reference_type="event",
+            )
+        except Exception:
+            pass
+
+    resp_data = {
         "ticket_id": ticket_id,
         "qr_token": ticket_id,
         "event_id": event_id,
         "event_title": event.get("title"),
         "status": "confirmed",
-        "message": "Registration successful. Use ticket_id as qr_token to check in at the event.",
+        "is_guest": is_guest,
+        "message": MSG.GUEST_REGISTRATION_SUCCESS if is_guest else "Registration successful. Use ticket_id as qr_token to check in at the event.",
     }
-    if ticket_payment_info:
-        response["payment"] = ticket_payment_info
-    return jsonify(response), 201
+    if is_guest:
+        resp_data["prompt_create_account"] = MSG.GUEST_ACCOUNT_PROMPT
+
+    return jsonify(resp_data), 201
 
 
 @events_bp.route("/catering-requests", methods=["GET"])
@@ -887,23 +862,14 @@ def create_event():
 def list_event_tiers(event_id):
     """
     List ticket tiers for an event (public).
-    ---
-    tags: [Events]
-    security: []
-    parameters:
-      - in: path
-        name: event_id
-        type: string
-        required: true
-    responses:
-      200:
-        description: Tier list
-      404:
-        description: Event not found
     """
     db = get_db()
-    event = db.table("events").select("id,title").eq("id", event_id).single().execute()
+    event = db.table("events").select("id,title,campus_id").eq("id", event_id).single().execute()
     if not event:
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+
+    campus_id = _get_campus_id()
+    if campus_id and event.get("campus_id") != campus_id:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     tiers = (
         db.table("event_ticket_tiers")
@@ -920,29 +886,6 @@ def list_event_tiers(event_id):
 def create_event_tier(event_id):
     """
     Create a ticket tier for an event (admin only).
-    ---
-    tags: [Events]
-    parameters:
-      - in: path
-        name: event_id
-        type: string
-        required: true
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [name]
-          properties:
-            name: {type: string}
-            price_naira: {type: number}
-            price_hp: {type: integer}
-            capacity: {type: integer}
-            description: {type: string}
-    responses:
-      201:
-        description: Tier created
-      404:
-        description: Event not found
     """
     db = get_db()
     event = db.table("events").select("id").eq("id", event_id).single().execute()
@@ -963,6 +906,23 @@ def create_event_tier(event_id):
     if capacity is not None and (not isinstance(capacity, int) or capacity < 1):
         return jsonify({"error": MSG.TIER_CAPACITY_INVALID_TIER}), 400
 
+    features = data.get("features", [])
+    if features is not None and not isinstance(features, list):
+        return jsonify({"error": MSG.TIER_FEATURES_INVALID}), 400
+    if features and not all(isinstance(f, str) for f in features):
+        return jsonify({"error": MSG.TIER_FEATURES_INVALID}), 400
+
+    terms = data.get("terms", [])
+    if terms is not None and not isinstance(terms, list):
+        return jsonify({"error": MSG.TIER_TERMS_INVALID}), 400
+    if terms and not all(isinstance(t, str) for t in terms):
+        return jsonify({"error": MSG.TIER_TERMS_INVALID}), 400
+
+    is_early_bird = bool(data.get("is_early_bird"))
+    early_bird_deadline = data.get("early_bird_deadline")
+    if is_early_bird and not early_bird_deadline:
+        return jsonify({"error": MSG.TIER_EARLY_BIRD_DEADLINE_REQUIRED}), 400
+
     payload = {
         "event_id": event_id,
         "name": sanitize_string(name, max_len=120),
@@ -971,8 +931,20 @@ def create_event_tier(event_id):
         "capacity": capacity,
         "description": sanitize_string(data.get("description", ""), max_len=500),
         "sold_count": 0,
+        "features": features or [],
+        "terms": terms or [],
+        "color": data.get("color"),
+        "icon": data.get("icon"),
+        "is_early_bird": is_early_bird,
+        "early_bird_deadline": early_bird_deadline,
     }
-    result = db.table("event_ticket_tiers").insert(payload)
+
+    try:
+        result = db.table("event_ticket_tiers").insert(payload)
+    except Exception:
+        fallback = {k: v for k, v in payload.items() if k not in ("features", "terms", "color", "icon", "is_early_bird", "early_bird_deadline")}
+        result = db.table("event_ticket_tiers").insert(fallback)
+
     saved = result[0] if isinstance(result, list) else result
     return jsonify(saved), 201
 
@@ -982,27 +954,6 @@ def create_event_tier(event_id):
 def update_event_tier(tier_id):
     """
     Update a ticket tier (admin only).
-    ---
-    tags: [Events]
-    parameters:
-      - in: path
-        name: tier_id
-        type: string
-        required: true
-      - in: body
-        name: body
-        schema:
-          properties:
-            name: {type: string}
-            price_naira: {type: number}
-            price_hp: {type: integer}
-            capacity: {type: integer}
-            description: {type: string}
-    responses:
-      200:
-        description: Tier updated
-      404:
-        description: Tier not found
     """
     db = get_db()
     tier = db.table("event_ticket_tiers").select("*").eq("id", tier_id).single().execute()
@@ -1010,8 +961,21 @@ def update_event_tier(tier_id):
         return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
 
     data = request.get_json(force=True, silent=True) or {}
-    ALLOWED = {"name", "price_naira", "price_hp", "capacity", "description"}
+    ALLOWED = {"name", "price_naira", "price_hp", "capacity", "description", "features", "terms", "color", "icon", "is_early_bird", "early_bird_deadline"}
     safe = {k: v for k, v in data.items() if k in ALLOWED}
+
+    if "features" in safe:
+        if not isinstance(safe["features"], list) or not all(isinstance(f, str) for f in safe["features"]):
+            return jsonify({"error": MSG.TIER_FEATURES_INVALID}), 400
+
+    if "terms" in safe:
+        if not isinstance(safe["terms"], list) or not all(isinstance(t, str) for t in safe["terms"]):
+            return jsonify({"error": MSG.TIER_TERMS_INVALID}), 400
+
+    is_eb = safe.get("is_early_bird", tier.get("is_early_bird"))
+    eb_dl = safe.get("early_bird_deadline", tier.get("early_bird_deadline"))
+    if is_eb and not eb_dl:
+        return jsonify({"error": MSG.TIER_EARLY_BIRD_DEADLINE_REQUIRED}), 400
 
     if "name" in safe:
         safe["name"] = sanitize_string(safe["name"], max_len=120)
@@ -1022,7 +986,12 @@ def update_event_tier(tier_id):
         if int(safe["capacity"]) < sold:
             return jsonify({"error": MSG.EVENT_CAPACITY_BELOW_ISSUED.format(issued=sold)}), 400
 
-    result = db.table("event_ticket_tiers").eq("id", tier_id).update(safe)
+    try:
+        result = db.table("event_ticket_tiers").eq("id", tier_id).update(safe)
+    except Exception:
+        fallback = {k: v for k, v in safe.items() if k not in ("features", "terms", "color", "icon", "is_early_bird", "early_bird_deadline")}
+        result = db.table("event_ticket_tiers").eq("id", tier_id).update(fallback)
+
     updated = result[0] if isinstance(result, list) else result
     return jsonify(updated), 200
 
@@ -1159,6 +1128,25 @@ def list_event_registrants(event_id):
     }), 200
 
 
+@events_bp.route("/<event_id>/image", methods=["POST"])
+@require_role("admin")
+def update_event_image(event_id):
+    """Update event image with Cloudinary URL."""
+    data = request.get_json(force=True, silent=True) or {}
+    image_url = data.get("image_url")
+
+    if not image_url:
+        return jsonify({"error": "image_url is required"}), 400
+
+    db = get_db()
+    db.table("events").eq("id", event_id).update({
+        "image_url": image_url,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({"image_url": image_url}), 200
+
+
 @events_bp.route("/<event_id>/send-registrants-to-host", methods=["POST"])
 @require_role("admin")
 def send_registrants_to_host(event_id):
@@ -1259,4 +1247,157 @@ def send_registrants_to_host(event_id):
         "message": "Registrant list sent",
         "host_email": host_email,
         "count": len(tickets),
+    }), 200
+
+
+@events_bp.route("/<event_id>/tiers/comparison", methods=["GET"])
+def get_tier_comparison(event_id):
+    """Fetch tier comparison view for an event (public)."""
+    db = get_db()
+    event = db.table("events").select("id,campus_id,title").eq("id", event_id).single().execute()
+    if not event:
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+
+    campus_id = _get_campus_id()
+    if campus_id and event.get("campus_id") != campus_id:
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+
+    try:
+        rpc_tiers = db.rpc("get_event_tier_comparison", {"p_event_id": event_id})
+        if isinstance(rpc_tiers, list):
+            return jsonify({"tiers": rpc_tiers}), 200
+    except Exception:
+        pass
+
+    try:
+        tiers = (
+            db.table("event_ticket_tiers")
+            .select("id,name,price_naira,price_hp,capacity,sold_count,description,features,terms,color,icon,is_early_bird,early_bird_deadline")
+            .eq("event_id", event_id)
+            .order("price_naira")
+            .execute()
+        ) or []
+    except Exception:
+        tiers = (
+            db.table("event_ticket_tiers")
+            .select("id,name,price_naira,price_hp,capacity,sold_count,description")
+            .eq("event_id", event_id)
+            .order("price_naira")
+            .execute()
+        ) or []
+
+    formatted = []
+    for t in tiers:
+        cap = t.get("capacity")
+        sold = int(t.get("sold_count") or 0)
+        item = {
+            "id": t["id"],
+            "name": t.get("name"),
+            "price_naira": t.get("price_naira"),
+            "price_hp": t.get("price_hp"),
+            "capacity": cap,
+            "sold_count": sold,
+            "available": (cap - sold) if cap is not None else None,
+            "is_sold_out": (cap is not None and sold >= cap),
+            "description": t.get("description"),
+            "features": t.get("features") if isinstance(t.get("features"), list) else [],
+            "terms": t.get("terms") if isinstance(t.get("terms"), list) else [],
+            "color": t.get("color"),
+            "icon": t.get("icon"),
+            "is_early_bird": bool(t.get("is_early_bird")),
+            "early_bird_deadline": t.get("early_bird_deadline"),
+        }
+        formatted.append(item)
+
+    return jsonify({"tiers": formatted}), 200
+
+
+@events_bp.route("/tiers/<tier_id>/detail", methods=["GET"])
+def get_tier_detail(tier_id):
+    """Return full tier detail with event info."""
+    db = get_db()
+    tier = db.table("event_ticket_tiers").select("*, events(id,campus_id,title)").eq("id", tier_id).single().execute()
+    if not tier:
+        return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
+
+    event = tier.get("events")
+    if not event or not isinstance(event, dict):
+        event = db.table("events").select("*").eq("id", tier["event_id"]).single().execute() or {}
+
+    campus_id = _get_campus_id()
+    if campus_id and event.get("campus_id") != campus_id:
+        return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
+
+    cap = tier.get("capacity")
+    sold = int(tier.get("sold_count") or 0)
+    tier["available"] = (cap - sold) if cap is not None else None
+    tier["is_sold_out"] = (cap is not None and sold >= cap)
+    tier["features"] = tier.get("features") if isinstance(tier.get("features"), list) else []
+    tier["terms"] = tier.get("terms") if isinstance(tier.get("terms"), list) else []
+    tier["event"] = event
+
+    return jsonify(tier), 200
+
+
+@events_bp.route("/my-tickets", methods=["GET"])
+@require_auth
+def my_tickets():
+    """Show all tickets for the authenticated user."""
+    db = get_db()
+    tickets = (
+        db.table("event_tickets")
+        .select("*")
+        .eq("user_id", g.user_id)
+        .order("created_at", ascending=False)
+        .execute()
+    ) or []
+
+    event_ids = list({t["event_id"] for t in tickets if t.get("event_id")})
+    ticket_ids = [t["id"] for t in tickets]
+
+    events_map = {}
+    if event_ids:
+        e_rows = db.table("events").select("*").in_("id", event_ids).execute() or []
+        events_map = {e["id"]: e for e in e_rows}
+
+    checkins_map = {}
+    if ticket_ids:
+        c_rows = db.table("event_checkins").select("*").in_("ticket_id", ticket_ids).execute() or []
+        checkins_map = {c["ticket_id"]: c for c in c_rows}
+
+    now = datetime.now(timezone.utc).isoformat()
+    formatted_tickets = []
+    upcoming = []
+    past = []
+    checked_in = []
+
+    for t in tickets:
+        e = events_map.get(t.get("event_id"), {})
+        ci = checkins_map.get(t["id"])
+        item = {
+            "ticket_id": t["id"],
+            "qr_token": t.get("qr_token") or t["id"],
+            "event_id": t.get("event_id"),
+            "event_title": e.get("title"),
+            "starts_at": e.get("starts_at"),
+            "location": e.get("location"),
+            "status": t.get("status"),
+            "is_guest": t.get("is_guest", False),
+            "checked_in": bool(ci),
+            "checked_in_at": ci.get("checked_in_at") if isinstance(ci, dict) else None,
+            "event": e,
+        }
+        formatted_tickets.append(item)
+        if ci:
+            checked_in.append(item)
+        elif e.get("starts_at") and e["starts_at"] < now:
+            past.append(item)
+        else:
+            upcoming.append(item)
+
+    return jsonify({
+        "tickets": formatted_tickets,
+        "upcoming": upcoming,
+        "past": past,
+        "checked_in": checked_in,
     }), 200
