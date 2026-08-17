@@ -80,15 +80,11 @@ def get_leaderboard():
             "snapshot_at": snapshot.get("created_at"),
         }), 200
 
-    profile_data = (
-        db.table("profiles")
-        .select("id,full_name,hp_balance")
-        .eq("is_active", "true")
-        .eq("role", "student")
-        .order("hp_balance", ascending=False)
-        .limit(limit)
-        .execute()
-    )
+    q = db.table("profiles").select("id,full_name,hp_balance").eq("is_active", "true").eq("role", "student")
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    profile_data = q.order("hp_balance", ascending=False).limit(limit).execute()
     rankings = []
     for i, p in enumerate(profile_data or []):
         rankings.append({

@@ -61,6 +61,9 @@ def transactions():
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     txn_type = request.args.get("type")
     if txn_type:
         q = q.eq("type", txn_type)
@@ -212,16 +215,11 @@ def unlock_history():
     db = get_db()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    rows = (
-        db.table("hp_transactions")
-        .select("*")
-        .eq("user_id", g.user_id)
-        .eq("source", "unlock")
-        .order("created_at", ascending=False)
-        .limit(limit)
-        .offset(offset)
-        .execute()
-    )
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows or []), 200
 
 

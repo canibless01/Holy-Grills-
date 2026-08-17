@@ -91,9 +91,10 @@ def add_to_cart():
     # Notes are stored inside the `options` jsonb column (cart_items has no `notes` column)
     notes = data.get("notes", "")
 
+    campus_id = getattr(g, 'campus_id', None)
     menu_item = (
         db.table("menu_items")
-        .select("id,name,price,is_available")
+        .select("id,name,price,is_available,campus_id")
         .eq("id", menu_item_id)
         .is_("deleted_at", "null")
         .single()
@@ -101,6 +102,8 @@ def add_to_cart():
     )
     if not menu_item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
+    if campus_id and menu_item.get("campus_id") != campus_id:
+        return jsonify({"error": "Menu item not found"}), 404
 
     now = datetime.now(timezone.utc).isoformat()
 

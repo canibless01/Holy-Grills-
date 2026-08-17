@@ -48,6 +48,9 @@ def list_challenges():
         .eq("is_active", "true")
         .not_.is_("time_window", "null")
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     tw = request.args.get("time_window")
     if tw in ("weekly", "monthly"):
         q = q.eq("time_window", tw)
@@ -67,14 +70,16 @@ def list_badges():
         description: All badge definitions
     """
     db = get_db()
-    rows = (
+    q = (
         db.table("milestones")
         .select("id,title,description,trigger_type,trigger_value,hp_awarded,icon_won,icon_locked")
         .eq("is_active", "true")
         .is_("time_window", "null")
-        .order("hp_awarded", ascending=False)
-        .execute()
-    ) or []
+    )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.order("hp_awarded", ascending=False).execute() or []
     return jsonify(rows), 200
 
 

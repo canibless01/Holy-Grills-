@@ -26,16 +26,18 @@ def _available_spins(db, user_id: str) -> list:
     way around that rule.
     """
     now = datetime.now(timezone.utc).isoformat()
-    return (
+    q = (
         db.table("exclusive_spins")
         .select("id,spin_count,source,month,expires_at")
         .eq("user_id", user_id)
         .eq("source", "leaderboard_prize")
         .gt("spin_count", 0)
         .gte("expires_at", now)
-        .order("expires_at")
-        .execute()
-    ) or []
+    )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    return q.order("expires_at").execute() or []
 
 
 def _spin_prizes() -> list:

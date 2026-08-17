@@ -421,6 +421,9 @@ def create_blast():
 
     data["created_by"] = g.user_id
     data["status"] = "pending"
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in data:
+        data["campus_id"] = campus_id
     if "target_segment" in data:
         data["segment"] = data.pop("target_segment")
     if "send_at" in data:

@@ -35,6 +35,9 @@ def list_listings():
     """
     db = get_db()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     category = request.args.get("category") or request.args.get("listing_type")
     if category:
         q = q.eq("listing_type", category)
@@ -66,6 +69,9 @@ def get_listing(listing_id):
     db = get_db()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).single().execute()
     if not listing:
+        return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and listing.get("campus_id") != campus_id:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     codes_available = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
     listing["codes_remaining"] = len(codes_available) if isinstance(codes_available, list) else 0
@@ -502,9 +508,12 @@ def admin_create_listing():
         "title", "description", "listing_type", "price", "hp_price",
         "cash_price", "total_value",
         "image_url", "vendor_name", "hp_tier_id", "is_featured",
-        "sort_order", "status", "is_out_of_stock",
+        "sort_order", "status", "is_out_of_stock", "campus_id",
     }
     safe = {k: v for k, v in data.items() if k in LISTING_COLS}
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
     from flask import current_app
     # Admin-created listings go live immediately — "active" matches the
     # marketplace_listings.status check constraint (active|rejected|archived).

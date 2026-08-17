@@ -65,10 +65,14 @@ def record_checkin():
     hp = _get_checkin_hp()
 
     try:
-        db.table("daily_checkins").insert({
+        campus_id = getattr(g, 'campus_id', None)
+        insert_data = {
             "user_id": user_id,
             "checkin_date": today,
-        })
+        }
+        if campus_id:
+            insert_data["campus_id"] = campus_id
+        db.table("daily_checkins").insert(insert_data)
     except SupabaseError as e:
         if e.details and e.details.get("code") == "23505":
             return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
@@ -127,15 +131,11 @@ def checkin_history():
     limit = min(int(request.args.get("limit", 30)), 90)
     offset = int(request.args.get("offset", 0))
 
-    rows = (
-        db.table("daily_checkins")
-        .select("id,checkin_date,created_at")
-        .eq("user_id", user_id)
-        .order("checkin_date", ascending=False)
-        .limit(limit)
-        .offset(offset)
-        .execute()
-    ) or []
+    q = db.table("daily_checkins").select("id,checkin_date,created_at").eq("user_id", user_id)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.order("checkin_date", ascending=False).limit(limit).offset(offset).execute() or []
 
     today = date.today().isoformat()
     checked_in_today = any(r.get("checkin_date") == today for r in rows)

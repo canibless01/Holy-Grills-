@@ -220,6 +220,7 @@ def send_notification(
     channels: list = None,
     urgency: str = None,
     metadata: dict = None,
+    campus_id: str = None,
 ) -> list:
     """
     Write notification record(s) for each channel and dispatch externally.
@@ -326,6 +327,11 @@ def send_notification(
     if metadata:
         merged_meta.update(metadata)
 
+    if campus_id is None:
+        from flask import has_app_context, g
+        if has_app_context():
+            campus_id = getattr(g, 'campus_id', None)
+
     for channel in channels:
         record = {
             "user_id": user_id,
@@ -335,6 +341,7 @@ def send_notification(
             "body": body,
             "action_url": action_url,
             "metadata": merged_meta,
+            "campus_id": campus_id,
         }
         try:
             result = db.table("notifications").insert(record)

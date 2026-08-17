@@ -36,13 +36,11 @@ def list_saved():
             count: {type: integer}
     """
     db = get_db()
-    items = (
-        db.table("saved_for_later")
-        .select("*,menu_items(id,name,price,image_url,is_available,description)")
-        .eq("user_id", g.user_id)
-        .order("created_at", ascending=False)
-        .execute()
-    ) or []
+    q = db.table("saved_for_later").select("*,menu_items(id,name,price,image_url,is_available,description)").eq("user_id", g.user_id)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    items = q.order("created_at", ascending=False).execute() or []
     return jsonify({"items": items, "count": len(items)}), 200
 
 
@@ -108,6 +106,7 @@ def save_item():
         db.table("saved_for_later").eq("id", existing["id"]).update(update_payload)
         return jsonify({"message": MSG.SAVED_ITEM_UPDATED, "quantity": update_payload["quantity"]}), 200
 
+    campus_id = getattr(g, 'campus_id', None)
     insert_payload = {
         "user_id": g.user_id,
         "menu_item_id": menu_item_id,
@@ -115,6 +114,8 @@ def save_item():
         "created_at": now,
         "updated_at": now,
     }
+    if campus_id:
+        insert_payload["campus_id"] = campus_id
     if notes:
         insert_payload["notes"] = notes
 

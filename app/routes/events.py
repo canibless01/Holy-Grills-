@@ -868,6 +868,9 @@ def create_event():
     if data.get("hp_per_attendee") and not data.get("hp_reward"):
         data["hp_reward"] = data["hp_per_attendee"]
     safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS}
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
     try:
         result = db.table("events").insert(safe)
     except Exception as _exc:

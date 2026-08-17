@@ -279,8 +279,15 @@ def wallet_transactions():
       200:
         description: Wallet transaction history
     """
+    db = get_db()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     tx_type = request.args.get("type") or None
-    txns = get_wallet_transactions(g.user_id, limit=limit, offset=offset, tx_type=tx_type)
+    q = db.table("wallet_transactions").select("*").eq("user_id", g.user_id)
+    if tx_type:
+        q = q.eq("reference_type", tx_type)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    txns = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(txns), 200

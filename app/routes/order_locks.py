@@ -99,6 +99,7 @@ def create_lock():
         return jsonify({"error": f"Configuration error: {str(e)}"}), 500
 
     now = datetime.now(timezone.utc).isoformat()
+    campus_id = getattr(g, 'campus_id', None)
     insert_data = {
         "user_id": g.user_id,
         "locked_date": locked_date_str,
@@ -106,6 +107,8 @@ def create_lock():
         "created_at": now,
         "updated_at": now,
     }
+    if campus_id:
+        insert_data["campus_id"] = campus_id
     if discount_pct is not None:
         insert_data["discount_pct"] = discount_pct
     if reward_hp_amount is not None:
@@ -146,16 +149,14 @@ def list_locks():
         description: List of locks
     """
     db = get_db()
-    q = (
-        db.table("order_locks")
-        .select("*")
-        .eq("user_id", g.user_id)
-        .order("created_at", ascending=False)
-    )
+    q = db.table("order_locks").select("*").eq("user_id", g.user_id)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
-    locks = q.execute() or []
+    locks = q.order("created_at", ascending=False).execute() or []
     return jsonify({"locks": locks, "count": len(locks)}), 200
 
 

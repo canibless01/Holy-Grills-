@@ -29,7 +29,7 @@ def _get_setting(db, key: str, default: str) -> str:
         return default
 
 
-def maybe_grant_first_order_gift(user_id: str, order_id: str) -> dict:
+def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = None) -> dict:
     """
     Check if user qualifies for the first-order hot dog gift and grant it.
 
@@ -88,14 +88,21 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str) -> dict:
             return {"granted": False, "reason": "not_first_order"}
 
         now = datetime.now(timezone.utc).isoformat()
+        if campus_id is None:
+            from flask import has_app_context, g
+            if has_app_context():
+                campus_id = getattr(g, 'campus_id', None)
 
         # Insert gift record
-        db.table("first_order_gifts").insert({
+        gift_record = {
             "user_id": user_id,
             "order_id": order_id,
             "status": "pending",
             "created_at": now,
-        })
+        }
+        if campus_id:
+            gift_record["campus_id"] = campus_id
+        db.table("first_order_gifts").insert(gift_record)
 
         # Insert gift as an order_item (is_gift=True, price=0) so it appears on the receipt
         gift_item_name = _get_setting(db, "first_order_gift_item_name", "First-Order Gift — Hot Dog")

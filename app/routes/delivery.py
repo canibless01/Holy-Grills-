@@ -280,11 +280,14 @@ def admin_create_hostel():
         if data.get(f) is None:
             return jsonify({"error": f"'{f}' is required"}), 400
 
+    campus_id = getattr(g, 'campus_id', None)
     record = {
         "name": data["name"],
         "delivery_fee": float(data["delivery_fee"]),
         "is_active": bool(data.get("is_active", True)),
     }
+    if campus_id:
+        record["campus_id"] = campus_id
     if data.get("gate_id"):
         record["gate_id"] = data["gate_id"]
 
@@ -415,6 +418,7 @@ def admin_create_gate():
     if not data.get("name"):
         return jsonify({"error": "'name' is required"}), 400
 
+    campus_id = getattr(g, 'campus_id', None)
     record = {
         "name": data["name"],
         "base_fee": float(data.get("base_fee") or 0),
@@ -422,6 +426,8 @@ def admin_create_gate():
         "min_fee": float(data.get("min_fee") or 0),
         "is_active": bool(data.get("is_active", True)),
     }
+    if campus_id:
+        record["campus_id"] = campus_id
     if data.get("lat") is not None:
         record["lat"] = float(data["lat"])
     if data.get("lon") is not None:
