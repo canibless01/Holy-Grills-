@@ -7,6 +7,11 @@ DEPRECATION NOTICE:
   which uses the authoritative, atomic `hg_create_order_atomic` RPC to ensure
   safe lock claiming, wallet debits, and item creation without race conditions.
 
+LEGACY FIELD DOCUMENTATION:
+  - `order_items.options_snapshot` is a legacy column and is NOT the real customization
+    snapshotting field. Real item variations and add-ons are snapshot in `selected_variations`
+    and `_addon_selections` within the order item payload.
+
 Order Status Machine:
   received → preparing → ready → assigned → out_for_delivery → delivered
                                                               → delivery_attempted → unclaimed
@@ -174,8 +179,8 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
     # Enforce required-group and min/max constraints
     for group in groups:
         count = counts_by_group.get(group["id"], 0)
-        min_select = int(group.get("min_select", 0))
-        max_select = int(group.get("max_select", 1))
+        min_select = int(group.get("min_select") if group.get("min_select") is not None else group.get("min_selections", 0))
+        max_select = int(group.get("max_select") if group.get("max_select") is not None else group.get("max_selections", 1))
         if (group.get("is_required") or min_select > 0) and count < min_select:
             raise ValueError(MSG.ORDER_ADDON_GROUP_REQUIRED.format(
                 group_name=group["name"], min_select=min_select, item_name=menu_item["name"]
@@ -455,7 +460,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         })
         subtotal += float(line_total)
 
-    # Resolve order-level add-ons
+    # Resolve order-level add-ons (group_id IS NULL flat add-ons)
     for addon_entry in payload.get("addons", []):
         addon = (
             db.table("menu_addons")
@@ -466,7 +471,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         )
         if not addon:
             raise ValueError(f"Add-on {addon_entry.get('addon_id')} not found")
-        if not addon.get("is_available"):
+        if not addon.get("is_available") or addon.get("is_archived"):
             raise ValueError(f"Add-on '{addon['name']}' is not currently available")
         addon_qty = max(1, int(addon_entry.get("quantity", 1)))
         addon_price = Decimal(str(addon["price"]))

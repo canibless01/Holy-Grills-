@@ -1,4 +1,10 @@
-"""Menu routes — categories, items, add-ons, variation groups, daily limits, kitchen capacity."""
+"""Menu routes — categories, items, add-ons, variation groups, daily limits, kitchen capacity.
+
+DATA MODEL DOCUMENTATION:
+  - `menu_items.options` (legacy column): NOT the active customization storage mechanism.
+    All item variations and customization options are stored in `menu_item_variation_groups`
+    and `menu_item_variation_options` tables.
+"""
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role

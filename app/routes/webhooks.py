@@ -426,20 +426,6 @@ def _handle_transfer(data: dict):
     )
 
 
-def _audit_webhook_event(event_type: str, reference: str, payload: dict, error: str = None) -> None:
-    """Write a webhook_events audit row. Fire-and-forget — never raises."""
-    try:
-        get_db().table("webhook_events").insert({
-            "event_type": event_type,
-            "reference": reference or "",
-            "payload": payload,
-            "error": error,
-            "status": "failed" if error else "processed",
-        }).execute()
-    except Exception:
-        pass
-
-
 def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -> None:
     """Send push+in_app alert to all admins when a webhook event fails to process."""
     try:

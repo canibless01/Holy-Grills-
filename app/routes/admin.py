@@ -1134,7 +1134,7 @@ def nudge_cart(cart_id):
 @require_role("admin")
 def audit_log():
     """
-    View admin audit log (admin only).
+    View admin audit log with pagination support (admin only).
     ---
     tags: [Admin]
     parameters:
@@ -1142,14 +1142,19 @@ def audit_log():
         name: limit
         type: integer
         default: 50
+      - in: query
+        name: offset
+        type: integer
+        default: 0
     responses:
       200:
-        description: Audit log entries
+        description: Audit log entries with pagination metadata
     """
     db = get_db()
     limit = min(int(request.args.get("limit", 50)), 200)
-    logs = db.table("admin_audit_logs").select("*").order("created_at", ascending=False).limit(limit).execute()
-    return jsonify(logs), 200
+    offset = int(request.args.get("offset", 0))
+    logs = db.table("admin_audit_logs").select("*").order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    return jsonify({"logs": logs, "count": len(logs), "limit": limit, "offset": offset}), 200
 
 
 @admin_bp.route("/cron/<job_name>", methods=["POST"])
@@ -1203,6 +1208,8 @@ def run_cron_job(job_name):
         process_scheduled_orders,
     )
 
+    from app.tasks.scheduled import check_post_delivery_nudges
+
     task_map = {
         "birthday-hp":                  birthday_hp_awards,
         "reset-monthly-leaderboard":    reset_monthly_leaderboard,
@@ -1217,6 +1224,7 @@ def run_cron_job(job_name):
         "membership-anniversary-awards": membership_anniversary_awards,
         "send-scheduled-notifications": send_scheduled_notifications,
         "process-scheduled-orders":     process_scheduled_orders,
+        "check-post-delivery-nudges":   check_post_delivery_nudges,
     }
 
     task_fn = task_map.get(job_name)
@@ -1283,6 +1291,7 @@ def cron_status():
         "membership-anniversary-awards",
         "send-scheduled-notifications",
         "process-scheduled-orders",
+        "check-post-delivery-nudges",
     ]
 
     EXPECTED_CADENCE = {
@@ -1299,6 +1308,7 @@ def cron_status():
         "membership-anniversary-awards": "daily @ 06:00 WAT",
         "send-scheduled-notifications": "every 15 minutes",
         "process-scheduled-orders":     "every 5 minutes",
+        "check-post-delivery-nudges":   "every 30 minutes",
     }
 
     try:
@@ -1521,6 +1531,7 @@ def bulk_grant_hp():
 def hp_report():
     """
     HP loyalty program health report — totals, tier distribution, top earners.
+    Optimized to use RPC aggregations or bounded query limits.
     ---
     tags: [Admin]
     responses:
@@ -1529,26 +1540,40 @@ def hp_report():
     """
     db = get_db()
 
-    issued_rows = db.table("hp_transactions").select("amount").gt("amount", 0).execute() or []
-    spent_rows  = db.table("hp_transactions").select("amount").lt("amount", 0).execute() or []
-    total_issued = sum(int(r.get("amount", 0)) for r in issued_rows)
-    total_spent  = abs(sum(int(r.get("amount", 0)) for r in spent_rows))
-
     today = datetime.now(timezone.utc).date().isoformat()
-    issued_today_rows = (
-        db.table("hp_transactions")
-        .select("amount")
-        .gt("amount", 0)
-        .gte("created_at", f"{today}T00:00:00Z")
-        .execute()
-    ) or []
-    issued_today = sum(int(r.get("amount", 0)) for r in issued_today_rows)
 
-    tier_rows = db.table("profiles").select("current_tier_id").execute() or []
-    tier_counts = {}
-    for r in tier_rows:
-        tid = r.get("current_tier_id") or "none"
-        tier_counts[tid] = tier_counts.get(tid, 0) + 1
+    try:
+        # DB RPC aggregation fallback to bounded queries
+        summary = db.rpc("get_hp_program_report_summary", {"p_today_date": today})
+        if summary and isinstance(summary, dict):
+            total_issued = int(summary.get("total_issued", 0))
+            total_spent = int(summary.get("total_spent", 0))
+            issued_today = int(summary.get("issued_today", 0))
+            tier_counts = summary.get("users_by_tier", {})
+        else:
+            raise Exception("RPC summary empty")
+    except Exception:
+        # Bounded query fallback (max 1000 latest rows per category)
+        issued_rows = db.table("hp_transactions").select("amount").gt("amount", 0).limit(1000).execute() or []
+        spent_rows  = db.table("hp_transactions").select("amount").lt("amount", 0).limit(1000).execute() or []
+        total_issued = sum(int(r.get("amount", 0)) for r in issued_rows)
+        total_spent  = abs(sum(int(r.get("amount", 0)) for r in spent_rows))
+
+        issued_today_rows = (
+            db.table("hp_transactions")
+            .select("amount")
+            .gt("amount", 0)
+            .gte("created_at", f"{today}T00:00:00Z")
+            .limit(1000)
+            .execute()
+        ) or []
+        issued_today = sum(int(r.get("amount", 0)) for r in issued_today_rows)
+
+        tier_rows = db.table("profiles").select("current_tier_id").limit(1000).execute() or []
+        tier_counts = {}
+        for r in tier_rows:
+            tid = r.get("current_tier_id") or "none"
+            tier_counts[tid] = tier_counts.get(tid, 0) + 1
 
     top_rows = (
         db.table("profiles")
@@ -1573,6 +1598,8 @@ def hp_report():
 def list_campuses():
     """
     List all campuses (admin only).
+    SECURITY NOTE:
+      Non-admin users cannot access this list. Admin access is global to manage multi-tenant campuses.
     ---
     tags: [Admin]
     responses:

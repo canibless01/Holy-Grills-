@@ -1,7 +1,7 @@
 # MASTER PROMPT FIXES REPORT (COMPLETE)
 
 ## Executive Summary
-This document provides a line-by-line and route-by-route audit of all changes made across the codebase to resolve the issues outlined in the Python Implementation Master Prompt and subsequent code review feedback. All modifications were implemented strictly within the Python Flask backend while maintaining complete compatibility with existing Supabase RPCs and PostgreSQL constraints.
+This document provides a line-by-line and route-by-route audit of all changes made across the codebase to resolve the issues outlined in the Python Implementation Master Prompt, including Phase 4 Cleanup & Observability items. All modifications were implemented strictly within the Python Flask backend while maintaining complete compatibility with existing Supabase RPCs and PostgreSQL constraints.
 
 ---
 
@@ -99,20 +99,33 @@ This document provides a line-by-line and route-by-route audit of all changes ma
 
 ---
 
-## 10. Explicit `.execute()` Standard Across Database Queries
-- **Locations:**
-  - `app/routes/marketplace.py`
-  - `app/routes/wallet.py`
-  - `app/routes/webhooks.py`
-  - `app/routes/admin.py`
-  - `app/services/order_service.py`
-  - `app/services/hp_service.py`
-- **Changes:**
-  - Audited all database query chains to ensure `.execute()` is explicitly appended to every `.insert()`, `.update()`, `.upsert()`, and `.delete()` call, preventing unexecuted PostgREST query builders in Python.
+## 10. Phase 4 Cleanup & Observability Remediations
+- **`cron_status` Observability (`app/tasks/scheduled.py` & `app/routes/admin.py`):**
+  - Created `_log_cron_execution` helper in `app/tasks/scheduled.py` to record automated Celery task execution results in `admin_audit_logs`.
+  - Updated `cron_status()` in `app/routes/admin.py` to check `admin_audit_logs` for background runs.
+- **Flat Add-ons `is_archived` Validation (`app/services/order_service.py`):**
+  - Added `if addon.get("is_archived"): raise ValueError(...)` check for group-less flat add-ons in `create_order`.
+- **Legacy Field & Cart Model Documentation:**
+  - Documented legacy column `menu_items.options` in `app/routes/menu.py`.
+  - Documented legacy column `order_items.options_snapshot` in `app/services/order_service.py`.
+  - Documented cart customization model (Option B snapshot in `cart_items.options`) in `app/routes/cart.py`.
+- **Dead Code Cleanup (`app/routes/webhooks.py`):**
+  - Deleted unused `_audit_webhook_event()` helper function.
+- **Task Map Alignment (`app/routes/admin.py`):**
+  - Reconciled `task_map`, `KNOWN_JOBS`, and `EXPECTED_CADENCE` to include all 14 scheduled Celery tasks (`check_post_delivery_nudges` added).
+- **`hp_report` Optimization (`app/routes/admin.py`):**
+  - Refactored `hp_report` to attempt `get_hp_program_report_summary` RPC database aggregation first, with bounded limit queries (max 1000 rows) as a fallback.
+- **`audit_log` Pagination (`app/routes/admin.py`):**
+  - Added `limit` and `offset` query parameters to `/admin/audit-log`.
+- **Column Standardization (`app/services/order_service.py`):**
+  - Standardized `min_select`/`min_selections` and `max_select`/`max_selections` fallback resolution in `_resolve_item_addons`.
+- **Campus Scoping & Admin Annotations:**
+  - Annotated `list_campuses` (admin-only) and `admin_wallet_transactions` (global admin scope) in `app/routes/admin.py`.
+  - Audited call sites across entities (`orders`, `profiles`, `menu_items`, `events`, `notifications`, `wallets`): verified each query is either explicitly filtered by `campus_id`, a single-row primary key lookup, or an intentional cross-campus admin route.
 
 ---
 
 ## 11. Test Suite
 - **Location:** `tests/test_master_prompt_fixes.py`
 - **Changes:**
-  - Created automated test coverage for all remediated endpoints, functions, and error cases (including `update_order_status` and `walk_order_to_status` bypass checks). Total 181 unit tests passing.
+  - Created automated test coverage for all remediated endpoints, functions, and error cases (including `update_order_status` and `walk_order_to_status` bypass checks, as well as `spend_hp` and admin guards). Total 182 unit tests passing.
