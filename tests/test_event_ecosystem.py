@@ -134,6 +134,7 @@ def test_guest_registration_success(client):
         return _mock_db().table(t)
 
     mock_db.table.side_effect = table_mock
+    mock_db.rpc.return_value = "t-999"
 
     with patch("app.middleware.auth.get_db", return_value=mock_db), \
          patch("app.routes.events.get_db", return_value=mock_db), \

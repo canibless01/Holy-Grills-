@@ -155,6 +155,9 @@ def list_all_orders():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
+    # Campus override resolution:
+    # Query parameter ?campus_id= explicitly overrides g.campus_id default scoping.
+    # If ?campus_id= is omitted, falls back to g.campus_id session context.
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -443,7 +446,7 @@ def activate_user(user_id):
 @require_role("admin", "kitchen")
 def list_windows():
     """
-    List delivery windows (admin/kitchen).
+    List delivery windows (admin/kitchen). Scoped by campus for kitchen users.
     ---
     tags: [Admin]
     responses:
@@ -451,9 +454,16 @@ def list_windows():
         description: Delivery windows
     """
     db = get_db()
-    windows = db.table("delivery_windows").select("*").order("starts_at", ascending=False).limit(50).execute()
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    q = db.table("delivery_windows").select("*")
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    windows = q.order("starts_at", ascending=False).limit(50).execute()
     for w in (windows or []):
-        orders = db.table("orders").select("id").eq("delivery_window_id", w["id"]).execute()
+        oq = db.table("orders").select("id").eq("delivery_window_id", w["id"])
+        if campus_id:
+            oq = oq.eq("campus_id", campus_id)
+        orders = oq.execute()
         w["order_count"] = len(orders or [])
     return jsonify(windows), 200
 
@@ -834,7 +844,8 @@ def create_promo():
             code: {type: string}
             discount_type: {type: string, enum: [percentage, flat]}
             discount_value: {type: number}
-            min_order_value: {type: number}
+            min_order_amount: {type: number}
+            campus_id: {type: string}
             max_discount_cap: {type: number}
             max_uses: {type: integer}
             max_uses_per_user: {type: integer}
@@ -859,10 +870,13 @@ def create_promo():
         "code", "discount_type", "discount_value", "min_order_amount",
         "max_uses", "max_uses_per_user",
         "scope", "used_count", "is_active", "created_by",
-        "starts_at", "ends_at",
+        "starts_at", "ends_at", "campus_id",
         "description", "applicable_item_ids", "applicable_category_ids",
     }
     safe = {k: v for k, v in data.items() if k in KNOWN_COLUMNS}
+    campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
     result = db.table("promo_codes").insert(safe)
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
@@ -906,7 +920,7 @@ def update_promo(promo_id):
     data = request.get_json(force=True) or {}
     KNOWN_COLUMNS = {
         "description", "discount_type", "discount_value", "min_order_amount",
-        "max_uses", "max_uses_per_user", "scope", "is_active",
+        "max_uses", "max_uses_per_user", "scope", "is_active", "campus_id",
         "starts_at", "ends_at", "applicable_item_ids", "applicable_category_ids",
     }
     safe = {k: v for k, v in data.items() if k in KNOWN_COLUMNS}
@@ -1344,19 +1358,24 @@ def bulk_grant_hp():
     amount = int(amount)
 
     # ── Build the user list ──────────────────────────────────────────────────
+    campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
     explicit_ids = data.get("user_ids")
     if explicit_ids:
         # Explicit list — validate they're real users
-        profiles = (
+        q_exp = (
             db.table("profiles")
             .select("id,full_name,current_tier_id")
             .in_("id", explicit_ids)
             .eq("is_active", True)
-            .execute()
-        ) or []
+        )
+        if campus_id:
+            q_exp = q_exp.eq("campus_id", campus_id)
+        profiles = q_exp.execute() or []
     else:
         # Start from all active users
         query = db.table("profiles").select("id,full_name,current_tier_id").eq("is_active", True)
+        if campus_id:
+            query = query.eq("campus_id", campus_id)
 
         tier_slug = data.get("tier_slug")
         if tier_slug:

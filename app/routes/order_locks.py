@@ -56,6 +56,19 @@ def create_lock():
     if locked_date <= date.today():
         return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
 
+    # Prevent users from having multiple active locks
+    existing = db.table("order_locks").select("id").eq("user_id", g.user_id).eq("status", "active").execute()
+    has_active = False
+    if isinstance(existing, list) and len(existing) > 0:
+        has_active = True
+    elif isinstance(existing, dict) and existing.get("data"):
+        has_active = True
+    elif hasattr(existing, "data") and isinstance(existing.data, list) and len(existing.data) > 0:
+        has_active = True
+
+    if has_active:
+        return jsonify({"error": "User already has an active lock"}), 400
+
     # reward_type: 'discount' (default) or 'hp'
     reward_type = (data.get("reward_type") or "discount").lower()
     if reward_type not in ("discount", "hp"):

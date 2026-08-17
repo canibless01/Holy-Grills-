@@ -295,19 +295,15 @@ def purchase_hp_bundle():
     naira_paid = hp_amount * price_per_hp
 
     # Idempotency check: see if this reference has already been successfully processed
-    try:
-        existing = db.table("hp_bundle_purchases").select("*").eq("provider", "paystack").eq("provider_reference", reference).execute()
-        if existing:
-            record = existing[0]
-            return jsonify({
-                "message": "Payment already processed",
-                "hp_credited_to_pending": int(record.get("hp_amount", 0)),
-                "hp_to_overflow": 0,
-                "idempotent": True,
-            }), 201
-    except Exception as ie:
-        # Ignore exception if columns are missing in live schema
-        logger.warning("purchase_hp_bundle: idempotency check query failed: %s", ie)
+    existing = db.table("hp_bundle_purchases").select("*").eq("provider", "paystack").eq("provider_reference", reference).execute()
+    if existing:
+        record = existing[0]
+        return jsonify({
+            "message": "Payment already processed",
+            "hp_credited_to_pending": int(record.get("hp_amount", 0)),
+            "hp_to_overflow": 0,
+            "idempotent": True,
+        }), 201
 
     try:
         from app.services.payment_service import verify_payment

@@ -638,6 +638,8 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
             "hp_amount": hp_amount,
             "naira_paid": naira_paid,
             "price_per_hp": price_per_hp,
+            "provider": provider,
+            "provider_reference": provider_reference,
         })
     except SupabaseError as exc:
         if exc.details and exc.details.get("code") == "23505":

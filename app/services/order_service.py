@@ -108,6 +108,86 @@ def _count_item_today(db, menu_item_id: str, today_order_ids: set) -> int:
     )
 
 
+def _resolve_item_variations(db, menu_item: dict, selected_variations: list) -> tuple[Decimal, list]:
+    """
+    Validate and resolve `selected_variations` (list of {variation_group_id, option_id})
+    for a single order item against that item's variation groups.
+    Enforces required groups, min/max selection bounds, option ownership, and availability.
+    Returns (price_delta_total_dec, resolved_variation_dicts).
+    """
+    menu_item_id = menu_item["id"]
+    try:
+        groups = (
+            db.table("menu_item_variation_groups")
+            .select("id,name,is_required,min_select,max_select,min_selections,max_selections")
+            .eq("menu_item_id", menu_item_id)
+            .execute()
+        ) or []
+    except Exception:
+        groups = []
+
+    group_ids = {g["id"] for g in groups}
+    selected_variations = selected_variations or []
+    selected_ids = [sel.get("option_id") for sel in selected_variations if sel.get("option_id")]
+
+    resolved_options_by_id = {}
+    if selected_ids:
+        try:
+            fetched = (
+                db.table("menu_item_variation_options")
+                .select("id,name,price_delta,variation_group_id,is_available,is_archived")
+                .in_("id", selected_ids)
+                .execute()
+            ) or []
+            resolved_options_by_id = {o["id"]: o for o in fetched}
+        except Exception:
+            resolved_options_by_id = {}
+
+    counts_by_group = {}
+    resolved_variations = []
+    price_delta_total = Decimal("0.0")
+
+    for sel in selected_variations:
+        opt_id = sel.get("option_id")
+        option = resolved_options_by_id.get(opt_id)
+        if not option:
+            raise ValueError(f"Variation option {opt_id} not found")
+        if not option.get("is_available", True) or option.get("is_archived", False):
+            raise ValueError(MSG.ORDER_VARIATION_UNAVAILABLE.format(name=option.get("name", "")))
+        if group_ids and option.get("variation_group_id") not in group_ids:
+            raise ValueError(f"Option '{option.get('name')}' does not belong to '{menu_item['name']}'")
+
+        vgroup_id = option.get("variation_group_id")
+        counts_by_group[vgroup_id] = counts_by_group.get(vgroup_id, 0) + 1
+        p_delta = Decimal(str(option.get("price_delta", 0)))
+        price_delta_total += p_delta
+        resolved_variations.append({
+            "variation_group_id": vgroup_id,
+            "option_id": option["id"],
+            "option_name": option["name"],
+            "price_delta": float(p_delta),
+        })
+
+    for group in groups:
+        count = counts_by_group.get(group["id"], 0)
+        min_select = group.get("min_select") if group.get("min_select") is not None else group.get("min_selections")
+        if min_select is None:
+            min_select = 1 if group.get("is_required") else 0
+        min_select = int(min_select)
+
+        max_select = group.get("max_select") if group.get("max_select") is not None else group.get("max_selections")
+        if max_select is None:
+            max_select = 1
+        max_select = int(max_select)
+
+        if (group.get("is_required") or min_select > 0) and count < min_select:
+            raise ValueError(f"Selection required for variation group '{group['name']}' in '{menu_item['name']}'")
+        if count > max_select:
+            raise ValueError(f"Too many selections for variation group '{group['name']}' in '{menu_item['name']}' (max {max_select})")
+
+    return price_delta_total, resolved_variations
+
+
 def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[float, list]:
     """
     Validate and resolve `selected_addons` (list of {addon_id, quantity}) for a
@@ -398,26 +478,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
         # Resolve variation selections and add any price deltas
         selected_variations = item.get("selected_variations", [])
-        variation_price_delta = Decimal("0.0")
-        resolved_variations = []
-        for sel in selected_variations:
-            option = (
-                db.table("menu_item_variation_options")
-                .select("id,name,price_delta,variation_group_id,is_available")
-                .eq("id", sel.get("option_id"))
-                .single()
-                .execute()
-            )
-            if option and not option.get("is_available", True):
-                raise ValueError(MSG.ORDER_VARIATION_UNAVAILABLE.format(name=option.get("name", "")))
-            if option:
-                variation_price_delta += Decimal(str(option.get("price_delta", 0)))
-                resolved_variations.append({
-                    "variation_group_id": option["variation_group_id"],
-                    "option_id": option["id"],
-                    "option_name": option["name"],
-                    "price_delta": float(option.get("price_delta", 0)),
-                })
+        variation_price_delta, resolved_variations = _resolve_item_variations(db, menu_item, selected_variations)
 
         # Resolve required/optional per-item add-on group selections
         selected_addons = item.get("selected_addons", [])
@@ -985,6 +1046,16 @@ def _handle_delivery_rewards(order: dict):
         tier_slug=tier_slug,
         order_items=order_items,
     )
+
+    # Apply next_order_hp_multiplier bonus if present, then reset to 1
+    try:
+        prof = db.table("profiles").select("next_order_hp_multiplier").eq("id", user_id).single().execute()
+        mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
+        if mult > 1:
+            hp_amount = round(hp_amount * mult)
+            db.table("profiles").eq("id", user_id).update({"next_order_hp_multiplier": 1})
+    except Exception as me:
+        logger.warning("_handle_delivery_rewards: next_order_hp_multiplier check failed: %s", me)
 
     # Step 2: Atomically credit via Supabase RPC — call for EVERY eligible
     # delivery, zero-HP included, so the idempotency marker always gets set

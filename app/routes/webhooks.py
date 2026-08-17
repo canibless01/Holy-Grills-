@@ -360,12 +360,23 @@ def _handle_dva_assign(data: dict):
     if not user_rows:
         return
     user_id = user_rows[0]["id"]
-    db.table("virtual_accounts").eq("user_id", user_id).update({
-        "account_number": account.get("account_number"),
-        "bank_name": account.get("bank", {}).get("name"),
-        "account_name": account.get("account_name"),
-        "provider_customer_id": customer.get("customer_code"),
-    })
+    va_exists = db.table("virtual_accounts").select("id").eq("user_id", user_id).limit(1).execute()
+    if va_exists:
+        db.table("virtual_accounts").eq("user_id", user_id).update({
+            "account_number": account.get("account_number"),
+            "bank_name": account.get("bank", {}).get("name"),
+            "account_name": account.get("account_name"),
+            "provider_customer_id": customer.get("customer_code"),
+        })
+    else:
+        db.table("virtual_accounts").insert({
+            "user_id": user_id,
+            "account_number": account.get("account_number"),
+            "bank_name": account.get("bank", {}).get("name"),
+            "account_name": account.get("account_name"),
+            "provider_customer_id": customer.get("customer_code"),
+            "provider": "paystack",
+        })
 
 
 def _handle_transfer(data: dict):
@@ -382,6 +393,20 @@ def _handle_transfer(data: dict):
 
     va_rows = db.table("virtual_accounts").select("user_id,campus_id").eq("account_number", account_number).limit(1).execute()
     if not va_rows:
+        logger.error("_handle_transfer: Virtual account %s not found for transfer ref %s", account_number, reference)
+        try:
+            admins = db.table("profiles").select("id").eq("role", "admin").execute() or []
+            for admin in admins:
+                send_notification(
+                    user_id=admin["id"],
+                    notif_type="system_alert",
+                    title="Unlinked Bank Transfer Warning",
+                    body=f"Bank transfer of ₦{amount_naira:,.2f} received for unknown account number {account_number} (ref: {reference}).",
+                    reference_id=reference,
+                    reference_type="bank_transfer",
+                )
+        except Exception as ae:
+            logger.error("Failed to notify admins of unlinked transfer: %s", ae)
         return
 
     user_id = va_rows[0]["user_id"]

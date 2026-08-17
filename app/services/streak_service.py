@@ -140,19 +140,16 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
     now = datetime.now(timezone.utc)
     today = now.date()
 
-    # Check fraud flag — silently skip
-    try:
-        profile = (
-            db.table("profiles")
-            .select("is_fraud_flagged,is_active")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-        if (profile or {}).get("is_fraud_flagged"):
-            return {"action": "excluded", "hp_awarded": 0, "streak_week": 0}
-    except Exception:
-        pass
+    # Check fraud flag
+    profile = (
+        db.table("profiles")
+        .select("is_fraud_flagged,is_active")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    )
+    if (profile or {}).get("is_fraud_flagged"):
+        return {"action": "excluded", "hp_awarded": 0, "streak_week": 0}
 
     # Load or create streak record
     try:

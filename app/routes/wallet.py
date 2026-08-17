@@ -126,18 +126,15 @@ def request_virtual_account():
     """
     db = get_db()
 
-    try:
-        existing = (
-            db.table("virtual_accounts")
-            .select("account_number,bank_name,account_name,provider_reference")
-            .eq("user_id", g.user_id)
-            .limit(1)
-            .execute()
-        )
-        if existing:
-            return jsonify({"virtual_account": existing[0], "created": False}), 200
-    except Exception:
-        existing = None
+    existing = (
+        db.table("virtual_accounts")
+        .select("account_number,bank_name,account_name,provider_reference")
+        .eq("user_id", g.user_id)
+        .limit(1)
+        .execute()
+    )
+    if existing:
+        return jsonify({"virtual_account": existing[0], "created": False}), 200
 
     try:
         profile = (
@@ -183,17 +180,14 @@ def request_virtual_account():
             ),
         }), 400
 
-    try:
-        db.table("virtual_accounts").insert({
-            "user_id": g.user_id,
-            "account_number": account["account_number"],
-            "bank_name": account["bank_name"],
-            "account_name": account["account_name"],
-            "provider_reference": str(account.get("reference", "")),
-            "provider": "paystack",
-        })
-    except Exception:
-        pass
+    db.table("virtual_accounts").insert({
+        "user_id": g.user_id,
+        "account_number": account["account_number"],
+        "bank_name": account["bank_name"],
+        "account_name": account["account_name"],
+        "provider_reference": str(account.get("reference", "")),
+        "provider": "paystack",
+    })
 
     return jsonify({"virtual_account": account, "created": True}), 201
 
