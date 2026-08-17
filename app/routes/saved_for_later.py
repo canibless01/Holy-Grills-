@@ -13,7 +13,7 @@ Saved items sync across devices because they live in the DB against the user_id.
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -35,7 +35,7 @@ def list_saved():
             items: {type: array}
             count: {type: integer}
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("saved_for_later").select("*,menu_items(id,name,price,image_url,is_available,description)").eq("user_id", g.user_id)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -69,7 +69,7 @@ def save_item():
       404:
         description: Menu item not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     menu_item_id = (data.get("menu_item_id") or "").strip()
     if not menu_item_id:
@@ -150,7 +150,7 @@ def update_saved_item(item_id):
       404:
         description: Saved item not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     existing = (
         db.table("saved_for_later")
@@ -191,7 +191,7 @@ def remove_saved_item(item_id):
       404:
         description: Saved item not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("saved_for_later")
         .select("id")
@@ -226,7 +226,7 @@ def move_saved_to_cart(item_id):
       404:
         description: Saved item not found
     """
-    db = get_db()
+    db = get_user_client()
     saved = (
         db.table("saved_for_later")
         .select("id,menu_item_id,quantity,notes")
@@ -292,7 +292,7 @@ def move_cart_to_saved(cart_item_id):
       404:
         description: Cart item not found
     """
-    db = get_db()
+    db = get_user_client()
     cart_item = (
         db.table("cart_items")
         .select("id,menu_item_id,quantity")

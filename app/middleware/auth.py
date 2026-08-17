@@ -10,6 +10,8 @@ from functools import wraps
 from flask import request, g, abort
 from app.db import get_db, SupabaseError
 
+ADMIN_ROLES = {"admin", "super_admin"}
+
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -102,7 +104,14 @@ def require_role(*roles):
             if not profile.get("is_active", True):
                 abort(403, "Account is deactivated")
 
-            if profile.get("role") not in roles:
+            allowed_roles = set()
+            for r in roles:
+                if r == "admin":
+                    allowed_roles.update(ADMIN_ROLES)
+                else:
+                    allowed_roles.add(r)
+
+            if profile.get("role") not in allowed_roles:
                 abort(403, f"Requires one of roles: {', '.join(roles)}")
 
             g.user = profile

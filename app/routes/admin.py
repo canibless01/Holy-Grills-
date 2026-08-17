@@ -260,24 +260,38 @@ def change_user_role(user_id):
         schema:
           required: [role]
           properties:
-            role: {type: string, enum: [user, admin, kitchen, rider, super_admin]}
+            role: {type: string, enum: [student, admin, kitchen, rider, super_admin]}
     responses:
       200:
         description: Role updated
       400:
         description: Invalid role
+      403:
+        description: Forbidden
       404:
         description: User not found
     """
     db = get_db()
+    if user_id == getattr(g, "user_id", None):
+        return jsonify({"error": "Cannot change your own role"}), 403
+
     profile = db.table("profiles").select("id,full_name,role").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
     data = request.get_json(force=True) or {}
     new_role = data.get("role", "").strip()
     VALID_ROLES = {"student", "admin", "kitchen", "rider", "super_admin"}
     if new_role not in VALID_ROLES:
         return jsonify({"error": MSG.ADMIN_INVALID_ROLE.format(roles=", ".join(sorted(VALID_ROLES)))}), 400
+
+    caller_role = getattr(g, "user_role", None)
+    if not caller_role and hasattr(g, "user") and isinstance(g.user, dict):
+        caller_role = g.user.get("role")
+
+    if new_role == "super_admin" and caller_role != "super_admin":
+        return jsonify({"error": "Only super_admin can assign super_admin role"}), 403
+
     result = db.table("profiles").eq("id", user_id).update({"role": new_role})
     _audit(g.user_id, "profiles", user_id, "change_role",
            {"from": profile.get("role"), "to": new_role})
