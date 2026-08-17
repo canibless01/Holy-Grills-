@@ -14,6 +14,37 @@ from app.routes.admin import admin_bp
 from app.routes.leaderboard import leaderboard_bp
 
 
+def test_auth_middleware_sets_g_jwt_token_and_get_user_client():
+    app = Flask(__name__)
+
+    @app.route("/test-me")
+    @require_role("student")
+    def test_me():
+        client = get_user_client()
+        assert isinstance(client, UserSupabaseClient)
+        assert getattr(g, "jwt_token", None) == "real-bearer-jwt-999"
+        return "ok", 200
+
+    test_client = app.test_client()
+
+    with patch("app.middleware.auth.get_db") as mock_auth_db, \
+         patch("app.db.get_db") as mock_db_get_db:
+        mock_db = MagicMock()
+        mock_auth_db.return_value = mock_db
+        mock_db_get_db.return_value = mock_db
+
+        mock_db.auth_get_user.return_value = {"id": "user-student-1"}
+        mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+            "id": "user-student-1",
+            "role": "student",
+            "is_active": True,
+            "campus_id": "campus-1",
+        }
+
+        resp = test_client.get("/test-me", headers={"Authorization": "Bearer real-bearer-jwt-999"})
+        assert resp.status_code == 200
+
+
 def test_get_user_client_returns_wrapper_when_jwt_in_g():
     app = Flask(__name__)
     with app.test_request_context():

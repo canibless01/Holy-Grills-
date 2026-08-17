@@ -136,10 +136,11 @@ All user-authenticated and user-scoped endpoints across the 17 user route module
 ## 5. Verification & Testing Summary
 
 * **Unit Tests Written:** Added `tests/test_phase1_security.py` verifying:
-  1. `get_user_client()` returning `UserSupabaseClient` with `.with_jwt()` when `g.jwt_token` is set.
+  1. Middleware `require_auth`, `require_role`, and `optional_auth` setting `g.jwt_token = token` and `get_user_client()` returning `UserSupabaseClient` in live request flows.
+  2. `get_user_client()` returning `UserSupabaseClient` with `.with_jwt()` when `g.jwt_token` is set.
   2. `@require_role("admin")` permitting `super_admin` callers.
   3. `change_user_role` preventing self role change (403).
   4. `change_user_role` preventing non-super_admin callers from assigning `super_admin` role (403).
   5. `squad_leaderboard` applying `campus_id` query filter.
 * **Test Suite Execution:** Ran full test suite (`python3 -m pytest tests/`).
-  - **Result:** 178 passed, 1 skipped (0 failures).
+  - **Result:** 180 passed, 1 skipped (0 failures).
