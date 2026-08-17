@@ -110,7 +110,7 @@ def get_reward(reward_id):
 @require_auth
 def redeem_reward(reward_id):
     """
-    Redeem a reward using HP. Checks balance, quantity, tier eligibility.
+    Redeem a reward using HP via atomic hg_redeem_reward RPC.
     ---
     tags: [Rewards]
     parameters:
@@ -127,17 +127,19 @@ def redeem_reward(reward_id):
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    reward = db.table("rewards").select("*").eq("id", reward_id).single().execute()
+    # Pre-fetch reward name and cost for notification/response
+    reward = db.table("rewards").select("id,name,hp_cost,is_active,stock_quantity,expires_at,min_tier_id").eq("id", reward_id).single().execute()
     if not reward or not reward.get("is_active", True):
         return jsonify({"error": MSG.REWARD_NOT_AVAILABLE}), 404
+
+    now = datetime.now(timezone.utc).isoformat()
+    expires_at = reward.get("expires_at")
+    if expires_at and expires_at < now:
+        return jsonify({"error": MSG.REWARD_EXPIRED}), 400
 
     stock = reward.get("stock_quantity")
     if stock is not None and stock <= 0:
         return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
-
-    expires_at = reward.get("expires_at")
-    if expires_at and expires_at < now:
-        return jsonify({"error": MSG.REWARD_EXPIRED}), 400
 
     if reward.get("min_tier_id"):
         user_tier = get_user_tier(g.user_id)
@@ -147,61 +149,48 @@ def redeem_reward(reward_id):
         if req_tier and user_tier_order < req_tier.get("sort_order", 0):
             return jsonify({"error": MSG.REWARD_TIER_TOO_LOW}), 400
 
-    hp_cost = reward["hp_cost"]
-    balance = get_hp_balance(g.user_id)
-    if balance["active"] < hp_cost:
-        return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
-
-    # Atomic decrement of reward stock using Optimistic Concurrency Control (OCC)
-    if stock is not None:
-        try:
-            res = db.table("rewards") \
-                .eq("id", reward_id) \
-                .eq("stock_quantity", stock) \
-                .update({"stock_quantity": stock - 1})
-            if not res:
-                return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
-        except Exception as e:
-            logger.error("redeem_reward OCC stock decrement failed for reward %s: %s", reward_id, e)
-            return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
-
-    redemption = db.table("reward_redemptions").insert({
-        "user_id": g.user_id,
-        "reward_id": reward_id,
-        "hp_cost_snapshot": hp_cost,
-        "status": "pending",
-    })
-    redemption_row = redemption[0] if isinstance(redemption, list) else redemption
-    redemption_id = redemption_row["id"]
+    hp_cost = reward.get("hp_cost", 0)
 
     try:
-        spend_hp(
+        rpc_res = db.rpc("hg_redeem_reward", {
+            "p_user_id": g.user_id,
+            "p_reward_id": reward_id,
+        })
+    except Exception as exc:
+        err_str = str(exc)
+        if "INSUFFICIENT" in err_str.upper() or "BALANCE" in err_str.upper():
+            balance = get_hp_balance(g.user_id)
+            return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
+        if "STOCK" in err_str.upper() or "OUT_OF_STOCK" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
+        if "NOT_FOUND" in err_str.upper() or "INACTIVE" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_NOT_AVAILABLE}), 404
+        return jsonify({"error": err_str}), 400
+
+    if isinstance(rpc_res, dict) and rpc_res.get("error"):
+        err_str = str(rpc_res["error"])
+        if "INSUFFICIENT" in err_str.upper() or "BALANCE" in err_str.upper():
+            balance = get_hp_balance(g.user_id)
+            return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
+        if "STOCK" in err_str.upper() or "OUT_OF_STOCK" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
+        if "NOT_FOUND" in err_str.upper() or "INACTIVE" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_NOT_AVAILABLE}), 404
+        return jsonify({"error": err_str}), 400
+
+    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "pending"}
+    redemption_id = redemption_row.get("id") or redemption_row.get("redemption_id") or str(rpc_res)
+
+    try:
+        send_notification(
             user_id=g.user_id,
-            amount=hp_cost,
+            notif_type="reward_redeemed",
+            template_data={"name": reward["name"], "hp": hp_cost},
             reference_id=redemption_id,
             reference_type="reward_redemption",
-            notes=f"Redeemed: {reward['name']}",
         )
-    except ValueError as e:
-        db.table("reward_redemptions").eq("id", redemption_id).delete()
-        if stock is not None:
-            try:
-                # Fetch current stock and increment back by 1 (safe fallback revert)
-                current_reward = db.table("rewards").select("stock_quantity").eq("id", reward_id).single().execute()
-                if current_reward:
-                    curr_stock = current_reward.get("stock_quantity", 0)
-                    db.table("rewards").eq("id", reward_id).update({"stock_quantity": curr_stock + 1})
-            except Exception as re:
-                logger.error("Failed to revert stock for reward %s: %s", reward_id, re)
-        return jsonify({"error": str(e)}), 400
-
-    send_notification(
-        user_id=g.user_id,
-        notif_type="reward_redeemed",
-        template_data={"name": reward["name"], "hp": hp_cost},
-        reference_id=redemption_id,
-        reference_type="reward_redemption",
-    )
+    except Exception:
+        pass
 
     return jsonify({"redemption": redemption_row, "hp_spent": hp_cost}), 201
 

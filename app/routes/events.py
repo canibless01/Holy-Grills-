@@ -136,7 +136,7 @@ def checkin(event_id):
         if qr_token:
             ticket_rows = db.table("event_tickets").select("*").eq("id", qr_token).execute() or []
             if not ticket_rows:
-                ticket_rows = db.table("event_tickets").select("*").eq("qr_token", qr_token).execute() or []
+                ticket_rows = db.table("event_tickets").select("*").eq("qr_code", qr_token).execute() or []
             if ticket_rows:
                 ticket = ticket_rows[0]
 
@@ -524,78 +524,75 @@ def register_for_event(event_id):
             name = guest_name
             phone = guest_phone
 
-    # ── Duplicate Registration Check ──────────────────────────────────────────
-    if user_id:
-        existing = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("user_id", user_id).execute() or []
-        if existing:
-            ex = existing[0]
-            return jsonify({
-                "ticket_id": ex["id"],
-                "qr_token": ex["id"],
-                "event_id": event_id,
-                "event_title": event.get("title"),
-                "status": ex.get("status", "confirmed"),
-                "is_guest": False,
-                "message": "Already registered — use ticket_id as qr_token to check in.",
-            }), 200
-    else:
-        existing = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("guest_email", guest_email).execute() or []
-        if existing:
-            return jsonify({"error": MSG.GUEST_ALREADY_REGISTERED}), 400
-
-    # ── Tier / Capacity Selection ──────────────────────────────────────────────
     tier_id = data.get("tier_id")
-    if tier_id:
-        tier = db.table("event_ticket_tiers").select("*").eq("id", tier_id).single().execute()
-        if not tier:
-            return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
-        cap = tier.get("capacity")
-        sold = int(tier.get("sold_count") or 0)
-        if cap is not None and sold >= cap:
-            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
 
-    cap_event = event.get("capacity")
-    if cap_event:
-        issued = db.table("event_tickets").select("id").eq("event_id", event_id).execute() or []
-        if len(issued) >= cap_event:
-            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
-
-    # ── Issue Ticket ───────────────────────────────────────────────────────────
-    ticket_id = str(uuid.uuid4())
-    ticket_payload = {
-        "id": ticket_id,
-        "event_id": event_id,
-        "user_id": user_id,
-        "tier_id": tier_id,
-        "status": "confirmed",
-        "is_guest": is_guest,
-        "guest_email": guest_email if is_guest else None,
-        "guest_name": guest_name if is_guest else None,
-        "guest_phone": guest_phone if is_guest else None,
-        "metadata": {"registration_answers": answers_data},
-    }
-
+    # ── Atomic Registration via RPC ───────────────────────────────────────────
+    metadata_payload = {"registration_answers": answers_data}
     try:
-        ticket_res = db.table("event_tickets").insert(ticket_payload)
-        ticket_row = ticket_res[0] if isinstance(ticket_res, list) else ticket_res
-        ticket_id = ticket_row.get("id", ticket_id)
-    except Exception:
-        fallback = {
-            "id": ticket_id,
-            "event_id": event_id,
-            "user_id": user_id,
-            "status": "confirmed",
-        }
-        db.table("event_tickets").insert(fallback)
-
-    if tier_id:
-        try:
-            tier_info = db.table("event_ticket_tiers").select("sold_count").eq("id", tier_id).single().execute() or {}
-            db.table("event_ticket_tiers").eq("id", tier_id).update({
-                "sold_count": int(tier_info.get("sold_count") or 0) + 1,
+        if is_guest:
+            rpc_res = db.rpc("register_event_guest", {
+                "p_event_id": event_id,
+                "p_guest_email": guest_email,
+                "p_guest_name": guest_name,
+                "p_guest_phone": guest_phone,
+                "p_tier_id": tier_id,
+                "p_metadata": metadata_payload,
             })
-        except Exception:
-            pass
+        else:
+            rpc_res = db.rpc("register_for_event_atomic", {
+                "p_event_id": event_id,
+                "p_user_id": user_id,
+                "p_tier_id": tier_id,
+                "p_metadata": metadata_payload,
+            })
+    except Exception as exc:
+        err_msg = str(exc)
+        if "ALREADY_REGISTERED" in err_msg or "already registered" in err_msg.lower():
+            if not is_guest:
+                ex = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("user_id", user_id).execute() or []
+                ex_row = ex[0] if ex else {}
+                return jsonify({
+                    "ticket_id": ex_row.get("id"),
+                    "qr_token": ex_row.get("id"),
+                    "event_id": event_id,
+                    "event_title": event.get("title"),
+                    "status": ex_row.get("status", "confirmed"),
+                    "is_guest": False,
+                    "message": "Already registered — use ticket_id as qr_token to check in.",
+                }), 200
+            return jsonify({"error": MSG.GUEST_ALREADY_REGISTERED}), 400
+        if "CAPACITY" in err_msg or "capacity" in err_msg.lower():
+            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
+        if "TIER" in err_msg or "tier" in err_msg.lower():
+            return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
+        return jsonify({"error": err_msg}), 400
+
+    if isinstance(rpc_res, dict) and rpc_res.get("error"):
+        err_msg = rpc_res["error"]
+        if "ALREADY_REGISTERED" in err_msg or "already registered" in err_msg.lower():
+            if not is_guest:
+                ex = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("user_id", user_id).execute() or []
+                ex_row = ex[0] if ex else {}
+                return jsonify({
+                    "ticket_id": ex_row.get("id"),
+                    "qr_token": ex_row.get("id"),
+                    "event_id": event_id,
+                    "event_title": event.get("title"),
+                    "status": ex_row.get("status", "confirmed"),
+                    "is_guest": False,
+                    "message": "Already registered — use ticket_id as qr_token to check in.",
+                }), 200
+            return jsonify({"error": MSG.GUEST_ALREADY_REGISTERED}), 400
+        if "CAPACITY" in err_msg or "capacity" in err_msg.lower():
+            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
+        if "TIER" in err_msg or "tier" in err_msg.lower():
+            return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
+        return jsonify({"error": err_msg}), 400
+
+    if isinstance(rpc_res, dict):
+        ticket_id = rpc_res.get("ticket_id") or rpc_res.get("id") or str(uuid.uuid4())
+    else:
+        ticket_id = str(rpc_res) if rpc_res else str(uuid.uuid4())
 
     # ── Email QR to Guest ──────────────────────────────────────────────────────
     if is_guest and guest_email:
@@ -1060,13 +1057,22 @@ def list_event_registrants(event_id):
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    tickets = (
-        db.table("event_tickets")
-        .select("id,user_id,tier_id,status,created_at,qr_token")
-        .eq("event_id", event_id)
-        .order("created_at")
-        .execute()
-    ) or []
+    try:
+        tickets = (
+            db.table("event_tickets")
+            .select("id,user_id,tier_id,status,created_at,qr_code")
+            .eq("event_id", event_id)
+            .order("created_at")
+            .execute()
+        ) or []
+    except Exception:
+        tickets = (
+            db.table("event_tickets")
+            .select("id,user_id,tier_id,status,created_at")
+            .eq("event_id", event_id)
+            .order("created_at")
+            .execute()
+        ) or []
 
     # Enrich with profile and tier info
     user_ids = list({t["user_id"] for t in tickets if t.get("user_id")})
@@ -1376,7 +1382,7 @@ def my_tickets():
         ci = checkins_map.get(t["id"])
         item = {
             "ticket_id": t["id"],
-            "qr_token": t.get("qr_token") or t["id"],
+            "qr_token": t.get("qr_code") or t.get("qr_token") or t["id"],
             "event_id": t.get("event_id"),
             "event_title": e.get("title"),
             "starts_at": e.get("starts_at"),

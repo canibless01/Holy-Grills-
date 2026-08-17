@@ -340,6 +340,8 @@ def send_notification(
             "title": title,
             "body": body,
             "action_url": action_url,
+            "reference_id": reference_id,
+            "reference_type": reference_type,
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
@@ -417,6 +419,10 @@ def send_blast(blast_id: str) -> dict:
         )
         .eq("is_active", True)
     )
+
+    campus_id = segment.get("campus_id") or segment.get("campus") or blast.get("campus_id")
+    if campus_id and campus_id != "all":
+        profiles_q = profiles_q.eq("campus_id", campus_id)
 
     if segment.get("role") and segment["role"] != "all":
         profiles_q = profiles_q.eq("role", segment["role"])

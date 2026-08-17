@@ -398,10 +398,26 @@ def _handle_transfer(data: dict):
 
     va_rows = db.table("virtual_accounts").select("user_id,campus_id").eq("account_number", account_number).limit(1).execute()
     if not va_rows:
-        err_msg = f"Bank transfer webhook error: no virtual account found for account_number {account_number} (ref {reference})"
-        current_app.logger.error(err_msg)
-        _notify_admin_webhook_failure("transfer.success", str(reference), err_msg)
-        raise ValueError(err_msg)
+    logger.error("...")
+    try:
+        admins = db.table("profiles").select("id").eq("role", "admin").execute() or []
+        for admin in admins:
+            send_notification(
+                    user_id=admin["id"],
+                    notif_type="system_alert",
+                    title="Unlinked Bank Transfer Warning",
+                    body=f"Bank transfer of ₦{amount_naira:,.2f} received for unknown account number {account_number} (ref: {reference}).",
+                    reference_id=reference,
+                    reference_type="bank_transfer",
+              )
+    except Exception as ae:
+        logger.error("Failed to notify admins: %s", ae)
+    
+    # Then raise error (don't use return)
+    err_msg = f"Bank transfer webhook error: no virtual account found for account_number {account_number} (ref {reference})"
+    current_app.logger.error(err_msg)
+    _notify_admin_webhook_failure("transfer.success", str(reference), err_msg)
+    raise ValueError(err_msg)  # <- This stops the function
 
     user_id = va_rows[0]["user_id"]
     campus_id = va_rows[0].get("campus_id")

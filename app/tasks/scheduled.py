@@ -135,12 +135,12 @@ def reset_monthly_leaderboard(self):
                         db.table("profiles").eq("id", uid).update({"top4_finish_count": new_count})
                         if new_count == 3:
                             try:
-                                _hof_profile = db.table("profiles").select("full_name,current_tier").eq("id", uid).single().execute() or {}
+                                _hof_profile = db.table("profiles").select("full_name,current_tier_id").eq("id", uid).single().execute() or {}
                                 db.table("hall_of_fame_inductees").insert({
                                     "user_id": uid,
                                     "inducted_at": now.isoformat(),
                                     "full_name": _hof_profile.get("full_name") or ("Platform Member"),
-                                    "tier_at_induction": _hof_profile.get("current_tier"),
+                                    "tier_at_induction": _hof_profile.get("current_tier_id"),
                                     "top4_finish_count": new_count,
                                     "campus_id": campus_id,
                                 })
@@ -353,6 +353,8 @@ def tier_grace_period_check(self):
             campus_id = campus["id"]
             tiers = db.table("hp_tiers").select("*").eq("campus_id", campus_id).order("sort_order").execute() or []
             if not tiers:
+                # Intentional global-tier fallback: if a campus has no campus-specific hp_tiers
+                # configured, fall back to global hp_tiers so grace period checks can proceed.
                 tiers = db.table("hp_tiers").select("*").order("sort_order").execute() or []
             base_tier = tiers[0] if tiers else None
             tier_map = {t["id"]: t for t in tiers}

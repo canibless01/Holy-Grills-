@@ -210,35 +210,72 @@ def purchase(listing_id):
     if reserved_code_id:
         purchase_record["metadata"] = {"code_id": reserved_code_id}
 
-    saved = db.table("marketplace_purchases").insert(purchase_record).execute()
-    purchase_row = saved[0] if isinstance(saved, list) else saved
+    if listing.get("listing_type") == "code":
+        available_codes = (
+            db.table("marketplace_access_codes")
+            .select("id")
+            .eq("listing_id", listing_id)
+            .eq("status", "available")
+            .limit(1)
+            .execute()
+        )
+        if not available_codes or len(available_codes) == 0:
+            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True})
+            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
+        purchase_record["metadata"] = {"code_id": available_codes[0]["id"]}
+
+    if hp_to_spend > 0:
+        spend_hp(g.user_id, hp_to_spend, listing_id, "marketplace_purchase", f"HP discount on: {listing['title']}")
+
+    try:
+        rpc_res = db.rpc("hg_purchase_marketplace_item", {
+            "p_user_id": g.user_id,
+            "p_listing_id": listing_id,
+            "p_pay_with_hp": use_hp,
+            "p_payment_method": payment_method,
+            "p_wallet_amount": wallet_amount,
+            "p_card_amount": card_amount,
+            "p_payment_reference": data.get("payment_reference", ""),
+            "p_quantity": 1,
+        })
+    except Exception as exc:
+        err_str = str(exc)
+        if "NO_CODES" in err_str.upper() or "OUT_OF_STOCK" in err_str.upper():
+            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
+        return jsonify({"error": err_str}), 400
+
+    if isinstance(rpc_res, dict) and rpc_res.get("error"):
+        err_str = str(rpc_res["error"])
+        if "NO_CODES" in err_str.upper() or "OUT_OF_STOCK" in err_str.upper():
+            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
+        return jsonify({"error": err_str}), 400
+
+    if isinstance(rpc_res, dict):
+        purchase_row = rpc_res.get("purchase") or rpc_res
+        code_value = rpc_res.get("code") or rpc_res.get("access_code")
+    else:
+        purchase_id_str = str(rpc_res) if rpc_res else str(uuid.uuid4())
+        purchase_row = {"id": purchase_id_str, "user_id": g.user_id, "listing_id": listing_id, "status": "pending"}
+        code_value = None
+
+    purchase_id = purchase_row.get("id") if isinstance(purchase_row, dict) else str(purchase_row)
+
+    if not code_value:
+        assigned_code_row = db.table("marketplace_access_codes").select("code").eq("assigned_purchase_id", purchase_id).single().execute()
+        if assigned_code_row:
+            code_value = assigned_code_row.get("code")
 
     from flask import current_app
     marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
     if marketplace_hp > 0:
-        # NOTE: source_type must NOT be "marketplace_purchase" — that string is
-        # reserved for the HP *spend* leg above (_resolve_txn_type maps it to
-        # "spend"), which would silently deduct this reward instead of adding it.
         award_active_hp(
             user_id=g.user_id,
             amount=marketplace_hp,
-            reference_id=purchase_row.get("id") if isinstance(purchase_row, dict) else None,
+            reference_id=purchase_id,
             reference_type="marketplace_purchase",
             source_type="marketplace_purchase_reward",
             notes="HP earned on marketplace purchase",
         )
-
-    code_value = None
-    code_id = (purchase_record.get("metadata") or {}).get("code_id")
-    if code_id:
-        code_row = db.table("marketplace_access_codes").select("code").eq("id", code_id).single().execute()
-        code_value = code_row.get("code") if code_row else None
-        if code_value:
-            db.table("marketplace_access_codes").eq("id", code_id).update({
-                "status": "assigned",
-                "assigned_purchase_id": purchase_row.get("id") if isinstance(purchase_row, dict) else None,
-                "assigned_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
 
     from app.services.notification_service import send_notification
     _purchase_body = MSG.MARKETPLACE_PURCHASE_BODY.format(title=listing["title"])

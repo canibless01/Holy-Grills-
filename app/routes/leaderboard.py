@@ -172,7 +172,7 @@ def hall_of_fame_inductees():
             if uid:
                 try:
                     profile = db.table("profiles").select(
-                        "avatar_url,faculty,department"
+                        "photo_url,faculty,department"
                     ).eq("id", uid).single().execute() or {}
                 except Exception:
                     pass
@@ -183,7 +183,7 @@ def hall_of_fame_inductees():
                 "tier_at_induction": row.get("tier_at_induction"),
                 "top4_finish_count": row.get("top4_finish_count"),
                 "qualifying_record": row.get("qualifying_record"),
-                "avatar_url": profile.get("avatar_url"),
+                "photo_url": profile.get("photo_url"),
                 "faculty": profile.get("faculty"),
                 "department": profile.get("department"),
                 "share_path": f"/hall-of-fame/{uid}",
@@ -224,7 +224,7 @@ def inductee_share_card(inductee_user_id):
         profile = {}
         try:
             profile = db.table("profiles").select(
-                "avatar_url,faculty,department,hp_earned_120day,current_tier_id"
+                "photo_url,faculty,department,hp_earned_120day,current_tier_id"
             ).eq("id", inductee_user_id).single().execute() or {}
         except Exception:
             pass
@@ -236,7 +236,7 @@ def inductee_share_card(inductee_user_id):
             "tier_at_induction": row.get("tier_at_induction"),
             "top4_finish_count": row.get("top4_finish_count"),
             "qualifying_record": row.get("qualifying_record"),
-            "avatar_url": profile.get("avatar_url"),
+            "photo_url": profile.get("photo_url"),
             "faculty": profile.get("faculty"),
             "department": profile.get("department"),
             # Relative share path — frontend prepends the app base URL
