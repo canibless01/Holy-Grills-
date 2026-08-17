@@ -1,4 +1,9 @@
-"""Cart routes — persistent per-user cart management."""
+"""Cart routes — persistent per-user cart management.
+
+CUSTOMIZATION MODEL DOCUMENTATION:
+  - Customization options (selected variations, preparation notes) are stored inside the
+    `cart_items.options` (JSONB) column on the client side (Option B snapshot model).
+"""
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth

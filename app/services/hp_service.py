@@ -362,11 +362,14 @@ def award_active_hp(
 
 
 def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, notes: str = "", campus_id: str = None) -> dict:
-    """Deduct HP from active balance. Raises ValueError if insufficient."""
-    balance = get_hp_balance(user_id)
-    if balance["active"] < amount:
+    """Deduct HP from active balance atomically via RPC. Raises ValueError if insufficient."""
+    if amount <= 0:
+        return {"spent": 0, "balance_after": get_hp_balance(user_id)["active"]}
+
+    current_active = get_hp_balance(user_id)["active"]
+    if current_active < amount:
         from app.messages import MSG, resolve_msg
-        raise ValueError(resolve_msg(MSG.HP_INSUFFICIENT, have=balance["active"], need=amount))
+        raise ValueError(resolve_msg(MSG.HP_INSUFFICIENT, have=current_active, need=amount))
 
     txn_type = _resolve_txn_type(reference_type, is_spend=True)
     _record_hp_transaction(
@@ -380,7 +383,8 @@ def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, 
         status="active",
         campus_id=campus_id,
     )
-    return {"spent": amount, "balance_after": balance["active"] - amount}
+    new_bal = get_hp_balance(user_id)["active"]
+    return {"spent": amount, "balance_after": new_bal}
 
 
 def expire_hp(user_id: str, amount: int, notes: str = "HP decayed due to inactivity", campus_id: str = None) -> dict:
@@ -540,12 +544,12 @@ def recalculate_tier(user_id: str) -> dict:
             "previous_tier_id": current_tier_id,
             "event": event,
             "hp_at_event": hp_earned_120day,
-        })
+        }).execute()
     except Exception:
         pass
 
     try:
-        db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]})
+        db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]}).execute()
     except Exception:
         pass
 
@@ -609,7 +613,7 @@ def process_flash_redeem(reward_id: str, user_id: str) -> dict:
         "reward_id": reward_id,
         "hp_cost_snapshot": discounted_cost,
         "status": "pending",
-    })
+    }).execute()
     redemption_row = redemption[0] if isinstance(redemption, list) else redemption
 
     spend_hp(user_id, discounted_cost, redemption_row["id"], "flash_reward_redemption",
@@ -638,7 +642,7 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
             "hp_amount": hp_amount,
             "naira_paid": naira_paid,
             "price_per_hp": price_per_hp,
-        })
+        }).execute()
     except SupabaseError as exc:
         if exc.details and exc.details.get("code") == "23505":
             raise ValueError("Payment reference already processed") from exc

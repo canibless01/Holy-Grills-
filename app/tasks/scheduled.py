@@ -14,6 +14,22 @@ from app.messages import MSG
 logger = get_logger(__name__)
 
 
+def _log_cron_execution(job_name: str, status: str, result: dict = None, error: str = None):
+    """Record scheduled cron execution in admin_audit_logs for cron_status observability."""
+    try:
+        db = get_db()
+        db.table("admin_audit_logs").insert({
+            "actor_id": "celery_system",
+            "actor_role": "system",
+            "entity_type": "cron_jobs",
+            "entity_id": job_name,
+            "action": f"scheduled_execution_{status}",
+            "after_value": {"status": status, "result": result, "error": error},
+        }).execute()
+    except Exception as e:
+        logger.warning("_log_cron_execution failed for %s: %s", job_name, e)
+
+
 @celery_app.task(name="app.tasks.scheduled.reset_monthly_leaderboard", bind=True, max_retries=3)
 def reset_monthly_leaderboard(self):
     """
