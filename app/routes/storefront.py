@@ -45,7 +45,11 @@ def list_sections():
         description: Storefront sections
     """
     db = get_db()
-    sections = db.table("storefront_sections").select("*").eq("is_active", "true").order("sort_order").execute()
+    q = db.table("storefront_sections").select("*").eq("is_active", "true")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    sections = q.order("sort_order").execute()
     return jsonify(sections), 200
 
 
@@ -520,6 +524,9 @@ def create_section():
     safe.setdefault("is_active", True)
     safe.setdefault("sort_order", 0)
     safe.setdefault("content", {})
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
     result = db.table("storefront_sections").insert(safe)
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
@@ -571,6 +578,9 @@ def list_banners():
     """
     db = get_db()
     q = db.table("banners").select("*").eq("is_active", "true")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     placement = request.args.get("placement")
     if placement:
         q = q.eq("placement", placement)
@@ -629,6 +639,9 @@ def create_banner():
     safe = {k: v for k, v in data.items() if k in BANNER_COLS}
     safe.setdefault("is_active", True)
     safe.setdefault("sort_order", 0)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
     result = db.table("banners").insert(safe)
     return jsonify(result[0] if isinstance(result, list) else result), 201
 

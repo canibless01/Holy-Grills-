@@ -12,7 +12,7 @@ from app.services.notification_service import send_notification
 from app.services import hp_service
 
 
-def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None) -> dict:
+def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None) -> dict:
     """
     Create a Supabase Auth user and profile.
     Returns Supabase auth session (access_token, refresh_token, user).
@@ -91,6 +91,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         "hp_balance": 0,
         "wallet_balance": 0,
         "preferences": {},
+        "campus_id": campus_id,
     }
     # Populate department / level if provided at sign-up (RUN 9)
     if department:
@@ -115,6 +116,8 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                 "full_name": full_name,
                 "referral_code": referral_code,
             }
+            if campus_id:
+                patch["campus_id"] = campus_id
             if referred_by_user_id:
                 patch["referred_by"] = referred_by_user_id
             if phone:

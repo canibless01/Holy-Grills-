@@ -52,13 +52,11 @@ def list_academic_levels():
     """
     db = get_db()
     try:
-        rows = (
-            db.table("academic_levels")
-            .select("id,name,value,sort_order")
-            .eq("is_active", True)
-            .order("sort_order", ascending=True)
-            .execute()
-        ) or []
+        q = db.table("academic_levels").select("id,name,value,sort_order").eq("is_active", True)
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        rows = q.order("sort_order", ascending=True).execute() or []
     except Exception:
         rows = []
     return jsonify({"levels": rows, "count": len(rows)}), 200

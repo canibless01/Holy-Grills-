@@ -33,15 +33,17 @@ def _get_free_side_options() -> list:
 def _active_credits(db, user_id: str) -> list:
     """Return non-expired rows from free_side_credits with remaining credits > 0."""
     now = datetime.now(timezone.utc).isoformat()
-    return (
+    q = (
         db.table("free_side_credits")
         .select("id,credits_remaining,source,month,expires_at")
         .eq("user_id", user_id)
         .gt("credits_remaining", 0)
         .gte("expires_at", now)
-        .order("expires_at")
-        .execute()
-    ) or []
+    )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    return q.order("expires_at").execute() or []
 
 
 @free_sides_bp.route("", methods=["GET"])

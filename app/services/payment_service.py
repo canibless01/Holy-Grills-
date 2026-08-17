@@ -39,11 +39,17 @@ def initialize_payment(email: str, amount_naira: float, reference: str, metadata
     Initialize a Paystack card payment. Returns authorization_url for redirect.
     amount_naira is in naira — converted to kobo for Paystack.
     """
+    from flask import has_app_context, g
+    campus_id = getattr(g, 'campus_id', None) if has_app_context() else None
+    meta = dict(metadata or {})
+    if campus_id and "campus_id" not in meta:
+        meta["campus_id"] = campus_id
+
     payload = {
         "email": email,
         "amount": int(amount_naira * 100),
         "reference": reference,
-        "metadata": metadata or {},
+        "metadata": meta,
     }
     if callback_url:
         payload["callback_url"] = callback_url

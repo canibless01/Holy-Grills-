@@ -20,11 +20,15 @@ def get_wallet(user_id: str) -> dict:
     )
 
 
-def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None) -> dict:
+def credit_wallet(user_id: str, amount: float, payment_reference: str, reference_id: str = None, reference_type: str = "topup", notes: str = "", provider_response: dict = None, campus_id: str = None) -> dict:
     """
     Credit ₦ to wallet (e.g., after Paystack webhook confirms payment).
     Awards HP if top-up meets minimum threshold. Uses atomic database-level RPC.
     """
+    if campus_id is None:
+        from flask import has_app_context, g
+        if has_app_context():
+            campus_id = getattr(g, 'campus_id', None)
     db = get_db()
     config = current_app.config
 
@@ -37,6 +41,7 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         "p_provider": "paystack",
         "p_provider_reference": payment_reference,
         "p_metadata": provider_response or {},
+        "p_campus_id": campus_id,
     })
 
     if isinstance(res, dict) and res.get("error"):
@@ -67,10 +72,14 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
     return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else amount}
 
 
-def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type: str, notes: str = "") -> dict:
+def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type: str, notes: str = "", campus_id: str = None) -> dict:
     """
     Deduct ₦ from wallet. Uses atomic database-level RPC.
     """
+    if campus_id is None:
+        from flask import has_app_context, g
+        if has_app_context():
+            campus_id = getattr(g, 'campus_id', None)
     db = get_db()
     res = db.rpc("debit_wallet_atomic", {
         "p_user_id": user_id,
@@ -79,6 +88,7 @@ def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type:
         "p_reference_type": reference_type,
         "p_reference_id": reference_id,
         "p_metadata": {},
+        "p_campus_id": campus_id,
     })
 
     if isinstance(res, dict) and res.get("error"):

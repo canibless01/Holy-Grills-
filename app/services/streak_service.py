@@ -122,7 +122,7 @@ def update_monthly_tracker(user_id: str, hp_awarded: int) -> None:
 
 # ── LOGIN / CHECK-IN STREAK ────────────────────────────────────────────────────
 
-def process_login_streak(user_id: str) -> dict:
+def process_login_streak(user_id: str, campus_id: str = None) -> dict:
     """
     Call on every successful authenticated login.
     Marks today as checked-in in the week_state JSONB.
@@ -170,6 +170,10 @@ def process_login_streak(user_id: str) -> dict:
         # Bootstrap
         week_start = _monday_of_week(today)
         day_offset = str((today - week_start).days)
+        if campus_id is None:
+            from flask import has_app_context, g
+            if has_app_context():
+                campus_id = getattr(g, 'campus_id', None)
         record = {
             "user_id": user_id,
             "streak_count": 1,
@@ -179,6 +183,7 @@ def process_login_streak(user_id: str) -> dict:
             "week_state": {day_offset: "checked"},
             "cycle_week_number": 1,
             "consecutive_weeks": 0,
+            "campus_id": campus_id,
         }
         try:
             db.table("login_streaks").insert(record)
@@ -513,7 +518,7 @@ def _touch_last_activity(db, user_id: str, now: datetime) -> None:
 
 # ── ORDER STREAK ───────────────────────────────────────────────────────────────
 
-def process_order_streak(user_id: str, order_id: str) -> dict:
+def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> dict:
     """
     Called when a food order is delivered.
     If this is the first qualifying order for the current ISO week, increments
@@ -540,6 +545,10 @@ def process_order_streak(user_id: str, order_id: str) -> dict:
 
     if not streak:
         # First ever order streak entry
+        if campus_id is None:
+            from flask import has_app_context, g
+            if has_app_context():
+                campus_id = getattr(g, 'campus_id', None)
         try:
             db.table("order_streaks").insert({
                 "user_id": user_id,
@@ -547,6 +556,7 @@ def process_order_streak(user_id: str, order_id: str) -> dict:
                 "longest_streak": 1,
                 "last_order_week": current_week,
                 "last_updated": now,
+                "campus_id": campus_id,
             })
         except Exception as e:
             logger.warning("process_order_streak: insert failed for %s: %s", user_id, e)

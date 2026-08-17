@@ -176,6 +176,9 @@ def list_orders():
     """
     db = get_db()
     q = db.table("orders").select("*,order_items(*)").eq("user_id", g.user_id)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -884,14 +887,11 @@ def list_delivery_windows():
     """
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
-    windows = (
-        db.table("delivery_windows")
-        .select("*")
-        .gte("ends_at", now)
-        .eq("status", "open")
-        .order("starts_at")
-        .execute()
-    ) or []
+    q = db.table("delivery_windows").select("*").gte("ends_at", now).eq("status", "open")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    windows = q.order("starts_at").execute() or []
     return jsonify(windows), 200
 
 

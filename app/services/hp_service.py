@@ -275,7 +275,7 @@ import logging as _logging
 logger = _logging.getLogger(__name__)
 
 
-def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: str = None, notes: str = "") -> dict:
+def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: str = None, notes: str = "", campus_id: str = None) -> dict:
     """
     Add HP to pending pool.
     Referral HP goes to ACTIVE (referral → active per brand spec).
@@ -303,6 +303,7 @@ def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: s
         source_type=source_type,
         notes=notes or f"{source_type} HP → {status}" + (f" (×{multiplier} multiplier)" if multiplier > 1.0 else ""),
         status=status,
+        campus_id=campus_id,
     )
     if is_referral:
         _update_earned_counters(user_id, amount)
@@ -323,6 +324,7 @@ def award_active_hp(
     notes: str = "",
     issued_by_admin_id: str = None,
     apply_multiplier: bool = True,
+    campus_id: str = None,
 ) -> dict:
     """
     Directly award HP to ACTIVE balance.
@@ -353,12 +355,13 @@ def award_active_hp(
         notes=notes + (f" (×{round(amount / original_amount, 2)} multiplier)" if amount != original_amount and notes else ""),
         status="active",
         issued_by_admin_id=issued_by_admin_id,
+        campus_id=campus_id,
     )
     _update_earned_counters(user_id, amount)
     return {"awarded": amount}
 
 
-def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, notes: str = "") -> dict:
+def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, notes: str = "", campus_id: str = None) -> dict:
     """Deduct HP from active balance. Raises ValueError if insufficient."""
     balance = get_hp_balance(user_id)
     if balance["active"] < amount:
@@ -375,11 +378,12 @@ def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, 
         source_type=reference_type,
         notes=notes or f"HP spent on {reference_type}",
         status="active",
+        campus_id=campus_id,
     )
     return {"spent": amount, "balance_after": balance["active"] - amount}
 
 
-def expire_hp(user_id: str, amount: int, notes: str = "HP decayed due to inactivity") -> dict:
+def expire_hp(user_id: str, amount: int, notes: str = "HP decayed due to inactivity", campus_id: str = None) -> dict:
     """Apply HP decay. Deducts from active balance."""
     balance = get_hp_balance(user_id)
     expire_amount = min(amount, max(0, balance["active"]))
@@ -394,6 +398,7 @@ def expire_hp(user_id: str, amount: int, notes: str = "HP decayed due to inactiv
         source_type="expiry",
         notes=notes,
         status="active",
+        campus_id=campus_id,
     )
     return {"expired": expire_amount}
 
@@ -661,7 +666,12 @@ def _record_hp_transaction(
     notes: str = "",
     status: str = "active",
     issued_by_admin_id: str = None,
+    campus_id: str = None,
 ):
+    if campus_id is None:
+        from flask import has_app_context, g
+        if has_app_context():
+            campus_id = getattr(g, 'campus_id', None)
     db = get_db()
     # Preserves the specific business context concept (e.g. earn_order, earn_referral) in the source/context field
     resolved_source = source_type or reference_type or txn_type or "system"
@@ -679,6 +689,7 @@ def _record_hp_transaction(
         "p_reference_id": reference_id,
         "p_issued_by_admin_id": issued_by_admin_id,
         "p_notes": notes,
+        "p_campus_id": campus_id,
     })
 
     if isinstance(res, dict) and res.get("error"):

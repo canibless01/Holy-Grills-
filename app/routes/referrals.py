@@ -89,13 +89,11 @@ def my_referrals():
 
         referral_code = profile.get("referral_code") if profile else None
 
-        referrals = (
-            db.table("referrals")
-            .select("*")
-            .eq("referrer_id", g.user_id)
-            .order("created_at", ascending=False)
-            .execute()
-        )
+        q = db.table("referrals").select("*").eq("referrer_id", g.user_id)
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        referrals = q.order("created_at", ascending=False).execute()
 
         enriched_referrals = []
         for referral in referrals:
@@ -157,12 +155,11 @@ def referral_stats():
         )
         referral_code = profile.get("referral_code") if profile else None
 
-        referrals = (
-            db.table("referrals")
-            .select("hp_awarded,status")
-            .eq("referrer_id", g.user_id)
-            .execute()
-        ) or []
+        q = db.table("referrals").select("hp_awarded,status").eq("referrer_id", g.user_id)
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        referrals = q.execute() or []
 
         total_hp = sum(r.get("hp_awarded", 0) or 0 for r in referrals)
         completed = [r for r in referrals if (r.get("hp_awarded") or 0) > 0]

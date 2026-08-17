@@ -679,8 +679,11 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
+    campus_id = getattr(g, 'campus_id', None)
+
     rpc_payload = {
         "p_user_id": user_id,
+        "p_campus_id": campus_id,
         "p_guest_name": payload.get("guest_name"),
         "p_guest_email": payload.get("guest_email"),
         "p_guest_phone": payload.get("guest_phone"),

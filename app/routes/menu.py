@@ -247,6 +247,7 @@ def create_category():
     if existing:
         return jsonify({"error": MSG.MENU_SLUG_EXISTS.format(slug=slug)}), 400
 
+    campus_id = getattr(g, 'campus_id', None)
     record = {
         "name": data["name"],
         "slug": slug,
@@ -254,6 +255,8 @@ def create_category():
         "sort_order": int(data.get("sort_order", 0)),
         "is_active": bool(data.get("is_active", True)),
     }
+    if campus_id:
+        record["campus_id"] = campus_id
     result = db.table("menu_categories").insert(record)
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
@@ -339,13 +342,11 @@ def list_categories():
         description: List of categories
     """
     db = get_db()
-    cats = (
-        db.table("menu_categories")
-        .select("*")
-        .eq("is_active", "true")
-        .order("sort_order")
-        .execute()
-    )
+    q = db.table("menu_categories").select("*").eq("is_active", "true")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    cats = q.order("sort_order").execute()
     return jsonify(cats), 200
 
 
@@ -381,6 +382,9 @@ def list_items():
     """
     db = get_db()
     q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
 
     category_slug = request.args.get("category")
     if category_slug:
@@ -463,6 +467,10 @@ def get_item(item_id):
         )
     if not item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
+
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and item.get("campus_id") != campus_id:
+        return jsonify({"error": "Item not found"}), 404
 
     groups = (
         db.table("menu_item_variation_groups")
@@ -745,6 +753,9 @@ def create_item():
         "hp_multiplier",
     }
     safe = {k: v for k, v in data.items() if k in MENU_ITEM_COLUMNS}
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id and "campus_id" not in safe:
+        safe["campus_id"] = campus_id
     try:
         result = db.table("menu_items").insert(safe)
     except Exception as exc:
@@ -1265,6 +1276,7 @@ def create_addon():
         if data.get(f) is None:
             return jsonify({"error": f"'{f}' is required"}), 400
 
+    campus_id = getattr(g, 'campus_id', None)
     record = {
         "name": data["name"],
         "description": data.get("description", ""),
@@ -1273,6 +1285,8 @@ def create_addon():
         "is_archived": False,
         "sort_order": int(data.get("sort_order", 0)),
     }
+    if campus_id:
+        record["campus_id"] = campus_id
     if data.get("group_id"):
         record["group_id"] = data["group_id"]
     result = db.table("menu_addons").insert(record)

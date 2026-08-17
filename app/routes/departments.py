@@ -49,6 +49,9 @@ def list_departments():
     db = get_db()
     try:
         q = db.table("departments").select("id,name,slug,faculty,sort_order").eq("is_active", True)
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
         faculty_filter = request.args.get("faculty")
         if faculty_filter:
             q = q.eq("faculty", faculty_filter)

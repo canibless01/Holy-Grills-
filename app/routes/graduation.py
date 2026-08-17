@@ -81,6 +81,7 @@ def claim_graduation():
     # HP amount: read from env/config so it can be changed without a deploy
     graduation_hp = int(current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT))
 
+    campus_id = getattr(g, 'campus_id', None)
     # Award HP — not subject to HP multiplier (graduation is a fixed life event)
     award_result = award_active_hp(
         user_id=g.user_id,
@@ -89,6 +90,7 @@ def claim_graduation():
         reference_type="graduation",
         notes=f"Graduation milestone HP — Level {user_level}",
         apply_multiplier=False,
+        campus_id=campus_id,
     )
 
     # Mark claimed

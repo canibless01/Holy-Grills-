@@ -59,6 +59,9 @@ def list_rewards():
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
     q = db.table("rewards").select("*,hp_tiers(name,slug)").eq("is_active", "true")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
 
     reward_type = request.args.get("category") or request.args.get("reward_type")
     if reward_type:

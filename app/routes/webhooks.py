@@ -233,7 +233,7 @@ def _handle_flutterwave_charge_success(data: dict):
         if not order_id:
             raise ValueError("Missing order_id in metadata")
 
-        order = db.table("orders").select("id,user_id,total_amount,status,payment_status").eq("id", order_id).single().execute()
+        order = db.table("orders").select("id,user_id,total_amount,status,payment_status,campus_id").eq("id", order_id).single().execute()
         if not order:
             raise ValueError(f"Order {order_id} not found")
 
@@ -253,10 +253,11 @@ def _handle_flutterwave_charge_success(data: dict):
         if amount_naira <= 0:
             raise ValueError(f"Invalid top-up amount: {amount_naira}")
 
-        profile = db.table("profiles").select("id").eq("id", user_id).single().execute()
+        profile = db.table("profiles").select("id,campus_id").eq("id", user_id).single().execute()
         if not profile:
             raise ValueError(f"User {user_id} not found for wallet top-up")
 
+        campus_id = profile.get("campus_id")
         credit_wallet(
             user_id=user_id,
             amount=amount_naira,
@@ -264,12 +265,14 @@ def _handle_flutterwave_charge_success(data: dict):
             reference_type="topup",
             notes=f"Card top-up via Flutterwave ({reference})",
             provider_response=data,
+            campus_id=campus_id,
         )
         _fmt_amt = f"{amount_naira:,.0f}"
         send_notification(
             user_id=user_id,
             notif_type="wallet_funded_card",
             template_data={"amount": _fmt_amt},
+            campus_id=campus_id,
         )
 
 
@@ -300,7 +303,7 @@ def _handle_charge_success(data: dict):
         if not order_id:
             raise ValueError("Missing order_id in metadata")
 
-        order = db.table("orders").select("id,user_id,total_amount,status,payment_status").eq("id", order_id).single().execute()
+        order = db.table("orders").select("id,user_id,total_amount,status,payment_status,campus_id").eq("id", order_id).single().execute()
         if not order:
             raise ValueError(f"Order {order_id} not found")
 
@@ -320,10 +323,11 @@ def _handle_charge_success(data: dict):
         if amount_naira <= 0:
             raise ValueError(f"Invalid top-up amount: {amount_naira}")
 
-        profile = db.table("profiles").select("id").eq("id", user_id).single().execute()
+        profile = db.table("profiles").select("id,campus_id").eq("id", user_id).single().execute()
         if not profile:
             raise ValueError(f"User {user_id} not found for wallet top-up")
 
+        campus_id = profile.get("campus_id")
         credit_wallet(
             user_id=user_id,
             amount=amount_naira,
@@ -331,12 +335,14 @@ def _handle_charge_success(data: dict):
             reference_type="topup",
             notes=f"Card top-up via Paystack ({reference})",
             provider_response=data,
+            campus_id=campus_id,
         )
         _fmt_amt = f"{amount_naira:,.0f}"
         send_notification(
             user_id=user_id,
             notif_type="wallet_funded_card",
             template_data={"amount": _fmt_amt},
+            campus_id=campus_id,
         )
 
 
@@ -374,24 +380,30 @@ def _handle_transfer(data: dict):
     if not account_number:
         return
 
-    va_rows = db.table("virtual_accounts").select("user_id").eq("account_number", account_number).limit(1).execute()
-    wallet = {"user_id": va_rows[0]["user_id"]} if va_rows else None
-    if not wallet:
+    va_rows = db.table("virtual_accounts").select("user_id,campus_id").eq("account_number", account_number).limit(1).execute()
+    if not va_rows:
         return
 
-    user_id = wallet["user_id"]
+    user_id = va_rows[0]["user_id"]
+    campus_id = va_rows[0].get("campus_id")
+    if not campus_id:
+        p_rows = db.table("profiles").select("campus_id").eq("id", user_id).limit(1).execute()
+        campus_id = p_rows[0].get("campus_id") if p_rows else None
+
     credit_wallet(
         user_id=user_id,
         amount=amount_naira,
         payment_reference=reference,
         reference_type="bank_transfer",
         notes=f"Bank transfer credited ({reference})",
+        campus_id=campus_id,
     )
     _fmt_amt = f"{amount_naira:,.0f}"
     send_notification(
         user_id=user_id,
         notif_type="wallet_funded_bank",
         template_data={"amount": _fmt_amt},
+        campus_id=campus_id,
     )
 
 

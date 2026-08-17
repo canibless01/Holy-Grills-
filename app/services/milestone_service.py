@@ -56,13 +56,12 @@ def get_user_milestones(user_id: str) -> dict:
     period_weekly  = _period_key("weekly", now.date())
     period_monthly = _period_key("monthly", now.date())
 
-    all_milestones = (
-        db.table("milestones")
-        .select("*")
-        .eq("is_active", "true")
-        .not_.in_("trigger_type", list(ADMIN_ONLY_TRIGGERS))
-        .execute()
-    ) or []
+    from flask import has_app_context, g
+    q = db.table("milestones").select("*").eq("is_active", "true").not_.in_("trigger_type", list(ADMIN_ONLY_TRIGGERS))
+    campus_id = getattr(g, 'campus_id', None) if has_app_context() else None
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    all_milestones = q.execute() or []
 
     earned_rows = (
         db.table("user_milestones")
@@ -196,14 +195,12 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
         db = get_db()
         now = datetime.now(timezone.utc)
 
-        milestones = (
-            db.table("milestones")
-            .select("id,trigger_value,hp_awarded,time_window,title")
-            .eq("trigger_type", trigger_type)
-            .eq("is_active", "true")
-            .lte("trigger_value", current_value)
-            .execute()
-        ) or []
+        from flask import has_app_context, g
+        q = db.table("milestones").select("id,trigger_value,hp_awarded,time_window,title").eq("trigger_type", trigger_type).eq("is_active", "true").lte("trigger_value", current_value)
+        campus_id = getattr(g, 'campus_id', None) if has_app_context() else None
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        milestones = q.execute() or []
 
         for m in milestones:
             mid = m["id"]

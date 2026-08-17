@@ -672,80 +672,92 @@ def process_scheduled_orders(self):
     """
     db = get_db()
     now = datetime.now(timezone.utc)
-
-    try:
-        due_orders = (
-            db.table("orders")
-            .select("id,scheduled_for,delivery_window_id")
-            .eq("is_scheduled", "true")
-            .eq("status", "received")
-            .lte("scheduled_for", now.isoformat())
-            .execute()
-        ) or []
-    except Exception as e:
-        logger.error("process_scheduled_orders: query failed: %s", e)
-        return {"error": str(e)}
-
-    if not due_orders:
-        return {"processed": 0, "checked_at": now.isoformat()}
-
-    # Notify every kitchen and admin user once per due order
-    try:
-        staff = (
-            db.table("profiles")
-            .select("id")
-            .in_("role", ["admin", "kitchen"])
-            .eq("is_active", "true")
-            .execute()
-        ) or []
-    except Exception:
-        staff = []
-
     from app.services.notification_service import send_notification
 
-    # Dedupe window: only notify once per order per 10-minute window.
-    # Check the notifications table so repeated task runs (every 5 min) don't spam staff.
-    dedup_cutoff = (now - timedelta(minutes=10)).isoformat()
+    try:
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
 
-    processed = 0
-    skipped = 0
-    for order in due_orders:
-        order_id = order["id"]
-        short_id = order_id[:8].upper()
-
-        # Skip if we already fired this notification for this specific order recently
-        try:
-            already_sent = (
-                db.table("notifications")
-                .select("id")
-                .eq("type", "scheduled_order_due")
-                .gte("created_at", dedup_cutoff)
-                .execute()
-            )
-            # Check if any recent notification body mentions this order
-            already_sent_for_order = any(
-                short_id in str(n.get("body", "") or "")
-                for n in (already_sent or [])
-            )
-        except Exception:
-            already_sent_for_order = False
-
-        if already_sent_for_order:
-            skipped += 1
-            continue
-
-        for member in staff:
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
             try:
-                send_notification(
-                    user_id=member["id"],
-                    notif_type="scheduled_order_due",
-                    template_data={"order_id": short_id},
-                )
+                due_orders = (
+                    db.table("orders")
+                    .select("id,scheduled_for,delivery_window_id")
+                    .eq("is_scheduled", "true")
+                    .eq("status", "received")
+                    .eq("campus_id", campus_id)
+                    .lte("scheduled_for", now.isoformat())
+                    .execute()
+                ) or []
             except Exception as e:
-                logger.warning("process_scheduled_orders: notify failed for staff %s: %s", member["id"], e)
-        processed += 1
+                logger.error("process_scheduled_orders: query failed for campus %s: %s", campus_id, e)
+                results[campus_id] = {"error": str(e)}
+                continue
 
-    return {"processed": processed, "skipped": skipped, "checked_at": now.isoformat()}
+            if not due_orders:
+                results[campus_id] = {"processed": 0, "checked_at": now.isoformat()}
+                continue
+
+            # Notify every kitchen and admin user once per due order in this campus
+            try:
+                staff = (
+                    db.table("profiles")
+                    .select("id")
+                    .in_("role", ["admin", "kitchen"])
+                    .eq("is_active", "true")
+                    .eq("campus_id", campus_id)
+                    .execute()
+                ) or []
+            except Exception:
+                staff = []
+
+            dedup_cutoff = (now - timedelta(minutes=10)).isoformat()
+
+            processed = 0
+            skipped = 0
+            for order in due_orders:
+                order_id = order["id"]
+                short_id = order_id[:8].upper()
+
+                try:
+                    already_sent = (
+                        db.table("notifications")
+                        .select("id")
+                        .eq("type", "scheduled_order_due")
+                        .eq("campus_id", campus_id)
+                        .gte("created_at", dedup_cutoff)
+                        .execute()
+                    )
+                    already_sent_for_order = any(
+                        short_id in str(n.get("body", "") or "")
+                        for n in (already_sent or [])
+                    )
+                except Exception:
+                    already_sent_for_order = False
+
+                if already_sent_for_order:
+                    skipped += 1
+                    continue
+
+                for member in staff:
+                    try:
+                        send_notification(
+                            user_id=member["id"],
+                            notif_type="scheduled_order_due",
+                            template_data={"order_id": short_id},
+                            campus_id=campus_id,
+                        )
+                    except Exception as e:
+                        logger.warning("process_scheduled_orders: notify failed for staff %s: %s", member["id"], e)
+                processed += 1
+
+            results[campus_id] = {"processed": processed, "skipped": skipped, "checked_at": now.isoformat()}
+
+        return results
+    except Exception as e:
+        logger.error("process_scheduled_orders error: %s", e)
+        return {"error": str(e)}
 
 
 @celery_app.task(name="app.tasks.scheduled.win_back_notifications", bind=True, max_retries=3)
