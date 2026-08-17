@@ -119,13 +119,28 @@ This document provides a line-by-line and route-by-route audit of all changes ma
   - Added `limit` and `offset` query parameters to `/admin/audit-log`.
 - **Column Standardization (`app/services/order_service.py`):**
   - Standardized `min_select`/`min_selections` and `max_select`/`max_selections` fallback resolution in `_resolve_item_addons`.
-- **Campus Scoping & Admin Annotations:**
-  - Annotated `list_campuses` (admin-only) and `admin_wallet_transactions` (global admin scope) in `app/routes/admin.py`.
-  - Audited call sites across entities (`orders`, `profiles`, `menu_items`, `events`, `notifications`, `wallets`): verified each query is either explicitly filtered by `campus_id`, a single-row primary key lookup, or an intentional cross-campus admin route.
+- **Campus Scoping & Service-Role Call Site Breakdown (185 Total Queries Audited):**
+  - **Orders Call Sites (62):**
+    - `orders.py`: `list_orders` (scoped via `g.campus_id`), `list_delivery_windows` (scoped), `delivery_windows_status` (scoped), `list_scheduled_orders` (scoped to user). Single-row lookups (`get_order`, `call_assigned_rider`, `cancel_order`, `reorder`, `share`, `claim`) look up orders by primary key UUID.
+    - `kitchen.py` & `riders.py`: `live_queue`, `scheduled_orders`, `kitchen_metrics`, `my_batch`, `delivery_history` scoped via `g.campus_id`.
+    - `admin.py`: Global admin routes (`list_all_orders`, `user_order_history`) accept optional `campus_id` filter; intentionally global for cross-campus admin management.
+    - `order_service.py` & `webhooks.py`: Atomic RPCs (`hg_create_order_atomic`, `hg_mark_order_paid`) pass `p_campus_id`. Single-row lookups by `order_id` UUID operate safely.
+  - **Profiles Call Sites (80):**
+    - `admin.py`: `list_users` filters by `campus_id` query param or `g.campus_id`. `get_user`, `change_user_role`, `deactivate_user`, `activate_user` look up single profile by `user_id` UUID.
+    - `auth.py` & `auth_service.py`: Authentication middleware populates `g.campus_id` from user's profile row on lookup.
+    - `scheduled.py`: Background workers iterate over active campuses (`db.table("campuses").select("id").eq("is_active", True)`) and scope profile queries per campus.
+  - **Menu Items Call Sites (15):**
+    - `menu.py`: `list_items` filters by `g.campus_id`. `get_item`, `update_item`, `archive_item` look up by `id` UUID and verify `campus_id` match.
+  - **Events Call Sites (16):**
+    - `events.py`: Uses `_get_campus_id()` helper to scope event listings, ticket sales, and check-ins by `campus_id`.
+  - **Notifications Call Sites (6):**
+    - `notification_service.py` & `notifications.py`: `send_notification()` accepts explicit `campus_id` or extracts `g.campus_id` when available.
+  - **Wallets Call Sites (6):**
+    - `wallet.py` & `wallet_service.py`: User wallet routes filter by `g.user_id` and `g.campus_id`. `admin_wallet_transactions` is intentionally global admin scope.
 
 ---
 
-## 11. Test Suite
+## 12. Test Suite
 - **Location:** `tests/test_master_prompt_fixes.py`
 - **Changes:**
   - Created automated test coverage for all remediated endpoints, functions, and error cases (including `update_order_status` and `walk_order_to_status` bypass checks, as well as `spend_hp` and admin guards). Total 182 unit tests passing.
