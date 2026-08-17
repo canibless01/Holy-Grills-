@@ -348,7 +348,7 @@ def _handle_charge_success(data: dict):
 
 def _handle_dva_assign(data: dict):
     """
-    Handle dedicated virtual account assignment. Update wallet record.
+    Handle dedicated virtual account assignment. Update or insert wallet record.
     """
     customer = data.get("customer", {})
     account = data.get("dedicated_account", {})
@@ -360,12 +360,25 @@ def _handle_dva_assign(data: dict):
     if not user_rows:
         return
     user_id = user_rows[0]["id"]
-    db.table("virtual_accounts").eq("user_id", user_id).update({
-        "account_number": account.get("account_number"),
-        "bank_name": account.get("bank", {}).get("name"),
-        "account_name": account.get("account_name"),
-        "provider_customer_id": customer.get("customer_code"),
-    })
+
+    existing_va = db.table("virtual_accounts").select("id").eq("user_id", user_id).limit(1).execute()
+    if existing_va:
+        db.table("virtual_accounts").eq("user_id", user_id).update({
+            "account_number": account.get("account_number"),
+            "bank_name": account.get("bank", {}).get("name"),
+            "account_name": account.get("account_name"),
+            "provider_customer_id": customer.get("customer_code"),
+        }).execute()
+    else:
+        db.table("virtual_accounts").insert({
+            "user_id": user_id,
+            "account_number": account.get("account_number"),
+            "bank_name": account.get("bank", {}).get("name"),
+            "account_name": account.get("account_name"),
+            "provider_customer_id": customer.get("customer_code"),
+            "provider_reference": str(account.get("id", "")),
+            "provider": "paystack",
+        }).execute()
 
 
 def _handle_transfer(data: dict):
@@ -378,11 +391,17 @@ def _handle_transfer(data: dict):
     db = get_db()
     account_number = recipient.get("details", {}).get("account_number")
     if not account_number:
-        return
+        err_msg = f"Bank transfer webhook error: missing account_number in recipient details for ref {reference}"
+        current_app.logger.error(err_msg)
+        _notify_admin_webhook_failure("transfer.success", str(reference), err_msg)
+        raise ValueError(err_msg)
 
     va_rows = db.table("virtual_accounts").select("user_id,campus_id").eq("account_number", account_number).limit(1).execute()
     if not va_rows:
-        return
+        err_msg = f"Bank transfer webhook error: no virtual account found for account_number {account_number} (ref {reference})"
+        current_app.logger.error(err_msg)
+        _notify_admin_webhook_failure("transfer.success", str(reference), err_msg)
+        raise ValueError(err_msg)
 
     user_id = va_rows[0]["user_id"]
     campus_id = va_rows[0].get("campus_id")

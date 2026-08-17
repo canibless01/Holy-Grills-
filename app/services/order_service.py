@@ -1,6 +1,12 @@
 """
 Order Service — handles order creation, status transitions, and HP award flow.
 
+DEPRECATION NOTICE:
+  Legacy order creation database function `hg_place_order` is DEPRECATED and
+  MUST NOT be used. All order creation logic routes through `create_order()`,
+  which uses the authoritative, atomic `hg_create_order_atomic` RPC to ensure
+  safe lock claiming, wallet debits, and item creation without race conditions.
+
 Order Status Machine:
   received → preparing → ready → assigned → out_for_delivery → delivered
                                                               → delivery_attempted → unclaimed
@@ -891,11 +897,44 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     is not held up by sequential Supabase notification inserts.
     """
     import threading as _threading
-    from flask import current_app as _app
+    from flask import current_app as _app, has_app_context, g
     db = get_db()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
+
+    if changed_by:
+        caller_role = None
+        caller_campus = None
+        if has_app_context() and getattr(g, 'user_id', None) == changed_by:
+            caller_role = getattr(g, 'user_role', None)
+            caller_campus = getattr(g, 'campus_id', None)
+        else:
+            try:
+                c_prof = db.table("profiles").select("role,campus_id").eq("id", changed_by).single().execute()
+                if c_prof:
+                    caller_role = c_prof.get("role")
+                    caller_campus = c_prof.get("campus_id")
+            except Exception:
+                pass
+
+        if caller_role == "rider":
+            batch_id = order.get("batch_id")
+            assigned_rider_id = None
+            if batch_id:
+                try:
+                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
+                    if batch:
+                        assigned_rider_id = batch.get("rider_id")
+                except Exception:
+                    pass
+            if not assigned_rider_id or assigned_rider_id != changed_by:
+                raise ValueError("Unauthorized: Rider is not assigned to this order")
+
+        elif caller_role == "kitchen":
+            order_campus = order.get("campus_id")
+            if caller_campus and order_campus and caller_campus != order_campus:
+                raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
 
     current_status = order["status"]
     allowed = VALID_TRANSITIONS.get(current_status, [])

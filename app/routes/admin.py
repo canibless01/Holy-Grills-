@@ -394,15 +394,33 @@ def deactivate_user(user_id):
     responses:
       200:
         description: User deactivated
+      400:
+        description: Self-deactivation prohibited
+      403:
+        description: Insufficient privileges
+      404:
+        description: User not found
     """
+    if user_id == g.user_id:
+        return jsonify({"error": "You cannot deactivate your own account"}), 400
+
     db = get_db()
+    target_profile = db.table("profiles").select("id,role,is_active,full_name").eq("id", user_id).single().execute()
+    if not target_profile:
+        return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    target_role = target_profile.get("role")
+    caller_role = getattr(g, "user_role", None)
+    if target_role == "super_admin" and caller_role != "super_admin":
+        return jsonify({"error": "Only super_admin users can deactivate a super_admin account"}), 403
+
     db.table("profiles").eq("id", user_id).update({
         "is_active": False,
         "deactivated_at": datetime.now(timezone.utc).isoformat(),
         "deactivated_by": g.user_id,
     })
     _audit(g.user_id, "profiles", user_id, "deactivate_account")
-    return jsonify({"message": MSG.ADMIN_USER_DEACTIVATED}), 200
+    return jsonify({"message": MSG.ADMIN_USER_DEACTIVATED, "user_id": user_id}), 200
 
 
 @admin_bp.route("/users/<user_id>/activate", methods=["POST"])
@@ -509,8 +527,10 @@ def create_window():
         return jsonify({"error": "is_active must be a boolean"}), 400
 
     # Only insert columns that exist in delivery_windows
-    WINDOW_COLS = {"label", "starts_at", "ends_at", "capacity", "is_active"}
+    WINDOW_COLS = {"label", "starts_at", "ends_at", "capacity", "is_active", "campus_id"}
     safe = {k: v for k, v in data.items() if k in WINDOW_COLS}
+    if "campus_id" not in safe and getattr(g, "campus_id", None):
+        safe["campus_id"] = g.campus_id
     safe["status"] = "open"
     safe["created_by"] = g.user_id
     result = db.table("delivery_windows").insert(safe)
@@ -532,8 +552,16 @@ def close_window(window_id):
     responses:
       200:
         description: Window closed
+      404:
+        description: Window not found
     """
     db = get_db()
+    window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
+    if not window:
+        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+    if window.get("status") == "closed":
+        return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED, "status": "closed"}), 200
+
     db.table("delivery_windows").eq("id", window_id).update({"status": "closed"})
     _audit(g.user_id, "delivery_windows", window_id, "close_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED}), 200
@@ -673,22 +701,63 @@ def create_batch():
     responses:
       201:
         description: Batch created and orders assigned
+      400:
+        description: Validation failure (invalid rider role, window missing, ineligible order)
+      404:
+        description: Window or rider not found
     """
     db = get_db()
     data = request.get_json(force=True) or {}
-    if not data.get("window_id") or not data.get("rider_id"):
+    window_id = data.get("window_id")
+    rider_id = data.get("rider_id")
+    if not window_id or not rider_id:
         return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
+
+    # 1. Verify window exists
+    window = db.table("delivery_windows").select("id").eq("id", window_id).single().execute()
+    if not window:
+        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+
+    # 2. Verify rider exists, is active, and has 'rider' role
+    rider_profile = db.table("profiles").select("id,role,is_active").eq("id", rider_id).single().execute()
+    if not rider_profile:
+        return jsonify({"error": "Rider user profile not found"}), 404
+    if not rider_profile.get("is_active"):
+        return jsonify({"error": "Rider account is deactivated"}), 400
+    if rider_profile.get("role") != "rider":
+        return jsonify({"error": f"User {rider_id} does not have the 'rider' role"}), 400
+
+    order_ids = data.get("order_ids", [])
+    if order_ids:
+        # 3. Validate each order_id
+        orders = db.table("orders").select("id,delivery_window_id,status,batch_id").in_("id", order_ids).execute() or []
+        fetched_ids = {o["id"] for o in orders}
+        missing_ids = set(order_ids) - fetched_ids
+        if missing_ids:
+            return jsonify({"error": f"Orders not found: {', '.join(missing_ids)}"}), 404
+
+        for o in orders:
+            # Verify order belongs to the batch's window
+            if o.get("delivery_window_id") and o.get("delivery_window_id") != window_id:
+                return jsonify({"error": f"Order {o['id']} belongs to delivery window {o['delivery_window_id']}, not batch window {window_id}"}), 400
+            # Verify order is in an eligible status (e.g., 'ready' or 'assigned')
+            if o.get("status") in ("cancelled", "refunded", "delivered", "unclaimed"):
+                return jsonify({"error": f"Order {o['id']} is in inelastic/terminal status '{o['status']}' and cannot be batched"}), 400
+            # Prevent order already assigned to another batch
+            if o.get("batch_id"):
+                return jsonify({"error": f"Order {o['id']} is already assigned to batch {o['batch_id']}"}), 400
+
     batch = db.table("delivery_batches").insert({
-        "window_id": data["window_id"],
-        "rider_id": data["rider_id"],
+        "window_id": window_id,
+        "rider_id": rider_id,
         "zone": data.get("zone", ""),
         "status": "assigned",
     })
     batch_row = batch[0] if isinstance(batch, list) else batch
     batch_id = batch_row["id"]
 
-    for order_id in data.get("order_ids", []):
-        db.table("orders").eq("id", order_id).update({"batch_id": batch_id})
+    for oid in order_ids:
+        db.table("orders").eq("id", oid).update({"batch_id": batch_id, "status": "assigned"})
 
     return jsonify(batch_row), 201
 

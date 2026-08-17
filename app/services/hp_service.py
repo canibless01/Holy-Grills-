@@ -362,11 +362,14 @@ def award_active_hp(
 
 
 def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, notes: str = "", campus_id: str = None) -> dict:
-    """Deduct HP from active balance. Raises ValueError if insufficient."""
-    balance = get_hp_balance(user_id)
-    if balance["active"] < amount:
+    """Deduct HP from active balance atomically via RPC. Raises ValueError if insufficient."""
+    if amount <= 0:
+        return {"spent": 0, "balance_after": get_hp_balance(user_id)["active"]}
+
+    current_active = get_hp_balance(user_id)["active"]
+    if current_active < amount:
         from app.messages import MSG, resolve_msg
-        raise ValueError(resolve_msg(MSG.HP_INSUFFICIENT, have=balance["active"], need=amount))
+        raise ValueError(resolve_msg(MSG.HP_INSUFFICIENT, have=current_active, need=amount))
 
     txn_type = _resolve_txn_type(reference_type, is_spend=True)
     _record_hp_transaction(
@@ -380,7 +383,8 @@ def spend_hp(user_id: str, amount: int, reference_id: str, reference_type: str, 
         status="active",
         campus_id=campus_id,
     )
-    return {"spent": amount, "balance_after": balance["active"] - amount}
+    new_bal = get_hp_balance(user_id)["active"]
+    return {"spent": amount, "balance_after": new_bal}
 
 
 def expire_hp(user_id: str, amount: int, notes: str = "HP decayed due to inactivity", campus_id: str = None) -> dict:
