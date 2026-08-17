@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import spend_hp, get_hp_balance, get_user_tier
 from app.services.notification_service import send_notification
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 import uuid
 from datetime import datetime, timezone
@@ -124,7 +124,7 @@ def redeem_reward(reward_id):
       400:
         description: Insufficient HP or reward not available
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
 
     reward = db.table("rewards").select("*").eq("id", reward_id).single().execute()
@@ -460,7 +460,7 @@ def my_redemptions():
       200:
         description: Redemption history
     """
-    db = get_db()
+    db = get_user_client()
     redemptions = (
         db.table("reward_redemptions")
         .select("*,rewards(name,reward_type,hp_cost,image_url)")

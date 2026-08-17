@@ -17,7 +17,7 @@ POST   /challenges/admin/<id>/grant — grant milestone to specific user
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -149,7 +149,7 @@ def social_follow():
       400:
         description: Already recorded
     """
-    db = get_db()
+    db = get_user_client()
 
     # Find the social_follow milestone
     milestone = (

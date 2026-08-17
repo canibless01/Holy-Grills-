@@ -7,7 +7,7 @@ POST /api/free-sides/redeem   — redeem a free side credit at checkout
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
@@ -58,7 +58,7 @@ def my_free_sides():
         description: Free side credit summary
     """
     user_id = g.user_id
-    db = get_db()
+    db = get_user_client()
 
     credits = _active_credits(db, user_id)
     total = sum(r.get("credits_remaining", 0) for r in credits)
@@ -95,7 +95,7 @@ def redeem_free_side():
         description: Invalid choice or no credits
     """
     user_id = g.user_id
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
     side_choice = (data.get("side_choice") or "").strip()

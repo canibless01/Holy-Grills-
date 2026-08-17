@@ -7,7 +7,7 @@ from app.middleware.auth import require_auth, optional_auth
 from app.middleware.rate_limit import rate_limit
 from app.services import auth_service
 from app.utils.retry import with_retry
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -291,7 +291,7 @@ def update_profile_photo():
     if not photo_url:
         return jsonify({"error": "photo_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("profiles").eq("id", g.user_id).update({
         "photo_url": photo_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -358,7 +358,7 @@ def list_addresses():
       200:
         description: List of saved addresses
     """
-    db = get_db()
+    db = get_user_client()
     rows = db.table("user_addresses").select("*").eq("user_id", g.user_id).order("is_default", ascending=False).execute()
     return jsonify(rows), 200
 
@@ -389,7 +389,7 @@ def add_address():
       201:
         description: Address saved
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     if not data.get("label") or not (data.get("line1") or data.get("address_line")) or not data.get("city"):
         return jsonify({"error": MSG.AUTH_ADDRESS_FIELDS_REQUIRED}), 400
@@ -444,7 +444,7 @@ def update_address(address_id):
       404:
         description: Address not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("user_addresses").select("id").eq("id", address_id).eq("user_id", g.user_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.AUTH_ADDRESS_NOT_FOUND}), 404
@@ -479,7 +479,7 @@ def delete_address(address_id):
       404:
         description: Address not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("user_addresses").select("id").eq("id", address_id).eq("user_id", g.user_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.AUTH_ADDRESS_NOT_FOUND}), 404
@@ -518,7 +518,7 @@ def change_password():
     if len(new_password) < 8:
         return jsonify({"error": MSG.AUTH_PASSWORD_TOO_SHORT}), 400
 
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("email").eq("id", g.user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -569,7 +569,7 @@ def delete_account():
     if not password:
         return jsonify({"error": MSG.AUTH_CONFIRM_DELETE_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("email,full_name").eq("id", g.user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -716,7 +716,7 @@ def register_device_token():
         description: token field missing or empty
     """
     from datetime import datetime, timezone
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     token = (data.get("token") or "").strip()
     if not token:

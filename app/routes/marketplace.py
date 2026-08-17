@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import spend_hp, get_hp_balance, award_active_hp
 from app.services.wallet_service import debit_wallet
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from app.utils.validators import validate_choice, validate_non_negative_number
 from datetime import datetime, timezone
@@ -106,7 +106,7 @@ def purchase(listing_id):
       400:
         description: Validation error
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     listing = db.table("marketplace_listings").select("*").eq("id", listing_id).eq("status", "active").single().execute()
     if not listing:
@@ -286,7 +286,7 @@ def my_purchases():
       200:
         description: User's purchase history
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 20)), 100)
     offset = int(request.args.get("offset", 0))
     rows = (
@@ -756,7 +756,7 @@ def submit_listing_request():
         return jsonify({"error": MSG.LISTING_VENDOR_UNAVAILABLE}), 503
     saved = result[0] if isinstance(result, list) else result
 
-    admins = db.table("profiles").select("id").eq("role", "admin").execute() or []
+    admins = db.table("profiles").select("id").in_("role", ["admin", "super_admin"]).execute() or []
     from app.services.notification_service import send_notification
     for admin in admins:
         send_notification(
@@ -903,7 +903,7 @@ def upload_codes(listing_id):
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
     from app.db import get_db
     db = get_db()
-    admins = db.table("profiles").select("id").eq("role", "admin").execute()
+    admins = db.table("profiles").select("id").in_("role", ["admin", "super_admin"]).execute()
     from app.services.notification_service import send_notification
     for admin in admins:
         send_notification(

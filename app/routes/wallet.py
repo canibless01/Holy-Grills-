@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.services.wallet_service import get_wallet, get_wallet_transactions
 from app.services.payment_service import initialize_payment, verify_payment
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 import uuid
 
@@ -26,7 +26,7 @@ def get_balance():
     if not wallet:
         return jsonify({"error": MSG.WALLET_NOT_FOUND}), 404
 
-    db = get_db()
+    db = get_user_client()
     virtual_account = None
     try:
         va_rows = (
@@ -74,7 +74,7 @@ def fund_via_card():
     if amount < min_topup:
         return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=min_topup)}), 400
 
-    db = get_db()
+    db = get_user_client()
     auth_user_rows = db.table("profiles").select("id").eq("id", g.user_id).single().execute()
     if not auth_user_rows:
         return jsonify({"error": MSG.WALLET_USER_NOT_FOUND}), 404
@@ -124,7 +124,7 @@ def request_virtual_account():
       502:
         description: Paystack error creating account
     """
-    db = get_db()
+    db = get_user_client()
 
     existing = (
         db.table("virtual_accounts")
@@ -278,7 +278,7 @@ def wallet_transactions():
       200:
         description: Wallet transaction history
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     tx_type = request.args.get("type") or None

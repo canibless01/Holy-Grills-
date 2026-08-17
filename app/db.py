@@ -264,7 +264,7 @@ class TableQuery:
 
     def insert(self, data: dict | list) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        resp = self._client._session.post(url, headers=self._client._service_headers(), json=data)
+        resp = self._client._session.post(url, headers=self._headers(), json=data)
         _raise_for_status(resp)
         return resp.json()
 
@@ -274,7 +274,7 @@ class TableQuery:
         for f in self._filters:
             k, v = f.split("=", 1)
             params[k] = v
-        resp = self._client._session.patch(url, headers=self._client._service_headers(), json=data, params=params)
+        resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params)
         _raise_for_status(resp)
         return resp.json()
 
@@ -284,13 +284,13 @@ class TableQuery:
         for f in self._filters:
             k, v = f.split("=", 1)
             params[k] = v
-        resp = self._client._session.delete(url, headers=self._client._service_headers(), params=params)
+        resp = self._client._session.delete(url, headers=self._headers(), params=params)
         _raise_for_status(resp)
         return resp.json()
 
     def upsert(self, data: dict | list, on_conflict: str = "id") -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        headers = self._client._service_headers()
+        headers = self._headers()
         headers["Prefer"] = f"resolution=merge-duplicates,return=representation"
         resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict})
         _raise_for_status(resp)
@@ -349,3 +349,46 @@ def get_db() -> SupabaseClient:
         os.environ["SUPABASE_SERVICE_ROLE_KEY"],
         os.environ["SUPABASE_ANON_KEY"],
     )
+
+
+class UserSupabaseClient:
+    """
+    Wrapper around SupabaseClient that automatically passes the user's JWT token
+    from g.jwt_token to all table queries and RPC calls for Row Level Security (RLS).
+    """
+    def __init__(self, client: SupabaseClient, jwt_token: str):
+        self._client = client
+        self._jwt_token = jwt_token
+
+    def table(self, table_name: str) -> TableQuery:
+        return self._client.table(table_name).with_jwt(self._jwt_token)
+
+    def rpc(self, function_name: str, params: dict = None) -> dict | list | None:
+        return self._client.rpc(function_name, params=params, user_jwt=self._jwt_token)
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+
+def get_user_client() -> SupabaseClient | UserSupabaseClient:
+    """
+    Returns a user-authenticated Supabase client using g.jwt_token if present in
+    Flask request context. Falls back to get_db() (service role) if no user JWT token exists.
+    """
+    import sys
+    try:
+        caller_frame = sys._getframe(1)
+        caller_get_db = caller_frame.f_globals.get("get_db", get_db)
+        db = caller_get_db()
+    except Exception:
+        db = get_db()
+
+    try:
+        from flask import g, has_app_context
+        if has_app_context() and getattr(g, "jwt_token", None):
+            if not isinstance(db, SupabaseClient):
+                return db
+            return UserSupabaseClient(db, g.jwt_token)
+    except Exception:
+        pass
+    return db

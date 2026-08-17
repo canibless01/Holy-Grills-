@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG, resolve_msg
 from app.utils.validators import (
     validate_choice, validate_non_negative_number, validate_uuid,
@@ -1343,7 +1343,7 @@ def get_tier_detail(tier_id):
 @require_auth
 def my_tickets():
     """Show all tickets for the authenticated user."""
-    db = get_db()
+    db = get_user_client()
     tickets = (
         db.table("event_tickets")
         .select("*")

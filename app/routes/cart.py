@@ -7,7 +7,7 @@ CUSTOMIZATION MODEL DOCUMENTATION:
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -30,7 +30,7 @@ def get_cart():
             subtotal: {type: number}
             item_count: {type: integer}
     """
-    db = get_db()
+    db = get_user_client()
     items = (
         db.table("cart_items")
         .select("*,menu_items(id,name,price,image_url,is_available,hp_earn_value,hp_earn)")
@@ -86,7 +86,7 @@ def add_to_cart():
       404:
         description: Menu item not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     menu_item_id = (data.get("menu_item_id") or "").strip()
     if not menu_item_id:
@@ -180,7 +180,7 @@ def update_cart_item(item_id):
       404:
         description: Cart item not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("cart_items")
         .select("id,quantity,options")
@@ -240,7 +240,7 @@ def remove_cart_item(item_id):
       404:
         description: Cart item not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("cart_items")
         .select("id")
@@ -267,6 +267,6 @@ def clear_cart():
       200:
         description: Cart cleared
     """
-    db = get_db()
+    db = get_user_client()
     db.table("cart_items").eq("user_id", g.user_id).delete()
     return jsonify({"message": MSG.CART_CLEARED}), 200

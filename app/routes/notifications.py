@@ -3,7 +3,7 @@
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.services.notification_service import send_blast
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -42,7 +42,7 @@ def push_subscribe():
       400:
         description: subscription field missing
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     subscription = data.get("subscription")
     if not subscription:
@@ -99,7 +99,7 @@ def push_unsubscribe():
       200:
         description: Subscription(s) deactivated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     endpoint = data.get("endpoint")
 
@@ -144,7 +144,7 @@ def my_notifications():
       200:
         description: Notification list with unread count
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 30)), 100)
     q = db.table("notifications").select("*").eq("user_id", g.user_id).eq("channel", "in_app")
     campus_id = getattr(g, 'campus_id', None)
@@ -204,7 +204,7 @@ def mark_all_read():
       200:
         description: All marked as read
     """
-    db = get_db()
+    db = get_user_client()
     db.table("notifications").eq("user_id", g.user_id).eq("channel", "in_app").is_("read_at", "null").update({
         "read_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -222,7 +222,7 @@ def get_preferences():
       200:
         description: Notification preference settings
     """
-    db = get_db()
+    db = get_user_client()
     prefs = (
         db.table("notification_preferences")
         .select("*")
@@ -267,7 +267,7 @@ def update_preferences():
       200:
         description: Preferences updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     allowed = {"push_enabled", "email_enabled", "order_updates", "promotions", "hp_updates", "delivery_updates"}
     update = {k: bool(v) for k, v in data.items() if k in allowed}
