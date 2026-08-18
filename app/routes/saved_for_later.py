@@ -119,11 +119,30 @@ def save_item():
     if notes:
         insert_payload["notes"] = notes
 
-    result = db.table("saved_for_later").insert(insert_payload)
-    return jsonify({
-        "message": MSG.SAVED_ITEM_ADDED,
-        "item": result[0] if isinstance(result, list) else result,
-    }), 201
+    try:
+        result = db.table("saved_for_later").insert(insert_payload)
+        return jsonify({
+            "message": MSG.SAVED_ITEM_ADDED,
+            "item": result[0] if isinstance(result, list) else result,
+        }), 201
+    except Exception as e:
+        err_str = str(e)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            cur = (
+                db.table("saved_for_later")
+                .select("id,quantity")
+                .eq("user_id", g.user_id)
+                .eq("menu_item_id", menu_item_id)
+                .single()
+                .execute()
+            )
+            if cur:
+                update_payload = {"quantity": cur["quantity"] + quantity, "updated_at": now}
+                if notes:
+                    update_payload["notes"] = notes
+                db.table("saved_for_later").eq("id", cur["id"]).update(update_payload)
+                return jsonify({"message": MSG.SAVED_ITEM_UPDATED, "quantity": update_payload["quantity"]}), 200
+        raise
 
 
 @saved_bp.route("/<item_id>", methods=["PATCH"])
@@ -256,6 +275,7 @@ def move_saved_to_cart(item_id):
             "quantity": new_qty, "updated_at": now
         })
     else:
+        campus_id = getattr(g, 'campus_id', None)
         cart_payload = {
             "user_id": g.user_id,
             "menu_item_id": menu_item_id,
@@ -264,6 +284,8 @@ def move_saved_to_cart(item_id):
             "created_at": now,
             "updated_at": now,
         }
+        if campus_id:
+            cart_payload["campus_id"] = campus_id
         # cart_items has no notes column — store in options jsonb
         if saved.get("notes"):
             cart_payload["options"] = {"notes": saved["notes"]}
@@ -329,7 +351,26 @@ def move_cart_to_saved(cart_item_id):
             "created_at": now,
             "updated_at": now,
         }
-        db.table("saved_for_later").insert(save_payload)
+        try:
+            db.table("saved_for_later").insert(save_payload)
+        except Exception as e:
+            err_str = str(e)
+            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+                cur = (
+                    db.table("saved_for_later")
+                    .select("id,quantity")
+                    .eq("user_id", g.user_id)
+                    .eq("menu_item_id", menu_item_id)
+                    .single()
+                    .execute()
+                )
+                if cur:
+                    new_qty = cur["quantity"] + cart_item.get("quantity", 1)
+                    db.table("saved_for_later").eq("id", cur["id"]).update({
+                        "quantity": new_qty, "updated_at": now
+                    })
+            else:
+                raise
 
     db.table("cart_items").eq("id", cart_item_id).delete()
     return jsonify({"message": MSG.CART_MOVED_TO_SAVED}), 200
