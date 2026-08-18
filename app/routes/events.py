@@ -472,7 +472,7 @@ def register_for_event(event_id):
     if not event or not event.get("is_published"):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = _get_campus_id()
     if campus_id and event.get("campus_id") != campus_id:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 

@@ -326,6 +326,7 @@ def batch_summary(window_id):
 @kitchen_bp.route("/batch/<batch_id>/advance", methods=["POST"])
 @require_role("kitchen", "admin")
 def batch_advance(batch_id):
+    # Batch advance uses an explicit forward transition map (NEXT_STATUS) to guarantee valid order status progression (received -> preparing -> ready -> assigned -> out_for_delivery -> delivered)
     """
     Advance every order in a delivery-window batch to its next status.
     Batch ID is a delivery_window_id. Each order is advanced one step

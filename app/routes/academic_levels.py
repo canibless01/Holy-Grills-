@@ -20,7 +20,10 @@ from app.middleware.auth import require_role
 from app.db import get_db
 from datetime import datetime, timezone
 
+# Academic levels are global (platform-wide), not campus-scoped
 academic_levels_bp = Blueprint("academic_levels", __name__)
+
+# Admin academic level CRUD operates globally
 admin_academic_levels_bp = Blueprint("admin_academic_levels", __name__)
 
 # ---------------------------------------------------------------------------

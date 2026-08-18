@@ -384,6 +384,7 @@ def admin_all_purchases():
 @require_auth
 @require_role("admin")
 def admin_update_purchase(purchase_id):
+    # Status change triggers actual refund — not just status update
     """
     Admin: update marketplace purchase status with buyer notification.
     Escrow state transitions: pending → completed | refunded | cancelled

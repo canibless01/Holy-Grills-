@@ -74,6 +74,7 @@ def my_free_sides():
 @free_sides_bp.route("/redeem", methods=["POST"])
 @require_auth
 def redeem_free_side():
+    # Credit consumed here; order attachment happens at checkout
     """
     Redeem one free side credit.
     Body: { "side_choice": "Fries", "order_id": "<uuid>" }
