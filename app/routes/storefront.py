@@ -103,16 +103,19 @@ def get_hours():
         description: Operating hours including today's status
     """
     db = get_db()
-    hours = db.table("operating_hours").select("*").order("weekday").execute()
+    campus_id = getattr(g, "campus_id", None)
+
+    hours_q = db.table("operating_hours").select("*")
+    if campus_id:
+        hours_q = hours_q.eq("campus_id", campus_id)
+    hours = hours_q.order("weekday").execute() or []
 
     from datetime import date
     today = date.today().isoformat()
-    override_rows = (
-        db.table("operating_hour_overrides")
-        .select("*")
-        .eq("date", today)
-        .execute()
-    )
+    override_q = db.table("operating_hour_overrides").select("*").eq("date", today)
+    if campus_id:
+        override_q = override_q.eq("campus_id", campus_id)
+    override_rows = override_q.execute()
     override = override_rows[0] if override_rows else None
 
     return jsonify({
@@ -164,7 +167,11 @@ def update_hours():
     if "close_time" in update_raw:
         update["closes_at"] = update_raw.pop("close_time")
     update.update(update_raw)  # carries is_closed unchanged
-    result = db.table("operating_hours").eq("weekday", weekday_int).update(update)
+    campus_id = getattr(g, "campus_id", None)
+    q = db.table("operating_hours").eq("weekday", weekday_int)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    result = q.update(update)
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -206,7 +213,10 @@ def set_override():
     if "close_time" in raw:
         payload["closes_at"] = raw.pop("close_time")
     payload.update(raw)
-    result = db.table("operating_hour_overrides").upsert(payload, on_conflict="date")
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id and "campus_id" not in payload:
+        payload["campus_id"] = campus_id
+    result = db.table("operating_hour_overrides").upsert(payload, on_conflict="date,campus_id")
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 

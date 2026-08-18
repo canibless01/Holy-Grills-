@@ -48,15 +48,16 @@ def get_leaderboard():
     limit = min(int(request.args.get("limit", default_limit)), max_limit)
     period_key = _period_key_for(period_type)
 
-    snapshot_rows = (
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    snap_q = (
         db.table("leaderboard_snapshots")
         .select("*")
         .eq("ranking_type", period_type)
         .eq("period_key", period_key)
-        .order("created_at", ascending=False)
-        .limit(1)
-        .execute()
     )
+    if campus_id:
+        snap_q = snap_q.eq("campus_id", campus_id)
+    snapshot_rows = snap_q.order("created_at", ascending=False).limit(1).execute()
 
     # Only serve snapshot if it was created within the last 24 hours
     _snapshot_fresh = False
@@ -264,15 +265,16 @@ def my_rank():
         period_type = "monthly"
     period_key = _period_key_for(period_type)
 
-    snapshot_rows = (
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    snap_q = (
         db.table("leaderboard_snapshots")
         .select("*")
         .eq("ranking_type", period_type)
         .eq("period_key", period_key)
-        .order("created_at", ascending=False)
-        .limit(1)
-        .execute()
     )
+    if campus_id:
+        snap_q = snap_q.eq("campus_id", campus_id)
+    snapshot_rows = snap_q.order("created_at", ascending=False).limit(1).execute()
 
     # Only trust snapshot when it is ≤24 hours old
     user_rank = None
@@ -296,13 +298,15 @@ def my_rank():
     hp_balance = profile.get("hp_balance", 0) if profile else 0
 
     if user_rank is None:
-        all_profiles = (
+        all_q = (
             db.table("profiles")
             .select("id,hp_balance")
             .eq("is_active", "true")
-            .order("hp_balance", ascending=False)
-            .execute()
+            .eq("role", "student")
         )
+        if campus_id:
+            all_q = all_q.eq("campus_id", campus_id)
+        all_profiles = all_q.order("hp_balance", ascending=False).execute()
         for i, p in enumerate(all_profiles or []):
             if p.get("id") == g.user_id:
                 user_rank = {
@@ -354,7 +358,7 @@ def squad_leaderboard():
     today = date.today()
 
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+        campus_id = getattr(g, "campus_id", None) or request.args.get("campus_id")
         # Fetch delivered squad orders
         q = (
             db.table("orders")
@@ -467,7 +471,7 @@ def squad_my_rank():
     today = date.today()
 
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+        campus_id = getattr(g, "campus_id", None) or request.args.get("campus_id")
         q = (
             db.table("orders")
             .select("id,user_id,hp_earned,created_at")

@@ -375,16 +375,23 @@ def batch_advance(batch_id):
     if not orders:
         return jsonify({"error": "No advanceable orders found in this batch", "batch_id": batch_id}), 404
 
+    NEXT_STATUS = {
+        "received": "preparing",
+        "preparing": "ready",
+        "ready": "assigned",
+        "assigned": "out_for_delivery",
+        "out_for_delivery": "delivered",
+    }
+
     advanced = []
     skipped = []
     for order in orders:
         oid = order["id"]
         current = order.get("status")
-        next_statuses = VALID_TRANSITIONS.get(current, [])
-        if not next_statuses:
-            skipped.append({"order_id": oid, "reason": f"No valid transitions from '{current}'"})
+        next_status = NEXT_STATUS.get(current)
+        if not next_status:
+            skipped.append({"order_id": oid, "reason": f"No valid forward transition defined from '{current}'"})
             continue
-        next_status = next_statuses[0]
         try:
             update_order_status(oid, next_status, changed_by=g.user_id, notes=notes)
             advanced.append({"order_id": oid, "from": current, "to": next_status})

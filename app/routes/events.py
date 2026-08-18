@@ -1,7 +1,7 @@
 """Events routes — discovery, catering requests, QR check-in, ticket tiers, admin export."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth, require_role, optional_auth
+from app.middleware.auth import require_auth, require_role, optional_auth, ADMIN_ROLES
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client, SupabaseError
@@ -116,27 +116,49 @@ def checkin(event_id):
     db = get_db()
 
     # Campus check
+    event = None
     try:
-        event = db.table("events").select("campus_id").eq("id", event_id).single().execute()
+        event = db.table("events").select("id,campus_id,metadata").eq("id", event_id).single().execute()
         if not event:
             return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
-        campus_id = _get_campus_id()
+        campus_id = getattr(g, "campus_id", None)
         if campus_id and event.get("campus_id") != campus_id:
             return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     except Exception:
-        pass
+        if not event:
+            return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
     data = request.get_json(force=True, silent=True) or {}
-    qr_token = (data.get("qr_token") or data.get("ticket_id") or "").strip()
+    raw_token = (data.get("qr_token") or data.get("ticket_id") or "").strip()
     guest_email = (data.get("guest_email") or data.get("email") or "").strip()
+
+    event_metadata = event.get("metadata") or {}
+    expected_door_qr = event_metadata.get("qr_token")
+
+    door_qr_matched = False
+    clean_token = raw_token
+
+    if raw_token.startswith("hg-event:"):
+        parts = raw_token.split(":")
+        if len(parts) == 3:
+            p_event_id, p_token = parts[1], parts[2]
+            if p_event_id != event_id:
+                return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+            if expected_door_qr and p_token == expected_door_qr:
+                door_qr_matched = True
+            else:
+                return jsonify({"error": "Invalid door QR token"}), 400
+            clean_token = p_token
+    elif expected_door_qr and raw_token == expected_door_qr:
+        door_qr_matched = True
 
     try:
         ticket = None
-        # Try finding ticket by QR code / ID
-        if qr_token:
-            ticket_rows = db.table("event_tickets").select("*").eq("id", qr_token).execute() or []
+        # Try finding ticket by QR code / ID if it wasn't a door QR match
+        if clean_token and not door_qr_matched:
+            ticket_rows = db.table("event_tickets").select("*").eq("id", clean_token).execute() or []
             if not ticket_rows:
-                ticket_rows = db.table("event_tickets").select("*").eq("qr_code", qr_token).execute() or []
+                ticket_rows = db.table("event_tickets").select("*").eq("qr_code", clean_token).execute() or []
             if ticket_rows:
                 ticket = ticket_rows[0]
 
@@ -450,7 +472,7 @@ def register_for_event(event_id):
     if not event or not event.get("is_published"):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    campus_id = _get_campus_id()
+    campus_id = getattr(g, "campus_id", None)
     if campus_id and event.get("campus_id") != campus_id:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
@@ -724,7 +746,7 @@ def update_catering_request(request_id):
         if not validate_uuid(safe["assigned_to"]):
             return jsonify({"error": MSG.EVENT_ASSIGNED_TO_INVALID}), 400
         assignee = db.table("profiles").select("id,role").eq("id", safe["assigned_to"]).single().execute()
-        if not assignee or assignee.get("role") not in ("admin", "staff"):
+        if not assignee or assignee.get("role") not in ADMIN_ROLES:
             return jsonify({"error": MSG.EVENT_ASSIGNED_TO_NOT_STAFF}), 400
 
     result = db.table("catering_requests").eq("id", request_id).update(safe)
@@ -1068,7 +1090,7 @@ def list_event_registrants(event_id):
     except Exception:
         tickets = (
             db.table("event_tickets")
-            .select("id,user_id,tier_id,status,created_at")
+            .select("id,user_id,tier_id,status,created_at,qr_code")
             .eq("event_id", event_id)
             .order("created_at")
             .execute()
@@ -1226,13 +1248,14 @@ def send_registrants_to_host(event_id):
             f"<td>{t.get('status','')}</td></tr>"
         )
 
+    custom_msg_html = f"<p>{custom_message}</p>" if custom_message else ""
     html = (
         f"<html><body style='font-family:sans-serif'>"
         f"<h2>Registrants for: {event.get('title', event_id)}</h2>"
         f"<p>Date: {event.get('starts_at','')}</p>"
         f"<p>Location: {event.get('location','')}</p>"
         f"<p>Total: {len(tickets)}</p>"
-        f"<p>{custom_message}</p>" if custom_message else ""
+        f"{custom_msg_html}"
         f"<table border='1' cellpadding='6' cellspacing='0'>"
         f"<tr><th>Name</th><th>Phone</th><th>Email</th><th>Tier</th><th>Status</th></tr>"
         f"{rows_html}"

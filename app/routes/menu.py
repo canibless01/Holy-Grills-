@@ -76,22 +76,18 @@ def _kitchen_stats(db):
     Return (capacity, orders_today_count, is_at_capacity).
     capacity is None when the kitchen has no daily cap configured.
     """
-    row = (
-        db.table("kitchen_settings")
-        .select("value")
-        .eq("key", "daily_order_capacity")
-        .single()
-        .execute()
-    )
+    campus_id = getattr(g, "campus_id", None)
+    ks_q = db.table("kitchen_settings").select("value").eq("key", "daily_order_capacity")
+    if campus_id:
+        ks_q = ks_q.eq("campus_id", campus_id)
+    row = ks_q.single().execute()
     raw = row.get("value") if row else ""
     capacity = int(raw) if raw and raw.isdigit() else None
 
-    today_orders = (
-        db.table("orders")
-        .select("id")
-        .gte("created_at", _today_start_iso())
-        .execute()
-    )
+    orders_q = db.table("orders").select("id").gte("created_at", _today_start_iso())
+    if campus_id:
+        orders_q = orders_q.eq("campus_id", campus_id)
+    today_orders = orders_q.execute()
     count = len(today_orders) if isinstance(today_orders, list) else 0
     at_capacity = capacity is not None and count >= capacity
     return capacity, count, at_capacity
@@ -102,12 +98,11 @@ def _daily_item_counts(db):
     Return {menu_item_id: total_qty_ordered_today} for all of today's orders.
     Aggregation done in Python since the mock client doesn't support GROUP BY.
     """
-    today_orders = (
-        db.table("orders")
-        .select("id")
-        .gte("created_at", _today_start_iso())
-        .execute()
-    ) or []
+    campus_id = getattr(g, "campus_id", None)
+    orders_q = db.table("orders").select("id").gte("created_at", _today_start_iso())
+    if campus_id:
+        orders_q = orders_q.eq("campus_id", campus_id)
+    today_orders = orders_q.execute() or []
     order_ids = {o["id"] for o in today_orders}
     counts = {}
     if order_ids:
@@ -1414,8 +1409,12 @@ def set_kitchen_capacity():
     data = request.get_json(force=True)
     cap = data.get("daily_order_capacity")
 
+    campus_id = getattr(g, "campus_id", None)
     if cap is None:
-        db.table("kitchen_settings").eq("key", "daily_order_capacity").update({
+        q = db.table("kitchen_settings").eq("key", "daily_order_capacity")
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        q.update({
             "value": "",
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "updated_by": g.user_id,
@@ -1425,7 +1424,10 @@ def set_kitchen_capacity():
     if not isinstance(cap, int) or cap < 1:
         return jsonify({"error": MSG.MENU_CAPACITY_POSITIVE}), 400
 
-    db.table("kitchen_settings").eq("key", "daily_order_capacity").update({
+    q = db.table("kitchen_settings").eq("key", "daily_order_capacity")
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    q.update({
         "value": str(cap),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": g.user_id,
