@@ -164,7 +164,8 @@ def reset_monthly_leaderboard(self):
                             except Exception:
                                 pass
                             try:
-                                _admin_ids = db.table("profiles").select("id").eq("role", "admin").eq("campus_id", campus_id).execute() or []
+                                from app.constants import ADMIN_ROLES
+                                _admin_ids = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).eq("campus_id", campus_id).execute() or []
                                 _hof_name = (db.table("profiles").select("full_name").eq("id", uid).single().execute() or {}).get("full_name", "A user")
                                 for _adm in _admin_ids:
                                     try:
@@ -619,10 +620,11 @@ def monthly_birthday_report(self):
             birthday_users.sort(key=lambda x: x["date"])
             count = len(birthday_users)
 
+            from app.constants import ADMIN_ROLES
             admins = (
                 db.table("profiles")
                 .select("id,email,full_name")
-                .eq("role", "admin")
+                .in_("role", list(ADMIN_ROLES))
                 .eq("is_active", "true")
                 .eq("campus_id", campus_id)
                 .execute()

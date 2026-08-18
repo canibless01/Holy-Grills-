@@ -400,7 +400,8 @@ def _handle_transfer(data: dict):
     if not va_rows:
         current_app.logger.error("No virtual account found for account_number %s", account_number)
         try:
-            admins = db.table("profiles").select("id").eq("role", "admin").execute() or []
+            from app.constants import ADMIN_ROLES
+            admins = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).execute() or []
             for admin in admins:
                 send_notification(
                     user_id=admin["id"],
@@ -445,11 +446,12 @@ def _handle_transfer(data: dict):
 def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -> None:
     """Send push+in_app alert to all admins when a webhook event fails to process."""
     try:
+        from app.constants import ADMIN_ROLES
         db = get_db()
         admins = (
             db.table("profiles")
             .select("id")
-            .eq("role", "admin")
+            .in_("role", list(ADMIN_ROLES))
             .eq("is_active", "true")
             .execute()
         ) or []

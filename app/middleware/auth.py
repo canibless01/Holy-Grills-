@@ -9,8 +9,7 @@ The decoded payload contains the user's UUID as 'sub' and role in app_metadata.
 from functools import wraps
 from flask import request, g, abort
 from app.db import get_db, SupabaseError
-
-ADMIN_ROLES = {"admin", "super_admin"}
+from app.constants import ADMIN_ROLES
 
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")

@@ -11,6 +11,7 @@ from app.utils.validators import (
     validate_choice, validate_positive_number, validate_non_negative_number,
     validate_datetime_order,
 )
+from app.constants import ADMIN_ROLES, VALID_ROLES
 
 logger = get_logger(__name__)
 
@@ -284,7 +285,7 @@ def change_user_role(user_id):
 
     data = request.get_json(force=True) or {}
     new_role = data.get("role", "").strip()
-    VALID_ROLES = {"student", "admin", "kitchen", "rider", "super_admin"}
+    # Single source of truth for user roles defined in app/constants.py matching DB enum
     if new_role not in VALID_ROLES:
         return jsonify({"error": MSG.ADMIN_INVALID_ROLE.format(roles=", ".join(sorted(VALID_ROLES)))}), 400
 
