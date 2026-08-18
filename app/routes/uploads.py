@@ -28,14 +28,8 @@ def upload_signature():
 
     timestamp = int(time.time())
     params_to_sign = {"folder": folder, "timestamp": timestamp}
-    canonical = "&".join(
-        f"{key}={params_to_sign[key]}" for key in sorted(params_to_sign)
-    )
-    signature = hmac.new(
-        api_secret.encode("utf-8"),
-        canonical.encode("utf-8"),
-        hashlib.sha1,
-    ).hexdigest()
+    to_sign = "&".join(f"{k}={params_to_sign[k]}" for k in sorted(params_to_sign)) + api_secret
+    signature = hashlib.sha1(to_sign.encode("utf-8")).hexdigest()
 
     return jsonify({
         "signature": signature,

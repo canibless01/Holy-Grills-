@@ -964,7 +964,7 @@ def create_promo():
     }
     safe = {k: v for k, v in data.items() if k in KNOWN_COLUMNS}
     campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
-    if campus_id and "campus_id" not in safe:
+    if campus_id:
         safe["campus_id"] = campus_id
     result = db.table("promo_codes").insert(safe)
     return jsonify(result[0] if isinstance(result, list) else result), 201

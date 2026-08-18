@@ -269,13 +269,37 @@ def admin_update_redemption(redemption_id):
         description: Redemption not found
     """
     db = get_db()
-    row = db.table("reward_redemptions").select("id,status,user_id,reward_id").eq("id", redemption_id).single().execute()
+    row = db.table("reward_redemptions").select("id,status,user_id,reward_id,hp_cost_snapshot").eq("id", redemption_id).single().execute()
     if not row:
         return jsonify({"error": MSG.REWARD_REDEMPTION_NOT_FOUND}), 404
     data = request.get_json(force=True) or {}
     new_status = data.get("status", "").strip()
     if new_status not in ("fulfilled", "rejected"):
         return jsonify({"error": MSG.REWARD_REDEMPTION_INVALID_STATUS}), 400
+
+    old_status = row.get("status")
+    if old_status == new_status:
+        return jsonify({"message": "No change", "status": new_status}), 200
+
+    # Before changing status to rejected: refund spent HP
+    if new_status == "rejected" and old_status != "rejected":
+        hp_cost = int(row.get("hp_cost_snapshot") or 0)
+        user_id = row.get("user_id")
+        if hp_cost > 0 and user_id:
+            try:
+                from app.services.hp_service import award_active_hp
+                award_active_hp(
+                    user_id=user_id,
+                    amount=hp_cost,
+                    txn_type="earn",
+                    reference_id=redemption_id,
+                    reference_type="reward_rejection_refund",
+                    source_type="reward_refund",
+                    notes=f"HP refund for rejected reward redemption #{redemption_id[:8].upper()}",
+                )
+            except Exception as e:
+                return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
+
     update = {"status": new_status}
     if new_status == "fulfilled":
         from datetime import datetime, timezone

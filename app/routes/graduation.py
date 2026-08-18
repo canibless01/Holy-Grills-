@@ -70,13 +70,30 @@ def claim_graduation():
         graduation_min_level = 400
 
     # Validate academic_level
-    user_level = int(profile.get("academic_level") or 0)
+    try:
+        user_level = int(profile.get("academic_level") or 0)
+    except Exception:
+        user_level = 0
+
     if user_level < graduation_min_level:
         return jsonify({
             "error": MSG.GRADUATION_LEVEL_REQUIRED.format(required=graduation_min_level, actual=user_level),
             "required_level": graduation_min_level,
             "your_level": user_level,
         }), 400
+
+    # OCC conditional update: mark claimed FIRST to prevent concurrent double-claim
+    updated = (
+        db.table("profiles")
+        .eq("id", g.user_id)
+        .eq("graduation_claimed", False)
+        .update({
+            "graduation_claimed": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    )
+    if not updated or (isinstance(updated, list) and len(updated) == 0):
+        return jsonify({"error": MSG.GRADUATION_ALREADY_CLAIMED}), 400
 
     # HP amount: read from env/config so it can be changed without a deploy
     graduation_hp = int(current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT))
@@ -92,12 +109,6 @@ def claim_graduation():
         apply_multiplier=False,
         campus_id=campus_id,
     )
-
-    # Mark claimed
-    db.table("profiles").eq("id", g.user_id).update({
-        "graduation_claimed": True,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
 
     # Fire graduation badge trigger
     try:
