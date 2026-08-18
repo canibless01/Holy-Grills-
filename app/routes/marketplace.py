@@ -939,8 +939,9 @@ def upload_codes(listing_id):
 
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
     from app.db import get_db
+    from app.constants import ADMIN_ROLES
     db = get_db()
-    admins = db.table("profiles").select("id").in_("role", ["admin", "super_admin"]).execute()
+    admins = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).execute()
     from app.services.notification_service import send_notification
     for admin in admins:
         send_notification(
