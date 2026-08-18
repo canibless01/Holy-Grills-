@@ -151,22 +151,37 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
                 f"Not yet eligible: need {trigger_value}, have {progress} for '{trigger_type}'"
             )
 
+    # Record completion first to defend against concurrent race conditions before awarding HP
+    try:
+        db.table("user_milestones").insert({
+            "user_id": user_id,
+            "milestone_id": milestone_id,
+            "hp_awarded": hp_awarded,
+            "period_key": period_key,
+        })
+    except Exception as e:
+        err_str = str(e)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            return {"message": "Already completed", "already_completed": True}
+        logger.warning("check_and_award_milestone: user_milestones insert failed: %s", e)
+
     # Award HP (pending for social/self-declared; active for auto-verified challenges)
     hp_destination = "pending" if trigger_type in SELF_DECLARED_TRIGGERS else "active"
     actual_hp = _award_milestone_hp(
         db, user_id, milestone_id, milestone.get("title", ""), hp_awarded, hp_destination
     )
 
-    # Record completion
-    try:
-        db.table("user_milestones").insert({
-            "user_id": user_id,
-            "milestone_id": milestone_id,
-            "hp_awarded": actual_hp,
-            "period_key": period_key,
-        })
-    except Exception as e:
-        logger.warning("check_and_award_milestone: user_milestones insert failed: %s", e)
+    # Update recorded actual_hp if capped or modified during HP award
+    if actual_hp != hp_awarded:
+        try:
+            q = db.table("user_milestones").eq("user_id", user_id).eq("milestone_id", milestone_id)
+            if period_key:
+                q = q.eq("period_key", period_key)
+            else:
+                q = q.is_("period_key", "null")
+            q.update({"hp_awarded": actual_hp})
+        except Exception as e:
+            logger.warning("check_and_award_milestone: update actual_hp failed: %s", e)
 
     # Fire notify_milestone_achieved shared hook
     try:
