@@ -420,7 +420,7 @@ def admin_update_purchase(purchase_id):
 
     purchase = (
         db.table("marketplace_purchases")
-        .select("id,user_id,status,marketplace_listings(title)")
+        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,listing_id,marketplace_listings(title,hp_price)")
         .eq("id", purchase_id)
         .single()
         .execute()
@@ -431,6 +431,44 @@ def admin_update_purchase(purchase_id):
     old_status = purchase.get("status")
     if old_status == new_status:
         return jsonify({"message": "No change", "status": new_status}), 200
+
+    # Before changing status to refunded or cancelled: execute refunds
+    if new_status in ("refunded", "cancelled") and old_status not in ("refunded", "cancelled"):
+        user_id = purchase.get("user_id")
+        wallet_amt = float(purchase.get("wallet_amount") or 0)
+        pay_hp = purchase.get("pay_with_hp")
+        listing_info = purchase.get("marketplace_listings") or {}
+        hp_price = int(listing_info.get("hp_price") or 0)
+
+        # 1. Refund wallet funds if wallet_amount > 0
+        if wallet_amt > 0 and user_id:
+            try:
+                from app.services.wallet_service import credit_wallet
+                credit_wallet(
+                    user_id=user_id,
+                    amount=wallet_amt,
+                    payment_reference=f"REFUND-MKT-{purchase_id[:8].upper()}",
+                    reference_id=purchase_id,
+                    reference_type="marketplace_refund",
+                    notes=f"Refund for marketplace purchase #{purchase_id[:8].upper()}",
+                )
+            except Exception as e:
+                return jsonify({"error": f"Wallet refund failed: {str(e)}"}), 400
+
+        # 2. Refund HP if HP payment was used
+        if pay_hp and hp_price > 0 and user_id:
+            try:
+                award_active_hp(
+                    user_id=user_id,
+                    amount=hp_price,
+                    txn_type="earn",
+                    reference_id=purchase_id,
+                    reference_type="marketplace_refund",
+                    source_type="marketplace",
+                    notes=f"HP refund for marketplace purchase #{purchase_id[:8].upper()}",
+                )
+            except Exception as e:
+                return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
 
     update_payload = {
         "status": new_status,
@@ -566,7 +604,7 @@ def admin_create_listing():
     for f in ["title", "listing_type", "price"]:
         if not data.get(f) and data.get(f) != 0:
             return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
-    VALID_LISTING_TYPES = ("code", "service", "product", "experience")
+    VALID_LISTING_TYPES = ("code", "manual", "subscription", "digital_code", "voucher")
     ok_lt, err_lt = validate_choice(data["listing_type"], VALID_LISTING_TYPES, "listing_type")
     if not ok_lt:
         return jsonify({"error": err_lt, "allowed_values": list(VALID_LISTING_TYPES)}), 400
@@ -605,8 +643,8 @@ def admin_create_listing():
                 "check" in detail_str or "constraint" in detail_str or "violates" in detail_str
             ):
                 return jsonify({
-                    "error": f"listing_type '{safe.get('listing_type')}' is not yet enabled in the database schema.",
-                    "allowed_values": ["code"],
+                    "error": f"listing_type '{safe.get('listing_type')}' is not enabled in the database schema.",
+                    "allowed_values": list(VALID_LISTING_TYPES),
                 }), 400
         raise
     return jsonify(result[0] if isinstance(result, list) else result), 201

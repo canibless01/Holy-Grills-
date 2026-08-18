@@ -96,6 +96,9 @@ def add_to_cart():
     # Notes are stored inside the `options` jsonb column (cart_items has no `notes` column)
     notes = data.get("notes", "")
 
+    selected_variations = data.get("selected_variations") or []
+    selected_addons = data.get("selected_addons") or []
+
     campus_id = getattr(g, 'campus_id', None)
     menu_item = (
         db.table("menu_items")
@@ -112,14 +115,29 @@ def add_to_cart():
 
     now = datetime.now(timezone.utc).isoformat()
 
-    existing = (
+    # Deduplication check: compare menu_item_id and customization equality (selected_variations and selected_addons)
+    user_items = (
         db.table("cart_items")
-        .select("id,quantity,options")
+        .select("id,quantity,options,selected_variations,selected_addons")
         .eq("user_id", g.user_id)
         .eq("menu_item_id", menu_item_id)
-        .single()
         .execute()
-    )
+    ) or []
+
+    existing = None
+    for item in user_items:
+        item_vars = item.get("selected_variations") or []
+        item_addons = item.get("selected_addons") or []
+        if item.get("options") and isinstance(item.get("options"), dict):
+            if not item_vars and item["options"].get("selected_variations"):
+                item_vars = item["options"]["selected_variations"]
+            if not item_addons and item["options"].get("selected_addons"):
+                item_addons = item["options"]["selected_addons"]
+
+        if item_vars == selected_variations and item_addons == selected_addons:
+            existing = item
+            break
+
     if existing:
         new_qty = min(50, existing["quantity"] + quantity)
         existing_opts = existing.get("options") or {}
@@ -133,18 +151,28 @@ def add_to_cart():
         if notes:
             existing_opts["notes"] = notes
             update_payload["options"] = existing_opts
+        if selected_variations:
+            update_payload["selected_variations"] = selected_variations
+        if selected_addons:
+            update_payload["selected_addons"] = selected_addons
         db.table("cart_items").eq("id", existing["id"]).update(update_payload)
         return jsonify({"message": MSG.CART_ITEM_UPDATED, "quantity": new_qty}), 200
 
     options_payload = {}
     if notes:
         options_payload["notes"] = notes
+    if selected_variations:
+        options_payload["selected_variations"] = selected_variations
+    if selected_addons:
+        options_payload["selected_addons"] = selected_addons
 
     insert_payload = {
         "user_id": g.user_id,
         "menu_item_id": menu_item_id,
         "quantity": quantity,
         "options": options_payload,
+        "selected_variations": selected_variations,
+        "selected_addons": selected_addons,
         "added_at": now,
         "created_at": now,
         "updated_at": now,

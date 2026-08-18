@@ -55,13 +55,15 @@ def push_subscribe():
     if endpoint:
         rows = (
             db.table("push_subscriptions")
-            .select("id")
+            .select("id,subscription")
             .eq("user_id", g.user_id)
             .execute()
         ) or []
         for row in rows:
-            existing = row
-            break
+            sub = row.get("subscription") or {}
+            if isinstance(sub, dict) and sub.get("endpoint") == endpoint:
+                existing = row
+                break
 
     record = {
         "user_id": g.user_id,
@@ -70,6 +72,9 @@ def push_subscribe():
         "is_active": True,
         "updated_at": now,
     }
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        record["campus_id"] = campus_id
 
     if existing:
         db.table("push_subscriptions").eq("id", existing["id"]).update(record)
@@ -157,14 +162,16 @@ def my_notifications():
 
     notifications = q.order("created_at", ascending=False).limit(limit).execute()
 
-    unread_count_rows = (
+    count_q = (
         db.table("notifications")
         .select("id")
         .eq("user_id", g.user_id)
         .eq("channel", "in_app")
         .is_("read_at", "null")
-        .execute()
     )
+    if campus_id:
+        count_q = count_q.eq("campus_id", campus_id)
+    unread_count_rows = count_q.execute()
 
     return jsonify({
         "notifications": notifications,

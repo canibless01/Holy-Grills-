@@ -251,20 +251,28 @@ def test_free_sides_redeem_occ_failure(mock_get_db, client):
         {"id": "credit-1", "credits_remaining": 1, "expires_at": "2030-12-12"}
     ]
 
+    def single_execute_side_effect():
+        # 1. Auth profile lookup
+        yield {"id": "user-123", "role": "student", "is_active": True}
+        # 2. _get_free_side_options system settings lookup
+        yield None
+        # 3. Order lookup
+        yield {"id": "00000000-0000-0000-0000-000000000000", "user_id": "user-123"}
+
+    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = single_execute_side_effect()
+
     # Mock the OCC atomic update to fail (concurrency collision, e.g. return empty list or fail)
     mock_db.table.return_value.eq.return_value.eq.return_value.update.return_value = []
 
     # Mock auth_get_user on the DB client mock
     mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}
-    mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {
-        "id": "user-123", "role": "student", "is_active": True
-    }
 
     with patch("app.middleware.auth.get_db", return_value=mock_db):
 
         headers = {"Authorization": "Bearer fake-jwt-token"}
         resp = client.post("/api/free-sides/redeem", json={
-            "side_choice": "Fries"
+            "side_choice": "Fries",
+            "order_id": "00000000-0000-0000-0000-000000000000"
         }, headers=headers)
 
     assert resp.status_code == 409

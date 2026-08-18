@@ -53,9 +53,6 @@ def list_academic_levels():
     db = get_db()
     try:
         q = db.table("academic_levels").select("id,name,value,sort_order").eq("is_active", True)
-        campus_id = getattr(g, 'campus_id', None)
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
         rows = q.order("sort_order", ascending=True).execute() or []
     except Exception:
         rows = []
