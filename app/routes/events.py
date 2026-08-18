@@ -190,7 +190,7 @@ def checkin(event_id):
             db.table("event_checkins").insert({
                 "ticket_id": ticket_id_str,
                 "checked_in_by": checked_by,
-                "qr_code": qr_token or ticket_id_str,
+                "qr_code": clean_token or ticket_id_str,
             })
         except SupabaseError as insert_err:
             err_str = str(insert_err)
