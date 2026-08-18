@@ -69,6 +69,7 @@ def record_checkin():
         insert_data = {
             "user_id": user_id,
             "checkin_date": today,
+            "hp_awarded": hp,
         }
         if campus_id:
             insert_data["campus_id"] = campus_id
@@ -132,16 +133,20 @@ def checkin_history():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("daily_checkins").select("id,checkin_date,created_at").eq("user_id", user_id)
+    count_q = db.table("daily_checkins").select("id").eq("user_id", user_id)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
+        count_q = count_q.eq("campus_id", campus_id)
     rows = q.order("checkin_date", ascending=False).limit(limit).offset(offset).execute() or []
+    all_rows = count_q.execute() or []
+    total_count = len(all_rows)
 
     today = date.today().isoformat()
     checked_in_today = any(r.get("checkin_date") == today for r in rows)
 
     return jsonify({
         "checkins": rows,
-        "total": len(rows),
+        "total": total_count,
         "checked_in_today": checked_in_today,
     }), 200

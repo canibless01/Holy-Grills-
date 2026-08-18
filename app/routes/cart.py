@@ -92,9 +92,12 @@ def add_to_cart():
     if not menu_item_id:
         return jsonify({"error": MSG.CART_MENU_ITEM_REQUIRED}), 400
 
-    quantity = max(1, int(data.get("quantity", 1)))
+    quantity = max(1, min(50, int(data.get("quantity", 1))))
     # Notes are stored inside the `options` jsonb column (cart_items has no `notes` column)
     notes = data.get("notes", "")
+
+    selected_variations = data.get("selected_variations") or []
+    selected_addons = data.get("selected_addons") or []
 
     campus_id = getattr(g, 'campus_id', None)
     menu_item = (
@@ -112,16 +115,31 @@ def add_to_cart():
 
     now = datetime.now(timezone.utc).isoformat()
 
-    existing = (
+    # Deduplication check: compare menu_item_id and customization equality (selected_variations and selected_addons)
+    user_items = (
         db.table("cart_items")
-        .select("id,quantity,options")
+        .select("id,quantity,options,selected_variations,selected_addons")
         .eq("user_id", g.user_id)
         .eq("menu_item_id", menu_item_id)
-        .single()
         .execute()
-    )
+    ) or []
+
+    existing = None
+    for item in user_items:
+        item_vars = item.get("selected_variations") or []
+        item_addons = item.get("selected_addons") or []
+        if item.get("options") and isinstance(item.get("options"), dict):
+            if not item_vars and item["options"].get("selected_variations"):
+                item_vars = item["options"]["selected_variations"]
+            if not item_addons and item["options"].get("selected_addons"):
+                item_addons = item["options"]["selected_addons"]
+
+        if item_vars == selected_variations and item_addons == selected_addons:
+            existing = item
+            break
+
     if existing:
-        new_qty = existing["quantity"] + quantity
+        new_qty = min(50, existing["quantity"] + quantity)
         existing_opts = existing.get("options") or {}
         if isinstance(existing_opts, str):
             import json as _json
@@ -133,27 +151,68 @@ def add_to_cart():
         if notes:
             existing_opts["notes"] = notes
             update_payload["options"] = existing_opts
+        if selected_variations:
+            update_payload["selected_variations"] = selected_variations
+        if selected_addons:
+            update_payload["selected_addons"] = selected_addons
         db.table("cart_items").eq("id", existing["id"]).update(update_payload)
         return jsonify({"message": MSG.CART_ITEM_UPDATED, "quantity": new_qty}), 200
 
     options_payload = {}
     if notes:
         options_payload["notes"] = notes
+    if selected_variations:
+        options_payload["selected_variations"] = selected_variations
+    if selected_addons:
+        options_payload["selected_addons"] = selected_addons
 
     insert_payload = {
         "user_id": g.user_id,
         "menu_item_id": menu_item_id,
         "quantity": quantity,
         "options": options_payload,
+        "selected_variations": selected_variations,
+        "selected_addons": selected_addons,
         "added_at": now,
         "created_at": now,
         "updated_at": now,
     }
-    result = db.table("cart_items").insert(insert_payload)
-    return jsonify({
-        "message": MSG.CART_ITEM_ADDED,
-        "item": result[0] if isinstance(result, list) else result,
-    }), 201
+    if campus_id:
+        insert_payload["campus_id"] = campus_id
+    try:
+        result = db.table("cart_items").insert(insert_payload)
+        return jsonify({
+            "message": MSG.CART_ITEM_ADDED,
+            "item": result[0] if isinstance(result, list) else result,
+        }), 201
+    except Exception as e:
+        err_str = str(e)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            # Concurrent double-add occurred — fall back to update path
+            cur = (
+                db.table("cart_items")
+                .select("id,quantity,options")
+                .eq("user_id", g.user_id)
+                .eq("menu_item_id", menu_item_id)
+                .single()
+                .execute()
+            )
+            if cur:
+                new_qty = min(50, cur["quantity"] + quantity)
+                update_payload = {"quantity": new_qty, "updated_at": now}
+                if notes:
+                    existing_opts = cur.get("options") or {}
+                    if isinstance(existing_opts, str):
+                        import json as _json
+                        try:
+                            existing_opts = _json.loads(existing_opts)
+                        except Exception:
+                            existing_opts = {}
+                    existing_opts["notes"] = notes
+                    update_payload["options"] = existing_opts
+                db.table("cart_items").eq("id", cur["id"]).update(update_payload)
+                return jsonify({"message": MSG.CART_ITEM_UPDATED, "quantity": new_qty}), 200
+        raise
 
 
 @cart_bp.route("/<item_id>", methods=["PATCH"])
@@ -201,7 +260,7 @@ def update_cart_item(item_id):
 
     update = {}
     if "quantity" in data:
-        update["quantity"] = int(data["quantity"])
+        update["quantity"] = max(1, min(50, int(data["quantity"])))
     # Notes are stored inside options jsonb (no `notes` column on cart_items)
     if "notes" in data:
         current = existing.get("options") or {}

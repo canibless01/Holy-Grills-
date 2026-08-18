@@ -1594,7 +1594,7 @@ def order_status_history(order_id):
     db = get_user_client()
     order = (
         db.table("orders")
-        .select("id,user_id,guest_phone")
+        .select("id,user_id,campus_id,delivery_batches(rider_id)")
         .eq("id", order_id)
         .single()
         .execute()
@@ -1602,11 +1602,24 @@ def order_status_history(order_id):
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    is_owner = (
-        order.get("user_id") == g.user_id or
-        getattr(g, "user_role", None) in ("admin", "super_admin", "kitchen", "rider")
-    )
-    if not is_owner:
+    role = getattr(g, "user_role", None)
+    has_access = False
+    if role in ("admin", "super_admin"):
+        has_access = True
+    elif role == "rider":
+        batch = order.get("delivery_batches")
+        if isinstance(batch, list):
+            batch = batch[0] if batch else None
+        rider_id = batch.get("rider_id") if isinstance(batch, dict) else None
+        has_access = bool(rider_id and rider_id == g.user_id)
+    elif role == "kitchen":
+        order_campus_id = order.get("campus_id")
+        user_campus_id = getattr(g, "campus_id", None)
+        has_access = bool(order_campus_id and user_campus_id and order_campus_id == user_campus_id)
+    else:
+        has_access = bool(order.get("user_id") and order.get("user_id") == g.user_id)
+
+    if not has_access:
         return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
 
     history = (

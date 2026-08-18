@@ -98,6 +98,22 @@ def redeem_free_side():
     db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
+    order_id = data.get("order_id")
+    if not order_id:
+        return jsonify({"error": "order_id is required"}), 400
+
+    import uuid as _uuid
+    try:
+        _uuid.UUID(order_id)
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+
+    order = db.table("orders").select("id,user_id").eq("id", order_id).single().execute()
+    if not order:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+    if order.get("user_id") != user_id:
+        return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
+
     side_choice = (data.get("side_choice") or "").strip()
     if not side_choice:
         return jsonify({"error": MSG.FREE_SIDE_INVALID_CHOICE}), 400
@@ -133,9 +149,24 @@ def redeem_free_side():
     if not success:
         return jsonify({"error": "No credits available or concurrent update occurred. Please try again."}), 409
 
+    # Attach free line item to the order in order_items table
+    try:
+        db.table("order_items").insert({
+            "order_id": order_id,
+            "menu_item_id": None,
+            "name_snapshot": f"Free Side ({side_choice})",
+            "quantity": 1,
+            "price_snapshot": 0.0,
+            "hp_earn_snapshot": 0,
+            "line_total": 0.0,
+            "is_addon": True,
+        })
+    except Exception as e:
+        logger.error("Failed to insert free side line item into order_items: %s", e)
+
     return jsonify({
         "message": MSG.FREE_SIDE_REDEEMED,
         "side_choice": side_choice,
         "credits_remaining": new_remaining,
-        "order_id": data.get("order_id"),
+        "order_id": order_id,
     }), 200

@@ -725,7 +725,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     # Pre-calculate hp_preview
     hp_preview_items = []
-    hp_preview_total = 0
     hp_preview_base = 0
     for line in order_items:
         if line.get("is_addon") or not line.get("price_snapshot"):
@@ -737,7 +736,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         multiplier = float(line.get("hp_multiplier_snapshot") or 1.0)
         line_hp = round(base_line * multiplier)
         hp_preview_base += base_line
-        hp_preview_total += line_hp
         hp_preview_items.append({
             "menu_item_id": line.get("menu_item_id"),
             "quantity": int(line.get("quantity") or 1),
@@ -745,9 +743,33 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             "base_hp": base_line,
             "hp": line_hp,
         })
+
+    tier_slug = "ember"
+    next_order_hp_mult = 1.0
+    if user_id:
+        try:
+            tier_info = hp_service.get_user_tier(user_id)
+            tier_slug = (tier_info.get("tier") or {}).get("slug", "ember")
+        except Exception:
+            pass
+        try:
+            prof = db.table("profiles").select("next_order_hp_multiplier").eq("id", user_id).single().execute()
+            next_order_hp_mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
+        except Exception:
+            pass
+
+    hp_preview_total = hp_service.calculate_delivery_hp(subtotal, tier_slug, order_items)
+    if next_order_hp_mult > 1:
+        hp_preview_total = round(hp_preview_total * next_order_hp_mult)
+        try:
+            db.table("profiles").eq("id", user_id).update({"next_order_hp_multiplier": 1})
+        except Exception:
+            pass
+
     hp_preview = {
         "base_hp": hp_preview_base,
         "total_hp": hp_preview_total,
+        "next_order_hp_multiplier": next_order_hp_mult,
         "items": hp_preview_items,
     }
 
@@ -1259,6 +1281,12 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
     )
     if not promo:
         raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))
+
+    from flask import has_app_context, g
+    if has_app_context():
+        campus_id = getattr(g, 'campus_id', None)
+        if campus_id and promo.get("campus_id") and promo["campus_id"] != campus_id:
+            raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))
 
     now = datetime.now(timezone.utc).isoformat()
     if promo.get("ends_at") and promo["ends_at"] < now:

@@ -96,7 +96,7 @@ def _kitchen_stats(db):
 def _daily_item_counts(db):
     """
     Return {menu_item_id: total_qty_ordered_today} for all of today's orders.
-    Aggregation done in Python since the mock client doesn't support GROUP BY.
+    Filtered server-side by today's order IDs and aggregated in Python.
     """
     campus_id = getattr(g, "campus_id", None)
     orders_q = db.table("orders").select("id").gte("created_at", _today_start_iso())
@@ -106,9 +106,14 @@ def _daily_item_counts(db):
     order_ids = {o["id"] for o in today_orders}
     counts = {}
     if order_ids:
-        rows = db.table("order_items").select("menu_item_id,quantity,order_id").execute() or []
+        rows = (
+            db.table("order_items")
+            .select("menu_item_id,quantity,order_id")
+            .in_("order_id", list(order_ids))
+            .execute()
+        ) or []
         for row in rows:
-            if row.get("order_id") in order_ids and row.get("menu_item_id"):
+            if row.get("menu_item_id"):
                 mid = row["menu_item_id"]
                 counts[mid] = counts.get(mid, 0) + int(row.get("quantity", 1))
     return counts
