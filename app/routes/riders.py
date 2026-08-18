@@ -477,8 +477,8 @@ def mark_picked_up(order_id):
 @require_role("rider", "admin")
 def get_customer_call_link(order_id):
     """
-    Get a secure call link for the customer. Phone number never exposed in plain text.
-    Returns tel: URI via server-side — never sent to browser as raw number.
+    Get a click-to-call link for the customer.
+    Returns a tel: URI formatted with the customer's phone number for mobile dialing.
     ---
     tags: [Riders]
     parameters:
@@ -488,7 +488,7 @@ def get_customer_call_link(order_id):
         required: true
     responses:
       200:
-        description: Secure call link
+        description: Click-to-call tel: URI link
     """
     db = get_db()
     order = db.table("orders").select("user_id,guest_phone").eq("id", order_id).single().execute()
