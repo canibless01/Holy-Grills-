@@ -479,6 +479,7 @@ def get_customer_call_link(order_id):
     """
     Get a click-to-call link for the customer.
     Returns a tel: URI formatted with the customer's phone number for mobile dialing.
+    Note: Direct customer phone number is returned in tel: format for mobile dialer integration.
     ---
     tags: [Riders]
     parameters:

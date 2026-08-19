@@ -242,6 +242,7 @@ def admin_list_redemptions():
 @rewards_bp.route("/admin/redemptions/<redemption_id>", methods=["PATCH"])
 @require_role("admin")
 def admin_update_redemption(redemption_id):
+    # Rejection triggers HP refund — not just status update
     """
     Fulfil or reject a reward redemption (admin only).
     ---

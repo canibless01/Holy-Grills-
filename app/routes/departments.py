@@ -17,7 +17,10 @@ from app.middleware.auth import require_auth, require_role
 from app.db import get_db
 from datetime import datetime, timezone
 
+# Departments are global (platform-wide), not campus-scoped
 departments_bp = Blueprint("departments", __name__)
+
+# Admin department CRUD operates globally
 admin_departments_bp = Blueprint("admin_departments", __name__)
 
 # ---------------------------------------------------------------------------
