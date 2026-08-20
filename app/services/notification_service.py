@@ -9,7 +9,7 @@ import os
 import threading
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
-from app.db import get_db
+from app.db import get_db, get_user_client
 from flask import current_app
 from app.utils.logger import get_logger
 from app.utils.retry import with_retry
@@ -306,7 +306,7 @@ def send_notification(
     if channels is None:
         channels = ["push", "in_app"]
 
-    db = get_db()
+    db = get_user_client()
 
     # ── Throttle check (non-critical types only, fails open) ──────────────────
     if _is_throttled(db, user_id, notif_type):
@@ -402,7 +402,7 @@ def send_blast(blast_id: str) -> dict:
     """
     from datetime import timedelta
 
-    db = get_db()
+    db = get_user_client()
     blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
     if not blast:
         raise ValueError("Blast not found")
@@ -671,7 +671,7 @@ def send_blast(blast_id: str) -> dict:
 
 
 def mark_read(notification_id: str, user_id: str) -> dict:
-    db = get_db()
+    db = get_user_client()
     updated = (
         db.table("notifications")
         .eq("id", notification_id)

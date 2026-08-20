@@ -20,7 +20,7 @@ free_sides_bp = Blueprint("free_sides", __name__)
 def _get_free_side_options() -> list:
     """Fetch allowed side options — from system_settings first, then config fallback."""
     try:
-        db = get_db()
+        db = get_user_client()
         row = db.table("system_settings").select("value").eq("key", "free_side_options").is_("campus_id", "null").single().execute()
         if row and row.get("value"):
             import json
@@ -128,7 +128,7 @@ def redeem_free_side():
         return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS}), 400
 
     # Use oldest-expiring credit first, try to update atomically using Optimistic Concurrency Control (OCC)
-    write_db = get_db()
+    write_db = get_user_client()
     success = False
     new_remaining = 0
     credit_row_used = None

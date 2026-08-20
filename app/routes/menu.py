@@ -455,7 +455,7 @@ def get_item(item_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     item = (
         db.table("menu_items")
         .select("*,menu_categories(name,slug)")

@@ -35,7 +35,7 @@ def _revoke_supabase_sessions(user_id: str) -> None:
 
 def _revoke_all_sessions(user_id: str) -> int:
     """Delete all device tokens and revoke Supabase sessions for a user. Returns devices_revoked count."""
-    db = get_db()
+    db = get_user_client()
     revoked = (
         db.table("device_tokens")
         .eq("user_id", user_id)

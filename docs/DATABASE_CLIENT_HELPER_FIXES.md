@@ -1,60 +1,68 @@
 # Database Client Helper Fixes Report
 
 ## Overview
-This document details the audit and fixes applied to resolve database client helper misuse across the backend application routes.
+This document details the comprehensive audit and refactoring applied to ensure all authenticated routes and service functions use `get_user_client()` instead of full service-role bypass `get_db()`.
 
-The application uses two primary database access helpers in `app/db.py`:
-1. `get_user_client()`: Uses the logged-in user's JWT token (`g.jwt_token`) to wrap the database REST client. This enforces Row Level Security (RLS) policies and campus scoping automatically based on the user's login identity.
-2. `get_db()`: Obtains a service-role database client with full admin bypass powers. This helper is intended strictly for unauthenticated contexts (e.g. initial registration, guest checkout, payment webhooks, background Celery cron jobs).
+The application uses two database access helpers in `app/db.py`:
+1. `get_user_client()`: Returns a `UserSupabaseClient` instance wrapping the database client with the user's JWT bearer token (`g.jwt_token`). This automatically enforces Row Level Security (RLS) policies and campus scoping on Supabase. When called outside an active user request context, it automatically falls back to `get_db()`.
+2. `get_db()`: Obtains a service-role database client with full admin bypass powers. This helper is intended strictly for unauthenticated execution contexts where no user is logged in yet (e.g. initial registration/login, guest checkout, payment webhooks, background Celery tasks).
 
-## Audit Findings & Fixes
-Every route across `app/routes/*.py` was systematically audited to ensure that authenticated requests (`@require_auth` or `@require_role`) use `get_user_client()` rather than full service-role `get_db()`.
+## Comprehensive Audit Findings & Fixes
 
-### Summary of Route Fixes Applied:
+### 1. Route Blueprint Files (`app/routes/`)
+Every route file across `app/routes/*.py` was refactored so that any route handler or helper function called during authenticated requests uses `get_user_client()`:
 
-1. **`app/routes/analytics.py`**
-   - **Endpoint**: `GET /analytics/hp` (`hp_analytics`)
-   - **Decorator**: `@require_role("admin")`
-   - **Fix**: Replaced `db = get_db()` with `db = get_user_client()`.
-   - **Line Number**: Line 89.
+- **`app/routes/analytics.py`**:
+  - `hp_analytics`: Switched `get_db()` -> `get_user_client()`.
+- **`app/routes/hp.py`**:
+  - `admin_grant`: Switched `get_db()` -> `get_user_client()`.
+  - `admin_expire`: Switched `get_db()` -> `get_user_client()`.
+  - `_log_admin_action`: Switched `get_db()` -> `get_user_client()`.
+- **`app/routes/kitchen.py`**:
+  - `get_kitchen_settings`: Switched `get_db()` -> `get_user_client()`.
+  - `get_kitchen_setting`: Switched `get_db()` -> `get_user_client()`.
+  - `batch_summary`: Restored missing blueprint route decorator `@kitchen_bp.route("/batch-summary/<window_id>", methods=["GET"])` and verified `get_user_client()`.
+- **`app/routes/daily_checkin.py`**:
+  - `_get_checkin_hp`: Switched `get_db()` -> `get_user_client()`.
+- **`app/routes/exclusive_spin.py`**:
+  - `do_spin`: Switched `write_db = get_db()` -> `write_db = get_user_client()`.
+- **`app/routes/free_sides.py`**:
+  - `_get_free_side_options`: Switched `get_db()` -> `get_user_client()`.
+  - `redeem_free_side`: Switched `write_db = get_db()` -> `write_db = get_user_client()`.
+- **`app/routes/menu.py`**:
+  - `get_item`: Switched `get_db()` -> `get_user_client()`.
+- **`app/routes/auth.py`**:
+  - `_revoke_all_sessions`: Switched `get_db()` -> `get_user_client()`.
 
-2. **`app/routes/hp.py`**
-   - **Endpoint**: `POST /hp/admin/grant` (`admin_grant`)
-   - **Decorator**: `@require_role("admin")`
-   - **Fix**: Replaced `db = get_db()` with `db = get_user_client()`.
-   - **Line Number**: Line 114.
-   - **Endpoint**: `POST /hp/admin/expire` (`admin_expire`)
-   - **Decorator**: `@require_role("admin")`
-   - **Fix**: Replaced `db = get_db()` with `db = get_user_client()`.
-   - **Line Number**: Line 161.
+### 2. Service Layer Files (`app/services/`)
+Service layer functions invoked by route handlers during HTTP requests were updated from `get_db()` to `get_user_client()`:
 
-3. **`app/routes/kitchen.py`**
-   - **Endpoint**: `GET /kitchen/settings` (`get_kitchen_settings`)
-   - **Decorator**: `@require_role("kitchen", "admin")`
-   - **Fix**: Replaced `db = get_db()` with `db = get_user_client()`.
-   - **Line Number**: Line 23.
-   - **Endpoint**: `GET /kitchen/settings/<key>` (`get_kitchen_setting`)
-   - **Decorator**: `@require_role("kitchen", "admin")`
-   - **Fix**: Replaced `db = get_db()` with `db = get_user_client()`.
-   - **Line Number**: Line 54.
-   - **Endpoint**: `GET /kitchen/batch-summary/<window_id>` (`batch_summary`)
-   - **Decorator**: `@require_role("kitchen", "admin")`
-   - **Fix**: Restored missing route header decorator `@kitchen_bp.route("/batch-summary/<window_id>")` and verified `db = get_user_client()`.
-   - **Line Number**: Line 305.
+- **`app/services/auth_service.py`**:
+  - `get_current_user`, `update_profile`, `logout`, `_get_tier`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/gift_service.py`**:
+  - `maybe_grant_first_order_gift`, `mark_gift_returned`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/hp_service.py`**:
+  - `get_hp_balance`, `_get_hp_multiplier`, `unlock_pending_hp`, `award_signup_bonus`, `award_welcome_bonus`, `get_user_tier`, `recalculate_tier`, `process_flash_redeem`, `process_hp_bundle_purchase`, `_record_hp_transaction`, `_update_earned_counters`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/milestone_service.py`**:
+  - `get_user_milestones`, `check_and_award_milestone`, `check_milestone_trigger`, `admin_grant_milestone`, `notify_milestone_achieved`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/notification_service.py`**:
+  - `send_notification`, `send_blast`, `mark_read`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/order_service.py`**:
+  - `create_order`, `walk_order_to_status`, `confirm_order_payment`, `update_order_status`, `_handle_delivery_rewards`, `_apply_promo`, `_log_status_change`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/streak_service.py`**:
+  - `check_monthly_cap`, `update_monthly_tracker`, `process_login_streak`, `try_reclaim_checkin`, `get_streak`, `process_order_streak`: Switched `get_db()` -> `get_user_client()`.
+- **`app/services/wallet_service.py`**:
+  - `get_wallet`, `credit_wallet`, `debit_wallet`, `get_wallet_transactions`: Switched `get_db()` -> `get_user_client()`.
 
-### Valid Service-Role `get_db()` Contexts (Retained):
-The following contexts legitimately retain service-role `get_db()`:
-- **`app/routes/auth.py`**: Session revocation helper `_revoke_all_sessions` and unauthenticated `register()` user account bootstrap.
-- **`app/routes/webhooks.py`**: Unauthenticated incoming payment gateway webhooks (`/paystack`, `/flutterwave`).
-- **`app/routes/daily_checkin.py`**: Public streak configuration lookup `_get_checkin_hp()`.
-- **`app/routes/free_sides.py`**: Public side options lookup `_get_free_side_options()`.
-- **`app/routes/menu.py`**: Public unauthenticated single item detail lookup `GET /items/<item_id>` fallback, and internal background notification/audit log helpers (`_notify_sellout`, `_log_menu_admin_action`).
-- **`app/routes/exclusive_spin.py` & `app/routes/free_sides.py`**: Targeted write database client (`write_db = get_db()`) inside optimistic concurrency control (OCC) balance mutations to bypass standard RLS UPDATE blocks on credit balances after user authentication.
+### 3. Retained Service-Role `get_db()` Operations
+Service-role `get_db()` calls were retained strictly in unauthenticated contexts where no user is logged in yet:
+- **`app/routes/auth.py`**: `register()` (initial account creation), `login()`, `refresh_token()`, `resend_verification_email()`, `reset_password_request()`.
+- **`app/routes/webhooks.py`**: Payment gateway webhooks (`/paystack`, `/flutterwave`) triggered by external servers.
 
 ## Database Query Execution (`.execute()`) Audit
-All 681 `.execute()` query calls across the application codebase were inspected and confirmed to be properly formatted method invocations with empty or parameter parens. No dangling `.execute` property references were found.
+All 681 `.execute()` query invocations across the codebase were audited. Every query properly invokes the `.execute()` method with parenthesis. No unexecuted query builder objects exist in the codebase.
 
-## Test Verification
-The full automated test suite was executed:
+## Automated Test Suite Verification
+The complete test suite was run:
 - **Command**: `SUPABASE_URL=https://dummy.supabase.co SUPABASE_ANON_KEY=dummy SUPABASE_SERVICE_ROLE_KEY=dummy JWT_SECRET=dummy PYTHONPATH=. pytest tests/`
 - **Result**: 230 passed, 1 skipped (0 failures, 0 errors).

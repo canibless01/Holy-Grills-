@@ -32,7 +32,7 @@ HP TRANSACTION TYPE ENUM VALUES (from live DB — confirmed):
 
 import math
 from datetime import datetime, timezone, timedelta
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from flask import current_app
 
 
@@ -59,7 +59,7 @@ def get_hp_balance(user_id: str) -> dict:
     Pending HP is tracked via hp_transactions rows where status='pending'.
     hp_earned_120day is read from profiles.hp_earned_120day (updated by daily task).
     """
-    db = get_db()
+    db = get_user_client()
     try:
         profile = (
             db.table("profiles")
@@ -117,7 +117,7 @@ def _get_hp_multiplier() -> float:
     Returns 1.0 if disabled, expired, or invalid.
     """
     try:
-        db = get_db()
+        db = get_user_client()
         m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").is_("campus_id", "null").single().execute()
         multiplier = float((m_row or {}).get("value", "1") or "1")
         if multiplier not in (0.5, 1.0, 2.0):
@@ -249,7 +249,7 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
     if amount_to_unlock <= 0:
         return {"unlocked": 0}
 
-    db = get_db()
+    db = get_user_client()
     res = db.rpc("unlock_pending_hp_fifo_atomic", {
         "p_user_id": user_id,
         "p_order_id": order_id,
@@ -412,7 +412,7 @@ def award_signup_bonus(user_id: str) -> dict:
     amount = current_app.config.get("SIGNUP_BONUS_HP", 0)
     if not amount:
         return {"awarded": 0, "reason": "Signup bonus disabled"}
-    db = get_db()
+    db = get_user_client()
     already = (
         db.table("hp_transactions")
         .select("id")
@@ -435,7 +435,7 @@ def award_signup_bonus(user_id: str) -> dict:
 
 def award_welcome_bonus(user_id: str, order_id: str) -> dict:
     """Award WELCOME_BONUS_HP active HP on the user's first delivered order. Checks if already awarded."""
-    db = get_db()
+    db = get_user_client()
     already = (
         db.table("hp_transactions")
         .select("id")
@@ -459,7 +459,7 @@ def award_welcome_bonus(user_id: str, order_id: str) -> dict:
 
 def get_user_tier(user_id: str) -> dict:
     """Get user's current tier from profiles.current_tier_id → hp_tiers."""
-    db = get_db()
+    db = get_user_client()
     try:
         profile = (
             db.table("profiles")
@@ -499,7 +499,7 @@ def recalculate_tier(user_id: str) -> dict:
     Uses the rolling 120-day earned HP — not the current balance — to determine tier.
     Updates profiles.current_tier_id and logs to user_tiers (event log).
     """
-    db = get_db()
+    db = get_user_client()
     try:
         profile = (
             db.table("profiles")
@@ -567,7 +567,7 @@ def _tier_sort_order_by_id(tier_id: str, tiers: list) -> int:
 
 def process_flash_redeem(reward_id: str, user_id: str) -> dict:
     """Flash redemption: 50% HP discount, first N users only, 24-hour window."""
-    db = get_db()
+    db = get_user_client()
     config = current_app.config
 
     flash = (
@@ -635,7 +635,7 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
     if abs(naira_paid - expected_naira) > 1:
         raise ValueError(f"Payment mismatch: ₦{naira_paid} received, ₦{expected_naira} expected")
 
-    db = get_db()
+    db = get_user_client()
     try:
         db.table("hp_bundle_purchases").insert({
             "event_host_id": event_host_id,
@@ -678,7 +678,7 @@ def _record_hp_transaction(
         from flask import has_app_context, g
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
-    db = get_db()
+    db = get_user_client()
     # Preserves the specific business context concept (e.g. earn_order, earn_referral) in the source/context field
     resolved_source = source_type or reference_type or txn_type or "system"
     # Enforce that p_type passed to the DB atomic RPC is strictly a valid enum value ('earn' | 'spend' | 'expire')
@@ -712,7 +712,7 @@ def _record_hp_transaction(
 def _update_earned_counters(user_id: str, amount: int):
     if amount <= 0:
         return
-    db = get_db()
+    db = get_user_client()
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     try:
         db.rpc("increment_monthly_hp_tracker", {
