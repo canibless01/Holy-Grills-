@@ -3,7 +3,7 @@
 import os
 import requests as _req
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, optional_auth
+from app.middleware.auth import require_auth, optional_auth, _resolve_default_campus
 from app.middleware.rate_limit import rate_limit
 from app.services import auth_service
 from app.utils.retry import with_retry
@@ -87,8 +87,7 @@ def register():
     campus_id = data.get("campus_id")
     if not campus_id:
         db = get_db()
-        default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-        campus_id = default.get("id") if default else None
+        campus_id = _resolve_default_campus(db)
 
     try:
         result = auth_service.register(
@@ -579,16 +578,9 @@ def delete_account():
     except Exception:
         return jsonify({"error": MSG.AUTH_PASSWORD_INCORRECT}), 400
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
-    db.table("profiles").eq("id", g.user_id).update({
-        "is_active": False,
-        "deactivated_at": now,
-        "deactivation_reason": data.get("reason", "user_requested"),
-        "full_name": "[Deleted User]",
-        "phone": None,
-        "date_of_birth": None,
-    })
+    result = db.rpc("hg_anonymize_user", {"p_user_id": g.user_id})
+    if isinstance(result, dict) and not result.get("success"):
+        return jsonify({"error": result.get("error", "Anonymization failed")}), 400
 
     try:
         _revoke_all_sessions(g.user_id)
@@ -600,7 +592,11 @@ def delete_account():
     except Exception:
         pass
 
-    return jsonify({"message": MSG.ACCOUNT_DELETED}), 200
+    anonymized_at = result.get("anonymized_at") if isinstance(result, dict) else None
+    resp = {"message": MSG.ACCOUNT_DELETED}
+    if anonymized_at:
+        resp["anonymized_at"] = anonymized_at
+    return jsonify(resp), 200
 
 
 @auth_bp.route("/verify-email", methods=["POST"])

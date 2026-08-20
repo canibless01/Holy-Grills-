@@ -62,26 +62,27 @@ def record_checkin():
     if existing and len(existing) > 0:
         return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
 
+    campus_id = getattr(g, "campus_id", None)
+    if not campus_id:
+        return jsonify({"error": "Unable to resolve campus for this request"}), 400
+
     hp = _get_checkin_hp()
 
     try:
-        campus_id = getattr(g, 'campus_id', None)
         insert_data = {
             "user_id": user_id,
             "checkin_date": today,
             "hp_awarded": hp,
+            "campus_id": campus_id,
         }
-        if campus_id:
-            insert_data["campus_id"] = campus_id
         db.table("daily_checkins").insert(insert_data)
-    except SupabaseError as e:
-        if e.details and e.details.get("code") == "23505":
-            return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
-        logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
-        return jsonify({"error": str(e)}), 400
     except Exception as e:
+        is_unique_violation = getattr(e, "code", None) == "23505" or "23505" in str(e)
+        if is_unique_violation:
+            logger.info("record_checkin: duplicate check-in for user %s", user_id)
+            return jsonify({"message": "Already checked in today", "already_checked_in": True}), 200
         logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
-        return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
+        return jsonify({"error": "Check-in failed, please try again"}), 500
 
     # Award HP if configured
     hp_awarded = 0

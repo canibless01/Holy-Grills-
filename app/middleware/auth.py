@@ -11,6 +11,14 @@ from flask import request, g, abort
 from app.db import get_db, SupabaseError
 from app.constants import ADMIN_ROLES
 
+def _resolve_default_campus(db):
+    """
+    Shared helper — call from require_auth / require_role / optional_auth
+    wherever g.campus_id needs a fallback.
+    """
+    default = db.table("campuses").select("id").eq("is_default", True).single().execute()
+    return default.get("id") if default else None
+
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -59,8 +67,7 @@ def require_auth(f):
         g.user_role = profile.get("role", "student")
         g.campus_id = profile.get("campus_id")
         if not g.campus_id:
-            default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-            g.campus_id = default.get("id") if default else None
+            g.campus_id = _resolve_default_campus(db)
 
         return f(*args, **kwargs)
 
@@ -117,8 +124,7 @@ def require_role(*roles):
             g.user_role = profile.get("role")
             g.campus_id = profile.get("campus_id")
             if not g.campus_id:
-                default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-                g.campus_id = default.get("id") if default else None
+                g.campus_id = _resolve_default_campus(db)
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -181,8 +187,7 @@ def optional_auth(f):
             g.user_role = profile.get("role", "student")
             g.campus_id = profile.get("campus_id")
             if not g.campus_id:
-                default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-                g.campus_id = default.get("id") if default else None
+                g.campus_id = _resolve_default_campus(db)
 
         return f(*args, **kwargs)
     return decorated

@@ -147,17 +147,22 @@ def delivery_windows():
     """
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
+    q_win = db.table("delivery_windows").select("id,label,starts_at,ends_at,status")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q_win = q_win.eq("campus_id", campus_id)
     windows = (
-        db.table("delivery_windows")
-        .select("id,label,starts_at,ends_at,status")
-        .gte("ends_at", now)
+        q_win.gte("ends_at", now)
         .order("starts_at")
         .execute()
-    )
+    ) or []
     window_ids = [w["id"] for w in windows]
     counts = {}
     for wid in window_ids:
-        rows = db.table("orders").select("id").eq("delivery_window_id", wid).execute()
+        q_ord = db.table("orders").select("id").eq("delivery_window_id", wid)
+        if campus_id:
+            q_ord = q_ord.eq("campus_id", campus_id)
+        rows = q_ord.execute() or []
         counts[wid] = len(rows)
 
     for w in windows:
@@ -304,13 +309,15 @@ def batch_summary(window_id):
         description: Aggregated item quantities for the window
     """
     db = get_db()
-    orders = (
+    q = (
         db.table("orders")
         .select("id,order_items(name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
-        .in_("status", ["received", "preparing", "ready"])
-        .execute()
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    orders = q.in_("status", ["received", "preparing", "ready"]).execute() or []
 
     aggregated: dict[str, int] = {}
     for order in orders:
@@ -367,8 +374,11 @@ def batch_advance(batch_id):
         db.table("orders")
         .select("id,status")
         .eq("delivery_window_id", batch_id)
-        .not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    q = q.not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])
     if from_status_filter:
         q = q.eq("status", from_status_filter)
 

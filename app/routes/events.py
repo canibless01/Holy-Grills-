@@ -53,18 +53,21 @@ def list_events():
       200:
         description: Event list
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     q = (
         db.table("events")
-        .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured")
+        .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured,campus_id,is_global")
         .eq("is_published", "true")
         .gte("starts_at", now)
     )
     campus_id = _get_campus_id()
+    events = q.order("starts_at").execute() or []
     if campus_id:
-        q = q.eq("campus_id", campus_id)
-    events = q.order("starts_at").execute()
+        events = [
+            e for e in events
+            if e.get("campus_id") == campus_id or e.get("campus_id") is None or e.get("is_global") in (True, "true")
+        ]
     return jsonify(events or []), 200
 
 
@@ -86,12 +89,13 @@ def get_event(event_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("*").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     campus_id = _get_campus_id()
-    if campus_id and event.get("campus_id") != campus_id:
+    is_event_global = event.get("campus_id") is None or event.get("is_global") in (True, "true")
+    if campus_id and event.get("campus_id") != campus_id and not is_event_global:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     try:
         tickets = db.table("event_tickets").select("id").eq("event_id", event_id).execute()
@@ -113,16 +117,17 @@ def checkin(event_id):
     Check in to a Holy Grills event using QR token or ticket ID / guest email.
     Awards HP if user is registered/authenticated or links guest account.
     """
-    db = get_db()
+    db = get_user_client()
 
     # Campus check
     event = None
     try:
-        event = db.table("events").select("id,campus_id,metadata").eq("id", event_id).single().execute()
+        event = db.table("events").select("id,campus_id,is_global,metadata").eq("id", event_id).single().execute()
         if not event:
             return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
         campus_id = getattr(g, "campus_id", None)
-        if campus_id and event.get("campus_id") != campus_id:
+        is_event_global = event.get("campus_id") is None or event.get("is_global") in (True, "true")
+        if campus_id and event.get("campus_id") != campus_id and not is_event_global:
             return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     except Exception:
         if not event:
@@ -461,7 +466,7 @@ def register_for_event(event_id):
     Register for a Holy Grills event (supports both registered users and guests).
     Returns ticket_id/qr_token and account creation prompt for guests.
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
     try:
@@ -473,7 +478,8 @@ def register_for_event(event_id):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
     campus_id = _get_campus_id()
-    if campus_id and event.get("campus_id") != campus_id:
+    is_event_global = event.get("campus_id") is None or event.get("is_global") in (True, "true")
+    if campus_id and event.get("campus_id") != campus_id and not is_event_global:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
     # ── Custom Form Fields Validation ──────────────────────────────────────────
@@ -861,10 +867,11 @@ def create_event():
     # Prefer hp_per_attendee over legacy hp_reward if provided
     if data.get("hp_per_attendee") and not data.get("hp_reward"):
         data["hp_reward"] = data["hp_per_attendee"]
-    safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS}
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id and "campus_id" not in safe:
-        safe["campus_id"] = campus_id
+    campus_id = getattr(g, "campus_id", None)
+    if not campus_id:
+        return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    safe.setdefault("campus_id", campus_id)
+    safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS or k == "campus_id"}
     try:
         result = db.table("events").insert(safe)
     except Exception as _exc:

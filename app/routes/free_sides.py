@@ -127,32 +127,38 @@ def redeem_free_side():
     if not credits:
         return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS}), 400
 
-    # Use oldest-expiring credit first, try to update atomically using Optimistic Concurrency Control (OCC)
+    write_db = get_db()
     success = False
     new_remaining = 0
+    credit_row_used = None
     for credit_row in credits:
         try:
-            res = db.table("free_side_credits") \
-                .eq("id", credit_row["id"]) \
-                .eq("credits_remaining", credit_row["credits_remaining"]) \
+            res = (
+                write_db.table("free_side_credits")
+                .eq("id", credit_row["id"])
+                .eq("credits_remaining", credit_row["credits_remaining"])
                 .update({
                     "credits_remaining": credit_row["credits_remaining"] - 1,
                     "used_at": datetime.now(timezone.utc).isoformat(),
                 })
-            if res:
-                success = True
-                new_remaining = credit_row["credits_remaining"] - 1
-                break
+            )
+            if res or res == []:
+                # res is non-empty list on success, [] on OCC failure
+                if isinstance(res, list) and len(res) == 0:
+                    success = False
+                else:
+                    success = True
+                    new_remaining = credit_row["credits_remaining"] - 1
+                    credit_row_used = credit_row
+                    break
         except Exception as e:
             logger.error("redeem_free_side OCC update failed for credit row %s: %s", credit_row["id"], e)
-            pass
 
     if not success:
         return jsonify({"error": "No credits available or concurrent update occurred. Please try again."}), 409
 
-    # Attach free line item to the order in order_items table
     try:
-        db.table("order_items").insert({
+        write_db.table("order_items").insert({
             "order_id": order_id,
             "menu_item_id": None,
             "name_snapshot": f"Free Side ({side_choice})",
@@ -161,9 +167,18 @@ def redeem_free_side():
             "hp_earn_snapshot": 0,
             "line_total": 0.0,
             "is_addon": True,
-        })
+        }).execute()
     except Exception as e:
         logger.error("Failed to insert free side line item into order_items: %s", e)
+        try:
+            write_db.table("free_side_credits").eq("id", credit_row_used["id"]).update({
+                "credits_remaining": credit_row_used["credits_remaining"],
+                "used_at": None,
+            }).execute()
+        except Exception as refund_err:
+            logger.error("redeem_free_side: refund-on-failure also failed for credit %s: %s",
+                         credit_row_used["id"], refund_err)
+        return jsonify({"error": "Failed to apply free side to order — your credit has not been used, please try again"}), 500
 
     return jsonify({
         "message": MSG.FREE_SIDE_REDEEMED,

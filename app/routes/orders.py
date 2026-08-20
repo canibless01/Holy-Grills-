@@ -906,7 +906,7 @@ def list_delivery_windows():
       200:
         description: Available delivery windows
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     q = db.table("delivery_windows").select("*").gte("ends_at", now).eq("status", "open")
     campus_id = getattr(g, 'campus_id', None)
@@ -935,7 +935,7 @@ def delivery_windows_status():
             next_window: {...} | null
           }
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
 
@@ -1019,7 +1019,7 @@ def list_delivery_zones():
       200:
         description: Delivery zones
     """
-    db = get_db()
+    db = get_user_client()
     zones = (
         db.table("delivery_zones")
         .select("*")

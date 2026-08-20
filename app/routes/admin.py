@@ -3,7 +3,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_role
 from app.services.notification_service import send_notification
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -40,7 +40,7 @@ def list_users():
       200:
         description: User list
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
 
@@ -75,7 +75,7 @@ def get_user(user_id):
       200:
         description: User detail
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("*").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -151,7 +151,7 @@ def list_all_orders():
       200:
         description: List of all orders with user and item details
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
 
@@ -219,7 +219,7 @@ def user_order_history(user_id):
       404:
         description: User not found
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("id,full_name").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404

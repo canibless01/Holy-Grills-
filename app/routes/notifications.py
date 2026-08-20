@@ -77,11 +77,11 @@ def push_subscribe():
         record["campus_id"] = campus_id
 
     if existing:
-        db.table("push_subscriptions").eq("id", existing["id"]).update(record)
+        db.table("push_subscriptions").eq("id", existing["id"]).update(record).execute()
         return jsonify({"message": MSG.PUSH_SUBSCRIPTION_UPDATED}), 200
 
     record["created_at"] = now
-    result = db.table("push_subscriptions").insert(record)
+    result = db.table("push_subscriptions").insert(record).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -123,7 +123,7 @@ def push_unsubscribe():
         db.table("push_subscriptions").eq("id", row["id"]).update({
             "is_active": False,
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }).execute()
         removed += 1
 
     return jsonify({"message": MSG.PUSH_UNSUBSCRIBED, "removed": removed}), 200
@@ -214,7 +214,7 @@ def mark_all_read():
     db = get_user_client()
     db.table("notifications").eq("user_id", g.user_id).eq("channel", "in_app").is_("read_at", "null").update({
         "read_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
     return jsonify({"message": MSG.NOTIF_ALL_READ}), 200
 
 
@@ -293,7 +293,7 @@ def update_preferences():
         )
 
         if existing:
-            db.table("notification_preferences").eq("user_id", g.user_id).update(update)
+            db.table("notification_preferences").eq("user_id", g.user_id).update(update).execute()
         else:
             defaults = {
                 "user_id": g.user_id,
@@ -305,7 +305,7 @@ def update_preferences():
                 "delivery_updates": True,
             }
             defaults.update(update)
-            db.table("notification_preferences").insert(defaults)
+            db.table("notification_preferences").insert(defaults).execute()
 
         result = (
             db.table("notification_preferences")
@@ -427,7 +427,6 @@ def create_blast():
             return jsonify({"error": f"'{f}' is required"}), 400
 
     data["created_by"] = g.user_id
-    data["status"] = "pending"
     campus_id = getattr(g, 'campus_id', None)
     if campus_id and "campus_id" not in data:
         data["campus_id"] = campus_id
@@ -435,7 +434,11 @@ def create_blast():
         data["segment"] = data.pop("target_segment")
     if "send_at" in data:
         data["scheduled_at"] = data.pop("send_at")
-    blast = db.table("notification_blasts").insert(data)
+
+    if not data.get("scheduled_at"):
+        data["status"] = "pending"
+
+    blast = db.table("notification_blasts").insert(data).execute()
     blast_row = blast[0] if isinstance(blast, list) else blast
 
     if not data.get("scheduled_at"):

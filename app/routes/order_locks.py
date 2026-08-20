@@ -131,8 +131,10 @@ def create_lock():
         insert_data["reward_type"] = reward_type
         insert_data["reschedule_count"] = 0
         result = db.table("order_locks").insert(insert_data)
-    except SupabaseError as exc:
-        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
+    except Exception as exc:
+        err_msg = str(getattr(exc, "details", {}).get("message", "")) if getattr(exc, "details", None) else str(exc)
+        if "uq_order_locks_one_active_per_user" in err_msg or "23505" in err_msg:
+            return jsonify({"error": "User already has an active lock"}), 400
         is_missing_col = "column" in err_msg and "does not exist" in err_msg
         if is_missing_col:
             # Fallback: strip columns that may not exist yet in older schemas
@@ -141,7 +143,7 @@ def create_lock():
             result = db.table("order_locks").insert(fallback)
         else:
             raise
-    row = result[0] if isinstance(result, list) else result
+    row = (result[0] if isinstance(result, list) else result) if result is not None else {}
     return jsonify({"message": MSG.ORDER_LOCK_CREATED, "lock": row}), 201
 
 
