@@ -45,6 +45,13 @@ ADMIN_ONLY_TRIGGERS = {"department_leader", "faculty_leader"}
 # trigger_types that are self-declared (no server-side verification, one-time only)
 SELF_DECLARED_TRIGGERS = {"social_follow"}
 
+# System-verified triggers configured via system_settings (one-time system milestones, time_window IS NULL)
+SYSTEM_VERIFIED_TRIGGERS = {
+    "pwa_install",
+    "push_subscribe",
+    "pwa_push_bonus",
+}
+
 
 def get_user_milestones(user_id: str) -> dict:
     """
@@ -84,11 +91,13 @@ def get_user_milestones(user_id: str) -> dict:
         tw  = m.get("time_window")
 
         if tw is None:
-            # Badge
+            # Badge or system milestone
             m["earned"] = mid in earned_lifetime
+            m["is_system"] = m.get("trigger_type") in SYSTEM_VERIFIED_TRIGGERS
             if m["earned"]:
                 completion = next((r for r in earned_rows if r["milestone_id"] == mid and r.get("period_key") is None), {})
                 m["earned_at"] = completion.get("completed_at")
+                m["hp_awarded"] = completion.get("hp_awarded", m.get("hp_awarded", 0))
             badges_earned.append(m)
         else:
             # Challenge
@@ -143,8 +152,22 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     if already:
         return {"message": "Already completed", "already_completed": True}
 
-    # Verify the user actually meets the trigger criteria
-    if trigger_type not in SELF_DECLARED_TRIGGERS:
+    # Resolve reward amount for system-verified triggers from system_settings
+    if trigger_type in SYSTEM_VERIFIED_TRIGGERS:
+        from app.utils.settings import get_validated_setting, SettingError
+        setting_map = {
+            "pwa_install": "PWA_INSTALL_HP",
+            "push_subscribe": "PUSH_SUBSCRIBE_HP",
+            "pwa_push_bonus": "PWA_PUSH_BONUS_HP",
+        }
+        setting_key = milestone.get("hp_setting_key") or setting_map.get(trigger_type)
+        try:
+            hp_awarded = int(get_validated_setting(db, setting_key, required=True, minimum=1))
+        except SettingError as se:
+            logger.error("check_and_award_milestone: configuration error for %s (%s): %s", trigger_type, setting_key, se)
+            raise ValueError(f"Configuration error for {trigger_type}: {str(se)}") from se
+    elif trigger_type not in SELF_DECLARED_TRIGGERS:
+        # Verify the user actually meets the trigger criteria for standard triggers
         progress = _compute_trigger_progress(db, user_id, trigger_type, trigger_value, time_window, now)
         if progress < trigger_value:
             raise ValueError(
@@ -162,10 +185,13 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     except Exception as e:
         err_str = str(e)
         if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return {"message": "Already completed", "already_completed": True}
+            return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
         logger.warning("check_and_award_milestone: user_milestones insert failed: %s", e)
+        # If DB error is not duplicate key, re-raise or check completion to prevent double-award
+        if _is_already_completed(db, user_id, milestone_id, period_key):
+            return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
 
-    # Award HP (pending for social/self-declared; active for auto-verified challenges)
+    # Award HP (pending for social/self-declared; active for auto-verified challenges and system triggers)
     hp_destination = "pending" if trigger_type in SELF_DECLARED_TRIGGERS else "active"
     actual_hp = _award_milestone_hp(
         db, user_id, milestone_id, milestone.get("title", ""), hp_awarded, hp_destination
@@ -226,17 +252,33 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
                 continue
 
             hp = int(m.get("hp_awarded") or 0)
-            actual_hp = _award_milestone_hp(db, user_id, mid, m.get("title", ""), hp, "active")
 
+            # Insert completion FIRST to defend against race conditions before awarding HP
             try:
                 db.table("user_milestones").insert({
                     "user_id": user_id,
                     "milestone_id": mid,
-                    "hp_awarded": actual_hp,
+                    "hp_awarded": hp,
                     "period_key": period_key,
                 })
-            except Exception:
-                pass
+            except Exception as ie:
+                err_str = str(ie)
+                if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+                    continue
+                if _is_already_completed(db, user_id, mid, period_key):
+                    continue
+
+            actual_hp = _award_milestone_hp(db, user_id, mid, m.get("title", ""), hp, "active")
+            if actual_hp != hp:
+                try:
+                    q = db.table("user_milestones").eq("user_id", user_id).eq("milestone_id", mid)
+                    if period_key:
+                        q = q.eq("period_key", period_key)
+                    else:
+                        q = q.is_("period_key", "null")
+                    q.update({"hp_awarded": actual_hp})
+                except Exception:
+                    pass
 
             try:
                 notify_milestone_achieved(user_id, mid)
@@ -281,6 +323,52 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
         pass
 
     return {"milestone": milestone, "hp_awarded": actual_hp, "awarded_by": admin_id}
+
+
+def check_and_award_pwa_push_bonus(user_id: str) -> dict:
+    """
+    Check if both pwa_install and push_subscribe system milestones are completed by user_id.
+    If both are completed and pwa_push_bonus has not been awarded, award pwa_push_bonus.
+    Returns status dict.
+    """
+    db = get_db()
+    # Fetch milestones for pwa_install, push_subscribe, pwa_push_bonus
+    m_rows = (
+        db.table("milestones")
+        .select("id,trigger_type")
+        .in_("trigger_type", ["pwa_install", "push_subscribe", "pwa_push_bonus"])
+        .eq("is_active", "true")
+        .execute()
+    ) or []
+
+    pwa_m = next((m for m in m_rows if m.get("trigger_type") == "pwa_install"), None)
+    push_m = next((m for m in m_rows if m.get("trigger_type") == "push_subscribe"), None)
+    bonus_m = next((m for m in m_rows if m.get("trigger_type") == "pwa_push_bonus"), None)
+
+    pwa_done = _is_already_completed(db, user_id, pwa_m["id"], None) if pwa_m else False
+    push_done = _is_already_completed(db, user_id, push_m["id"], None) if push_m else False
+    bonus_done = _is_already_completed(db, user_id, bonus_m["id"], None) if bonus_m else False
+
+    eligible = pwa_done and push_done
+    bonus_result = None
+
+    if eligible and not bonus_done and bonus_m:
+        try:
+            bonus_result = check_and_award_milestone(user_id, bonus_m["id"])
+            if bonus_result.get("already_completed"):
+                bonus_done = True
+            elif not bonus_result.get("already_completed") and bonus_result.get("hp_awarded", 0) >= 0:
+                bonus_done = True
+        except Exception as e:
+            logger.warning("check_and_award_pwa_push_bonus failed for user %s: %s", user_id, e)
+
+    return {
+        "pwa_install": pwa_done,
+        "push_subscribe": push_done,
+        "bonus_completed": bonus_done,
+        "eligible": eligible,
+        "bonus_result": bonus_result,
+    }
 
 
 def notify_milestone_achieved(user_id: str, milestone_id: str) -> None:

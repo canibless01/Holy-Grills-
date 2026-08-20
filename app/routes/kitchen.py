@@ -96,7 +96,6 @@ def update_kitchen_settings():
     now = datetime.now(timezone.utc).isoformat()
     campus_id = getattr(g, 'campus_id', None)
     updated = {}
-    campus_id = getattr(g, 'campus_id', None)
     for key, value in settings.items():
         payload = {
             "key": key,
@@ -306,7 +305,7 @@ def kitchen_metrics():
 @require_role("kitchen", "admin")
 def batch_summary(window_id):
     """
-    Get aggregated item quantity summary for a delivery window batch.
+    Get aggregated item counts across all active orders in a delivery window batch.
     ---
     tags: [Kitchen]
     parameters:
@@ -321,7 +320,7 @@ def batch_summary(window_id):
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,order_items(name_snapshot,quantity)")
+        .select("id,status,order_items(name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "preparing", "ready"])
     )

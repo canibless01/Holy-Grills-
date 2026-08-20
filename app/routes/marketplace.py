@@ -287,7 +287,7 @@ def admin_update_purchase(purchase_id):
 
     purchase = (
         db.table("marketplace_purchases")
-        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,listing_id,marketplace_listings(title,hp_price)")
+        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,listing_id,quantity,marketplace_listings(title,hp_price)")
         .eq("id", purchase_id)
         .single()
         .execute()
@@ -878,6 +878,7 @@ def restore_inventory_on_refund(db, purchase, logger):
     write, when status is being set to 'refunded' or 'cancelled'.
     """
     listing_id = purchase.get("listing_id")
+    purchase_id = purchase.get("id")
     quantity = purchase.get("quantity", 1)
     if listing_id:
         listing = db.table("marketplace_listings").select("inventory_count").eq("id", listing_id).single().execute()
@@ -888,6 +889,21 @@ def restore_inventory_on_refund(db, purchase, logger):
             }).execute()
         else:
             db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": False}).execute()
+
+        if purchase_id:
+            code_row = (
+                db.table("marketplace_access_codes")
+                .select("id")
+                .eq("assigned_purchase_id", purchase_id)
+                .single()
+                .execute()
+            )
+            if code_row:
+                db.table("marketplace_access_codes").eq("id", code_row["id"]).update({
+                    "status": "available",
+                    "assigned_purchase_id": None,
+                    "assigned_at": None,
+                }).execute()
 
 
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
