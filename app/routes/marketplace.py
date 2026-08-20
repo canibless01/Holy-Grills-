@@ -585,7 +585,7 @@ def admin_create_listing():
           properties:
             title: {type: string}
             description: {type: string}
-            listing_type: {type: string, enum: [code, service, product, experience]}
+            listing_type: {type: string, enum: [code, manual, subscription, digital_code, voucher]}
             price: {type: number}
             hp_price: {type: integer}
             image_url: {type: string}

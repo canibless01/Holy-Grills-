@@ -81,8 +81,28 @@ def push_subscribe():
         return jsonify({"message": MSG.PUSH_SUBSCRIPTION_UPDATED}), 200
 
     record["created_at"] = now
-    result = db.table("push_subscriptions").insert(record)
-    return jsonify(result[0] if isinstance(result, list) else result), 201
+    try:
+        result = db.table("push_subscriptions").insert(record)
+        return jsonify(result[0] if isinstance(result, list) else result), 201
+    except Exception as exc:
+        err_str = str(exc)
+        if "uq_push_subscriptions_user_endpoint" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            rows = (
+                db.table("push_subscriptions")
+                .select("id,subscription")
+                .eq("user_id", g.user_id)
+                .execute()
+            ) or []
+            match = None
+            for r in rows:
+                sub = r.get("subscription") or {}
+                if isinstance(sub, dict) and sub.get("endpoint") == endpoint:
+                    match = r
+                    break
+            if match:
+                db.table("push_subscriptions").eq("id", match["id"]).update(record)
+                return jsonify({"message": MSG.PUSH_SUBSCRIPTION_UPDATED}), 200
+        raise
 
 
 @push_bp.route("/subscribe", methods=["DELETE"])

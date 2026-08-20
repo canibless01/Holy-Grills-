@@ -338,6 +338,9 @@ def admin_list_locks():
         .select("*,profiles(full_name,email,phone)")
         .order("locked_date", ascending=True)
     )
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -350,7 +353,7 @@ def admin_list_locks():
 
 def _get_setting(db, key: str, default: str = "") -> str:
     try:
-        row = db.table("system_settings").select("value").eq("key", key).single().execute()
+        row = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
         return row.get("value", default) if row else default
     except Exception:
         return default

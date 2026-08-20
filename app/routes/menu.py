@@ -725,8 +725,6 @@ def create_item():
             price: {type: number}
             hp_earn_value: {type: integer}
             description: {type: string}
-            sku: {type: string}
-            dietary_tags: {type: array, items: {type: string}}
             daily_limit: {type: integer, description: "Max servings per day (null = unlimited)"}
     responses:
       201:

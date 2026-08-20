@@ -87,8 +87,8 @@ def register():
     campus_id = data.get("campus_id")
     if not campus_id:
         db = get_db()
-        default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-        campus_id = default.get("id") if default else None
+        default = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
+        campus_id = default[0]["id"] if (default and isinstance(default, list) and len(default) > 0) else None
 
     try:
         result = auth_service.register(
@@ -579,16 +579,10 @@ def delete_account():
     except Exception:
         return jsonify({"error": MSG.AUTH_PASSWORD_INCORRECT}), 400
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
-    db.table("profiles").eq("id", g.user_id).update({
-        "is_active": False,
-        "deactivated_at": now,
-        "deactivation_reason": data.get("reason", "user_requested"),
-        "full_name": "[Deleted User]",
-        "phone": None,
-        "date_of_birth": None,
-    })
+    result = db.rpc("hg_anonymize_user", {"p_user_id": g.user_id})
+    if not result or not isinstance(result, dict) or not result.get("success"):
+        err_msg = result.get("error", "Anonymization failed") if isinstance(result, dict) else "Anonymization failed"
+        return jsonify({"error": err_msg}), 400
 
     try:
         _revoke_all_sessions(g.user_id)
@@ -600,7 +594,7 @@ def delete_account():
     except Exception:
         pass
 
-    return jsonify({"message": MSG.ACCOUNT_DELETED}), 200
+    return jsonify({"message": MSG.ACCOUNT_DELETED, "anonymized_at": result.get("anonymized_at")}), 200
 
 
 @auth_bp.route("/verify-email", methods=["POST"])

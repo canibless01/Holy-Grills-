@@ -21,7 +21,11 @@ def get_kitchen_settings():
         description: Kitchen settings key/value map
     """
     db = get_db()
-    rows = db.table("kitchen_settings").select("*").execute() or []
+    q = db.table("kitchen_settings").select("*")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.execute() or []
     settings = {r["key"]: r["value"] for r in rows}
     return jsonify({
         "settings": settings,
@@ -48,7 +52,11 @@ def get_kitchen_setting(key):
         description: Setting not found
     """
     db = get_db()
-    row = db.table("kitchen_settings").select("*").eq("key", key).limit(1).execute()
+    q = db.table("kitchen_settings").select("*").eq("key", key)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    row = q.limit(1).execute()
     row = row[0] if row else None
     if not row:
         return jsonify({"error": MSG.KITCHEN_SETTING_NOT_FOUND}), 404
@@ -87,6 +95,7 @@ def update_kitchen_settings():
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
     updated = {}
+    campus_id = getattr(g, 'campus_id', None)
     for key, value in settings.items():
         payload = {
             "key": key,
@@ -94,7 +103,11 @@ def update_kitchen_settings():
             "updated_by": g.user_id,
             "updated_at": now,
         }
-        result = db.table("kitchen_settings").upsert(payload, on_conflict="key")
+        if campus_id:
+            payload["campus_id"] = campus_id
+            result = db.table("kitchen_settings").upsert(payload, on_conflict="key,campus_id")
+        else:
+            result = db.table("kitchen_settings").upsert(payload, on_conflict="key")
         updated[key] = (result[0] if isinstance(result, list) else result) or payload
 
     return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200

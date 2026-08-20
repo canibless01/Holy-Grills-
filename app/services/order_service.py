@@ -71,6 +71,17 @@ STATUS_TIMESTAMPS = {
 }
 
 
+def create_order_apply_rpc_total(rpc_result, locally_computed_total):
+    """
+    Call this immediately after the hg_create_order_atomic RPC call
+    returns, instead of using locally_computed_total for anything shown
+    to the customer or charged.
+    """
+    total_amount = rpc_result.get("total_amount", locally_computed_total)
+    discount_applied = rpc_result.get("order_lock_discount_applied", False)
+    return total_amount, discount_applied
+
+
 def _today_start_iso():
     """UTC midnight today as ISO string."""
     return datetime.now(timezone.utc).replace(
@@ -822,8 +833,13 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if result.get("error"):
         raise ValueError(result["error"])
 
+    rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
+
     order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
-    if not result.get("idempotent"):
+    if order and isinstance(order, dict):
+        order["total_amount"] = rpc_total
+        order["order_lock_discount_applied"] = discount_applied
+    if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
     return order
 

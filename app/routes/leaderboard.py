@@ -111,14 +111,17 @@ def hall_of_fame():
     """
     db = get_db()
     try:
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         # Monthly #1 winners from leaderboard snapshots
-        entries = (
+        q_snap = (
             db.table("leaderboard_snapshots")
             .select("*")
             .eq("ranking_type", "monthly")
-            .order("period_key", ascending=False)
-            .execute()
         )
+        if campus_id:
+            q_snap = q_snap.eq("campus_id", campus_id)
+        entries = q_snap.order("period_key", ascending=False).execute()
+
         hall = []
         for snap in (entries or []):
             snap_entries = snap.get("entries") or []
@@ -130,12 +133,10 @@ def hall_of_fame():
                 })
 
         # Top-4 finish inductees
-        inductees_raw = (
-            db.table("hall_of_fame_inductees")
-            .select("user_id,full_name,inducted_at,tier_at_induction,top4_finish_count")
-            .order("inducted_at", ascending=False)
-            .execute()
-        ) or []
+        q_ind = db.table("hall_of_fame_inductees").select("user_id,full_name,inducted_at,tier_at_induction,top4_finish_count")
+        if campus_id:
+            q_ind = q_ind.eq("campus_id", campus_id)
+        inductees_raw = q_ind.order("inducted_at", ascending=False).execute() or []
 
         return jsonify({
             "monthly_winners": hall,
@@ -159,12 +160,11 @@ def hall_of_fame_inductees():
     """
     db = get_db()
     try:
-        rows = (
-            db.table("hall_of_fame_inductees")
-            .select("*")
-            .order("inducted_at", ascending=False)
-            .execute()
-        ) or []
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+        q = db.table("hall_of_fame_inductees").select("*")
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        rows = q.order("inducted_at", ascending=False).execute() or []
 
         inductees = []
         for row in rows:
@@ -210,14 +210,11 @@ def inductee_share_card(inductee_user_id):
     """
     db = get_db()
     try:
-        row = (
-            db.table("hall_of_fame_inductees")
-            .select("*")
-            .eq("user_id", inductee_user_id)
-            .order("inducted_at", ascending=False)
-            .limit(1)
-            .execute()
-        )
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+        q = db.table("hall_of_fame_inductees").select("*").eq("user_id", inductee_user_id)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        row = q.order("inducted_at", ascending=False).limit(1).execute()
         row = (row[0] if isinstance(row, list) and row else row) or None
         if not row:
             return jsonify({"error": "Inductee not found"}), 404
