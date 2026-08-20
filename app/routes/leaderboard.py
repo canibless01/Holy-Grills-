@@ -100,7 +100,7 @@ def get_leaderboard():
 @leaderboard_bp.route("/hall-of-fame", methods=["GET"])
 def hall_of_fame():
     """
-    Permanent Hall of Fame — monthly leaderboard #1 winners by period,
+    Permanent Hall of Fame — global monthly leaderboard #1 winners by period,
     plus all users inducted via 4 top-4 finishes (hall_of_fame_inductees).
     ---
     tags: [Leaderboard]
@@ -111,15 +111,12 @@ def hall_of_fame():
     """
     db = get_user_client()
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
-        # Monthly #1 winners from leaderboard snapshots
+        # Monthly #1 winners from leaderboard snapshots (global)
         q_snap = (
             db.table("leaderboard_snapshots")
             .select("*")
             .eq("ranking_type", "monthly")
         )
-        if campus_id:
-            q_snap = q_snap.eq("campus_id", campus_id)
         entries = q_snap.order("period_key", ascending=False).execute()
 
         hall = []
@@ -132,10 +129,8 @@ def hall_of_fame():
                     "winner": winner,
                 })
 
-        # Top-4 finish inductees
+        # Top-4 finish inductees (global)
         q_ind = db.table("hall_of_fame_inductees").select("user_id,full_name,inducted_at,tier_at_induction,top4_finish_count")
-        if campus_id:
-            q_ind = q_ind.eq("campus_id", campus_id)
         inductees_raw = q_ind.order("inducted_at", ascending=False).execute() or []
 
         return jsonify({
@@ -149,7 +144,7 @@ def hall_of_fame():
 @leaderboard_bp.route("/hall-of-fame/inductees", methods=["GET"])
 def hall_of_fame_inductees():
     """
-    All Hall of Fame inductees — users who reached 4 top-4 leaderboard finishes.
+    All Hall of Fame inductees — users who reached 4 top-4 leaderboard finishes (global).
     Includes full profile data for card rendering.
     ---
     tags: [Leaderboard]
@@ -160,10 +155,7 @@ def hall_of_fame_inductees():
     """
     db = get_user_client()
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         q = db.table("hall_of_fame_inductees").select("*")
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
         rows = q.order("inducted_at", ascending=False).execute() or []
 
         inductees = []
@@ -197,7 +189,7 @@ def hall_of_fame_inductees():
 @leaderboard_bp.route("/hall-of-fame/inductees/<inductee_user_id>/card", methods=["GET"])
 def inductee_share_card(inductee_user_id):
     """
-    Shareable induction card data for a specific Hall of Fame inductee.
+    Shareable induction card data for a specific Hall of Fame inductee (global).
     Returns everything needed for the frontend to render and share the card.
     ---
     tags: [Leaderboard]
@@ -210,10 +202,7 @@ def inductee_share_card(inductee_user_id):
     """
     db = get_user_client()
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         q = db.table("hall_of_fame_inductees").select("*").eq("user_id", inductee_user_id)
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
         row = q.order("inducted_at", ascending=False).limit(1).execute()
         row = (row[0] if isinstance(row, list) and row else row) or None
         if not row:
