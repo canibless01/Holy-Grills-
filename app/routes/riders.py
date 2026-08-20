@@ -493,7 +493,7 @@ def get_customer_call_link(order_id):
         required: true
     responses:
       200:
-        description: Click-to-call tel: URI link
+        description: "Click-to-call tel: URI link"
     """
     db = get_user_client()
     order = db.table("orders").select("user_id,guest_phone").eq("id", order_id).single().execute()
