@@ -23,7 +23,7 @@ _DEFAULT_CHECKIN_HP = 5
 def _get_checkin_hp() -> int:
     try:
         db = get_db()
-        row = db.table("system_settings").select("value").eq("key", "daily_checkin_hp").single().execute()
+        row = db.table("system_settings").select("value").eq("key", "daily_checkin_hp").is_("campus_id", "null").single().execute()
         if row and row.get("value"):
             return int(row["value"])
     except Exception:

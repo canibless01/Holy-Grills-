@@ -353,7 +353,7 @@ def admin_list_locks():
 
 def _get_setting(db, key: str, default: str = "") -> str:
     try:
-        row = db.table("system_settings").select("value").eq("key", key).single().execute()
+        row = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
         return row.get("value", default) if row else default
     except Exception:
         return default

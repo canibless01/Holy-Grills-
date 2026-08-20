@@ -21,7 +21,7 @@ def _get_free_side_options() -> list:
     """Fetch allowed side options — from system_settings first, then config fallback."""
     try:
         db = get_db()
-        row = db.table("system_settings").select("value").eq("key", "free_side_options").single().execute()
+        row = db.table("system_settings").select("value").eq("key", "free_side_options").is_("campus_id", "null").single().execute()
         if row and row.get("value"):
             import json
             return json.loads(row["value"])

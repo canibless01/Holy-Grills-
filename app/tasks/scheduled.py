@@ -838,7 +838,7 @@ def win_back_notifications(self):
         for campus in (campuses if isinstance(campuses, list) else []):
             campus_id = campus["id"]
             try:
-                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
+                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").is_("campus_id", "null").single().execute()
                 decay_onset = int(onset_row.get("value", decay_onset_default)) if onset_row else decay_onset_default
             except Exception:
                 decay_onset = decay_onset_default
@@ -965,7 +965,7 @@ def hp_decay_check(self):
                 onset_days = onset_days_default
 
             try:
-                rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").single().execute()
+                rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").is_("campus_id", "null").single().execute()
                 decay_rate = float(rate_row.get("value", decay_rate_default)) if rate_row else decay_rate_default
             except Exception:
                 decay_rate = decay_rate_default

@@ -62,6 +62,7 @@ def claim_graduation():
             db.table("system_settings")
             .select("value")
             .eq("key", "graduation_min_level")
+            .is_("campus_id", "null")
             .single()
             .execute()
         )
