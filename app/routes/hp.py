@@ -60,10 +60,7 @@ def transactions():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("campus_id", g.campus_id)
     txn_type = request.args.get("type")
     if txn_type:
         q = q.eq("type", txn_type)
@@ -108,9 +105,14 @@ def admin_grant():
       200:
         description: HP granted
     """
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     if not data.get("user_id") or not data.get("amount"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+
+    db = get_db()
+    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
+    if getattr(g, "user_role", None) == "admin" and target and target.get("campus_id") != getattr(g, "campus_id", None):
+        return jsonify({"error": "Cannot grant HP outside your campus"}), 403
 
     try:
         result = award_active_hp(
@@ -151,6 +153,12 @@ def admin_expire():
     data = request.get_json(force=True) or {}
     if not data.get("user_id"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+
+    db = get_db()
+    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
+    if getattr(g, "user_role", None) == "admin" and target and target.get("campus_id") != getattr(g, "campus_id", None):
+        return jsonify({"error": "Cannot expire HP outside your campus"}), 403
+
     amount = data.get("amount")
     if amount is None:
         # Expire all active HP if amount not specified
@@ -215,10 +223,7 @@ def unlock_history():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock").eq("campus_id", g.campus_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows or []), 200
 
@@ -474,14 +479,12 @@ def transfer_hp():
 def _log_admin_action(actor_id, table, target_id, action, after_data=None):
     from app.db import get_db
     db = get_db()
-    try:
-        db.table("admin_audit_logs").insert({
-            "actor_id": actor_id,
-            "actor_role": "admin",
-            "entity_type": table,
-            "entity_id": target_id,
-            "action": action,
-            "after_value": after_data,
-        })
-    except Exception:
-        pass
+    return db.table("admin_audit_logs").insert({
+        "actor_id": actor_id,
+        "actor_role": getattr(g, "user_role", "admin"),
+        "entity_type": table,
+        "entity_id": target_id,
+        "action": action,
+        "after_value": after_data,
+        "campus_id": getattr(g, "campus_id", None),
+    }).execute()

@@ -16,15 +16,21 @@ POST   /challenges/admin/<id>/grant — grant milestone to specific user
 """
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, optional_auth
 from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
 challenges_bp = Blueprint("challenges", __name__)
 
+MILESTONE_ALLOWED_FIELDS = {
+    "title", "description", "trigger_type", "trigger_value", "hp_awarded",
+    "time_window", "icon_won", "icon_locked", "is_active", "social_link", "campus_id"
+}
+
 
 @challenges_bp.route("", methods=["GET"])
+@optional_auth
 def list_challenges():
     """
     List active challenges (milestones with time_window set).

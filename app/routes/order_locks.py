@@ -338,6 +338,9 @@ def admin_list_locks():
         .select("*,profiles(full_name,email,phone)")
         .order("locked_date", ascending=True)
     )
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
