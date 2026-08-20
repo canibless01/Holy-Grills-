@@ -20,8 +20,6 @@ webhooks_bp = Blueprint("webhooks", __name__)
 
 @webhooks_bp.route("/paystack", methods=["POST"])
 def paystack_webhook():
-    from flask import g
-    campus_id = getattr(g, 'campus_id', None)
     """
     Paystack webhook handler.
     Handles: charge.success, transfer.success, dedicatedaccount.assign.success
@@ -356,10 +354,11 @@ def _handle_dva_assign(data: dict):
     if not user_email:
         return
     db = get_db()
-    user_rows = db.table("profiles").select("id").eq("email", user_email).limit(1).execute()
+    user_rows = db.table("profiles").select("id,campus_id").eq("email", user_email).limit(1).execute()
     if not user_rows:
         return
     user_id = user_rows[0]["id"]
+    campus_id = user_rows[0].get("campus_id")
 
     existing_va = db.table("virtual_accounts").select("id").eq("user_id", user_id).limit(1).execute()
     if existing_va:
@@ -370,7 +369,7 @@ def _handle_dva_assign(data: dict):
             "provider_customer_id": customer.get("customer_code"),
         }).execute()
     else:
-        db.table("virtual_accounts").insert({
+        va_data = {
             "user_id": user_id,
             "account_number": account.get("account_number"),
             "bank_name": account.get("bank", {}).get("name"),
@@ -378,7 +377,10 @@ def _handle_dva_assign(data: dict):
             "provider_customer_id": customer.get("customer_code"),
             "provider_reference": str(account.get("id", "")),
             "provider": "paystack",
-        }).execute()
+        }
+        if campus_id:
+            va_data["campus_id"] = campus_id
+        db.table("virtual_accounts").insert(va_data).execute()
 
 
 def _handle_transfer(data: dict):

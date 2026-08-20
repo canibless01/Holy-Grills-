@@ -288,11 +288,11 @@ def push_subscribed_challenge():
         record["campus_id"] = campus_id
 
     if existing:
-        db.table("push_subscriptions").eq("id", existing["id"]).update(record).execute()
+        db.table("push_subscriptions").eq("id", existing["id"]).update(record)
     else:
         record["created_at"] = now
         try:
-            db.table("push_subscriptions").insert(record).execute()
+            db.table("push_subscriptions").insert(record)
         except Exception as exc:
             err_str = str(exc)
             if "uq_push_subscriptions_user_endpoint" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
@@ -304,7 +304,7 @@ def push_subscribed_challenge():
                 ) or []
                 match = next((r for r in rows if (r.get("subscription") or {}).get("endpoint") == endpoint), None)
                 if match:
-                    db.table("push_subscriptions").eq("id", match["id"]).update(record).execute()
+                    db.table("push_subscriptions").eq("id", match["id"]).update(record)
 
     # Look up push_subscribe milestone
     m_rows = (
