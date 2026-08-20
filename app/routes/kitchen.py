@@ -96,7 +96,6 @@ def update_kitchen_settings():
     now = datetime.now(timezone.utc).isoformat()
     campus_id = getattr(g, 'campus_id', None)
     updated = {}
-    campus_id = getattr(g, 'campus_id', None)
     for key, value in settings.items():
         payload = {
             "key": key,
@@ -106,12 +105,11 @@ def update_kitchen_settings():
         }
         if campus_id:
             payload["campus_id"] = campus_id
-            on_conflict_target = "key,campus_id" if campus_id else "key"
-            res = db.table("kitchen_settings").upsert(payload, on_conflict=on_conflict_target)
-            result = res.execute() if hasattr(res, "execute") else res
-            updated[key] = (result[0] if isinstance(result, list) else result) or payload
-            
-        return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+        res = db.table("kitchen_settings").upsert(payload, on_conflict="key,campus_id" if campus_id else "key")
+        result = res.execute() if hasattr(res, "execute") else res
+        updated[key] = (result[0] if isinstance(result, list) else result) or payload
+
+    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
           
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")
@@ -302,14 +300,33 @@ def kitchen_metrics():
     }), 200
 
 
-@name_snapshot,quantity)")
+@kitchen_bp.route("/batch-summary/<window_id>", methods=["GET"])
+@require_role("kitchen", "admin")
+def batch_summary(window_id):
+    """
+    Get aggregated item counts across all active orders in a delivery window batch.
+    ---
+    tags: [Kitchen]
+    parameters:
+      - in: path
+        name: window_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Item summary for batch
+    """
+    db = get_user_client()
+    q = (
+        db.table("orders")
+        .select("id,status,order_items(name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "preparing", "ready"])
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    orders = q.in_("status", ["received", "preparing", "ready"]).execute() or []
+    orders = q.execute() or []
 
     aggregated: dict[str, int] = {}
     for order in orders:

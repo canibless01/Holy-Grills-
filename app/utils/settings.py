@@ -24,9 +24,10 @@ class MalformedSettingError(SettingError):
     pass
 
 
-def get_validated_setting(db, key: str, default=None, minimum=None, maximum=None, required=False):
+def get_validated_setting(db, key: str, default=None, minimum=None, maximum=None, required=False, campus_id=None):
     """
     Retrieves and validates a setting from the system_settings table.
+    Per-campus settings (.eq("campus_id", campus_id)) take precedence over global (.is_("campus_id", "null")).
 
     - If database query fails, raises DatabaseUnavailableError (fails safely, doesn't silently use default).
     - If setting is missing:
@@ -35,9 +36,20 @@ def get_validated_setting(db, key: str, default=None, minimum=None, maximum=None
     - If setting exists but is malformed (e.g. not numeric when bounds are specified), raises MalformedSettingError.
     - If numeric bounds are supplied, enforces them strictly.
     """
+    if campus_id is None:
+        try:
+            from flask import has_app_context, g
+            if has_app_context():
+                campus_id = getattr(g, "campus_id", None)
+        except Exception:
+            pass
+
+    res = None
     try:
-        # Note: single().execute() might raise Exception on database issues
-        res = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
+        if campus_id:
+            res = db.table("system_settings").select("value").eq("key", key).eq("campus_id", campus_id).single().execute()
+        if not res:
+            res = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
     except Exception as e:
         logger.error("Database query failed while retrieving system setting '%s'", key, exc_info=True)
         raise DatabaseUnavailableError(f"Database unavailable while querying setting: {key}") from e

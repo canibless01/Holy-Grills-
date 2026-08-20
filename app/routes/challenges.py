@@ -185,6 +185,179 @@ def social_follow():
         return jsonify({"error": str(e)}), 400
 
 
+@challenges_bp.route("/pwa-installed", methods=["POST"])
+@require_auth
+def pwa_installed():
+    """
+    Claim PWA installation system milestone reward.
+    ---
+    tags: [Challenges]
+    responses:
+      200:
+        description: PWA install milestone status or claim result
+    """
+    db = get_user_client()
+    m_rows = (
+        db.table("milestones")
+        .select("id,title")
+        .eq("trigger_type", "pwa_install")
+        .eq("is_active", "true")
+        .limit(1)
+        .execute()
+    ) or []
+    milestone = m_rows[0] if isinstance(m_rows, list) and m_rows else (m_rows if isinstance(m_rows, dict) else None)
+    if not milestone:
+        return jsonify({"error": "PWA install milestone not configured or inactive"}), 404
+
+    from app.services.milestone_service import check_and_award_milestone, check_and_award_pwa_push_bonus
+    try:
+        result = check_and_award_milestone(g.user_id, milestone["id"])
+        # Check if PWA + Push bonus is now eligible
+        check_and_award_pwa_push_bonus(g.user_id)
+        already_completed = bool(result.get("already_completed"))
+        hp_awarded = int(result.get("hp_awarded") or 0) if not already_completed else 0
+        return jsonify({
+            "success": True,
+            "milestone": "pwa_install",
+            "hp_awarded": hp_awarded,
+            "already_completed": already_completed,
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@challenges_bp.route("/push-subscribed", methods=["POST"])
+@require_auth
+def push_subscribed_challenge():
+    """
+    Register Web Push subscription and claim push subscription system milestone reward.
+    ---
+    tags: [Challenges]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [subscription]
+          properties:
+            subscription:
+              type: object
+              description: Web Push subscription object
+            device_label:
+              type: string
+    responses:
+      200:
+        description: Push subscription registered and milestone evaluated
+      400:
+        description: Missing subscription data or validation error
+    """
+    db = get_user_client()
+    data = request.get_json(force=True, silent=True) or {}
+    subscription = data.get("subscription")
+    if not subscription or not isinstance(subscription, dict):
+        return jsonify({"error": MSG.PUSH_SUBSCRIPTION_REQUIRED}), 400
+
+    now = datetime.now(timezone.utc).isoformat()
+    endpoint = subscription.get("endpoint")
+
+    existing = None
+    if endpoint:
+        rows = (
+            db.table("push_subscriptions")
+            .select("id,subscription")
+            .eq("user_id", g.user_id)
+            .execute()
+        ) or []
+        for row in rows:
+            sub = row.get("subscription") or {}
+            if isinstance(sub, dict) and sub.get("endpoint") == endpoint:
+                existing = row
+                break
+
+    record = {
+        "user_id": g.user_id,
+        "subscription": subscription,
+        "device_label": data.get("device_label"),
+        "is_active": True,
+        "updated_at": now,
+    }
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        record["campus_id"] = campus_id
+
+    if existing:
+        db.table("push_subscriptions").eq("id", existing["id"]).update(record).execute()
+    else:
+        record["created_at"] = now
+        try:
+            db.table("push_subscriptions").insert(record).execute()
+        except Exception as exc:
+            err_str = str(exc)
+            if "uq_push_subscriptions_user_endpoint" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+                rows = (
+                    db.table("push_subscriptions")
+                    .select("id,subscription")
+                    .eq("user_id", g.user_id)
+                    .execute()
+                ) or []
+                match = next((r for r in rows if (r.get("subscription") or {}).get("endpoint") == endpoint), None)
+                if match:
+                    db.table("push_subscriptions").eq("id", match["id"]).update(record).execute()
+
+    # Look up push_subscribe milestone
+    m_rows = (
+        db.table("milestones")
+        .select("id,title")
+        .eq("trigger_type", "push_subscribe")
+        .eq("is_active", "true")
+        .limit(1)
+        .execute()
+    ) or []
+    milestone = m_rows[0] if isinstance(m_rows, list) and m_rows else (m_rows if isinstance(m_rows, dict) else None)
+    if not milestone:
+        return jsonify({"error": "Push subscribe milestone not configured or inactive"}), 404
+
+    from app.services.milestone_service import check_and_award_milestone, check_and_award_pwa_push_bonus
+    try:
+        result = check_and_award_milestone(g.user_id, milestone["id"])
+        check_and_award_pwa_push_bonus(g.user_id)
+        already_completed = bool(result.get("already_completed"))
+        hp_awarded = int(result.get("hp_awarded") or 0) if not already_completed else 0
+        return jsonify({
+            "success": True,
+            "milestone": "push_subscribe",
+            "hp_awarded": hp_awarded,
+            "already_completed": already_completed,
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@challenges_bp.route("/pwa-push-bonus-status", methods=["GET"])
+@require_auth
+def pwa_push_bonus_status():
+    """
+    Get PWA + Push Subscription bonus eligibility and status. Automatically awards bonus if eligible.
+    ---
+    tags: [Challenges]
+    responses:
+      200:
+        description: PWA and Push bonus status summary
+    """
+    from app.services.milestone_service import check_and_award_pwa_push_bonus
+    status = check_and_award_pwa_push_bonus(g.user_id)
+    return jsonify({
+        "pwa_install": status["pwa_install"],
+        "push_subscribe": status["push_subscribe"],
+        "bonus_completed": status["bonus_completed"],
+        "eligible": status["eligible"],
+    }), 200
+
+
 # ── Admin endpoints ───────────────────────────────────────────────────────────
 
 @challenges_bp.route("/admin", methods=["GET"])

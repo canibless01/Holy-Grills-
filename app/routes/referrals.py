@@ -98,22 +98,19 @@ def my_referrals():
             q = q.eq("campus_id", campus_id)
         referrals = q.order("created_at", ascending=False).execute()
 
+        referred_user_ids = [r.get("referred_user_id") for r in referrals if r.get("referred_user_id")]
+        profiles_map = {}
+        if referred_user_ids:
+            try:
+                prof_rows = db.table("profiles").select("id,full_name,created_at").in_("id", referred_user_ids).execute() or []
+                profiles_map = {p["id"]: p for p in prof_rows}
+            except Exception:
+                profiles_map = {}
+
         enriched_referrals = []
         for referral in referrals:
-            referred_user = None
             referred_user_id = referral.get("referred_user_id")
-            if referred_user_id:
-                try:
-                    referred_user = (
-                        db.table("profiles")
-                        .select("full_name,created_at")
-                        .eq("id", referred_user_id)
-                        .single()
-                        .execute()
-                    )
-                except Exception:
-                    referred_user = None
-            referral["referred_user"] = referred_user
+            referral["referred_user"] = profiles_map.get(referred_user_id)
             enriched_referrals.append(referral)
 
         total_hp = sum(r.get("hp_awarded", 0) or 0 for r in enriched_referrals)

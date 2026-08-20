@@ -229,6 +229,9 @@ def admin_list_redemptions():
     q = db.table("reward_redemptions").select(
         "*,rewards(name,reward_type,hp_cost,image_url),profiles!user_id(full_name,email)"
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -270,7 +273,11 @@ def admin_update_redemption(redemption_id):
         description: Redemption not found
     """
     db = get_user_client()
-    row = db.table("reward_redemptions").select("id,status,user_id,reward_id,hp_cost_snapshot").eq("id", redemption_id).single().execute()
+    q = db.table("reward_redemptions").select("id,status,user_id,reward_id,hp_cost_snapshot").eq("id", redemption_id)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    row = q.single().execute()
     if not row:
         return jsonify({"error": MSG.REWARD_REDEMPTION_NOT_FOUND}), 404
     data = request.get_json(force=True) or {}
@@ -282,8 +289,11 @@ def admin_update_redemption(redemption_id):
     if old_status == new_status:
         return jsonify({"message": "No change", "status": new_status}), 200
 
+    if old_status == "fulfilled" and new_status == "rejected":
+        return jsonify({"error": "Cannot reject an already-fulfilled redemption"}), 400
+
     # Before changing status to rejected: refund spent HP
-    if new_status == "rejected" and old_status != "rejected":
+    if new_status == "rejected" and old_status == "pending":
         hp_cost = int(row.get("hp_cost_snapshot") or 0)
         user_id = row.get("user_id")
         if hp_cost > 0 and user_id:
@@ -357,6 +367,7 @@ def create_reward():
     if "quantity_available" in data:
         data["stock_quantity"] = data.pop("quantity_available")
     data["is_active"] = data.get("is_active", True)
+    data["campus_id"] = data.get("campus_id") or getattr(g, "campus_id", None)
     result = db.table("rewards").insert(data)
     created = result[0] if isinstance(result, list) else result
 
@@ -395,7 +406,11 @@ def update_reward_image(reward_id):
         return jsonify({"error": "image_url is required"}), 400
 
     db = get_user_client()
-    db.table("rewards").eq("id", reward_id).update({
+    q = db.table("rewards").eq("id", reward_id)
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    q.update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -430,7 +445,11 @@ def update_reward(reward_id):
     db = get_user_client()
     data = request.get_json(force=True)
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("rewards").eq("id", reward_id).update(data)
+    q = db.table("rewards").eq("id", reward_id)
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    result = q.update(data)
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -453,10 +472,17 @@ def delete_reward(reward_id):
         description: Reward not found
     """
     db = get_user_client()
-    existing = db.table("rewards").select("id").eq("id", reward_id).limit(1).execute()
+    q = db.table("rewards").select("id").eq("id", reward_id)
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    existing = q.limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
-    db.table("rewards").eq("id", reward_id).update({
+    update_q = db.table("rewards").eq("id", reward_id)
+    if campus_id:
+        update_q = update_q.eq("campus_id", campus_id)
+    update_q.update({
         "is_active": False,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
