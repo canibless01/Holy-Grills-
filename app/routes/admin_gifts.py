@@ -9,7 +9,7 @@ PATCH  /admin/settings/<key>             — update a system setting
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -33,7 +33,7 @@ def list_first_order_gifts():
       200:
         description: List of first-order gifts
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("first_order_gifts")
         .select("*,profiles(full_name,email,phone),orders(id,total_amount,created_at)")
@@ -76,7 +76,7 @@ def update_first_order_gift(gift_id):
       404:
         description: Gift not found
     """
-    db = get_db()
+    db = get_user_client()
     gift = (
         db.table("first_order_gifts")
         .select("id,status")
@@ -129,7 +129,7 @@ def list_settings():
       200:
         description: All system settings
     """
-    db = get_db()
+    db = get_user_client()
     settings = db.table("system_settings").select("*").order("key").execute() or []
     return jsonify({"settings": settings, "count": len(settings)}), 200
 
@@ -166,7 +166,7 @@ def update_setting(key):
       404:
         description: Setting not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("system_settings")
         .select("key")
@@ -260,7 +260,7 @@ def create_setting():
       409:
         description: Key already exists
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     key = (data.get("key") or "").strip()
     value = data.get("value")

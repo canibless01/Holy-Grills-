@@ -3,7 +3,7 @@
 import math
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 
 delivery_bp = Blueprint("delivery", __name__)
@@ -85,7 +85,7 @@ def list_hostels():
         description: |
           { hostels: [{ id, name, gate_id, delivery_fee, is_active, gates: {...} }] }
     """
-    db = get_db()
+    db = get_user_client()
     try:
         q = db.table("hostels").select("*,gates(name,lat,lon)").eq("is_active", "true")
         campus_id = getattr(g, 'campus_id', None)
@@ -110,7 +110,7 @@ def list_gates():
         description: |
           { gates: [{ id, name, lat, lon, base_fee, rate_per_km, min_fee }] }
     """
-    db = get_db()
+    db = get_user_client()
     try:
         q = db.table("gates").select("*").eq("is_active", "true")
         campus_id = getattr(g, 'campus_id', None)
@@ -160,7 +160,7 @@ def calculate_fee():
       404:
         description: Hostel or gate not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     delivery_type = data.get("delivery_type")
 
@@ -237,7 +237,7 @@ def admin_list_hostels():
       200:
         description: All hostels
     """
-    db = get_db()
+    db = get_user_client()
     try:
         hostels = (
             db.table("hostels")
@@ -274,7 +274,7 @@ def admin_create_hostel():
       400:
         description: Missing required field
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     for f in ["name", "delivery_fee"]:
         if data.get(f) is None:
@@ -317,7 +317,7 @@ def admin_update_hostel(hostel_id):
       404:
         description: Hostel not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     allowed = {"name", "gate_id", "delivery_fee", "is_active"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -351,7 +351,7 @@ def admin_delete_hostel(hostel_id):
       404:
         description: Hostel not found
     """
-    db = get_db()
+    db = get_user_client()
     try:
         result = db.table("hostels").eq("id", hostel_id).update({
             "is_active": False,
@@ -379,7 +379,7 @@ def admin_list_gates():
       200:
         description: All gates
     """
-    db = get_db()
+    db = get_user_client()
     try:
         gates = db.table("gates").select("*").order("name").execute() or []
     except Exception:
@@ -414,7 +414,7 @@ def admin_create_gate():
       400:
         description: Missing required field
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     if not data.get("name"):
         return jsonify({"error": "'name' is required"}), 400
@@ -460,7 +460,7 @@ def admin_update_gate(gate_id):
       404:
         description: Gate not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     allowed = {"name", "lat", "lon", "base_fee", "rate_per_km", "min_fee", "is_active"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -494,7 +494,7 @@ def admin_delete_gate(gate_id):
       404:
         description: Gate not found
     """
-    db = get_db()
+    db = get_user_client()
     try:
         result = db.table("gates").eq("id", gate_id).update({
             "is_active": False,

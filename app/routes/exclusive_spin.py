@@ -141,18 +141,20 @@ def do_spin():
     new_count = 0
     for spin_row in spins:
         try:
-            res = write_db.table("exclusive_spins") \
-                .eq("id", spin_row["id"]) \
-                .eq("user_id", user_id) \
-                .eq("spin_count", spin_row["spin_count"]) \
+            res = (
+                write_db.table("exclusive_spins")
+                .eq("id", spin_row["id"])
+                .eq("user_id", user_id)
+                .eq("spin_count", spin_row["spin_count"])
                 .update({"spin_count": spin_row["spin_count"] - 1})
+                .execute()
+            )
             if res:
                 success = True
                 new_count = spin_row["spin_count"] - 1
                 break
         except Exception as e:
             logger.error("do_spin OCC update failed for spin row %s: %s", spin_row["id"], e)
-            pass
 
     if not success:
         return jsonify({"error": "No spin credits available or concurrent update occurred. Please try again."}), 409

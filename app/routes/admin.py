@@ -3,7 +3,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_role
 from app.services.notification_service import send_notification
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -40,7 +40,7 @@ def list_users():
       200:
         description: User list
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
 
@@ -75,7 +75,7 @@ def get_user(user_id):
       200:
         description: User detail
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("*").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -151,7 +151,7 @@ def list_all_orders():
       200:
         description: List of all orders with user and item details
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
 
@@ -219,7 +219,7 @@ def user_order_history(user_id):
       404:
         description: User not found
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("id,full_name").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -275,7 +275,7 @@ def change_user_role(user_id):
       404:
         description: User not found
     """
-    db = get_db()
+    db = get_user_client()
     if user_id == getattr(g, "user_id", None):
         return jsonify({"error": "Cannot change your own role"}), 403
 
@@ -328,7 +328,7 @@ def user_hp_history(user_id):
       404:
         description: User not found
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("id,full_name").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -379,7 +379,7 @@ def user_wallet_history(user_id):
       404:
         description: User not found
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("id,full_name").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -422,7 +422,7 @@ def deactivate_user(user_id):
     if user_id == g.user_id:
         return jsonify({"error": "You cannot deactivate your own account"}), 400
 
-    db = get_db()
+    db = get_user_client()
     target_profile = db.table("profiles").select("id,role,is_active,full_name").eq("id", user_id).single().execute()
     if not target_profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -459,7 +459,7 @@ def activate_user(user_id):
       404:
         description: User not found
     """
-    db = get_db()
+    db = get_user_client()
     profile = db.table("profiles").select("id,is_active,full_name").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
@@ -486,7 +486,7 @@ def list_windows():
       200:
         description: Delivery windows
     """
-    db = get_db()
+    db = get_user_client()
     campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
     q = db.table("delivery_windows").select("*")
     if campus_id:
@@ -522,7 +522,7 @@ def create_window():
       201:
         description: Window created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     if "opens_at" in data:
         data["starts_at"] = data.pop("opens_at")
@@ -585,7 +585,7 @@ def close_window(window_id):
       404:
         description: Window not found
     """
-    db = get_db()
+    db = get_user_client()
     window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
     if not window:
         return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
@@ -615,7 +615,7 @@ def reopen_window(window_id):
       404:
         description: Window not found
     """
-    db = get_db()
+    db = get_user_client()
     window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
     if not window:
         return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
@@ -654,7 +654,7 @@ def list_batches():
       200:
         description: Delivery batch list
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("delivery_batches").select(
@@ -695,7 +695,7 @@ def get_batch(batch_id):
       404:
         description: Batch not found
     """
-    db = get_db()
+    db = get_user_client()
     batch = db.table("delivery_batches").select(
         "*,delivery_windows!window_id(label,starts_at,ends_at),profiles!rider_id(full_name,phone)"
     ).eq("id", batch_id).limit(1).execute()
@@ -736,7 +736,7 @@ def create_batch():
       404:
         description: Window or rider not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     window_id = data.get("window_id")
     rider_id = data.get("rider_id")
@@ -819,7 +819,7 @@ def update_batch(batch_id):
       404:
         description: Batch not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("delivery_batches").select("id").eq("id", batch_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
@@ -855,7 +855,7 @@ def cancel_batch(batch_id):
       404:
         description: Batch not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("delivery_batches").select("id,status").eq("id", batch_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
@@ -889,7 +889,7 @@ def list_batch_orders(batch_id):
       404:
         description: Batch not found
     """
-    db = get_db()
+    db = get_user_client()
     batch = db.table("delivery_batches").select("id").eq("id", batch_id).limit(1).execute()
     if not batch:
         return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
@@ -911,7 +911,7 @@ def list_promos():
       200:
         description: Promo code list
     """
-    db = get_db()
+    db = get_user_client()
     codes = db.table("promo_codes").select("*").order("created_at", ascending=False).execute()
     return jsonify(codes), 200
 
@@ -945,7 +945,7 @@ def create_promo():
       201:
         description: Promo code created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     required = ["code", "discount_type", "discount_value"]
     for f in required:
@@ -1001,7 +1001,7 @@ def update_promo(promo_id):
       404:
         description: Promo code not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("promo_codes").select("id").eq("id", promo_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_PROMO_NOT_FOUND}), 404
@@ -1084,7 +1084,7 @@ def promo_uses(promo_id):
       404:
         description: Promo code not found
     """
-    db = get_db()
+    db = get_user_client()
     promo = db.table("promo_codes").select("*").eq("id", promo_id).limit(1).execute()
     promo = promo[0] if promo else None
     if not promo:
@@ -1119,7 +1119,7 @@ def abandoned_carts():
       200:
         description: Abandoned cart list
     """
-    db = get_db()
+    db = get_user_client()
     carts = (
         db.table("abandoned_carts")
         .select("*,profiles(full_name)")
@@ -1146,7 +1146,7 @@ def nudge_cart(cart_id):
       200:
         description: Recovery nudge sent
     """
-    db = get_db()
+    db = get_user_client()
     cart = db.table("abandoned_carts").select("*").eq("id", cart_id).single().execute()
     if not cart or not cart.get("user_id"):
         return jsonify({"error": MSG.ADMIN_CART_NOT_FOUND}), 404
@@ -1184,7 +1184,7 @@ def audit_log():
       200:
         description: Audit log entries with pagination metadata
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     logs = db.table("admin_audit_logs").select("*").order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
@@ -1310,7 +1310,7 @@ def cron_status():
       200:
         description: Cron job status map
     """
-    db = get_db()
+    db = get_user_client()
 
     KNOWN_JOBS = [
         "birthday-hp",
@@ -1443,7 +1443,7 @@ def bulk_grant_hp():
     """
     from app.services.hp_service import award_active_hp
 
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
 
     amount = data.get("amount")
@@ -1578,7 +1578,7 @@ def hp_report():
       200:
         description: HP program metrics
     """
-    db = get_db()
+    db = get_user_client()
 
     today = datetime.now(timezone.utc).date().isoformat()
 
@@ -1646,7 +1646,7 @@ def list_campuses():
       200:
         description: List of campuses
     """
-    db = get_db()
+    db = get_user_client()
     try:
         campuses = db.table("campuses").select("*").order("name").execute() or []
     except Exception as e:
@@ -1659,7 +1659,7 @@ def list_campuses():
 @require_role("admin")
 def list_reviews():
     """List all order reviews with filters"""
-    db = get_db()
+    db = get_user_client()
 
     # Validation of query parameters to return 400 Bad Request if invalid
     try:
@@ -1789,7 +1789,7 @@ def list_reviews():
 
 
 def _audit(actor_id, table, target_id, action, after_data=None):
-    db = get_db()
+    db = get_user_client()
     try:
         db.table("admin_audit_logs").insert({
             "actor_id": actor_id,

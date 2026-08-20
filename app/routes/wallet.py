@@ -202,45 +202,21 @@ def request_virtual_account():
 @require_role("admin")
 def admin_wallet_transactions():
     """
-    List wallet transactions across all users (admin only).
-    SECURITY / MULTI-TENANCY NOTE:
-      Intentionally has no campus_id filter to adhere to the admin-is-global multi-tenant pattern,
-      allowing global administrators full visibility over system-wide financial transactions.
-    ---
-    tags: [Wallet]
-    parameters:
-      - in: query
-        name: user_id
-        type: string
-        description: Filter by user UUID
-      - in: query
-        name: type
-        type: string
-        description: Filter by reference_type (topup, order_payment, refund, withdrawal, bank_transfer)
-      - in: query
-        name: from_date
-        type: string
-        format: date
-      - in: query
-        name: to_date
-        type: string
-        format: date
-      - in: query
-        name: limit
-        type: integer
-        default: 50
-      - in: query
-        name: offset
-        type: integer
-        default: 0
-    responses:
-      200:
-        description: Wallet transactions across all users
+    List wallet transactions (admin only). Scoped to caller campus_id unless super_admin.
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("wallet_transactions").select("*,profiles!user_id(full_name,email)")
+
+    caller_role = getattr(g, "user_role", None)
+    if not caller_role and hasattr(g, "user") and isinstance(g.user, dict):
+        caller_role = g.user.get("role")
+
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    if caller_role != "super_admin" and campus_id:
+        q = q.eq("campus_id", campus_id)
+
     uid = request.args.get("user_id")
     if uid:
         q = q.eq("user_id", uid)

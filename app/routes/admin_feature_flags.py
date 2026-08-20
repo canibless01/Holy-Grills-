@@ -14,7 +14,7 @@ PATCH  /api/admin/hall-of-fame-rewards/<user_id> — update status
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
@@ -35,7 +35,7 @@ def create_feature_flag():
     if not flag_name:
         return jsonify({"error": MSG.FEATURE_FLAG_NAME_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
     existing = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
     if existing:
         return jsonify({"error": "Feature flag already exists", "flag": existing}), 409
@@ -67,7 +67,7 @@ def list_feature_flags():
       200:
         description: Feature flag list
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("feature_flags").select("*")
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
@@ -94,7 +94,7 @@ def get_feature_flag(flag_name):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
     if not row:
         return jsonify({"error": MSG.FEATURE_FLAG_NOT_FOUND}), 404
@@ -124,7 +124,7 @@ def update_feature_flag(flag_name):
       200:
         description: Flag updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
     existing = db.table("feature_flags").select("feature_name").eq("feature_name", flag_name).single().execute()
@@ -175,7 +175,7 @@ def list_leaderboard_prizes():
       200:
         description: Prize list
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("leaderboard_reward_fulfillments").select("*").order("month", ascending=False)
     status = request.args.get("status")
     if status:
@@ -225,7 +225,7 @@ def fulfil_leaderboard_prize(record_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("leaderboard_reward_fulfillments").select("id").eq("id", record_id).single().execute()
     if not row:
         return jsonify({"error": MSG.LEADERBOARD_REWARD_NOT_FOUND}), 404
@@ -258,7 +258,7 @@ def list_hof_rewards():
       200:
         description: HoF reward list
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("hall_of_fame_rewards").select("*").order("inducted_at", ascending=False)
     status = request.args.get("status")
     if status:
@@ -305,7 +305,7 @@ def fulfil_hof_reward(record_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("hall_of_fame_rewards").select("id").eq("id", record_id).single().execute()
     if not row:
         return jsonify({"error": MSG.HOF_REWARD_NOT_FOUND}), 404

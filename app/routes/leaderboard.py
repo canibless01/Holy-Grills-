@@ -39,7 +39,7 @@ def get_leaderboard():
       200:
         description: Leaderboard rankings
     """
-    db = get_db()
+    db = get_user_client()
     period_type = request.args.get("period_type", "monthly")
     if period_type not in ("monthly", "weekly", "all_time"):
         period_type = "monthly"
@@ -109,7 +109,7 @@ def hall_of_fame():
       200:
         description: Hall of Fame entries
     """
-    db = get_db()
+    db = get_user_client()
     try:
         campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         # Monthly #1 winners from leaderboard snapshots
@@ -158,7 +158,7 @@ def hall_of_fame_inductees():
       200:
         description: Inductee list with profile enrichment
     """
-    db = get_db()
+    db = get_user_client()
     try:
         campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         q = db.table("hall_of_fame_inductees").select("*")
@@ -208,7 +208,7 @@ def inductee_share_card(inductee_user_id):
       404:
         description: Inductee not found
     """
-    db = get_db()
+    db = get_user_client()
     try:
         campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         q = db.table("hall_of_fame_inductees").select("*").eq("user_id", inductee_user_id)
@@ -344,7 +344,7 @@ def squad_leaderboard():
       200:
         description: Squad leaderboard rankings
     """
-    db = get_db()
+    db = get_user_client()
     period_type = request.args.get("period_type", "monthly")
     if period_type not in ("monthly", "weekly", "all_time"):
         period_type = "monthly"

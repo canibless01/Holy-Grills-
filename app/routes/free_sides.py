@@ -134,14 +134,15 @@ def redeem_free_side():
     credit_row_used = None
     for credit_row in credits:
         try:
-            res = write_db.table("free_side_credits") \
-                .eq("id", credit_row["id"]) \
-                .eq("user_id", user_id) \
-                .eq("credits_remaining", credit_row["credits_remaining"]) \
+            res = (
+                write_db.table("free_side_credits")
+                .eq("id", credit_row["id"])
+                .eq("credits_remaining", credit_row["credits_remaining"])
                 .update({
                     "credits_remaining": credit_row["credits_remaining"] - 1,
                     "used_at": datetime.now(timezone.utc).isoformat(),
                 })
+            )
             if res:
                 success = True
                 new_remaining = credit_row["credits_remaining"] - 1
@@ -149,7 +150,6 @@ def redeem_free_side():
                 break
         except Exception as e:
             logger.error("redeem_free_side OCC update failed for credit row %s: %s", credit_row["id"], e)
-            pass
 
     if not success:
         return jsonify({"error": "No credits available or concurrent update occurred. Please try again."}), 409
@@ -165,7 +165,7 @@ def redeem_free_side():
             "hp_earn_snapshot": 0,
             "line_total": 0.0,
             "is_addon": True,
-        })
+        }).execute()
     except Exception as e:
         logger.error("Failed to insert free side line item into order_items: %s", e)
         # Compensate: restore the used credit if order item insertion fails
@@ -173,9 +173,10 @@ def redeem_free_side():
             write_db.table("free_side_credits").eq("id", credit_row_used["id"]).update({
                 "credits_remaining": credit_row_used["credits_remaining"],
                 "used_at": None,
-            })
+            }).execute()
         except Exception as refund_err:
-            logger.error("redeem_free_side: refund-on-failure also failed for credit %s: %s", credit_row_used["id"], refund_err)
+            logger.error("redeem_free_side: refund-on-failure also failed for credit %s: %s",
+                         credit_row_used["id"], refund_err)
         return jsonify({"error": "Failed to apply free side to order — your credit has not been used, please try again"}), 500
 
     return jsonify({

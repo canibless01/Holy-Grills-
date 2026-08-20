@@ -157,6 +157,25 @@ class SupabaseClient:
         )
 
 
+
+class QueryResultList(list):
+    def execute(self):
+        return self
+
+class QueryResultDict(dict):
+    def execute(self):
+        return self
+
+def _wrap_result(res):
+    if isinstance(res, list):
+        return QueryResultList([_wrap_result(x) for x in res])
+    elif isinstance(res, dict):
+        d = QueryResultDict()
+        for k, v in res.items():
+            d[k] = _wrap_result(v)
+        return d
+    return res
+
 class TableQuery:
     def __init__(self, client: SupabaseClient, table: str):
         self._client = client
@@ -284,7 +303,7 @@ class TableQuery:
         url = f"{self._client.url}/rest/v1/{self._table}"
         resp = self._client._session.post(url, headers=self._headers(), json=data)
         _raise_for_status(resp)
-        return resp.json()
+        return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
     def update(self, data: dict) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
@@ -294,7 +313,7 @@ class TableQuery:
             params[k] = v
         resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params)
         _raise_for_status(resp)
-        return resp.json()
+        return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
     def delete(self) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
@@ -304,7 +323,7 @@ class TableQuery:
             params[k] = v
         resp = self._client._session.delete(url, headers=self._headers(), params=params)
         _raise_for_status(resp)
-        return resp.json()
+        return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
     def upsert(self, data: dict | list, on_conflict: str = "id") -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
@@ -312,7 +331,7 @@ class TableQuery:
         headers["Prefer"] = f"resolution=merge-duplicates,return=representation"
         resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict})
         _raise_for_status(resp)
-        return resp.json()
+        return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
 
 class _NotProxy:

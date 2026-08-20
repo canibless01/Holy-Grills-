@@ -33,7 +33,7 @@ def list_listings():
       200:
         description: Marketplace listings
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -66,7 +66,7 @@ def get_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
@@ -82,31 +82,13 @@ def get_listing(listing_id):
 @require_auth
 def purchase(listing_id):
     """
-    Purchase a marketplace listing. Supports HP pricing, wallet, card, or split.
-    ---
-    tags: [Marketplace]
-    parameters:
-      - in: path
-        name: listing_id
-        type: string
-        required: true
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [payment_method]
-          properties:
-            payment_method: {type: string, enum: [wallet, card, split]}
-            wallet_amount: {type: number}
-            payment_reference: {type: string, description: "Required for card payment confirmation"}
-    responses:
-      201:
-        description: Purchase successful, code returned if applicable
-      400:
-        description: Validation error
+    Purchase a marketplace listing. Uses atomic hg_purchase_marketplace_item RPC.
     """
+    from flask import current_app
+    from app.services.notification_service import send_notification
+
     db = get_user_client()
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     listing = db.table("marketplace_listings").select("*").eq("id", listing_id).eq("status", "active").single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_AVAILABLE}), 404
@@ -138,14 +120,19 @@ def purchase(listing_id):
         })
     except Exception as exc:
         err_str = str(exc)
-        if "out of stock" in err_str.lower() or "insufficient inventory" in err_str.lower() or "no_codes" in err_str.lower():
+        if "out of stock" in err_str.lower() or "insufficient inventory" in err_str.lower() or "no_codes" in err_str.upper():
+            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
+        return jsonify({"error": err_str}), 400
+
+    if isinstance(purchase_row, dict) and purchase_row.get("error"):
+        err_str = str(purchase_row["error"])
+        if "out of stock" in err_str.lower() or "insufficient inventory" in err_str.lower() or "no_codes" in err_str.upper():
             return jsonify({"error": MSG.LISTING_NO_CODES}), 400
         return jsonify({"error": err_str}), 400
 
     purchase_id = purchase_row.get("id") if isinstance(purchase_row, dict) else str(purchase_row)
     code_value = (purchase_row.get("metadata") or {}).get("code") if isinstance(purchase_row, dict) else None
 
-    from flask import current_app
     marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
     if marketplace_hp > 0:
         award_active_hp(
@@ -157,7 +144,6 @@ def purchase(listing_id):
             notes="HP earned on marketplace purchase",
         )
 
-    from app.services.notification_service import send_notification
     _purchase_body = MSG.MARKETPLACE_PURCHASE_BODY.format(title=listing["title"])
     if code_value:
         _purchase_body += MSG.MARKETPLACE_PURCHASE_CODE_SUFFIX.format(code=code_value)
@@ -173,8 +159,8 @@ def purchase(listing_id):
 
     if listing.get("listing_type") in ("code", "digital_code", "voucher", "subscription"):
         codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
-        if len(codes_left) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
-            _alert_admin_low_inventory(listing_id, listing["title"], len(codes_left))
+        if len(codes_left or []) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
+            _alert_admin_low_inventory(listing_id, listing["title"], len(codes_left or []))
 
     return jsonify({
         "purchase": purchase_row,
@@ -244,7 +230,7 @@ def admin_all_purchases():
       200:
         description: All marketplace purchases
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("marketplace_purchases").select(
@@ -292,7 +278,7 @@ def admin_update_purchase(purchase_id):
       404:
         description: Purchase not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     new_status = (data.get("status") or "").strip()
     VALID_STATUSES = {"pending", "completed", "refunded", "cancelled"}
@@ -315,6 +301,10 @@ def admin_update_purchase(purchase_id):
 
     # Before changing status to refunded or cancelled: execute refunds
     if new_status in ("refunded", "cancelled") and old_status not in ("refunded", "cancelled"):
+        guard_err = guard_refund_eligibility(db, purchase, jsonify)
+        if guard_err:
+            return guard_err
+
         user_id = purchase.get("user_id")
         wallet_amt = float(purchase.get("wallet_amount") or 0)
         pay_hp = purchase.get("pay_with_hp")
@@ -351,18 +341,8 @@ def admin_update_purchase(purchase_id):
             except Exception as e:
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
 
-        # Restore inventory / release the access code on refund or cancel
-        listing_id = purchase.get("listing_id")
-        if listing_id:
-            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": False}).execute()
-            code_row = (
-                db.table("marketplace_access_codes")
-                .select("id").eq("assigned_purchase_id", purchase_id).single().execute()
-            )
-            if code_row:
-                db.table("marketplace_access_codes").eq("id", code_row["id"]).update({
-                    "status": "available", "assigned_purchase_id": None, "assigned_at": None,
-                }).execute()
+        from app.utils.logger import get_logger
+        restore_inventory_on_refund(db, purchase, get_logger(__name__))
 
     update_payload = {
         "status": new_status,
@@ -414,7 +394,7 @@ def admin_get_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).limit(1).execute()
     listing = listing[0] if listing else None
     if not listing:
@@ -451,7 +431,7 @@ def admin_list_listings():
       200:
         description: All listings for admin review
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)")
@@ -493,7 +473,7 @@ def admin_create_listing():
       400:
         description: Validation error
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     for f in ["title", "listing_type", "price"]:
         if not data.get(f) and data.get(f) != 0:
@@ -555,7 +535,7 @@ def update_listing_image(listing_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("marketplace_listings").eq("id", listing_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -596,7 +576,7 @@ def admin_update_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("id,title,status").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.MARKETPLACE_LISTING_NOT_FOUND}), 404
@@ -659,7 +639,7 @@ def admin_delete_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("id,title").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
@@ -700,7 +680,7 @@ def submit_listing_request():
       503:
         description: Vendor request intake temporarily unavailable
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     required = ["vendor_name", "vendor_email", "service_title", "category", "description", "proposed_price"]
     for f in required:
@@ -766,7 +746,7 @@ def admin_list_requests():
       200:
         description: Vendor listing requests
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("marketplace_requests").select("*")
@@ -805,7 +785,7 @@ def admin_respond_to_request(request_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("marketplace_requests").select("id,status").eq("id", request_id).single().execute()
     if not row:
         return jsonify({"error": MSG.MARKETPLACE_REQUEST_NOT_FOUND}), 404
@@ -853,7 +833,7 @@ def upload_codes(listing_id):
       201:
         description: Codes uploaded
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     codes = data.get("codes", [])
     if not codes:
@@ -869,10 +849,51 @@ def upload_codes(listing_id):
     return jsonify({"uploaded": len(records)}), 201
 
 
+def guard_refund_eligibility(db, purchase, jsonify):
+    """
+    Call this FIRST in admin_update_purchase(), before any wallet/HP
+    refund, when the target status is 'refunded' or 'cancelled'.
+    """
+    listing_id = purchase.get("listing_id")
+    listing = db.table("marketplace_listings").select("listing_type").eq("id", listing_id).single().execute()
+    is_code_listing = listing and listing.get("listing_type") in ("code", "digital_code", "voucher", "subscription")
+
+    if is_code_listing:
+        code_row = (
+            db.table("marketplace_access_codes")
+            .select("id, status").eq("assigned_purchase_id", purchase.get("id")).single().execute()
+        )
+        if code_row and code_row.get("status") == "assigned":
+            return jsonify({
+                "error": "This purchase cannot be refunded — the access code has already been "
+                         "delivered to the customer and cannot be revoked."
+            }), 400
+    return None
+
+
+def restore_inventory_on_refund(db, purchase, logger):
+    """
+    Insert this in admin_update_purchase(), after guard_refund_eligibility
+    has passed and after the wallet/HP refund, before the update_payload
+    write, when status is being set to 'refunded' or 'cancelled'.
+    """
+    listing_id = purchase.get("listing_id")
+    quantity = purchase.get("quantity", 1)
+    if listing_id:
+        listing = db.table("marketplace_listings").select("inventory_count").eq("id", listing_id).single().execute()
+        if listing and listing.get("inventory_count") is not None:
+            db.table("marketplace_listings").eq("id", listing_id).update({
+                "inventory_count": listing["inventory_count"] + quantity,
+                "is_out_of_stock": False,
+            }).execute()
+        else:
+            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": False}).execute()
+
+
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
     from app.db import get_db
     from app.constants import ADMIN_ROLES
-    db = get_db()
+    db = get_user_client()
     admins = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).execute()
     from app.services.notification_service import send_notification
     for admin in admins:

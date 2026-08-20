@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -92,7 +92,7 @@ def update_kitchen_settings():
     if not settings or not isinstance(settings, dict):
         return jsonify({"error": MSG.KITCHEN_SETTINGS_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     campus_id = getattr(g, 'campus_id', None)
     updated = {}
@@ -129,7 +129,7 @@ def live_queue():
       200:
         description: Kitchen order queue
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("orders")
         .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
@@ -158,7 +158,7 @@ def delivery_windows():
       200:
         description: Delivery windows
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     campus_id = getattr(g, 'campus_id', None)
     q = db.table("delivery_windows").select("id,label,starts_at,ends_at,status").gte("ends_at", now)
@@ -204,7 +204,7 @@ def scheduled_orders():
       200:
         description: List of scheduled orders with items and window info
     """
-    db = get_db()
+    db = get_user_client()
     # Scheduled orders: is_scheduled=True AND status='received' (not yet activated).
     # The DB enum does not include a 'scheduled' status value; the is_scheduled
     # boolean column is the authoritative discriminator. Once kitchen promotes an
@@ -247,7 +247,7 @@ def kitchen_metrics():
       200:
         description: Kitchen metrics summary
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -302,33 +302,14 @@ def kitchen_metrics():
     }), 200
 
 
-@kitchen_bp.route("/batch-summary/<window_id>", methods=["GET"])
-@require_role("kitchen", "admin")
-def batch_summary(window_id):
-    """
-    Get consolidated prep list for a delivery window batch.
-    ---
-    tags: [Kitchen]
-    parameters:
-      - in: path
-        name: window_id
-        type: string
-        required: true
-    responses:
-      200:
-        description: Aggregated item quantities for the window
-    """
-    db = get_db()
-    q = (
-        db.table("orders")
-        .select("id,order_items(name_snapshot,quantity)")
+@name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "preparing", "ready"])
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    orders = q.execute() or []
+    orders = q.in_("status", ["received", "preparing", "ready"]).execute() or []
 
     aggregated: dict[str, int] = {}
     for order in orders:
@@ -376,7 +357,7 @@ def batch_advance(batch_id):
         description: No orders found in this batch
     """
     from app.services.order_service import update_order_status, VALID_TRANSITIONS
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     from_status_filter = data.get("from_status")
     notes = data.get("notes", f"Batch advance by kitchen ({batch_id[:8]})")
@@ -385,11 +366,11 @@ def batch_advance(batch_id):
         db.table("orders")
         .select("id,status")
         .eq("delivery_window_id", batch_id)
-        .not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
+    q = q.not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])
     if from_status_filter:
         q = q.eq("status", from_status_filter)
 

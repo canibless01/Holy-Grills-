@@ -81,7 +81,7 @@ def list_tiers():
       200:
         description: All tier definitions
     """
-    db = get_db()
+    db = get_user_client()
     tiers = db.table("hp_tiers").select("*").order("sort_order").execute()
     return jsonify(tiers), 200
 
@@ -505,12 +505,16 @@ def _log_admin_action(actor_id, table, target_id, action, after_data=None, campu
     db = get_db()
     actor_role = getattr(g, "user_role", "admin")
     cid = campus_id or getattr(g, "campus_id", None)
-    db.table("admin_audit_logs").insert({
-        "actor_id": actor_id,
-        "actor_role": actor_role,
-        "entity_type": table,
-        "entity_id": target_id,
-        "action": action,
-        "after_value": after_data,
-        "campus_id": getattr(g, "campus_id", None),
-    }).execute()
+    
+    try:
+        db.table("admin_audit_logs").insert({
+            "actor_id": actor_id,
+            "actor_role": actor_role,
+            "entity_type": table,
+            "entity_id": target_id,
+            "action": action,
+            "after_value": after_data,
+            "campus_id": cid,
+        }).execute()
+    except Exception:
+        pass  # Silent faildef _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None)

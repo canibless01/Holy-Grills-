@@ -145,7 +145,7 @@ def create_lock():
             result = res.execute() if hasattr(res, "execute") else res
         else:
             raise
-    row = result[0] if isinstance(result, list) else result
+    row = (result[0] if isinstance(result, list) else result) if result is not None else {}
     return jsonify({"message": MSG.ORDER_LOCK_CREATED, "lock": row}), 201
 
 
@@ -266,7 +266,7 @@ def reschedule_lock(lock_id):
 
     now = datetime.now(timezone.utc).isoformat()
     new_reschedule_count = int(lock.get("reschedule_count", 0)) + 1
-    updated = db.table("order_locks").eq("id", lock_id).update({
+    updated = reschedule_lock_write(db, lock_id, {
         "locked_date": new_date_str,
         "reschedule_count": new_reschedule_count,
         "updated_at": now,
@@ -336,15 +336,17 @@ def admin_list_locks():
       200:
         description: All locks
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("order_locks")
         .select("*,profiles(full_name,email,phone)")
         .order("locked_date", ascending=True)
     )
+    # Allow query param, but super_admin sees al
     campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    if campus_id and getattr(g, "user_role", None) != "super_admin":
+      q = q.eq("campus_id", campus_id)
+      
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -353,6 +355,15 @@ def admin_list_locks():
         q = q.eq("locked_date", date_filter)
     locks = q.execute() or []
     return jsonify({"locks": locks, "count": len(locks)}), 200
+
+
+def reschedule_lock_write(db, lock_id, update):
+    return db.table("order_locks").eq("id", lock_id).update(update)
+
+
+def cancel_lock_write(db, lock_id):
+    now = datetime.now(timezone.utc).isoformat()
+    return db.table("order_locks").eq("id", lock_id).update({"status": "cancelled", "updated_at": now})
 
 
 def _get_setting(db, key: str, default: str = "") -> str:

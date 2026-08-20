@@ -3,7 +3,7 @@
 import os
 import requests as _req
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, optional_auth
+from app.middleware.auth import require_auth, optional_auth, _resolve_default_campus
 from app.middleware.rate_limit import rate_limit
 from app.services import auth_service
 from app.utils.retry import with_retry
@@ -594,7 +594,11 @@ def delete_account():
     except Exception:
         pass
 
-    return jsonify({"message": MSG.ACCOUNT_DELETED, "anonymized_at": result.get("anonymized_at")}), 200
+    anonymized_at = result.get("anonymized_at") if isinstance(result, dict) else None
+    resp = {"message": MSG.ACCOUNT_DELETED}
+    if anonymized_at:
+        resp["anonymized_at"] = anonymized_at
+    return jsonify(resp), 200
 
 
 @auth_bp.route("/verify-email", methods=["POST"])
