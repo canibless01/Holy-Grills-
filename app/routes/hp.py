@@ -111,7 +111,7 @@ def admin_grant():
     if not data.get("user_id") or not data.get("amount"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
 
-    db = get_db()
+    db = get_user_client()
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404
@@ -158,7 +158,7 @@ def admin_expire():
     if not data.get("user_id"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
 
-    db = get_db()
+    db = get_user_client()
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404

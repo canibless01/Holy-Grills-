@@ -86,7 +86,7 @@ def hp_analytics():
       200:
         description: HP analytics
     """
-    db = get_db()
+    db = get_user_client()
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
     to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
 

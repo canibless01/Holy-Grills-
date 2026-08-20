@@ -20,7 +20,7 @@ def get_kitchen_settings():
       200:
         description: Kitchen settings key/value map
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("kitchen_settings").select("*")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -51,7 +51,7 @@ def get_kitchen_setting(key):
       404:
         description: Setting not found
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("kitchen_settings").select("*").eq("key", key)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -302,14 +302,33 @@ def kitchen_metrics():
     }), 200
 
 
-@name_snapshot,quantity)")
+@kitchen_bp.route("/batch-summary/<window_id>", methods=["GET"])
+@require_role("kitchen", "admin")
+def batch_summary(window_id):
+    """
+    Get aggregated item quantity summary for a delivery window batch.
+    ---
+    tags: [Kitchen]
+    parameters:
+      - in: path
+        name: window_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Aggregated item summary for kitchen preparation
+    """
+    db = get_user_client()
+    q = (
+        db.table("orders")
+        .select("id,order_items(name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "preparing", "ready"])
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    orders = q.in_("status", ["received", "preparing", "ready"]).execute() or []
+    orders = q.execute() or []
 
     aggregated: dict[str, int] = {}
     for order in orders:
