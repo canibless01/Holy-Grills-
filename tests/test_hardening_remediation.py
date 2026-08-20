@@ -251,18 +251,21 @@ def test_free_sides_redeem_occ_failure(mock_get_db, client):
         {"id": "credit-1", "credits_remaining": 1, "expires_at": "2030-12-12"}
     ]
 
+    mock_db.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = []
+
     def single_execute_side_effect():
         # 1. Auth profile lookup
-        yield {"id": "user-123", "role": "student", "is_active": True}
-        # 2. _get_free_side_options system settings lookup
-        yield None
-        # 3. Order lookup
+        yield {"id": "user-123", "role": "student", "is_active": True, "campus_id": None}
+        # 2. Order lookup
         yield {"id": "00000000-0000-0000-0000-000000000000", "user_id": "user-123"}
+        # 3. _get_free_side_options system settings lookup
+        yield None
 
     mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = single_execute_side_effect()
 
     # Mock the OCC atomic update to fail (concurrency collision, e.g. return empty list or fail)
     mock_db.table.return_value.eq.return_value.eq.return_value.update.return_value = []
+    mock_db.table.return_value.eq.return_value.eq.return_value.eq.return_value.update.return_value = []
 
     # Mock auth_get_user on the DB client mock
     mock_db.auth_get_user.return_value = {"id": "user-123", "role": "student"}

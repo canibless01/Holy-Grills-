@@ -59,8 +59,8 @@ def require_auth(f):
         g.user_role = profile.get("role", "student")
         g.campus_id = profile.get("campus_id")
         if not g.campus_id:
-            default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-            g.campus_id = default.get("id") if default else None
+            default = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
+            g.campus_id = default[0]["id"] if (default and isinstance(default, list) and len(default) > 0) else None
 
         return f(*args, **kwargs)
 
@@ -117,8 +117,8 @@ def require_role(*roles):
             g.user_role = profile.get("role")
             g.campus_id = profile.get("campus_id")
             if not g.campus_id:
-                default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-                g.campus_id = default.get("id") if default else None
+                default = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
+                g.campus_id = default[0]["id"] if (default and isinstance(default, list) and len(default) > 0) else None
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -181,8 +181,8 @@ def optional_auth(f):
             g.user_role = profile.get("role", "student")
             g.campus_id = profile.get("campus_id")
             if not g.campus_id:
-                default = db.table("campuses").select("id").eq("is_default", True).single().execute()
-                g.campus_id = default.get("id") if default else None
+                default = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
+                g.campus_id = default[0]["id"] if (default and isinstance(default, list) and len(default) > 0) else None
 
         return f(*args, **kwargs)
     return decorated

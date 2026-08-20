@@ -561,12 +561,18 @@ def register_for_event(event_id):
                 "p_metadata": metadata_payload,
             })
         else:
-            rpc_res = db.rpc("register_for_event_atomic", {
+            params = {
                 "p_event_id": event_id,
                 "p_user_id": user_id,
-                "p_tier_id": tier_id,
-                "p_metadata": metadata_payload,
-            })
+            }
+            try:
+                rpc_res = db.rpc("register_for_event_atomic", {
+                    **params,
+                    "p_tier_id": tier_id,
+                    "p_metadata": metadata_payload,
+                })
+            except Exception:
+                rpc_res = db.rpc("register_for_event_atomic", params)
     except Exception as exc:
         err_msg = str(exc)
         if "ALREADY_REGISTERED" in err_msg or "already registered" in err_msg.lower():
@@ -853,7 +859,7 @@ def create_event():
     EVENT_COLUMNS = {
         "title", "slug", "description", "location", "starts_at", "ends_at",
         "hp_reward", "hp_promo_enabled", "is_featured", "capacity",
-        "is_published", "organizer_id",
+        "is_published", "organizer_id", "campus_id",
         # Phase 2 columns (from migration):
         "hp_per_attendee", "funding_source", "max_attendees",
         "hp_required", "total_value", "is_paid",
@@ -861,10 +867,11 @@ def create_event():
     # Prefer hp_per_attendee over legacy hp_reward if provided
     if data.get("hp_per_attendee") and not data.get("hp_reward"):
         data["hp_reward"] = data["hp_per_attendee"]
-    safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS}
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id and "campus_id" not in safe:
-        safe["campus_id"] = campus_id
+    if not campus_id:
+        return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS}
+    safe["campus_id"] = campus_id
     try:
         result = db.table("events").insert(safe)
     except Exception as _exc:
@@ -1405,7 +1412,7 @@ def my_tickets():
         ci = checkins_map.get(t["id"])
         item = {
             "ticket_id": t["id"],
-            "qr_token": t.get("qr_code") or t.get("qr_token") or t["id"],
+            "qr_token": t.get("qr_code") or t["id"],
             "event_id": t.get("event_id"),
             "event_title": e.get("title"),
             "starts_at": e.get("starts_at"),

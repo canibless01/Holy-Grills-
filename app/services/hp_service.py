@@ -118,12 +118,12 @@ def _get_hp_multiplier() -> float:
     """
     try:
         db = get_db()
-        m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").single().execute()
+        m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").is_("campus_id", "null").single().execute()
         multiplier = float((m_row or {}).get("value", "1") or "1")
         if multiplier not in (0.5, 1.0, 2.0):
             return 1.0
         # Check expiry
-        exp_row = db.table("system_settings").select("value").eq("key", "multiplier_expires_at").single().execute()
+        exp_row = db.table("system_settings").select("value").eq("key", "multiplier_expires_at").is_("campus_id", "null").single().execute()
         expires_at = ((exp_row or {}).get("value") or "").strip()
         if expires_at:
             exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))

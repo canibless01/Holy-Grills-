@@ -73,33 +73,59 @@ def hp_analytics():
     HP ecosystem analytics — issued vs redeemed, tier distribution.
     ---
     tags: [Analytics]
+    parameters:
+      - in: query
+        name: from_date
+        type: string
+        format: date
+      - in: query
+        name: to_date
+        type: string
+        format: date
     responses:
       200:
         description: HP analytics
     """
     db = get_db()
+    from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
+    to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
+
     EARN_SOURCES = {"food_order", "welcome", "referral", "review", "event_checkin",
                     "birthday", "challenge", "admin_grant", "squad_bonus", "streak",
                     "signup", "wallet_topup", "social", "daily_checkin", "food", "order"}
     SPEND_SOURCES = {"reward_redemption", "flash_reward_redemption", "marketplace_purchase",
                      "order_hp_redemption", "spin_cost", "hp_transfer", "spend_reward", "spend_marketplace", "spend_order_discount"}
-    q = db.table("hp_transactions").select("amount,type,status,source")
+    q = (
+        db.table("hp_transactions")
+        .select("amount,type,status,source")
+        .gte("created_at", from_date)
+        .lte("created_at", to_date + "T23:59:59Z")
+    )
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    hp_txns = q.execute()
+    hp_txns = q.execute() or []
+    if isinstance(hp_txns, dict) and "data" in hp_txns:
+        hp_txns = hp_txns["data"]
+
     earned = sum(t["amount"] for t in hp_txns if t.get("source") in EARN_SOURCES and t["amount"] > 0)
     spent = abs(sum(t["amount"] for t in hp_txns if t.get("source") in SPEND_SOURCES and t["amount"] < 0))
     expired = abs(sum(t["amount"] for t in hp_txns if t.get("type") == "expire" and t["amount"] < 0))
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
 
-    tiers = db.table("hp_tiers").select("id,name").order("sort_order").execute()
+    tiers = db.table("hp_tiers").select("id,name").order("sort_order").execute() or []
+    if isinstance(tiers, dict) and "data" in tiers:
+        tiers = tiers["data"]
+
     tier_distribution = []
     for tier in tiers:
-        count = db.table("profiles").select("id").eq("current_tier_id", tier["id"]).eq("is_active", "true").execute()
-        tier_distribution.append({"tier": tier["name"], "count": len(count)})
+        res = db.table("profiles").select("id", count="exact").eq("current_tier_id", tier["id"]).eq("is_active", "true").execute()
+        cnt = res.get("count", 0) if isinstance(res, dict) else len(res or [])
+        tier_distribution.append({"tier": tier["name"], "count": cnt})
 
     return jsonify({
+        "from_date": from_date,
+        "to_date": to_date,
         "hp_earned_active": earned,
         "hp_spent": spent,
         "hp_expired": expired,

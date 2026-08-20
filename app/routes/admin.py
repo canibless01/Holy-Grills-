@@ -1218,6 +1218,7 @@ def run_cron_job(job_name):
           - membership-anniversary-awards
           - send-scheduled-notifications
           - process-scheduled-orders
+          - check-post-delivery-nudges
     responses:
       200:
         description: Cron job result

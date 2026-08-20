@@ -37,7 +37,7 @@ def get_validated_setting(db, key: str, default=None, minimum=None, maximum=None
     """
     try:
         # Note: single().execute() might raise Exception on database issues
-        res = db.table("system_settings").select("value").eq("key", key).single().execute()
+        res = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
     except Exception as e:
         logger.error("Database query failed while retrieving system setting '%s'", key, exc_info=True)
         raise DatabaseUnavailableError(f"Database unavailable while querying setting: {key}") from e

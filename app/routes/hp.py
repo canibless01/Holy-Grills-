@@ -107,7 +107,7 @@ def admin_grant():
       200:
         description: HP granted
     """
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     if not data.get("user_id") or not data.get("amount"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
 
@@ -406,7 +406,7 @@ def transfer_hp():
     # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
     # min_orders is read from system_settings first (admin-editable), falling back to
     # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
-    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").single().execute()
+    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
     _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
     min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
     completed_orders = (
@@ -512,5 +512,5 @@ def _log_admin_action(actor_id, table, target_id, action, after_data=None, campu
         "entity_id": target_id,
         "action": action,
         "after_value": after_data,
-        "campus_id": cid,
-    })
+        "campus_id": getattr(g, "campus_id", None),
+    }).execute()

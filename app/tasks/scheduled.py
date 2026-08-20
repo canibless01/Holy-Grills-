@@ -19,7 +19,7 @@ def _log_cron_execution(job_name: str, status: str, result: dict = None, error: 
     try:
         db = get_db()
         db.table("admin_audit_logs").insert({
-            "actor_id": "celery_system",
+            "actor_id": None,
             "actor_role": "system",
             "entity_type": "cron_jobs",
             "entity_id": job_name,
@@ -30,7 +30,28 @@ def _log_cron_execution(job_name: str, status: str, result: dict = None, error: 
         logger.warning("_log_cron_execution failed for %s: %s", job_name, e)
 
 
+def with_cron_logging(job_name: str):
+    """Decorator to automatically record execution status in admin_audit_logs."""
+    def decorator(func):
+        from functools import wraps
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                res = func(*args, **kwargs)
+                if isinstance(res, dict) and res.get("skipped"):
+                    _log_cron_execution(job_name, "skipped", result=res)
+                else:
+                    _log_cron_execution(job_name, "success", result=res if isinstance(res, dict) else {"result": str(res)})
+                return res
+            except Exception as exc:
+                _log_cron_execution(job_name, "failed", error=str(exc))
+                raise
+        return wrapper
+    return decorator
+
+
 @celery_app.task(name="app.tasks.scheduled.reset_monthly_leaderboard", bind=True, max_retries=3)
+@with_cron_logging("reset-monthly-leaderboard")
 def reset_monthly_leaderboard(self):
     """
     Runs: 1st of each month at 00:01 WAT.
@@ -258,6 +279,7 @@ def reset_monthly_leaderboard(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3)
+@with_cron_logging("recalculate-120day-hp")
 def recalculate_120day_hp(self):
     """
     Runs: Daily at 02:00 WAT.
@@ -326,6 +348,7 @@ def recalculate_120day_hp(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3)
+@with_cron_logging("tier-grace-period-check")
 def tier_grace_period_check(self):
     """
     Runs: Daily at 03:00 WAT.
@@ -453,6 +476,7 @@ def tier_grace_period_check(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.birthday_hp_awards", bind=True, max_retries=3)
+@with_cron_logging("birthday-hp")
 def birthday_hp_awards(self):
     """
     Runs: Daily at 08:00 WAT.
@@ -564,6 +588,7 @@ def birthday_hp_awards(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.monthly_birthday_report", bind=True, max_retries=2)
+@with_cron_logging("monthly-birthday-report")
 def monthly_birthday_report(self):
     """
     Runs: 1st of each month at 07:00 WAT.
@@ -682,6 +707,7 @@ def monthly_birthday_report(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.process_scheduled_orders", bind=True, max_retries=3)
+@with_cron_logging("process-scheduled-orders")
 def process_scheduled_orders(self):
     """
     Runs: Every 5 minutes.
@@ -781,6 +807,7 @@ def process_scheduled_orders(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.win_back_notifications", bind=True, max_retries=3)
+@with_cron_logging("win-back-notifications")
 def win_back_notifications(self):
     """
     Runs: Daily at 10:00 WAT.
@@ -811,7 +838,7 @@ def win_back_notifications(self):
         for campus in (campuses if isinstance(campuses, list) else []):
             campus_id = campus["id"]
             try:
-                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
+                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").is_("campus_id", "null").single().execute()
                 decay_onset = int(onset_row.get("value", decay_onset_default)) if onset_row else decay_onset_default
             except Exception:
                 decay_onset = decay_onset_default
@@ -902,6 +929,7 @@ def win_back_notifications(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.hp_decay_check", bind=True, max_retries=3)
+@with_cron_logging("hp-decay-check")
 def hp_decay_check(self):
     """
     Runs: Daily at 05:00 WAT.
@@ -937,7 +965,7 @@ def hp_decay_check(self):
                 onset_days = onset_days_default
 
             try:
-                rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").single().execute()
+                rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").is_("campus_id", "null").single().execute()
                 decay_rate = float(rate_row.get("value", decay_rate_default)) if rate_row else decay_rate_default
             except Exception:
                 decay_rate = decay_rate_default
@@ -1001,6 +1029,7 @@ def hp_decay_check(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.check_order_locks", bind=True, max_retries=3)
+@with_cron_logging("check-order-locks")
 def check_order_locks(self):
     """
     Runs: Daily at 09:00 WAT.
@@ -1117,6 +1146,7 @@ def check_order_locks(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.reset_monthly_hp_tracker", bind=True, max_retries=2)
+@with_cron_logging("reset-monthly-hp-tracker")
 def reset_monthly_hp_tracker(self):
     """
     Runs: 1st of each month at 00:05 WAT.
@@ -1155,6 +1185,7 @@ def reset_monthly_hp_tracker(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.membership_anniversary_awards", bind=True, max_retries=3)
+@with_cron_logging("membership-anniversary-awards")
 def membership_anniversary_awards(self):
     """
     Runs: Daily at 06:00 WAT.
@@ -1273,6 +1304,7 @@ def membership_anniversary_awards(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_notifications", bind=True, max_retries=3)
+@with_cron_logging("send-scheduled-notifications")
 def send_scheduled_notifications(self):
     """
     Runs: Every 15 minutes.
@@ -1380,6 +1412,7 @@ def send_scheduled_notifications(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.scan_abandoned_carts", bind=True)
+@with_cron_logging("scan-abandoned-carts")
 def scan_abandoned_carts(self):
     """
     Runs: Every 30 minutes.
@@ -1437,6 +1470,7 @@ def scan_abandoned_carts(self):
 
 
 @celery_app.task(name="app.tasks.scheduled.check_post_delivery_nudges", bind=True, max_retries=3)
+@with_cron_logging("check-post-delivery-nudges")
 def check_post_delivery_nudges(self):
     """
     Runs: Every 30 minutes.
