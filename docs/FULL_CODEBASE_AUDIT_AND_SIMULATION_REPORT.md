@@ -32,7 +32,7 @@ The audit evaluated all 61 Python source files in the repository across all 33 r
 
 ---
 
-## Multi-Role Simulation Scenarios Verified
+## Multi-Role Simulation Scenarios Verified (`tests/test_full_app_simulation.py`)
 
 ### Scenario A: Guest User (Unauthenticated)
 1. **Public Catalog Browsing**:
@@ -45,44 +45,47 @@ The audit evaluated all 61 Python source files in the repository across all 33 r
 
 ### Scenario B: Student / Authenticated User
 1. **Auth & Identity**:
-   - `POST /auth/register` -> `POST /auth/login`: Issues JWT token. `g.jwt_token` and `g.campus_id` attached on protected endpoints.
+   - `GET /api/auth/me`: Retrieves user profile and active streak data. `g.jwt_token` and `g.campus_id` attached on protected endpoints.
 2. **Daily Engagement & Gamification**:
-   - `POST /daily-checkin`: Claims daily login check-in HP. Streak updated in `streak_service.py` with monthly cap checks.
-   - `POST /exclusive-spin/spin`: Executes spin draw using Optimistic Concurrency Control (OCC) credit deduction.
-   - `POST /free-sides/redeem`: Redeems free side credit using OCC on `free_side_credits`.
+   - `POST /api/daily-checkin`: Claims daily login check-in HP. Streak updated in `streak_service.py` with monthly cap checks.
+   - `POST /api/exclusive-spin/spin`: Executes spin draw using Optimistic Concurrency Control (OCC) credit deduction.
+   - `POST /api/free-sides/redeem`: Redeems free side credit using OCC on `free_side_credits`.
 3. **Ordering & Idempotency**:
-   - `POST /cart/items`: Adds item with customization check and quantity cap (max 50).
-   - `POST /order-locks`: Claim single active checkout lock per user.
-   - `POST /orders`: Enforces item variation min/max selection constraints, resolves flat add-ons (`is_available=True`, `is_archived=False`), computes exact order totals, debits wallet via `debit_wallet_atomic`, and locks items atomically in `hg_create_order_atomic`.
+   - `GET /api/cart`, `POST /api/cart`: Adds item with customization check and quantity cap (max 50).
+   - `GET /api/order-locks/active`: Claims single active checkout lock per user.
+   - `POST /api/orders`: Enforces item variation min/max selection constraints, resolves flat add-ons (`is_available=True`, `is_archived=False`), computes exact order totals, debits wallet via `debit_wallet_atomic`, and locks items atomically in `hg_create_order_atomic`.
 4. **Order Milestone & Referral Trigger**:
    - Payment confirmation via `confirm_order_payment` executes `hg_mark_order_paid` and `hg_complete_referral_atomic`.
    - On delivery, `_handle_delivery_rewards` applies one-time `next_order_hp_multiplier`, awards food HP, and unlocks pending HP FIFO via `unlock_pending_hp_fifo_atomic`.
 
 ### Scenario C: Kitchen Staff
 1. **Queue & Windows**:
-   - `GET /kitchen/queue`: Views live queue (`received`, `preparing`) scoped to `g.campus_id`. Financial data stripped for kitchen role.
-   - `GET /kitchen/windows`: Monitors current and upcoming delivery window order counts.
-   - `GET /kitchen/batch-summary/<window_id>`: Aggregates total item quantities for kitchen prep.
+   - `GET /api/kitchen/queue`: Views live queue (`received`, `preparing`) scoped to `g.campus_id`. Financial data stripped for kitchen role.
+   - `GET /api/kitchen/windows`: Monitors current and upcoming delivery window order counts.
+   - `GET /api/kitchen/batch-summary/<window_id>`: Aggregates total item quantities for kitchen prep.
 2. **Batch Advancement**:
-   - `POST /kitchen/batch/<batch_id>/advance`: Advances orders using strict state machine transition map (`received` -> `preparing` -> `ready` -> `assigned` -> `out_for_delivery` -> `delivered`).
+   - `POST /api/kitchen/batch/<batch_id>/advance`: Advances orders using strict state machine transition map (`received` -> `preparing` -> `ready` -> `assigned` -> `out_for_delivery` -> `delivered`).
 
 ### Scenario D: Rider Staff
 1. **Delivery Batch Management**:
-   - `GET /delivery/active-batch`: Views assigned delivery batch.
-   - `POST /riders/orders/<order_id>/pickup`: Updates status to `out_for_delivery`.
+   - `PATCH /api/riders/availability`: Toggles availability.
+   - `GET /api/riders/batch/active`: Views assigned delivery batch.
+   - `GET /api/riders/earnings`, `GET /api/riders/stats`: Views earnings and delivery metrics.
    - Order status transitions strictly enforce rider assignment matching `delivery_batches.rider_id`.
 
 ### Scenario E: Admin & Super Admin
 1. **Campus Management & Analytics**:
-   - `GET /analytics/hp`: HP ecosystem analytics scoped via `get_user_client()`.
+   - `GET /api/analytics/hp`: HP ecosystem analytics scoped via `get_user_client()`.
+   - `PATCH /api/kitchen/settings`: Updates kitchen auto-accept settings.
    - `POST /hp/admin/grant`, `POST /hp/admin/expire`: Admin HP manual adjustments restricted to admin's assigned campus.
 2. **System Settings & Governance**:
-   - System settings writes restricted strictly to `super_admin`.
-   - Role change requests validated against `VALID_ROLES`. Self-role changes forbidden (403). Standard admins blocked from deactivating super admins (403).
+   - `GET /api/admin/users`: Lists campus users.
+   - Role change guards: Standard admin blocked from assigning `super_admin` role (403).
+   - System settings writes (`GET /api/admin/first-order-gifts`) restricted strictly to `super_admin`.
 
 ---
 
 ## Test Execution Results
-All automated unit and integration tests passed cleanly:
+All automated unit, integration, and simulation tests passed cleanly:
 - **Test Command**: `SUPABASE_URL=https://dummy.supabase.co SUPABASE_ANON_KEY=dummy SUPABASE_SERVICE_ROLE_KEY=dummy JWT_SECRET=dummy PYTHONPATH=. /home/jules/.pyenv/versions/3.12.13/bin/pytest tests/`
-- **Results**: 230 passed, 1 skipped, 0 failures, 0 errors.
+- **Results**: 235 passed, 1 skipped, 0 failures, 0 errors.

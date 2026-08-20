@@ -109,7 +109,7 @@ def update_kitchen_settings():
             on_conflict_target = "key,campus_id" if campus_id else "key"
             res = db.table("kitchen_settings").upsert(payload, on_conflict=on_conflict_target)
             result = res.execute() if hasattr(res, "execute") else res
-            updated[key] = (result[0] if isinstance(result, list) else result) or payload
+            updated[key] = (result[0] if isinstance(result, list) and len(result) > 0 else result) or payload
             
         return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
           
