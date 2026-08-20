@@ -65,6 +65,7 @@ def list_challenges():
 
 
 @challenges_bp.route("/badges", methods=["GET"])
+@optional_auth
 def list_badges():
     """
     List all badges (lifetime milestones, time_window IS NULL).
@@ -158,14 +159,15 @@ def social_follow():
     db = get_user_client()
 
     # Find the social_follow milestone
-    milestone = (
+    m_rows = (
         db.table("milestones")
         .select("id,hp_awarded,title,social_link")
         .eq("trigger_type", "social_follow")
         .eq("is_active", "true")
-        .single()
+        .limit(1)
         .execute()
-    )
+    ) or []
+    milestone = m_rows[0] if isinstance(m_rows, list) and m_rows else (m_rows if isinstance(m_rows, dict) else None)
     if not milestone:
         return jsonify({"error": MSG.SOCIAL_FOLLOW_NOT_CONFIGURED}), 404
 
@@ -261,11 +263,10 @@ def admin_create_milestone():
     if data.get("time_window") and data["time_window"] not in ("weekly", "monthly"):
         return jsonify({"error": MSG.CHALLENGE_TIME_WINDOW_INVALID}), 400
 
-    ALLOWED = {"title", "description", "trigger_type", "trigger_value", "hp_awarded",
-               "time_window", "icon_won", "icon_locked", "is_active", "social_link"}
-    safe = {k: v for k, v in data.items() if k in ALLOWED}
+    safe = {k: v for k, v in data.items() if k in MILESTONE_ALLOWED_FIELDS}
     safe["created_by"] = g.user_id
     safe.setdefault("is_active", False)
+    safe.setdefault("campus_id", getattr(g, "campus_id", None))
     try:
         result = db.table("milestones").insert(safe)
     except Exception as exc:
@@ -295,11 +296,7 @@ def admin_update_milestone(milestone_id):
     if not db.table("milestones").select("id").eq("id", milestone_id).limit(1).execute():
         return jsonify({"error": MSG.CHALLENGE_NOT_FOUND}), 404
     data = request.get_json(force=True) or {}
-    ALLOWED = {
-        "title", "description", "trigger_type", "trigger_value", "hp_awarded",
-        "time_window", "icon_won", "icon_locked", "is_active", "social_link",
-    }
-    safe = {k: v for k, v in data.items() if k in ALLOWED}
+    safe = {k: v for k, v in data.items() if k in MILESTONE_ALLOWED_FIELDS}
     if not safe:
         return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()

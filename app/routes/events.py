@@ -561,12 +561,18 @@ def register_for_event(event_id):
                 "p_metadata": metadata_payload,
             })
         else:
-            rpc_res = db.rpc("register_for_event_atomic", {
+            params = {
                 "p_event_id": event_id,
                 "p_user_id": user_id,
-                "p_tier_id": tier_id,
-                "p_metadata": metadata_payload,
-            })
+            }
+            try:
+                rpc_res = db.rpc("register_for_event_atomic", {
+                    **params,
+                    "p_tier_id": tier_id,
+                    "p_metadata": metadata_payload,
+                })
+            except Exception:
+                rpc_res = db.rpc("register_for_event_atomic", params)
     except Exception as exc:
         err_msg = str(exc)
         if "ALREADY_REGISTERED" in err_msg or "already registered" in err_msg.lower():
@@ -1406,7 +1412,7 @@ def my_tickets():
         ci = checkins_map.get(t["id"])
         item = {
             "ticket_id": t["id"],
-            "qr_token": t.get("qr_code") or t.get("qr_token") or t["id"],
+            "qr_token": t.get("qr_code") or t["id"],
             "event_id": t.get("event_id"),
             "event_title": e.get("title"),
             "starts_at": e.get("starts_at"),
