@@ -130,15 +130,19 @@ def create_lock():
     try:
         insert_data["reward_type"] = reward_type
         insert_data["reschedule_count"] = 0
-        result = db.table("order_locks").insert(insert_data)
+        res = db.table("order_locks").insert(insert_data)
+        result = res.execute() if hasattr(res, "execute") else res
     except SupabaseError as exc:
         err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
+        if "uq_order_locks_one_active_per_user" in err_msg or "unique constraint" in err_msg.lower():
+            return jsonify({"error": "User already has an active lock"}), 400
         is_missing_col = "column" in err_msg and "does not exist" in err_msg
         if is_missing_col:
             # Fallback: strip columns that may not exist yet in older schemas
             fallback = {k: v for k, v in insert_data.items()
                         if k not in ("reward_type", "reward_hp_amount", "reschedule_count")}
-            result = db.table("order_locks").insert(fallback)
+            res = db.table("order_locks").insert(fallback)
+            result = res.execute() if hasattr(res, "execute") else res
         else:
             raise
     row = result[0] if isinstance(result, list) else result
@@ -266,7 +270,7 @@ def reschedule_lock(lock_id):
         "locked_date": new_date_str,
         "reschedule_count": new_reschedule_count,
         "updated_at": now,
-    })
+    }).execute()
     row = updated[0] if isinstance(updated, list) else updated
     return jsonify({"message": MSG.ORDER_LOCK_RESCHEDULED, "lock": row}), 200
 
@@ -306,7 +310,7 @@ def cancel_lock(lock_id):
         return jsonify({"error": MSG.ORDER_LOCK_NOT_ACTIVE}), 400
 
     now = datetime.now(timezone.utc).isoformat()
-    db.table("order_locks").eq("id", lock_id).update({"status": "cancelled", "updated_at": now})
+    db.table("order_locks").eq("id", lock_id).update({"status": "cancelled", "updated_at": now}).execute()
     return jsonify({"message": MSG.ORDER_LOCK_CANCELLED}), 200
 
 

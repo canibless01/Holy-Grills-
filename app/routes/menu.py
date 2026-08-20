@@ -18,15 +18,18 @@ def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data
     try:
         from app.db import get_db as _get_db
         db = _get_db()
+        actor_role = getattr(g, "user_role", "admin")
+        campus_id = getattr(g, "campus_id", None)
         db.table("admin_audit_logs").insert({
             "actor_id": actor_id,
-            "actor_role": "admin",
+            "actor_role": actor_role,
             "entity_type": entity_type,
             "entity_id": str(entity_id),
             "action": action,
             "before_value": before_data,
             "after_value": after_data,
-        })
+            "campus_id": campus_id,
+        }).execute()
     except Exception:
         pass
 
@@ -263,7 +266,7 @@ def create_category():
     }
     if campus_id:
         record["campus_id"] = campus_id
-    result = db.table("menu_categories").insert(record)
+    result = db.table("menu_categories").insert(record).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -305,7 +308,7 @@ def update_category(category_id):
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         return jsonify({"error": MSG.MENU_NO_VALID_FIELDS}), 400
-    result = db.table("menu_categories").eq("id", category_id).update(update)
+    result = db.table("menu_categories").eq("id", category_id).update(update).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -332,7 +335,7 @@ def delete_category(category_id):
     if not existing:
         return jsonify({"error": MSG.MENU_CATEGORY_NOT_FOUND}), 404
 
-    db.table("menu_categories").eq("id", category_id).update({"is_active": False})
+    db.table("menu_categories").eq("id", category_id).update({"is_active": False}).execute()
     return jsonify({"message": MSG.MENU_CATEGORY_DEACTIVATED.format(name=existing["name"]), "category_id": category_id}), 200
 
 
@@ -453,24 +456,14 @@ def get_item(item_id):
         description: Not found
     """
     db = get_db()
-    try:
-        item = (
-            db.table("menu_items")
-            .select("*,menu_categories(name,slug)")
-            .eq("id", item_id)
-            .is_("deleted_at", "null")
-            .single()
-            .execute()
-        )
-    except Exception:
-        item = (
-            db.table("menu_items")
-            .select("*,menu_categories(name,slug)")
-            .eq("id", item_id)
-            .is_("deleted_at", "null")
-            .single()
-            .execute()
-        )
+    item = (
+        db.table("menu_items")
+        .select("*,menu_categories(name,slug)")
+        .eq("id", item_id)
+        .is_("deleted_at", "null")
+        .single()
+        .execute()
+    )
     if not item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
 
@@ -603,6 +596,7 @@ def create_addon_group(item_id):
     if max_select < min_select:
         return jsonify({"error": MSG.MENU_ADDON_MAX_SELECT_INVALID}), 400
 
+    campus_id = getattr(g, "campus_id", None)
     record = {
         "menu_item_id": item_id,
         "name": data["name"],
@@ -611,7 +605,9 @@ def create_addon_group(item_id):
         "max_select": max_select,
         "sort_order": int(data.get("sort_order", 0)),
     }
-    result = db.table("menu_addon_groups").insert(record)
+    if campus_id:
+        record["campus_id"] = campus_id
+    result = db.table("menu_addon_groups").insert(record).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -662,6 +658,7 @@ def update_addon_group(item_id, group_id):
         .eq("id", group_id)
         .eq("menu_item_id", item_id)
         .update(update)
+        .execute()
     )
     if not result:
         return jsonify({"error": MSG.MENU_ADDON_GROUP_NOT_FOUND}), 404
@@ -702,7 +699,7 @@ def delete_addon_group(item_id, group_id):
     )
     if not existing:
         return jsonify({"error": MSG.MENU_ADDON_GROUP_NOT_FOUND}), 404
-    db.table("menu_addon_groups").eq("id", group_id).eq("menu_item_id", item_id).delete()
+    db.table("menu_addon_groups").eq("id", group_id).eq("menu_item_id", item_id).delete().execute()
     return jsonify({"message": MSG.MENU_ADDON_GROUP_DELETED}), 200
 
 
@@ -761,7 +758,7 @@ def create_item():
     if campus_id and "campus_id" not in safe:
         safe["campus_id"] = campus_id
     try:
-        result = db.table("menu_items").insert(safe)
+        result = db.table("menu_items").insert(safe).execute()
     except Exception as exc:
         return jsonify({"error": MSG.MENU_ITEM_CREATE_FAILED.format(error=str(exc)[:120])}), 400
     created = result[0] if isinstance(result, list) else result
@@ -783,7 +780,7 @@ def update_menu_item_image(item_id):
     db.table("menu_items").eq("id", item_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
 
     return jsonify({"image_url": image_url}), 200
 
@@ -839,7 +836,7 @@ def update_item(item_id):
         if safe_data["hp_multiplier"] not in {0.5, 1.0, 2.0}:
             return jsonify({"error": "hp_multiplier must be 0.5, 1.0, or 2.0"}), 400
     safe_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("menu_items").eq("id", item_id).update(safe_data)
+    result = db.table("menu_items").eq("id", item_id).update(safe_data).execute()
     data = safe_data  # use safe_data for audit below
     updated = result[0] if isinstance(result, list) else result
     # Audit log
@@ -908,7 +905,7 @@ def bulk_update_availability():
             db.table("menu_items").eq("id", item_id).update({
                 "is_available": is_available,
                 "updated_at": now_ts,
-            })
+            }).execute()
             updated.append(item_id)
             _log_menu_admin_action(g.user_id, "menu_items", item_id, "bulk_availability",
                                    before_data={"is_available": before_map.get(item_id, {}).get("is_available")},
@@ -958,7 +955,7 @@ def archive_item(item_id):
     result = db.table("menu_items").eq("id", item_id).update({
         "deleted_at": now_ts,
         "is_available": False,
-    })
+    }).execute()
     _log_menu_admin_action(g.user_id, "menu_items", item_id, "archive",
                            before_data={"is_available": before.get("is_available"), "name": before.get("name")},
                            after_data={"is_available": False, "deleted_at": now_ts})
@@ -1007,6 +1004,7 @@ def create_variation_group(item_id):
     if not data.get("name"):
         return jsonify({"error": MSG.MENU_ADDON_NAME_REQUIRED}), 400
 
+    campus_id = getattr(g, "campus_id", None)
     record = {
         "menu_item_id": item_id,
         "name": data["name"],
@@ -1015,7 +1013,9 @@ def create_variation_group(item_id):
         "max_selections": int(data.get("max_selections", 1)),
         "sort_order": int(data.get("sort_order", 0)),
     }
-    result = db.table("menu_item_variation_groups").insert(record)
+    if campus_id:
+        record["campus_id"] = campus_id
+    result = db.table("menu_item_variation_groups").insert(record).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -1048,6 +1048,7 @@ def update_variation_group(item_id, group_id):
         .eq("id", group_id)
         .eq("menu_item_id", item_id)
         .update(update)
+        .execute()
     )
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
@@ -1090,6 +1091,7 @@ def create_variation_option(item_id, group_id):
     if not data.get("name"):
         return jsonify({"error": MSG.MENU_ADDON_NAME_REQUIRED}), 400
 
+    campus_id = getattr(g, "campus_id", None)
     record = {
         "variation_group_id": group_id,
         "name": data["name"],
@@ -1097,7 +1099,9 @@ def create_variation_option(item_id, group_id):
         "is_available": bool(data.get("is_available", True)),
         "sort_order": int(data.get("sort_order", 0)),
     }
-    result = db.table("menu_item_variation_options").insert(record)
+    if campus_id:
+        record["campus_id"] = campus_id
+    result = db.table("menu_item_variation_options").insert(record).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -1154,6 +1158,7 @@ def update_variation_option(item_id, group_id, option_id):
         .eq("id", option_id)
         .eq("variation_group_id", group_id)
         .update(update)
+        .execute()
     )
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
@@ -1195,7 +1200,7 @@ def delete_variation_option(item_id, group_id, option_id):
     )
     if not existing:
         return jsonify({"error": "Variation option not found"}), 404
-    db.table("menu_item_variation_options").eq("id", option_id).delete()
+    db.table("menu_item_variation_options").eq("id", option_id).delete().execute()
     return jsonify({"message": "Variation option deleted"}), 200
 
 
@@ -1233,8 +1238,8 @@ def delete_variation_group(item_id, group_id):
     if not existing:
         return jsonify({"error": "Variation group not found"}), 404
     # Cascade delete options first
-    db.table("menu_item_variation_options").eq("variation_group_id", group_id).delete()
-    db.table("menu_item_variation_groups").eq("id", group_id).delete()
+    db.table("menu_item_variation_options").eq("variation_group_id", group_id).delete().execute()
+    db.table("menu_item_variation_groups").eq("id", group_id).delete().execute()
     return jsonify({"message": "Variation group and all options deleted"}), 200
 
 
@@ -1312,7 +1317,7 @@ def create_addon():
         record["campus_id"] = campus_id
     if data.get("group_id"):
         record["group_id"] = data["group_id"]
-    result = db.table("menu_addons").insert(record)
+    result = db.table("menu_addons").insert(record).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 
@@ -1337,7 +1342,7 @@ def update_addon(addon_id):
     allowed = {"name", "description", "price", "is_available", "sort_order", "group_id"}
     update = {k: v for k, v in data.items() if k in allowed}
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("menu_addons").eq("id", addon_id).update(update)
+    result = db.table("menu_addons").eq("id", addon_id).update(update).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -1357,7 +1362,7 @@ def archive_addon(addon_id):
         "is_archived": True,
         "is_available": False,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
     return jsonify({"message": MSG.MENU_ADDON_ARCHIVED, "addon": result[0] if isinstance(result, list) else result}), 200
 
 
@@ -1421,7 +1426,7 @@ def set_kitchen_capacity():
             "value": "",
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "updated_by": g.user_id,
-        })
+        }).execute()
         return jsonify({"daily_order_capacity": None, "message": MSG.MENU_CAPACITY_LIMIT_REMOVED}), 200
 
     if not isinstance(cap, int) or cap < 1:
@@ -1430,11 +1435,13 @@ def set_kitchen_capacity():
     q = db.table("kitchen_settings").eq("key", "daily_order_capacity")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    q.update({
+    res = q.update({
         "value": str(cap),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": g.user_id,
     })
+    if hasattr(res, "execute"):
+        res.execute()
     _, orders_today, at_capacity = _kitchen_stats(db)
     return jsonify({
         "daily_order_capacity": cap,
