@@ -63,6 +63,7 @@ def test_pwa_installed_authenticated_claim(client):
             mock_table.insert.return_value = [{"id": "um-1"}]
         elif table_name == "system_settings":
             mock_table.select().eq().is_().single().execute.return_value = {"value": "50"}
+            mock_table.select().eq().eq().single().execute.return_value = {"value": "50"}
         return mock_table
 
     mock_db.table.side_effect = table_router

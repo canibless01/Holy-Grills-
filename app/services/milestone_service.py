@@ -160,7 +160,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
             "push_subscribe": "PUSH_SUBSCRIBE_HP",
             "pwa_push_bonus": "PWA_PUSH_BONUS_HP",
         }
-        setting_key = setting_map.get(trigger_type)
+        setting_key = milestone.get("hp_setting_key") or setting_map.get(trigger_type)
         try:
             hp_awarded = int(get_validated_setting(db, setting_key, required=True, minimum=1))
         except SettingError as se:
