@@ -81,7 +81,7 @@ def record_checkin():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
-        return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
+        return jsonify({"error": "Check-in failed, please try again"}), 500
 
     # Award HP if configured
     hp_awarded = 0

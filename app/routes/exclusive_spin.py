@@ -136,12 +136,14 @@ def do_spin():
         return jsonify({"error": MSG.SPIN_NO_CREDITS}), 400
 
     # Use oldest-expiring spin first, try to update atomically using Optimistic Concurrency Control (OCC)
+    write_db = get_db()
     success = False
     new_count = 0
     for spin_row in spins:
         try:
-            res = db.table("exclusive_spins") \
+            res = write_db.table("exclusive_spins") \
                 .eq("id", spin_row["id"]) \
+                .eq("user_id", user_id) \
                 .eq("spin_count", spin_row["spin_count"]) \
                 .update({"spin_count": spin_row["spin_count"] - 1})
             if res:

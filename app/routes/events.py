@@ -853,7 +853,7 @@ def create_event():
     EVENT_COLUMNS = {
         "title", "slug", "description", "location", "starts_at", "ends_at",
         "hp_reward", "hp_promo_enabled", "is_featured", "capacity",
-        "is_published", "organizer_id",
+        "is_published", "organizer_id", "campus_id",
         # Phase 2 columns (from migration):
         "hp_per_attendee", "funding_source", "max_attendees",
         "hp_required", "total_value", "is_paid",
@@ -861,10 +861,11 @@ def create_event():
     # Prefer hp_per_attendee over legacy hp_reward if provided
     if data.get("hp_per_attendee") and not data.get("hp_reward"):
         data["hp_reward"] = data["hp_per_attendee"]
-    safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS}
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id and "campus_id" not in safe:
-        safe["campus_id"] = campus_id
+    if not campus_id:
+        return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS}
+    safe["campus_id"] = campus_id
     try:
         result = db.table("events").insert(safe)
     except Exception as _exc:
