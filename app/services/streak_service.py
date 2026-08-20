@@ -25,7 +25,7 @@ MONTHLY PENDING CAP:
 
 import math
 from datetime import datetime, timezone, date, timedelta
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,7 +63,7 @@ def check_monthly_cap(user_id: str, hp_to_add: int) -> dict:
     Does NOT update the tracker — call update_monthly_tracker() after awarding.
     Cap key: 'monthly_pending_cap' in system_settings (default 1000).
     """
-    db = get_db()
+    db = get_user_client()
     cap = int(_get_setting(db, "monthly_pending_cap", "1000"))
     month = datetime.now(timezone.utc).strftime("%Y-%m")
 
@@ -92,7 +92,7 @@ def update_monthly_tracker(user_id: str, hp_awarded: int) -> None:
     """Record awarded HP against the monthly cap tracker."""
     if hp_awarded <= 0:
         return
-    db = get_db()
+    db = get_user_client()
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     now = datetime.now(timezone.utc).isoformat()
     try:
@@ -136,7 +136,7 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
        "week_start": str,
        "week_progress": {...}}
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc)
     today = now.date()
 
@@ -389,7 +389,7 @@ def try_reclaim_checkin(user_id: str, reclaim_type: str = "order") -> dict:
 
     Returns {"reclaimed": bool, "day_offset": int | None}
     """
-    db = get_db()
+    db = get_user_client()
     today = date.today()
     now = datetime.now(timezone.utc)
 
@@ -469,7 +469,7 @@ def _build_week_progress(week_state: dict, week_start: date, today: date) -> dic
 
 def get_streak(user_id: str) -> dict:
     """Return the user's current login streak info."""
-    db = get_db()
+    db = get_user_client()
     today = date.today()
     try:
         row = (
@@ -523,7 +523,7 @@ def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> 
 
     Returns {"streak_weeks": int, "hp_awarded": int, "new_week": bool}
     """
-    db = get_db()
+    db = get_user_client()
     today = date.today()
     current_week = _week_key(today)
     now = datetime.now(timezone.utc).isoformat()

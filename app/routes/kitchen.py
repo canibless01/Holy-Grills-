@@ -20,7 +20,7 @@ def get_kitchen_settings():
       200:
         description: Kitchen settings key/value map
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("kitchen_settings").select("*")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -51,7 +51,7 @@ def get_kitchen_setting(key):
       404:
         description: Setting not found
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("kitchen_settings").select("*").eq("key", key)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -105,11 +105,12 @@ def update_kitchen_settings():
         }
         if campus_id:
             payload["campus_id"] = campus_id
-        res = db.table("kitchen_settings").upsert(payload, on_conflict="key,campus_id" if campus_id else "key")
-        result = res.execute() if hasattr(res, "execute") else res
-        updated[key] = (result[0] if isinstance(result, list) else result) or payload
-
-    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+            on_conflict_target = "key,campus_id" if campus_id else "key"
+            res = db.table("kitchen_settings").upsert(payload, on_conflict=on_conflict_target)
+            result = res.execute() if hasattr(res, "execute") else res
+            updated[key] = (result[0] if isinstance(result, list) and len(result) > 0 else result) or payload
+            
+        return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
           
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")
@@ -314,7 +315,7 @@ def batch_summary(window_id):
         required: true
     responses:
       200:
-        description: Item summary for batch
+        description: Aggregated item summary for kitchen preparation
     """
     db = get_user_client()
     q = (

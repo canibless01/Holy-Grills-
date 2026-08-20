@@ -4,13 +4,13 @@ No withdrawals. Fund via Paystack bank transfer or card.
 """
 
 from datetime import datetime, timezone
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.services.hp_service import award_active_hp
 from flask import current_app
 
 
 def get_wallet(user_id: str) -> dict:
-    db = get_db()
+    db = get_user_client()
     return (
         db.table("wallets")
         .select("user_id,balance,currency,created_at,updated_at")
@@ -29,7 +29,7 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         from flask import has_app_context, g
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
-    db = get_db()
+    db = get_user_client()
     config = current_app.config
 
     res = db.rpc("credit_wallet_atomic", {
@@ -80,7 +80,7 @@ def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type:
         from flask import has_app_context, g
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
-    db = get_db()
+    db = get_user_client()
     res = db.rpc("debit_wallet_atomic", {
         "p_user_id": user_id,
         "p_amount": amount,
@@ -106,7 +106,7 @@ def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type:
 
 
 def get_wallet_transactions(user_id: str, limit: int = 50, offset: int = 0, reference_type: str = None) -> list:
-    db = get_db()
+    db = get_user_client()
     q = db.table("wallet_transactions").select("*").eq("user_id", user_id)
     if reference_type:
         q = q.eq("reference_type", reference_type)

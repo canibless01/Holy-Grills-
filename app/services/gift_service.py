@@ -14,7 +14,7 @@ Gift is also inserted into order_items with is_gift=True and price=0.
 """
 
 from datetime import datetime, timezone, date
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.utils.logger import get_logger
 from app.messages import MSG
 
@@ -48,7 +48,7 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = N
 
     Returns {"granted": bool, "reason": str}
     """
-    db = get_db()
+    db = get_user_client()
     try:
         enabled = _get_setting(db, "first_order_gift_enabled", "false")
         if enabled.lower() != "true":
@@ -186,7 +186,7 @@ def mark_gift_returned(user_id: str, order_id: str) -> dict:
     Mark a first-order gift as 'returned' (failed delivery).
     Sends push+in_app notification to the user.
     """
-    db = get_db()
+    db = get_user_client()
     try:
         # NOTE: first_order_gifts has no `updated_at` column in the live schema
         # (only `created_at`) — drop it from the update payload to avoid a

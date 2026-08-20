@@ -7,7 +7,7 @@ import uuid
 import re
 from datetime import datetime, timezone, date
 from flask import current_app
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.services.notification_service import send_notification
 from app.services import hp_service
 
@@ -200,7 +200,7 @@ def refresh_token(refresh_token: str) -> dict:
 
 
 def get_current_user(access_token: str) -> dict:
-    db = get_db()
+    db = get_user_client()
 
     auth_user = db.auth_get_user(access_token)
     user_id = auth_user.get("id")
@@ -242,7 +242,7 @@ def get_current_user(access_token: str) -> dict:
 
 
 def update_profile(user_id: str, data: dict) -> dict:
-    db = get_db()
+    db = get_user_client()
     # department, academic_level, faculty are live columns on profiles (confirmed against DB).
     # faculty is derived from department mapping.
     allowed = {
@@ -271,7 +271,7 @@ def update_profile(user_id: str, data: dict) -> dict:
 
 
 def logout(access_token: str) -> None:
-    get_db().auth_sign_out(access_token)
+    get_user_client().auth_sign_out(access_token)
 
 
 def resend_verification_email(email: str) -> dict:
@@ -305,7 +305,7 @@ def _generate_referral_code(full_name: str) -> str:
 
 
 def _get_tier(user_id: str) -> dict | None:
-    db = get_db()
+    db = get_user_client()
     try:
         profile_rows = (
             db.table("profiles")

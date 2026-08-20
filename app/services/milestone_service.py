@@ -34,7 +34,7 @@ trigger_type values and their verification logic:
 """
 
 from datetime import datetime, timezone, timedelta
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -58,7 +58,7 @@ def get_user_milestones(user_id: str) -> dict:
     Return all milestones split into earned badges, available challenges,
     and pending (in-progress) challenges.
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc)
     period_weekly  = _period_key("weekly", now.date())
     period_monthly = _period_key("monthly", now.date())
@@ -121,7 +121,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     Verifies against real data tables, awards HP if criteria met.
     Raises ValueError if not eligible.
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc)
 
     milestone = (
@@ -233,7 +233,7 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
     Designed to be called fire-and-forget; all errors are swallowed.
     """
     try:
-        db = get_db()
+        db = get_user_client()
         now = datetime.now(timezone.utc)
 
         from flask import has_app_context, g
@@ -291,7 +291,7 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
 
 def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dict:
     """Admin manually awards a milestone (used for department_leader, faculty_leader, etc.)."""
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc)
     milestone = db.table("milestones").select("*").eq("id", milestone_id).single().execute()
     if not milestone:
@@ -378,7 +378,7 @@ def notify_milestone_achieved(user_id: str, milestone_id: str) -> None:
     """
     try:
         from app.services.notification_service import send_notification
-        from app.db import get_db as _get_db
+        from app.db import get_db, get_user_client as _get_db
         _db = _get_db()
         m = _db.table("milestones").select("title,hp_awarded,time_window").eq("id", milestone_id).single().execute()
         if not m:

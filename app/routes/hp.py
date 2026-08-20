@@ -109,7 +109,7 @@ def admin_grant():
     if not data.get("user_id") or not data.get("amount"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
 
-    db = get_db()
+    db = get_user_client()
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404
@@ -156,7 +156,7 @@ def admin_expire():
     if not data.get("user_id"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
 
-    db = get_db()
+    db = get_user_client()
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404
@@ -497,14 +497,20 @@ def transfer_hp():
 
 
 def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
-    from app.db import get_db
-    db = get_db()
-    db.table("admin_audit_logs").insert({
-        "actor_id": actor_id,
-        "actor_role": getattr(g, "user_role", "admin"),
-        "entity_type": table,
-        "entity_id": target_id,
-        "action": action,
-        "after_value": after_data,
-        "campus_id": campus_id or getattr(g, "campus_id", None),
-    })
+    from app.db import get_db, get_user_client
+    db = get_user_client()
+    actor_role = getattr(g, "user_role", "admin")
+    cid = campus_id or getattr(g, "campus_id", None)
+    
+    try:
+        db.table("admin_audit_logs").insert({
+            "actor_id": actor_id,
+            "actor_role": actor_role,
+            "entity_type": table,
+            "entity_id": target_id,
+            "action": action,
+            "after_value": after_data,
+            "campus_id": cid,
+        }).execute()
+    except Exception:
+        pass  # Silent faildef _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None)

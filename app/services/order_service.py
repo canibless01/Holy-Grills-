@@ -30,7 +30,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from flask import current_app
-from app.db import get_db, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.services import hp_service
 from app.services.wallet_service import debit_wallet
 from app.services.notification_service import send_notification
@@ -296,7 +296,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     """
     idempotency_key = str(uuid.uuid4())
 
-    db = get_db()
+    db = get_user_client()
 
     # Reject if kitchen is already at daily capacity
     _check_kitchen_capacity(db)
@@ -884,7 +884,7 @@ def walk_order_to_status(
         {"steps": ["preparing", "ready", ...], "final": <order dict>}
     """
     from flask import has_app_context, g
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
@@ -948,7 +948,7 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     Called after card payment confirmed (webhook).
     Updates payment_status to paid. Order is already in 'received' state.
     """
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
@@ -1043,7 +1043,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     """
     import threading as _threading
     from flask import current_app as _app, has_app_context, g
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError("Order not found")
@@ -1143,7 +1143,7 @@ def _handle_delivery_rewards(order: dict):
     tier = tier_info.get("tier") or {}
     tier_slug = tier.get("slug", "ember")
 
-    db = get_db()
+    db = get_user_client()
     order_items = order.get("order_items")
     if not isinstance(order_items, list):
         try:
@@ -1263,7 +1263,7 @@ def _handle_delivery_rewards(order: dict):
     try:
         from app.services.milestone_service import check_milestone_trigger
         delivered_count_rows = (
-            get_db().table("orders")
+            get_user_client().table("orders")
             .select("id")
             .eq("user_id", user_id)
             .eq("status", "delivered")
@@ -1284,7 +1284,7 @@ def _handle_delivery_rewards(order: dict):
 
     # Update last_activity_at for decay-onset tracking
     try:
-        get_db().table("profiles").eq("id", user_id).update({
+        get_user_client().table("profiles").eq("id", user_id).update({
             "last_activity_at": datetime.now(timezone.utc).isoformat()
         }).execute()
     except Exception:
@@ -1292,7 +1292,7 @@ def _handle_delivery_rewards(order: dict):
 
 
 def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
-    db = get_db()
+    db = get_user_client()
     promo = (
         db.table("promo_codes")
         .select("*")
@@ -1341,7 +1341,7 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
 
 
 def _log_status_change(order_id: str, from_status: str, to_status: str, changed_by: str = None, notes: str = ""):
-    db = get_db()
+    db = get_user_client()
     try:
         db.table("order_status_logs").insert({
             "order_id": order_id,
