@@ -223,7 +223,7 @@ def admin_list_redemptions():
       200:
         description: All redemptions for admin
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("reward_redemptions").select(
@@ -269,7 +269,7 @@ def admin_update_redemption(redemption_id):
       404:
         description: Redemption not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("reward_redemptions").select("id,status,user_id,reward_id,hp_cost_snapshot").eq("id", redemption_id).single().execute()
     if not row:
         return jsonify({"error": MSG.REWARD_REDEMPTION_NOT_FOUND}), 404
@@ -345,7 +345,7 @@ def create_reward():
       201:
         description: Reward created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     required = ["name", "hp_cost"]
     for f in required:
@@ -394,7 +394,7 @@ def update_reward_image(reward_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("rewards").eq("id", reward_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -427,7 +427,7 @@ def update_reward(reward_id):
       200:
         description: Reward updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = db.table("rewards").eq("id", reward_id).update(data)
@@ -452,7 +452,7 @@ def delete_reward(reward_id):
       404:
         description: Reward not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("rewards").select("id").eq("id", reward_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404

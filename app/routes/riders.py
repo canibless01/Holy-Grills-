@@ -4,7 +4,7 @@ import math
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
 from app.services.order_service import update_order_status
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 
 riders_bp = Blueprint("riders", __name__)
@@ -32,7 +32,7 @@ def my_batch():
       200:
         description: Rider's assigned batch
     """
-    db = get_db()
+    db = get_user_client()
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
@@ -236,7 +236,7 @@ def toggle_availability():
     if "is_available" not in data:
         return jsonify({"error": MSG.RIDER_AVAILABILITY_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
     from datetime import datetime, timezone
     update = {
         "is_available": bool(data["is_available"]),
@@ -283,7 +283,7 @@ def delivery_history():
       200:
         description: Past deliveries with batch and order summaries
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 20)), 100)
     offset = int(request.args.get("offset", 0))
 
@@ -321,7 +321,7 @@ def rider_stats():
       200:
         description: Rider delivery stats — total deliveries, completion rate, zones served
     """
-    db = get_db()
+    db = get_user_client()
     all_batches = (
         db.table("delivery_batches")
         .select("id,status,zone,created_at")
@@ -403,7 +403,7 @@ def rider_earnings():
     else:
         return jsonify({"error": MSG.RIDER_EARNINGS_INVALID_PERIOD}), 400
 
-    db = get_db()
+    db = get_user_client()
     batches = (
         db.table("delivery_batches")
         .select("id")
@@ -459,7 +459,7 @@ def mark_picked_up(order_id):
       404:
         description: Order not found
     """
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("id,status").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.RIDER_ORDER_NOT_FOUND}), 404
@@ -491,7 +491,7 @@ def get_customer_call_link(order_id):
       200:
         description: Click-to-call tel: URI link
     """
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("user_id,guest_phone").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.RIDER_ORDER_NOT_FOUND}), 404

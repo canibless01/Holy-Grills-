@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -82,7 +82,7 @@ def update_section(section_id):
       200:
         description: Section updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     allowed = {"title", "subtitle", "body", "image_url", "cta_text", "cta_url", "is_active", "sort_order", "config"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -146,7 +146,7 @@ def update_hours():
       200:
         description: Hours updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     day_name = (data.get("day") or "").lower()
     if not day_name:
@@ -198,7 +198,7 @@ def set_override():
       201:
         description: Override set
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     if "override_date" in data:
         data["date"] = data.pop("override_date")
@@ -388,7 +388,7 @@ def create_early_supporter():
       201:
         description: Early supporter created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -441,7 +441,7 @@ def update_early_supporter(section_id):
     ---
     tags: [Storefront]
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("storefront_sections")
         .select("id,content,section_type")
@@ -482,7 +482,7 @@ def delete_early_supporter(section_id):
     ---
     tags: [Storefront]
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("storefront_sections")
         .select("id")
@@ -510,7 +510,7 @@ def update_early_supporter_photo(section_id):
     if not photo_url:
         return jsonify({"error": "photo_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
     content = (section.get("content") or {}) if isinstance(section, dict) else {}
     content["photo_url"] = photo_url
@@ -547,7 +547,7 @@ def create_section():
       201:
         description: Section created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     for f in ["key", "title", "section_type"]:
         if not data.get(f):
@@ -582,7 +582,7 @@ def delete_section(section_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("storefront_sections").select("id").eq("id", section_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.SECTION_NOT_FOUND}), 404
@@ -603,7 +603,7 @@ def update_section_image(section_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
     content = (section.get("content") or {}) if isinstance(section, dict) else {}
     content["image_url"] = image_url
@@ -678,7 +678,7 @@ def create_banner():
       400:
         description: Missing required field or invalid images format
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     for f in ["title", "image_url"]:
         if not data.get(f):
@@ -720,7 +720,7 @@ def delete_banner(banner_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     banner = db.table("banners").select("id,title").eq("id", banner_id).single().execute()
     if not banner:
         return jsonify({"error": "Banner not found"}), 404
@@ -761,7 +761,7 @@ def update_banner(banner_id):
       404:
         description: Banner not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
 
     # Validate carousel images if provided
@@ -794,7 +794,7 @@ def update_banner_image(banner_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     update_data = {
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -908,7 +908,7 @@ def newsletter_list():
       200:
         description: Subscriber list
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 100)), 500)
     offset = int(request.args.get("offset", 0))
     q = db.table("newsletter_subscriptions").select("*")
