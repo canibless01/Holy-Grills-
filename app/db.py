@@ -181,6 +181,7 @@ class TableQuery:
         self._client = client
         self._table = table
         self._select = "*"
+        self._count: str | None = None
         self._filters: list[str] = []
         self._order: str | None = None
         self._limit: int | None = None
@@ -188,8 +189,9 @@ class TableQuery:
         self._single = False
         self._user_jwt: str | None = None
 
-    def select(self, columns: str = "*") -> "TableQuery":
+    def select(self, columns: str = "*", count: str | None = None) -> "TableQuery":
         self._select = columns
+        self._count = count
         return self
 
     def eq(self, column: str, value) -> "TableQuery":
@@ -271,6 +273,8 @@ class TableQuery:
         h = self._client._user_headers(self._user_jwt) if self._user_jwt else self._client._service_headers()
         if self._single:
             h["Accept"] = "application/vnd.pgrst.object+json"
+        if self._count:
+            h["Prefer"] = f"count={self._count}"
         return h
 
     def execute(self) -> list | dict | None:
@@ -279,7 +283,21 @@ class TableQuery:
         if self._single and resp.status_code in (406, 404):
             return None
         _raise_for_status(resp)
-        return resp.json()
+        data = resp.json()
+        if self._count:
+            content_range = resp.headers.get("Content-Range") or resp.headers.get("content-range")
+            total = None
+            if content_range and "/" in content_range:
+                total_str = content_range.split("/")[-1]
+                if total_str.isdigit():
+                    total = int(total_str)
+            if total is None and isinstance(data, list):
+                total = len(data)
+            if isinstance(data, dict):
+                data["count"] = total
+                return data
+            return {"data": data, "count": total}
+        return data
 
     def insert(self, data: dict | list) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"

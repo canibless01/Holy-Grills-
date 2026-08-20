@@ -87,7 +87,8 @@ def register():
     campus_id = data.get("campus_id")
     if not campus_id:
         db = get_db()
-        campus_id = _resolve_default_campus(db)
+        default = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
+        campus_id = default[0]["id"] if (default and isinstance(default, list) and len(default) > 0) else None
 
     try:
         result = auth_service.register(
@@ -579,8 +580,9 @@ def delete_account():
         return jsonify({"error": MSG.AUTH_PASSWORD_INCORRECT}), 400
 
     result = db.rpc("hg_anonymize_user", {"p_user_id": g.user_id})
-    if isinstance(result, dict) and not result.get("success"):
-        return jsonify({"error": result.get("error", "Anonymization failed")}), 400
+    if not result or not isinstance(result, dict) or not result.get("success"):
+        err_msg = result.get("error", "Anonymization failed") if isinstance(result, dict) else "Anonymization failed"
+        return jsonify({"error": err_msg}), 400
 
     try:
         _revoke_all_sessions(g.user_id)

@@ -18,14 +18,17 @@ def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data
     try:
         from app.db import get_db, get_user_client as _get_db
         db = _get_db()
+        actor_role = getattr(g, "user_role", "admin")
+        campus_id = getattr(g, "campus_id", None)
         db.table("admin_audit_logs").insert({
             "actor_id": actor_id,
-            "actor_role": "admin",
+            "actor_role": actor_role,
             "entity_type": entity_type,
             "entity_id": str(entity_id),
             "action": action,
             "before_value": before_data,
             "after_value": after_data,
+            "campus_id": campus_id,
         }).execute()
     except Exception:
         pass
@@ -452,7 +455,7 @@ def get_item(item_id):
       404:
         description: Not found
     """
-    db = get_user_client()
+    db = get_db()
     item = (
         db.table("menu_items")
         .select("*,menu_categories(name,slug)")
@@ -719,8 +722,6 @@ def create_item():
             price: {type: number}
             hp_earn_value: {type: integer}
             description: {type: string}
-            sku: {type: string}
-            dietary_tags: {type: array, items: {type: string}}
             daily_limit: {type: integer, description: "Max servings per day (null = unlimited)"}
     responses:
       201:
@@ -1417,20 +1418,30 @@ def set_kitchen_capacity():
     cap = data.get("daily_order_capacity")
 
     campus_id = getattr(g, "campus_id", None)
-    payload = {
-        "value": "" if cap is None else str(cap),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "updated_by": g.user_id,
-    }
-    if cap is not None and (not isinstance(cap, int) or cap < 1):
+    if cap is None:
+        q = db.table("kitchen_settings").eq("key", "daily_order_capacity")
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        q.update({
+            "value": "",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": g.user_id,
+        }).execute()
+        return jsonify({"daily_order_capacity": None, "message": MSG.MENU_CAPACITY_LIMIT_REMOVED}), 200
+
+    if not isinstance(cap, int) or cap < 1:
         return jsonify({"error": MSG.MENU_CAPACITY_POSITIVE}), 400
 
     q = db.table("kitchen_settings").eq("key", "daily_order_capacity")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    res = q.update(payload)
-    if cap is None:
-        return jsonify({"daily_order_capacity": None, "message": MSG.MENU_CAPACITY_LIMIT_REMOVED}), 200
+    res = q.update({
+        "value": str(cap),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": g.user_id,
+    })
+    if hasattr(res, "execute"):
+        res.execute()
     _, orders_today, at_capacity = _kitchen_stats(db)
     return jsonify({
         "daily_order_capacity": cap,

@@ -130,17 +130,19 @@ def create_lock():
     try:
         insert_data["reward_type"] = reward_type
         insert_data["reschedule_count"] = 0
-        result = db.table("order_locks").insert(insert_data)
-    except Exception as exc:
-        err_msg = str(getattr(exc, "details", {}).get("message", "")) if getattr(exc, "details", None) else str(exc)
-        if "uq_order_locks_one_active_per_user" in err_msg or "23505" in err_msg:
+        res = db.table("order_locks").insert(insert_data)
+        result = res.execute() if hasattr(res, "execute") else res
+    except SupabaseError as exc:
+        err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
+        if "uq_order_locks_one_active_per_user" in err_msg or "unique constraint" in err_msg.lower():
             return jsonify({"error": "User already has an active lock"}), 400
         is_missing_col = "column" in err_msg and "does not exist" in err_msg
         if is_missing_col:
             # Fallback: strip columns that may not exist yet in older schemas
             fallback = {k: v for k, v in insert_data.items()
                         if k not in ("reward_type", "reward_hp_amount", "reschedule_count")}
-            result = db.table("order_locks").insert(fallback)
+            res = db.table("order_locks").insert(fallback)
+            result = res.execute() if hasattr(res, "execute") else res
         else:
             raise
     row = (result[0] if isinstance(result, list) else result) if result is not None else {}
@@ -268,7 +270,7 @@ def reschedule_lock(lock_id):
         "locked_date": new_date_str,
         "reschedule_count": new_reschedule_count,
         "updated_at": now,
-    })
+    }).execute()
     row = updated[0] if isinstance(updated, list) else updated
     return jsonify({"message": MSG.ORDER_LOCK_RESCHEDULED, "lock": row}), 200
 
@@ -307,7 +309,8 @@ def cancel_lock(lock_id):
     if lock.get("status") != "active":
         return jsonify({"error": MSG.ORDER_LOCK_NOT_ACTIVE}), 400
 
-    cancel_lock_write(db, lock_id)
+    now = datetime.now(timezone.utc).isoformat()
+    db.table("order_locks").eq("id", lock_id).update({"status": "cancelled", "updated_at": now}).execute()
     return jsonify({"message": MSG.ORDER_LOCK_CANCELLED}), 200
 
 
@@ -339,10 +342,11 @@ def admin_list_locks():
         .select("*,profiles(full_name,email,phone)")
         .order("locked_date", ascending=True)
     )
-    if getattr(g, "user_role", None) != "super_admin":
-        campus_id = getattr(g, "campus_id", None)
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
+    # Allow query param, but super_admin sees al
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    if campus_id and getattr(g, "user_role", None) != "super_admin":
+      q = q.eq("campus_id", campus_id)
+      
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -364,7 +368,7 @@ def cancel_lock_write(db, lock_id):
 
 def _get_setting(db, key: str, default: str = "") -> str:
     try:
-        row = db.table("system_settings").select("value").eq("key", key).single().execute()
+        row = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
         return row.get("value", default) if row else default
     except Exception:
         return default

@@ -22,8 +22,8 @@ _DEFAULT_CHECKIN_HP = 5
 
 def _get_checkin_hp() -> int:
     try:
-        db = get_user_client()
-        row = db.table("system_settings").select("value").eq("key", "daily_checkin_hp").single().execute()
+        db = get_db()
+        row = db.table("system_settings").select("value").eq("key", "daily_checkin_hp").is_("campus_id", "null").single().execute()
         if row and row.get("value"):
             return int(row["value"])
     except Exception:
@@ -134,14 +134,14 @@ def checkin_history():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("daily_checkins").select("id,checkin_date,created_at").eq("user_id", user_id)
-    count_q = db.table("daily_checkins").select("id").eq("user_id", user_id)
+    count_q = db.table("daily_checkins").select("id", count="exact").eq("user_id", user_id)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
         count_q = count_q.eq("campus_id", campus_id)
     rows = q.order("checkin_date", ascending=False).limit(limit).offset(offset).execute() or []
-    all_rows = count_q.execute() or []
-    total_count = len(all_rows)
+    count_res = count_q.execute()
+    total_count = count_res.get("count", 0) if isinstance(count_res, dict) else len(count_res or [])
 
     today = date.today().isoformat()
     checked_in_today = any(r.get("checkin_date") == today for r in rows)

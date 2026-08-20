@@ -100,6 +100,23 @@ def update_first_order_gift(gift_id):
 
 # ── System Settings ───────────────────────────────────────────────────────────
 
+def require_super_admin_for_settings_write(g, jsonify):
+    """Insert at the top of any system_settings admin-write route."""
+    if g.user_role != "super_admin":
+        return jsonify({"error": "Only super_admin may modify system settings"}), 403
+    return None  # proceed
+
+
+def read_global_setting(db, key):
+    """Global keys now have campus_id IS NULL — query explicitly for that,
+    don't assume a row always has a campus_id."""
+    return db.table("system_settings").select("*").eq("key", key).is_("campus_id", "null").single().execute()
+
+
+def read_percampus_setting(db, key, campus_id):
+    return db.table("system_settings").select("*").eq("key", key).eq("campus_id", campus_id).single().execute()
+
+
 @admin_gifts_bp.route("/settings", methods=["GET"])
 @require_auth
 @require_role("admin")
@@ -121,6 +138,9 @@ def list_settings():
 @require_auth
 @require_role("admin")
 def update_setting(key):
+    auth_err = require_super_admin_for_settings_write(g, jsonify)
+    if auth_err:
+        return auth_err
     """
     Admin: update a system setting value.
     ---
@@ -215,6 +235,9 @@ def _broadcast_multiplier_event(db, multiplier: float):
 @require_auth
 @require_role("admin")
 def create_setting():
+    auth_err = require_super_admin_for_settings_write(g, jsonify)
+    if auth_err:
+        return auth_err
     """
     Admin: create a new system setting.
     ---

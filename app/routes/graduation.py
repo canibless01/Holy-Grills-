@@ -62,6 +62,7 @@ def claim_graduation():
             db.table("system_settings")
             .select("value")
             .eq("key", "graduation_min_level")
+            .is_("campus_id", "null")
             .single()
             .execute()
         )
@@ -100,15 +101,19 @@ def claim_graduation():
 
     campus_id = getattr(g, 'campus_id', None)
     # Award HP — not subject to HP multiplier (graduation is a fixed life event)
-    award_result = award_active_hp(
-        user_id=g.user_id,
-        amount=graduation_hp,
-        txn_type="earn_graduation",
-        reference_type="graduation",
-        notes=f"Graduation milestone HP — Level {user_level}",
-        apply_multiplier=False,
-        campus_id=campus_id,
-    )
+    try:
+        award_result = award_active_hp(
+            user_id=g.user_id,
+            amount=graduation_hp,
+            txn_type="earn_graduation",
+            reference_type="graduation",
+            notes=f"Graduation milestone HP — Level {user_level}",
+            apply_multiplier=False,
+            campus_id=campus_id,
+        )
+    except Exception as e:
+        db.table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
+        return jsonify({"error": "Failed to award graduation HP — please try again"}), 500
 
     # Fire graduation badge trigger
     try:

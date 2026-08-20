@@ -20,8 +20,12 @@ def get_kitchen_settings():
       200:
         description: Kitchen settings key/value map
     """
-    db = get_user_client()
-    rows = db.table("kitchen_settings").select("*").execute() or []
+    db = get_db()
+    q = db.table("kitchen_settings").select("*")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.execute() or []
     settings = {r["key"]: r["value"] for r in rows}
     return jsonify({
         "settings": settings,
@@ -47,8 +51,12 @@ def get_kitchen_setting(key):
       404:
         description: Setting not found
     """
-    db = get_user_client()
-    row = db.table("kitchen_settings").select("*").eq("key", key).limit(1).execute()
+    db = get_db()
+    q = db.table("kitchen_settings").select("*").eq("key", key)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    row = q.limit(1).execute()
     row = row[0] if row else None
     if not row:
         return jsonify({"error": MSG.KITCHEN_SETTING_NOT_FOUND}), 404
@@ -86,7 +94,9 @@ def update_kitchen_settings():
 
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
+    campus_id = getattr(g, 'campus_id', None)
     updated = {}
+    campus_id = getattr(g, 'campus_id', None)
     for key, value in settings.items():
         payload = {
             "key": key,
@@ -94,12 +104,15 @@ def update_kitchen_settings():
             "updated_by": g.user_id,
             "updated_at": now,
         }
-        result = db.table("kitchen_settings").upsert(payload, on_conflict="key")
-        updated[key] = (result[0] if isinstance(result, list) else result) or payload
-
-    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
-
-
+        if campus_id:
+            payload["campus_id"] = campus_id
+            on_conflict_target = "key,campus_id" if campus_id else "key"
+            res = db.table("kitchen_settings").upsert(payload, on_conflict=on_conflict_target)
+            result = res.execute() if hasattr(res, "execute") else res
+            updated[key] = (result[0] if isinstance(result, list) else result) or payload
+            
+        return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+          
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")
 def live_queue():
@@ -147,22 +160,19 @@ def delivery_windows():
     """
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
-    q_win = db.table("delivery_windows").select("id,label,starts_at,ends_at,status")
     campus_id = getattr(g, 'campus_id', None)
+    q = db.table("delivery_windows").select("id,label,starts_at,ends_at,status").gte("ends_at", now)
     if campus_id:
-        q_win = q_win.eq("campus_id", campus_id)
-    windows = (
-        q_win.gte("ends_at", now)
-        .order("starts_at")
-        .execute()
-    ) or []
+        q = q.eq("campus_id", campus_id)
+    windows = q.order("starts_at").execute() or []
+
     window_ids = [w["id"] for w in windows]
     counts = {}
     for wid in window_ids:
-        q_ord = db.table("orders").select("id").eq("delivery_window_id", wid)
+        oq = db.table("orders").select("id").eq("delivery_window_id", wid)
         if campus_id:
-            q_ord = q_ord.eq("campus_id", campus_id)
-        rows = q_ord.execute() or []
+            oq = oq.eq("campus_id", campus_id)
+        rows = oq.execute() or []
         counts[wid] = len(rows)
 
     for w in windows:
@@ -292,27 +302,9 @@ def kitchen_metrics():
     }), 200
 
 
-@kitchen_bp.route("/batch-summary/<window_id>", methods=["GET"])
-@require_role("kitchen", "admin")
-def batch_summary(window_id):
-    """
-    Get consolidated prep list for a delivery window batch.
-    ---
-    tags: [Kitchen]
-    parameters:
-      - in: path
-        name: window_id
-        type: string
-        required: true
-    responses:
-      200:
-        description: Aggregated item quantities for the window
-    """
-    db = get_user_client()
-    q = (
-        db.table("orders")
-        .select("id,order_items(name_snapshot,quantity)")
+@name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
+        .in_("status", ["received", "preparing", "ready"])
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:

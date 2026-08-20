@@ -21,7 +21,7 @@ def _get_free_side_options() -> list:
     """Fetch allowed side options — from system_settings first, then config fallback."""
     try:
         db = get_db()
-        row = db.table("system_settings").select("value").eq("key", "free_side_options").single().execute()
+        row = db.table("system_settings").select("value").eq("key", "free_side_options").is_("campus_id", "null").single().execute()
         if row and row.get("value"):
             import json
             return json.loads(row["value"])
@@ -127,6 +127,7 @@ def redeem_free_side():
     if not credits:
         return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS}), 400
 
+    # Use oldest-expiring credit first, try to update atomically using Optimistic Concurrency Control (OCC)
     write_db = get_db()
     success = False
     new_remaining = 0
@@ -153,6 +154,7 @@ def redeem_free_side():
     if not success:
         return jsonify({"error": "No credits available or concurrent update occurred. Please try again."}), 409
 
+    # Attach free line item to the order in order_items table using service role write_db
     try:
         write_db.table("order_items").insert({
             "order_id": order_id,
@@ -166,6 +168,7 @@ def redeem_free_side():
         }).execute()
     except Exception as e:
         logger.error("Failed to insert free side line item into order_items: %s", e)
+        # Compensate: restore the used credit if order item insertion fails
         try:
             write_db.table("free_side_credits").eq("id", credit_row_used["id"]).update({
                 "credits_remaining": credit_row_used["credits_remaining"],

@@ -280,10 +280,9 @@ def admin_create_hostel():
         if data.get(f) is None:
             return jsonify({"error": f"'{f}' is required"}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = getattr(g, 'campus_id', None)
     if not campus_id:
         return jsonify({"error": "Unable to resolve campus for this request"}), 400
-
     record = {
         "name": data["name"],
         "delivery_fee": float(data["delivery_fee"]),
@@ -420,10 +419,9 @@ def admin_create_gate():
     if not data.get("name"):
         return jsonify({"error": "'name' is required"}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = getattr(g, 'campus_id', None)
     if not campus_id:
         return jsonify({"error": "Unable to resolve campus for this request"}), 400
-
     record = {
         "name": data["name"],
         "base_fee": float(data.get("base_fee") or 0),
