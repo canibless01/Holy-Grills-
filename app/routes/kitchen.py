@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 
@@ -20,7 +20,7 @@ def get_kitchen_settings():
       200:
         description: Kitchen settings key/value map
     """
-    db = get_db()
+    db = get_user_client()
     rows = db.table("kitchen_settings").select("*").execute() or []
     settings = {r["key"]: r["value"] for r in rows}
     return jsonify({
@@ -47,7 +47,7 @@ def get_kitchen_setting(key):
       404:
         description: Setting not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("kitchen_settings").select("*").eq("key", key).limit(1).execute()
     row = row[0] if row else None
     if not row:
@@ -84,7 +84,7 @@ def update_kitchen_settings():
     if not settings or not isinstance(settings, dict):
         return jsonify({"error": MSG.KITCHEN_SETTINGS_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     updated = {}
     for key, value in settings.items():
@@ -116,7 +116,7 @@ def live_queue():
       200:
         description: Kitchen order queue
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("orders")
         .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
@@ -145,7 +145,7 @@ def delivery_windows():
       200:
         description: Delivery windows
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     q_win = db.table("delivery_windows").select("id,label,starts_at,ends_at,status")
     campus_id = getattr(g, 'campus_id', None)
@@ -194,7 +194,7 @@ def scheduled_orders():
       200:
         description: List of scheduled orders with items and window info
     """
-    db = get_db()
+    db = get_user_client()
     # Scheduled orders: is_scheduled=True AND status='received' (not yet activated).
     # The DB enum does not include a 'scheduled' status value; the is_scheduled
     # boolean column is the authoritative discriminator. Once kitchen promotes an
@@ -237,7 +237,7 @@ def kitchen_metrics():
       200:
         description: Kitchen metrics summary
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -308,7 +308,7 @@ def batch_summary(window_id):
       200:
         description: Aggregated item quantities for the window
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("orders")
         .select("id,order_items(name_snapshot,quantity)")
@@ -365,7 +365,7 @@ def batch_advance(batch_id):
         description: No orders found in this batch
     """
     from app.services.order_service import update_order_status, VALID_TRANSITIONS
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     from_status_filter = data.get("from_status")
     notes = data.get("notes", f"Batch advance by kitchen ({batch_id[:8]})")

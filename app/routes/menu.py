@@ -8,7 +8,7 @@ DATA MODEL DOCUMENTATION:
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 from app.messages import MSG
 
@@ -16,7 +16,7 @@ from app.messages import MSG
 def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data=None, after_data=None):
     """Write an admin audit log entry for menu item changes. Silently ignores errors."""
     try:
-        from app.db import get_db as _get_db
+        from app.db import get_db, get_user_client as _get_db
         db = _get_db()
         db.table("admin_audit_logs").insert({
             "actor_id": actor_id,
@@ -34,7 +34,7 @@ def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data
 def _notify_sellout(item_id: str, item_name: str):
     """Send a push+in_app notification to all admins when an item sells out."""
     try:
-        from app.db import get_db as _get_db
+        from app.db import get_db, get_user_client as _get_db
         from app.services.notification_service import send_notification
         db = _get_db()
         admins = (
@@ -241,7 +241,7 @@ def create_category():
       400:
         description: Missing required field or slug conflict
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     for f in ["name", "slug"]:
         if not data.get(f):
@@ -295,7 +295,7 @@ def update_category(category_id):
       404:
         description: Category not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("menu_categories").select("id").eq("id", category_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.MENU_CATEGORY_NOT_FOUND}), 404
@@ -327,7 +327,7 @@ def delete_category(category_id):
       404:
         description: Category not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("menu_categories").select("id,name").eq("id", category_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.MENU_CATEGORY_NOT_FOUND}), 404
@@ -347,7 +347,7 @@ def list_categories():
       200:
         description: List of categories
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("menu_categories").select("*").eq("is_active", "true")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -386,7 +386,7 @@ def list_items():
         description: |
           { items: [...], kitchen: { daily_order_capacity, orders_today, is_at_capacity } }
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -452,7 +452,7 @@ def get_item(item_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     item = (
         db.table("menu_items")
         .select("*,menu_categories(name,slug)")
@@ -514,7 +514,7 @@ def get_item_addons(item_id):
       404:
         description: Menu item not found
     """
-    db = get_db()
+    db = get_user_client()
     item = (
         db.table("menu_items")
         .select("id")
@@ -579,7 +579,7 @@ def create_addon_group(item_id):
       404:
         description: Menu item not found
     """
-    db = get_db()
+    db = get_user_client()
     item = db.table("menu_items").select("id").eq("id", item_id).single().execute()
     if not item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
@@ -630,7 +630,7 @@ def update_addon_group(item_id, group_id):
       404:
         description: Add-on group not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     allowed = {"name", "is_required", "min_select", "max_select", "sort_order"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -685,7 +685,7 @@ def delete_addon_group(item_id, group_id):
       404:
         description: Add-on group not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("menu_addon_groups")
         .select("id")
@@ -728,7 +728,7 @@ def create_item():
       400:
         description: Missing required field
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     for f in ["name", "category_id", "price"]:
         if data.get(f) is None:
@@ -775,7 +775,7 @@ def update_menu_item_image(item_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("menu_items").eq("id", item_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -816,7 +816,7 @@ def update_item(item_id):
         "tags", "daily_limit", "is_available", "image_url", "is_featured",
         "hp_multiplier",
     }
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     # Fetch before-state for audit and sell-out detection
     before = (
@@ -876,7 +876,7 @@ def bulk_update_availability():
       400:
         description: Missing required fields
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     item_ids = data.get("item_ids")
     if not item_ids or not isinstance(item_ids, list):
@@ -942,7 +942,7 @@ def archive_item(item_id):
       200:
         description: Item archived
     """
-    db = get_db()
+    db = get_user_client()
     before = (
         db.table("menu_items")
         .select("id,name,is_available")
@@ -998,7 +998,7 @@ def create_variation_group(item_id):
       400:
         description: Missing required field
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     if not data.get("name"):
         return jsonify({"error": MSG.MENU_ADDON_NAME_REQUIRED}), 400
@@ -1038,7 +1038,7 @@ def update_variation_group(item_id, group_id):
       200:
         description: Group updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     allowed = {"name", "is_required", "min_selections", "max_selections", "sort_order"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -1085,7 +1085,7 @@ def create_variation_option(item_id, group_id):
       400:
         description: Missing required field
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     if not data.get("name"):
         return jsonify({"error": MSG.MENU_ADDON_NAME_REQUIRED}), 400
@@ -1138,7 +1138,7 @@ def update_variation_option(item_id, group_id, option_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     allowed = {"name", "price_delta", "is_available", "sort_order"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -1188,7 +1188,7 @@ def delete_variation_option(item_id, group_id, option_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("menu_item_variation_options")
         .select("id")
@@ -1225,7 +1225,7 @@ def delete_variation_group(item_id, group_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = (
         db.table("menu_item_variation_groups")
         .select("id")
@@ -1258,7 +1258,7 @@ def list_addons():
       200:
         description: List of add-ons
     """
-    db = get_db()
+    db = get_user_client()
     addons = (
         db.table("menu_addons")
         .select("*")
@@ -1297,7 +1297,7 @@ def create_addon():
       400:
         description: Missing required field
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     for f in ["name", "price"]:
         if data.get(f) is None:
@@ -1336,7 +1336,7 @@ def update_addon(addon_id):
       200:
         description: Add-on updated
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     allowed = {"name", "description", "price", "is_available", "sort_order", "group_id"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -1356,7 +1356,7 @@ def archive_addon(addon_id):
       200:
         description: Add-on archived
     """
-    db = get_db()
+    db = get_user_client()
     result = db.table("menu_addons").eq("id", addon_id).update({
         "is_archived": True,
         "is_available": False,
@@ -1380,7 +1380,7 @@ def get_kitchen_capacity():
       200:
         description: Kitchen capacity info
     """
-    db = get_db()
+    db = get_user_client()
     capacity, orders_today, at_capacity = _kitchen_stats(db)
     return jsonify({
         "daily_order_capacity": capacity,
@@ -1412,7 +1412,7 @@ def set_kitchen_capacity():
       400:
         description: Invalid value
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     cap = data.get("daily_order_capacity")
 

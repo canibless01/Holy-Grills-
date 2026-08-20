@@ -41,7 +41,7 @@ def list_challenges():
       200:
         description: Active challenges
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("milestones")
         .select("id,title,description,trigger_type,trigger_value,hp_awarded,time_window,icon_won,icon_locked")
@@ -69,7 +69,7 @@ def list_badges():
       200:
         description: All badge definitions
     """
-    db = get_db()
+    db = get_user_client()
     q = (
         db.table("milestones")
         .select("id,title,description,trigger_type,trigger_value,hp_awarded,icon_won,icon_locked")
@@ -202,7 +202,7 @@ def admin_list_milestones():
       200:
         description: All milestones
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("milestones").select("*")
@@ -246,7 +246,7 @@ def admin_create_milestone():
       201:
         description: Milestone created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     required = ["title", "trigger_type", "trigger_value", "hp_awarded"]
     for f in required:
@@ -285,7 +285,7 @@ def admin_update_milestone(milestone_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     if not db.table("milestones").select("id").eq("id", milestone_id).limit(1).execute():
         return jsonify({"error": MSG.CHALLENGE_NOT_FOUND}), 404
     data = request.get_json(force=True) or {}
@@ -319,7 +319,7 @@ def admin_delete_milestone(milestone_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     if not db.table("milestones").select("id").eq("id", milestone_id).limit(1).execute():
         return jsonify({"error": MSG.CHALLENGE_NOT_FOUND}), 404
     db.table("milestones").eq("id", milestone_id).update({"is_active": False})

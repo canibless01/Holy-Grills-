@@ -33,7 +33,7 @@ def list_listings():
       200:
         description: Marketplace listings
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -66,7 +66,7 @@ def get_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
@@ -230,7 +230,7 @@ def admin_all_purchases():
       200:
         description: All marketplace purchases
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("marketplace_purchases").select(
@@ -278,7 +278,7 @@ def admin_update_purchase(purchase_id):
       404:
         description: Purchase not found
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     new_status = (data.get("status") or "").strip()
     VALID_STATUSES = {"pending", "completed", "refunded", "cancelled"}
@@ -394,7 +394,7 @@ def admin_get_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).limit(1).execute()
     listing = listing[0] if listing else None
     if not listing:
@@ -431,7 +431,7 @@ def admin_list_listings():
       200:
         description: All listings for admin review
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)")
@@ -473,7 +473,7 @@ def admin_create_listing():
       400:
         description: Validation error
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     for f in ["title", "listing_type", "price"]:
         if not data.get(f) and data.get(f) != 0:
@@ -535,7 +535,7 @@ def update_listing_image(listing_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("marketplace_listings").eq("id", listing_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -576,7 +576,7 @@ def admin_update_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("id,title,status").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.MARKETPLACE_LISTING_NOT_FOUND}), 404
@@ -639,7 +639,7 @@ def admin_delete_listing(listing_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     listing = db.table("marketplace_listings").select("id,title").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
@@ -680,7 +680,7 @@ def submit_listing_request():
       503:
         description: Vendor request intake temporarily unavailable
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     required = ["vendor_name", "vendor_email", "service_title", "category", "description", "proposed_price"]
     for f in required:
@@ -746,7 +746,7 @@ def admin_list_requests():
       200:
         description: Vendor listing requests
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("marketplace_requests").select("*")
@@ -785,7 +785,7 @@ def admin_respond_to_request(request_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("marketplace_requests").select("id,status").eq("id", request_id).single().execute()
     if not row:
         return jsonify({"error": MSG.MARKETPLACE_REQUEST_NOT_FOUND}), 404
@@ -833,7 +833,7 @@ def upload_codes(listing_id):
       201:
         description: Codes uploaded
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     codes = data.get("codes", [])
     if not codes:
@@ -893,7 +893,7 @@ def restore_inventory_on_refund(db, purchase, logger):
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
     from app.db import get_db
     from app.constants import ADMIN_ROLES
-    db = get_db()
+    db = get_user_client()
     admins = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).execute()
     from app.services.notification_service import send_notification
     for admin in admins:

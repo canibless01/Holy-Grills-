@@ -356,7 +356,7 @@ def list_blasts():
       200:
         description: Blast history
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("notification_blasts").select("*")
@@ -388,7 +388,7 @@ def get_blast(blast_id):
       404:
         description: Blast not found
     """
-    db = get_db()
+    db = get_user_client()
     blast = db.table("notification_blasts").select("*").eq("id", blast_id).limit(1).execute()
     blast = blast[0] if blast else None
     if not blast:
@@ -419,7 +419,7 @@ def create_blast():
       201:
         description: Blast created and sent
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     required = ["title", "body", "channels"]
     for f in required:

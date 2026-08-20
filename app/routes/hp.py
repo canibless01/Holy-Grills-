@@ -82,7 +82,7 @@ def list_tiers():
       200:
         description: All tier definitions
     """
-    db = get_db()
+    db = get_user_client()
     tiers = db.table("hp_tiers").select("*").order("sort_order").execute()
     return jsonify(tiers), 200
 
@@ -473,7 +473,7 @@ def transfer_hp():
 
 def _log_admin_action(actor_id, table, target_id, action, after_data=None):
     from app.db import get_db
-    db = get_db()
+    db = get_user_client()
     try:
         db.table("admin_audit_logs").insert({
             "actor_id": actor_id,

@@ -870,15 +870,15 @@ def create_event():
     campus_id = getattr(g, "campus_id", None)
     if not campus_id:
         return jsonify({"error": "Unable to resolve campus for this request"}), 400
-    safe.setdefault("campus_id", campus_id)
     safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS or k == "campus_id"}
+    safe["campus_id"] = campus_id
     try:
-        result = db.table("events").insert(safe)
+        result = db.table("events").insert(safe).execute()
     except Exception as _exc:
         # New columns may not exist yet — strip them and retry
         PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees", "hp_required", "total_value", "is_paid"}
         safe2 = {k: v for k, v in safe.items() if k not in PHASE2_COLS}
-        result = db.table("events").insert(safe2)
+        result = db.table("events").insert(safe2).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 

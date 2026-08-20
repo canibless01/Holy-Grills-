@@ -20,7 +20,7 @@ def get_public_config():
       200:
         description: Public system configuration
     """
-    db = get_db()
+    db = get_user_client()
     try:
         settings = db.table("system_settings").select("key,value").eq("is_public", True).execute() or []
         # Fallback if no public settings marked yet: read key public configs
@@ -44,7 +44,7 @@ def list_sections():
       200:
         description: Storefront sections
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("storefront_sections").select("*").eq("is_active", "true")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -102,7 +102,7 @@ def get_hours():
       200:
         description: Operating hours including today's status
     """
-    db = get_db()
+    db = get_user_client()
     campus_id = getattr(g, "campus_id", None)
 
     hours_q = db.table("operating_hours").select("*")
@@ -248,7 +248,7 @@ def validate_promo():
       400:
         description: Invalid or expired code
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True) or {}
     code = data.get("code", "").upper()
     subtotal = float(data.get("order_subtotal", 0))
@@ -339,7 +339,7 @@ def list_early_supporters():
       200:
         description: List of early supporters (ordered by sort_order)
     """
-    db = get_db()
+    db = get_user_client()
     rows = (
         db.table("storefront_sections")
         .select("id,title,content,sort_order,created_at")
@@ -632,7 +632,7 @@ def list_banners():
       200:
         description: Active banners ordered by sort_order
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("banners").select("*").eq("is_active", "true")
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
@@ -830,7 +830,7 @@ def newsletter_subscribe():
       200:
         description: Already subscribed
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     email = (data.get("email") or "").strip().lower()
     if not email:
@@ -872,7 +872,7 @@ def newsletter_unsubscribe():
       200:
         description: Unsubscribed successfully
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     email = (data.get("email") or "").strip().lower()
     if not email:

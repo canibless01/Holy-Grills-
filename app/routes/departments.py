@@ -14,7 +14,7 @@ Admin:
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 
 # Departments are global (platform-wide), not campus-scoped
@@ -49,7 +49,7 @@ def list_departments():
       200:
         description: List of active departments
     """
-    db = get_db()
+    db = get_user_client()
     try:
         q = db.table("departments").select("id,name,slug,faculty,sort_order").eq("is_active", True)
         faculty_filter = request.args.get("faculty")
@@ -87,7 +87,7 @@ def list_faculties():
       200:
         description: List of faculty names
     """
-    db = get_db()
+    db = get_user_client()
     try:
         rows = db.table("departments").select("faculty").eq("is_active", True).execute() or []
         faculties = sorted({r["faculty"] for r in rows if r.get("faculty")})
@@ -114,7 +114,7 @@ def get_department(dept_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     try:
         # Enforce is_active for the public endpoint — inactive depts are admin-only
         dept = (
@@ -154,7 +154,7 @@ def admin_list_departments():
       200:
         description: All departments
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("departments").select("*")
     if request.args.get("faculty"):
         q = q.eq("faculty", request.args["faculty"])
@@ -200,7 +200,7 @@ def admin_create_department():
         slug = re.sub(r"[^a-z0-9-]", "", slug)
 
     now = datetime.now(timezone.utc).isoformat()
-    db = get_db()
+    db = get_user_client()
     try:
         row = db.table("departments").insert({
             "name": data["name"].strip(),
@@ -248,7 +248,7 @@ def admin_update_department(dept_id):
       404:
         description: Department not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("departments").select("id").eq("id", dept_id).single().execute()
     if not existing:
         return jsonify({"error": "Department not found"}), 404
@@ -298,7 +298,7 @@ def admin_deactivate_department(dept_id):
       404:
         description: Department not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("departments").select("id,name").eq("id", dept_id).single().execute()
     if not existing:
         return jsonify({"error": "Department not found"}), 404
@@ -328,7 +328,7 @@ def admin_restore_department(dept_id):
       404:
         description: Department not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("departments").select("id,name").eq("id", dept_id).single().execute()
     if not existing:
         return jsonify({"error": "Department not found"}), 404
