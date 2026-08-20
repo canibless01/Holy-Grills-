@@ -10,7 +10,7 @@ from app.utils.validators import validate_choice, validate_non_negative_number
 from datetime import datetime, timezone
 import uuid
 
-LISTING_STATUSES = ("active", "rejected", "archived")
+LISTING_STATUSES = ("pending", "active", "paused", "rejected", "archived", "draft")
 
 marketplace_bp = Blueprint("marketplace", __name__)
 
@@ -94,9 +94,8 @@ def purchase(listing_id):
         name: body
         required: true
         schema:
-          required: [use_hp_pricing, payment_method]
+          required: [payment_method]
           properties:
-            use_hp_pricing: {type: boolean}
             payment_method: {type: string, enum: [wallet, card, split]}
             wallet_amount: {type: number}
             payment_reference: {type: string, description: "Required for card payment confirmation"}
@@ -116,154 +115,35 @@ def purchase(listing_id):
 
     payment_method = data.get("payment_method", "wallet")
     hp_price = int(listing.get("hp_price") or 0)
-    cash_price = float(listing.get("cash_price") or 0)
-    total_value = float(listing.get("total_value") or listing.get("price") or 0)
-
-    # §Pricing model:
-    # If user active HP ≥ hp_price → deduct hp_price HP + charge cash_price ₦
-    # Else                           → charge total_value ₦ only (no HP deducted)
     balance = get_hp_balance(g.user_id)
     user_hp = balance.get("active", 0)
-
-    if hp_price > 0 and user_hp >= hp_price:
-        hp_to_spend = hp_price
-        naira_to_pay = cash_price
-        use_hp = True
-    else:
-        hp_to_spend = 0
-        naira_to_pay = total_value
-        use_hp = False
-
-    # Bug 1 & 2 Fixes: Move code reservation BEFORE any wallet debit or HP spend, and use atomic claim
-    reserved_code_id = None
-    reserved_code_val = None
-
-    if listing.get("listing_type") == "code":
-        # Check and claim access code atomically
-        available_codes = (
-            db.table("marketplace_access_codes")
-            .select("id,code")
-            .eq("listing_id", listing_id)
-            .eq("status", "available")
-            .limit(1)
-            .execute()
-        )
-        if not available_codes or len(available_codes) == 0:
-            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True}).execute()
-            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
-
-        cand_code = available_codes[0]
-        # Atomically mark as assigned/reserved
-        now_iso = datetime.now(timezone.utc).isoformat()
-        claimed = (
-            db.table("marketplace_access_codes")
-            .eq("id", cand_code["id"])
-            .eq("status", "available")
-            .update({"status": "assigned", "assigned_at": now_iso})
-            .execute()
-        )
-        if not claimed or (isinstance(claimed, list) and len(claimed) == 0):
-            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
-
-        reserved_code_id = cand_code["id"]
-        reserved_code_val = cand_code["code"]
+    use_hp = hp_price > 0 and user_hp >= hp_price and payment_method != "card"
 
     wallet_amount = 0.0
-    card_amount = 0.0
-    try:
+    if not use_hp:
+        total_value = float(listing.get("total_value") or listing.get("price") or 0)
         if payment_method == "wallet":
-            wallet_amount = naira_to_pay
-            if wallet_amount > 0:
-                debit_wallet(g.user_id, wallet_amount, listing_id, "marketplace", f"Purchase: {listing['title']}")
-        elif payment_method == "card":
-            card_amount = naira_to_pay
+            wallet_amount = total_value
         elif payment_method == "split":
-            wallet_amount = float(data.get("wallet_amount", 0))
-            if wallet_amount > naira_to_pay:
-                wallet_amount = naira_to_pay
-            card_amount = naira_to_pay - wallet_amount
-            if wallet_amount > 0:
-                debit_wallet(g.user_id, wallet_amount, listing_id, "marketplace", f"Wallet portion: {listing['title']}")
-
-        if hp_to_spend > 0:
-            spend_hp(g.user_id, hp_to_spend, listing_id, "marketplace_purchase", f"HP discount on: {listing['title']}")
-    except Exception as exc:
-        # Revert claimed code if payment or HP spend fails
-        if reserved_code_id:
-            try:
-                db.table("marketplace_access_codes").eq("id", reserved_code_id).update({"status": "available", "assigned_at": None}).execute()
-            except Exception:
-                pass
-        return jsonify({"error": str(exc)}), 400
-
-    purchase_record = {
-        "user_id": g.user_id,
-        "listing_id": listing_id,
-        "pay_with_hp": use_hp,
-        "payment_method": payment_method,
-        "wallet_amount": wallet_amount,
-        "card_amount": card_amount,
-        "payment_reference": data.get("payment_reference", ""),
-        "quantity": 1,
-        "status": "pending",
-    }
-    if reserved_code_id:
-        purchase_record["metadata"] = {"code_id": reserved_code_id}
-
-    if listing.get("listing_type") == "code":
-        available_codes = (
-            db.table("marketplace_access_codes")
-            .select("id")
-            .eq("listing_id", listing_id)
-            .eq("status", "available")
-            .limit(1)
-            .execute()
-        )
-        if not available_codes or len(available_codes) == 0:
-            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True})
-            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
-        purchase_record["metadata"] = {"code_id": available_codes[0]["id"]}
-
-    if hp_to_spend > 0:
-        spend_hp(g.user_id, hp_to_spend, listing_id, "marketplace_purchase", f"HP discount on: {listing['title']}")
+            wallet_amount = min(float(data.get("wallet_amount", 0)), total_value)
 
     try:
-        rpc_res = db.rpc("hg_purchase_marketplace_item", {
+        purchase_row = db.rpc("hg_purchase_marketplace_item", {
             "p_user_id": g.user_id,
             "p_listing_id": listing_id,
-            "p_pay_with_hp": use_hp,
-            "p_payment_method": payment_method,
-            "p_wallet_amount": wallet_amount,
-            "p_card_amount": card_amount,
-            "p_payment_reference": data.get("payment_reference", ""),
             "p_quantity": 1,
+            "p_pay_with_hp": use_hp,
+            "p_wallet_amount": wallet_amount,
+            "p_payment_reference": data.get("payment_reference"),
         })
     except Exception as exc:
         err_str = str(exc)
-        if "NO_CODES" in err_str.upper() or "OUT_OF_STOCK" in err_str.upper():
+        if "out of stock" in err_str.lower() or "insufficient inventory" in err_str.lower() or "no_codes" in err_str.lower():
             return jsonify({"error": MSG.LISTING_NO_CODES}), 400
         return jsonify({"error": err_str}), 400
-
-    if isinstance(rpc_res, dict) and rpc_res.get("error"):
-        err_str = str(rpc_res["error"])
-        if "NO_CODES" in err_str.upper() or "OUT_OF_STOCK" in err_str.upper():
-            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
-        return jsonify({"error": err_str}), 400
-
-    if isinstance(rpc_res, dict):
-        purchase_row = rpc_res.get("purchase") or rpc_res
-        code_value = rpc_res.get("code") or rpc_res.get("access_code")
-    else:
-        purchase_id_str = str(rpc_res) if rpc_res else str(uuid.uuid4())
-        purchase_row = {"id": purchase_id_str, "user_id": g.user_id, "listing_id": listing_id, "status": "pending"}
-        code_value = None
 
     purchase_id = purchase_row.get("id") if isinstance(purchase_row, dict) else str(purchase_row)
-
-    if not code_value:
-        assigned_code_row = db.table("marketplace_access_codes").select("code").eq("assigned_purchase_id", purchase_id).single().execute()
-        if assigned_code_row:
-            code_value = assigned_code_row.get("code")
+    code_value = (purchase_row.get("metadata") or {}).get("code") if isinstance(purchase_row, dict) else None
 
     from flask import current_app
     marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
@@ -286,15 +166,15 @@ def purchase(listing_id):
         notif_type="marketplace_purchase",
         title=MSG.MARKETPLACE_PURCHASE_TITLE,
         body=_purchase_body,
-        reference_id=purchase_row["id"],
+        reference_id=purchase_id,
         reference_type="marketplace_purchase",
         channels=["push", "in_app", "email"],
     )
 
-    codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
-    from flask import current_app
-    if len(codes_left) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
-        _alert_admin_low_inventory(listing_id, listing["title"], len(codes_left))
+    if listing.get("listing_type") in ("code", "digital_code", "voucher", "subscription"):
+        codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
+        if len(codes_left) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
+            _alert_admin_low_inventory(listing_id, listing["title"], len(codes_left))
 
     return jsonify({
         "purchase": purchase_row,
@@ -471,6 +351,19 @@ def admin_update_purchase(purchase_id):
             except Exception as e:
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
 
+        # Restore inventory / release the access code on refund or cancel
+        listing_id = purchase.get("listing_id")
+        if listing_id:
+            db.table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": False}).execute()
+            code_row = (
+                db.table("marketplace_access_codes")
+                .select("id").eq("assigned_purchase_id", purchase_id).single().execute()
+            )
+            if code_row:
+                db.table("marketplace_access_codes").eq("id", code_row["id"]).update({
+                    "status": "available", "assigned_purchase_id": None, "assigned_at": None,
+                }).execute()
+
     update_payload = {
         "status": new_status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -585,7 +478,7 @@ def admin_create_listing():
           properties:
             title: {type: string}
             description: {type: string}
-            listing_type: {type: string, enum: [code, service, product, experience]}
+            listing_type: {type: string, enum: [code, manual, subscription, digital_code, voucher]}
             price: {type: number}
             hp_price: {type: integer}
             image_url: {type: string}
@@ -771,10 +664,10 @@ def admin_delete_listing(listing_id):
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     try:
-        db.table("marketplace_access_codes").eq("listing_id", listing_id).delete()
+        db.table("marketplace_access_codes").eq("listing_id", listing_id).delete().execute()
     except Exception:
         pass
-    db.table("marketplace_listings").eq("id", listing_id).delete()
+    db.table("marketplace_listings").eq("id", listing_id).delete().execute()
     return jsonify({"message": f"Listing '{listing.get('title', listing_id)}' deleted"}), 200
 
 

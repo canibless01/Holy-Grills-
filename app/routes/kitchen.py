@@ -21,7 +21,11 @@ def get_kitchen_settings():
         description: Kitchen settings key/value map
     """
     db = get_db()
-    rows = db.table("kitchen_settings").select("*").execute() or []
+    q = db.table("kitchen_settings").select("*")
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    rows = q.execute() or []
     settings = {r["key"]: r["value"] for r in rows}
     return jsonify({
         "settings": settings,
@@ -48,7 +52,11 @@ def get_kitchen_setting(key):
         description: Setting not found
     """
     db = get_db()
-    row = db.table("kitchen_settings").select("*").eq("key", key).limit(1).execute()
+    q = db.table("kitchen_settings").select("*").eq("key", key)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    row = q.limit(1).execute()
     row = row[0] if row else None
     if not row:
         return jsonify({"error": MSG.KITCHEN_SETTING_NOT_FOUND}), 404
@@ -86,6 +94,7 @@ def update_kitchen_settings():
 
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
+    campus_id = getattr(g, 'campus_id', None)
     updated = {}
     for key, value in settings.items():
         payload = {
@@ -94,7 +103,11 @@ def update_kitchen_settings():
             "updated_by": g.user_id,
             "updated_at": now,
         }
-        result = db.table("kitchen_settings").upsert(payload, on_conflict="key")
+        if campus_id:
+            payload["campus_id"] = campus_id
+        on_conflict_target = "key,campus_id" if campus_id else "key"
+        res = db.table("kitchen_settings").upsert(payload, on_conflict=on_conflict_target)
+        result = res.execute() if hasattr(res, "execute") else res
         updated[key] = (result[0] if isinstance(result, list) else result) or payload
 
     return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
@@ -147,17 +160,19 @@ def delivery_windows():
     """
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
-    windows = (
-        db.table("delivery_windows")
-        .select("id,label,starts_at,ends_at,status")
-        .gte("ends_at", now)
-        .order("starts_at")
-        .execute()
-    )
+    campus_id = getattr(g, 'campus_id', None)
+    q = db.table("delivery_windows").select("id,label,starts_at,ends_at,status").gte("ends_at", now)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    windows = q.order("starts_at").execute() or []
+
     window_ids = [w["id"] for w in windows]
     counts = {}
     for wid in window_ids:
-        rows = db.table("orders").select("id").eq("delivery_window_id", wid).execute()
+        oq = db.table("orders").select("id").eq("delivery_window_id", wid)
+        if campus_id:
+            oq = oq.eq("campus_id", campus_id)
+        rows = oq.execute() or []
         counts[wid] = len(rows)
 
     for w in windows:
@@ -304,13 +319,16 @@ def batch_summary(window_id):
         description: Aggregated item quantities for the window
     """
     db = get_db()
-    orders = (
+    q = (
         db.table("orders")
         .select("id,order_items(name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "preparing", "ready"])
-        .execute()
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    orders = q.execute() or []
 
     aggregated: dict[str, int] = {}
     for order in orders:
@@ -369,6 +387,9 @@ def batch_advance(batch_id):
         .eq("delivery_window_id", batch_id)
         .not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])
     )
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
     if from_status_filter:
         q = q.eq("status", from_status_filter)
 

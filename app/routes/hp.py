@@ -62,8 +62,7 @@ def transactions():
     offset = int(request.args.get("offset", 0))
     q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    q = q.eq("campus_id", campus_id)
     txn_type = request.args.get("type")
     if txn_type:
         q = q.eq("type", txn_type)
@@ -112,6 +111,13 @@ def admin_grant():
     if not data.get("user_id") or not data.get("amount"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
 
+    db = get_db()
+    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
+    if not target:
+        return jsonify({"error": "Target user profile not found"}), 404
+    if getattr(g, "user_role", None) == "admin" and target.get("campus_id") and getattr(g, "campus_id", None) and target.get("campus_id") != g.campus_id:
+        return jsonify({"error": "Cannot grant HP outside your campus"}), 403
+
     try:
         result = award_active_hp(
             user_id=data["user_id"],
@@ -151,6 +157,14 @@ def admin_expire():
     data = request.get_json(force=True) or {}
     if not data.get("user_id"):
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+
+    db = get_db()
+    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
+    if not target:
+        return jsonify({"error": "Target user profile not found"}), 404
+    if getattr(g, "user_role", None) == "admin" and target.get("campus_id") and getattr(g, "campus_id", None) and target.get("campus_id") != g.campus_id:
+        return jsonify({"error": "Cannot expire HP outside your campus"}), 403
+
     amount = data.get("amount")
     if amount is None:
         # Expire all active HP if amount not specified
@@ -217,8 +231,7 @@ def unlock_history():
     offset = int(request.args.get("offset", 0))
     q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    q = q.eq("campus_id", campus_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows or []), 200
 
@@ -433,14 +446,30 @@ def transfer_hp():
 
     transfer_note = notes or f"HP transfer from {sender_name}"
     spend_hp(g.user_id, amount, recipient_id, "hp_transfer", f"Sent {amount} HP to {recipient_name}")
-    award_active_hp(
-        user_id=recipient_id,
-        amount=amount,
-        source_type="hp_transfer",
-        reference_id=g.user_id,
-        reference_type="hp_transfer",
-        notes=transfer_note,
-    )
+    try:
+        award_active_hp(
+            user_id=recipient_id,
+            amount=amount,
+            source_type="hp_transfer",
+            reference_id=g.user_id,
+            reference_type="hp_transfer",
+            notes=transfer_note,
+        )
+    except Exception as e:
+        logger.error("transfer_hp: credit leg failed after debit succeeded, sender=%s recipient=%s amount=%s: %s", g.user_id, recipient_id, amount, e)
+        try:
+            award_active_hp(
+                user_id=g.user_id,
+                amount=amount,
+                source_type="hp_transfer_refund",
+                reference_id=recipient_id,
+                reference_type="hp_transfer_refund",
+                notes="Refund: transfer failed to complete",
+            )
+        except Exception as refund_err:
+            logger.error("transfer_hp: refund-on-failure ALSO failed, sender=%s amount=%s: %s", g.user_id, amount, refund_err)
+            return jsonify({"error": "Transfer failed and could not be auto-refunded — contact support"}), 500
+        return jsonify({"error": "Transfer failed — your HP has been refunded, please try again"}), 500
 
     # Notify the recipient that they received HP
     try:
@@ -471,17 +500,17 @@ def transfer_hp():
     }), 200
 
 
-def _log_admin_action(actor_id, table, target_id, action, after_data=None):
+def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
     from app.db import get_db
     db = get_db()
-    try:
-        db.table("admin_audit_logs").insert({
-            "actor_id": actor_id,
-            "actor_role": "admin",
-            "entity_type": table,
-            "entity_id": target_id,
-            "action": action,
-            "after_value": after_data,
-        })
-    except Exception:
-        pass
+    actor_role = getattr(g, "user_role", "admin")
+    cid = campus_id or getattr(g, "campus_id", None)
+    db.table("admin_audit_logs").insert({
+        "actor_id": actor_id,
+        "actor_role": actor_role,
+        "entity_type": table,
+        "entity_id": target_id,
+        "action": action,
+        "after_value": after_data,
+        "campus_id": cid,
+    })
