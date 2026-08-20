@@ -290,7 +290,7 @@ def notify_milestone_achieved(user_id: str, milestone_id: str) -> None:
     """
     try:
         from app.services.notification_service import send_notification
-        from app.db import get_user_client as _get_db
+        from app.db import get_db, get_user_client as _get_db
         _db = _get_db()
         m = _db.table("milestones").select("title,hp_awarded,time_window").eq("id", milestone_id).single().execute()
         if not m:

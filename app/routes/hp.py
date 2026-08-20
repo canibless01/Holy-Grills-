@@ -501,7 +501,7 @@ def transfer_hp():
 
 
 def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
-    from app.db import get_user_client
+    from app.db import get_db, get_user_client
     db = get_user_client()
     actor_role = getattr(g, "user_role", "admin")
     cid = campus_id or getattr(g, "campus_id", None)

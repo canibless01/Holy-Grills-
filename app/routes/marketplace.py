@@ -891,7 +891,7 @@ def restore_inventory_on_refund(db, purchase, logger):
 
 
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
-    from app.db import get_user_client
+    from app.db import get_db, get_user_client
     from app.constants import ADMIN_ROLES
     db = get_user_client()
     admins = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).execute()
