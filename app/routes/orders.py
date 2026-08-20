@@ -591,7 +591,7 @@ def refund_order(order_id):
     if not reason:
         return jsonify({"error": MSG.ORDER_REFUND_REASON_REQUIRED}), 400
 
-    db = get_db()
+    db = get_user_client()
     order = db.table("orders").select("id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
@@ -1523,7 +1523,7 @@ def _distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str):
     """Split HP evenly among registered squad members + organizer."""
     if total_hp <= 0:
         return
-    db = get_db()
+    db = get_user_client()
     try:
         members = (
             db.table("squad_members")

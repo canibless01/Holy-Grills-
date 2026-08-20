@@ -710,6 +710,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     wallet_amount_used = float(wallet_amount_used_dec)
     card_amount_used = float(card_amount_used_dec)
 
+    if user_id is None:
+        if payment_method in ("wallet", "split") and wallet_amount_used > 0:
+            raise ValueError("Guest orders cannot use wallet payments.")
+        if not payload.get("guest_name") or not payload.get("guest_phone") or not payload.get("guest_email"):
+            raise ValueError("Guest orders require guest_name, guest_phone, and guest_email.")
+
     # Pre-check wallet balance before inserting order (for both wallet and split payment methods)
     if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
         wallet = db.table("wallets").select("balance").eq("user_id", user_id).single().execute()

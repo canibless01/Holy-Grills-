@@ -142,15 +142,11 @@ def redeem_free_side():
                     "used_at": datetime.now(timezone.utc).isoformat(),
                 })
             )
-            if res or res == []:
-                # res is non-empty list on success, [] on OCC failure
-                if isinstance(res, list) and len(res) == 0:
-                    success = False
-                else:
-                    success = True
-                    new_remaining = credit_row["credits_remaining"] - 1
-                    credit_row_used = credit_row
-                    break
+            if res:
+                success = True
+                new_remaining = credit_row["credits_remaining"] - 1
+                credit_row_used = credit_row
+                break
         except Exception as e:
             logger.error("redeem_free_side OCC update failed for credit row %s: %s", credit_row["id"], e)
 

@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify, g, current_app, Response
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone, timedelta
 import csv
@@ -31,7 +31,7 @@ def sales_analytics():
       200:
         description: Sales analytics summary
     """
-    db = get_db()
+    db = get_user_client()
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
     to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
 
@@ -77,7 +77,7 @@ def hp_analytics():
       200:
         description: HP analytics
     """
-    db = get_db()
+    db = get_user_client()
     EARN_SOURCES = {"food_order", "welcome", "referral", "review", "event_checkin",
                     "birthday", "challenge", "admin_grant", "squad_bonus", "streak",
                     "signup", "wallet_topup", "social", "daily_checkin", "food", "order"}
@@ -121,7 +121,7 @@ def referral_analytics():
       200:
         description: Referral stats
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("referrals").select("id,hp_awarded")
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
@@ -150,7 +150,7 @@ def dashboard_summary():
       200:
         description: Live dashboard snapshot
     """
-    db = get_db()
+    db = get_user_client()
     today = datetime.now(timezone.utc).date().isoformat()
     today_start = f"{today}T00:00:00Z"
     today_end   = f"{today}T23:59:59Z"
@@ -258,7 +258,7 @@ def orders_analytics():
       200:
         description: Order flow analytics
     """
-    db = get_db()
+    db = get_user_client()
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat())
     to_date   = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
 
@@ -360,7 +360,7 @@ def export_csv():
       400:
         description: Unknown export type
     """
-    db = get_db()
+    db = get_user_client()
     export_type = request.args.get("type", "").lower()
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
     to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
@@ -441,7 +441,7 @@ def gifts_analytics():
       200:
         description: Gift stats by status
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("first_order_gifts").select("id,status,created_at")
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
@@ -469,7 +469,7 @@ def abandoned_carts_analytics():
       200:
         description: Abandoned cart stats
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("abandoned_carts").select("id,is_recovered,created_at")
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
@@ -497,7 +497,7 @@ def marketplace_analytics():
       200:
         description: Marketplace stats
     """
-    db = get_db()
+    db = get_user_client()
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     q_p = db.table("marketplace_purchases").select("id,wallet_amount,card_amount")
     if campus_id:
@@ -550,7 +550,7 @@ def items_analytics():
       200:
         description: Per-item sales breakdown sorted by qty desc
     """
-    db = get_db()
+    db = get_user_client()
     from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
     to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
     limit = min(int(request.args.get("limit", 50)), 200)
@@ -624,7 +624,7 @@ def users_analytics():
       200:
         description: User activity metrics with tier segmentation
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc)
     to_date = request.args.get("to_date", now.date().isoformat())
     from_date = request.args.get("from_date", (now - timedelta(days=30)).date().isoformat())
@@ -717,7 +717,7 @@ def retention_analytics():
       200:
         description: Cohort retention by signup week
     """
-    db = get_db()
+    db = get_user_client()
     weeks = min(int(request.args.get("weeks", 12)), 52)
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(weeks=weeks)).isoformat()

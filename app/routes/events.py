@@ -286,7 +286,7 @@ def admin_list_events():
       200:
         description: All events for admin
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("events").select("*")
@@ -328,7 +328,7 @@ def update_event(event_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id,starts_at,ends_at,capacity,title").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -401,7 +401,7 @@ def delete_event(event_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id,title").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -441,7 +441,7 @@ def generate_event_qr(event_id):
       404:
         description: Event not found
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id,title,metadata").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -686,7 +686,7 @@ def list_catering_requests():
       200:
         description: Catering request list
     """
-    db = get_db()
+    db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("catering_requests").select("*")
@@ -723,7 +723,7 @@ def update_catering_request(request_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     row = db.table("catering_requests").select("id,organizer_name,email").eq("id", request_id).single().execute()
     if not row:
         return jsonify({"error": MSG.EVENT_CATERING_NOT_FOUND}), 404
@@ -786,7 +786,7 @@ def submit_catering_request():
       201:
         description: Request submitted
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     required = ["organizer_name", "email", "phone", "event_name", "event_date", "expected_guests"]
     for f in required:
@@ -840,7 +840,7 @@ def create_event():
       201:
         description: Event created
     """
-    db = get_db()
+    db = get_user_client()
     data = request.get_json(force=True)
     required = ["title", "location", "starts_at", "hp_reward"]
     for f in required:
@@ -889,7 +889,7 @@ def list_event_tiers(event_id):
     """
     List ticket tiers for an event (public).
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id,title,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -913,7 +913,7 @@ def create_event_tier(event_id):
     """
     Create a ticket tier for an event (admin only).
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -981,7 +981,7 @@ def update_event_tier(tier_id):
     """
     Update a ticket tier (admin only).
     """
-    db = get_db()
+    db = get_user_client()
     tier = db.table("event_ticket_tiers").select("*").eq("id", tier_id).single().execute()
     if not tier:
         return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
@@ -1042,7 +1042,7 @@ def delete_event_tier(tier_id):
       404:
         description: Tier not found
     """
-    db = get_db()
+    db = get_user_client()
     tier = db.table("event_ticket_tiers").select("*").eq("id", tier_id).single().execute()
     if not tier:
         return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
@@ -1081,7 +1081,7 @@ def list_event_registrants(event_id):
       404:
         description: Event not found
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id,title,starts_at,location").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -1173,7 +1173,7 @@ def update_event_image(event_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_db()
+    db = get_user_client()
     db.table("events").eq("id", event_id).update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1209,7 +1209,7 @@ def send_registrants_to_host(event_id):
       404:
         description: Event not found
     """
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("*").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -1289,7 +1289,7 @@ def send_registrants_to_host(event_id):
 @events_bp.route("/<event_id>/tiers/comparison", methods=["GET"])
 def get_tier_comparison(event_id):
     """Fetch tier comparison view for an event (public)."""
-    db = get_db()
+    db = get_user_client()
     event = db.table("events").select("id,campus_id,title").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -1351,7 +1351,7 @@ def get_tier_comparison(event_id):
 @events_bp.route("/tiers/<tier_id>/detail", methods=["GET"])
 def get_tier_detail(tier_id):
     """Return full tier detail with event info."""
-    db = get_db()
+    db = get_user_client()
     tier = db.table("event_ticket_tiers").select("*, events(id,campus_id,title)").eq("id", tier_id).single().execute()
     if not tier:
         return jsonify({"error": MSG.TIER_NOT_FOUND}), 404

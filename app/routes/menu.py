@@ -1428,7 +1428,7 @@ def set_kitchen_capacity():
     q = db.table("kitchen_settings").eq("key", "daily_order_capacity")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    q.update(payload)
+    res = q.update(payload)
     if cap is None:
         return jsonify({"daily_order_capacity": None, "message": MSG.MENU_CAPACITY_LIMIT_REMOVED}), 200
     _, orders_today, at_capacity = _kitchen_stats(db)

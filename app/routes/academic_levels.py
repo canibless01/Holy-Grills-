@@ -17,7 +17,7 @@ admin controls the canonical list (e.g. "100 Level", "200 Level", "Postgraduate"
 
 from flask import Blueprint, request, jsonify
 from app.middleware.auth import require_role
-from app.db import get_db
+from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 
 # Academic levels are global (platform-wide), not campus-scoped
@@ -53,7 +53,7 @@ def list_academic_levels():
                   sort_order: {type: integer}
             count: {type: integer}
     """
-    db = get_db()
+    db = get_user_client()
     try:
         q = db.table("academic_levels").select("id,name,value,sort_order").eq("is_active", True)
         rows = q.order("sort_order", ascending=True).execute() or []
@@ -80,7 +80,7 @@ def get_academic_level(level_id):
       404:
         description: Not found or inactive
     """
-    db = get_db()
+    db = get_user_client()
     try:
         row = (
             db.table("academic_levels")
@@ -116,7 +116,7 @@ def admin_list_academic_levels():
       200:
         description: All academic levels
     """
-    db = get_db()
+    db = get_user_client()
     q = db.table("academic_levels").select("*")
     if request.args.get("is_active") is not None:
         q = q.eq("is_active", request.args.get("is_active").lower() == "true")
@@ -163,7 +163,7 @@ def admin_create_academic_level():
         return jsonify({"error": "'name' and 'value' are required"}), 400
 
     now = datetime.now(timezone.utc).isoformat()
-    db = get_db()
+    db = get_user_client()
     try:
         row = db.table("academic_levels").insert({
             "name": data["name"].strip(),
@@ -209,7 +209,7 @@ def admin_update_academic_level(level_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("academic_levels").select("id").eq("id", level_id).single().execute()
     if not existing:
         return jsonify({"error": "Academic level not found"}), 404
@@ -259,7 +259,7 @@ def admin_deactivate_academic_level(level_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("academic_levels").select("id,name").eq("id", level_id).single().execute()
     if not existing:
         return jsonify({"error": "Academic level not found"}), 404
@@ -289,7 +289,7 @@ def admin_restore_academic_level(level_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     existing = db.table("academic_levels").select("id,name").eq("id", level_id).single().execute()
     if not existing:
         return jsonify({"error": "Academic level not found"}), 404

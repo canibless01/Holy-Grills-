@@ -56,7 +56,7 @@ def list_rewards():
       200:
         description: List of rewards
     """
-    db = get_db()
+    db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     q = db.table("rewards").select("*,hp_tiers(name,slug)").eq("is_active", "true")
     campus_id = getattr(g, 'campus_id', None)
@@ -99,7 +99,7 @@ def get_reward(reward_id):
       404:
         description: Not found
     """
-    db = get_db()
+    db = get_user_client()
     reward = db.table("rewards").select("*,hp_tiers(name,slug)").eq("id", reward_id).single().execute()
     if not reward:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
