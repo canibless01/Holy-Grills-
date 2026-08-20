@@ -16,7 +16,7 @@ from app.messages import MSG
 def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data=None, after_data=None):
     """Write an admin audit log entry for menu item changes. Silently ignores errors."""
     try:
-        from app.db import get_db, get_user_client as _get_db
+        from app.db import get_user_client as _get_db
         db = _get_db()
         actor_role = getattr(g, "user_role", "admin")
         campus_id = getattr(g, "campus_id", None)
@@ -37,7 +37,7 @@ def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data
 def _notify_sellout(item_id: str, item_name: str):
     """Send a push+in_app notification to all admins when an item sells out."""
     try:
-        from app.db import get_db, get_user_client as _get_db
+        from app.db import get_user_client as _get_db
         from app.services.notification_service import send_notification
         db = _get_db()
         admins = (

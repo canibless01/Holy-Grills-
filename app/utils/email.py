@@ -352,8 +352,8 @@ def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str) ->
 
 def get_user_email_and_name(user_id: str) -> tuple:
     """Fetch user email + name from Supabase profiles table."""
-    from app.db import get_db
-    db = get_db()
+    from app.db import get_user_client
+    db = get_user_client()
     try:
         profile = (
             db.table("profiles")
