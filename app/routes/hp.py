@@ -60,9 +60,7 @@ def transactions():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
-    campus_id = getattr(g, 'campus_id', None)
-    q = q.eq("campus_id", campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("campus_id", g.campus_id)
     txn_type = request.args.get("type")
     if txn_type:
         q = q.eq("type", txn_type)
@@ -115,7 +113,7 @@ def admin_grant():
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404
-    if getattr(g, "user_role", None) == "admin" and target.get("campus_id") and getattr(g, "campus_id", None) and target.get("campus_id") != g.campus_id:
+    if getattr(g, "user_role", None) == "admin" and getattr(g, "campus_id", None) and target.get("campus_id") and target.get("campus_id") != g.campus_id:
         return jsonify({"error": "Cannot grant HP outside your campus"}), 403
 
     try:
@@ -229,9 +227,7 @@ def unlock_history():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
-    campus_id = getattr(g, 'campus_id', None)
-    q = q.eq("campus_id", campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock").eq("campus_id", g.campus_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows or []), 200
 
@@ -503,18 +499,12 @@ def transfer_hp():
 def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
     from app.db import get_db
     db = get_db()
-    actor_role = getattr(g, "user_role", "admin")
-    cid = campus_id or getattr(g, "campus_id", None)
-    
-    try:
-        db.table("admin_audit_logs").insert({
-            "actor_id": actor_id,
-            "actor_role": actor_role,
-            "entity_type": table,
-            "entity_id": target_id,
-            "action": action,
-            "after_value": after_data,
-            "campus_id": cid,
-        }).execute()
-    except Exception:
-        pass  # Silent faildef _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None)
+    db.table("admin_audit_logs").insert({
+        "actor_id": actor_id,
+        "actor_role": getattr(g, "user_role", "admin"),
+        "entity_type": table,
+        "entity_id": target_id,
+        "action": action,
+        "after_value": after_data,
+        "campus_id": campus_id or getattr(g, "campus_id", None),
+    })

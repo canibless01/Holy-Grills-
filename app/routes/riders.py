@@ -247,6 +247,10 @@ def toggle_availability():
     if data.get("location_lng") is not None:
         update["location_lng"] = float(data["location_lng"])
 
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        update["campus_id"] = campus_id
+
     try:
         existing = db.table("rider_profiles").select("id").eq("user_id", g.user_id).single().execute()
         if existing:
