@@ -290,8 +290,11 @@ def purchase_hp_bundle():
     """
     db = get_user_client()
     from app.services.hp_service import process_hp_bundle_purchase
-    data = request.get_json(force=True)
-    hp_amount = int(data.get("hp_amount", 0))
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        hp_amount = int(data.get("hp_amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
     reference = data.get("paystack_reference", "").strip()
 
     min_purchase = int(current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))
@@ -513,4 +516,4 @@ def _log_admin_action(actor_id, table, target_id, action, after_data=None, campu
             "campus_id": cid,
         }).execute()
     except Exception:
-        pass  # Silent faildef _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None)
+        pass

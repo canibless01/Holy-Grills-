@@ -592,7 +592,7 @@ def refund_order(order_id):
         return jsonify({"error": MSG.ORDER_REFUND_REASON_REQUIRED}), 400
 
     db = get_user_client()
-    order = db.table("orders").select("id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes").eq("id", order_id).single().execute()
+    order = db.table("orders").select("id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes,card_refund_total").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
@@ -608,12 +608,7 @@ def refund_order(order_id):
     existing_wallet_txs = db.table("wallet_transactions").select("amount").eq("reference_id", order_id).eq("reference_type", "refund").execute()
     already_refunded_wallet = sum(float(tx["amount"]) for tx in existing_wallet_txs) if existing_wallet_txs else 0.0
 
-    notes_str = order.get("notes") or ""
-    import re
-    # NOTE: Parsing regex over orders.notes for card refund tracking is fragile.
-    # A dedicated card_refund_total column on orders is recommended for future schema iterations.
-    card_refunds_in_notes = re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
-    already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
+    already_refunded_card = float(order.get("card_refund_total") or 0)
 
     refundable_wallet = max(0.0, wallet_amount_used - already_refunded_wallet)
     refundable_card = max(0.0, card_amount_used - already_refunded_card)
@@ -642,6 +637,10 @@ def refund_order(order_id):
             except Exception as e:
                 # Halt local refund mutations if provider fails
                 return jsonify({"error": f"Card refund failed via Paystack: {str(e)}"}), 400
+
+            db.table("orders").eq("id", order_id).update({
+                "card_refund_total": already_refunded_card + card_refund_allocation
+            }).execute()
 
     # Process wallet refund
     wallet_credited = False
@@ -678,7 +677,7 @@ def refund_order(order_id):
     # Construct rich notes snapshot for history tracking
     new_notes = f"[REFUNDED by {g.user_id[:8]}] {reason}"
     if card_refund_allocation > 0:
-        new_notes += f" [CARD_REFUND: {card_refund_allocation}]"
+        new_notes += f" [card refund: {card_refund_allocation}]"
     if wallet_refund_allocation > 0 and not wallet_credited:
         new_notes += f" [MANUAL_WALLET_REFUND: {wallet_refund_allocation}]"
 
@@ -687,7 +686,7 @@ def refund_order(order_id):
     db.table("orders").eq("id", order_id).update({
         "notes": updated_notes,
         "refunded_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }).execute()
 
     from app.services.notification_service import send_notification
     if order.get("user_id"):
@@ -1359,13 +1358,18 @@ def record_order_share(order_id):
     now = datetime.now(timezone.utc).isoformat()
     platform = (request.get_json(force=True) or {}).get("platform", "whatsapp")
 
-    db.table("order_share_events").insert({
-        "user_id": g.user_id,
-        "order_id": order_id,
-        "platform": platform,
-        "hp_awarded": actual_hp,
-        "created_at": now,
-    })
+    try:
+        db.table("order_share_events").insert({
+            "user_id": g.user_id,
+            "order_id": order_id,
+            "platform": platform,
+            "hp_awarded": actual_hp,
+            "created_at": now,
+        }).execute()
+    except Exception as exc:
+        from app.utils.logger import get_logger
+        get_logger(__name__).warning("record_order_share: insert failed for order %s: %s", order_id, exc)
+        return jsonify({"error": "Could not record share right now. Please try again."}), 400
 
     if actual_hp > 0:
         from app.services.hp_service import earn_pending_hp
@@ -1512,11 +1516,29 @@ def add_squad_members(order_id):
                 pass
             results.append({"email": email, "status": "notified"})
 
-    # If order is already delivered and split_hp is enabled, distribute HP now
+    # If order is already delivered and split_hp is enabled, distribute HP now —
+    # but only once per order. squad_hp_distributed_at guards against repeat
+    # calls to this endpoint re-awarding the full order HP every time.
+    hp_distributed = False
     if split_hp and order.get("status") == "delivered" and order.get("hp_earned", 0) > 0:
-        _distribute_squad_hp(order_id, order["hp_earned"], g.user_id)
+        if not order.get("squad_hp_distributed_at"):
+            claim = (
+                db.table("orders")
+                .eq("id", order_id)
+                .is_("squad_hp_distributed_at", "null")
+                .update({"squad_hp_distributed_at": datetime.now(timezone.utc).isoformat()})
+                .execute()
+            )
+            # Only distribute if THIS request won the claim (updated at least one row).
+            if claim:
+                _distribute_squad_hp(order_id, order["hp_earned"], g.user_id)
+                hp_distributed = True
 
-    return jsonify({"message": "Squad members recorded", "results": results}), 200
+    return jsonify({
+        "message": "Squad members recorded",
+        "results": results,
+        "hp_distributed": hp_distributed,
+    }), 200
 
 
 def _distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str):
