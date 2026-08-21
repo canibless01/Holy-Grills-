@@ -9,6 +9,7 @@ from app.tasks.celery_app import celery_app
 from app.db import get_db
 from datetime import datetime, timezone, timedelta, date
 from app.utils.logger import get_logger
+from app.utils.settings import get_validated_setting
 from app.messages import MSG
 
 logger = get_logger(__name__)
@@ -62,8 +63,9 @@ def reset_monthly_leaderboard(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("reset_monthly_leaderboard: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -75,6 +77,19 @@ def reset_monthly_leaderboard(self):
             now = datetime.now(timezone.utc)
             last_month = (now.replace(day=1) - timedelta(days=1))
             period = last_month.strftime("%Y-%m")
+
+            # Duplicate-run guard: check if snapshot already created for this period & campus
+            existing_snap = (
+                db.table("leaderboard_snapshots")
+                .select("id")
+                .eq("ranking_type", "monthly")
+                .eq("period_key", period)
+                .eq("campus_id", campus_id)
+                .execute()
+            ) or []
+            if existing_snap:
+                results[campus_id] = {"period": period, "skipped": "Snapshot already exists for period"}
+                continue
 
             month_start = last_month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             month_end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -275,7 +290,10 @@ def reset_monthly_leaderboard(self):
 
         return results
     finally:
-        db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3)
@@ -290,8 +308,9 @@ def recalculate_120day_hp(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "recalculate_120day_hp"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("recalculate_120day_hp: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -344,7 +363,10 @@ def recalculate_120day_hp(self):
 
         return results
     finally:
-        db.rpc("release_cron_lock", {"p_job_name": "recalculate_120day_hp"})
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "recalculate_120day_hp"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3)
@@ -359,8 +381,9 @@ def tier_grace_period_check(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "tier_grace_period_check"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("tier_grace_period_check: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -471,8 +494,10 @@ def tier_grace_period_check(self):
 
         return results
     finally:
-        db.rpc("release_cron_lock", {"p_job_name": "tier_grace_period_check"})
-
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "tier_grace_period_check"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.birthday_hp_awards", bind=True, max_retries=3)
@@ -483,108 +508,125 @@ def birthday_hp_awards(self):
     Award birthday HP (BIRTHDAY_HP env var, default 150) ACTIVE to users whose birthday is today.
     30-day redemption window communicated in notification.
     """
-    from flask import current_app
-    birthday_hp = current_app.config.get("BIRTHDAY_HP", 150)
-
     db = get_db()
-    today = datetime.now(timezone.utc)
-    today_md = today.strftime("%m-%d")
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "birthday_hp_awards"})
+    except Exception as e:
+        logger.error("birthday_hp_awards: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
 
-    campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-    results = {}
-    from app.services.hp_service import award_active_hp
-    from app.services.notification_service import send_notification
+    try:
+        from flask import current_app
+        birthday_hp = current_app.config.get("BIRTHDAY_HP", 150)
 
-    for campus in (campuses if isinstance(campuses, list) else []):
-        campus_id = campus["id"]
-        profiles = (
-            db.table("profiles")
-            .select("id,full_name,date_of_birth,faculty,department")
-            .eq("is_active", "true")
-            .eq("campus_id", campus_id)
-            .execute()
-        ) or []
+        today = datetime.now(timezone.utc)
+        today_md = today.strftime("%m-%d")
 
-        awarded = 0
-        for profile in profiles:
-            dob = profile.get("date_of_birth")
-            if not dob:
-                continue
-            try:
-                dob_md = str(dob)[5:][:5]
-                if dob_md == today_md:
-                    already = (
-                        db.table("hp_transactions")
-                        .select("id")
-                        .eq("user_id", profile["id"])
-                        .eq("campus_id", campus_id)
-                        .eq("reference_type", "birthday")
-                        .gte("created_at", today.replace(month=today.month, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat())
-                        .execute()
-                    )
-                    if already:
-                        continue
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        from app.services.hp_service import award_active_hp
+        from app.services.notification_service import send_notification
 
-                    award_active_hp(
-                        user_id=profile["id"],
-                        amount=birthday_hp,
-                        txn_type="earn_birthday",
-                        reference_type="birthday",
-                        notes=f"Birthday HP — {today.strftime('%B %d, %Y')}",
-                        apply_multiplier=False,
-                    )
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            profiles = (
+                db.table("profiles")
+                .select("id,full_name,date_of_birth,faculty,department")
+                .eq("is_active", "true")
+                .eq("campus_id", campus_id)
+                .execute()
+            ) or []
 
-                    name = (profile.get("full_name") or "").split()[0]
-                    faculty = profile.get("faculty", "")
-                    dept = profile.get("department", "")
-                    transfer_link = f"/hp/transfer?recipient_id={profile['id']}"
-                    send_notification(
-                        user_id=profile["id"],
-                        notif_type="birthday_bonus",
-                        template_data={"name": name, "hp": birthday_hp},
-                        metadata={"transfer_link": transfer_link, "faculty": faculty, "department": dept},
-                    )
+            awarded = 0
+            for profile in profiles:
+                dob = profile.get("date_of_birth")
+                if not dob:
+                    continue
+                try:
+                    dob_md = str(dob)[5:][:5]
+                    if dob_md == today_md:
+                        already = (
+                            db.table("hp_transactions")
+                            .select("id")
+                            .eq("user_id", profile["id"])
+                            .eq("campus_id", campus_id)
+                            .eq("reference_type", "birthday")
+                            .gte("created_at", today.replace(month=today.month, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat())
+                            .execute()
+                        )
+                        if already:
+                            continue
 
-                    if faculty or dept:
-                        try:
-                            peer_query = (
-                                db.table("profiles")
-                                .select("id")
-                                .eq("is_active", "true")
-                                .eq("campus_id", campus_id)
-                                .neq("id", profile["id"])
-                            )
-                            if faculty:
-                                peer_query = peer_query.eq("faculty", faculty)
-                            if dept:
-                                peer_query = peer_query.eq("department", dept)
-                            peers = peer_query.execute() or []
-                            for peer in peers:
-                                try:
-                                    send_notification(
-                                        user_id=peer["id"],
-                                        notif_type="birthday_blast",
-                                        template_data={"name": name},
-                                        metadata={"transfer_link": transfer_link, "celebrant_id": profile["id"]},
-                                    )
-                                except Exception as _pe:
-                                    logger.warning(
-                                        "birthday_hp_awards: peer blast failed for peer %s: %s",
-                                        peer["id"], _pe,
-                                    )
-                        except Exception as _be:
-                            logger.warning(
-                                "birthday_hp_awards: peer blast query failed for celebrant %s: %s",
-                                profile["id"], _be,
-                            )
+                        award_active_hp(
+                            user_id=profile["id"],
+                            amount=birthday_hp,
+                            txn_type="earn_birthday",
+                            reference_type="birthday",
+                            notes=f"Birthday HP — {today.strftime('%B %d, %Y')}",
+                            apply_multiplier=False,
+                            campus_id=campus_id,
+                        )
 
-                    awarded += 1
-            except Exception as e:
-                logger.error("birthday_hp_awards: failed for user %s: %s", profile["id"], e)
+                        name = (profile.get("full_name") or "").split()[0]
+                        faculty = profile.get("faculty", "")
+                        dept = profile.get("department", "")
+                        transfer_link = f"/hp/transfer?recipient_id={profile['id']}"
+                        send_notification(
+                            user_id=profile["id"],
+                            notif_type="birthday_bonus",
+                            template_data={"name": name, "hp": birthday_hp},
+                            metadata={"transfer_link": transfer_link, "faculty": faculty, "department": dept},
+                            campus_id=campus_id,
+                        )
 
-        results[campus_id] = {"awarded": awarded, "date": today_md}
+                        if faculty or dept:
+                            try:
+                                peer_query = (
+                                    db.table("profiles")
+                                    .select("id")
+                                    .eq("is_active", "true")
+                                    .eq("campus_id", campus_id)
+                                    .neq("id", profile["id"])
+                                )
+                                if faculty:
+                                    peer_query = peer_query.eq("faculty", faculty)
+                                if dept:
+                                    peer_query = peer_query.eq("department", dept)
+                                peers = peer_query.execute() or []
+                                for peer in peers:
+                                    try:
+                                        send_notification(
+                                            user_id=peer["id"],
+                                            notif_type="birthday_blast",
+                                            template_data={"name": name},
+                                            metadata={"transfer_link": transfer_link, "celebrant_id": profile["id"]},
+                                            campus_id=campus_id,
+                                        )
+                                    except Exception as _pe:
+                                        logger.warning(
+                                            "birthday_hp_awards: peer blast failed for peer %s: %s",
+                                            peer["id"], _pe,
+                                        )
+                            except Exception as _be:
+                                logger.warning(
+                                    "birthday_hp_awards: peer blast query failed for celebrant %s: %s",
+                                    profile["id"], _be,
+                                )
 
-    return results
+                        awarded += 1
+                except Exception as e:
+                    logger.error("birthday_hp_awards: failed for user %s: %s", profile["id"], e)
+
+            results[campus_id] = {"awarded": awarded, "date": today_md}
+
+        return results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "birthday_hp_awards"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.monthly_birthday_report", bind=True, max_retries=2)
@@ -599,10 +641,11 @@ def monthly_birthday_report(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "monthly_birthday_report"})
-        if not lock_acquired:
-            return {"skipped": "Lock not acquired"}
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("monthly_birthday_report: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
 
     try:
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
@@ -678,6 +721,7 @@ def monthly_birthday_report(self):
                             month=month_name,
                         ),
                         body=notif_body,
+                        campus_id=campus_id,
                     )
                     if admin.get("email"):
                         send_email(
@@ -717,10 +761,18 @@ def process_scheduled_orders(self):
     but are hidden from the kitchen board until this task fires.
     """
     db = get_db()
-    now = datetime.now(timezone.utc)
-    from app.services.notification_service import send_notification
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "process_scheduled_orders"})
+    except Exception as e:
+        logger.error("process_scheduled_orders: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
 
     try:
+        now = datetime.now(timezone.utc)
+        from app.services.notification_service import send_notification
+
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
 
@@ -804,6 +856,11 @@ def process_scheduled_orders(self):
     except Exception as e:
         logger.error("process_scheduled_orders error: %s", e)
         return {"error": str(e)}
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "process_scheduled_orders"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.win_back_notifications", bind=True, max_retries=3)
@@ -817,8 +874,9 @@ def win_back_notifications(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "win_back_notifications"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("win_back_notifications: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -837,11 +895,7 @@ def win_back_notifications(self):
 
         for campus in (campuses if isinstance(campuses, list) else []):
             campus_id = campus["id"]
-            try:
-                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").is_("campus_id", "null").single().execute()
-                decay_onset = int(onset_row.get("value", decay_onset_default)) if onset_row else decay_onset_default
-            except Exception:
-                decay_onset = decay_onset_default
+            decay_onset = get_validated_setting(db, "decay_onset_days", default=decay_onset_default, campus_id=campus_id)
 
             results = {"day70": 0, "day95": 0, "day118": 0}
 
@@ -896,6 +950,7 @@ def win_back_notifications(self):
                                 user_id=user_id,
                                 notif_type="winback_118",
                                 template_data={},
+                                campus_id=campus_id,
                             )
                             results["day118"] += 1
                     elif _is_in_band(days_inactive, day95):
@@ -905,6 +960,7 @@ def win_back_notifications(self):
                                 user_id=user_id,
                                 notif_type="winback_95",
                                 template_data={"days": max(0, days_to_decay)},
+                                campus_id=campus_id,
                             )
                             results["day95"] += 1
                     elif _is_in_band(days_inactive, day70):
@@ -913,6 +969,7 @@ def win_back_notifications(self):
                                 user_id=user_id,
                                 notif_type="winback_70",
                                 template_data={},
+                                campus_id=campus_id,
                             )
                             results["day70"] += 1
                 except Exception as e:
@@ -939,8 +996,9 @@ def hp_decay_check(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "hp_decay_check"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("hp_decay_check: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -958,17 +1016,8 @@ def hp_decay_check(self):
 
         for campus in (campuses if isinstance(campuses, list) else []):
             campus_id = campus["id"]
-            try:
-                onset_row = db.table("system_settings").select("value").eq("key", "decay_onset_days").single().execute()
-                onset_days = int(onset_row.get("value", onset_days_default)) if onset_row else onset_days_default
-            except Exception:
-                onset_days = onset_days_default
-
-            try:
-                rate_row = db.table("system_settings").select("value").eq("key", "decay_rate_monthly").is_("campus_id", "null").single().execute()
-                decay_rate = float(rate_row.get("value", decay_rate_default)) if rate_row else decay_rate_default
-            except Exception:
-                decay_rate = decay_rate_default
+            onset_days = get_validated_setting(db, "decay_onset_days", default=onset_days_default, campus_id=campus_id)
+            decay_rate = get_validated_setting(db, "decay_rate_monthly", default=decay_rate_default, campus_id=campus_id)
 
             daily_rate = (1 + decay_rate) ** (1 / 30) - 1
 
@@ -1002,17 +1051,32 @@ def hp_decay_check(self):
                 if days_inactive < onset_days:
                     continue
 
+                # Idempotent duplicate-run guard: check if decay was already applied in the past 20 hours
+                recent_decay = (
+                    db.table("hp_transactions")
+                    .select("id")
+                    .eq("user_id", user_id)
+                    .eq("reference_type", "decay")
+                    .gte("created_at", (now - timedelta(hours=20)).isoformat())
+                    .limit(1)
+                    .execute()
+                ) or []
+                if recent_decay:
+                    continue
+
                 decay_amount = max(1, int(hp_balance * daily_rate))
                 try:
                     expire_hp(
                         user_id,
                         decay_amount,
                         f"HP decay — {days_inactive} days inactivity (daily rate {daily_rate:.4f})",
+                        campus_id=campus_id,
                     )
                     send_notification(
                         user_id=user_id,
                         notif_type="hp_decay_applied",
                         template_data={"amount": decay_amount, "days": days_inactive},
+                        campus_id=campus_id,
                     )
                     decayed += 1
                 except Exception as e:
@@ -1039,8 +1103,9 @@ def check_order_locks(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "check_order_locks"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("check_order_locks: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -1113,6 +1178,7 @@ def check_order_locks(self):
                                 "date": locked_date.strftime("%B %d"),
                             },
                             channels=["push", "in_app"],
+                            campus_id=campus_id,
                         )
                     else:
                         discount_pct = float(lock.get("discount_pct", 10))
@@ -1126,6 +1192,7 @@ def check_order_locks(self):
                                 "date": locked_date.strftime("%B %d"),
                             },
                             channels=["push", "in_app"],
+                            campus_id=campus_id,
                         )
                     db.table("order_locks").eq("id", lock["id"]).update({
                         "reminder_sent_at": now.isoformat(),
@@ -1156,8 +1223,9 @@ def reset_monthly_hp_tracker(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_monthly_hp_tracker"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("reset_monthly_hp_tracker: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -1196,8 +1264,9 @@ def membership_anniversary_awards(self):
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "membership_anniversary_awards"})
-    except Exception:
-        lock_acquired = True
+    except Exception as e:
+        logger.error("membership_anniversary_awards: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
     if not lock_acquired:
         return {"skipped": "Lock not acquired"}
 
@@ -1222,6 +1291,7 @@ def membership_anniversary_awards(self):
                 rewards = (
                     db.table("membership_rewards")
                     .select("months,hp_awarded")
+                    .is_("campus_id", "null")
                     .execute()
                 ) or []
 
@@ -1248,7 +1318,7 @@ def membership_anniversary_awards(self):
                     continue
                 try:
                     created_dt = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
-                    months_member = (now - created_dt).days // 30
+                    months_member = (now.year - created_dt.year) * 12 + (now.month - created_dt.month)
                 except Exception:
                     continue
 
@@ -1281,6 +1351,7 @@ def membership_anniversary_awards(self):
                         reference_type="membership_anniversary",
                         notes=f"Membership anniversary — {months_member} months",
                         apply_multiplier=False,
+                        campus_id=campus_id,
                     )
                     from app.messages import MSG
                     name = (profile.get("full_name") or "").split()[0] or MSG.ANNIVERSARY_FALLBACK_NAME
@@ -1288,6 +1359,7 @@ def membership_anniversary_awards(self):
                         user_id=profile["id"],
                         notif_type="membership_anniversary",
                         template_data={"months": months_member, "name": name, "hp": hp_amount},
+                        campus_id=campus_id,
                     )
                     awarded += 1
                 except Exception as e:
@@ -1312,9 +1384,16 @@ def send_scheduled_notifications(self):
     next_send_at has passed and is_active=True.
     """
     db = get_db()
-    now = datetime.now(timezone.utc)
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "send_scheduled_notifications"})
+    except Exception as e:
+        logger.error("send_scheduled_notifications: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
 
     try:
+        now = datetime.now(timezone.utc)
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
         from app.services.notification_service import send_notification
@@ -1383,6 +1462,7 @@ def send_scheduled_notifications(self):
                                 reference_id=campaign_id,
                                 reference_type="scheduled_notification",
                                 channels=channels,
+                                campus_id=campus_id,
                             )
                         except Exception as e:
                             logger.warning("send_scheduled_notifications: notify failed for user %s: %s", uid, e)
@@ -1409,6 +1489,11 @@ def send_scheduled_notifications(self):
     except Exception as e:
         logger.error("send_scheduled_notifications error: %s", e)
         return {"error": str(e)}
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_notifications"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.scan_abandoned_carts", bind=True)
@@ -1419,54 +1504,69 @@ def scan_abandoned_carts(self):
     Flags carts inactive for 60+ minutes as abandoned.
     """
     db = get_db()
-    from datetime import datetime, timezone, timedelta
-    from flask import current_app
-    from app.services.notification_service import send_notification
-    now = datetime.now(timezone.utc)
-    cutoff = (now - timedelta(minutes=current_app.config.get("ABANDONED_CART_MINUTES", 60))).isoformat()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "scan_abandoned_carts"})
+    except Exception as e:
+        logger.error("scan_abandoned_carts: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
 
-    campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-    results = {}
+    try:
+        from datetime import datetime, timezone, timedelta
+        from flask import current_app
+        from app.services.notification_service import send_notification
+        now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(minutes=current_app.config.get("ABANDONED_CART_MINUTES", 60))).isoformat()
 
-    for campus in (campuses if isinstance(campuses, list) else []):
-        campus_id = campus["id"]
-        abandoned = (
-            db.table("abandoned_carts")
-            .select("id,user_id")
-            .eq("is_recovered", "false")
-            .eq("campus_id", campus_id)
-            .lt("updated_at", cutoff)
-            .execute()
-        ) or []
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
 
-        notified = 0
-        for cart in abandoned:
-            user_id = cart.get("user_id")
-            if not user_id:
-                continue
-
-            already_notified = (
-                db.table("notifications")
-                .select("id")
-                .eq("user_id", user_id)
-                .eq("type", "abandoned_cart")
-                .gte("created_at", (now - timedelta(hours=24)).isoformat())
-                .limit(1)
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            abandoned = (
+                db.table("abandoned_carts")
+                .select("id,user_id")
+                .eq("is_recovered", False)
+                .eq("campus_id", campus_id)
+                .lt("updated_at", cutoff)
                 .execute()
-            )
-            if already_notified:
-                continue
+            ) or []
 
-            send_notification(
-                user_id=user_id,
-                notif_type="abandoned_cart",
-                template_data={},
-            )
-            notified += 1
+            notified = 0
+            for cart in abandoned:
+                user_id = cart.get("user_id")
+                if not user_id:
+                    continue
 
-        results[campus_id] = {"scanned": len(abandoned), "notified": notified, "cutoff": cutoff}
+                already_notified = (
+                    db.table("notifications")
+                    .select("id")
+                    .eq("user_id", user_id)
+                    .eq("type", "abandoned_cart")
+                    .gte("created_at", (now - timedelta(hours=24)).isoformat())
+                    .limit(1)
+                    .execute()
+                )
+                if already_notified:
+                    continue
 
-    return results
+                send_notification(
+                    user_id=user_id,
+                    notif_type="abandoned_cart",
+                    template_data={},
+                    campus_id=campus_id,
+                )
+                notified += 1
+
+            results[campus_id] = {"scanned": len(abandoned), "notified": notified, "cutoff": cutoff}
+
+        return results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "scan_abandoned_carts"})
+        except Exception:
+            pass
 
 
 @celery_app.task(name="app.tasks.scheduled.check_post_delivery_nudges", bind=True, max_retries=3)
@@ -1479,79 +1579,94 @@ def check_post_delivery_nudges(self):
       8.3  reengagement_nudge  — sent ~24 hours after delivery  (in-app only)
     """
     db = get_db()
-    now = datetime.now(timezone.utc)
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "check_post_delivery_nudges"})
+    except Exception as e:
+        logger.error("check_post_delivery_nudges: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
 
-    campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-    campus_results = {}
+    try:
+        now = datetime.now(timezone.utc)
 
-    windows = {
-        "satisfaction_check": (timedelta(hours=1, minutes=30), timedelta(hours=2, minutes=30)),
-        "reengagement_nudge": (timedelta(hours=23), timedelta(hours=25)),
-    }
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        campus_results = {}
 
-    for campus in (campuses if isinstance(campuses, list) else []):
-        campus_id = campus["id"]
-        results = {"satisfaction_check": 0, "reengagement_nudge": 0, "errors": 0}
+        windows = {
+            "satisfaction_check": (timedelta(hours=1, minutes=30), timedelta(hours=2, minutes=30)),
+            "reengagement_nudge": (timedelta(hours=23), timedelta(hours=25)),
+        }
 
-        for notif_type, (min_delta, max_delta) in windows.items():
-            earliest = (now - max_delta).isoformat()
-            latest   = (now - min_delta).isoformat()
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            results = {"satisfaction_check": 0, "reengagement_nudge": 0, "errors": 0}
 
-            delivered_logs = (
-                db.table("order_status_logs")
-                .select("order_id,created_at")
-                .eq("status", "delivered")
-                .gte("created_at", earliest)
-                .lte("created_at", latest)
-                .execute()
-            ) or []
+            for notif_type, (min_delta, max_delta) in windows.items():
+                earliest = (now - max_delta).isoformat()
+                latest   = (now - min_delta).isoformat()
 
-            for log in delivered_logs:
-                order_id = log["order_id"]
-                try:
-                    order = (
-                        db.table("orders")
-                        .select("user_id,status")
-                        .eq("id", order_id)
-                        .eq("campus_id", campus_id)
-                        .single()
-                        .execute()
-                    )
-                    if not order:
-                        continue
-                    user_id = order.get("user_id")
-                    if not user_id:
-                        continue
+                delivered_logs = (
+                    db.table("order_status_logs")
+                    .select("order_id,created_at")
+                    .eq("status", "delivered")
+                    .gte("created_at", earliest)
+                    .lte("created_at", latest)
+                    .execute()
+                ) or []
 
-                    already_sent = (
-                        db.table("notifications")
-                        .select("id")
-                        .eq("user_id", user_id)
-                        .eq("type", notif_type)
-                        .eq("reference_id", order_id)
-                        .limit(1)
-                        .execute()
-                    )
-                    if already_sent:
-                        continue
+                for log in delivered_logs:
+                    order_id = log["order_id"]
+                    try:
+                        order = (
+                            db.table("orders")
+                            .select("user_id,status")
+                            .eq("id", order_id)
+                            .eq("campus_id", campus_id)
+                            .single()
+                            .execute()
+                        )
+                        if not order:
+                            continue
+                        user_id = order.get("user_id")
+                        if not user_id:
+                            continue
 
-                    from app.services.notification_service import send_notification
-                    send_notification(
-                        user_id=user_id,
-                        notif_type=notif_type,
-                        template_data={},
-                        reference_id=order_id,
-                        reference_type="order",
-                    )
-                    results[notif_type] += 1
+                        already_sent = (
+                            db.table("notifications")
+                            .select("id")
+                            .eq("user_id", user_id)
+                            .eq("type", notif_type)
+                            .eq("reference_id", order_id)
+                            .limit(1)
+                            .execute()
+                        )
+                        if already_sent:
+                            continue
 
-                except Exception as e:
-                    logger.warning(
-                        "check_post_delivery_nudges: error for order %s / %s: %s",
-                        order_id, notif_type, e,
-                    )
-                    results["errors"] += 1
+                        from app.services.notification_service import send_notification
+                        send_notification(
+                            user_id=user_id,
+                            notif_type=notif_type,
+                            template_data={},
+                            reference_id=order_id,
+                            reference_type="order",
+                            campus_id=campus_id,
+                        )
+                        results[notif_type] += 1
 
-        campus_results[campus_id] = results
+                    except Exception as e:
+                        logger.warning(
+                            "check_post_delivery_nudges: error for order %s / %s: %s",
+                            order_id, notif_type, e,
+                        )
+                        results["errors"] += 1
 
-    return campus_results
+            campus_results[campus_id] = results
+
+        return campus_results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "check_post_delivery_nudges"})
+        except Exception:
+            pass

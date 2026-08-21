@@ -87,7 +87,14 @@ def fund_via_card():
         return jsonify({"error": "Card payments are not configured on this server."}), 502
 
     try:
-        email = g.jwt_payload.get("email", "")
+        profile = (
+            db.table("profiles")
+            .select("email")
+            .eq("id", g.user_id)
+            .single()
+            .execute()
+        ) or {}
+        email = (g.jwt_payload or {}).get("email") or profile.get("email") or ""
         result = initialize_payment(
             email=email,
             amount_naira=amount,
@@ -199,7 +206,20 @@ def request_virtual_account():
     }
     if campus_id:
         va_payload["campus_id"] = campus_id
-    db.table("virtual_accounts").insert(va_payload).execute()
+
+    try:
+        admin_db = get_db()
+        admin_db.table("virtual_accounts").insert(va_payload).execute()
+    except Exception as ins_err:
+        from flask import current_app
+        current_app.logger.error(
+            "request_virtual_account: DB insert failed for user %s, account %s: %s",
+            g.user_id, account.get("account_number"), ins_err
+        )
+        return jsonify({
+            "error": "Virtual account created at provider but failed to save record locally. Please contact support.",
+            "virtual_account": account,
+        }), 500
 
     return jsonify({"virtual_account": account, "created": True}), 201
 

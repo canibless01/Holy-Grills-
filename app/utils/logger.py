@@ -22,6 +22,24 @@ LOG_FORMAT = "[%(levelname)s] %(asctime)s | %(name)s | %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+class ExtraFormatter(logging.Formatter):
+    """Custom formatter that renders extra={...} attributes if present."""
+    RESERVED_ATTRS = {
+        'args', 'asctime', 'created', 'exc_info', 'exc_text', 'filename',
+        'funcName', 'levelname', 'levelno', 'lineno', 'module', 'msecs',
+        'message', 'msg', 'name', 'pathname', 'process', 'processName',
+        'relativeCreated', 'stack_info', 'thread', 'threadName'
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        standard_msg = super().format(record)
+        extra_items = {k: v for k, v in record.__dict__.items() if k not in self.RESERVED_ATTRS}
+        if extra_items:
+            extra_str = " | " + " ".join(f"{k}={v!r}" for k, v in extra_items.items())
+            return standard_msg + extra_str
+        return standard_msg
+
+
 def _configure_root_logger(level: int = logging.INFO) -> None:
     """Configure the root logger once at app startup."""
     root = logging.getLogger()
@@ -29,7 +47,7 @@ def _configure_root_logger(level: int = logging.INFO) -> None:
         return  # already configured
 
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
+    handler.setFormatter(ExtraFormatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
     root.addHandler(handler)
     root.setLevel(level)
 

@@ -222,14 +222,18 @@ def _resend_api_key() -> str:
     return os.environ.get("RESEND_API_KEY", "")
 
 
+import html as _html
+
 def _build_html(name: str, body_text: str, app_tagline: str) -> str:
     """Wrap plain-text body in a minimal responsive HTML shell."""
-    body_html = body_text.strip().replace("\n", "<br>")
+    safe_name = _html.escape(str(name or "there"))
+    safe_tagline = _html.escape(str(app_tagline or ""))
+    body_html = _html.escape(body_text.strip()).replace("\n", "<br>")
     return (
         f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
-        f"<p>Hi {name},</p>"
+        f"<p>Hi {safe_name},</p>"
         f"<p>{body_html}</p>"
-        f"<br><p style='color:#888;font-size:12px'>— {app_tagline}</p>"
+        f"<br><p style='color:#888;font-size:12px'>— {safe_tagline}</p>"
         f"</body></html>"
     )
 
@@ -372,12 +376,11 @@ def get_user_email_and_name(user_id: str) -> tuple:
 def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str, event_id: str, event_date: str = "", event_location: str = "") -> bool:
     """
     Send QR ticket email to guest or registered user.
-    Generates QR code payload (hg-event:{event_id}:{ticket_id}) and sends HTML email.
+    Generates QR code payload (hg-event:{event_id}:{ticket_id}) locally as base64 PNG.
+    Does NOT leak ticket IDs to third-party QR generation APIs.
     """
     qr_payload = f"hg-event:{event_id}:{ticket_id}"
-    qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={qr_payload}"
 
-    qr_img_tag = f'<img src="{qr_img_url}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px 0;" />'
     try:
         import qrcode
         import io, base64
@@ -390,26 +393,35 @@ def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
         qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px 0;" />'
     except Exception as e:
-        logger.debug("Failed to generate local base64 QR code, fallback to qrserver URL: %s", e)
+        logger.error("send_qr_ticket_email: Failed to generate local base64 QR code for ticket %s: %s", ticket_id, e)
+        # Fail closed instead of leaking ticket_id to third-party external server
+        return False
 
-    app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
+    safe_title = _html.escape(str(event_title or ""))
+    safe_name = _html.escape(str(name or "there"))
+    safe_date = _html.escape(str(event_date or "TBA"))
+    safe_location = _html.escape(str(event_location or "TBA"))
+    safe_ticket_id = _html.escape(str(ticket_id or ""))
+    safe_email = _html.escape(str(email or ""))
+
+    app_tagline = _html.escape(os.environ.get("APP_TAGLINE", "Holy Grills FUTA"))
     subject = f"🎟️ Your Ticket for {event_title}"
 
     html_body = (
         f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
-        f"<h2>🎟️ Your Ticket for {event_title}</h2>"
-        f"<p>Hi {name or 'there'},</p>"
+        f"<h2>🎟️ Your Ticket for {safe_title}</h2>"
+        f"<p>Hi {safe_name},</p>"
         f"<p>Thank you for registering! Here are your official ticket details:</p>"
         f"<ul>"
-        f"<li><strong>Event:</strong> {event_title}</li>"
-        f"<li><strong>Date:</strong> {event_date or 'TBA'}</li>"
-        f"<li><strong>Location:</strong> {event_location or 'TBA'}</li>"
-        f"<li><strong>Ticket ID:</strong> <code>{ticket_id}</code></li>"
+        f"<li><strong>Event:</strong> {safe_title}</li>"
+        f"<li><strong>Date:</strong> {safe_date}</li>"
+        f"<li><strong>Location:</strong> {safe_location}</li>"
+        f"<li><strong>Ticket ID:</strong> <code>{safe_ticket_id}</code></li>"
         f"</ul>"
         f"<p>Present this QR code at the door for check-in:</p>"
         f"{qr_img_tag}"
         f"<div style='background-color:#f0f8ff;border-left:4px solid #0080ff;padding:12px;margin:20px 0;'>"
-        f"<strong>Earn Rewards!</strong> Create an account with {email} to earn HP for this event and unlock exclusive perks!"
+        f"<strong>Earn Rewards!</strong> Create an account with {safe_email} to earn HP for this event and unlock exclusive perks!"
         f"</div>"
         f"<br><p style='color:#888;font-size:12px'>— {app_tagline}</p>"
         f"</body></html>"

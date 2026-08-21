@@ -4,6 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role
 from app.db import get_db, get_user_client
 from app.messages import MSG
+from app.routes.events import _get_campus_id
 from datetime import datetime, timezone
 
 storefront_bp = Blueprint("storefront", __name__)
@@ -46,10 +47,10 @@ def list_sections():
     """
     db = get_user_client()
     q = db.table("storefront_sections").select("*").eq("is_active", "true")
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
-    sections = q.order("sort_order").execute()
+    campus_id = _get_campus_id()
+    sections = q.order("sort_order").execute() or []
+    if campus_id and isinstance(sections, list):
+        sections = [s for s in sections if s.get("campus_id") == campus_id or s.get("campus_id") is None]
     return jsonify(sections), 200
 
 
@@ -81,8 +82,13 @@ def update_section(section_id):
     responses:
       200:
         description: Section updated
+      404:
+        description: Section not found
     """
     db = get_user_client()
+    existing = db.table("storefront_sections").select("id").eq("id", section_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.SECTION_NOT_FOUND}), 404
     data = request.get_json(force=True)
     allowed = {"title", "subtitle", "body", "image_url", "cta_text", "cta_url", "is_active", "sort_order", "config"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -103,19 +109,19 @@ def get_hours():
         description: Operating hours including today's status
     """
     db = get_user_client()
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = _get_campus_id()
 
     hours_q = db.table("operating_hours").select("*")
-    if campus_id:
-        hours_q = hours_q.eq("campus_id", campus_id)
     hours = hours_q.order("weekday").execute() or []
+    if campus_id and isinstance(hours, list):
+        hours = [h for h in hours if h.get("campus_id") == campus_id or h.get("campus_id") is None]
 
     from datetime import date
     today = date.today().isoformat()
     override_q = db.table("operating_hour_overrides").select("*").eq("date", today)
-    if campus_id:
-        override_q = override_q.eq("campus_id", campus_id)
-    override_rows = override_q.execute()
+    override_rows = override_q.execute() or []
+    if campus_id and isinstance(override_rows, list):
+        override_rows = [o for o in override_rows if o.get("campus_id") == campus_id or o.get("campus_id") is None]
     override = override_rows[0] if override_rows else None
 
     return jsonify({
@@ -597,14 +603,17 @@ def delete_section(section_id):
 @require_role("admin")
 def update_section_image(section_id):
     """Update storefront section image with Cloudinary URL."""
+    db = get_user_client()
+    section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
+    if not section:
+        return jsonify({"error": MSG.SECTION_NOT_FOUND}), 404
+
     data = request.get_json(force=True, silent=True) or {}
     image_url = data.get("image_url")
 
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_user_client()
-    section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
     content = (section.get("content") or {}) if isinstance(section, dict) else {}
     content["image_url"] = image_url
 
@@ -634,13 +643,13 @@ def list_banners():
     """
     db = get_user_client()
     q = db.table("banners").select("*").eq("is_active", "true")
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
     placement = request.args.get("placement")
     if placement:
         q = q.eq("placement", placement)
     banners = q.order("sort_order").execute() or []
+    campus_id = _get_campus_id()
+    if campus_id and isinstance(banners, list):
+        banners = [b for b in banners if b.get("campus_id") == campus_id or b.get("campus_id") is None]
     return jsonify(banners), 200
 
 
@@ -787,6 +796,11 @@ def update_banner(banner_id):
 @require_role("admin")
 def update_banner_image(banner_id):
     """Update banner image with Cloudinary URL."""
+    db = get_user_client()
+    existing = db.table("banners").select("id").eq("id", banner_id).single().execute()
+    if not existing:
+        return jsonify({"error": "Banner not found"}), 404
+
     data = request.get_json(force=True, silent=True) or {}
     image_url = data.get("image_url")
     mobile_image_url = data.get("mobile_image_url")
@@ -794,7 +808,6 @@ def update_banner_image(banner_id):
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
 
-    db = get_user_client()
     update_data = {
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -830,10 +843,10 @@ def newsletter_subscribe():
       200:
         description: Already subscribed
     """
-    db = get_user_client()
-    data = request.get_json(force=True)
+    db = get_db()
+    data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip().lower()
-    if not email:
+    if not email or "@" not in email:
         return jsonify({"error": MSG.STOREFRONT_EMAIL_REQUIRED}), 400
 
     existing_rows = db.table("newsletter_subscriptions").select("id,unsubscribed_at").eq("email", email).limit(1).execute()
@@ -872,10 +885,10 @@ def newsletter_unsubscribe():
       200:
         description: Unsubscribed successfully
     """
-    db = get_user_client()
-    data = request.get_json(force=True)
+    db = get_db()
+    data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip().lower()
-    if not email:
+    if not email or "@" not in email:
         return jsonify({"error": MSG.STOREFRONT_EMAIL_REQUIRED}), 400
 
     db.table("newsletter_subscriptions").eq("email", email).update({

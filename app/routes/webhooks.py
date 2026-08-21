@@ -362,12 +362,15 @@ def _handle_dva_assign(data: dict):
 
     existing_va = db.table("virtual_accounts").select("id").eq("user_id", user_id).limit(1).execute()
     if existing_va:
-        db.table("virtual_accounts").eq("user_id", user_id).update({
+        update_data = {
             "account_number": account.get("account_number"),
             "bank_name": account.get("bank", {}).get("name"),
             "account_name": account.get("account_name"),
             "provider_customer_id": customer.get("customer_code"),
-        }).execute()
+        }
+        if campus_id:
+            update_data["campus_id"] = campus_id
+        db.table("virtual_accounts").eq("user_id", user_id).update(update_data).execute()
     else:
         va_data = {
             "user_id": user_id,
@@ -454,7 +457,7 @@ def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -
             db.table("profiles")
             .select("id")
             .in_("role", list(ADMIN_ROLES))
-            .eq("is_active", "true")
+            .eq("is_active", True)
             .execute()
         ) or []
         from app.messages import MSG

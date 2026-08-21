@@ -73,6 +73,8 @@ def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[
 # Public user endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+from app.routes.events import _get_campus_id
+
 @delivery_bp.route("/hostels", methods=["GET"])
 def list_hostels():
     """
@@ -88,10 +90,10 @@ def list_hostels():
     db = get_user_client()
     try:
         q = db.table("hostels").select("*,gates(name,lat,lon)").eq("is_active", "true")
-        campus_id = getattr(g, 'campus_id', None)
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
         hostels = q.order("name").execute() or []
+        campus_id = _get_campus_id()
+        if campus_id and isinstance(hostels, list):
+            hostels = [h for h in hostels if h.get("campus_id") == campus_id or h.get("campus_id") is None]
     except Exception:
         # Table may not exist yet — return empty list gracefully
         hostels = []
@@ -113,10 +115,10 @@ def list_gates():
     db = get_user_client()
     try:
         q = db.table("gates").select("*").eq("is_active", "true")
-        campus_id = getattr(g, 'campus_id', None)
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
         gates = q.order("name").execute() or []
+        campus_id = _get_campus_id()
+        if campus_id and isinstance(gates, list):
+            gates = [g_row for g_row in gates if g_row.get("campus_id") == campus_id or g_row.get("campus_id") is None]
     except Exception:
         gates = []
     return jsonify({"gates": gates}), 200
@@ -239,12 +241,11 @@ def admin_list_hostels():
     """
     db = get_user_client()
     try:
-        hostels = (
-            db.table("hostels")
-            .select("*,gates(name)")
-            .order("name")
-            .execute()
-        ) or []
+        campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+        q = db.table("hostels").select("*,gates(name)").order("name")
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        hostels = q.execute() or []
     except Exception:
         hostels = []
     return jsonify({"hostels": hostels}), 200
@@ -280,9 +281,14 @@ def admin_create_hostel():
         if data.get(f) is None:
             return jsonify({"error": f"'{f}' is required"}), 400
 
-    campus_id = getattr(g, 'campus_id', None)
-    if not campus_id:
-        return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    if getattr(g, 'user_role', None) == "super_admin":
+        campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
+        if not campus_id:
+            return jsonify({"error": "campus_id is required for super_admin"}), 400
+    else:
+        campus_id = getattr(g, 'campus_id', None)
+        if not campus_id:
+            return jsonify({"error": "Unable to resolve campus for this request"}), 400
     record = {
         "name": data["name"],
         "delivery_fee": float(data["delivery_fee"]),
@@ -381,7 +387,11 @@ def admin_list_gates():
     """
     db = get_user_client()
     try:
-        gates = db.table("gates").select("*").order("name").execute() or []
+        campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+        q = db.table("gates").select("*").order("name")
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        gates = q.execute() or []
     except Exception:
         gates = []
     return jsonify({"gates": gates}), 200
@@ -419,9 +429,14 @@ def admin_create_gate():
     if not data.get("name"):
         return jsonify({"error": "'name' is required"}), 400
 
-    campus_id = getattr(g, 'campus_id', None)
-    if not campus_id:
-        return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    if getattr(g, 'user_role', None) == "super_admin":
+        campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
+        if not campus_id:
+            return jsonify({"error": "campus_id is required for super_admin"}), 400
+    else:
+        campus_id = getattr(g, 'campus_id', None)
+        if not campus_id:
+            return jsonify({"error": "Unable to resolve campus for this request"}), 400
     record = {
         "name": data["name"],
         "base_fee": float(data.get("base_fee") or 0),
