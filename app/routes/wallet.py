@@ -138,7 +138,7 @@ def request_virtual_account():
 
     profile = (
         db.table("profiles")
-        .select("email,full_name,phone")
+        .select("email,full_name,phone,campus_id")
         .eq("id", g.user_id)
         .single()
         .execute()
@@ -146,6 +146,7 @@ def request_virtual_account():
     if not profile:
         return jsonify({"error": MSG.WALLET_PROFILE_NOT_FOUND}), 404
 
+    campus_id = profile.get("campus_id") or getattr(g, "campus_id", None)
     email = profile.get("email") or g.jwt_payload.get("email", "")
     from app.services.payment_service import create_virtual_account
     try:
@@ -167,14 +168,17 @@ def request_virtual_account():
                 "account_name": profile.get("full_name") or "HG User",
                 "provider_reference": "mock-nuban-sandbox",
             }
-            db.table("virtual_accounts").insert({
+            mock_payload = {
                 "user_id": g.user_id,
                 "account_number": mock_account["account_number"],
                 "bank_name": mock_account["bank_name"],
                 "account_name": mock_account["account_name"],
                 "provider_reference": str(mock_account.get("provider_reference", "")),
                 "provider": "paystack",
-            }).execute()
+            }
+            if campus_id:
+                mock_payload["campus_id"] = campus_id
+            db.table("virtual_accounts").insert(mock_payload).execute()
             return jsonify({"virtual_account": mock_account, "created": True, "mock": True}), 201
         return jsonify({
             "error": MSG.WALLET_VA_FAILED.format(error=err_str),
@@ -185,14 +189,17 @@ def request_virtual_account():
             ),
         }), 400
 
-    db.table("virtual_accounts").insert({
+    va_payload = {
         "user_id": g.user_id,
         "account_number": account["account_number"],
         "bank_name": account["bank_name"],
         "account_name": account["account_name"],
         "provider_reference": str(account.get("reference", "")),
         "provider": "paystack",
-    }).execute()
+    }
+    if campus_id:
+        va_payload["campus_id"] = campus_id
+    db.table("virtual_accounts").insert(va_payload).execute()
 
     return jsonify({"virtual_account": account, "created": True}), 201
 
