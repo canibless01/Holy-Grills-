@@ -17,7 +17,7 @@ This document details all Python route-level audit fixes across Batches 5, 6, an
   - Repaired syntax error in `batch_summary()`.
   - Added `.eq("campus_id", campus_id)` filtering across settings, windows, batch summary, and batch advance.
   - Set composite conflict target `on_conflict="key,campus_id"` for `update_kitchen_settings()`.
-- **`leaderboard.py` (PY-L1):** Added `.eq("campus_id", campus_id)` filtering across Hall of Fame routes.
+- **`leaderboard.py` (PY-L1):** Confirmed Hall of Fame routes (`/hall-of-fame`, `/hall-of-fame/inductees`, `/hall-of-fame/inductees/<id>/card`) are global across all campuses per specification, while individual (`/leaderboard`, `/my-rank`) and squad (`/squad`, `/squad/my-rank`) leaderboards are campus-scoped with `.eq("campus_id", campus_id)`.
 
 ### Batch 6 (`marketplace.py`, `menu.py`, `notifications.py`, `order_locks.py`)
 - **`marketplace.py` (PY-B2-M1, M2, M3, M4):**
