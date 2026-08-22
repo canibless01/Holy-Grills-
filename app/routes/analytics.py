@@ -443,10 +443,13 @@ def export_csv():
     else:
         return jsonify({"error": MSG.ANALYTICS_UNKNOWN_EXPORT.format(export_type=export_type)}), 400
 
+    row_limit = min(int(request.args.get("limit", 5000)), 10000)
+    capped_rows = rows[:row_limit] if isinstance(rows, list) else rows
+
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
     writer.writeheader()
-    for row in rows:
+    for row in capped_rows:
         writer.writerow(row)
 
     return Response(
@@ -474,8 +477,8 @@ def gifts_analytics():
         q = q.eq("campus_id", campus_id)
     gifts = q.execute() or []
     status_counts = {}
-    for g in gifts:
-        s = g.get("status", "unknown")
+    for gift in gifts:
+        s = gift.get("status", "unknown")
         status_counts[s] = status_counts.get(s, 0) + 1
 
     return jsonify({
@@ -528,19 +531,19 @@ def marketplace_analytics():
     q_p = db.table("marketplace_purchases").select("id,wallet_amount,card_amount")
     if campus_id:
         q_p = q_p.eq("campus_id", campus_id)
-    purchases = q_p.execute()
+    purchases = q_p.execute() or []
     total_revenue = sum(float(p.get("wallet_amount", 0)) + float(p.get("card_amount", 0)) for p in purchases)
     hp_discount_count = 0
 
     q_l = db.table("marketplace_listings").select("id,title,is_out_of_stock,listing_type")
     if campus_id:
         q_l = q_l.eq("campus_id", campus_id)
-    listings = q_l.execute()
+    listings = q_l.execute() or []
     low_stock = []
     low_stock_threshold = current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5)
     for l in listings:
         if l.get("listing_type") == "code":
-            codes = db.table("marketplace_access_codes").select("id").eq("listing_id", l["id"]).eq("status", "available").execute()
+            codes = db.table("marketplace_access_codes").select("id").eq("listing_id", l["id"]).eq("status", "available").execute() or []
             if len(codes) <= low_stock_threshold:
                 low_stock.append({"listing_id": l["id"], "title": l["title"], "codes_remaining": len(codes)})
 

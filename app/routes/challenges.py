@@ -51,7 +51,7 @@ def list_challenges():
     q = (
         db.table("milestones")
         .select("id,title,description,trigger_type,trigger_value,hp_awarded,time_window,icon_won,icon_locked")
-        .eq("is_active", "true")
+        .eq("is_active", True)
         .not_.is_("time_window", "null")
     )
     campus_id = getattr(g, 'campus_id', None)
@@ -80,7 +80,7 @@ def list_badges():
     q = (
         db.table("milestones")
         .select("id,title,description,trigger_type,trigger_value,hp_awarded,icon_won,icon_locked")
-        .eq("is_active", "true")
+        .eq("is_active", True)
         .is_("time_window", "null")
     )
     campus_id = getattr(g, 'campus_id', None)

@@ -367,9 +367,8 @@ def _handle_dva_assign(data: dict):
             "bank_name": account.get("bank", {}).get("name"),
             "account_name": account.get("account_name"),
             "provider_customer_id": customer.get("customer_code"),
+            "campus_id": campus_id,
         }
-        if campus_id:
-            update_data["campus_id"] = campus_id
         db.table("virtual_accounts").eq("user_id", user_id).update(update_data).execute()
     else:
         va_data = {
@@ -380,9 +379,8 @@ def _handle_dva_assign(data: dict):
             "provider_customer_id": customer.get("customer_code"),
             "provider_reference": str(account.get("id", "")),
             "provider": "paystack",
+            "campus_id": campus_id,
         }
-        if campus_id:
-            va_data["campus_id"] = campus_id
         db.table("virtual_accounts").insert(va_data).execute()
 
 

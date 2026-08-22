@@ -23,11 +23,17 @@ def get_public_config():
     """
     db = get_user_client()
     try:
-        settings = db.table("system_settings").select("key,value").eq("is_public", True).execute() or []
+        campus_id = _get_campus_id()
+        q = db.table("system_settings").select("key,value,campus_id").eq("is_public", True)
+        settings = q.execute() or []
         # Fallback if no public settings marked yet: read key public configs
         if not settings:
-            keys = ["whatsapp_link", "platform_name", "launch_window_end_date"]
-            settings = db.table("system_settings").select("key,value").in_("key", keys).execute() or []
+            q_fb = db.table("system_settings").select("key,value,campus_id").in_("key", ["whatsapp_link", "platform_name", "launch_window_end_date"])
+            settings = q_fb.execute() or []
+
+        if campus_id and isinstance(settings, list):
+            settings = [s for s in settings if s.get("campus_id") == campus_id or s.get("campus_id") is None]
+
         config_dict = {row["key"]: row["value"] for row in settings if row.get("key")}
     except Exception:
         config_dict = {}
