@@ -11,7 +11,6 @@ from app.utils.validators import (
     validate_datetime_order, sanitize_string,
 )
 from datetime import datetime, timezone
-import html
 import uuid
 
 events_bp = Blueprint("events", __name__)
@@ -94,11 +93,6 @@ def get_event(event_id):
     event = db.table("events").select("*").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
-
-    is_admin = getattr(g, "user_role", None) in ("admin", "super_admin")
-    if not is_admin and not event.get("is_published"):
-        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
-
     campus_id = _get_campus_id()
     is_event_global = event.get("campus_id") is None or event.get("is_global") in (True, "true")
     if campus_id and event.get("campus_id") != campus_id and not is_event_global:
@@ -187,10 +181,6 @@ def checkin(event_id):
 
         if not ticket:
             return jsonify({"error": MSG.TICKET_NOT_FOUND}), 400
-
-        is_admin = getattr(g, "user_role", None) in ("admin", "super_admin")
-        if not door_qr_matched and not is_admin:
-            return jsonify({"error": "Door QR code verification required for event check-in"}), 400
 
         ticket_id_str = ticket["id"]
 
@@ -808,14 +798,8 @@ def submit_catering_request():
     for f in required:
         if not data.get(f):
             return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
-
-    CATERING_REQUEST_COLS = {
-        "organizer_name", "email", "phone", "event_name", "event_date",
-        "expected_guests", "budget", "notes", "hp_promo_optin"
-    }
-    payload = {k: v for k, v in data.items() if k in CATERING_REQUEST_COLS}
-    payload["status"] = "new"
-    result = db.table("catering_requests").insert(payload)
+    data["status"] = "new"
+    result = db.table("catering_requests").insert(data)
     saved = result[0] if isinstance(result, list) else result
 
     admins = db.table("profiles").select("id").eq("role", "admin").execute()
@@ -945,12 +929,8 @@ def create_event_tier(event_id):
     if not name:
         return jsonify({"error": MSG.TIER_NAME_REQUIRED}), 400
 
-    try:
-        price_naira = float(data.get("price_naira", 0))
-        price_hp    = float(data.get("price_hp", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": MSG.TIER_PRICE_INVALID}), 400
-
+    price_naira = data.get("price_naira", 0)
+    price_hp    = data.get("price_hp", 0)
     if price_naira < 0 or price_hp < 0:
         return jsonify({"error": MSG.TIER_PRICE_INVALID}), 400
 
@@ -1083,76 +1063,6 @@ def delete_event_tier(tier_id):
 
 # ── Admin event ticket export & send-to-host ──────────────────────────────────
 
-def _get_event_registrants_data(db, event_id):
-    """
-    Fetch and enrich all ticket registrants for an event, supporting guest registrants.
-    """
-    try:
-        tickets = (
-            db.table("event_tickets")
-            .select("id,user_id,tier_id,status,created_at,qr_code,guest_name,guest_email,guest_phone,is_guest")
-            .eq("event_id", event_id)
-            .order("created_at")
-            .execute()
-        ) or []
-    except Exception:
-        tickets = (
-            db.table("event_tickets")
-            .select("id,user_id,tier_id,status,created_at,qr_code")
-            .eq("event_id", event_id)
-            .order("created_at")
-            .execute()
-        ) or []
-
-    user_ids = list({t["user_id"] for t in tickets if t.get("user_id")})
-    tier_ids = list({t["tier_id"] for t in tickets if t.get("tier_id")})
-
-    profiles = {}
-    if user_ids:
-        profile_rows = db.table("profiles").select("id,full_name,phone,email").in_("id", user_ids).execute() or []
-        profiles = {p["id"]: p for p in profile_rows}
-
-    tiers = {}
-    if tier_ids:
-        tier_rows = db.table("event_ticket_tiers").select("id,name").in_("id", tier_ids).execute() or []
-        tiers = {t["id"]: t for t in tier_rows}
-
-    ticket_ids = [t["id"] for t in tickets]
-    checkins = {}
-    if ticket_ids:
-        ci_rows = db.table("event_checkins").select("ticket_id,checked_in_at").in_("ticket_id", ticket_ids).execute() or []
-        checkins = {r["ticket_id"]: r["checked_in_at"] for r in ci_rows}
-
-    enriched = []
-    for t in tickets:
-        is_guest = t.get("is_guest") or not t.get("user_id")
-        if is_guest:
-            full_name = t.get("guest_name")
-            phone = t.get("guest_phone")
-            email = t.get("guest_email")
-        else:
-            prof = profiles.get(t.get("user_id"), {})
-            full_name = prof.get("full_name")
-            phone = prof.get("phone")
-            email = prof.get("email")
-
-        tier = tiers.get(t.get("tier_id"), {})
-        enriched.append({
-            "ticket_id":    t["id"],
-            "full_name":    full_name,
-            "phone":        phone,
-            "email":        email,
-            "tier_name":    tier.get("name"),
-            "status":       t.get("status"),
-            "registered_at": t.get("created_at"),
-            "checked_in":   bool(checkins.get(t["id"])),
-            "checked_in_at": checkins.get(t["id"]),
-            "is_guest":     is_guest,
-        })
-
-    return tickets, enriched
-
-
 @events_bp.route("/<event_id>/registrants", methods=["GET"])
 @require_role("admin")
 def list_event_registrants(event_id):
@@ -1182,7 +1092,59 @@ def list_event_registrants(event_id):
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    _, enriched = _get_event_registrants_data(db, event_id)
+    try:
+        tickets = (
+            db.table("event_tickets")
+            .select("id,user_id,tier_id,status,created_at,qr_code")
+            .eq("event_id", event_id)
+            .order("created_at")
+            .execute()
+        ) or []
+    except Exception:
+        tickets = (
+            db.table("event_tickets")
+            .select("id,user_id,tier_id,status,created_at,qr_code")
+            .eq("event_id", event_id)
+            .order("created_at")
+            .execute()
+        ) or []
+
+    # Enrich with profile and tier info
+    user_ids = list({t["user_id"] for t in tickets if t.get("user_id")})
+    tier_ids = list({t["tier_id"] for t in tickets if t.get("tier_id")})
+
+    profiles = {}
+    if user_ids:
+        profile_rows = db.table("profiles").select("id,full_name,phone,email").in_("id", user_ids).execute() or []
+        profiles = {p["id"]: p for p in profile_rows}
+
+    tiers = {}
+    if tier_ids:
+        tier_rows = db.table("event_ticket_tiers").select("id,name").in_("id", tier_ids).execute() or []
+        tiers = {t["id"]: t for t in tier_rows}
+
+    # Fetch check-in status
+    ticket_ids = [t["id"] for t in tickets]
+    checkins = {}
+    if ticket_ids:
+        ci_rows = db.table("event_checkins").select("ticket_id,checked_in_at").in_("ticket_id", ticket_ids).execute() or []
+        checkins = {r["ticket_id"]: r["checked_in_at"] for r in ci_rows}
+
+    enriched = []
+    for t in tickets:
+        prof = profiles.get(t.get("user_id"), {})
+        tier = tiers.get(t.get("tier_id"), {})
+        enriched.append({
+            "ticket_id":    t["id"],
+            "full_name":    prof.get("full_name"),
+            "phone":        prof.get("phone"),
+            "email":        prof.get("email"),
+            "tier_name":    tier.get("name"),
+            "status":       t.get("status"),
+            "registered_at": t.get("created_at"),
+            "checked_in":   bool(checkins.get(t["id"])),
+            "checked_in_at": checkins.get(t["id"]),
+        })
 
     fmt = request.args.get("format", "json").lower()
     if fmt == "csv":
@@ -1190,7 +1152,7 @@ def list_event_registrants(event_id):
         si = io.StringIO()
         writer = csv.DictWriter(si, fieldnames=[
             "ticket_id", "full_name", "phone", "email", "tier_name",
-            "status", "registered_at", "checked_in", "checked_in_at", "is_guest",
+            "status", "registered_at", "checked_in", "checked_in_at",
         ])
         writer.writeheader()
         writer.writerows(enriched)
@@ -1265,33 +1227,46 @@ def send_registrants_to_host(event_id):
     if not host_email:
         return jsonify({"error": "host_email is required"}), 400
 
-    tickets, enriched = _get_event_registrants_data(db, event_id)
+    # Build registrant table (reuse list_event_registrants logic inline)
+    tickets = (
+        db.table("event_tickets")
+        .select("id,user_id,tier_id,status,created_at")
+        .eq("event_id", event_id)
+        .order("created_at")
+        .execute()
+    ) or []
+
+    user_ids = list({t["user_id"] for t in tickets if t.get("user_id")})
+    tier_ids = list({t["tier_id"] for t in tickets if t.get("tier_id")})
+
+    profiles = {}
+    if user_ids:
+        prows = db.table("profiles").select("id,full_name,phone,email").in_("id", user_ids).execute() or []
+        profiles = {p["id"]: p for p in prows}
+
+    tiers = {}
+    if tier_ids:
+        trows = db.table("event_ticket_tiers").select("id,name").in_("id", tier_ids).execute() or []
+        tiers = {t["id"]: t for t in trows}
 
     rows_html = ""
-    for r in enriched:
-        name_esc = html.escape(r.get("full_name") or "")
-        phone_esc = html.escape(r.get("phone") or "")
-        email_esc = html.escape(r.get("email") or "")
-        tier_esc = html.escape(r.get("tier_name") or "")
-        status_esc = html.escape(r.get("status") or "")
+    for t in tickets:
+        prof = profiles.get(t.get("user_id"), {})
+        tier = tiers.get(t.get("tier_id"), {})
         rows_html += (
-            f"<tr><td>{name_esc}</td>"
-            f"<td>{phone_esc}</td>"
-            f"<td>{email_esc}</td>"
-            f"<td>{tier_esc}</td>"
-            f"<td>{status_esc}</td></tr>"
+            f"<tr><td>{prof.get('full_name','')}</td>"
+            f"<td>{prof.get('phone','')}</td>"
+            f"<td>{prof.get('email','')}</td>"
+            f"<td>{tier.get('name','')}</td>"
+            f"<td>{t.get('status','')}</td></tr>"
         )
 
-    custom_msg_html = f"<p>{html.escape(custom_message)}</p>" if custom_message else ""
-    event_title_esc = html.escape(str(event.get('title', event_id)))
-    event_starts_esc = html.escape(str(event.get('starts_at', '')))
-    event_loc_esc = html.escape(str(event.get('location', '')))
-
-    html_body = (
+    custom_msg_html = f"<p>{custom_message}</p>" if custom_message else ""
+    html = (
         f"<html><body style='font-family:sans-serif'>"
-        f"<h2>Registrants for: {event_title_esc}</h2>"
-        f"<p>Date: {event_starts_esc}</p>"
-        f"<p>Location: {event_loc_esc}</p>"
+        f"<h2>Registrants for: {event.get('title', event_id)}</h2>"
+        f"<p>Date: {event.get('starts_at','')}</p>"
+        f"<p>Location: {event.get('location','')}</p>"
         f"<p>Total: {len(tickets)}</p>"
         f"{custom_msg_html}"
         f"<table border='1' cellpadding='6' cellspacing='0'>"
@@ -1305,7 +1280,7 @@ def send_registrants_to_host(event_id):
         to_email=host_email,
         to_name=host_name,
         subject=f"Registrant List — {event.get('title', event_id)}",
-        html_body=html_body,
+        html_body=html,
     )
     if not ok:
         return jsonify({"error": "Failed to send email — check RESEND_API_KEY"}), 502

@@ -290,6 +290,9 @@ def change_user_role(user_id):
         return jsonify({"error": MSG.ADMIN_INVALID_ROLE.format(roles=", ".join(sorted(VALID_ROLES)))}), 400
 
     caller_role = getattr(g, "user_role", None)
+    if not caller_role and hasattr(g, "user") and isinstance(g.user, dict):
+        caller_role = g.user.get("role")
+
     if new_role == "super_admin" and caller_role != "super_admin":
         return jsonify({"error": "Only super_admin can assign super_admin role"}), 403
 
@@ -479,27 +482,16 @@ def list_windows():
     List delivery windows (admin/kitchen). Scoped by campus for kitchen users.
     ---
     tags: [Admin]
-    parameters:
-      - in: query
-        name: limit
-        type: integer
-        default: 50
-      - in: query
-        name: offset
-        type: integer
-        default: 0
     responses:
       200:
         description: Delivery windows
     """
     db = get_user_client()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
     q = db.table("delivery_windows").select("*")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    windows = q.order("starts_at", ascending=False).limit(limit).offset(offset).execute()
+    windows = q.order("starts_at", ascending=False).limit(50).execute()
     for w in (windows or []):
         oq = db.table("orders").select("id").eq("delivery_window_id", w["id"])
         if campus_id:
@@ -649,10 +641,7 @@ def list_batches():
       - in: query
         name: status
         type: string
-        enum: [open, assigned, completed, cancelled]
-      - in: query
-        name: gate_id
-        type: string
+        enum: [assigned, completed, cancelled]
       - in: query
         name: limit
         type: integer
@@ -668,24 +657,15 @@ def list_batches():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    status_filter = request.args.get("status")
-    gate_id_filter = request.args.get("gate_id")
-
     q = db.table("delivery_batches").select(
         "*,delivery_windows!window_id(label,starts_at,ends_at),profiles!rider_id(full_name,phone)"
     )
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
-
     window_id = request.args.get("window_id")
     if window_id:
         q = q.eq("window_id", window_id)
-    if status_filter:
-        q = q.eq("status", status_filter)
-    if gate_id_filter:
-        q = q.eq("gate_id", gate_id_filter)
-
+    status = request.args.get("status")
+    if status:
+        q = q.eq("status", status)
     batches = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
     # Annotate each batch with its order count
     for b in batches:
@@ -916,88 +896,8 @@ def list_batch_orders(batch_id):
     orders = db.table("orders").select(
         "id,status,delivery_address_snapshot,total_amount,created_at,"
         "order_items(name_snapshot,quantity)"
-    ).eq("batch_id", batch_id).order("created_at", ascending=True).execute() or []
+    ).eq("batch_id", batch_id).execute() or []
     return jsonify({"batch_id": batch_id, "orders": orders, "count": len(orders)}), 200
-
-
-@admin_bp.route("/delivery-batches/<batch_id>/reassign", methods=["POST"])
-@require_role("admin")
-def reassign_batch_orders(batch_id):
-    """
-    Reassign specific orders within a batch to a different rider than the
-    batch's default, via an override in delivery_assignments.
-    """
-    db = get_user_client()
-    data = request.get_json(force=True) or {}
-    rider_id = data.get("rider_id")
-    if not rider_id:
-        return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
-
-    batch = db.table("delivery_batches").select("id,campus_id").eq("id", batch_id).single().execute()
-    if not batch:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-
-    rider_profile = db.table("profiles").select("id,role,is_active").eq("id", rider_id).single().execute()
-    if not rider_profile:
-        return jsonify({"error": "Rider user profile not found"}), 404
-    if not rider_profile.get("is_active"):
-        return jsonify({"error": "Rider account is deactivated"}), 400
-    if rider_profile.get("role") != "rider":
-        return jsonify({"error": f"User {rider_id} does not have the 'rider' role"}), 400
-
-    order_ids = data.get("order_ids")
-    if not order_ids:
-        count = data.get("count")
-        if not count or not isinstance(count, int) or count <= 0:
-            return jsonify({"error": "Provide either order_ids or a positive count"}), 400
-        from_end = data.get("from", "start") == "end"
-        batch_orders = (
-            db.table("orders")
-            .select("id,created_at")
-            .eq("batch_id", batch_id)
-            .order("created_at", ascending=not from_end)
-            .limit(count)
-            .execute()
-        ) or []
-        order_ids = [o["id"] for o in batch_orders]
-
-    if not order_ids:
-        return jsonify({"error": "No matching orders to reassign"}), 400
-
-    check = db.table("orders").select("id").eq("batch_id", batch_id).in_("id", order_ids).execute() or []
-    found_ids = {o["id"] for o in check}
-    missing = set(order_ids) - found_ids
-    if missing:
-        return jsonify({"error": f"Orders not in this batch: {', '.join(missing)}"}), 400
-
-    results = []
-    for oid in order_ids:
-        db.table("delivery_assignments").upsert({
-            "order_id": oid,
-            "rider_id": rider_id,
-            "batch_id": batch_id,
-            "campus_id": batch.get("campus_id"),
-            "status": "assigned",
-        }, on_conflict="order_id").execute()
-        results.append(oid)
-
-    _audit(g.user_id, "delivery_assignments", batch_id, "reassign_batch_orders", {"order_ids": results, "rider_id": rider_id})
-    return jsonify({"message": "Orders reassigned", "order_ids": results, "rider_id": rider_id}), 200
-
-
-@admin_bp.route("/delivery-batches/<batch_id>/reassign/<order_id>", methods=["DELETE"])
-@require_role("admin")
-def clear_order_reassignment(batch_id, order_id):
-    """
-    Remove a per-order rider override, reverting the order to the batch's default rider.
-    """
-    db = get_user_client()
-    existing = db.table("delivery_assignments").select("id").eq("order_id", order_id).eq("batch_id", batch_id).limit(1).execute()
-    if not existing:
-        return jsonify({"error": "No override exists for this order"}), 404
-    db.table("delivery_assignments").eq("order_id", order_id).eq("batch_id", batch_id).delete().execute()
-    _audit(g.user_id, "delivery_assignments", order_id, "clear_order_reassignment")
-    return jsonify({"message": "Override cleared", "order_id": order_id}), 200
 
 
 @admin_bp.route("/promo-codes", methods=["GET"])
