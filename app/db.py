@@ -46,6 +46,7 @@ class SupabaseClient:
             f"{self.url}/rest/v1/rpc/{function_name}",
             headers=headers,
             json=params or {},
+            timeout=30,
         )
         _raise_for_status(resp)
         # 204 No Content or empty body — return None instead of crashing
@@ -61,6 +62,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"email": email, "password": password, "data": user_metadata or {}},
+            timeout=30,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -73,6 +75,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"email": email, "password": password},
+            timeout=30,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -85,6 +88,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"refresh_token": refresh_token},
+            timeout=30,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -96,6 +100,7 @@ class SupabaseClient:
                 "apikey": self.anon_key,
                 "Authorization": f"Bearer {access_token}",
             },
+            timeout=30,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -109,6 +114,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json=data,
+            timeout=30,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -128,6 +134,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"type": email_type, "email": email},
+            timeout=30,
         )
         if resp.status_code == 422:
             # Already confirmed — treat as success so we don't leak status
@@ -143,6 +150,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"email": email},
+            timeout=30,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -154,6 +162,7 @@ class SupabaseClient:
                 "apikey": self.anon_key,
                 "Authorization": f"Bearer {access_token}",
             },
+            timeout=30,
         )
 
 
@@ -223,7 +232,13 @@ class TableQuery:
         return self
 
     def in_(self, column: str, values: list) -> "TableQuery":
-        val_str = "({})".format(",".join(str(v) for v in values))
+        formatted_vals = []
+        for v in values:
+            v_str = str(v)
+            if isinstance(v, str) and ("," in v_str or '"' in v_str or " " in v_str):
+                v_str = '"' + v_str.replace('"', '""') + '"'
+            formatted_vals.append(v_str)
+        val_str = "({})".format(",".join(formatted_vals))
         self._filters.append(f"{column}=in.{val_str}")
         return self
 
@@ -256,17 +271,17 @@ class TableQuery:
         self._user_jwt = jwt
         return self
 
-    def _build_params(self) -> dict:
-        params = {"select": self._select}
+    def _build_params(self) -> list[tuple[str, str]]:
+        params = [("select", self._select)]
         for f in self._filters:
             k, v = f.split("=", 1)
-            params[k] = v
+            params.append((k, v))
         if self._order:
-            params["order"] = self._order
+            params.append(("order", self._order))
         if self._limit is not None:
-            params["limit"] = self._limit
+            params.append(("limit", str(self._limit)))
         if self._offset is not None:
-            params["offset"] = self._offset
+            params.append(("offset", str(self._offset)))
         return params
 
     def _headers(self) -> dict:
@@ -279,7 +294,7 @@ class TableQuery:
 
     def execute(self) -> list | dict | None:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        resp = self._client._session.get(url, headers=self._headers(), params=self._build_params())
+        resp = self._client._session.get(url, headers=self._headers(), params=self._build_params(), timeout=30)
         if self._single and resp.status_code in (406, 404):
             return None
         _raise_for_status(resp)
@@ -301,27 +316,27 @@ class TableQuery:
 
     def insert(self, data: dict | list) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        resp = self._client._session.post(url, headers=self._headers(), json=data)
+        resp = self._client._session.post(url, headers=self._headers(), json=data, timeout=30)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
     def update(self, data: dict) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        params = {}
+        params = []
         for f in self._filters:
             k, v = f.split("=", 1)
-            params[k] = v
-        resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params)
+            params.append((k, v))
+        resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params, timeout=30)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
     def delete(self) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        params = {}
+        params = []
         for f in self._filters:
             k, v = f.split("=", 1)
-            params[k] = v
-        resp = self._client._session.delete(url, headers=self._headers(), params=params)
+            params.append((k, v))
+        resp = self._client._session.delete(url, headers=self._headers(), params=params, timeout=30)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
@@ -329,7 +344,7 @@ class TableQuery:
         url = f"{self._client.url}/rest/v1/{self._table}"
         headers = self._headers()
         headers["Prefer"] = f"resolution=merge-duplicates,return=representation"
-        resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict})
+        resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict}, timeout=30)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 

@@ -367,7 +367,7 @@ def create_reward():
     if "quantity_available" in data:
         data["stock_quantity"] = data.pop("quantity_available")
     data["is_active"] = data.get("is_active", True)
-    data["campus_id"] = data.get("campus_id") or getattr(g, "campus_id", None)
+    data["campus_id"] = getattr(g, "campus_id", None) or data.get("campus_id")
     result = db.table("rewards").insert(data)
     created = result[0] if isinstance(result, list) else result
 

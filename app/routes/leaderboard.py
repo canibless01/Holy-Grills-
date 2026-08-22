@@ -48,7 +48,7 @@ def get_leaderboard():
     limit = min(int(request.args.get("limit", default_limit)), max_limit)
     period_key = _period_key_for(period_type)
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None)
     snap_q = (
         db.table("leaderboard_snapshots")
         .select("*")
@@ -82,7 +82,7 @@ def get_leaderboard():
         }), 200
 
     q = db.table("profiles").select("id,full_name,hp_balance").eq("is_active", "true").eq("role", "student")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     profile_data = q.order("hp_balance", ascending=False).limit(limit).execute()
@@ -251,7 +251,7 @@ def my_rank():
         period_type = "monthly"
     period_key = _period_key_for(period_type)
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None)
     snap_q = (
         db.table("leaderboard_snapshots")
         .select("*")
@@ -344,7 +344,7 @@ def squad_leaderboard():
     today = date.today()
 
     try:
-        campus_id = getattr(g, "campus_id", None) or request.args.get("campus_id")
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         # Fetch delivered squad orders
         q = (
             db.table("orders")
@@ -457,7 +457,7 @@ def squad_my_rank():
     today = date.today()
 
     try:
-        campus_id = getattr(g, "campus_id", None) or request.args.get("campus_id")
+        campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
         q = (
             db.table("orders")
             .select("id,user_id,hp_earned,created_at")

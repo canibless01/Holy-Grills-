@@ -407,7 +407,7 @@ def test_refund_split_and_partial_validations():
                         def mock_execute():
                             if "role" in fields:
                                 return {"id": "admin-1", "role": "admin", "is_active": True, "campus_id": "campus-1"}
-                            elif fields == "id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes":
+                            elif "total_amount" in fields:
                                 return {
                                     "id": "order-1",
                                     "user_id": "user-1",
