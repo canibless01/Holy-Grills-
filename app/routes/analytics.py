@@ -443,10 +443,13 @@ def export_csv():
     else:
         return jsonify({"error": MSG.ANALYTICS_UNKNOWN_EXPORT.format(export_type=export_type)}), 400
 
+    row_limit = min(int(request.args.get("limit", 5000)), 10000)
+    capped_rows = rows[:row_limit] if isinstance(rows, list) else rows
+
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
     writer.writeheader()
-    for row in rows:
+    for row in capped_rows:
         writer.writerow(row)
 
     return Response(

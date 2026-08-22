@@ -75,7 +75,10 @@ def save_item():
     if not menu_item_id:
         return jsonify({"error": MSG.CART_MENU_ITEM_REQUIRED}), 400
 
-    quantity = max(1, int(data.get("quantity", 1)))
+    try:
+        quantity = max(1, int(data.get("quantity", 1)))
+    except (ValueError, TypeError):
+        return jsonify({"error": "quantity must be a valid integer"}), 400
     notes = data.get("notes", "")
 
     menu_item = (
@@ -184,7 +187,10 @@ def update_saved_item(item_id):
 
     patch = {"updated_at": datetime.now(timezone.utc).isoformat()}
     if "quantity" in data:
-        patch["quantity"] = max(1, int(data["quantity"]))
+        try:
+            patch["quantity"] = max(1, int(data["quantity"]))
+        except (ValueError, TypeError):
+            return jsonify({"error": "quantity must be a valid integer"}), 400
     if "notes" in data:
         patch["notes"] = data["notes"]
 

@@ -15,10 +15,11 @@ from flask import current_app
 
 
 class SupabaseClient:
-    def __init__(self, url: str, service_key: str, anon_key: str):
+    def __init__(self, url: str, service_key: str, anon_key: str, timeout: int = 15):
         self.url = url.rstrip("/")
         self.service_key = service_key
         self.anon_key = anon_key
+        self.timeout = timeout
         self._session = requests.Session()
 
     def _service_headers(self) -> dict:
@@ -46,7 +47,7 @@ class SupabaseClient:
             f"{self.url}/rest/v1/rpc/{function_name}",
             headers=headers,
             json=params or {},
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         # 204 No Content or empty body — return None instead of crashing
@@ -62,7 +63,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"email": email, "password": password, "data": user_metadata or {}},
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -75,7 +76,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"email": email, "password": password},
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -88,7 +89,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"refresh_token": refresh_token},
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -100,7 +101,7 @@ class SupabaseClient:
                 "apikey": self.anon_key,
                 "Authorization": f"Bearer {access_token}",
             },
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -114,7 +115,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json=data,
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -134,7 +135,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"type": email_type, "email": email},
-            timeout=30,
+            timeout=self.timeout,
         )
         if resp.status_code == 422:
             # Already confirmed — treat as success so we don't leak status
@@ -150,7 +151,7 @@ class SupabaseClient:
                 "Content-Type": "application/json",
             },
             json={"email": email},
-            timeout=30,
+            timeout=self.timeout,
         )
         _raise_for_status(resp)
         return resp.json()
@@ -162,7 +163,7 @@ class SupabaseClient:
                 "apikey": self.anon_key,
                 "Authorization": f"Bearer {access_token}",
             },
-            timeout=30,
+            timeout=self.timeout,
         )
 
 
@@ -203,32 +204,41 @@ class TableQuery:
         self._count = count
         return self
 
+    @staticmethod
+    def _escape_val(v) -> str:
+        """Escape special characters in PostgREST filter values."""
+        if v is None:
+            return ""
+        s = str(v)
+        # PostgREST reserved characters in query params
+        return s.replace("%", "%25").replace(",", "%2C").replace(")", "%29").replace("(", "%28")
+
     def eq(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=eq.{value}")
+        self._filters.append(f"{column}=eq.{self._escape_val(value)}")
         return self
 
     def neq(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=neq.{value}")
+        self._filters.append(f"{column}=neq.{self._escape_val(value)}")
         return self
 
     def gt(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=gt.{value}")
+        self._filters.append(f"{column}=gt.{self._escape_val(value)}")
         return self
 
     def gte(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=gte.{value}")
+        self._filters.append(f"{column}=gte.{self._escape_val(value)}")
         return self
 
     def lt(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=lt.{value}")
+        self._filters.append(f"{column}=lt.{self._escape_val(value)}")
         return self
 
     def lte(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=lte.{value}")
+        self._filters.append(f"{column}=lte.{self._escape_val(value)}")
         return self
 
     def ilike(self, column: str, pattern: str) -> "TableQuery":
-        self._filters.append(f"{column}=ilike.{pattern}")
+        self._filters.append(f"{column}=ilike.{self._escape_val(pattern)}")
         return self
 
     def in_(self, column: str, values: list) -> "TableQuery":
@@ -294,7 +304,7 @@ class TableQuery:
 
     def execute(self) -> list | dict | None:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        resp = self._client._session.get(url, headers=self._headers(), params=self._build_params(), timeout=30)
+        resp = self._client._session.get(url, headers=self._headers(), params=self._build_params(), timeout=self._client.timeout)
         if self._single and resp.status_code in (406, 404):
             return None
         _raise_for_status(resp)
@@ -316,7 +326,7 @@ class TableQuery:
 
     def insert(self, data: dict | list) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        resp = self._client._session.post(url, headers=self._headers(), json=data, timeout=30)
+        resp = self._client._session.post(url, headers=self._headers(), json=data, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
@@ -325,8 +335,8 @@ class TableQuery:
         params = []
         for f in self._filters:
             k, v = f.split("=", 1)
-            params.append((k, v))
-        resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params, timeout=30)
+            params[k] = v
+        resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
@@ -335,8 +345,8 @@ class TableQuery:
         params = []
         for f in self._filters:
             k, v = f.split("=", 1)
-            params.append((k, v))
-        resp = self._client._session.delete(url, headers=self._headers(), params=params, timeout=30)
+            params[k] = v
+        resp = self._client._session.delete(url, headers=self._headers(), params=params, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
@@ -344,7 +354,7 @@ class TableQuery:
         url = f"{self._client.url}/rest/v1/{self._table}"
         headers = self._headers()
         headers["Prefer"] = f"resolution=merge-duplicates,return=representation"
-        resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict}, timeout=30)
+        resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict}, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 

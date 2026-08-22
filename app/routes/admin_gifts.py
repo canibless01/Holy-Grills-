@@ -215,7 +215,7 @@ def _broadcast_multiplier_event(db, multiplier: float):
     try:
         from app.services.notification_service import send_notification
         from app.messages import MSG
-        users = db.table("profiles").select("id").eq("is_active", "true").execute() or []
+        users = db.table("profiles").select("id").eq("is_active", True).execute() or []
         for user in users:
             try:
                 send_notification(
