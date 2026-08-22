@@ -89,22 +89,26 @@ def _today_start_iso():
     ).isoformat()
 
 
-def _check_kitchen_capacity(db):
-    """Raise ValueError if the kitchen's daily order cap has been reached."""
+def _check_kitchen_capacity(db, campus_id: str | None):
+    """Raise ValueError if the kitchen's daily order cap has been reached, for the given campus."""
+    if not campus_id:
+        return
     row = (
         db.table("kitchen_settings")
         .select("value")
         .eq("key", "daily_order_capacity")
+        .eq("campus_id", campus_id)
         .single()
         .execute()
     )
     raw = row.get("value") if row else ""
     if not raw or not str(raw).isdigit():
-        return  # no cap configured
+        return
     capacity = int(raw)
     orders_today = (
         db.table("orders")
         .select("id")
+        .eq("campus_id", campus_id)
         .gte("created_at", _today_start_iso())
         .execute()
     ) or []
@@ -297,9 +301,11 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     idempotency_key = str(uuid.uuid4())
 
     db = get_user_client()
+    from flask import g
+    campus_id = getattr(g, 'campus_id', None)
 
     # Reject if kitchen is already at daily capacity
-    _check_kitchen_capacity(db)
+    _check_kitchen_capacity(db, campus_id)
 
     # ── Ordering window gate (non-scheduled orders only) ──────────────────────
     # Checks (in priority order):
@@ -790,8 +796,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
-    campus_id = getattr(g, 'campus_id', None)
-
     rpc_payload = {
         "p_user_id": user_id,
         "p_campus_id": campus_id,
@@ -847,6 +851,14 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         order["order_lock_discount_applied"] = discount_applied
     if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
+
+        try:
+            batch_id = db.rpc("hg_auto_assign_order_to_batch", {"p_order_id": result["order_id"]})
+            if batch_id:
+                order["batch_id"] = batch_id
+        except Exception as exc:
+            logger.warning("create_order: auto-batch assignment failed for order %s: %s", result["order_id"], exc)
+
     return order
 
 
@@ -905,16 +917,8 @@ def walk_order_to_status(
                 pass
 
         if caller_role == "rider":
-            batch_id = order.get("batch_id")
-            assigned_rider_id = None
-            if batch_id:
-                try:
-                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
-                    if batch:
-                        assigned_rider_id = batch.get("rider_id")
-                except Exception:
-                    pass
-            if not assigned_rider_id or assigned_rider_id != changed_by:
+            effective_rider_id = db.rpc("hg_effective_rider", {"p_order_id": order_id})
+            if not effective_rider_id or effective_rider_id != changed_by:
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
@@ -1064,16 +1068,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 pass
 
         if caller_role == "rider":
-            batch_id = order.get("batch_id")
-            assigned_rider_id = None
-            if batch_id:
-                try:
-                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
-                    if batch:
-                        assigned_rider_id = batch.get("rider_id")
-                except Exception:
-                    pass
-            if not assigned_rider_id or assigned_rider_id != changed_by:
+            effective_rider_id = db.rpc("hg_effective_rider", {"p_order_id": order_id})
+            if not effective_rider_id or effective_rider_id != changed_by:
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
@@ -1093,6 +1089,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
         update_data[ts_field] = now
 
     updated = db.table("orders").eq("id", order_id).update(update_data).execute()
+    if not updated:
+        raise ValueError("Order status update was not applied — no rows matched.")
     _log_status_change(order_id, current_status, new_status, changed_by, notes)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery
@@ -1176,7 +1174,7 @@ def _handle_delivery_rewards(order: dict):
         mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
         if mult > 1:
             hp_amount = round(hp_amount * mult)
-            db.table("profiles").eq("id", user_id).update({"next_order_hp_multiplier": 1})
+            db.rpc("hg_reset_next_order_multiplier", {"p_user_id": user_id})
     except Exception as me:
         logger.warning("_handle_delivery_rewards: next_order_hp_multiplier check failed: %s", me)
 

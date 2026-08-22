@@ -242,7 +242,13 @@ class TableQuery:
         return self
 
     def in_(self, column: str, values: list) -> "TableQuery":
-        val_str = "({})".format(",".join(self._escape_val(v) for v in values))
+        formatted_vals = []
+        for v in values:
+            v_str = str(v)
+            if isinstance(v, str) and ("," in v_str or '"' in v_str or " " in v_str):
+                v_str = '"' + v_str.replace('"', '""') + '"'
+            formatted_vals.append(v_str)
+        val_str = "({})".format(",".join(formatted_vals))
         self._filters.append(f"{column}=in.{val_str}")
         return self
 
@@ -275,17 +281,17 @@ class TableQuery:
         self._user_jwt = jwt
         return self
 
-    def _build_params(self) -> dict:
-        params = {"select": self._select}
+    def _build_params(self) -> list[tuple[str, str]]:
+        params = [("select", self._select)]
         for f in self._filters:
             k, v = f.split("=", 1)
-            params[k] = v
+            params.append((k, v))
         if self._order:
-            params["order"] = self._order
+            params.append(("order", self._order))
         if self._limit is not None:
-            params["limit"] = self._limit
+            params.append(("limit", str(self._limit)))
         if self._offset is not None:
-            params["offset"] = self._offset
+            params.append(("offset", str(self._offset)))
         return params
 
     def _headers(self) -> dict:
@@ -326,7 +332,7 @@ class TableQuery:
 
     def update(self, data: dict) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        params = {}
+        params = []
         for f in self._filters:
             k, v = f.split("=", 1)
             params[k] = v
@@ -336,7 +342,7 @@ class TableQuery:
 
     def delete(self) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        params = {}
+        params = []
         for f in self._filters:
             k, v = f.split("=", 1)
             params[k] = v

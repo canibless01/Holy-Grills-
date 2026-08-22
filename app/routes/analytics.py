@@ -472,7 +472,7 @@ def gifts_analytics():
     """
     db = get_user_client()
     q = db.table("first_order_gifts").select("id,status,created_at")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     gifts = q.execute() or []
@@ -527,7 +527,7 @@ def marketplace_analytics():
         description: Marketplace stats
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None)
     q_p = db.table("marketplace_purchases").select("id,wallet_amount,card_amount")
     if campus_id:
         q_p = q_p.eq("campus_id", campus_id)

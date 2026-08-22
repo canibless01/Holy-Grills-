@@ -127,7 +127,8 @@ def my_referrals():
         }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+        logger.error("referrals: unexpected error: %s", e)
+        return jsonify({"error": "Something went wrong. Please try again."}), 500
 
 
 @referrals_bp.route("/stats", methods=["GET"])

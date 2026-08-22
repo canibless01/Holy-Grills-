@@ -96,18 +96,54 @@ def purchase(listing_id):
         return jsonify({"error": MSG.LISTING_OUT_OF_STOCK}), 400
 
     payment_method = data.get("payment_method", "wallet")
+    if payment_method not in ("wallet", "hp", "card", "split"):
+        payment_method = "wallet"
+
     hp_price = int(listing.get("hp_price") or 0)
     balance = get_hp_balance(g.user_id)
     user_hp = balance.get("active", 0)
-    use_hp = hp_price > 0 and user_hp >= hp_price and payment_method != "card"
+
+    if payment_method in ("wallet", "card", "split"):
+        use_hp = False
+    elif payment_method == "hp":
+        use_hp = True
+    else:
+        use_hp = hp_price > 0 and user_hp >= hp_price
+
+    if use_hp and hp_price > 0 and user_hp < hp_price:
+        return jsonify({"error": MSG.INSUFFICIENT_HP}), 400
 
     wallet_amount = 0.0
+    card_amount = 0.0
     if not use_hp:
         total_value = float(listing.get("total_value") or listing.get("price") or 0)
         if payment_method == "wallet":
             wallet_amount = total_value
+        elif payment_method == "card":
+            wallet_amount = 0.0
         elif payment_method == "split":
-            wallet_amount = min(float(data.get("wallet_amount", 0)), total_value)
+            wallet_amount = max(0.0, min(float(data.get("wallet_amount", 0)), total_value))
+        card_amount = max(0.0, total_value - wallet_amount)
+
+    actual_payment_method = "hp" if use_hp else ("wallet" if card_amount == 0 else ("card" if wallet_amount == 0 else "split"))
+
+    if card_amount > 0:
+        reference = (data.get("payment_reference") or "").strip()
+        if not reference:
+            return jsonify({"error": "payment_reference is required for card payment"}), 400
+        try:
+            from app.services.payment_service import verify_payment
+            txn_data = verify_payment(reference)
+        except Exception as e:
+            return jsonify({"error": f"Payment verification failed: {str(e)}"}), 402
+
+        if (txn_data or {}).get("status") != "success":
+            return jsonify({"error": "Payment was not successful"}), 402
+
+        paid_kobo = int((txn_data or {}).get("amount", 0))
+        required_kobo = int(round(card_amount * 100))
+        if paid_kobo < required_kobo:
+            return jsonify({"error": f"Insufficient card payment amount: paid {paid_kobo/100:.2f}, expected {card_amount:.2f}"}), 402
 
     try:
         purchase_row = db.rpc("hg_purchase_marketplace_item", {
@@ -166,6 +202,9 @@ def purchase(listing_id):
         "purchase": purchase_row,
         "code": code_value,
         "hp_earned": marketplace_hp,
+        "payment_method": actual_payment_method,
+        "wallet_amount_used": wallet_amount,
+        "card_amount_used": card_amount,
     }), 201
 
 
