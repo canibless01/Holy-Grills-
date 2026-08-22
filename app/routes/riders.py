@@ -67,18 +67,7 @@ def my_batch():
         .select("id,status,notes,delivery_address_snapshot,user_id")
         .eq("batch_id", batch_id)
         .execute()
-    ) or []
-
-    if orders:
-        order_ids_in_batch = [o["id"] for o in orders]
-        overrides = (
-            db.table("delivery_assignments")
-            .select("order_id,rider_id")
-            .in_("order_id", order_ids_in_batch)
-            .execute()
-        ) or []
-        reassigned_away_ids = {ov["order_id"] for ov in overrides if ov["rider_id"] != g.user_id}
-        orders = [o for o in orders if o["id"] not in reassigned_away_ids]
+    )
 
     # Fetch gate coordinates for distance ranking (look up via batch zone name or gate table)
     gate_lat = None
@@ -316,16 +305,6 @@ def delivery_history():
             .eq("batch_id", batch["id"])
             .execute()
         ) or []
-        if orders:
-            order_ids = [o["id"] for o in orders]
-            overrides = (
-                db.table("delivery_assignments")
-                .select("order_id,rider_id")
-                .in_("order_id", order_ids)
-                .execute()
-            ) or []
-            reassigned_away_ids = {ov["order_id"] for ov in overrides if ov["rider_id"] != g.user_id}
-            orders = [o for o in orders if o["id"] not in reassigned_away_ids]
         result.append({
             **batch,
             "order_count": len(orders),
@@ -448,35 +427,6 @@ def rider_earnings():
         if since is not None:
             q = q.gte("delivered_at", since.isoformat())
         orders = q.execute() or []
-
-        if orders:
-            order_ids = [o["id"] for o in orders]
-            overrides = (
-                db.table("delivery_assignments")
-                .select("order_id,rider_id")
-                .in_("order_id", order_ids)
-                .execute()
-            ) or []
-            reassigned_away_ids = {ov["order_id"] for ov in overrides if ov["rider_id"] != g.user_id}
-            orders = [o for o in orders if o["id"] not in reassigned_away_ids]
-
-        my_override_orders = (
-            db.table("delivery_assignments")
-            .select("order_id")
-            .eq("rider_id", g.user_id)
-            .execute()
-        ) or []
-        override_order_ids = [o["order_id"] for o in my_override_orders if o["order_id"] not in {x["id"] for x in orders}]
-        if override_order_ids:
-            extra_q = (
-                db.table("orders")
-                .select("id,delivery_fee,delivered_at,batch_id")
-                .in_("id", override_order_ids)
-                .eq("status", "delivered")
-            )
-            if since is not None:
-                extra_q = extra_q.gte("delivered_at", since.isoformat())
-            orders = orders + (extra_q.execute() or [])
 
     total_earnings = round(sum(float(o.get("delivery_fee") or 0) for o in orders), 2)
     deliveries = [

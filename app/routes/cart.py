@@ -255,7 +255,7 @@ def update_cart_item(item_id):
     if "quantity" in data:
         qty = int(data["quantity"])
         if qty <= 0:
-            db.table("cart_items").eq("id", item_id).eq("user_id", g.user_id).delete()
+            db.table("cart_items").eq("id", item_id).delete()
             return jsonify({"message": MSG.CART_ITEM_REMOVED}), 200
 
     update = {}
@@ -274,7 +274,7 @@ def update_cart_item(item_id):
         update["options"] = current
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    result = db.table("cart_items").eq("id", item_id).eq("user_id", g.user_id).update(update)
+    result = db.table("cart_items").eq("id", item_id).update(update)
     return jsonify({
         "message": MSG.CART_ITEM_UPDATED,
         "item": result[0] if isinstance(result, list) else result,
@@ -311,7 +311,7 @@ def remove_cart_item(item_id):
     if not existing:
         return jsonify({"error": MSG.CART_ITEM_NOT_FOUND}), 404
 
-    db.table("cart_items").eq("id", item_id).eq("user_id", g.user_id).delete()
+    db.table("cart_items").eq("id", item_id).delete()
     return jsonify({"message": MSG.CART_ITEM_REMOVED}), 200
 
 

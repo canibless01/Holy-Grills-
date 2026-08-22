@@ -206,12 +206,15 @@ class TableQuery:
 
     @staticmethod
     def _escape_val(v) -> str:
-        """Escape special characters in PostgREST filter values."""
+        """Format filter values for PostgREST query parameters."""
         if v is None:
             return ""
         s = str(v)
-        # PostgREST reserved characters in query params
-        return s.replace("%", "%25").replace(",", "%2C").replace(")", "%29").replace("(", "%28")
+        # If value contains PostgREST reserved delimiter characters, wrap in double quotes
+        if any(c in s for c in (",", "(", ")", "\"")):
+            escaped = s.replace("\"", "\\\"")
+            return f'"{escaped}"'
+        return s
 
     def eq(self, column: str, value) -> "TableQuery":
         self._filters.append(f"{column}=eq.{self._escape_val(value)}")
@@ -242,13 +245,7 @@ class TableQuery:
         return self
 
     def in_(self, column: str, values: list) -> "TableQuery":
-        formatted_vals = []
-        for v in values:
-            v_str = str(v)
-            if isinstance(v, str) and ("," in v_str or '"' in v_str or " " in v_str):
-                v_str = '"' + v_str.replace('"', '""') + '"'
-            formatted_vals.append(v_str)
-        val_str = "({})".format(",".join(formatted_vals))
+        val_str = "({})".format(",".join(self._escape_val(v) for v in values))
         self._filters.append(f"{column}=in.{val_str}")
         return self
 
@@ -281,17 +278,17 @@ class TableQuery:
         self._user_jwt = jwt
         return self
 
-    def _build_params(self) -> list[tuple[str, str]]:
-        params = [("select", self._select)]
+    def _build_params(self) -> dict:
+        params = {"select": self._select}
         for f in self._filters:
             k, v = f.split("=", 1)
-            params.append((k, v))
+            params[k] = v
         if self._order:
-            params.append(("order", self._order))
+            params["order"] = self._order
         if self._limit is not None:
-            params.append(("limit", str(self._limit)))
+            params["limit"] = self._limit
         if self._offset is not None:
-            params.append(("offset", str(self._offset)))
+            params["offset"] = self._offset
         return params
 
     def _headers(self) -> dict:
@@ -332,7 +329,7 @@ class TableQuery:
 
     def update(self, data: dict) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        params = []
+        params = {}
         for f in self._filters:
             k, v = f.split("=", 1)
             params[k] = v
@@ -342,7 +339,7 @@ class TableQuery:
 
     def delete(self) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        params = []
+        params = {}
         for f in self._filters:
             k, v = f.split("=", 1)
             params[k] = v
