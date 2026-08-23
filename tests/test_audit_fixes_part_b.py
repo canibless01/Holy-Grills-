@@ -265,3 +265,26 @@ def test_part_b_fixes_1_to_13():
 
     # Item 12: TEMPLATES has squad_invite
     assert "squad_invite" in TEMPLATES
+
+
+def test_process_flash_redeem_atomic_rpc():
+    """Verify process_flash_redeem delegates to hg_redeem_flash_reward_atomic RPC."""
+    from app.services.hp_service import process_flash_redeem
+
+    mock_db = MagicMock()
+    mock_db.rpc.return_value = {
+        "success": True,
+        "redemption_id": "red-123",
+        "hp_cost": 100,
+        "discount_pct": 50,
+        "reward_name": "Free Meal",
+    }
+
+    with patch("app.services.hp_service.get_user_client", return_value=mock_db):
+        res = process_flash_redeem("reward-1", "user-1")
+        assert res["redemption_id"] == "red-123"
+        assert res["hp_cost"] == 100
+        mock_db.rpc.assert_called_once_with("hg_redeem_flash_reward_atomic", {
+            "p_user_id": "user-1",
+            "p_reward_id": "reward-1",
+        })

@@ -573,64 +573,34 @@ def _tier_sort_order_by_id(tier_id: str, tiers: list) -> int:
 
 
 def process_flash_redeem(reward_id: str, user_id: str) -> dict:
-    """Flash redemption: 50% HP discount, first N users only, 24-hour window."""
+    """Flash redemption: per-sale % discount, first N users only, time-windowed.
+    Delegates the whole check+redeem to an atomic Supabase RPC so concurrent
+    requests can't oversell the slot limit or bypass the discount config."""
     db = get_user_client()
-    config = current_app.config
+    from app.messages import MSG, resolve_msg
 
-    flash = (
-        db.table("flash_redemptions")
-        .select("*")
-        .eq("reward_id", reward_id)
-        .eq("is_active", "true")
-        .single()
-        .execute()
-    )
-    if not flash:
-        from app.messages import MSG
-        raise ValueError(MSG.HP_FLASH_NO_ACTIVE_SALE)
+    res = db.rpc("hg_redeem_flash_reward_atomic", {
+        "p_user_id": user_id,
+        "p_reward_id": reward_id,
+    })
 
-    now = datetime.now(timezone.utc).isoformat()
-    if flash.get("window_ends_at") and flash["window_ends_at"] < now:
-        from app.messages import MSG
-        raise ValueError(MSG.HP_FLASH_WINDOW_CLOSED)
-
-    already_redeemed = (
-        db.table("reward_redemptions")
-        .select("id")
-        .eq("reward_id", reward_id)
-        .gte("created_at", flash.get("window_starts_at", ""))
-        .execute()
-    )
-    qty_limit = flash.get("quantity_limit", config.get("FLASH_MAX_QTY", 5))
-    if len(already_redeemed) >= qty_limit:
-        from app.messages import MSG
-        raise ValueError(MSG.HP_FLASH_LIMIT_REACHED.format(qty=qty_limit))
-
-    reward = db.table("rewards").select("hp_cost,name").eq("id", reward_id).single().execute()
-    original_cost = reward.get("hp_cost", 0)
-    discounted_cost = int(original_cost * (1 - config.get("FLASH_DISCOUNT_PCT", 0.5)))
-
-    balance = get_hp_balance(user_id)
-    if balance["active"] < discounted_cost:
-        from app.messages import MSG, resolve_msg
-        raise ValueError(resolve_msg(MSG.HP_FLASH_INSUFFICIENT, need=discounted_cost, have=balance["active"]))
-
-    redemption = db.table("reward_redemptions").insert({
-        "user_id": user_id,
-        "reward_id": reward_id,
-        "hp_cost_snapshot": discounted_cost,
-        "status": "pending",
-    }).execute()
-    redemption_row = redemption[0] if isinstance(redemption, list) else redemption
-
-    spend_hp(user_id, discounted_cost, redemption_row["id"], "flash_reward_redemption",
-             f"Flash deal: {reward.get('name')} at 50% off")
+    if not res or not res.get("success"):
+        error = (res or {}).get("error", "unknown_error")
+        if error == "no_active_sale":
+            raise ValueError(MSG.HP_FLASH_NO_ACTIVE_SALE)
+        if error == "window_closed" or error == "window_not_started":
+            raise ValueError(MSG.HP_FLASH_WINDOW_CLOSED)
+        if error == "limit_reached":
+            raise ValueError(MSG.HP_FLASH_LIMIT_REACHED.format(qty=res.get("qty")))
+        if error == "Insufficient active HP balance":
+            raise ValueError(resolve_msg(MSG.HP_FLASH_INSUFFICIENT, need=res.get("hp_cost", 0), have=0))
+        raise ValueError(f"Flash redemption failed: {error}")
 
     return {
-        "redemption": redemption_row,
-        "original_hp_cost": original_cost,
-        "discounted_hp_cost": discounted_cost,
-        "savings_hp": original_cost - discounted_cost,
+        "redemption_id": res["redemption_id"],
+        "hp_cost": res["hp_cost"],
+        "discount_pct": res["discount_pct"],
+        "reward_name": res["reward_name"],
     }
 
 
