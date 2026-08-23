@@ -214,6 +214,18 @@ Create an account to earn HP for this event!
 — {d.get('app_tagline', '')}
 """,
     },
+    "squad_invite": {
+        "subject": lambda d: f"You've been invited to join a squad order on {d.get('app_name', 'Holy Grills')}!",
+        "body": lambda d: f"""
+Hi {d.get('name', 'there')},
+
+{d.get('organizer', 'A friend')} added you to a squad order on {d.get('app_name', 'Holy Grills')}!
+
+Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.
+
+— {d.get('app_tagline', '')}
+""",
+    },
 }
 
 

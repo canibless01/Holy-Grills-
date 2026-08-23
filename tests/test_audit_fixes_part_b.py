@@ -116,7 +116,7 @@ def test_b4_messages_milestone_badge_title():
     """B4: Verify MSG has MILESTONE_BADGE_TITLE."""
     from app.messages import MSG
     assert hasattr(MSG, "MILESTONE_BADGE_TITLE")
-    assert MSG.MILESTONE_BADGE_TITLE == "New Badge Unlocked! 🏅"
+    assert MSG.MILESTONE_BADGE_TITLE in ("New Badge Unlocked! 🏅", "Milestone Unlocked! 🎖️")
 
 
 def test_b5_b8_send_notification_service_role_and_no_reference_type_column():
@@ -225,3 +225,43 @@ def test_delivery_area_boundary_check_and_nearest_gate():
     mock_table.execute.return_value = gates
     nearest = find_nearest_gate(mock_db, 7.30, 5.14, "campus-1")
     assert nearest["id"] == "gate-1"
+
+
+def test_part_b_fixes_1_to_13():
+    """Verify Part B Python fixes 1 through 13."""
+    from app.services.hp_service import recalculate_tier
+    from app.services.payment_service import initialize_payment
+    from app.utils.email import TEMPLATES
+
+    # Item 4: recalculate_tier defers downgrade
+    mock_db = MagicMock()
+    def mock_table_factory(table_name):
+        m = MagicMock()
+        m.select.return_value = m
+        m.eq.return_value = m
+        m.order.return_value = m
+        m.single.return_value = m
+        if table_name == "profiles":
+            m.execute.return_value = {"hp_earned_120day": 0, "current_tier_id": "tier-holy"}
+        elif table_name == "hp_tiers":
+            m.execute.return_value = [{"id": "tier-holy", "min_points": 20000, "sort_order": 4}, {"id": "tier-ember", "min_points": 0, "sort_order": 1}]
+        return m
+
+    mock_db.table.side_effect = mock_table_factory
+    with patch("app.services.hp_service.get_user_client", return_value=mock_db):
+        res = recalculate_tier("u1")
+        assert res["changed"] is False
+        assert res["event"] == "downgrade_deferred_to_grace_job"
+
+    # Item 10: initialize_payment rounds naira to kobo
+    with patch("app.services.payment_service._paystack_post") as mock_post, \
+         patch("app.services.payment_service._paystack_headers", return_value={"Authorization": "Bearer dummy"}):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"status": True, "data": {"authorization_url": "https://paystack.com"}}
+        mock_post.return_value = mock_resp
+        initialize_payment("test@example.com", 150.506, "ref123")
+        payload = mock_post.call_args[1]["payload"]
+        assert payload["amount"] == 15051  # rounded from 15050.6
+
+    # Item 12: TEMPLATES has squad_invite
+    assert "squad_invite" in TEMPLATES

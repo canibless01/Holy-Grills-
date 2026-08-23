@@ -42,7 +42,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
 
     existing = db.table("profiles").select("id").eq("email", email).execute()
     if existing and len(existing) > 0:
-        raise ValueError("Account already registered. Please login instead.")
+        raise ValueError("If this email can be registered, you'll receive a confirmation shortly. If you already have an account, try logging in or resetting your password.")
 
     try:
         auth_result = db.auth_sign_up(
@@ -53,7 +53,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     except SupabaseError as e:
         error_msg = str(e).lower()
         if "user already registered" in error_msg or "duplicate" in error_msg:
-            raise ValueError("Account already exists. Please login.")
+            raise ValueError("If this email can be registered, you'll receive a confirmation shortly. If you already have an account, try logging in or resetting your password.")
         raise ValueError(f"Registration failed: {error_msg}")
 
     user_id = auth_result.get("user", {}).get("id") or auth_result.get("id")
@@ -158,8 +158,9 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                 "referred_user_id": user_id,
                 "hp_awarded": 0,
             })
-        except SupabaseError:
-            pass
+        except SupabaseError as e:
+            from app.utils.logger import get_logger
+            get_logger(__name__).error("register: referral row insert failed for user %s (referrer %s): %s", user_id, referred_by_user_id, e)
 
         # Notify referrer that someone signed up with their code
         try:
@@ -169,13 +170,15 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                 notif_type="referral_signup",
                 template_data={},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            from app.utils.logger import get_logger
+            get_logger(__name__).error("register: referral signup notification failed for referrer %s: %s", referred_by_user_id, e)
 
     try:
         hp_service.award_signup_bonus(user_id)
-    except Exception:
-        pass
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).error("register: award_signup_bonus failed for user %s: %s", user_id, e)
 
     return auth_result
 

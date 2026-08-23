@@ -123,11 +123,13 @@ def _is_throttled(db, user_id: str, notif_type: str) -> bool:
         if recent:
             return True
 
-        # 2. Daily cap
+        # 2. Daily cap (non-critical types only — critical types are exempt from the cap itself,
+        # and must also be excluded from occupying its budget)
         today_count = (
             db.table("notification_log")
             .select("id")
             .eq("user_id", user_id)
+            .not_.in_("type", list(_CRITICAL_NOTIF_TYPES))
             .gte("sent_at", today_start)
             .execute()
         )

@@ -305,17 +305,23 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
     if already:
         return {"message": "Already completed", "already_completed": True}
 
-    actual_hp = _award_milestone_hp(db, user_id, milestone_id, milestone.get("title", ""), hp, "active")
-
+    # Record completion first to defend against concurrent race conditions before awarding HP
     try:
         db.table("user_milestones").insert({
             "user_id": user_id,
             "milestone_id": milestone_id,
-            "hp_awarded": actual_hp,
+            "hp_awarded": hp,
             "period_key": period_key,
         })
     except Exception as e:
-        logger.warning("admin_grant_milestone: insert failed: %s", e)
+        err_str = str(e)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
+        logger.warning("admin_grant_milestone: user_milestones insert failed: %s", e)
+        if _is_already_completed(db, user_id, milestone_id, period_key):
+            return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
+
+    actual_hp = _award_milestone_hp(db, user_id, milestone_id, milestone.get("title", ""), hp, "active")
 
     try:
         notify_milestone_achieved(user_id, milestone_id)

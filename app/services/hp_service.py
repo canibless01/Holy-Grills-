@@ -537,6 +537,13 @@ def recalculate_tier(user_id: str) -> dict:
         return {"tier": new_tier, "changed": False}
 
     event = "upgraded" if (not current_tier_id or _tier_sort_order(new_tier) > _tier_sort_order_by_id(current_tier_id, tiers_raw)) else "downgraded"
+
+    if event == "downgraded":
+        # Downgrades are handled exclusively by the tier_grace_period_check
+        # scheduled task, which respects the maintenance_points threshold and
+        # the 7-day grace window. Applying a downgrade here would skip both.
+        return {"tier": new_tier, "changed": False, "event": "downgrade_deferred_to_grace_job"}
+
     try:
         db.table("user_tiers").insert({
             "user_id": user_id,

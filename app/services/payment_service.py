@@ -47,7 +47,7 @@ def initialize_payment(email: str, amount_naira: float, reference: str, metadata
 
     payload = {
         "email": email,
-        "amount": int(amount_naira * 100),
+        "amount": round(amount_naira * 100),
         "reference": reference,
         "metadata": meta,
     }
@@ -142,7 +142,7 @@ def refund_paystack_charge(transaction_reference: str, amount_naira: float = Non
         "transaction": transaction_reference,
     }
     if amount_naira is not None:
-        payload["amount"] = int(amount_naira * 100) # naira to kobo
+        payload["amount"] = round(amount_naira * 100) # naira to kobo
     if reason:
         payload["customer_note"] = reason
 
