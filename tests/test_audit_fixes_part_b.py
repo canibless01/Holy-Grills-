@@ -184,3 +184,44 @@ def test_b10_check_post_delivery_nudges_in_beat_schedule():
     assert "check-post-delivery-nudges" in celery_app.conf.beat_schedule
     entry = celery_app.conf.beat_schedule["check-post-delivery-nudges"]
     assert entry["task"] == "app.tasks.scheduled.check_post_delivery_nudges"
+
+
+def test_delivery_area_boundary_check_and_nearest_gate():
+    """Delivery Grouping & Route Ordering: test boundary check and find_nearest_gate."""
+    from app.routes.delivery import is_within_delivery_area, find_nearest_gate
+
+    mock_db = MagicMock()
+    mock_table = MagicMock()
+    mock_db.table.return_value = mock_table
+    mock_table.select.return_value = mock_table
+    mock_table.eq.return_value = mock_table
+    mock_table.single.return_value = mock_table
+
+    # 1. When campus lat/lon is None -> fails open (True)
+    mock_table.execute.return_value = {"lat": None, "lon": None}
+    assert is_within_delivery_area(mock_db, 7.30, 5.14, "campus-1") is True
+
+    # 2. When campus lat/lon set and within 15km
+    mock_table.execute.side_effect = [
+        {"lat": 7.2985, "lon": 5.1421},  # campus select
+        {"value": "15"},                 # kitchen_settings max_delivery_radius_km
+    ]
+    # Point ~1km away
+    assert is_within_delivery_area(mock_db, 7.30, 5.14, "campus-1") is True
+
+    # 3. Point ~50km away -> False
+    mock_table.execute.side_effect = [
+        {"lat": 7.2985, "lon": 5.1421},
+        {"value": "15"},
+    ]
+    assert is_within_delivery_area(mock_db, 7.80, 5.14, "campus-1") is False
+
+    # 4. find_nearest_gate selects nearest gate
+    gates = [
+        {"id": "gate-1", "name": "Gate 1", "lat": 7.29, "lon": 5.14},
+        {"id": "gate-2", "name": "Gate 2", "lat": 7.50, "lon": 5.14},
+    ]
+    mock_table.execute.side_effect = None
+    mock_table.execute.return_value = gates
+    nearest = find_nearest_gate(mock_db, 7.30, 5.14, "campus-1")
+    assert nearest["id"] == "gate-1"

@@ -639,9 +639,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         except Exception:
             pass
 
-    from app.routes.delivery import validate_coordinates
+    from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
         delivery_location_lat, delivery_location_lon = validate_coordinates(delivery_location_lat, delivery_location_lon)
+
+    if (delivery_type == "off_campus" and not delivery_location_id
+            and delivery_location_lat is not None and delivery_location_lon is not None):
+        campus_id_for_check = getattr(g, "campus_id", None)
+        if not is_within_delivery_area(db, delivery_location_lat, delivery_location_lon, campus_id_for_check):
+            raise ValueError("This location is outside our delivery area.")
+        nearest_gate = find_nearest_gate(db, delivery_location_lat, delivery_location_lon, campus_id_for_check)
+        if nearest_gate:
+            delivery_location_id = nearest_gate["id"]
 
     if delivery_type == "on_campus" and delivery_location_id:
         try:
