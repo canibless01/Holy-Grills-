@@ -80,3 +80,107 @@ def test_send_scheduled_notifications_has_cron_lock():
         res = send_scheduled_notifications()
         assert res == {"skipped": "Lock not acquired"}
         mock_db.rpc.assert_called_with("try_acquire_cron_lock", {"p_job_name": "send_scheduled_notifications"})
+
+
+def test_b2_table_query_eq_neq_none():
+    """B2: Verify TableQuery.eq(col, None) and .neq(col, None) generate is.null / is.not.null."""
+    client = SupabaseClient("https://example.supabase.co", "service_key", "anon_key")
+    query = client.table("test_table")
+    query.eq("status", None)
+    query.neq("deleted_at", None)
+    params = query._build_params()
+    assert params.get("status") == "is.null"
+    assert params.get("deleted_at") == "is.not.null"
+
+
+def test_b3_get_user_email_and_name_uses_get_db():
+    """B3: Verify get_user_email_and_name uses service role get_db() instead of get_user_client()."""
+    from app.utils.email import get_user_email_and_name
+
+    mock_db = MagicMock()
+    mock_table = MagicMock()
+    mock_db.table.return_value = mock_table
+    mock_table.select.return_value = mock_table
+    mock_table.eq.return_value = mock_table
+    mock_table.single.return_value = mock_table
+    mock_table.execute.return_value = {"email": "test@example.com", "full_name": "Test User"}
+
+    with patch("app.db.get_db", return_value=mock_db) as mock_get_db:
+        email, name = get_user_email_and_name("user-123")
+        assert email == "test@example.com"
+        assert name == "Test User"
+        mock_get_db.assert_called_once()
+
+
+def test_b4_messages_milestone_badge_title():
+    """B4: Verify MSG has MILESTONE_BADGE_TITLE."""
+    from app.messages import MSG
+    assert hasattr(MSG, "MILESTONE_BADGE_TITLE")
+    assert MSG.MILESTONE_BADGE_TITLE == "New Badge Unlocked! 🏅"
+
+
+def test_b5_b8_send_notification_service_role_and_no_reference_type_column():
+    """B5 & B8: Verify send_notification uses get_db() and inserts payload without 'reference_type' column."""
+    from app.services.notification_service import send_notification
+
+    mock_db = MagicMock()
+    mock_table = MagicMock()
+    mock_db.table.return_value = mock_table
+    mock_table.insert.return_value = [{"id": "notif-1"}]
+
+    with patch("app.services.notification_service.get_db", return_value=mock_db) as mock_get_db, \
+         patch("app.services.notification_service._is_throttled", return_value=False), \
+         patch("app.services.notification_service._log_notification"):
+        records = send_notification(
+            user_id="u1",
+            notif_type="test_type",
+            title="Test Title",
+            body="Test Body",
+            reference_id="ref-123",
+            reference_type="order",
+            channels=["in_app"],
+        )
+        assert len(records) == 1
+        mock_get_db.assert_called()
+        insert_arg = mock_table.insert.call_args[0][0]
+        assert "reference_type" not in insert_arg
+        assert insert_arg["metadata"]["reference_type"] == "order"
+
+
+def test_b6_send_blast_notif_type():
+    """B6: Verify send_blast uses notif_type=f'blast_{blast_id}'."""
+    from app.services.notification_service import send_blast
+
+    mock_db = MagicMock()
+    mock_table = MagicMock()
+    mock_db.table.return_value = mock_table
+
+    blast_row = {
+        "id": "blast-999",
+        "segment": {},
+        "channels": ["in_app"],
+        "title": "Hello",
+        "body": "World",
+    }
+    mock_table.select.return_value = mock_table
+    mock_table.eq.return_value = mock_table
+    mock_table.single.return_value = mock_table
+    mock_table.execute.side_effect = [
+        blast_row,  # select blast
+        [{"id": "u1", "full_name": "Alice"}],  # select profiles
+        [],  # update blast status
+    ]
+
+    with patch("app.services.notification_service.get_user_client", return_value=mock_db), \
+         patch("app.services.notification_service.send_notification") as mock_send_notif:
+        send_blast("blast-999")
+        mock_send_notif.assert_called_once()
+        assert mock_send_notif.call_args[1]["notif_type"] == "blast_blast-999"
+
+
+def test_b10_check_post_delivery_nudges_in_beat_schedule():
+    """B10: Verify check-post-delivery-nudges is registered in celery_app beat schedule."""
+    from app.tasks.celery_app import celery_app
+    assert "check-post-delivery-nudges" in celery_app.conf.beat_schedule
+    entry = celery_app.conf.beat_schedule["check-post-delivery-nudges"]
+    assert entry["task"] == "app.tasks.scheduled.check_post_delivery_nudges"

@@ -306,7 +306,7 @@ def send_notification(
     if channels is None:
         channels = ["push", "in_app"]
 
-    db = get_user_client()
+    db = get_db()
 
     # ── Throttle check (non-critical types only, fails open) ──────────────────
     if _is_throttled(db, user_id, notif_type):
@@ -341,7 +341,6 @@ def send_notification(
             "body": body,
             "action_url": action_url,
             "reference_id": reference_id,
-            "reference_type": reference_type,
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
@@ -659,7 +658,7 @@ def send_blast(blast_id: str) -> dict:
             notif_body = body_tpl.replace("{name}", first)
         send_notification(
             user_id=uid,
-            notif_type="blast",
+            notif_type=f"blast_{blast_id}",
             title=notif_title,
             body=notif_body,
             channels=channels,

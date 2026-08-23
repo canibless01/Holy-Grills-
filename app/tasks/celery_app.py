@@ -30,6 +30,15 @@ celery_app = Celery(
     include=["app.tasks.scheduled"],
 )
 
+class ContextTask(celery_app.Task):
+    def __call__(self, *args, **kwargs):
+        from app import create_app
+        app = create_app()
+        with app.app_context():
+            return self.run(*args, **kwargs)
+
+celery_app.Task = ContextTask
+
 celery_app.conf.beat_schedule = {
     "reset-monthly-leaderboard": {
         "task": "app.tasks.scheduled.reset_monthly_leaderboard",
@@ -84,6 +93,10 @@ celery_app.conf.beat_schedule = {
     "send-scheduled-notifications": {
         "task": "app.tasks.scheduled.send_scheduled_notifications",
         "schedule": crontab(minute="*/15"),
+    },
+    "check-post-delivery-nudges": {
+        "task": "app.tasks.scheduled.check_post_delivery_nudges",
+        "schedule": crontab(minute="*/30"),
     },
 }
 

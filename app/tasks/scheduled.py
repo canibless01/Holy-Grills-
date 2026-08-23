@@ -172,11 +172,20 @@ def reset_monthly_leaderboard(self):
                         if new_count == 3:
                             try:
                                 _hof_profile = db.table("profiles").select("full_name,current_tier_id").eq("id", uid).single().execute() or {}
+                                _tier_name = None
+                                _tier_id = _hof_profile.get("current_tier_id")
+                                if _tier_id:
+                                    try:
+                                        _tier_row = db.table("hp_tiers").select("name").eq("id", _tier_id).single().execute()
+                                        _tier_name = (_tier_row or {}).get("name")
+                                    except Exception:
+                                        _tier_name = None
+
                                 db.table("hall_of_fame_inductees").insert({
                                     "user_id": uid,
                                     "inducted_at": now.isoformat(),
                                     "full_name": _hof_profile.get("full_name") or ("Platform Member"),
-                                    "tier_at_induction": _hof_profile.get("current_tier_id"),
+                                    "tier_at_induction": _tier_name or "Unknown",
                                     "top4_finish_count": new_count,
                                     "campus_id": campus_id,
                                 })
@@ -1496,6 +1505,39 @@ def send_scheduled_notifications(self):
             pass
 
 
+def _sync_abandoned_carts_from_cart_items(db):
+    """Upsert abandoned_carts rows from cart_items idle 60+ minutes.
+    Logged-in users only — see note on guest carts below."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+    stale_items = (
+        db.table("cart_items")
+        .select("user_id,campus_id,updated_at")
+        .lt("updated_at", cutoff)
+        .execute()
+    ) or []
+    seen_users = set()
+    for item in stale_items:
+        uid = item.get("user_id")
+        if not uid or uid in seen_users:
+            continue
+        seen_users.add(uid)
+        existing = (
+            db.table("abandoned_carts")
+            .select("id")
+            .eq("user_id", uid)
+            .eq("is_recovered", False)
+            .limit(1)
+            .execute()
+        )
+        if existing:
+            continue  # already tracked, don't duplicate
+        db.table("abandoned_carts").insert({
+            "user_id": uid,
+            "campus_id": item.get("campus_id"),
+            "last_active_at": item.get("updated_at"),
+        })
+
+
 @celery_app.task(name="app.tasks.scheduled.scan_abandoned_carts", bind=True)
 @with_cron_logging("scan-abandoned-carts")
 def scan_abandoned_carts(self):
@@ -1513,6 +1555,7 @@ def scan_abandoned_carts(self):
         return {"skipped": "Lock not acquired"}
 
     try:
+        _sync_abandoned_carts_from_cart_items(db)
         from datetime import datetime, timezone, timedelta
         from flask import current_app
         from app.services.notification_service import send_notification
