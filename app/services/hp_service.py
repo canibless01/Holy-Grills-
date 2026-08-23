@@ -119,12 +119,26 @@ def _get_hp_multiplier() -> float:
     try:
         db = get_user_client()
         m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").is_("campus_id", "null").single().execute()
-        multiplier = float((m_row or {}).get("value", "1") or "1")
+        m_val = (m_row or {}).get("value", "1") or "1"
+        if isinstance(m_val, str) and m_val.startswith('"') and m_val.endswith('"'):
+            import json
+            try:
+                m_val = json.loads(m_val)
+            except Exception:
+                pass
+        multiplier = float(m_val)
         if multiplier not in (0.5, 1.0, 2.0):
             return 1.0
         # Check expiry
         exp_row = db.table("system_settings").select("value").eq("key", "multiplier_expires_at").is_("campus_id", "null").single().execute()
-        expires_at = ((exp_row or {}).get("value") or "").strip()
+        exp_val = (exp_row or {}).get("value") or ""
+        if isinstance(exp_val, str) and exp_val.startswith('"') and exp_val.endswith('"'):
+            import json
+            try:
+                exp_val = json.loads(exp_val)
+            except Exception:
+                pass
+        expires_at = str(exp_val).strip()
         if expires_at:
             exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
             if datetime.now(timezone.utc) > exp_dt:
@@ -169,73 +183,6 @@ def calculate_delivery_hp(order_total, tier_slug, order_items) -> int:
     return total_hp
 
 
-def award_food_order_hp(
-    user_id: str,
-    order_id: str,
-    order_total: float,
-    tier_slug: str = "ember",
-    order_items: list | None = None,
-) -> dict:
-    """Thin wrapper kept for any other existing callers."""
-    total_hp = calculate_delivery_hp(order_total, tier_slug, order_items)
-
-    config = current_app.config
-    tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
-    if order_items:
-        base_hp = 0
-        multiplied_base_hp = 0
-        for item in order_items:
-            if item.get("is_addon") or not item.get("price_snapshot"):
-                continue
-            line_base_hp = int(
-                float(item.get("price_snapshot") or 0)
-                * int(item.get("quantity") or 1)
-                * config["HP_PER_NAIRA_FOOD"]
-            )
-            base_hp += line_base_hp
-            try:
-                item_multiplier = float(item.get("hp_multiplier_snapshot") or 1.0)
-            except (TypeError, ValueError):
-                item_multiplier = 1.0
-            if item_multiplier not in (0.5, 1.0, 2.0):
-                item_multiplier = 1.0
-            multiplied_line_hp = round(line_base_hp * item_multiplier)
-            multiplied_base_hp += multiplied_line_hp
-        tier_bonus_hp = total_hp - multiplied_base_hp
-        event_multiplier = 1.0
-    else:
-        base_hp = int(order_total * config["HP_PER_NAIRA_FOOD"])
-        tier_bonus_hp = round(base_hp * (tier_multiplier - 1.0))
-        event_multiplier = _get_hp_multiplier()
-
-    if total_hp > 0:
-        _record_hp_transaction(
-            user_id=user_id,
-            amount=total_hp,
-            txn_type="earn",
-            reference_id=order_id,
-            reference_type="order",
-            source_type="food",
-            notes=(
-                f"Food order HP: {base_hp} base"
-                + (" × per-item multiplier" if order_items else
-                   (f" ×{event_multiplier} multiplier" if event_multiplier > 1.0 else ""))
-                + f" + {tier_bonus_hp} tier bonus ({tier_slug})"
-            ),
-            status="active",
-        )
-        _update_earned_counters(user_id, total_hp)
-
-    unlock_result = unlock_pending_hp(user_id, order_id, order_total)
-    return {
-        "base_hp": base_hp,
-        "tier_bonus_hp": tier_bonus_hp,
-        "total_hp": total_hp,
-        "unlocked_pending_hp": unlock_result.get("unlocked", 0),
-        "multiplier_applied": event_multiplier,
-    }
-
-
 def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
     """
     Unlock pending HP proportional to food spend — FIFO.
@@ -249,7 +196,7 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
     if amount_to_unlock <= 0:
         return {"unlocked": 0}
 
-    db = get_user_client()
+    db = get_db()
     res = db.rpc("unlock_pending_hp_fifo_atomic", {
         "p_user_id": user_id,
         "p_order_id": order_id,
@@ -457,9 +404,9 @@ def award_welcome_bonus(user_id: str, order_id: str) -> dict:
     )
 
 
-def get_user_tier(user_id: str) -> dict:
+def get_user_tier(user_id: str, campus_id: str = None) -> dict:
     """Get user's current tier from profiles.current_tier_id → hp_tiers."""
-    db = get_user_client()
+    db = get_db()
     try:
         profile = (
             db.table("profiles")
@@ -493,13 +440,13 @@ def get_user_tier(user_id: str) -> dict:
         return {"tier": None, "is_in_grace_period": False}
 
 
-def recalculate_tier(user_id: str) -> dict:
+def recalculate_tier(user_id: str, campus_id: str = None) -> dict:
     """
     Compare hp_earned_120day against tier thresholds (min_points column in hp_tiers).
     Uses the rolling 120-day earned HP — not the current balance — to determine tier.
     Updates profiles.current_tier_id and logs to user_tiers (event log).
     """
-    db = get_user_client()
+    db = get_db()
     try:
         profile = (
             db.table("profiles")
@@ -655,7 +602,7 @@ def _record_hp_transaction(
         from flask import has_app_context, g
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
-    db = get_user_client()
+    db = get_db()
     # Preserves the specific business context concept (e.g. earn_order, earn_referral) in the source/context field
     resolved_source = source_type or reference_type or txn_type or "system"
     # Enforce that p_type passed to the DB atomic RPC is strictly a valid enum value ('earn' | 'spend' | 'expire')
@@ -689,7 +636,7 @@ def _record_hp_transaction(
 def _update_earned_counters(user_id: str, amount: int):
     if amount <= 0:
         return
-    db = get_user_client()
+    db = get_db()
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     try:
         db.rpc("increment_monthly_hp_tracker", {

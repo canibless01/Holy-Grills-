@@ -91,8 +91,8 @@ def _today_start_iso():
 
 def _check_kitchen_capacity(db):
     """Raise ValueError if the kitchen's daily order cap has been reached."""
-    from flask import g
-    campus_id = getattr(g, 'campus_id', None)
+    from flask import has_request_context, g
+    campus_id = getattr(g, 'campus_id', None) if has_request_context() else None
     rows = (
         db.table("kitchen_settings")
         .select("value")
@@ -327,8 +327,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             _now_wat_dt = _now_utc + _td(hours=1)
             _now_wat = _now_wat_dt.time()
             _today_iso = _now_wat_dt.date().isoformat()
-            from flask import g
-            campus_id = getattr(g, "campus_id", None)
+            from flask import has_request_context, g
+            campus_id = getattr(g, "campus_id", None) if has_request_context() else None
 
             # 1. Check DB override for today
             _override_rows = (
@@ -654,7 +654,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     if (delivery_type == "off_campus" and not delivery_location_id
             and delivery_location_lat is not None and delivery_location_lon is not None):
-        campus_id_for_check = getattr(g, "campus_id", None)
+        campus_id_for_check = getattr(g, "campus_id", None) if has_request_context() else None
         if not is_within_delivery_area(db, delivery_location_lat, delivery_location_lon, campus_id_for_check):
             raise ValueError("This location is outside our delivery area.")
         nearest_gate = find_nearest_gate(db, delivery_location_lat, delivery_location_lon, campus_id_for_check)
@@ -808,7 +808,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None) if has_request_context() else None
 
     rpc_payload = {
         "p_user_id": user_id,
@@ -1322,8 +1322,8 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
     if not promo:
         raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))
 
-    from flask import has_app_context, g
-    if has_app_context():
+    from flask import has_request_context, g
+    if has_request_context():
         campus_id = getattr(g, 'campus_id', None)
         if campus_id and promo.get("campus_id") and promo["campus_id"] != campus_id:
             raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))

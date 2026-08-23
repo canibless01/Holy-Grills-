@@ -50,20 +50,14 @@ def test_review_stats_uses_one_sql_aggregation_call_and_zero_defaults():
     assert "item-2" not in stats
 
 
-def test_food_hp_combines_item_and_tier_multipliers():
+def test_calculate_delivery_hp_combines_item_and_tier_multipliers():
     app = Flask(__name__)
     app.config.update(HP_PER_NAIRA_FOOD=0.1, HP_UNLOCK_RATE_PCT=0.30,
                       TIER_MULTIPLIERS={"blaze": 1.15})
 
-    with app.app_context(), \
-         patch.object(hp_service, "_record_hp_transaction"), \
-         patch.object(hp_service, "_update_earned_counters"), \
-         patch.object(hp_service, "unlock_pending_hp", return_value={"unlocked": 0}), \
-         patch.object(hp_service, "recalculate_tier"):
-        result = hp_service.award_food_order_hp(
-            "user-1",
-            "order-1",
-            1000,
+    with app.app_context():
+        total_hp = hp_service.calculate_delivery_hp(
+            order_total=1000,
             tier_slug="blaze",
             order_items=[{
                 "price_snapshot": 1000,
@@ -73,10 +67,7 @@ def test_food_hp_combines_item_and_tier_multipliers():
             }],
         )
 
-    assert result["base_hp"] == 100
-    assert result["tier_bonus_hp"] == 30
-    assert result["total_hp"] == 230
-    assert result["multiplier_applied"] == 1.0
+    assert total_hp == 230
 
 
 def test_migration_has_per_item_column_indexes_and_delivered_review_filter():

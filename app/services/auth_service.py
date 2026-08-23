@@ -142,15 +142,6 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     except SupabaseError:
         raise ValueError("Registration failed. Please try again.")
 
-    try:
-        db.table("wallets").insert({
-            "user_id": user_id,
-            "balance": 0,
-            "currency": "NGN",
-        })
-    except SupabaseError:
-        pass
-
     if referred_by_user_id:
         try:
             db.table("referrals").insert({
@@ -250,7 +241,7 @@ def update_profile(user_id: str, data: dict) -> dict:
     # faculty is derived from department mapping.
     allowed = {
         "full_name", "phone", "date_of_birth",
-        "push_enabled", "push_subscription", "email_notifications",
+        "push_enabled", "email_notifications",
         "department", "academic_level",
     }
     update_data = {k: v for k, v in data.items() if k in allowed}

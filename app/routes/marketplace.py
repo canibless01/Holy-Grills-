@@ -35,16 +35,16 @@ def list_listings():
     """
     db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
     category = request.args.get("category") or request.args.get("listing_type")
     if category:
         q = q.eq("listing_type", category)
     search = request.args.get("q")
     if search:
         q = q.ilike("title", f"%{search}%")
-    listings = q.order("is_featured", ascending=False).order("sort_order").execute()
+    listings = q.order("is_featured", ascending=False).order("sort_order").execute() or []
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        listings = [l for l in listings if not l.get("campus_id") or l.get("campus_id") == campus_id]
     return jsonify(listings), 200
 
 
@@ -71,7 +71,7 @@ def get_listing(listing_id):
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id and listing.get("campus_id") != campus_id:
+    if campus_id and listing.get("campus_id") and listing.get("campus_id") != campus_id:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     codes_available = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
     listing["codes_remaining"] = len(codes_available) if isinstance(codes_available, list) else 0

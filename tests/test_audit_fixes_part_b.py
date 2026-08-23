@@ -248,7 +248,7 @@ def test_part_b_fixes_1_to_13():
         return m
 
     mock_db.table.side_effect = mock_table_factory
-    with patch("app.services.hp_service.get_user_client", return_value=mock_db):
+    with patch("app.services.hp_service.get_db", return_value=mock_db):
         res = recalculate_tier("u1")
         assert res["changed"] is False
         assert res["event"] == "downgrade_deferred_to_grace_job"

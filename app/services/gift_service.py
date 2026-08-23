@@ -24,7 +24,14 @@ logger = get_logger(__name__)
 def _get_setting(db, key: str, default: str) -> str:
     try:
         row = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
-        return row.get("value", default) if row else default
+        val = row.get("value", default) if row else default
+        if isinstance(val, str) and val.startswith('"') and val.endswith('"'):
+            import json
+            try:
+                val = json.loads(val)
+            except Exception:
+                pass
+        return str(val) if val is not None else default
     except Exception:
         return default
 
@@ -57,7 +64,7 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = N
         end_date_str = _get_setting(db, "launch_window_end_date", "")
         if end_date_str:
             try:
-                end_date = date.fromisoformat(end_date_str)
+                end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00")).date() if "T" in end_date_str else date.fromisoformat(end_date_str[:10])
                 if date.today() > end_date:
                     return {"granted": False, "reason": "launch_window_closed"}
             except ValueError:

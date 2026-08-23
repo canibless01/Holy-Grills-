@@ -152,6 +152,8 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     if already:
         return {"message": "Already completed", "already_completed": True}
 
+    db = get_db()
+
     # Resolve reward amount for system-verified triggers from system_settings
     if trigger_type in SYSTEM_VERIFIED_TRIGGERS:
         from app.utils.settings import get_validated_setting, SettingError
@@ -187,9 +189,9 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
         if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
             return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
         logger.warning("check_and_award_milestone: user_milestones insert failed: %s", e)
-        # If DB error is not duplicate key, re-raise or check completion to prevent double-award
         if _is_already_completed(db, user_id, milestone_id, period_key):
             return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
+        return {"message": "Milestone check failed", "already_completed": False, "hp_awarded": 0}
 
     # Award HP (pending for social/self-declared; active for auto-verified challenges and system triggers)
     hp_destination = "pending" if trigger_type in SELF_DECLARED_TRIGGERS else "active"
@@ -209,12 +211,6 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
         except Exception as e:
             logger.warning("check_and_award_milestone: update actual_hp failed: %s", e)
 
-    # Fire notify_milestone_achieved shared hook
-    try:
-        notify_milestone_achieved(user_id, milestone_id)
-    except Exception as e:
-        logger.warning("check_and_award_milestone: notify failed: %s", e)
-
     return {
         "milestone": milestone,
         "hp_awarded": actual_hp,
@@ -233,7 +229,7 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
     Designed to be called fire-and-forget; all errors are swallowed.
     """
     try:
-        db = get_user_client()
+        db = get_db()
         now = datetime.now(timezone.utc)
 
         from flask import has_app_context, g
@@ -280,10 +276,6 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
                 except Exception:
                     pass
 
-            try:
-                notify_milestone_achieved(user_id, mid)
-            except Exception:
-                pass
 
     except Exception as e:
         logger.warning("check_milestone_trigger: error for user %s trigger %s: %s", user_id, trigger_type, e)
@@ -322,11 +314,6 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
             return {"message": "Already completed", "already_completed": True, "hp_awarded": 0}
 
     actual_hp = _award_milestone_hp(db, user_id, milestone_id, milestone.get("title", ""), hp, "active")
-
-    try:
-        notify_milestone_achieved(user_id, milestone_id)
-    except Exception:
-        pass
 
     return {"milestone": milestone, "hp_awarded": actual_hp, "awarded_by": admin_id}
 
