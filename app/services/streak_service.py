@@ -370,7 +370,6 @@ def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks:
             reference_id=f"{user_id}:login_streak:{cycle_week}",
             notes=f"Check-in streak week {cycle_week} completed — {actual_hp} HP pending",
         )
-        update_monthly_tracker(user_id, actual_hp)
         from app.services.notification_service import send_notification
         from app.messages import MSG
         send_notification(

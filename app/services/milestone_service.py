@@ -601,7 +601,6 @@ def _award_milestone_hp(
                 reference_id=milestone_id,
                 notes=f"Milestone: {title} — {actual_hp} HP pending",
             )
-            update_monthly_tracker(user_id, actual_hp)
         except Exception as e:
             logger.warning("_award_milestone_hp (pending): failed for %s: %s", user_id, e)
             return 0

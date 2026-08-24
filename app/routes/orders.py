@@ -1376,7 +1376,6 @@ def record_order_share(order_id):
             reference_id=order_id,
             notes=f"Order share on {platform} — {actual_hp} HP pending",
         )
-        update_monthly_tracker(g.user_id, actual_hp)
 
     return jsonify({
         "message": resolve_msg(MSG.SHARE_PROMPT_HP_TITLE, hp=actual_hp) if actual_hp else MSG.SHARE_PROMPT_ALREADY_TODAY,
