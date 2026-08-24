@@ -80,7 +80,6 @@ def _apply_prize(user_id: str, prize_name: str, db) -> None:
                     amount=amount,
                     source_type="exclusive_spin",
                     reference_type="exclusive_spin",
-                    reference_id=prize_name,
                     notes=f"Exclusive Spin prize: {prize_name}",
                 )
             except Exception as e:

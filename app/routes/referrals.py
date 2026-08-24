@@ -178,7 +178,6 @@ def referral_stats():
 
 
 @referrals_bp.route("/complete", methods=["POST"])
-@require_auth
 @require_role("admin")
 def complete_referral():
     """

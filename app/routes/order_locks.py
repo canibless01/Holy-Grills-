@@ -317,7 +317,6 @@ def cancel_lock(lock_id):
 # ── Admin endpoints ───────────────────────────────────────────────────────────
 
 @order_locks_bp.route("/admin/all", methods=["GET"])
-@require_auth
 @require_role("admin")
 def admin_list_locks():
     """

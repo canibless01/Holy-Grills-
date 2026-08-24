@@ -81,6 +81,15 @@ def get_leaderboard():
             "snapshot_at": snapshot.get("created_at"),
         }), 200
 
+    if period_type != "all_time":
+        return jsonify({
+            "period_key": period_key,
+            "period_type": period_type,
+            "rankings": [],
+            "snapshot_pending": True,
+            "message": "Rankings for this period are being calculated — check back shortly.",
+        }), 200
+
     q = db.table("profiles").select("id,full_name,hp_balance").eq("is_active", "true").eq("role", "student")
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
@@ -284,6 +293,16 @@ def my_rank():
     hp_balance = profile.get("hp_balance", 0) if profile else 0
 
     if user_rank is None:
+        if period_type != "all_time":
+            return jsonify({
+                "rank_entry": None,
+                "hp_balance": hp_balance,
+                "period_key": period_key,
+                "period_type": period_type,
+                "snapshot_pending": True,
+                "message": "Rankings for this period are being calculated — check back shortly.",
+            }), 200
+
         all_q = (
             db.table("profiles")
             .select("id,hp_balance")

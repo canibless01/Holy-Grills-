@@ -17,7 +17,6 @@ admin_gifts_bp = Blueprint("admin_gifts", __name__)
 
 
 @admin_gifts_bp.route("/first-order-gifts", methods=["GET"])
-@require_auth
 @require_role("admin")
 def list_first_order_gifts():
     """
@@ -49,7 +48,6 @@ def list_first_order_gifts():
 
 
 @admin_gifts_bp.route("/first-order-gifts/<gift_id>", methods=["PATCH"])
-@require_auth
 @require_role("admin")
 def update_first_order_gift(gift_id):
     """
@@ -118,7 +116,6 @@ def read_percampus_setting(db, key, campus_id):
 
 
 @admin_gifts_bp.route("/settings", methods=["GET"])
-@require_auth
 @require_role("admin")
 def list_settings():
     """
@@ -135,49 +132,23 @@ def list_settings():
 
 
 @admin_gifts_bp.route("/settings/<key>", methods=["PATCH"])
-@require_auth
 @require_role("admin")
 def update_setting(key):
     auth_err = require_super_admin_for_settings_write(g, jsonify)
     if auth_err:
         return auth_err
-    """
-    Admin: update a system setting value.
-    ---
-    tags: [Admin - Settings]
-    parameters:
-      - in: path
-        name: key
-        type: string
-        required: true
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [value]
-          properties:
-            value: {type: string}
-            description: {type: string}
-    responses:
-      200:
-        description: Setting updated
-      400:
-        description: Value required
-      404:
-        description: Setting not found
-    """
     db = get_user_client()
-    existing = (
-        db.table("system_settings")
-        .select("key")
-        .eq("key", key)
-        .single()
-        .execute()
-    )
+    data = request.get_json(force=True) or {}
+    campus_id = data.get("campus_id")
+
+    if campus_id:
+        existing = read_percampus_setting(db, key, campus_id)
+    else:
+        existing = read_global_setting(db, key)
+
     if not existing:
         return jsonify({"error": MSG.SETTING_NOT_FOUND}), 404
 
-    data = request.get_json(force=True) or {}
     value = data.get("value")
     if value is None:
         return jsonify({"error": MSG.SETTING_VALUE_REQUIRED}), 400
@@ -196,7 +167,9 @@ def update_setting(key):
     if "description" in data:
         update_payload["description"] = data["description"]
 
-    db.table("system_settings").eq("key", key).update(update_payload)
+    q = db.table("system_settings").eq("key", key)
+    q = q.is_("campus_id", "null") if not campus_id else q.eq("campus_id", campus_id)
+    q.update(update_payload)
 
     # When hp_multiplier is set above 1, broadcast to all active users immediately
     if key == "hp_multiplier":
@@ -232,42 +205,20 @@ def _broadcast_multiplier_event(db, multiplier: float):
 
 
 @admin_gifts_bp.route("/settings", methods=["POST"])
-@require_auth
 @require_role("admin")
 def create_setting():
     auth_err = require_super_admin_for_settings_write(g, jsonify)
     if auth_err:
         return auth_err
-    """
-    Admin: create a new system setting.
-    ---
-    tags: [Admin - Settings]
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [key, value]
-          properties:
-            key: {type: string}
-            value: {type: string}
-            description: {type: string}
-    responses:
-      201:
-        description: Setting created
-      400:
-        description: Key and value required
-      409:
-        description: Key already exists
-    """
     db = get_user_client()
     data = request.get_json(force=True) or {}
     key = (data.get("key") or "").strip()
     value = data.get("value")
+    campus_id = data.get("campus_id")
     if not key or value is None:
         return jsonify({"error": MSG.SETTING_KEY_VALUE_REQUIRED}), 400
 
-    existing = db.table("system_settings").select("key").eq("key", key).single().execute()
+    existing = read_percampus_setting(db, key, campus_id) if campus_id else read_global_setting(db, key)
     if existing:
         return jsonify({"error": MSG.SETTING_KEY_EXISTS}), 409
 
@@ -276,6 +227,7 @@ def create_setting():
         "key": key,
         "value": str(value),
         "description": data.get("description", ""),
+        "campus_id": campus_id,
         "updated_at": now,
         "updated_by": g.user_id,
     })
