@@ -95,19 +95,28 @@ def purchase(listing_id):
     if listing.get("is_out_of_stock"):
         return jsonify({"error": MSG.LISTING_OUT_OF_STOCK}), 400
 
+    requested_use_hp = bool(data.get("use_hp", False))
     payment_method = data.get("payment_method", "wallet")
+
     hp_price = int(listing.get("hp_price") or 0)
+    cash_price = listing.get("cash_price")
+    full_price = float(listing.get("total_value") or listing.get("price") or 0)
+
     balance = get_hp_balance(g.user_id)
     user_hp = balance.get("active", 0)
-    use_hp = hp_price > 0 and user_hp >= hp_price and payment_method != "card"
+    use_hp = requested_use_hp and hp_price > 0 and user_hp >= hp_price
+
+    if use_hp:
+        cash_due = float(cash_price) if cash_price is not None else 0.0
+    else:
+        cash_due = full_price
 
     wallet_amount = 0.0
-    if not use_hp:
-        total_value = float(listing.get("total_value") or listing.get("price") or 0)
+    if cash_due > 0:
         if payment_method == "wallet":
-            wallet_amount = total_value
+            wallet_amount = cash_due
         elif payment_method == "split":
-            wallet_amount = min(float(data.get("wallet_amount", 0)), total_value)
+            wallet_amount = min(float(data.get("wallet_amount", 0)), cash_due)
 
     try:
         purchase_row = db.rpc("hg_purchase_marketplace_item", {
@@ -292,7 +301,7 @@ def admin_update_purchase(purchase_id):
 
     purchase = (
         db.table("marketplace_purchases")
-        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,listing_id,quantity,marketplace_listings(title,hp_price)")
+        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,payment_reference,listing_id,quantity,marketplace_listings(title,hp_price)")
         .eq("id", purchase_id)
         .single()
         .execute()
@@ -312,6 +321,8 @@ def admin_update_purchase(purchase_id):
 
         user_id = purchase.get("user_id")
         wallet_amt = float(purchase.get("wallet_amount") or 0)
+        card_amt = float(purchase.get("card_amount") or 0)
+        payment_ref = purchase.get("payment_reference")
         pay_hp = purchase.get("pay_with_hp")
         listing_info = purchase.get("marketplace_listings") or {}
         hp_price = int(listing_info.get("hp_price") or 0)
@@ -360,6 +371,20 @@ def admin_update_purchase(purchase_id):
                         )
                         return jsonify({"error": f"HP refund failed and wallet reversal also failed — manual correction needed. {str(e)}"}), 500
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
+
+        # 3. Refund card portion via Paystack if card_amount > 0
+        if card_amt > 0:
+            if not payment_ref:
+                return jsonify({"error": "Cannot refund card portion: purchase has no payment_reference"}), 400
+            try:
+                from app.services.payment_service import refund_paystack_charge
+                refund_paystack_charge(
+                    transaction_reference=payment_ref,
+                    amount_naira=card_amt,
+                    reason=f"Marketplace purchase #{purchase_id[:8].upper()} {new_status}",
+                )
+            except Exception as e:
+                return jsonify({"error": f"Card refund failed: {str(e)}"}), 400
 
         from app.utils.logger import get_logger
         restore_inventory_on_refund(db, purchase, get_logger(__name__))

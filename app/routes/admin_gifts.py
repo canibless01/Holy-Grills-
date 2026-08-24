@@ -160,7 +160,7 @@ def update_setting(key):
             return jsonify({"error": "hp_multiplier must be 0.5, 1.0, or 2.0"}), 400
 
     update_payload = {
-        "value": str(value),
+        "value": value,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": g.user_id,
     }
@@ -225,7 +225,7 @@ def create_setting():
     now = datetime.now(timezone.utc).isoformat()
     result = db.table("system_settings").insert({
         "key": key,
-        "value": str(value),
+        "value": value,
         "description": data.get("description", ""),
         "campus_id": campus_id,
         "updated_at": now,

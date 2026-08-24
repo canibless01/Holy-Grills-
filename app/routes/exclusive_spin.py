@@ -91,6 +91,17 @@ def _apply_prize(user_id: str, prize_name: str, db) -> None:
             db.table("profiles").eq("id", user_id).update({"next_order_hp_multiplier": 2})
         except Exception as e:
             logger.warning("_apply_prize: multiplier update failed for %s: %s", user_id, e)
+    else:
+        # Physical prize (Free Sausage, Free Gizzard, Free Side, Free Coleslaw, etc.)
+        # — nothing to credit automatically, but staff need a record to fulfil it.
+        try:
+            db.table("exclusive_spin_fulfillments").insert({
+                "user_id": user_id,
+                "prize_name": prize_name,
+                "status": "pending",
+            })
+        except Exception as e:
+            logger.warning("Failed to log physical prize fulfilment for %s: %s", user_id, e)
 
 
 @exclusive_spin_bp.route("", methods=["GET"])

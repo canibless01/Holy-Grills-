@@ -235,7 +235,9 @@ def unlock_history():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock").eq("campus_id", g.campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
+    if g.campus_id:
+        q = q.eq("campus_id", g.campus_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows or []), 200
 
