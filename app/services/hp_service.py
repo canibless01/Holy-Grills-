@@ -540,7 +540,7 @@ def process_flash_redeem(reward_id: str, user_id: str) -> dict:
         if error == "limit_reached":
             raise ValueError(MSG.HP_FLASH_LIMIT_REACHED.format(qty=res.get("qty")))
         if error == "Insufficient active HP balance":
-            raise ValueError(resolve_msg(MSG.HP_FLASH_INSUFFICIENT, need=res.get("hp_cost", 0), have=0))
+            raise ValueError(resolve_msg(MSG.HP_FLASH_INSUFFICIENT, need=res.get("hp_cost", 0), have=res.get("have", 0)))
         raise ValueError(f"Flash redemption failed: {error}")
 
     return {
