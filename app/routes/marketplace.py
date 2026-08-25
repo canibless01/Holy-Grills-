@@ -35,16 +35,16 @@ def list_listings():
     """
     db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
     category = request.args.get("category") or request.args.get("listing_type")
     if category:
         q = q.eq("listing_type", category)
     search = request.args.get("q")
     if search:
         q = q.ilike("title", f"%{search}%")
-    listings = q.order("is_featured", ascending=False).order("sort_order").execute()
+    listings = q.order("is_featured", ascending=False).order("sort_order").execute() or []
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        listings = [l for l in listings if not l.get("campus_id") or l.get("campus_id") == campus_id]
     return jsonify(listings), 200
 
 
@@ -71,7 +71,7 @@ def get_listing(listing_id):
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id and listing.get("campus_id") != campus_id:
+    if campus_id and listing.get("campus_id") and listing.get("campus_id") != campus_id:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     codes_available = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
     listing["codes_remaining"] = len(codes_available) if isinstance(codes_available, list) else 0
@@ -95,19 +95,28 @@ def purchase(listing_id):
     if listing.get("is_out_of_stock"):
         return jsonify({"error": MSG.LISTING_OUT_OF_STOCK}), 400
 
+    requested_use_hp = bool(data.get("use_hp", False))
     payment_method = data.get("payment_method", "wallet")
+
     hp_price = int(listing.get("hp_price") or 0)
+    cash_price = listing.get("cash_price")
+    full_price = float(listing.get("total_value") or listing.get("price") or 0)
+
     balance = get_hp_balance(g.user_id)
     user_hp = balance.get("active", 0)
-    use_hp = hp_price > 0 and user_hp >= hp_price and payment_method != "card"
+    use_hp = requested_use_hp and hp_price > 0 and user_hp >= hp_price
+
+    if use_hp:
+        cash_due = float(cash_price) if cash_price is not None else 0.0
+    else:
+        cash_due = full_price
 
     wallet_amount = 0.0
-    if not use_hp:
-        total_value = float(listing.get("total_value") or listing.get("price") or 0)
+    if cash_due > 0:
         if payment_method == "wallet":
-            wallet_amount = total_value
+            wallet_amount = cash_due
         elif payment_method == "split":
-            wallet_amount = min(float(data.get("wallet_amount", 0)), total_value)
+            wallet_amount = min(float(data.get("wallet_amount", 0)), cash_due)
 
     try:
         purchase_row = db.rpc("hg_purchase_marketplace_item", {
@@ -135,14 +144,19 @@ def purchase(listing_id):
 
     marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
     if marketplace_hp > 0:
-        award_active_hp(
-            user_id=g.user_id,
-            amount=marketplace_hp,
-            reference_id=purchase_id,
-            reference_type="marketplace_purchase",
-            source_type="marketplace_purchase_reward",
-            notes="HP earned on marketplace purchase",
-        )
+        try:
+            award_active_hp(
+                user_id=g.user_id,
+                amount=marketplace_hp,
+                reference_id=purchase_id,
+                reference_type="marketplace_purchase",
+                source_type="marketplace_purchase_reward",
+                notes="HP earned on marketplace purchase",
+            )
+        except Exception as e:
+            from app.utils.logger import get_logger
+            get_logger(__name__).error("purchase: bonus HP award failed for %s, purchase %s: %s", g.user_id, purchase_id, e)
+            marketplace_hp = 0
 
     _purchase_body = MSG.MARKETPLACE_PURCHASE_BODY.format(title=listing["title"])
     if code_value:
@@ -287,7 +301,7 @@ def admin_update_purchase(purchase_id):
 
     purchase = (
         db.table("marketplace_purchases")
-        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,listing_id,quantity,marketplace_listings(title,hp_price)")
+        .select("id,user_id,status,pay_with_hp,payment_method,wallet_amount,card_amount,payment_reference,listing_id,quantity,marketplace_listings(title,hp_price)")
         .eq("id", purchase_id)
         .single()
         .execute()
@@ -307,6 +321,8 @@ def admin_update_purchase(purchase_id):
 
         user_id = purchase.get("user_id")
         wallet_amt = float(purchase.get("wallet_amount") or 0)
+        card_amt = float(purchase.get("card_amount") or 0)
+        payment_ref = purchase.get("payment_reference")
         pay_hp = purchase.get("pay_with_hp")
         listing_info = purchase.get("marketplace_listings") or {}
         hp_price = int(listing_info.get("hp_price") or 0)
@@ -339,7 +355,36 @@ def admin_update_purchase(purchase_id):
                     notes=f"HP refund for marketplace purchase #{purchase_id[:8].upper()}",
                 )
             except Exception as e:
+                if wallet_amt > 0 and user_id:
+                    try:
+                        from app.services.wallet_service import debit_wallet
+                        debit_wallet(
+                            user_id=user_id, amount=wallet_amt,
+                            reference_id=purchase_id, reference_type="marketplace_refund_reversal",
+                            notes=f"Reversing wallet refund — HP refund leg failed for purchase #{purchase_id[:8].upper()}",
+                        )
+                    except Exception as reversal_err:
+                        from app.utils.logger import get_logger
+                        get_logger(__name__).error(
+                            "admin_update_purchase: wallet reversal ALSO failed, purchase=%s user=%s wallet_amt=%s: %s",
+                            purchase_id, user_id, wallet_amt, reversal_err,
+                        )
+                        return jsonify({"error": f"HP refund failed and wallet reversal also failed — manual correction needed. {str(e)}"}), 500
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
+
+        # 3. Refund card portion via Paystack if card_amount > 0
+        if card_amt > 0:
+            if not payment_ref:
+                return jsonify({"error": "Cannot refund card portion: purchase has no payment_reference"}), 400
+            try:
+                from app.services.payment_service import refund_paystack_charge
+                refund_paystack_charge(
+                    transaction_reference=payment_ref,
+                    amount_naira=card_amt,
+                    reason=f"Marketplace purchase #{purchase_id[:8].upper()} {new_status}",
+                )
+            except Exception as e:
+                return jsonify({"error": f"Card refund failed: {str(e)}"}), 400
 
         from app.utils.logger import get_logger
         restore_inventory_on_refund(db, purchase, get_logger(__name__))
@@ -839,14 +884,34 @@ def upload_codes(listing_id):
     if not codes:
         return jsonify({"error": MSG.MARKETPLACE_CODES_REQUIRED}), 400
 
-    records = [{"listing_id": listing_id, "code": c, "status": "available"} for c in codes]
-    db.table("marketplace_access_codes").insert(records).execute()
+    existing_rows = (
+        db.table("marketplace_access_codes")
+        .select("code")
+        .eq("listing_id", listing_id)
+        .execute()
+    ) or []
+    existing_codes = {r["code"] for r in existing_rows}
+
+    new_codes = [c for c in codes if c not in existing_codes]
+    skipped_codes = [c for c in codes if c in existing_codes]
+
+    if not new_codes:
+        return jsonify({
+            "error": "All submitted codes already exist for this listing",
+            "skipped": skipped_codes,
+        }), 400
+
+    records = [{"listing_id": listing_id, "code": c, "status": "available"} for c in new_codes]
+    try:
+        db.table("marketplace_access_codes").insert(records).execute()
+    except Exception as e:
+        return jsonify({"error": f"Failed to upload codes: {str(e)}"}), 400
 
     db.table("marketplace_listings").eq("id", listing_id).update({
         "is_out_of_stock": False,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
-    return jsonify({"uploaded": len(records)}), 201
+    return jsonify({"uploaded": len(records), "skipped_duplicates": skipped_codes}), 201
 
 
 def guard_refund_eligibility(db, purchase, jsonify):

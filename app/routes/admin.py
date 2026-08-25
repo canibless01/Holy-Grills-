@@ -704,8 +704,27 @@ def get_batch(batch_id):
         return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
     orders = db.table("orders").select(
         "id,status,delivery_address_snapshot,total_amount,created_at,"
+        "delivery_location_lat,delivery_location_lon,"
         "order_items(name_snapshot,quantity)"
     ).eq("batch_id", batch_id).execute() or []
+
+    batch_row = db.table("delivery_batches").select("gate_id").eq("id", batch_id).single().execute()
+    gate = db.table("gates").select("lat,lon").eq("id", batch_row.get("gate_id")).single().execute() if batch_row and batch_row.get("gate_id") else None
+    if gate and gate.get("lat") is not None and gate.get("lon") is not None and orders:
+        from app.routes.delivery import haversine_km
+        with_coords = [o for o in orders if o.get("delivery_location_lat") is not None and o.get("delivery_location_lon") is not None]
+        without_coords = [o for o in orders if o not in with_coords]
+        sequenced = []
+        cur_lat, cur_lon = gate["lat"], gate["lon"]
+        remaining = with_coords[:]
+        while remaining:
+            nearest = min(remaining, key=lambda o: haversine_km(cur_lat, cur_lon, o["delivery_location_lat"], o["delivery_location_lon"]))
+            sequenced.append(nearest)
+            cur_lat, cur_lon = nearest["delivery_location_lat"], nearest["delivery_location_lon"]
+            remaining.remove(nearest)
+        orders = sequenced + without_coords
+    else:
+        orders = sorted(orders, key=lambda o: o.get("created_at") or "")
     batch["orders"] = orders
     return jsonify(batch), 200
 

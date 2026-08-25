@@ -36,7 +36,7 @@ def my_batch():
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
-    q = db.table("delivery_batches").select("id,window_id,zone,status,created_at").eq("rider_id", g.user_id).in_("status", ["assigned", "in_progress"])
+    q = db.table("delivery_batches").select("id,window_id,zone,gate_id,status,created_at").eq("rider_id", g.user_id).in_("status", ["assigned", "in_progress"])
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -64,10 +64,30 @@ def my_batch():
 
     orders = (
         db.table("orders")
-        .select("id,status,notes,delivery_address_snapshot,user_id")
+        .select("id,status,notes,delivery_address_snapshot,user_id,delivery_location_lat,delivery_location_lon")
         .eq("batch_id", batch_id)
         .execute()
-    )
+    ) or []
+
+    # Order the stops so the rider isn't zigzagging: nearest-neighbour, starting
+    # from the batch's gate. Stops with no known coordinates (hostel deliveries —
+    # hostels have no lat/lon in this database) are appended at the end, in
+    # whatever order they were added, since there's no position to sort them by.
+    if orders:
+        gate = db.table("gates").select("lat,lon").eq("id", batch.get("gate_id")).single().execute() if batch.get("gate_id") else None
+        if gate and gate.get("lat") is not None and gate.get("lon") is not None:
+            from app.routes.delivery import haversine_km
+            with_coords = [o for o in orders if o.get("delivery_location_lat") is not None and o.get("delivery_location_lon") is not None]
+            without_coords = [o for o in orders if o not in with_coords]
+            sequenced = []
+            cur_lat, cur_lon = gate["lat"], gate["lon"]
+            remaining = with_coords[:]
+            while remaining:
+                nearest = min(remaining, key=lambda o: haversine_km(cur_lat, cur_lon, o["delivery_location_lat"], o["delivery_location_lon"]))
+                sequenced.append(nearest)
+                cur_lat, cur_lon = nearest["delivery_location_lat"], nearest["delivery_location_lon"]
+                remaining.remove(nearest)
+            orders = sequenced + without_coords
 
     # Fetch gate coordinates for distance ranking (look up via batch zone name or gate table)
     gate_lat = None

@@ -217,11 +217,17 @@ class TableQuery:
         return s
 
     def eq(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=eq.{self._escape_val(value)}")
+        if value is None:
+            self._filters.append(f"{column}=is.null")
+        else:
+            self._filters.append(f"{column}=eq.{self._escape_val(value)}")
         return self
 
     def neq(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=neq.{self._escape_val(value)}")
+        if value is None:
+            self._filters.append(f"{column}=is.not.null")
+        else:
+            self._filters.append(f"{column}=neq.{self._escape_val(value)}")
         return self
 
     def gt(self, column: str, value) -> "TableQuery":

@@ -123,6 +123,7 @@ def update_monthly_tracker(user_id: str, hp_awarded: int) -> None:
 # ── LOGIN / CHECK-IN STREAK ────────────────────────────────────────────────────
 
 def process_login_streak(user_id: str, campus_id: str = None) -> dict:
+    db = get_db()
     """
     Call on every successful authenticated login.
     Marks today as checked-in in the week_state JSONB.
@@ -136,7 +137,6 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
        "week_start": str,
        "week_progress": {...}}
     """
-    db = get_user_client()
     now = datetime.now(timezone.utc)
     today = now.date()
 
@@ -184,14 +184,9 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
         }
         try:
             db.table("login_streaks").insert(record)
-        except Exception:
-            # Columns may not exist yet — fall back to minimal insert
-            db.table("login_streaks").insert({
-                "user_id": user_id,
-                "streak_count": 1,
-                "last_login_date": today.isoformat(),
-                "last_updated": now.isoformat(),
-            })
+        except Exception as ie:
+            logger.warning("process_login_streak: insert failed for %s: %s", user_id, ie)
+            return {"action": "failed", "hp_awarded": 0, "streak_week": 1, "error": str(ie)}
         _touch_last_activity(db, user_id, now)
         return {
             "action": "started",
@@ -229,12 +224,16 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
                 "week_progress": _build_week_progress(week_state, current_week_start, today),
             }
         week_state[day_offset] = "checked"
-        db.table("login_streaks").eq("id", streak["id"]).update({
-            "week_state": week_state,
-            "last_login_date": today.isoformat(),
-            "last_updated": now.isoformat(),
-            "streak_count": int(streak.get("streak_count") or 1) + 1,
-        })
+        try:
+            db.table("login_streaks").eq("id", streak["id"]).update({
+                "week_state": week_state,
+                "last_login_date": today.isoformat(),
+                "last_updated": now.isoformat(),
+                "streak_count": int(streak.get("streak_count") or 1) + 1,
+            })
+        except Exception as ue:
+            logger.warning("process_login_streak: update same_week failed for %s: %s", user_id, ue)
+            return {"action": "failed", "hp_awarded": 0, "streak_week": cycle_week, "error": str(ue)}
         _touch_last_activity(db, user_id, now)
         return {
             "action": "checked_in",
@@ -270,15 +269,19 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
 
     # Start new week
     new_week_state = {str((today - current_week_start).days): "checked"}
-    db.table("login_streaks").eq("id", streak["id"]).update({
-        "current_week_start": current_week_start.isoformat(),
-        "week_state": new_week_state,
-        "cycle_week_number": cycle_week,
-        "consecutive_weeks": consecutive_weeks,
-        "last_login_date": today.isoformat(),
-        "last_updated": now.isoformat(),
-        "streak_count": 1 if not week_completed else int(streak.get("streak_count") or 1) + 1,
-    })
+    try:
+        db.table("login_streaks").eq("id", streak["id"]).update({
+            "current_week_start": current_week_start.isoformat(),
+            "week_state": new_week_state,
+            "cycle_week_number": cycle_week,
+            "consecutive_weeks": consecutive_weeks,
+            "last_login_date": today.isoformat(),
+            "last_updated": now.isoformat(),
+            "streak_count": 1 if not week_completed else int(streak.get("streak_count") or 1) + 1,
+        })
+    except Exception as ue:
+        logger.warning("process_login_streak: update new_week failed for %s: %s", user_id, ue)
+        return {"action": "failed", "hp_awarded": 0, "streak_week": cycle_week, "error": str(ue)}
     _touch_last_activity(db, user_id, now)
     return {
         "action": "new_week_started",
@@ -364,9 +367,9 @@ def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks:
             user_id=user_id,
             amount=actual_hp,
             source_type="streak",
+            reference_id=f"{user_id}:login_streak:{cycle_week}",
             notes=f"Check-in streak week {cycle_week} completed — {actual_hp} HP pending",
         )
-        update_monthly_tracker(user_id, actual_hp)
         from app.services.notification_service import send_notification
         from app.messages import MSG
         send_notification(
@@ -523,7 +526,7 @@ def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> 
 
     Returns {"streak_weeks": int, "hp_awarded": int, "new_week": bool}
     """
-    db = get_user_client()
+    db = get_db()
     today = date.today()
     current_week = _week_key(today)
     now = datetime.now(timezone.utc).isoformat()
@@ -626,6 +629,8 @@ def _award_order_streak_hp(db, user_id: str, streak_weeks: int) -> int:
             user_id=user_id,
             amount=hp,
             source_type="streak",
+            reference_type="streak",
+            reference_id=f"{user_id}:order_streak:{streak_weeks}",
             notes=f"Order streak milestone — {streak_weeks} consecutive week(s) → {hp} HP active",
         )
         from app.services.notification_service import send_notification

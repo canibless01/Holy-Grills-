@@ -29,7 +29,7 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         from flask import has_app_context, g
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
-    db = get_user_client()
+    db = get_db()
     config = current_app.config
 
     res = db.rpc("credit_wallet_atomic", {
@@ -80,7 +80,7 @@ def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type:
         from flask import has_app_context, g
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
-    db = get_user_client()
+    db = get_db()
     res = db.rpc("debit_wallet_atomic", {
         "p_user_id": user_id,
         "p_amount": amount,

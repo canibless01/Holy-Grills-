@@ -667,6 +667,7 @@ class MSG:
     MILESTONE_ACHIEVED_TITLE     = "Milestone Reached! 🎉"
     MILESTONE_ACHIEVED_BODY      = "Congratulations, {name}! You've hit a new milestone."
     MILESTONE_CHALLENGE_TITLE    = "Challenge Unlocked! 🏆"
+    MILESTONE_BADGE_TITLE        = "Milestone Unlocked! 🎖️"
     MILESTONE_HP_SUFFIX          = " — {hp} {currency} earned!"
 
     # ── Validation — generic field-level ─────────────────────────────────────

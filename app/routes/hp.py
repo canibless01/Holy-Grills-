@@ -60,7 +60,9 @@ def transactions():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("campus_id", g.campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
+    if g.campus_id:
+        q = q.eq("campus_id", g.campus_id)
     txn_type = request.args.get("type")
     if txn_type:
         q = q.eq("type", txn_type)
@@ -106,8 +108,14 @@ def admin_grant():
         description: HP granted
     """
     data = request.get_json(force=True) or {}
-    if not data.get("user_id") or not data.get("amount"):
+    if not data.get("user_id") or data.get("amount") is None:
         return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+    try:
+        _amount_check = int(data["amount"])
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+    if _amount_check <= 0:
+        return jsonify({"error": "amount must be a positive number — use /admin/expire to reduce HP"}), 400
 
     db = get_user_client()
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
@@ -227,7 +235,9 @@ def unlock_history():
     db = get_user_client()
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
-    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock").eq("campus_id", g.campus_id)
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
+    if g.campus_id:
+        q = q.eq("campus_id", g.campus_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows or []), 200
 

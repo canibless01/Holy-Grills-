@@ -91,20 +91,23 @@ def _today_start_iso():
 
 def _check_kitchen_capacity(db):
     """Raise ValueError if the kitchen's daily order cap has been reached."""
-    row = (
+    from flask import has_request_context, g
+    campus_id = getattr(g, 'campus_id', None) if has_request_context() else None
+    rows = (
         db.table("kitchen_settings")
         .select("value")
         .eq("key", "daily_order_capacity")
-        .single()
+        .eq("campus_id", campus_id)
         .execute()
-    )
-    raw = row.get("value") if row else ""
+    ) or []
+    raw = rows[0].get("value") if rows else ""
     if not raw or not str(raw).isdigit():
-        return  # no cap configured
+        return  # no cap configured for this campus
     capacity = int(raw)
     orders_today = (
         db.table("orders")
         .select("id")
+        .eq("campus_id", campus_id)
         .gte("created_at", _today_start_iso())
         .execute()
     ) or []
@@ -141,12 +144,13 @@ def _resolve_item_variations(db, menu_item: dict, selected_variations: list) -> 
     try:
         groups = (
             db.table("menu_item_variation_groups")
-            .select("id,name,is_required,min_select,max_select,min_selections,max_selections")
+            .select("id,name,is_required,min_selections,max_selections")
             .eq("menu_item_id", menu_item_id)
             .execute()
         ) or []
     except Exception:
         groups = []
+        logger.error("menu_item_variation_groups query failed for item %s", menu_item_id)
 
     group_ids = {g["id"] for g in groups}
     selected_variations = selected_variations or []
@@ -320,14 +324,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     return _time(default_h, default_m)
 
             _now_utc = datetime.now(_tz.utc)
-            _now_wat = (_now_utc + _td(hours=1)).time()
-            _today_iso = _date.today().isoformat()
+            _now_wat_dt = _now_utc + _td(hours=1)
+            _now_wat = _now_wat_dt.time()
+            _today_iso = _now_wat_dt.date().isoformat()
+            from flask import has_request_context, g
+            campus_id = getattr(g, "campus_id", None) if has_request_context() else None
 
             # 1. Check DB override for today
             _override_rows = (
                 db.table("operating_hour_overrides")
-                .select("is_closed,opens_at,closes_at,open_time,close_time")
+                .select("is_closed,opens_at,closes_at")
                 .eq("date", _today_iso)
+                .eq("campus_id", campus_id)
                 .execute()
             ) or []
             _override = _override_rows[0] if _override_rows else None
@@ -335,19 +343,20 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             if _override is not None:
                 if _override.get("is_closed"):
                     raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-                _ov_open = _override.get("opens_at") or _override.get("open_time")
-                _ov_close = _override.get("closes_at") or _override.get("close_time")
+                _ov_open = _override.get("opens_at")
+                _ov_close = _override.get("closes_at")
                 if _ov_open and _ov_close:
                     if not (_parse_hm(_ov_open, 0, 0) <= _now_wat <= _parse_hm(_ov_close, 23, 59)):
                         raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
                 # Override says open with no specific times → open all day, allow
             else:
-                # 2. Check operating_hours table for today's weekday
-                _weekday = _now_utc.weekday()
+                # 2. Check operating_hours table for today's weekday (WAT weekday, not UTC)
+                _weekday = _now_wat_dt.weekday()
                 _oh_rows = (
                     db.table("operating_hours")
-                    .select("is_closed,opens_at,closes_at,open_time,close_time")
+                    .select("is_closed,opens_at,closes_at")
                     .eq("weekday", _weekday)
+                    .eq("campus_id", campus_id)
                     .execute()
                 ) or []
                 _oh = _oh_rows[0] if _oh_rows else None
@@ -355,8 +364,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 if _oh is not None:
                     if _oh.get("is_closed"):
                         raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-                    _oh_open = _oh.get("opens_at") or _oh.get("open_time")
-                    _oh_close = _oh.get("closes_at") or _oh.get("close_time")
+                    _oh_open = _oh.get("opens_at")
+                    _oh_close = _oh.get("closes_at")
                     if _oh_open and _oh_close:
                         if not (_parse_hm(_oh_open, 0, 0) <= _now_wat <= _parse_hm(_oh_close, 23, 59)):
                             raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
@@ -639,9 +648,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         except Exception:
             pass
 
-    from app.routes.delivery import validate_coordinates
+    from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
         delivery_location_lat, delivery_location_lon = validate_coordinates(delivery_location_lat, delivery_location_lon)
+
+    if (delivery_type == "off_campus" and not delivery_location_id
+            and delivery_location_lat is not None and delivery_location_lon is not None):
+        campus_id_for_check = getattr(g, "campus_id", None) if has_request_context() else None
+        if not is_within_delivery_area(db, delivery_location_lat, delivery_location_lon, campus_id_for_check):
+            raise ValueError("This location is outside our delivery area.")
+        nearest_gate = find_nearest_gate(db, delivery_location_lat, delivery_location_lon, campus_id_for_check)
+        if nearest_gate:
+            delivery_location_id = nearest_gate["id"]
 
     if delivery_type == "on_campus" and delivery_location_id:
         try:
@@ -790,7 +808,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = getattr(g, 'campus_id', None) if has_request_context() else None
 
     rpc_payload = {
         "p_user_id": user_id,
@@ -1304,8 +1322,8 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
     if not promo:
         raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))
 
-    from flask import has_app_context, g
-    if has_app_context():
+    from flask import has_request_context, g
+    if has_request_context():
         campus_id = getattr(g, 'campus_id', None)
         if campus_id and promo.get("campus_id") and promo["campus_id"] != campus_id:
             raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))
@@ -1315,8 +1333,16 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
         raise ValueError(MSG.STOREFRONT_PROMO_EXPIRED)
     if promo.get("starts_at") and promo["starts_at"] > now:
         raise ValueError(MSG.STOREFRONT_PROMO_NOT_ACTIVE)
-    if promo.get("max_uses") and int(promo.get("used_count") or 0) >= promo["max_uses"]:
-        raise ValueError(MSG.STOREFRONT_PROMO_LIMIT)
+    if promo.get("max_uses"):
+        total_uses = (
+            db.table("orders")
+            .select("id")
+            .eq("promo_code_id", promo["id"])
+            .neq("status", "cancelled")
+            .execute()
+        ) or []
+        if len(total_uses) >= promo["max_uses"]:
+            raise ValueError(MSG.STOREFRONT_PROMO_LIMIT)
     if order_subtotal < float(promo.get("min_order_amount") or 0):
         raise ValueError(MSG.ORDER_PROMO_MIN_ORDER.format(min_amount=float(promo.get("min_order_amount", 0))))
 

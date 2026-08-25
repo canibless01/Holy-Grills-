@@ -31,7 +31,7 @@ def _get_token_from_header() -> str:
     return parts[1].strip()
 
 def require_auth(f):
-    """Verify Supabase token via Supabase Auth API and load user profile."""
+    """Decorator to require Supabase JWT authentication. Sets g.user, g.user_id, g.jwt_token, g.campus_id."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = _get_token_from_header()

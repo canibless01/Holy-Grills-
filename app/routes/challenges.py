@@ -288,7 +288,12 @@ def push_subscribed_challenge():
         record["campus_id"] = campus_id
 
     if existing:
-        db.table("push_subscriptions").eq("id", existing["id"]).update(record)
+        try:
+            db.table("push_subscriptions").eq("id", existing["id"]).update(record)
+        except Exception as e:
+            from app.utils.logger import get_logger
+            get_logger(__name__).warning("push subscription update failed for %s: %s", g.user_id, e)
+            return jsonify({"error": "Failed to update subscription"}), 500
     else:
         record["created_at"] = now
         try:

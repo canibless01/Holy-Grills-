@@ -352,10 +352,10 @@ def list_categories():
     """
     db = get_user_client()
     q = db.table("menu_categories").select("*").eq("is_active", "true")
+    cats = q.order("sort_order").execute() or []
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
-        q = q.eq("campus_id", campus_id)
-    cats = q.order("sort_order").execute()
+        cats = [c for c in cats if not c.get("campus_id") or c.get("campus_id") == campus_id]
     return jsonify(cats), 200
 
 
@@ -390,10 +390,8 @@ def list_items():
           { items: [...], kitchen: { daily_order_capacity, orders_today, is_at_capacity } }
     """
     db = get_user_client()
-    q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
 
     category_slug = request.args.get("category")
     if category_slug:
@@ -421,6 +419,8 @@ def list_items():
         q = q.eq("is_featured", "true")
 
     items = q.order("name").execute() or []
+    if campus_id:
+        items = [i for i in items if not i.get("campus_id") or i.get("campus_id") == campus_id]
 
     capacity, orders_today, at_capacity = _kitchen_stats(db)
     counts = _daily_item_counts(db)
@@ -468,7 +468,7 @@ def get_item(item_id):
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
 
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id and item.get("campus_id") != campus_id:
+    if campus_id and item.get("campus_id") and item.get("campus_id") != campus_id:
         return jsonify({"error": "Item not found"}), 404
 
     groups = (
@@ -1268,8 +1268,11 @@ def list_addons():
         .is_("group_id", "null")
         .order("sort_order")
         .execute()
-    )
-    return jsonify(addons or []), 200
+    ) or []
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        addons = [a for a in addons if not a.get("campus_id") or a.get("campus_id") == campus_id]
+    return jsonify(addons), 200
 
 
 @menu_bp.route("/addons", methods=["POST"])

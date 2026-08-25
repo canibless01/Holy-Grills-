@@ -19,7 +19,7 @@ def _complete_referral_award(referral: dict, order_id: str):
     Complete referral via atomic database function, then handle Python milestones.
     Supabase owns atomic completion (75 HP to referrer), Python owns milestone logic.
     """
-    db = get_user_client()
+    db = get_db()
     referrer_id = referral["referrer_id"]
 
     # 1. Call atomic DB function for base referral award (75 HP to referrer only)
@@ -178,7 +178,6 @@ def referral_stats():
 
 
 @referrals_bp.route("/complete", methods=["POST"])
-@require_auth
 @require_role("admin")
 def complete_referral():
     """

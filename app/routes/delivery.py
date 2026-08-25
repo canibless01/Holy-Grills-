@@ -69,6 +69,57 @@ def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[
     return round(min_fee, 2), None
 
 
+def is_within_delivery_area(db, lat: float, lon: float, campus_id: str | None) -> bool:
+    """
+    Whether (lat, lon) is within the campus's configured delivery radius of
+    the campus's own center point — this is the ONLY thing that should ever
+    reject an order for being too far away. Fails open (returns True) if the
+    campus has no center point configured yet, so a missing one-time admin
+    setup step never blocks every off-campus order.
+    """
+    if not campus_id:
+        return True
+    campus = db.table("campuses").select("lat,lon").eq("id", campus_id).single().execute()
+    if not campus or campus.get("lat") is None or campus.get("lon") is None:
+        return True  # not configured yet — don't block orders because of it
+
+    max_radius_km = 15.0
+    try:
+        row = (
+            db.table("kitchen_settings")
+            .select("value")
+            .eq("key", "max_delivery_radius_km")
+            .eq("campus_id", campus_id)
+            .single()
+            .execute()
+        )
+        if row and row.get("value"):
+            max_radius_km = float(row["value"])
+    except Exception:
+        pass  # use the fallback above
+
+    return haversine_km(campus["lat"], campus["lon"], lat, lon) <= max_radius_km
+
+
+def find_nearest_gate(db, lat: float, lon: float, campus_id: str | None) -> dict | None:
+    """
+    Return the active gate with lat/lon set that's closest to (lat, lon) —
+    used purely for fee calculation and batch grouping, once the pin has
+    already passed is_within_delivery_area separately. This never rejects an
+    order for being "too far" — that's not its job. Returns None only if no
+    gate anywhere has coordinates set at all; the order still proceeds without
+    an auto-resolved gate in that case.
+    """
+    q = db.table("gates").select("*").eq("is_active", "true")
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    gates = q.execute() or []
+    candidates = [g for g in gates if g.get("lat") is not None and g.get("lon") is not None]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda g: haversine_km(g["lat"], g["lon"], lat, lon))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public user endpoints
 # ─────────────────────────────────────────────────────────────────────────────
@@ -170,9 +221,6 @@ def calculate_fee():
         return jsonify({"error": "delivery_type must be 'on_campus' or 'off_campus'"}), 400
 
     location_id = data.get("delivery_location_id")
-    if not location_id:
-        return jsonify({"error": "'delivery_location_id' is required"}), 400
-
     user_lat = data.get("lat")
     user_lon = data.get("lon")
 
@@ -181,6 +229,19 @@ def calculate_fee():
             user_lat, user_lon = validate_coordinates(user_lat, user_lon)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+
+    if not location_id:
+        if data.get("delivery_type") == "off_campus" and user_lat is not None and user_lon is not None:
+            campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+            if not is_within_delivery_area(db, user_lat, user_lon, campus_id):
+                return jsonify({"error": "This location is outside our delivery area."}), 400
+            nearest = find_nearest_gate(db, user_lat, user_lon, campus_id)
+            if nearest:
+                location_id = nearest["id"]
+            else:
+                return jsonify({"error": "'delivery_location_id' is required"}), 400
+        else:
+            return jsonify({"error": "'delivery_location_id' is required"}), 400
 
     try:
         if delivery_type == "on_campus":

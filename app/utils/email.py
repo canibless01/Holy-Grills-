@@ -214,6 +214,18 @@ Create an account to earn HP for this event!
 — {d.get('app_tagline', '')}
 """,
     },
+    "squad_invite": {
+        "subject": lambda d: f"You've been invited to join a squad order on {d.get('app_name', 'Holy Grills')}!",
+        "body": lambda d: f"""
+Hi {d.get('name', 'there')},
+
+{d.get('organizer', 'A friend')} added you to a squad order on {d.get('app_name', 'Holy Grills')}!
+
+Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.
+
+— {d.get('app_tagline', '')}
+""",
+    },
 }
 
 
@@ -356,8 +368,8 @@ def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str) ->
 
 def get_user_email_and_name(user_id: str) -> tuple:
     """Fetch user email + name from Supabase profiles table."""
-    from app.db import get_db, get_user_client
-    db = get_user_client()
+    from app.db import get_db
+    db = get_db()
     try:
         profile = (
             db.table("profiles")

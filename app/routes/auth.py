@@ -569,7 +569,7 @@ def delete_account():
     if not password:
         return jsonify({"error": MSG.AUTH_CONFIRM_DELETE_REQUIRED}), 400
 
-    db = get_user_client()
+    db = get_db()
     profile = db.table("profiles").select("email,full_name").eq("id", g.user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
