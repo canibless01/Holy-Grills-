@@ -609,6 +609,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if min_items <= squad_item_count <= max_items:
             is_squad_order = True
 
+    hp_discount = 0.0
     promo_discount = 0.0
     promo_code_id = None
     if payload.get("promo_code") and user_id:
