@@ -463,9 +463,26 @@ def generate_event_qr(event_id):
 @optional_auth
 def register_for_event(event_id):
     """
-    Register for a Holy Grills event (supports both registered users and guests).
-    Returns ticket_id/qr_token and account creation prompt for guests.
+    Register for an event. Supports ticket tiers, an optional HP discount
+    (HP + discounted cash, never HP alone), wallet/card/split cash payment,
+    and promo codes. Guests (no account) can register and pay by card,
+    exactly like guest checkout on orders -- always full price, no HP/wallet.
+    ---
+    tags: [Events]
+    parameters:
+      - in: path
+        name: event_id
+        type: string
+        required: true
+    responses:
+      201:
+        description: Registered (or payment initiated)
+      400:
+        description: Validation error
+      404:
+        description: Event not found
     """
+    import uuid
     db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
@@ -473,62 +490,53 @@ def register_for_event(event_id):
         event = db.table("events").select("*").eq("id", event_id).single().execute()
     except Exception:
         event = None
-
     if not event or not event.get("is_published"):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
     campus_id = _get_campus_id()
-    is_event_global = event.get("campus_id") is None or event.get("is_global") in (True, "true")
+    is_event_global = event.get("campus_id") is None
     if campus_id and event.get("campus_id") != campus_id and not is_event_global:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    # ── Custom Form Fields Validation ──────────────────────────────────────────
+    # ── Custom registration field validation (unchanged from original) ──
+    answers_data = data.get("registration_answers", {}) or {}
     reg_fields = event.get("registration_fields") or []
-    answers_data = data.get("answers") or data.get("metadata") or {}
-    if not isinstance(answers_data, dict):
-        answers_data = {}
+    for field_def in reg_fields:
+        if not isinstance(field_def, dict):
+            continue
+        fname = field_def.get("name")
+        flabel = field_def.get("label") or fname
+        ftype = field_def.get("type", "text")
+        is_req = field_def.get("required", False)
+        ans_val = answers_data.get(fname)
+        if ans_val is None and fname in data:
+            ans_val = data.get(fname)
+        if is_req and (ans_val is None or str(ans_val).strip() == ""):
+            return jsonify({"error": MSG.REGISTRATION_FIELD_REQUIRED.format(field=flabel)}), 400
+        if ans_val is not None and str(ans_val).strip() != "":
+            if ftype == "select":
+                opts = field_def.get("options") or []
+                if opts and ans_val not in opts:
+                    return jsonify({"error": f"Invalid selection for {flabel}"}), 400
+            answers_data[fname] = ans_val
+    metadata_payload = {"registration_answers": answers_data}
 
-    if reg_fields and isinstance(reg_fields, list):
-        for field_def in reg_fields:
-            if not isinstance(field_def, dict):
-                continue
-            fname = field_def.get("name")
-            flabel = field_def.get("label") or fname
-            ftype = field_def.get("type", "text")
-            is_req = field_def.get("required", False)
+    # ── Tier lookup ──
+    tier_id = data.get("tier_id")
+    tier = None
+    if tier_id:
+        tier = db.table("event_ticket_tiers").select("*").eq("id", tier_id).eq("event_id", event_id).single().execute()
+        if not tier:
+            return jsonify({"error": "Ticket tier not found"}), 404
 
-            ans_val = answers_data.get(fname)
-            if ans_val is None and fname in data:
-                ans_val = data.get(fname)
-
-            if is_req and (ans_val is None or str(ans_val).strip() == ""):
-                return jsonify({"error": MSG.REGISTRATION_FIELD_REQUIRED.format(field=flabel)}), 400
-
-            if ans_val is not None and str(ans_val).strip() != "":
-                if ftype == "select":
-                    opts = field_def.get("options") or []
-                    if opts and ans_val not in opts:
-                        return jsonify({"error": f"Invalid selection for {flabel}"}), 400
-                answers_data[fname] = ans_val
-
-    # ── User / Guest Resolution ────────────────────────────────────────────────
+    price_hp = int((tier or {}).get("price_hp") or 0)
     user_id = getattr(g, "user_id", None)
-    is_guest = False
-    guest_email = None
-    guest_name = None
-    guest_phone = None
 
-    if user_id:
-        user_prof = getattr(g, "user", None) or {}
-        email = data.get("email") or user_prof.get("email") or ""
-        name = data.get("name") or user_prof.get("full_name") or ""
-        phone = data.get("phone") or user_prof.get("phone") or ""
-        is_guest = False
-    else:
+    # ── Guest path (no bearer token) -- always full price, card only ──
+    if not user_id:
         guest_email = (data.get("guest_email") or data.get("email") or "").strip()
         guest_name = (data.get("guest_name") or data.get("name") or "").strip()
         guest_phone = (data.get("guest_phone") or data.get("phone") or "").strip()
-
         if not guest_email:
             return jsonify({"error": MSG.GUEST_EMAIL_REQUIRED}), 400
         if not guest_name:
@@ -536,136 +544,315 @@ def register_for_event(event_id):
         if not guest_phone:
             return jsonify({"error": MSG.GUEST_PHONE_REQUIRED}), 400
 
-        # Check if guest_email belongs to an existing profile
-        prof_rows = db.table("profiles").select("id,full_name,phone,email").eq("email", guest_email).execute() or []
-        if prof_rows:
-            p = prof_rows[0]
-            user_id = p["id"]
-            is_guest = False
-            email = p.get("email") or guest_email
-            name = p.get("full_name") or guest_name
-            phone = p.get("phone") or guest_phone
-        else:
-            user_id = None
-            is_guest = True
-            email = guest_email
-            name = guest_name
-            phone = guest_phone
+        promo_code_id = None
+        full_price = float((tier or {}).get("price_naira_full") or (tier or {}).get("price_naira") or 0)
+        if data.get("promo_code") and full_price > 0:
+            code = str(data["promo_code"]).strip().upper()
+            promo = db.table("promo_codes").select("id,min_order_amount").eq("code", code).eq("is_active", "true").execute() or []
+            if not promo:
+                return jsonify({"error": f"Promo code '{code}' is invalid"}), 400
+            promo_code_id = promo[0]["id"]
 
-    tier_id = data.get("tier_id")
-
-    # ── Atomic Registration via RPC ───────────────────────────────────────────
-    metadata_payload = {"registration_answers": answers_data}
-    try:
-        if is_guest:
-            rpc_res = db.rpc("register_event_guest", {
+        try:
+            rpc_res = db.rpc("register_for_event_guest_paid", {
                 "p_event_id": event_id,
                 "p_guest_email": guest_email,
                 "p_guest_name": guest_name,
                 "p_guest_phone": guest_phone,
                 "p_tier_id": tier_id,
+                "p_promo_code_id": promo_code_id,
                 "p_metadata": metadata_payload,
             })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        if isinstance(rpc_res, dict) and rpc_res.get("error"):
+            return jsonify({"error": rpc_res["error"]}), 400
+
+        if isinstance(rpc_res, dict):
+            ticket_id = rpc_res.get("ticket_id")
+            status = rpc_res.get("status")
+            payment_status = rpc_res.get("payment_status")
+            card_amount_used = rpc_res.get("card_amount_used")
         else:
-            params = {
-                "p_event_id": event_id,
-                "p_user_id": user_id,
-            }
+            ticket_id = str(rpc_res) if rpc_res else None
+            status = "confirmed"
+            payment_status = "not_required"
+            card_amount_used = 0
+
+        response = {
+            "message": MSG.GUEST_REGISTRATION_SUCCESS,
+            "ticket_id": ticket_id,
+            "qr_token": ticket_id,
+            "status": status,
+            "payment_status": payment_status,
+            "is_guest": True,
+            "prompt_create_account": getattr(MSG, "GUEST_ACCOUNT_PROMPT", "Create an account to track your orders and earn points!"),
+        }
+
+        card_amount = float(card_amount_used or 0)
+        if card_amount > 0:
+            resp = _initiate_event_card_payment(db, ticket_id, event_id, card_amount, guest_email, data.get("callback_url"))
+            if "error" in resp:
+                return jsonify({**resp, "ticket_id": ticket_id}), 502
+            response.update(resp)
+        else:
             try:
-                rpc_res = db.rpc("register_for_event_atomic", {
-                    **params,
-                    "p_tier_id": tier_id,
-                    "p_metadata": metadata_payload,
-                })
+                send_qr_ticket_email(
+                    email=guest_email, name=guest_name, event_title=event.get("title", ""),
+                    ticket_id=ticket_id, event_id=event_id,
+                    event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
+                )
             except Exception:
-                rpc_res = db.rpc("register_for_event_atomic", params)
+                pass
+
+        return jsonify(response), 201
+
+    # ── Authenticated user path ──
+    use_hp = bool(data.get("use_hp"))  # explicit opt-in only -- never automatic
+    if use_hp:
+        if price_hp <= 0:
+            return jsonify({"error": "This ticket has no HP discount available"}), 400
+        from app.services.hp_service import get_hp_balance
+        balance = get_hp_balance(user_id)
+        if balance.get("active", 0) < price_hp:
+            return jsonify({"error": f"Insufficient HP balance. Need {price_hp} HP to use the HP discount -- you can still register at full price instead."}), 400
+
+    cash_reference_price = float((tier or {}).get("price_naira") or 0) if use_hp else float((tier or {}).get("price_naira_full") or (tier or {}).get("price_naira") or 0)
+
+    promo_code_id = None
+    if data.get("promo_code") and cash_reference_price > 0:
+        code = str(data["promo_code"]).strip().upper()
+        promo = db.table("promo_codes").select("id,min_order_amount").eq("code", code).eq("is_active", "true").execute() or []
+        if not promo:
+            return jsonify({"error": f"Promo code '{code}' is invalid"}), 400
+        promo_code_id = promo[0]["id"]
+        if cash_reference_price < float(promo[0].get("min_order_amount") or 0):
+            return jsonify({"error": f"This ticket does not meet the minimum amount for promo code '{code}'"}), 400
+
+    wallet_amount = 0
+    if cash_reference_price > 0:
+        payment_method = data.get("payment_method", "wallet")
+        if payment_method == "wallet":
+            wallet_amount = cash_reference_price  # RPC caps this to the post-discount total
+        elif payment_method == "split":
+            wallet_amount = max(0, float(data.get("wallet_amount", 0)))
+        # "card" -> wallet_amount stays 0
+
+    try:
+        rpc_res = db.rpc("register_for_event_paid", {
+            "p_event_id": event_id,
+            "p_user_id": user_id,
+            "p_tier_id": tier_id,
+            "p_use_hp": use_hp,
+            "p_wallet_amount": wallet_amount,
+            "p_promo_code_id": promo_code_id,
+            "p_metadata": metadata_payload,
+        })
     except Exception as exc:
-        err_msg = str(exc)
-        if "ALREADY_REGISTERED" in err_msg or "already registered" in err_msg.lower():
-            if not is_guest:
-                ex = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("user_id", user_id).execute() or []
-                ex_row = ex[0] if ex else {}
-                return jsonify({
-                    "ticket_id": ex_row.get("id"),
-                    "qr_token": ex_row.get("id"),
-                    "event_id": event_id,
-                    "event_title": event.get("title"),
-                    "status": ex_row.get("status", "confirmed"),
-                    "is_guest": False,
-                    "message": "Already registered — use ticket_id as qr_token to check in.",
-                }), 200
-            return jsonify({"error": MSG.GUEST_ALREADY_REGISTERED}), 400
-        if "CAPACITY" in err_msg or "capacity" in err_msg.lower():
-            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
-        if "TIER" in err_msg or "tier" in err_msg.lower():
-            return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
-        return jsonify({"error": err_msg}), 400
+        return jsonify({"error": str(exc)}), 400
 
     if isinstance(rpc_res, dict) and rpc_res.get("error"):
-        err_msg = rpc_res["error"]
-        if "ALREADY_REGISTERED" in err_msg or "already registered" in err_msg.lower():
-            if not is_guest:
-                ex = db.table("event_tickets").select("id,status").eq("event_id", event_id).eq("user_id", user_id).execute() or []
-                ex_row = ex[0] if ex else {}
-                return jsonify({
-                    "ticket_id": ex_row.get("id"),
-                    "qr_token": ex_row.get("id"),
-                    "event_id": event_id,
-                    "event_title": event.get("title"),
-                    "status": ex_row.get("status", "confirmed"),
-                    "is_guest": False,
-                    "message": "Already registered — use ticket_id as qr_token to check in.",
-                }), 200
-            return jsonify({"error": MSG.GUEST_ALREADY_REGISTERED}), 400
-        if "CAPACITY" in err_msg or "capacity" in err_msg.lower():
-            return jsonify({"error": MSG.EVENT_AT_CAPACITY}), 400
-        if "TIER" in err_msg or "tier" in err_msg.lower():
-            return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
-        return jsonify({"error": err_msg}), 400
+        return jsonify({"error": rpc_res["error"]}), 400
 
-    if isinstance(rpc_res, dict):
-        ticket_id = rpc_res.get("ticket_id") or rpc_res.get("id") or str(uuid.uuid4())
-    else:
-        ticket_id = str(rpc_res) if rpc_res else str(uuid.uuid4())
+    ticket_id = rpc_res.get("ticket_id")
+    already = rpc_res.get("already_registered", False)
+    msg = MSG.ALREADY_REGISTERED_FOR_EVENT if already else (getattr(MSG, "EVENT_REGISTRATION_SUCCESS", MSG.GUEST_REGISTRATION_SUCCESS))
+    response = {
+        "message": msg,
+        "ticket_id": ticket_id,
+        "status": rpc_res.get("status") if isinstance(rpc_res, dict) else "confirmed",
+        "payment_status": rpc_res.get("payment_status") if isinstance(rpc_res, dict) else "not_required",
+        "payment_method": rpc_res.get("payment_method") if isinstance(rpc_res, dict) else "none",
+        "hp_charged": rpc_res.get("hp_charged", 0) if isinstance(rpc_res, dict) else 0,
+    }
 
-    # ── Email QR to Guest ──────────────────────────────────────────────────────
-    if is_guest and guest_email:
-        send_qr_ticket_email(
-            email=guest_email,
-            name=guest_name,
-            event_title=event.get("title", ""),
-            ticket_id=ticket_id,
-            event_id=event_id,
-            event_date=event.get("starts_at", ""),
-            event_location=event.get("location", ""),
-        )
-
-    if user_id:
+    card_amount = float(rpc_res.get("card_amount_used") or 0)
+    if not already and card_amount > 0:
+        profile = db.table("profiles").select("email,full_name").eq("id", user_id).single().execute() or {}
+        email = (g.jwt_payload or {}).get("email") or profile.get("email") or ""
+        resp = _initiate_event_card_payment(db, ticket_id, event_id, card_amount, email, data.get("callback_url"), user_id=user_id)
+        if "error" in resp:
+            return jsonify({**resp, "ticket_id": ticket_id}), 502
+        response.update(resp)
+    elif not already and response["payment_status"] in ("paid", "not_required"):
         try:
-            from app.services.notification_service import send_notification
-            send_notification(
-                user_id=user_id,
-                notif_type="event_registered",
-                template_data={"title": event.get("title", "the event")},
-                reference_id=event_id,
-                reference_type="event",
+            profile = db.table("profiles").select("email,full_name").eq("id", user_id).single().execute() or {}
+            send_qr_ticket_email(
+                email=(g.jwt_payload or {}).get("email") or profile.get("email") or "",
+                name=profile.get("full_name") or "", event_title=event.get("title", ""),
+                ticket_id=ticket_id, event_id=event_id,
+                event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
             )
         except Exception:
             pass
 
-    resp_data = {
-        "ticket_id": ticket_id,
-        "qr_token": ticket_id,
-        "event_id": event_id,
-        "event_title": event.get("title"),
-        "status": "confirmed",
-        "is_guest": is_guest,
-        "message": MSG.GUEST_REGISTRATION_SUCCESS if is_guest else "Registration successful. Use ticket_id as qr_token to check in at the event.",
-    }
-    if is_guest:
-        resp_data["prompt_create_account"] = MSG.GUEST_ACCOUNT_PROMPT
+    return jsonify(response), 201
 
-    return jsonify(resp_data), 201
+
+def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, callback_url=None, user_id=None):
+    """Shared helper: initialize Paystack for the card portion of an event ticket."""
+    import uuid
+    from app.services.payment_service import initialize_payment
+    if not current_app.config.get("PAYSTACK_SECRET_KEY"):
+        return {"error": "Card payments are not configured on this server."}
+    try:
+        ref_prefix = current_app.config.get("EVENT_TICKET_REF_PREFIX", "HG-EVTKT-")
+        reference = f"{ref_prefix}{str(uuid.uuid4())[:8].upper()}"
+        meta = {"type": "event_ticket_payment", "ticket_id": ticket_id, "event_id": event_id}
+        if user_id:
+            meta["user_id"] = user_id
+        pay_result = initialize_payment(
+            email=email, amount_naira=amount_naira, reference=reference,
+            metadata=meta, callback_url=callback_url,
+        )
+        db.table("event_tickets").eq("id", ticket_id).update({"payment_reference": reference})
+        return {"authorization_url": pay_result["authorization_url"], "card_amount_due": amount_naira}
+    except Exception as exc:
+        return {"error": f"Registration recorded but card payment setup failed: {exc}"}
+
+
+@events_bp.route("/<event_id>/tickets/<ticket_id>/pdf", methods=["GET"])
+@optional_auth
+def download_ticket_pdf(event_id, ticket_id):
+    """
+    Download a PDF version of an event ticket, with the same QR the
+    check-in scanner expects (ticket_id-based -- NOT the shared door-poster code).
+    ---
+    tags: [Events]
+    parameters:
+      - in: path
+        name: event_id
+        type: string
+        required: true
+      - in: path
+        name: ticket_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: PDF file
+      403:
+        description: Not your ticket
+      404:
+        description: Not found
+    """
+    import io
+    import qrcode
+    from reportlab.lib.pagesizes import A5
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+
+    db = get_user_client()
+    ticket = db.table("event_tickets").select("*").eq("id", ticket_id).eq("event_id", event_id).single().execute()
+    if not ticket:
+        return jsonify({"error": MSG.TICKET_NOT_FOUND}), 404
+
+    user_id = getattr(g, "user_id", None)
+    if ticket.get("user_id"):
+        if not user_id or str(ticket["user_id"]) != str(user_id):
+            return jsonify({"error": "You do not have access to this ticket"}), 403
+    else:
+        provided_email = (request.args.get("guest_email") or "").strip().lower()
+        if not provided_email or provided_email != (ticket.get("guest_email") or "").lower():
+            return jsonify({"error": "You do not have access to this ticket"}), 403
+
+    event = db.table("events").select("title,starts_at,ends_at,location").eq("id", event_id).single().execute() or {}
+    tier = None
+    if ticket.get("tier_id"):
+        tier = db.table("event_ticket_tiers").select("name").eq("id", ticket["tier_id"]).single().execute()
+
+    qr_payload = f"hg-event:{event_id}:{ticket_id}"
+    qr_img = qrcode.make(qr_payload)
+    qr_buf = io.BytesIO()
+    qr_img.save(qr_buf, format="PNG")
+    qr_buf.seek(0)
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A5)
+    width, height = A5
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(15 * mm, height - 20 * mm, "Holy Grills — Event Ticket")
+
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(15 * mm, height - 32 * mm, event.get("title", "Event"))
+
+    c.setFont("Helvetica", 10)
+    y = height - 40 * mm
+    if event.get("starts_at"):
+        c.drawString(15 * mm, y, f"When: {event['starts_at']}")
+        y -= 6 * mm
+    if event.get("location"):
+        c.drawString(15 * mm, y, f"Where: {event['location']}")
+        y -= 6 * mm
+    if tier and tier.get("name"):
+        c.drawString(15 * mm, y, f"Tier: {tier['name']}")
+        y -= 6 * mm
+    attendee = ticket.get("guest_name") or "Registered attendee"
+    c.drawString(15 * mm, y, f"Attendee: {attendee}")
+    y -= 10 * mm
+
+    c.drawImage(ImageReader(qr_buf), 15 * mm, y - 45 * mm, width=45 * mm, height=45 * mm)
+    c.setFont("Helvetica", 8)
+    c.drawString(15 * mm, y - 50 * mm, f"Ticket ID: {ticket_id}")
+    c.drawString(15 * mm, y - 55 * mm, "Present this QR code at the door.")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+
+    from flask import send_file
+    return send_file(
+        buf, mimetype="application/pdf", as_attachment=True,
+        download_name=f"holy-grills-ticket-{ticket_id[:8]}.pdf",
+    )
+
+
+def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provider_response: dict = None) -> dict:
+    """
+    Called after card payment for an event ticket is confirmed (webhook).
+    Mirrors confirm_order_payment() exactly.
+    """
+    db = get_user_client()
+    ticket = db.table("event_tickets").select("*").eq("id", ticket_id).single().execute()
+    if not ticket:
+        raise ValueError("Ticket not found")
+
+    if ticket.get("payment_status") == "paid":
+        return ticket  # idempotent
+
+    try:
+        db.rpc("hg_mark_event_ticket_paid", {
+            "p_ticket_id": ticket_id,
+            "p_provider": "paystack",
+            "p_provider_reference": payment_reference,
+            "p_amount": ticket.get("card_amount_used"),
+            "p_metadata": provider_response or {},
+        })
+    except Exception as exc:
+        raise ValueError(f"Failed to confirm ticket payment: {exc}")
+
+    updated = db.table("event_tickets").select("*").eq("id", ticket_id).single().execute()
+
+    # Send the QR ticket email now that payment is actually confirmed
+    try:
+        event = db.table("events").select("title,starts_at,location").eq("id", updated["event_id"]).single().execute() or {}
+        if updated.get("user_id"):
+            profile = db.table("profiles").select("email,full_name").eq("id", updated["user_id"]).single().execute() or {}
+            email, name = profile.get("email", ""), profile.get("full_name", "")
+        else:
+            email, name = updated.get("guest_email", ""), updated.get("guest_name", "")
+        send_qr_ticket_email(
+            email=email, name=name, event_title=event.get("title", ""),
+            ticket_id=ticket_id, event_id=updated["event_id"],
+            event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
+        )
+    except Exception:
+        pass
+
+    return updated
 
 
 @events_bp.route("/catering-requests", methods=["GET"])

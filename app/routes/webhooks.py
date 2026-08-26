@@ -247,6 +247,23 @@ def _handle_flutterwave_charge_success(data: dict):
 
         confirm_order_payment(order_id, reference, provider_response=data)
 
+    elif payment_type == "event_ticket_payment":
+        ticket_id = meta.get("ticket_id")
+        if not ticket_id:
+            raise ValueError("Missing ticket_id in metadata")
+        ticket = db.table("event_tickets").select("id,user_id,card_amount_used,status,payment_status,campus_id").eq("id", ticket_id).single().execute()
+        if not ticket:
+            raise ValueError(f"Ticket {ticket_id} not found")
+        if user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(user_id):
+            raise ValueError("Ticket user mismatch")
+        expected_amount = float(ticket.get("card_amount_used") or 0)
+        if abs(amount_naira - expected_amount) > 0.01:
+            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Ticket: {expected_amount}")
+        if ticket.get("status") == "cancelled":
+            raise ValueError("Ticket is already cancelled")
+        from app.routes.events import confirm_event_ticket_payment
+        confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
+
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:
             raise ValueError(f"Invalid top-up amount: {amount_naira}")
@@ -316,6 +333,23 @@ def _handle_charge_success(data: dict):
             raise ValueError(f"Order is already {order.get('status')}")
 
         confirm_order_payment(order_id, reference, provider_response=data)
+
+    elif payment_type == "event_ticket_payment":
+        ticket_id = metadata.get("ticket_id")
+        if not ticket_id:
+            raise ValueError("Missing ticket_id in metadata")
+        ticket = db.table("event_tickets").select("id,user_id,card_amount_used,status,payment_status,campus_id").eq("id", ticket_id).single().execute()
+        if not ticket:
+            raise ValueError(f"Ticket {ticket_id} not found")
+        if user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(user_id):
+            raise ValueError("Ticket user mismatch")
+        expected_amount = float(ticket.get("card_amount_used") or 0)
+        if abs(amount_naira - expected_amount) > 0.01:
+            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Ticket: {expected_amount}")
+        if ticket.get("status") == "cancelled":
+            raise ValueError("Ticket is already cancelled")
+        from app.routes.events import confirm_event_ticket_payment
+        confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
 
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:

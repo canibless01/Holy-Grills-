@@ -716,11 +716,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     subtotal_dec = Decimal(str(subtotal))
     promo_discount_dec = Decimal(str(promo_discount))
-    hp_discount_dec = Decimal(str(hp_discount))
     squad_discount_dec = Decimal(str(squad_discount))
     order_lock_discount_dec = Decimal(str(order_lock_discount))
 
-    total_dec = subtotal_dec - promo_discount_dec - hp_discount_dec - squad_discount_dec - order_lock_discount_dec + delivery_fee_dec
+    total_dec = subtotal_dec - promo_discount_dec - squad_discount_dec - order_lock_discount_dec + delivery_fee_dec
     total_dec = max(Decimal("0.0"), total_dec.quantize(Decimal("0.01")))
     total = float(total_dec)
 

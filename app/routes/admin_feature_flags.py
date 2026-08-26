@@ -318,3 +318,71 @@ def fulfil_hof_reward(record_id):
     result = db.table("hall_of_fame_rewards").eq("id", record_id).update(safe)
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.HOF_REWARD_FULFILLED, "record": updated}), 200
+
+
+# ── Exclusive Spin Prize Fulfilment ────────────────────────────────────────
+
+@admin_flags_bp.route("/exclusive-spin-prizes", methods=["GET"])
+@require_role("admin")
+def list_exclusive_spin_prizes():
+    """
+    List exclusive-spin physical prize fulfilment records.
+    ---
+    tags: [Admin]
+    parameters:
+      - in: query
+        name: status
+        type: string
+        enum: [pending, fulfilled]
+    responses:
+      200:
+        description: Prize list
+    """
+    db = get_user_client()
+    q = db.table("exclusive_spin_fulfillments").select("*").order("created_at", ascending=False)
+    status = request.args.get("status")
+    if status:
+        q = q.eq("status", status)
+    rows = q.execute() or []
+    user_ids = list({r["user_id"] for r in rows if r.get("user_id")})
+    profiles = {}
+    if user_ids:
+        prows = db.table("profiles").select("id,full_name,phone").in_("id", user_ids).execute() or []
+        profiles = {p["id"]: p for p in prows}
+    for r in rows:
+        prof = profiles.get(r.get("user_id"), {})
+        r["full_name"] = prof.get("full_name")
+        r["phone"] = prof.get("phone")
+    return jsonify(rows), 200
+
+
+@admin_flags_bp.route("/exclusive-spin-prizes/<record_id>", methods=["PATCH"])
+@require_role("admin")
+def fulfil_exclusive_spin_prize(record_id):
+    """
+    Mark an exclusive-spin physical prize as fulfilled.
+    Body: { "status": "fulfilled", "notes": "..." }
+    ---
+    tags: [Admin]
+    parameters:
+      - in: path
+        name: record_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Updated
+      404:
+        description: Not found
+    """
+    db = get_user_client()
+    row = db.table("exclusive_spin_fulfillments").select("id").eq("id", record_id).single().execute()
+    if not row:
+        return jsonify({"error": "Prize record not found"}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    safe = {k: v for k, v in data.items() if k in {"status", "notes"}}
+    safe["fulfilled_by"] = g.user_id
+    safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
+    result = db.table("exclusive_spin_fulfillments").eq("id", record_id).update(safe)
+    updated = result[0] if isinstance(result, list) else result
+    return jsonify({"message": "Prize marked fulfilled", "record": updated}), 200
