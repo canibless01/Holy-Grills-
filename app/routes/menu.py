@@ -352,10 +352,10 @@ def list_categories():
     """
     db = get_user_client()
     q = db.table("menu_categories").select("*").eq("is_active", "true")
-    cats = q.order("sort_order").execute() or []
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
-        cats = [c for c in cats if not c.get("campus_id") or c.get("campus_id") == campus_id]
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    cats = q.order("sort_order").execute() or []
     return jsonify(cats), 200
 
 
@@ -392,6 +392,8 @@ def list_items():
     db = get_user_client()
     campus_id = getattr(g, 'campus_id', None)
     q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
+    if campus_id:
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
 
     category_slug = request.args.get("category")
     if category_slug:
@@ -419,8 +421,34 @@ def list_items():
         q = q.eq("is_featured", "true")
 
     items = q.order("name").execute() or []
-    if campus_id:
-        items = [i for i in items if not i.get("campus_id") or i.get("campus_id") == campus_id]
+
+    item_ids = [item["id"] for item in items]
+    availability_rows = (
+        db.table("menu_item_availability")
+        .select("menu_item_id,is_available,daily_limit,price_override")
+        .in_("menu_item_id", item_ids)
+        .eq("campus_id", campus_id)
+        .execute()
+    ) if (campus_id and item_ids) else []
+    availability_by_item = {a["menu_item_id"]: a for a in availability_rows}
+
+    filtered_items = []
+    for item in items:
+        avail = availability_by_item.get(item["id"])
+        if avail:
+            item["is_available"] = bool(item.get("is_available")) and bool(avail.get("is_available"))
+            if avail.get("price_override") is not None:
+                item["price"] = avail["price_override"]
+            item["daily_limit"] = avail.get("daily_limit")
+        elif item.get("campus_id") is None:
+            # Global item with no availability row yet for this campus — fail closed
+            item["is_available"] = False
+            item["daily_limit"] = 0
+
+        if available_only and not item["is_available"]:
+            continue
+        filtered_items.append(item)
+    items = filtered_items
 
     capacity, orders_today, at_capacity = _kitchen_stats(db)
     counts = _daily_item_counts(db)
@@ -814,8 +842,7 @@ def update_item(item_id):
     # Whitelist for PATCH: only columns that exist in menu_items (Supabase source of truth)
     MENU_ITEM_UPDATE_COLUMNS = {
         "name", "slug", "category_id", "price", "hp_earn_value", "description",
-        "tags", "daily_limit", "is_available", "image_url", "is_featured",
-        "hp_multiplier",
+        "tags", "image_url", "is_featured", "hp_multiplier",
     }
     db = get_user_client()
     data = request.get_json(force=True)
@@ -851,31 +878,45 @@ def update_item(item_id):
     return jsonify(updated), 200
 
 
+@menu_bp.route("/items/<item_id>/availability", methods=["PATCH"])
+@require_role("admin", "kitchen")
+def update_item_availability(item_id):
+    """
+    Update this campus's availability for a menu item — on/off, daily cap,
+    price override, ordering window. Scoped to the caller's own campus.
+    """
+    db = get_user_client()
+    data = request.get_json(force=True) or {}
+    campus_id = getattr(g, "campus_id", None)
+    if not campus_id:
+        return jsonify({"error": "campus_id is required"}), 400
+
+    AVAILABILITY_FIELDS = {"is_available", "daily_limit", "price_override", "opens_at", "closes_at"}
+    safe = {k: v for k, v in data.items() if k in AVAILABILITY_FIELDS}
+    if not safe:
+        return jsonify({"error": "At least one availability field is required"}), 400
+    safe["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    result = db.table("menu_item_availability").upsert(
+        {"menu_item_id": item_id, "campus_id": campus_id, **safe},
+        on_conflict="menu_item_id,campus_id",
+    )
+    updated = result[0] if isinstance(result, list) else result
+
+    if safe.get("is_available") is False:
+        item = db.table("menu_items").select("name").eq("id", item_id).single().execute()
+        if item:
+            _notify_sellout(item_id, item.get("name", "Item"))
+
+    return jsonify(updated), 200
+
+
 @menu_bp.route("/items/bulk-availability", methods=["PATCH"])
-@require_role("admin")
+@require_role("admin", "kitchen")
 def bulk_update_availability():
     """
-    Bulk update availability for multiple menu items (admin only).
+    Bulk update availability for multiple menu items (admin/kitchen).
     Use during a rush when multiple items sell out simultaneously.
-    ---
-    tags: [Menu]
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          required: [item_ids, is_available]
-          properties:
-            item_ids:
-              type: array
-              items: {type: string}
-              description: List of menu item IDs to update
-            is_available: {type: boolean}
-    responses:
-      200:
-        description: Items updated
-      400:
-        description: Missing required fields
     """
     db = get_user_client()
     data = request.get_json(force=True)
@@ -885,36 +926,27 @@ def bulk_update_availability():
     if "is_available" not in data:
         return jsonify({"error": MSG.MENU_AVAILABILITY_REQUIRED}), 400
 
-    is_available = bool(data["is_available"])
-    # Fetch before-states for sell-out detection (only needed when marking unavailable)
-    before_map = {}
-    if not is_available:
-        before_rows = (
-            db.table("menu_items")
-            .select("id,name,is_available")
-            .in_("id", item_ids)
-            .execute()
-        ) or []
-        before_map = {r["id"]: r for r in before_rows}
+    campus_id = getattr(g, "campus_id", None)
+    if not campus_id:
+        return jsonify({"error": "campus_id is required"}), 400
 
+    is_available = bool(data["is_available"])
     updated = []
     failed = []
     now_ts = datetime.now(timezone.utc).isoformat()
     for item_id in item_ids:
         try:
-            db.table("menu_items").eq("id", item_id).update({
+            db.table("menu_item_availability").upsert({
+                "menu_item_id": item_id,
+                "campus_id": campus_id,
                 "is_available": is_available,
                 "updated_at": now_ts,
-            }).execute()
+            }, on_conflict="menu_item_id,campus_id").execute()
             updated.append(item_id)
-            _log_menu_admin_action(g.user_id, "menu_items", item_id, "bulk_availability",
-                                   before_data={"is_available": before_map.get(item_id, {}).get("is_available")},
-                                   after_data={"is_available": is_available})
-            # Sell-out notification when availability just turned off
             if not is_available:
-                before = before_map.get(item_id, {})
-                if before.get("is_available", True):
-                    _notify_sellout(item_id, before.get("name", "Item"))
+                item = db.table("menu_items").select("name").eq("id", item_id).single().execute()
+                if item:
+                    _notify_sellout(item_id, item.get("name", "Item"))
         except Exception as exc:
             failed.append({"id": item_id, "error": str(exc)})
 
