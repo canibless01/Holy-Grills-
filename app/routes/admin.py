@@ -1,7 +1,7 @@
 """Admin panel routes — users, orders, delivery windows, promo codes, audit log."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_owns_campus
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
 from datetime import datetime, timezone
@@ -45,7 +45,7 @@ def list_users():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("profiles").select("id,full_name,phone,role,is_active,created_at,referral_code,hp_balance,wallet_balance,current_tier_id,campus_id")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     role_filter = request.args.get("role")
@@ -156,10 +156,7 @@ def list_all_orders():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
-    # Campus override resolution:
-    # Query parameter ?campus_id= explicitly overrides g.campus_id default scoping.
-    # If ?campus_id= is omitted, falls back to g.campus_id session context.
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -279,9 +276,11 @@ def change_user_role(user_id):
     if user_id == getattr(g, "user_id", None):
         return jsonify({"error": "Cannot change your own role"}), 403
 
-    profile = db.table("profiles").select("id,full_name,role").eq("id", user_id).single().execute()
+    profile = db.table("profiles").select("id,full_name,role,campus_id").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    assert_owns_campus(profile.get("campus_id"))
 
     data = request.get_json(force=True) or {}
     new_role = data.get("role", "").strip()
@@ -423,9 +422,11 @@ def deactivate_user(user_id):
         return jsonify({"error": "You cannot deactivate your own account"}), 400
 
     db = get_user_client()
-    target_profile = db.table("profiles").select("id,role,is_active,full_name").eq("id", user_id).single().execute()
+    target_profile = db.table("profiles").select("id,role,is_active,full_name,campus_id").eq("id", user_id).single().execute()
     if not target_profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    assert_owns_campus(target_profile.get("campus_id"))
 
     target_role = target_profile.get("role")
     caller_role = getattr(g, "user_role", None)
@@ -460,9 +461,11 @@ def activate_user(user_id):
         description: User not found
     """
     db = get_user_client()
-    profile = db.table("profiles").select("id,is_active,full_name").eq("id", user_id).single().execute()
+    profile = db.table("profiles").select("id,is_active,full_name,campus_id").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    assert_owns_campus(profile.get("campus_id"))
     if profile.get("is_active"):
         return jsonify({"message": MSG.ADMIN_USER_ALREADY_ACTIVE, "user_id": user_id}), 200
 
@@ -931,7 +934,11 @@ def list_promos():
         description: Promo code list
     """
     db = get_user_client()
-    codes = db.table("promo_codes").select("*").order("created_at", ascending=False).execute()
+    codes_q = db.table("promo_codes").select("*").order("created_at", ascending=False)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    if campus_id:
+        codes_q = codes_q.eq("campus_id", campus_id)
+    codes = codes_q.execute()
     return jsonify(codes), 200
 
 
@@ -982,7 +989,7 @@ def create_promo():
         "description", "applicable_item_ids", "applicable_category_ids",
     }
     safe = {k: v for k, v in data.items() if k in KNOWN_COLUMNS}
-    campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if campus_id:
         safe["campus_id"] = campus_id
     result = db.table("promo_codes").insert(safe)
@@ -1021,9 +1028,12 @@ def update_promo(promo_id):
         description: Promo code not found
     """
     db = get_user_client()
-    existing = db.table("promo_codes").select("id").eq("id", promo_id).limit(1).execute()
+    existing = db.table("promo_codes").select("id,campus_id").eq("id", promo_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_PROMO_NOT_FOUND}), 404
+
+    existing_row = existing[0] if isinstance(existing, list) else existing
+    assert_owns_campus(existing_row.get("campus_id"))
 
     data = request.get_json(force=True) or {}
     KNOWN_COLUMNS = {
@@ -1477,7 +1487,7 @@ def bulk_grant_hp():
     amount = int(amount)
 
     # ── Build the user list ──────────────────────────────────────────────────
-    campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     explicit_ids = data.get("user_ids")
     if explicit_ids:
         # Explicit list — validate they're real users

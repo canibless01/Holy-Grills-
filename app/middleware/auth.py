@@ -10,6 +10,28 @@ from functools import wraps
 from flask import request, g, abort
 from app.db import get_db, SupabaseError
 from app.constants import ADMIN_ROLES
+from app.messages import MSG
+
+
+def resolve_scoped_campus_id(requested_campus_id=None):
+    """
+    For super_admin: requested value (or None = all campuses).
+    For everyone else: always their assigned campus (g.campus_id) — requested value is ignored.
+    """
+    if getattr(g, "user_role", None) == "super_admin":
+        return requested_campus_id
+    return getattr(g, "campus_id", None)
+
+
+def assert_owns_campus(record_campus_id):
+    """
+    Raise 403 if a non-super_admin attempts to access/mutate a record belonging to a different campus.
+    """
+    if getattr(g, "user_role", None) == "super_admin":
+        return
+    user_campus_id = getattr(g, "campus_id", None)
+    if record_campus_id != user_campus_id:
+        abort(403, description=MSG.ORDER_ACCESS_DENIED)
 
 def _resolve_default_campus(db, user_role: str = None):
     """
