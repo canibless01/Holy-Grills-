@@ -303,8 +303,15 @@ def validate_promo():
 
 
 def _is_currently_open(schedule: list, override) -> bool:
-    from datetime import datetime, timezone, time
-    now = datetime.now(timezone.utc)
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+    try:
+        wat_tz = ZoneInfo("Africa/Lagos")
+    except Exception:
+        from datetime import timezone, timedelta
+        wat_tz = timezone(timedelta(hours=1))
+
+    now = datetime.now(wat_tz)
     today_weekday = now.weekday()  # 0=Monday … 6=Sunday
 
     if override:

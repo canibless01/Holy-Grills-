@@ -102,7 +102,8 @@ def my_referrals():
         profiles_map = {}
         if referred_user_ids:
             try:
-                prof_rows = db.table("profiles").select("id,full_name,created_at").in_("id", referred_user_ids).execute() or []
+                from app.db import get_db
+                prof_rows = get_db().table("profiles").select("id,full_name,created_at").in_("id", referred_user_ids).execute() or []
                 profiles_map = {p["id"]: p for p in prof_rows}
             except Exception:
                 profiles_map = {}

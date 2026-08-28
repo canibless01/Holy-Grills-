@@ -30,8 +30,28 @@ def assert_owns_campus(record_campus_id):
     if getattr(g, "user_role", None) == "super_admin":
         return
     user_campus_id = getattr(g, "campus_id", None)
-    if record_campus_id != user_campus_id:
+    if record_campus_id and record_campus_id != user_campus_id:
         abort(403, description=MSG.ORDER_ACCESS_DENIED)
+
+
+def fetch_or_403(db, table, record_id, select="*", not_found_msg=None):
+    record = db.table(table).select(select).eq("id", record_id).single().execute()
+    if record:
+        return record, None
+    from app.db import get_db
+    from flask import jsonify
+    exists = get_db().table(table).select("id").eq("id", record_id).single().execute()
+    if exists:
+        return None, (jsonify({"error": "You don't have permission to access this resource"}), 403)
+    return None, (jsonify({"error": not_found_msg or "Not found"}), 404)
+
+
+def update_or_403(db, table, record_id, patch):
+    result = db.table(table).eq("id", record_id).update(patch).execute()
+    from flask import jsonify
+    if not result or (isinstance(result, list) and len(result) == 0):
+        return None, (jsonify({"error": "Update not permitted or record not found"}), 403)
+    return result, None
 
 def _resolve_default_campus(db, user_role: str = None):
     """

@@ -1,7 +1,7 @@
 """Admin panel routes — users, orders, delivery windows, promo codes, audit log."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_owns_campus
+from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_owns_campus, fetch_or_403, update_or_403
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
 from datetime import datetime, timezone
@@ -78,6 +78,10 @@ def get_user(user_id):
     db = get_user_client()
     profile = db.table("profiles").select("*").eq("id", user_id).single().execute()
     if not profile:
+        from app.db import get_db
+        exists_check = get_db().table("profiles").select("id").eq("id", user_id).single().execute()
+        if exists_check:
+            return jsonify({"error": "You don't have permission to view users from that campus"}), 403
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
 
     # Explicit safe fields filtering to prevent sensitive column exposure (e.g. password_hash, secrets, etc.)
@@ -1221,7 +1225,7 @@ def audit_log():
 
 
 @admin_bp.route("/cron/<job_name>", methods=["POST"])
-@require_role("admin")
+@require_role("super_admin")
 def run_cron_job(job_name):
     """
     Manually trigger a scheduled cron job (admin only).
