@@ -56,7 +56,7 @@ def list_challenges():
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
-        q = q.eq("campus_id", campus_id)
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     tw = request.args.get("time_window")
     if tw in ("weekly", "monthly"):
         q = q.eq("time_window", tw)
@@ -85,7 +85,7 @@ def list_badges():
     )
     campus_id = getattr(g, 'campus_id', None)
     if campus_id:
-        q = q.eq("campus_id", campus_id)
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     rows = q.order("hp_awarded", ascending=False).execute() or []
     return jsonify(rows), 200
 

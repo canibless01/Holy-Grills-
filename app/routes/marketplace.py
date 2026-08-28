@@ -35,6 +35,9 @@ def list_listings():
     """
     db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
+    campus_id = getattr(g, 'campus_id', None)
+    if campus_id:
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     category = request.args.get("category") or request.args.get("listing_type")
     if category:
         q = q.eq("listing_type", category)
@@ -42,9 +45,31 @@ def list_listings():
     if search:
         q = q.ilike("title", f"%{search}%")
     listings = q.order("is_featured", ascending=False).order("sort_order").execute() or []
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        listings = [l for l in listings if not l.get("campus_id") or l.get("campus_id") == campus_id]
+
+    if campus_id and listings:
+        listing_ids = [l["id"] for l in listings]
+        try:
+            availability_rows = (
+                db.table("marketplace_listing_availability")
+                .select("listing_id,is_out_of_stock,inventory_count,price_override")
+                .in_("listing_id", listing_ids)
+                .eq("campus_id", campus_id)
+                .execute()
+            ) or []
+            availability_by_listing = {a["listing_id"]: a for a in availability_rows}
+            result = []
+            for listing in listings:
+                avail = availability_by_listing.get(listing["id"])
+                out_of_stock = avail.get("is_out_of_stock", False) if avail else listing.get("is_out_of_stock", False)
+                if out_of_stock:
+                    continue
+                if avail and avail.get("price_override"):
+                    listing["price"] = avail["price_override"]
+                result.append(listing)
+            listings = result
+        except Exception:
+            listings = [l for l in listings if not l.get("is_out_of_stock")]
+
     return jsonify(listings), 200
 
 
@@ -533,7 +558,7 @@ def admin_create_listing():
         "title", "description", "listing_type", "price", "hp_price",
         "cash_price", "total_value",
         "image_url", "vendor_name", "hp_tier_id", "is_featured",
-        "sort_order", "status", "is_out_of_stock", "campus_id",
+        "sort_order", "status", "campus_id",
     }
     safe = {k: v for k, v in data.items() if k in LISTING_COLS}
     campus_id = getattr(g, 'campus_id', None)
@@ -587,6 +612,28 @@ def update_listing_image(listing_id):
     }).execute()
 
     return jsonify({"image_url": image_url}), 200
+
+
+@marketplace_bp.route("/admin/listings/<listing_id>/availability", methods=["PATCH"])
+@require_role("admin")
+def update_listing_availability(listing_id):
+    db = get_user_client()
+    data = request.get_json(force=True) or {}
+    campus_id = getattr(g, "campus_id", None)
+    if not campus_id:
+        return jsonify({"error": "campus_id is required"}), 400
+
+    AVAILABILITY_FIELDS = {"inventory_count", "low_inventory_threshold", "is_out_of_stock", "price_override"}
+    safe = {k: v for k, v in data.items() if k in AVAILABILITY_FIELDS}
+    if not safe:
+        return jsonify({"error": "At least one availability field is required"}), 400
+    safe["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    result = db.table("marketplace_listing_availability").upsert(
+        {"listing_id": listing_id, "campus_id": campus_id, **safe},
+        on_conflict="listing_id,campus_id",
+    )
+    return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
 @marketplace_bp.route("/admin/listings/<listing_id>", methods=["PATCH"])

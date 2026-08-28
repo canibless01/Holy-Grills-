@@ -301,6 +301,16 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     idempotency_key = str(uuid.uuid4())
 
     db = get_user_client()
+    from flask import has_request_context, g
+    campus_id = getattr(g, "campus_id", None) if has_request_context() else None
+    if not campus_id:
+        try:
+            from app.routes.events import _get_campus_id
+            campus_id = _get_campus_id()
+        except Exception:
+            pass
+    if not campus_id:
+        raise ValueError("campus_id could not be resolved for this order")
 
     # Reject if kitchen is already at daily capacity
     _check_kitchen_capacity(db)
@@ -463,6 +473,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         db.table("orders")
         .select("id")
         .gte("created_at", _today_start_iso())
+        .eq("campus_id", campus_id)
         .not_.in_("status", ["cancelled", "refunded"])
         .execute()
     ) or []
@@ -491,13 +502,30 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             )
         if not menu_item:
             raise ValueError(MSG.ORDER_MENU_ITEM_NOT_FOUND.format(id=item["menu_item_id"]))
-        if not menu_item.get("is_available") or menu_item.get("deleted_at"):
+
+        availability = None
+        try:
+            availability = (
+                db.table("menu_item_availability")
+                .select("is_available,daily_limit,price_override")
+                .eq("menu_item_id", menu_item["id"])
+                .eq("campus_id", campus_id)
+                .single()
+                .execute()
+            )
+        except Exception:
+            availability = None
+
+        is_item_available = bool(menu_item.get("is_available"))
+        if availability:
+            is_item_available = is_item_available and bool(availability.get("is_available"))
+
+        if not is_item_available or menu_item.get("deleted_at"):
             raise ValueError(MSG.ORDER_MENU_ITEM_UNAVAILABLE.format(name=menu_item["name"]))
 
         qty = max(1, int(item.get("quantity", 1)))
 
-        # Enforce per-item daily limit
-        daily_limit = menu_item.get("daily_limit")
+        daily_limit = availability.get("daily_limit") if availability else menu_item.get("daily_limit")
         if daily_limit is not None:
             count_today = _count_item_today(db, menu_item["id"], today_order_ids)
             remaining = max(0, int(daily_limit) - count_today)
@@ -505,7 +533,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 raise ValueError(MSG.ORDER_MENU_ITEM_SOLD_OUT_TODAY.format(name=menu_item["name"], remaining=remaining))
 
         from decimal import Decimal
-        unit_price = Decimal(str(menu_item["price"]))
+        base_price = availability.get("price_override") if (availability and availability.get("price_override") is not None) else menu_item["price"]
+        unit_price = Decimal(str(base_price))
 
         # Resolve variation selections and add any price deltas
         selected_variations = item.get("selected_variations", [])
@@ -807,8 +836,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
-    campus_id = getattr(g, 'campus_id', None) if has_request_context() else None
-
     rpc_payload = {
         "p_user_id": user_id,
         "p_campus_id": campus_id,
@@ -864,6 +891,21 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         order["order_lock_discount_applied"] = discount_applied
     if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
+
+    # Clear the cart now that the order has been placed successfully.
+    # Guests (user_id is None) don't have a server-side cart to clear.
+    # Skip on an idempotent replay (same idempotency_key called twice) — the
+    # cart was already cleared the first time this order was actually created.
+    if user_id and not result.get("idempotent"):
+        try:
+            db.table("cart_items").eq("user_id", user_id).delete()
+        except Exception as cart_exc:
+            from flask import current_app
+            current_app.logger.error(
+                "create_order: order %s succeeded but cart clear failed for user %s: %s",
+                result.get("order_id"), user_id, cart_exc,
+            )
+
     return order
 
 

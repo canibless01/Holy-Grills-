@@ -985,6 +985,11 @@ def submit_catering_request():
     for f in required:
         if not data.get(f):
             return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
+
+    campus_id = getattr(g, "campus_id", None) or _get_campus_id()
+    if not campus_id:
+        return jsonify({"error": "campus_id is required"}), 400
+    data["campus_id"] = campus_id
     data["status"] = "new"
     result = db.table("catering_requests").insert(data)
     saved = result[0] if isinstance(result, list) else result
