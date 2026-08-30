@@ -593,13 +593,15 @@ def close_window(window_id):
         description: Window not found
     """
     db = get_user_client()
-    window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
-    if not window:
-        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+    window, err = fetch_or_403(db, "delivery_windows", window_id, select="id,status", not_found_msg=MSG.ADMIN_WINDOW_NOT_FOUND)
+    if err:
+        return err
     if window.get("status") == "closed":
         return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED, "status": "closed"}), 200
 
-    db.table("delivery_windows").eq("id", window_id).update({"status": "closed"}).execute()
+    res, err = update_or_403(db, "delivery_windows", window_id, {"status": "closed"})
+    if err:
+        return err
     _audit(g.user_id, "delivery_windows", window_id, "close_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED}), 200
 
@@ -623,9 +625,9 @@ def reopen_window(window_id):
         description: Window not found
     """
     db = get_user_client()
-    window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
-    if not window:
-        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+    window, err = fetch_or_403(db, "delivery_windows", window_id, select="id,status", not_found_msg=MSG.ADMIN_WINDOW_NOT_FOUND)
+    if err:
+        return err
     if window.get("status") == "open":
         return jsonify({"message": MSG.ADMIN_WINDOW_ALREADY_OPEN, "status": "open"}), 200
     db.table("delivery_windows").eq("id", window_id).update({"status": "open"}).execute()
@@ -703,12 +705,13 @@ def get_batch(batch_id):
         description: Batch not found
     """
     db = get_user_client()
+    batch_check, err = fetch_or_403(db, "delivery_batches", batch_id, select="id", not_found_msg=MSG.ADMIN_BATCH_NOT_FOUND)
+    if err:
+        return err
     batch = db.table("delivery_batches").select(
         "*,delivery_windows!window_id(label,starts_at,ends_at),profiles!rider_id(full_name,phone)"
     ).eq("id", batch_id).limit(1).execute()
     batch = batch[0] if batch else None
-    if not batch:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
     orders = db.table("orders").select(
         "id,status,delivery_address_snapshot,total_amount,created_at,"
         "delivery_location_lat,delivery_location_lon,"
@@ -846,9 +849,9 @@ def update_batch(batch_id):
         description: Batch not found
     """
     db = get_user_client()
-    existing = db.table("delivery_batches").select("id").eq("id", batch_id).limit(1).execute()
-    if not existing:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    existing, err = fetch_or_403(db, "delivery_batches", batch_id, select="id", not_found_msg=MSG.ADMIN_BATCH_NOT_FOUND)
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     BATCH_UPDATE_COLS = {"status", "rider_id", "zone", "notes"}
     safe = {k: v for k, v in data.items() if k in BATCH_UPDATE_COLS}
@@ -1118,10 +1121,11 @@ def promo_uses(promo_id):
         description: Promo code not found
     """
     db = get_user_client()
+    promo_check, err = fetch_or_403(db, "promo_codes", promo_id, select="id", not_found_msg=MSG.ADMIN_PROMO_NOT_FOUND)
+    if err:
+        return err
     promo = db.table("promo_codes").select("*").eq("id", promo_id).limit(1).execute()
     promo = promo[0] if promo else None
-    if not promo:
-        return jsonify({"error": MSG.ADMIN_PROMO_NOT_FOUND}), 404
 
     uses = (
         db.table("promo_code_uses")

@@ -35,14 +35,23 @@ def assert_owns_campus(record_campus_id):
 
 
 def fetch_or_403(db, table, record_id, select="*", not_found_msg=None):
-    record = db.table(table).select(select).eq("id", record_id).single().execute()
+    record = None
+    try:
+        record = db.table(table).select(select).eq("id", record_id).single().execute()
+    except Exception:
+        pass
     if record:
         return record, None
-    from app.db import get_db
+
     from flask import jsonify
-    exists = get_db().table(table).select("id").eq("id", record_id).single().execute()
-    if exists:
-        return None, (jsonify({"error": "You don't have permission to access this resource"}), 403)
+    try:
+        from app.db import get_db
+        exists = get_db().table(table).select("id").eq("id", record_id).single().execute()
+        if exists:
+            return None, (jsonify({"error": "You don't have permission to access this resource"}), 403)
+    except Exception:
+        pass
+
     return None, (jsonify({"error": not_found_msg or "Not found"}), 404)
 
 

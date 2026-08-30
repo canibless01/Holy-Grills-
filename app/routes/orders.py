@@ -1603,8 +1603,12 @@ def order_status_history(order_id):
 
     role = getattr(g, "user_role", None)
     has_access = False
-    if role in ("admin", "super_admin"):
+    if role == "super_admin":
         has_access = True
+    elif role == "admin":
+        order_campus_id = order.get("campus_id")
+        user_campus_id = getattr(g, "campus_id", None)
+        has_access = not order_campus_id or (order_campus_id == user_campus_id)
     elif role == "rider":
         batch = order.get("delivery_batches")
         if isinstance(batch, list):
