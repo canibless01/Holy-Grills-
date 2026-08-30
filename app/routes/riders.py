@@ -122,8 +122,9 @@ def my_batch():
         customer_name = None
         try:
             if order.get("user_id"):
+                from app.db import get_db
                 profile = (
-                    db.table("profiles")
+                    get_db().table("profiles")
                     .select("full_name")
                     .eq("id", order["user_id"])
                     .single()
@@ -522,7 +523,8 @@ def get_customer_call_link(order_id):
 
     phone = order.get("guest_phone")
     if order.get("user_id"):
-        profile = db.table("profiles").select("phone").eq("id", order["user_id"]).single().execute()
+        from app.db import get_db
+        profile = get_db().table("profiles").select("phone").eq("id", order["user_id"]).single().execute()
         phone = profile.get("phone") if profile else phone
 
     if not phone:

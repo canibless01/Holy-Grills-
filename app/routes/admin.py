@@ -1,7 +1,7 @@
 """Admin panel routes — users, orders, delivery windows, promo codes, audit log."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_owns_campus, fetch_or_403, update_or_403
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
 from datetime import datetime, timezone
@@ -45,7 +45,7 @@ def list_users():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("profiles").select("id,full_name,phone,role,is_active,created_at,referral_code,hp_balance,wallet_balance,current_tier_id,campus_id")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     role_filter = request.args.get("role")
@@ -78,6 +78,10 @@ def get_user(user_id):
     db = get_user_client()
     profile = db.table("profiles").select("*").eq("id", user_id).single().execute()
     if not profile:
+        from app.db import get_db
+        exists_check = get_db().table("profiles").select("id").eq("id", user_id).single().execute()
+        if exists_check:
+            return jsonify({"error": "You don't have permission to view users from that campus"}), 403
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
 
     # Explicit safe fields filtering to prevent sensitive column exposure (e.g. password_hash, secrets, etc.)
@@ -156,10 +160,7 @@ def list_all_orders():
     offset = int(request.args.get("offset", 0))
 
     q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
-    # Campus override resolution:
-    # Query parameter ?campus_id= explicitly overrides g.campus_id default scoping.
-    # If ?campus_id= is omitted, falls back to g.campus_id session context.
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -279,9 +280,11 @@ def change_user_role(user_id):
     if user_id == getattr(g, "user_id", None):
         return jsonify({"error": "Cannot change your own role"}), 403
 
-    profile = db.table("profiles").select("id,full_name,role").eq("id", user_id).single().execute()
+    profile = db.table("profiles").select("id,full_name,role,campus_id").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    assert_owns_campus(profile.get("campus_id"))
 
     data = request.get_json(force=True) or {}
     new_role = data.get("role", "").strip()
@@ -423,9 +426,11 @@ def deactivate_user(user_id):
         return jsonify({"error": "You cannot deactivate your own account"}), 400
 
     db = get_user_client()
-    target_profile = db.table("profiles").select("id,role,is_active,full_name").eq("id", user_id).single().execute()
+    target_profile = db.table("profiles").select("id,role,is_active,full_name,campus_id").eq("id", user_id).single().execute()
     if not target_profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    assert_owns_campus(target_profile.get("campus_id"))
 
     target_role = target_profile.get("role")
     caller_role = getattr(g, "user_role", None)
@@ -460,9 +465,11 @@ def activate_user(user_id):
         description: User not found
     """
     db = get_user_client()
-    profile = db.table("profiles").select("id,is_active,full_name").eq("id", user_id).single().execute()
+    profile = db.table("profiles").select("id,is_active,full_name,campus_id").eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+
+    assert_owns_campus(profile.get("campus_id"))
     if profile.get("is_active"):
         return jsonify({"message": MSG.ADMIN_USER_ALREADY_ACTIVE, "user_id": user_id}), 200
 
@@ -586,13 +593,15 @@ def close_window(window_id):
         description: Window not found
     """
     db = get_user_client()
-    window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
-    if not window:
-        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+    window, err = fetch_or_403(db, "delivery_windows", window_id, select="id,status", not_found_msg=MSG.ADMIN_WINDOW_NOT_FOUND)
+    if err:
+        return err
     if window.get("status") == "closed":
         return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED, "status": "closed"}), 200
 
-    db.table("delivery_windows").eq("id", window_id).update({"status": "closed"}).execute()
+    res, err = update_or_403(db, "delivery_windows", window_id, {"status": "closed"})
+    if err:
+        return err
     _audit(g.user_id, "delivery_windows", window_id, "close_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_CLOSED}), 200
 
@@ -616,9 +625,9 @@ def reopen_window(window_id):
         description: Window not found
     """
     db = get_user_client()
-    window = db.table("delivery_windows").select("id,status").eq("id", window_id).single().execute()
-    if not window:
-        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+    window, err = fetch_or_403(db, "delivery_windows", window_id, select="id,status", not_found_msg=MSG.ADMIN_WINDOW_NOT_FOUND)
+    if err:
+        return err
     if window.get("status") == "open":
         return jsonify({"message": MSG.ADMIN_WINDOW_ALREADY_OPEN, "status": "open"}), 200
     db.table("delivery_windows").eq("id", window_id).update({"status": "open"}).execute()
@@ -696,12 +705,13 @@ def get_batch(batch_id):
         description: Batch not found
     """
     db = get_user_client()
+    batch_check, err = fetch_or_403(db, "delivery_batches", batch_id, select="id", not_found_msg=MSG.ADMIN_BATCH_NOT_FOUND)
+    if err:
+        return err
     batch = db.table("delivery_batches").select(
         "*,delivery_windows!window_id(label,starts_at,ends_at),profiles!rider_id(full_name,phone)"
     ).eq("id", batch_id).limit(1).execute()
     batch = batch[0] if batch else None
-    if not batch:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
     orders = db.table("orders").select(
         "id,status,delivery_address_snapshot,total_amount,created_at,"
         "delivery_location_lat,delivery_location_lon,"
@@ -839,9 +849,9 @@ def update_batch(batch_id):
         description: Batch not found
     """
     db = get_user_client()
-    existing = db.table("delivery_batches").select("id").eq("id", batch_id).limit(1).execute()
-    if not existing:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    existing, err = fetch_or_403(db, "delivery_batches", batch_id, select="id", not_found_msg=MSG.ADMIN_BATCH_NOT_FOUND)
+    if err:
+        return err
     data = request.get_json(force=True) or {}
     BATCH_UPDATE_COLS = {"status", "rider_id", "zone", "notes"}
     safe = {k: v for k, v in data.items() if k in BATCH_UPDATE_COLS}
@@ -931,7 +941,11 @@ def list_promos():
         description: Promo code list
     """
     db = get_user_client()
-    codes = db.table("promo_codes").select("*").order("created_at", ascending=False).execute()
+    codes_q = db.table("promo_codes").select("*").order("created_at", ascending=False)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    if campus_id:
+        codes_q = codes_q.eq("campus_id", campus_id)
+    codes = codes_q.execute()
     return jsonify(codes), 200
 
 
@@ -982,7 +996,7 @@ def create_promo():
         "description", "applicable_item_ids", "applicable_category_ids",
     }
     safe = {k: v for k, v in data.items() if k in KNOWN_COLUMNS}
-    campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if campus_id:
         safe["campus_id"] = campus_id
     result = db.table("promo_codes").insert(safe)
@@ -1021,9 +1035,12 @@ def update_promo(promo_id):
         description: Promo code not found
     """
     db = get_user_client()
-    existing = db.table("promo_codes").select("id").eq("id", promo_id).limit(1).execute()
+    existing = db.table("promo_codes").select("id,campus_id").eq("id", promo_id).limit(1).execute()
     if not existing:
         return jsonify({"error": MSG.ADMIN_PROMO_NOT_FOUND}), 404
+
+    existing_row = existing[0] if isinstance(existing, list) else existing
+    assert_owns_campus(existing_row.get("campus_id"))
 
     data = request.get_json(force=True) or {}
     KNOWN_COLUMNS = {
@@ -1104,10 +1121,11 @@ def promo_uses(promo_id):
         description: Promo code not found
     """
     db = get_user_client()
+    promo_check, err = fetch_or_403(db, "promo_codes", promo_id, select="id", not_found_msg=MSG.ADMIN_PROMO_NOT_FOUND)
+    if err:
+        return err
     promo = db.table("promo_codes").select("*").eq("id", promo_id).limit(1).execute()
     promo = promo[0] if promo else None
-    if not promo:
-        return jsonify({"error": MSG.ADMIN_PROMO_NOT_FOUND}), 404
 
     uses = (
         db.table("promo_code_uses")
@@ -1211,7 +1229,7 @@ def audit_log():
 
 
 @admin_bp.route("/cron/<job_name>", methods=["POST"])
-@require_role("admin")
+@require_role("super_admin")
 def run_cron_job(job_name):
     """
     Manually trigger a scheduled cron job (admin only).
@@ -1477,7 +1495,7 @@ def bulk_grant_hp():
     amount = int(amount)
 
     # ── Build the user list ──────────────────────────────────────────────────
-    campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     explicit_ids = data.get("user_ids")
     if explicit_ids:
         # Explicit list — validate they're real users

@@ -10,6 +10,57 @@ from functools import wraps
 from flask import request, g, abort
 from app.db import get_db, SupabaseError
 from app.constants import ADMIN_ROLES
+from app.messages import MSG
+
+
+def resolve_scoped_campus_id(requested_campus_id=None):
+    """
+    For super_admin: requested value (or None = all campuses).
+    For everyone else: always their assigned campus (g.campus_id) — requested value is ignored.
+    """
+    if getattr(g, "user_role", None) == "super_admin":
+        return requested_campus_id
+    return getattr(g, "campus_id", None)
+
+
+def assert_owns_campus(record_campus_id):
+    """
+    Raise 403 if a non-super_admin attempts to access/mutate a record belonging to a different campus.
+    """
+    if getattr(g, "user_role", None) == "super_admin":
+        return
+    user_campus_id = getattr(g, "campus_id", None)
+    if record_campus_id and record_campus_id != user_campus_id:
+        abort(403, description=MSG.ORDER_ACCESS_DENIED)
+
+
+def fetch_or_403(db, table, record_id, select="*", not_found_msg=None):
+    record = None
+    try:
+        record = db.table(table).select(select).eq("id", record_id).single().execute()
+    except Exception:
+        pass
+    if record:
+        return record, None
+
+    from flask import jsonify
+    try:
+        from app.db import get_db
+        exists = get_db().table(table).select("id").eq("id", record_id).single().execute()
+        if exists:
+            return None, (jsonify({"error": "You don't have permission to access this resource"}), 403)
+    except Exception:
+        pass
+
+    return None, (jsonify({"error": not_found_msg or "Not found"}), 404)
+
+
+def update_or_403(db, table, record_id, patch):
+    result = db.table(table).eq("id", record_id).update(patch).execute()
+    from flask import jsonify
+    if not result or (isinstance(result, list) and len(result) == 0):
+        return None, (jsonify({"error": "Update not permitted or record not found"}), 403)
+    return result, None
 
 def _resolve_default_campus(db, user_role: str = None):
     """
