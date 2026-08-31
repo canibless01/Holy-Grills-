@@ -22,15 +22,11 @@ class Config:
     SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 
-    raw_origins = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("CORS_ORIGINS", "*")
+    raw_origins = os.environ.get("CORS_ORIGINS", "*")
     if raw_origins == "*":
         CORS_ORIGINS = "*"
     else:
-        origins_list = [o.strip() for o in raw_origins.split(",") if o.strip()]
-        for dev_origin in ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]:
-            if dev_origin not in origins_list:
-                origins_list.append(dev_origin)
-        CORS_ORIGINS = origins_list
+        CORS_ORIGINS = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
