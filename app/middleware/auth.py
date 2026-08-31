@@ -85,6 +85,8 @@ def require_auth(f):
     """Decorator to require Supabase JWT authentication. Sets g.user, g.user_id, g.jwt_token, g.campus_id."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return f(*args, **kwargs)
         token = _get_token_from_header()
         db = get_db()
 
@@ -131,6 +133,8 @@ def require_role(*roles):
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            if request.method == "OPTIONS":
+                return f(*args, **kwargs)
             token = _get_token_from_header()
             db = get_db()
 
@@ -187,6 +191,8 @@ def optional_auth(f):
     """Try to load user from JWT if present, but don't fail if missing (for guest flows)."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return f(*args, **kwargs)
         auth_header = request.headers.get("Authorization")
         g.user_id = None
         g.user = None

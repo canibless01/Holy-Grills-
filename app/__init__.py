@@ -52,6 +52,12 @@ def create_app(config_class=Config):
         supports_credentials=True,
     )
 
+    @app.before_request
+    def handle_options_preflight():
+        if request.method == "OPTIONS":
+            response = app.make_default_options_response()
+            return response
+
     swagger_config = {
         "headers": [],
         "specs": [
