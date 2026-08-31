@@ -44,19 +44,7 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    CORS(
-        app,
-        resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}},
-        allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        supports_credentials=True,
-    )
-
-    @app.before_request
-    def handle_options_preflight():
-        if request.method == "OPTIONS":
-            response = app.make_default_options_response()
-            return response
+    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     swagger_config = {
         "headers": [],
