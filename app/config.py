@@ -22,7 +22,7 @@ class Config:
     SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 
-    raw_origins = os.environ.get("CORS_ORIGINS", "*")
+    raw_origins = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("CORS_ORIGINS", "*")
     if raw_origins == "*":
         CORS_ORIGINS = "*"
     else:
