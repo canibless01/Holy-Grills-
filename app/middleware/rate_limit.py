@@ -30,6 +30,8 @@ def rate_limit(max_requests, window_seconds=60):
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            if request.method == "OPTIONS":
+                return f(*args, **kwargs)
             # Resolve values — look up config keys at request time so env var
             # changes take effect after a restart without code edits.
             _max = (
