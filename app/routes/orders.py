@@ -389,10 +389,19 @@ def add_review_images(order_id):
         return jsonify({"error": "image_urls is required"}), 400
 
     db = get_user_client()
-    db.table("order_reviews").eq("order_id", order_id).eq("user_id", g.user_id).update({
-        "image_urls": image_urls,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    result = (
+        db.table("order_reviews")
+        .eq("order_id", order_id)
+        .eq("user_id", g.user_id)
+        .update({
+            "image_urls": image_urls,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    )
+    if hasattr(result, "execute"):
+        result = result.execute()
+    if not result:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     return jsonify({"image_urls": image_urls}), 200
 

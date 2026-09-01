@@ -7,7 +7,7 @@ DATA MODEL DOCUMENTATION:
 """
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, optional_auth, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from datetime import datetime, timezone
 from app.messages import MSG
@@ -340,6 +340,7 @@ def delete_category(category_id):
 
 
 @menu_bp.route("/categories", methods=["GET"])
+@optional_auth
 def list_categories():
     """
     List all active menu categories for the current campus (guest or authenticated).
@@ -365,6 +366,7 @@ def list_categories():
 # ─────────────────────────────────────────────────────────────────────────────
 
 @menu_bp.route("/items", methods=["GET"])
+@optional_auth
 def list_items():
     """
     List menu items with availability, daily stock, and kitchen capacity metadata for the current campus (guest or authenticated).
@@ -846,6 +848,7 @@ def update_item(item_id):
     MENU_ITEM_UPDATE_COLUMNS = {
         "name", "slug", "category_id", "price", "hp_earn_value", "description",
         "tags", "image_url", "is_featured", "hp_multiplier",
+        "is_available", "daily_limit",
     }
     db = get_user_client()
     data = request.get_json(force=True)
@@ -856,7 +859,9 @@ def update_item(item_id):
         .eq("id", item_id)
         .single()
         .execute()
-    ) or {}
+    )
+    if not before:
+        return jsonify({"error": "Menu item not found"}), 404
     safe_data = {k: v for k, v in data.items() if k in MENU_ITEM_UPDATE_COLUMNS}
     if "hp_multiplier" in safe_data:
         try:
@@ -890,7 +895,7 @@ def update_item_availability(item_id):
     """
     db = get_user_client()
     data = request.get_json(force=True) or {}
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": "campus_id is required"}), 400
 
@@ -929,7 +934,7 @@ def bulk_update_availability():
     if "is_available" not in data:
         return jsonify({"error": MSG.MENU_AVAILABILITY_REQUIRED}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": "campus_id is required"}), 400
 
@@ -1075,6 +1080,16 @@ def update_variation_group(item_id, group_id):
         description: Group updated
     """
     db = get_user_client()
+    existing = (
+        db.table("menu_item_variation_groups")
+        .select("id")
+        .eq("id", group_id)
+        .eq("menu_item_id", item_id)
+        .single()
+        .execute()
+    )
+    if not existing:
+        return jsonify({"error": "Variation group not found"}), 404
     data = request.get_json(force=True)
     allowed = {"name", "is_required", "min_selections", "max_selections", "sort_order"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -1283,6 +1298,7 @@ def delete_variation_group(item_id, group_id):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @menu_bp.route("/addons", methods=["GET"])
+@optional_auth
 def list_addons():
     """
     List available add-on items — optional extras customers can append to any order
@@ -1376,6 +1392,9 @@ def update_addon(addon_id):
         description: Add-on updated
     """
     db = get_user_client()
+    existing = db.table("menu_addons").select("id").eq("id", addon_id).single().execute()
+    if not existing:
+        return jsonify({"error": "Add-on not found"}), 404
     data = request.get_json(force=True)
     allowed = {"name", "description", "price", "is_available", "sort_order", "group_id"}
     update = {k: v for k, v in data.items() if k in allowed}
@@ -1396,6 +1415,9 @@ def archive_addon(addon_id):
         description: Add-on archived
     """
     db = get_user_client()
+    existing = db.table("menu_addons").select("id").eq("id", addon_id).single().execute()
+    if not existing:
+        return jsonify({"error": "Add-on not found"}), 404
     result = db.table("menu_addons").eq("id", addon_id).update({
         "is_archived": True,
         "is_available": False,

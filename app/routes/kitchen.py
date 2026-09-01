@@ -129,7 +129,7 @@ def update_kitchen_settings():
             result = res.execute() if hasattr(res, "execute") else res
             updated[key] = (result[0] if isinstance(result, list) and len(result) > 0 else result) or payload
 
-        return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
           
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")

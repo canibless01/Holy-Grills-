@@ -1,7 +1,7 @@
 """Marketplace routes — listings, purchases, code redemption."""
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, optional_auth, resolve_scoped_campus_id
 from app.services.hp_service import spend_hp, get_hp_balance, award_active_hp
 from app.services.wallet_service import debit_wallet
 from app.db import get_db, get_user_client
@@ -16,7 +16,7 @@ marketplace_bp = Blueprint("marketplace", __name__)
 
 
 @marketplace_bp.route("", methods=["GET"])
-@require_auth
+@optional_auth
 def list_listings():
     """
     List active marketplace listings with availability filters (login required).
@@ -621,7 +621,7 @@ def update_listing_image(listing_id):
 def update_listing_availability(listing_id):
     db = get_user_client()
     data = request.get_json(force=True) or {}
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": "campus_id is required"}), 400
 

@@ -557,14 +557,6 @@ NOTIFICATION_TEMPLATES: dict = {
         "include_name": True,
         "channels":     None,
     },
-    # Canonical name per spec; hp.py call site uses this type
-    "hp_transfer_recipient": {
-        "title":        MSG.HP_TRANSFER_RECEIVED_TITLE,
-        "body":         MSG.HP_TRANSFER_RECEIVED_BODY,
-        "include_name": True,
-        "channels":     None,
-    },
-
     # ── Rewards ────────────────────────────────────────────────────────────────
     "reward_redeemed": {
         "title":        MSG.REWARD_REDEEMED_TITLE,

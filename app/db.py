@@ -281,6 +281,11 @@ class TableQuery:
         self._single = True
         return self
 
+    def or_(self, filter_str: str) -> "TableQuery":
+        """Add PostgREST or=(...) filter parameter."""
+        self._filters.append(f"or=({filter_str})")
+        return self
+
     def with_jwt(self, jwt: str) -> "TableQuery":
         self._user_jwt = jwt
         self._use_user_headers = True

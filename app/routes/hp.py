@@ -121,8 +121,9 @@ def admin_grant():
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404
-    if getattr(g, "user_role", None) == "admin" and getattr(g, "campus_id", None) and target.get("campus_id") and target.get("campus_id") != g.campus_id:
-        return jsonify({"error": "Cannot grant HP outside your campus"}), 403
+    if getattr(g, "user_role", None) == "admin":
+        if target.get("campus_id") != getattr(g, "campus_id", None):
+            return jsonify({"error": "Cannot grant HP outside your campus"}), 403
 
     try:
         result = award_active_hp(
@@ -168,8 +169,9 @@ def admin_expire():
     target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
     if not target:
         return jsonify({"error": "Target user profile not found"}), 404
-    if getattr(g, "user_role", None) == "admin" and target.get("campus_id") and getattr(g, "campus_id", None) and target.get("campus_id") != g.campus_id:
-        return jsonify({"error": "Cannot expire HP outside your campus"}), 403
+    if getattr(g, "user_role", None) == "admin":
+        if target.get("campus_id") != getattr(g, "campus_id", None):
+            return jsonify({"error": "Cannot expire HP outside your campus"}), 403
 
     amount = data.get("amount")
     if amount is None:
