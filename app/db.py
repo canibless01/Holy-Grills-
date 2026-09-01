@@ -30,10 +30,11 @@ class SupabaseClient:
             "Prefer": "return=representation",
         }
 
-    def _user_headers(self, user_jwt: str) -> dict:
+    def _user_headers(self, user_jwt: str = None) -> dict:
+        token = user_jwt or self.anon_key
         return {
             "apikey": self.anon_key,
-            "Authorization": f"Bearer {user_jwt}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         }
@@ -282,6 +283,7 @@ class TableQuery:
 
     def with_jwt(self, jwt: str) -> "TableQuery":
         self._user_jwt = jwt
+        self._use_user_headers = True
         return self
 
     def _build_params(self) -> dict:
@@ -298,7 +300,8 @@ class TableQuery:
         return params
 
     def _headers(self) -> dict:
-        h = self._client._user_headers(self._user_jwt) if self._user_jwt else self._client._service_headers()
+        use_user = getattr(self, "_use_user_headers", False) or bool(self._user_jwt)
+        h = self._client._user_headers(self._user_jwt) if use_user else self._client._service_headers()
         if self._single:
             h["Accept"] = "application/vnd.pgrst.object+json"
         if self._count:
@@ -438,7 +441,7 @@ class UserSupabaseClient:
 def get_user_client() -> SupabaseClient | UserSupabaseClient:
     """
     Returns a user-authenticated Supabase client using g.jwt_token if present in
-    Flask request context. Falls back to get_db() (service role) if no user JWT token exists.
+    Flask request context. Unauthenticated guests receive visitor-scoped access using the anon key.
     """
     import sys
     try:
@@ -450,10 +453,11 @@ def get_user_client() -> SupabaseClient | UserSupabaseClient:
 
     try:
         from flask import g, has_app_context
-        if has_app_context() and getattr(g, "jwt_token", None):
+        if has_app_context():
+            jwt = getattr(g, "jwt_token", None)
             if not isinstance(db, SupabaseClient):
                 return db
-            return UserSupabaseClient(db, g.jwt_token)
+            return UserSupabaseClient(db, jwt)
     except Exception:
         pass
     return db

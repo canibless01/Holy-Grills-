@@ -66,7 +66,8 @@ def test_get_user_client_returns_db_when_no_jwt():
     app = Flask(__name__)
     with app.test_request_context():
         client = get_user_client()
-        assert not isinstance(client, UserSupabaseClient)
+        assert isinstance(client, UserSupabaseClient)
+        assert client._jwt_token is None
 
 
 def test_require_role_allows_super_admin():

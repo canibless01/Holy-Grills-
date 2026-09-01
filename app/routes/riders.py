@@ -2,7 +2,7 @@
 
 import math
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.services.order_service import update_order_status
 from app.db import get_db, get_user_client
 from app.messages import MSG
@@ -37,7 +37,7 @@ def my_batch():
     now = datetime.now(timezone.utc).isoformat()
 
     q = db.table("delivery_batches").select("id,window_id,zone,gate_id,status,created_at").eq("rider_id", g.user_id).in_("status", ["assigned", "in_progress"])
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     batches = q.order("created_at", ascending=False).limit(1).execute()

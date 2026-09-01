@@ -66,11 +66,23 @@ def _resolve_default_campus(db, user_role: str = None):
     """
     Shared helper — call from require_auth / require_role / optional_auth
     wherever g.campus_id needs a fallback. Never assigns a default to super_admin.
+    Prioritizes designated default campus (is_default=True) before falling back to first active campus.
     """
     if user_role == "super_admin":
         return None
-    default = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
-    return default[0]["id"] if (default and isinstance(default, list) and len(default) > 0) else None
+    default = (
+        db.table("campuses")
+        .select("id")
+        .eq("is_active", True)
+        .eq("is_default", True)
+        .order("created_at")
+        .limit(1)
+        .execute()
+    )
+    if default and isinstance(default, list) and len(default) > 0:
+        return default[0]["id"]
+    fallback = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(1).execute()
+    return fallback[0]["id"] if (fallback and isinstance(fallback, list) and len(fallback) > 0) else None
 
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
@@ -86,7 +98,7 @@ def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if request.method == "OPTIONS":
-            return f(*args, **kwargs)
+            return "", 200
         token = _get_token_from_header()
         db = get_db()
 
@@ -134,7 +146,7 @@ def require_role(*roles):
         @wraps(f)
         def decorated(*args, **kwargs):
             if request.method == "OPTIONS":
-                return f(*args, **kwargs)
+                return "", 200
             token = _get_token_from_header()
             db = get_db()
 
@@ -192,7 +204,7 @@ def optional_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if request.method == "OPTIONS":
-            return f(*args, **kwargs)
+            return "", 200
         auth_header = request.headers.get("Authorization")
         g.user_id = None
         g.user = None

@@ -342,7 +342,7 @@ def delete_category(category_id):
 @menu_bp.route("/categories", methods=["GET"])
 def list_categories():
     """
-    List all active menu categories.
+    List all active menu categories for the current campus (guest or authenticated).
     ---
     tags: [Menu]
     security: []
@@ -350,9 +350,10 @@ def list_categories():
       200:
         description: List of categories
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
     q = db.table("menu_categories").select("*").eq("is_active", "true")
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     cats = q.order("sort_order").execute() or []
@@ -366,7 +367,7 @@ def list_categories():
 @menu_bp.route("/items", methods=["GET"])
 def list_items():
     """
-    List menu items with availability, daily stock, and kitchen capacity metadata.
+    List menu items with availability, daily stock, and kitchen capacity metadata for the current campus (guest or authenticated).
     Each item includes is_sold_out and daily_remaining.
     ---
     tags: [Menu]
@@ -389,8 +390,9 @@ def list_items():
         description: |
           { items: [...], kitchen: { daily_order_capacity, orders_today, is_at_capacity } }
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
@@ -495,7 +497,8 @@ def get_item(item_id):
     if not item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
 
-    campus_id = getattr(g, 'campus_id', None)
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
     if campus_id and item.get("campus_id") and item.get("campus_id") != campus_id:
         return jsonify({"error": "Item not found"}), 404
 

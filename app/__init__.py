@@ -4,6 +4,7 @@ import logging
 from flask import Flask, request
 from flask_cors import CORS
 from flasgger import Swagger
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config
 from app.utils.logger import get_logger
@@ -43,6 +44,7 @@ from app.routes.uploads import uploads_bp
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
 

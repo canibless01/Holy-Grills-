@@ -16,9 +16,10 @@ marketplace_bp = Blueprint("marketplace", __name__)
 
 
 @marketplace_bp.route("", methods=["GET"])
+@require_auth
 def list_listings():
     """
-    List active marketplace listings.
+    List active marketplace listings with availability filters (login required).
     ---
     tags: [Marketplace]
     security: []
@@ -74,9 +75,10 @@ def list_listings():
 
 
 @marketplace_bp.route("/<listing_id>", methods=["GET"])
+@require_auth
 def get_listing(listing_id):
     """
-    Get marketplace listing detail.
+    Get marketplace listing detail (login required).
     ---
     tags: [Marketplace]
     security: []
@@ -744,9 +746,10 @@ def admin_delete_listing(listing_id):
 
 
 @marketplace_bp.route("/requests", methods=["POST"])
+@require_auth
 def submit_listing_request():
     """
-    Submit a vendor listing request for admin review.
+    Submit a vendor listing request for admin review (login required).
     ---
     tags: [Marketplace]
     security: []
