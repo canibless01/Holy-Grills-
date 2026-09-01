@@ -16,6 +16,16 @@ from app.tasks.scheduled import (
 )
 
 
+def test_table_query_duplicate_filters_accumulate():
+    """Ensure multiple filters on the same column (e.g. date range gte/lte) accumulate into a list."""
+    mock_client = MagicMock()
+    from app.db import TableQuery
+    tq = TableQuery(mock_client, "orders")
+    tq.gte("created_at", "2026-08-01").lte("created_at", "2026-08-31")
+    params = tq._build_params()
+    assert params.get("created_at") == ["gte.2026-08-01", "lte.2026-08-31"]
+
+
 def test_resolve_default_campus_super_admin():
     """Ensure super_admin is never assigned a default campus."""
     mock_db = MagicMock()

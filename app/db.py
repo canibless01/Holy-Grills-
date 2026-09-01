@@ -287,10 +287,21 @@ class TableQuery:
         return self
 
     def _build_params(self) -> dict:
+        """
+        Build PostgREST query parameters dictionary from select, filters, ordering, and limit/offset.
+        Accumulates duplicate filter keys (e.g. gte and lte date range filters on created_at) into lists
+        so PostgREST receives both boundaries instead of overwriting earlier bounds.
+        """
         params = {"select": self._select}
         for f in self._filters:
             k, v = f.split("=", 1)
-            params[k] = v
+            if k in params:
+                if isinstance(params[k], list):
+                    params[k].append(v)
+                else:
+                    params[k] = [params[k], v]
+            else:
+                params[k] = v
         if self._order:
             params["order"] = self._order
         if self._limit is not None:
