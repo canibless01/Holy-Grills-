@@ -1,6 +1,6 @@
 # BACKEND SOURCE OF TRUTH — HOLY GRILLS PLATFORM REST API & ARCHITECTURE
 
-Exhaustive, single-source-of-truth document detailing all 311 REST API endpoints, 99 public database tables, order state machine, calculation formulas, transaction guarantees, complete webhook payloads, error recovery instructions, state persistence & caching, squad order logic, rider assignment logic, campaign/feature flag rules, and system configuration settings.
+Exhaustive, single-source-of-truth document detailing all REST API endpoints, 99 public database tables, order state machine, calculation formulas, transaction guarantees, complete webhook payloads, error recovery instructions, state persistence & caching, squad order logic, rider assignment logic, campaign/feature flag rules, and system configuration settings.
 
 ## SYSTEM ARCHITECTURE OVERVIEW
 
@@ -78,8 +78,6 @@ Exhaustive, single-source-of-truth document detailing all 311 REST API endpoints
   - `line_base_hp` = `int(3000 * 0.1)` = `300 HP`.
 
   - `total_hp` = `round(300 * 1.2)` = `360 HP` earned upon delivery.
-
-- **Edge Cases**: Discounts do not reduce HP earned on food subtotal; delivery fees earn 0 HP; HP cannot be used to pay for food orders.
 
 - **Location**: `app/services/hp_service.py:calculate_delivery_hp()`.
 
@@ -160,7 +158,7 @@ Exhaustive, single-source-of-truth document detailing all 311 REST API endpoints
 ---
 ## SECTION 3: API ENDPOINT INVENTORY
 
-Total documented REST API endpoints: **311**
+Total documented REST API endpoints: **324**
 
 
 ### `GET /api/academic-levels`
@@ -358,10 +356,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "sort_order": "string // OPTIONAL \u2014 default: null",
-    "value": "string // OPTIONAL \u2014 default: null"
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "sort_order": "any // OPTIONAL \u2014 default: null",
+    "value": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -694,10 +692,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "order_ids": "string // OPTIONAL \u2014 default: null",
-    "rider_id": "string // OPTIONAL \u2014 default: null",
-    "window_id": "string // OPTIONAL \u2014 default: null",
-    "zone": "string // OPTIONAL \u2014 default: null"
+    "order_ids": "any // OPTIONAL \u2014 default: null",
+    "rider_id": "any // OPTIONAL \u2014 default: null",
+    "window_id": "any // OPTIONAL \u2014 default: null",
+    "zone": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -933,13 +931,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "capacity": "string // OPTIONAL \u2014 default: null",
-    "ends_at": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "label": "string // OPTIONAL \u2014 default: null",
-    "starts_at": "string // OPTIONAL \u2014 default: null",
-    "zone_id": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "capacity": "any // OPTIONAL \u2014 default: null",
+    "ends_at": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "label": "any // OPTIONAL \u2014 default: null",
+    "starts_at": "any // OPTIONAL \u2014 default: null",
+    "zone_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -1109,11 +1107,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "faculty": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "slug": "string // OPTIONAL \u2014 default: null",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "faculty": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "slug": "any // OPTIONAL \u2014 default: null",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -1323,6 +1321,49 @@ Total documented REST API endpoints: **311**
 
 ---
 
+### `POST /api/admin/feature-flags`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/admin_feature_flags.py` (`create_feature_flag`)
+
+**Summary:** Create a disabled feature flag.
+
+
+**Request Specification:**
+
+```json
+{
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "description": "any // OPTIONAL \u2014 default: null",
+    "feature_name": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `feature_flags`
+
+
+**Error Responses & Recovery Instructions:**
+
+- `"Feature flag already exists"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+
+---
+
 ### `GET /api/admin/feature-flags`
 
 **Authentication:** `admin` (JWT required)
@@ -1358,49 +1399,6 @@ Total documented REST API endpoints: **311**
 **Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `POST /api/admin/feature-flags`
-
-**Authentication:** `admin` (JWT required)
-
-**Source File:** `app/routes/admin_feature_flags.py` (`create_feature_flag`)
-
-**Summary:** Create a disabled feature flag.
-
-
-**Request Specification:**
-
-```json
-{
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "description": "string // OPTIONAL \u2014 default: null",
-    "feature_name": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null"
-}
-```
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `feature_flags`
-
-
-**Error Responses & Recovery Instructions:**
-
-- `"Feature flag already exists"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1453,9 +1451,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "description": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "description": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -1533,7 +1531,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "status": "string // OPTIONAL \u2014 default: null"
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -1647,14 +1645,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "integer / number // OPTIONAL \u2014 default: null",
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "dry_run": "string // OPTIONAL \u2014 default: null",
-    "last_order_after": "string // OPTIONAL \u2014 default: null",
-    "last_order_before": "string // OPTIONAL \u2014 default: null",
-    "reason": "string // OPTIONAL \u2014 default: null",
-    "tier_slug": "string // OPTIONAL \u2014 default: null",
-    "user_ids": "string // OPTIONAL \u2014 default: null"
+    "amount": "any // OPTIONAL \u2014 default: null",
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "dry_run": "any // OPTIONAL \u2014 default: null",
+    "last_order_after": "any // OPTIONAL \u2014 default: null",
+    "last_order_before": "any // OPTIONAL \u2014 default: null",
+    "reason": "any // OPTIONAL \u2014 default: null",
+    "tier_slug": "any // OPTIONAL \u2014 default: null",
+    "user_ids": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -1663,10 +1661,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -1700,10 +1697,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "period": "monthly",
+    "total_hp_issued": 125000,
+    "total_hp_redeemed": 45000,
+    "net_active_hp": 80000,
+    "active_users_count": 340
 }
 ```
 
@@ -1888,11 +1886,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "code": "string // OPTIONAL \u2014 default: null",
-    "created_by": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "used_count": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "code": "any // OPTIONAL \u2014 default: null",
+    "created_by": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "used_count": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -2083,10 +2081,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "description": "string // OPTIONAL \u2014 default: null",
-    "key": "string // OPTIONAL \u2014 default: null",
-    "value": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "description": "any // OPTIONAL \u2014 default: null",
+    "key": "any // OPTIONAL \u2014 default: null",
+    "value": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -2124,9 +2122,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "description": "string // OPTIONAL \u2014 default: null",
-    "value": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "description": "any // OPTIONAL \u2014 default: null",
+    "value": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -2320,10 +2318,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -2396,7 +2393,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "role": "string // OPTIONAL \u2014 default: null"
+    "role": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -2444,9 +2441,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "wallet_balance": 5000.0,
-    "currency": "NGN",
-    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -2634,10 +2631,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "period": "monthly",
+    "total_hp_issued": 125000,
+    "total_hp_redeemed": 45000,
+    "net_active_hp": 80000,
+    "active_users_count": 340
 }
 ```
 
@@ -2824,8 +2822,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "retained": "string // OPTIONAL \u2014 default: null",
-    "total": "string // OPTIONAL \u2014 default: null"
+    "retained": "any // OPTIONAL \u2014 default: null",
+    "total": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -2943,7 +2941,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "password": "string // REQUIRED \u2014 must be non-empty"
+    "password": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -3019,17 +3017,17 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "address_line": "string // OPTIONAL \u2014 default: null",
-    "city": "string // OPTIONAL \u2014 default: null",
-    "hostel": "string // OPTIONAL \u2014 default: null",
-    "is_default": "boolean // OPTIONAL \u2014 default: null",
-    "label": "string // OPTIONAL \u2014 default: null",
-    "landmark": "string // OPTIONAL \u2014 default: null",
-    "latitude": "string // OPTIONAL \u2014 default: null",
-    "line1": "string // OPTIONAL \u2014 default: null",
-    "line2": "string // OPTIONAL \u2014 default: null",
-    "longitude": "string // OPTIONAL \u2014 default: null",
-    "state": "string // OPTIONAL \u2014 default: null"
+    "address_line": "any // OPTIONAL \u2014 default: null",
+    "city": "any // OPTIONAL \u2014 default: null",
+    "hostel": "any // OPTIONAL \u2014 default: null",
+    "is_default": "any // OPTIONAL \u2014 default: null",
+    "label": "any // OPTIONAL \u2014 default: null",
+    "landmark": "any // OPTIONAL \u2014 default: null",
+    "latitude": "any // OPTIONAL \u2014 default: null",
+    "line1": "any // OPTIONAL \u2014 default: null",
+    "line2": "any // OPTIONAL \u2014 default: null",
+    "longitude": "any // OPTIONAL \u2014 default: null",
+    "state": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3105,8 +3103,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "address_line": "string // OPTIONAL \u2014 default: null",
-    "is_default": "boolean // OPTIONAL \u2014 default: null"
+    "address_line": "any // OPTIONAL \u2014 default: null",
+    "is_default": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3146,8 +3144,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "current_password": "string // OPTIONAL \u2014 default: null",
-    "new_password": "string // OPTIONAL \u2014 default: null"
+    "current_password": "any // OPTIONAL \u2014 default: null",
+    "new_password": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3187,9 +3185,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "device_model": "string // OPTIONAL \u2014 default: null",
-    "platform": "string // OPTIONAL \u2014 default: null",
-    "token": "string // OPTIONAL \u2014 default: null"
+    "device_model": "any // OPTIONAL \u2014 default: null",
+    "platform": "any // OPTIONAL \u2014 default: null",
+    "token": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3229,8 +3227,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "string // REQUIRED \u2014 must be non-empty",
-    "password": "string // REQUIRED \u2014 must be non-empty"
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "password": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -3414,7 +3412,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "photo_url": "string // OPTIONAL \u2014 default: null"
+    "photo_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3454,8 +3452,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "access_token": "string // OPTIONAL \u2014 default: null",
-    "refresh_token": "string // OPTIONAL \u2014 default: null"
+    "access_token": "any // OPTIONAL \u2014 default: null",
+    "refresh_token": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3495,15 +3493,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "academic_level": "string // OPTIONAL \u2014 default: null",
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "date_of_birth": "string // OPTIONAL \u2014 default: null",
-    "department": "string // OPTIONAL \u2014 default: null",
-    "email": "string // REQUIRED \u2014 must be non-empty",
-    "full_name": "string // OPTIONAL \u2014 default: null",
-    "password": "string // REQUIRED \u2014 must be non-empty",
-    "phone": "string // REQUIRED \u2014 must be non-empty",
-    "referred_by_code": "string // OPTIONAL \u2014 default: null"
+    "academic_level": "any // OPTIONAL \u2014 default: null",
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "date_of_birth": "any // OPTIONAL \u2014 default: null",
+    "department": "any // OPTIONAL \u2014 default: null",
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "full_name": "any // OPTIONAL \u2014 default: null",
+    "password": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "phone": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "referred_by_code": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3543,7 +3541,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "string // REQUIRED \u2014 must be non-empty"
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -3619,7 +3617,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "string // REQUIRED \u2014 must be non-empty"
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -3731,11 +3729,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "menu_item_id": "string // OPTIONAL \u2014 default: null",
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "quantity": "integer / number // OPTIONAL \u2014 default: null",
-    "selected_addons": "string // OPTIONAL \u2014 default: null",
-    "selected_variations": "string // OPTIONAL \u2014 default: null"
+    "menu_item_id": "any // OPTIONAL \u2014 default: null",
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "quantity": "any // OPTIONAL \u2014 default: null",
+    "selected_addons": "any // OPTIONAL \u2014 default: null",
+    "selected_variations": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3811,8 +3809,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "quantity": "integer / number // OPTIONAL \u2014 default: null"
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "quantity": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -3831,6 +3829,501 @@ Total documented REST API endpoints: **311**
 **Database & Service Interactions:**
 
 - **Database Tables:** `cart_items`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `GET /api/challenges`
+
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
+
+**Source File:** `app/routes/challenges.py` (`list_challenges`)
+
+**Summary:** List active challenges (milestones with time_window set).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+- **Query Parameters:** `time_window`
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `POST /api/challenges/<milestone_id>/complete`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`complete_challenge`)
+
+**Summary:** Attempt to complete a challenge or claim a badge.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** None directly in route handler (delegated to service layer)
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `GET /api/challenges/admin`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`admin_list_milestones`)
+
+**Summary:** List all milestones (admin).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+- **Query Parameters:** `is_active, limit, offset, time_window`
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `POST /api/challenges/admin`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`admin_create_milestone`)
+
+**Summary:** Create a new milestone (admin).
+
+
+**Request Specification:**
+
+```json
+{
+    "time_window": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `DELETE /api/challenges/admin/<milestone_id>`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`admin_delete_milestone`)
+
+**Summary:** Deactivate (soft-delete) a milestone (admin).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `PATCH /api/challenges/admin/<milestone_id>`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`admin_update_milestone`)
+
+**Summary:** Update a milestone (admin).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `POST /api/challenges/admin/<milestone_id>/grant`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`admin_grant_milestone`)
+
+**Summary:** Manually grant a milestone to a user (admin).
+
+
+**Request Specification:**
+
+```json
+{
+    "user_id": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** None directly in route handler (delegated to service layer)
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `GET /api/challenges/badges`
+
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
+
+**Source File:** `app/routes/challenges.py` (`list_badges`)
+
+**Summary:** List all badges (lifetime milestones, time_window IS NULL).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `GET /api/challenges/my`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`my_milestones`)
+
+**Summary:** Get the authenticated user's full milestone progress (badges + challenges).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** None directly in route handler (delegated to service layer)
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `POST /api/challenges/push-subscribed`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`push_subscribed_challenge`)
+
+**Summary:** Register Web Push subscription and claim push subscription system milestone reward.
+
+
+**Request Specification:**
+
+```json
+{
+    "device_label": "any // OPTIONAL \u2014 default: null",
+    "subscription": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones, push_subscriptions`
+
+
+**Error Responses & Recovery Instructions:**
+
+- `"Failed to update subscription"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Push subscribe milestone not configured or inactive"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+
+---
+
+### `POST /api/challenges/pwa-installed`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`pwa_installed`)
+
+**Summary:** Claim PWA installation system milestone reward.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
+
+
+**Error Responses & Recovery Instructions:**
+
+- `"PWA install milestone not configured or inactive"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+
+---
+
+### `GET /api/challenges/pwa-push-bonus-status`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`pwa_push_bonus_status`)
+
+**Summary:** Get PWA + Push Subscription bonus eligibility and status. Automatically awards bonus if eligible.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "pwa_install": {
+        "completed": true,
+        "hp_awarded": 50
+    },
+    "push_subscribe": {
+        "completed": true,
+        "hp_awarded": 50
+    },
+    "pwa_push_bonus": {
+        "completed": true,
+        "hp_awarded": 100
+    }
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** None directly in route handler (delegated to service layer)
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
+### `POST /api/challenges/social-follow`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/challenges.py` (`social_follow`)
+
+**Summary:** Self-declare a social follow (one-time, HP → Pending, subject to monthly cap).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `milestones`
 
 
 **Error Responses & Recovery Instructions:**
@@ -3896,9 +4389,23 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "history": [
+        {
+            "status": "received",
+            "created_at": "2026-03-31T12:00:00Z",
+            "changed_by": "customer"
+        },
+        {
+            "status": "preparing",
+            "created_at": "2026-03-31T12:05:00Z",
+            "changed_by": "kitchen"
+        },
+        {
+            "status": "delivered",
+            "created_at": "2026-03-31T12:25:00Z",
+            "changed_by": "rider"
+        }
+    ]
 }
 ```
 
@@ -3965,14 +4472,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "base_fee": "string // OPTIONAL \u2014 default: null",
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "lat": "string // OPTIONAL \u2014 default: null",
-    "lon": "string // OPTIONAL \u2014 default: null",
-    "min_fee": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "rate_per_km": "string // OPTIONAL \u2014 default: null"
+    "base_fee": "any // OPTIONAL \u2014 default: null",
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "lat": "any // OPTIONAL \u2014 default: null",
+    "lon": "any // OPTIONAL \u2014 default: null",
+    "min_fee": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "rate_per_km": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4125,11 +4632,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "delivery_fee": "string // OPTIONAL \u2014 default: null",
-    "gate_id": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "delivery_fee": "any // OPTIONAL \u2014 default: null",
+    "gate_id": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -4243,11 +4750,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "delivery_location_id": "string // OPTIONAL \u2014 default: null",
-    "delivery_type": "string // OPTIONAL \u2014 default: null",
-    "lat": "string // OPTIONAL \u2014 default: null",
-    "lon": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "delivery_location_id": "any // OPTIONAL \u2014 default: null",
+    "delivery_type": "any // OPTIONAL \u2014 default: null",
+    "lat": "any // OPTIONAL \u2014 default: null",
+    "lon": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4617,14 +5124,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "ends_at": "string // OPTIONAL \u2014 default: null",
-    "hp_per_attendee": "string // OPTIONAL \u2014 default: null",
-    "hp_reward": "string // OPTIONAL \u2014 default: null",
-    "is_published": "string // OPTIONAL \u2014 default: null",
-    "organizer_id": "string // OPTIONAL \u2014 default: null",
-    "slug": "string // OPTIONAL \u2014 default: null",
-    "starts_at": "string // OPTIONAL \u2014 default: null",
-    "title": "string // REQUIRED \u2014 must be non-empty"
+    "ends_at": "any // OPTIONAL \u2014 default: null",
+    "hp_per_attendee": "any // OPTIONAL \u2014 default: null",
+    "hp_reward": "any // OPTIONAL \u2014 default: null",
+    "is_published": "any // OPTIONAL \u2014 default: null",
+    "organizer_id": "any // OPTIONAL \u2014 default: null",
+    "slug": "any // OPTIONAL \u2014 default: null",
+    "starts_at": "any // OPTIONAL \u2014 default: null",
+    "title": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -4736,8 +5243,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_per_attendee": "string // OPTIONAL \u2014 default: null",
-    "hp_reward": "string // OPTIONAL \u2014 default: null"
+    "hp_per_attendee": "any // OPTIONAL \u2014 default: null",
+    "hp_reward": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4777,10 +5284,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "string // REQUIRED \u2014 must be non-empty",
-    "guest_email": "string // OPTIONAL \u2014 default: null",
-    "qr_token": "string // OPTIONAL \u2014 default: null",
-    "ticket_id": "string // OPTIONAL \u2014 default: null"
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "guest_email": "any // OPTIONAL \u2014 default: null",
+    "qr_token": "any // OPTIONAL \u2014 default: null",
+    "ticket_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4820,7 +5327,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4860,7 +5367,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "qr_token": "string // OPTIONAL \u2014 default: null"
+    "qr_token": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4900,19 +5407,19 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "callback_url": "string // OPTIONAL \u2014 default: null",
-    "email": "string // REQUIRED \u2014 must be non-empty",
-    "guest_email": "string // OPTIONAL \u2014 default: null",
-    "guest_name": "string // OPTIONAL \u2014 default: null",
-    "guest_phone": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "payment_method": "string // REQUIRED \u2014 must be non-empty",
-    "phone": "string // REQUIRED \u2014 must be non-empty",
-    "promo_code": "string // OPTIONAL \u2014 default: null",
-    "registration_answers": "string // OPTIONAL \u2014 default: null",
-    "tier_id": "string // OPTIONAL \u2014 default: null",
-    "use_hp": "boolean // OPTIONAL \u2014 default: null",
-    "wallet_amount": "string // OPTIONAL \u2014 default: null"
+    "callback_url": "any // OPTIONAL \u2014 default: null",
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "guest_email": "any // OPTIONAL \u2014 default: null",
+    "guest_name": "any // OPTIONAL \u2014 default: null",
+    "guest_phone": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "payment_method": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "phone": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "promo_code": "any // OPTIONAL \u2014 default: null",
+    "registration_answers": "any // OPTIONAL \u2014 default: null",
+    "tier_id": "any // OPTIONAL \u2014 default: null",
+    "use_hp": "any // OPTIONAL \u2014 default: null",
+    "wallet_amount": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -4991,9 +5498,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "custom_message": "string // OPTIONAL \u2014 default: null",
-    "host_email": "string // OPTIONAL \u2014 default: null",
-    "host_name": "string // OPTIONAL \u2014 default: null"
+    "custom_message": "any // OPTIONAL \u2014 default: null",
+    "host_email": "any // OPTIONAL \u2014 default: null",
+    "host_name": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5108,17 +5615,17 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "capacity": "string // OPTIONAL \u2014 default: null",
-    "color": "string // OPTIONAL \u2014 default: null",
-    "description": "string // OPTIONAL \u2014 default: null",
-    "early_bird_deadline": "string // OPTIONAL \u2014 default: null",
-    "features": "string // OPTIONAL \u2014 default: null",
-    "icon": "string // OPTIONAL \u2014 default: null",
-    "is_early_bird": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "price_hp": "string // OPTIONAL \u2014 default: null",
-    "price_naira": "string // OPTIONAL \u2014 default: null",
-    "terms": "string // OPTIONAL \u2014 default: null"
+    "capacity": "any // OPTIONAL \u2014 default: null",
+    "color": "any // OPTIONAL \u2014 default: null",
+    "description": "any // OPTIONAL \u2014 default: null",
+    "early_bird_deadline": "any // OPTIONAL \u2014 default: null",
+    "features": "any // OPTIONAL \u2014 default: null",
+    "icon": "any // OPTIONAL \u2014 default: null",
+    "is_early_bird": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "price_hp": "any // OPTIONAL \u2014 default: null",
+    "price_naira": "any // OPTIONAL \u2014 default: null",
+    "terms": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5270,10 +5777,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "event_name": "string // OPTIONAL \u2014 default: null",
-    "organizer_name": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "event_name": "any // OPTIONAL \u2014 default: null",
+    "organizer_name": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5601,8 +6108,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "order_id": "string // OPTIONAL \u2014 default: null",
-    "side_choice": "string // OPTIONAL \u2014 default: null"
+    "order_id": "any // OPTIONAL \u2014 default: null",
+    "side_choice": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5717,9 +6224,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "integer / number // OPTIONAL \u2014 default: null",
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "user_id": "string // OPTIONAL \u2014 default: null"
+    "amount": "any // OPTIONAL \u2014 default: null",
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "user_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5728,10 +6235,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -5761,9 +6267,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "integer / number // OPTIONAL \u2014 default: null",
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "user_id": "string // OPTIONAL \u2014 default: null"
+    "amount": "any // OPTIONAL \u2014 default: null",
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "user_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5772,10 +6278,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -5811,10 +6316,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -5848,10 +6352,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -5880,10 +6383,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "integer / number // OPTIONAL \u2014 default: null",
-    "hp_amount": "string // OPTIONAL \u2014 default: null",
-    "paystack_reference": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "amount": "any // OPTIONAL \u2014 default: null",
+    "hp_amount": "any // OPTIONAL \u2014 default: null",
+    "paystack_reference": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -5892,10 +6395,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -5929,10 +6431,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -5966,10 +6467,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -6005,10 +6505,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -6037,9 +6536,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "integer / number // OPTIONAL \u2014 default: null",
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "recipient_id": "string // OPTIONAL \u2014 default: null"
+    "amount": "any // OPTIONAL \u2014 default: null",
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "recipient_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -6048,10 +6547,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -6088,10 +6586,23 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_balance": 1250,
-    "pending_hp_balance": 300,
-    "tier": "regular",
-    "tier_multiplier": 1.1
+    "history": [
+        {
+            "status": "received",
+            "created_at": "2026-03-31T12:00:00Z",
+            "changed_by": "customer"
+        },
+        {
+            "status": "preparing",
+            "created_at": "2026-03-31T12:05:00Z",
+            "changed_by": "kitchen"
+        },
+        {
+            "status": "delivered",
+            "created_at": "2026-03-31T12:25:00Z",
+            "changed_by": "rider"
+        }
+    ]
 }
 ```
 
@@ -6156,8 +6667,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "from_status": "string // OPTIONAL \u2014 default: null",
-    "notes": "string // OPTIONAL \u2014 default: null"
+    "from_status": "any // OPTIONAL \u2014 default: null",
+    "notes": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -6347,7 +6858,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "settings": "string // OPTIONAL \u2014 default: null"
+    "settings": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -6793,10 +7304,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "payment_method": "string // REQUIRED \u2014 must be non-empty",
-    "payment_reference": "string // OPTIONAL \u2014 default: null",
-    "use_hp": "boolean // OPTIONAL \u2014 default: null",
-    "wallet_amount": "string // OPTIONAL \u2014 default: null"
+    "payment_method": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "payment_reference": "any // OPTIONAL \u2014 default: null",
+    "use_hp": "any // OPTIONAL \u2014 default: null",
+    "wallet_amount": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -6836,7 +7347,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "codes": "string // OPTIONAL \u2014 default: null"
+    "codes": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -6914,8 +7425,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "listing_type": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "listing_type": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7061,7 +7572,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7102,7 +7613,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7180,8 +7691,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "admin_note": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "admin_note": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7259,8 +7770,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "admin_notes": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "admin_notes": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7300,7 +7811,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7378,13 +7889,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "category": "string // OPTIONAL \u2014 default: null",
-    "description": "string // OPTIONAL \u2014 default: null",
-    "proposed_price": "string // OPTIONAL \u2014 default: null",
-    "service_title": "string // OPTIONAL \u2014 default: null",
-    "vendor_email": "string // OPTIONAL \u2014 default: null",
-    "vendor_name": "string // OPTIONAL \u2014 default: null",
-    "vendor_phone": "string // OPTIONAL \u2014 default: null"
+    "category": "any // OPTIONAL \u2014 default: null",
+    "description": "any // OPTIONAL \u2014 default: null",
+    "proposed_price": "any // OPTIONAL \u2014 default: null",
+    "service_title": "any // OPTIONAL \u2014 default: null",
+    "vendor_email": "any // OPTIONAL \u2014 default: null",
+    "vendor_name": "any // OPTIONAL \u2014 default: null",
+    "vendor_phone": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7460,12 +7971,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "description": "string // OPTIONAL \u2014 default: null",
-    "group_id": "string // OPTIONAL \u2014 default: null",
-    "is_available": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "price": "string // OPTIONAL \u2014 default: null",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "description": "any // OPTIONAL \u2014 default: null",
+    "group_id": "any // OPTIONAL \u2014 default: null",
+    "is_available": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "price": "any // OPTIONAL \u2014 default: null",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7564,18 +8075,26 @@ Total documented REST API endpoints: **311**
 
 ---
 
-### `GET /api/menu/categories`
+### `POST /api/menu/categories`
 
-**Authentication:** Optional JWT (Authenticated or Guest checkout context)
+**Authentication:** `admin` (JWT required)
 
-**Source File:** `app/routes/menu.py` (`list_categories`)
+**Source File:** `app/routes/menu.py` (`create_category`)
 
-**Summary:** List all active menu categories for the current campus (guest or authenticated).
+**Summary:** Create a new menu category (admin only).
 
 
 **Request Specification:**
 
-- **JSON Body:** None required / empty body
+```json
+{
+    "description": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "slug": "any // OPTIONAL \u2014 default: null",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
+}
+```
 
 
 **Response Specification (200 OK Response):**
@@ -7600,26 +8119,18 @@ Total documented REST API endpoints: **311**
 
 ---
 
-### `POST /api/menu/categories`
+### `GET /api/menu/categories`
 
-**Authentication:** `admin` (JWT required)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
-**Source File:** `app/routes/menu.py` (`create_category`)
+**Source File:** `app/routes/menu.py` (`list_categories`)
 
-**Summary:** Create a new menu category (admin only).
+**Summary:** List all active menu categories for the current campus (guest or authenticated).
 
 
 **Request Specification:**
 
-```json
-{
-    "description": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "slug": "string // OPTIONAL \u2014 default: null",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
-}
-```
+- **JSON Body:** None required / empty body
 
 
 **Response Specification (200 OK Response):**
@@ -7767,10 +8278,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_multiplier": "string // OPTIONAL \u2014 default: null",
-    "is_available": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "slug": "string // OPTIONAL \u2014 default: null"
+    "hp_multiplier": "any // OPTIONAL \u2014 default: null",
+    "is_available": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "slug": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7846,9 +8357,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_multiplier": "string // OPTIONAL \u2014 default: null",
-    "is_available": "string // OPTIONAL \u2014 default: null",
-    "updated_at": "string // OPTIONAL \u2014 default: null"
+    "hp_multiplier": "any // OPTIONAL \u2014 default: null",
+    "is_available": "any // OPTIONAL \u2014 default: null",
+    "updated_at": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -7889,11 +8400,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_required": "string // OPTIONAL \u2014 default: null",
-    "max_select": "string // OPTIONAL \u2014 default: null",
-    "min_select": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "is_required": "any // OPTIONAL \u2014 default: null",
+    "max_select": "any // OPTIONAL \u2014 default: null",
+    "min_select": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8077,7 +8588,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8118,7 +8629,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8158,11 +8669,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_required": "string // OPTIONAL \u2014 default: null",
-    "max_selections": "string // OPTIONAL \u2014 default: null",
-    "min_selections": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "is_required": "any // OPTIONAL \u2014 default: null",
+    "max_selections": "any // OPTIONAL \u2014 default: null",
+    "min_selections": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8274,10 +8785,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_available": "string // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "price_delta": "string // OPTIONAL \u2014 default: null",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "is_available": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "price_delta": "any // OPTIONAL \u2014 default: null",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8389,9 +8900,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "is_available": "string // OPTIONAL \u2014 default: null",
-    "item_ids": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "is_available": "any // OPTIONAL \u2014 default: null",
+    "item_ids": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8467,7 +8978,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "daily_order_capacity": "string // OPTIONAL \u2014 default: null"
+    "daily_order_capacity": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8619,11 +9130,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "created_by": "string // OPTIONAL \u2014 default: null",
-    "scheduled_at": "string // OPTIONAL \u2014 default: null",
-    "segment": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "created_by": "any // OPTIONAL \u2014 default: null",
+    "scheduled_at": "any // OPTIONAL \u2014 default: null",
+    "segment": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -8794,6 +9305,52 @@ Total documented REST API endpoints: **311**
 
 ---
 
+### `POST /api/order-locks`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/order_locks.py` (`create_lock`)
+
+**Summary:** Lock-in a future order date with a discount.
+
+
+**Request Specification:**
+
+```json
+{
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "discount_pct": "any // OPTIONAL \u2014 default: null",
+    "locked_date": "any // OPTIONAL \u2014 default: null",
+    "reschedule_count": "any // OPTIONAL \u2014 default: null",
+    "reward_hp_amount": "any // OPTIONAL \u2014 default: null",
+    "reward_type": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `order_locks`
+
+
+**Error Responses & Recovery Instructions:**
+
+- `"User already has an active lock"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"reward_type must be 'discount' or 'hp'"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+
+---
+
 ### `GET /api/order-locks`
 
 **Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
@@ -8829,52 +9386,6 @@ Total documented REST API endpoints: **311**
 **Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `POST /api/order-locks`
-
-**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
-
-**Source File:** `app/routes/order_locks.py` (`create_lock`)
-
-**Summary:** Lock-in a future order date with a discount.
-
-
-**Request Specification:**
-
-```json
-{
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "discount_pct": "string // OPTIONAL \u2014 default: null",
-    "locked_date": "string // OPTIONAL \u2014 default: null",
-    "reschedule_count": "string // OPTIONAL \u2014 default: null",
-    "reward_hp_amount": "string // OPTIONAL \u2014 default: null",
-    "reward_type": "string // OPTIONAL \u2014 default: null"
-}
-```
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `order_locks`
-
-
-**Error Responses & Recovery Instructions:**
-
-- `"User already has an active lock"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
-- `"reward_type must be 'discount' or 'hp'"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8963,7 +9474,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "locked_date": "string // OPTIONAL \u2014 default: null"
+    "locked_date": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9028,6 +9539,59 @@ Total documented REST API endpoints: **311**
 
 ---
 
+### `POST /api/orders`
+
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
+
+**Source File:** `app/routes/orders.py` (`create_order`)
+
+
+**Request Specification:**
+
+```json
+{
+    "items": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "payment_method": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "user_id": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** None directly in route handler (delegated to service layer)
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
 ### `GET /api/orders`
 
 **Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
@@ -9064,71 +9628,6 @@ Total documented REST API endpoints: **311**
 **Database & Service Interactions:**
 
 - **Database Tables:** `orders`
-
-
-**Error Responses & Recovery Instructions:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `POST /api/orders`
-
-**Authentication:** Optional JWT (Authenticated or Guest checkout context)
-
-**Source File:** `app/routes/orders.py` (`create_order`)
-
-
-**Request Specification:**
-
-```json
-{
-    "items": "array // REQUIRED \u2014 array of objects: [{'menu_item_id': 'uuid', 'quantity': integer, 'addons': [{'addon_id': 'uuid'}]}]",
-    "payment_method": "string // REQUIRED \u2014 enum: 'wallet' | 'card' | 'split'",
-    "delivery_type": "string // CONDITIONAL \u2014 enum: 'on_campus' | 'off_campus' (required if delivery requested)",
-    "delivery_location_id": "string // CONDITIONAL \u2014 uuid referencing hostel or gate",
-    "promo_code": "string // OPTIONAL \u2014 promotional code string (e.g. 'SAVE10')",
-    "use_hp": "boolean // OPTIONAL \u2014 default: false",
-    "campus_id": "string // OPTIONAL \u2014 uuid referencing campus",
-    "idempotency_key": "string // OPTIONAL \u2014 unique UUID string preventing duplicate orders",
-    "scheduled_for": "string // CONDITIONAL \u2014 ISO timestamp for future delivery window",
-    "notes": "string // OPTIONAL \u2014 special preparation or delivery instructions",
-    "guest_name": "string // CONDITIONAL \u2014 required for unauthenticated guest checkout",
-    "guest_phone": "string // CONDITIONAL \u2014 required for unauthenticated guest checkout",
-    "guest_email": "string // CONDITIONAL \u2014 required for unauthenticated guest checkout",
-    "squad_name": "string // OPTIONAL \u2014 squad group name if group order",
-    "is_squad_order": "boolean // OPTIONAL \u2014 default: false"
-}
-```
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-    "order_number": "HG-9A8B7C6D5E",
-    "status": "received",
-    "payment_status": "paid",
-    "subtotal": 3000.0,
-    "delivery_fee": 200.0,
-    "discount_amount": 0.0,
-    "total_amount": 3200.0,
-    "hp_earned": 360,
-    "items": [
-        {
-            "menu_item_id": "8a2c1b",
-            "quantity": 2,
-            "unit_price": 1500.0
-        }
-    ]
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** None directly in route handler (delegated to service layer)
 
 
 **Error Responses & Recovery Instructions:**
@@ -9199,15 +9698,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "orders": [
-        {
-            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-            "order_number": "HG-9A8B7C6D5E",
-            "status": "delivered",
-            "payment_status": "paid",
-            "total_amount": 3200.0
-        }
-    ]
+    "call_link": "tel:+2348012345678",
+    "rider_phone": "08012345678",
+    "rider_name": "Delivery Rider Alex"
 }
 ```
 
@@ -9236,7 +9729,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "reason": "string // OPTIONAL \u2014 default: null"
+    "reason": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9289,7 +9782,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "claim_token": "string // OPTIONAL \u2014 default: null"
+    "claim_token": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9347,13 +9840,21 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "orders": [
+    "history": [
         {
-            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-            "order_number": "HG-9A8B7C6D5E",
+            "status": "received",
+            "created_at": "2026-03-31T12:00:00Z",
+            "changed_by": "customer"
+        },
+        {
+            "status": "preparing",
+            "created_at": "2026-03-31T12:05:00Z",
+            "changed_by": "kitchen"
+        },
+        {
             "status": "delivered",
-            "payment_status": "paid",
-            "total_amount": 3200.0
+            "created_at": "2026-03-31T12:25:00Z",
+            "changed_by": "rider"
         }
     ]
 }
@@ -9384,9 +9885,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "reason": "string // OPTIONAL \u2014 default: null",
-    "refund_amount": "string // OPTIONAL \u2014 default: null",
-    "refund_to_wallet": "string // OPTIONAL \u2014 default: null"
+    "reason": "any // OPTIONAL \u2014 default: null",
+    "refund_amount": "any // OPTIONAL \u2014 default: null",
+    "refund_to_wallet": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9489,10 +9990,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "comment": "string // OPTIONAL \u2014 default: null",
-    "kitchen_rating": "string // OPTIONAL \u2014 default: null",
-    "rating": "string // OPTIONAL \u2014 default: null",
-    "rider_rating": "string // OPTIONAL \u2014 default: null"
+    "comment": "any // OPTIONAL \u2014 default: null",
+    "kitchen_rating": "any // OPTIONAL \u2014 default: null",
+    "rating": "any // OPTIONAL \u2014 default: null",
+    "rider_rating": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9545,7 +10046,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_urls": "string // OPTIONAL \u2014 default: null"
+    "image_urls": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9598,7 +10099,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "reason": "string // OPTIONAL \u2014 default: null"
+    "reason": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9687,8 +10188,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "emails": "string // OPTIONAL \u2014 default: null",
-    "split_hp": "boolean // OPTIONAL \u2014 default: null"
+    "emails": "any // OPTIONAL \u2014 default: null",
+    "split_hp": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9741,8 +10242,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -9782,8 +10283,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "target_status": "string // OPTIONAL \u2014 default: null"
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "target_status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10047,8 +10548,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "code": "string // OPTIONAL \u2014 default: null",
-    "order_subtotal": "string // OPTIONAL \u2014 default: null"
+    "code": "any // OPTIONAL \u2014 default: null",
+    "order_subtotal": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10089,7 +10590,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "endpoint": "string // OPTIONAL \u2014 default: null"
+    "endpoint": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10129,8 +10630,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "device_label": "string // OPTIONAL \u2014 default: null",
-    "subscription": "string // OPTIONAL \u2014 default: null"
+    "device_label": "any // OPTIONAL \u2014 default: null",
+    "subscription": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10206,8 +10707,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "order_id": "string // OPTIONAL \u2014 default: null",
-    "referred_user_id": "string // OPTIONAL \u2014 default: null"
+    "order_id": "any // OPTIONAL \u2014 default: null",
+    "referred_user_id": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10321,11 +10822,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "string // OPTIONAL \u2014 default: null",
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "reward_type": "string // OPTIONAL \u2014 default: null",
-    "stock_quantity": "string // OPTIONAL \u2014 default: null"
+    "campus_id": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "reward_type": "any // OPTIONAL \u2014 default: null",
+    "stock_quantity": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10437,7 +10938,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "updated_at": "string // OPTIONAL \u2014 default: null"
+    "updated_at": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10477,7 +10978,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10591,8 +11092,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "fulfilled_at": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null"
+    "fulfilled_at": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10668,9 +11169,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_available": "string // OPTIONAL \u2014 default: null",
-    "location_lat": "string // OPTIONAL \u2014 default: null",
-    "location_lng": "string // OPTIONAL \u2014 default: null"
+    "is_available": "any // OPTIONAL \u2014 default: null",
+    "location_lat": "any // OPTIONAL \u2014 default: null",
+    "location_lng": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -10791,9 +11292,23 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "history": [
+        {
+            "status": "received",
+            "created_at": "2026-03-31T12:00:00Z",
+            "changed_by": "customer"
+        },
+        {
+            "status": "preparing",
+            "created_at": "2026-03-31T12:05:00Z",
+            "changed_by": "kitchen"
+        },
+        {
+            "status": "delivered",
+            "created_at": "2026-03-31T12:25:00Z",
+            "changed_by": "rider"
+        }
+    ]
 }
 ```
 
@@ -10860,7 +11375,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "string // OPTIONAL \u2014 default: null"
+    "notes": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11083,9 +11598,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "menu_item_id": "string // OPTIONAL \u2014 default: null",
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "quantity": "integer / number // OPTIONAL \u2014 default: null"
+    "menu_item_id": "any // OPTIONAL \u2014 default: null",
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "quantity": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11161,8 +11676,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "string // OPTIONAL \u2014 default: null",
-    "quantity": "integer / number // OPTIONAL \u2014 default: null"
+    "notes": "any // OPTIONAL \u2014 default: null",
+    "quantity": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11312,7 +11827,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "images": "string // OPTIONAL \u2014 default: null"
+    "images": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11388,7 +11903,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "images": "string // OPTIONAL \u2014 default: null"
+    "images": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11429,8 +11944,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null",
-    "mobile_image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null",
+    "mobile_image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11543,11 +12058,11 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "note": "string // OPTIONAL \u2014 default: null",
-    "photo_url": "string // OPTIONAL \u2014 default: null",
-    "social_links": "string // OPTIONAL \u2014 default: null",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "note": "any // OPTIONAL \u2014 default: null",
+    "photo_url": "any // OPTIONAL \u2014 default: null",
+    "social_links": "any // OPTIONAL \u2014 default: null",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11623,9 +12138,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_active": "boolean // OPTIONAL \u2014 default: null",
-    "name": "string // REQUIRED \u2014 must be non-empty",
-    "sort_order": "string // OPTIONAL \u2014 default: null"
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11665,7 +12180,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "photo_url": "string // OPTIONAL \u2014 default: null"
+    "photo_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11690,6 +12205,48 @@ Total documented REST API endpoints: **311**
 
 - `"Early supporter not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 - `"photo_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+
+---
+
+### `POST /api/storefront/newsletter`
+
+**Authentication:** Public (No auth token required)
+
+**Source File:** `app/routes/storefront.py` (`newsletter_subscribe`)
+
+**Summary:** Subscribe an email address to the Holy Grills newsletter.
+
+
+**Request Specification:**
+
+```json
+{
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "full_name": "any // OPTIONAL \u2014 default: null",
+    "source": "any // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `newsletter_subscriptions`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
 ---
 
@@ -11731,48 +12288,6 @@ Total documented REST API endpoints: **311**
 
 ---
 
-### `POST /api/storefront/newsletter`
-
-**Authentication:** Public (No auth token required)
-
-**Source File:** `app/routes/storefront.py` (`newsletter_subscribe`)
-
-**Summary:** Subscribe an email address to the Holy Grills newsletter.
-
-
-**Request Specification:**
-
-```json
-{
-    "email": "string // REQUIRED \u2014 must be non-empty",
-    "full_name": "string // OPTIONAL \u2014 default: null",
-    "source": "string // OPTIONAL \u2014 default: null"
-}
-```
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `newsletter_subscriptions`
-
-
-**Error Responses & Recovery Instructions:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
 ### `POST /api/storefront/newsletter/unsubscribe`
 
 **Authentication:** Public (No auth token required)
@@ -11786,7 +12301,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "string // REQUIRED \u2014 must be non-empty"
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty"
 }
 ```
 
@@ -11862,7 +12377,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "day": "string // OPTIONAL \u2014 default: null"
+    "day": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11903,7 +12418,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "date": "string // OPTIONAL \u2014 default: null"
+    "date": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -11943,8 +12458,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "code": "string // OPTIONAL \u2014 default: null",
-    "order_subtotal": "string // OPTIONAL \u2014 default: null"
+    "code": "any // OPTIONAL \u2014 default: null",
+    "order_subtotal": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -12129,7 +12644,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "string // OPTIONAL \u2014 default: null"
+    "image_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -12169,7 +12684,7 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "folder": "string // OPTIONAL \u2014 default: null"
+    "folder": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -12215,9 +12730,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "wallet_balance": 5000.0,
-    "currency": "NGN",
-    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -12253,9 +12768,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "wallet_balance": 5000.0,
-    "currency": "NGN",
-    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
 }
 ```
 
@@ -12289,9 +12804,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "wallet_balance": 5000.0,
-    "currency": "NGN",
-    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    "account_number": "1234567890",
+    "bank_name": "Wema Bank",
+    "account_name": "HolyGrills - John Doe",
+    "reference": "HG-VA-102938"
 }
 ```
 
@@ -12320,8 +12836,8 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "integer / number // OPTIONAL \u2014 default: null",
-    "callback_url": "string // OPTIONAL \u2014 default: null"
+    "amount": "any // OPTIONAL \u2014 default: null",
+    "callback_url": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -12330,9 +12846,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "wallet_balance": 5000.0,
-    "currency": "NGN",
-    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    "authorization_url": "https://checkout.paystack.com/30092831",
+    "reference": "HG-WAL-172839210-9A8B",
+    "status": "pending"
 }
 ```
 
@@ -12369,9 +12885,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "wallet_balance": 5000.0,
-    "currency": "NGN",
-    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    "transactions": [
+        {
+            "id": "t1",
+            "amount": 2000.0,
+            "type": "credit",
+            "source": "paystack_card",
+            "created_at": "2026-03-31T12:00:00Z"
+        }
+    ]
 }
 ```
 
@@ -12400,10 +12922,10 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "flw_ref": "string // OPTIONAL \u2014 default: null",
-    "id": "string // OPTIONAL \u2014 default: null",
-    "status": "string // OPTIONAL \u2014 default: null",
-    "tx_ref": "string // OPTIONAL \u2014 default: null"
+    "flw_ref": "any // OPTIONAL \u2014 default: null",
+    "id": "any // OPTIONAL \u2014 default: null",
+    "status": "any // OPTIONAL \u2014 default: null",
+    "tx_ref": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -12443,9 +12965,9 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "id": "string // OPTIONAL \u2014 default: null",
-    "reference": "string // OPTIONAL \u2014 default: null",
-    "transfer_code": "string // OPTIONAL \u2014 default: null"
+    "id": "any // OPTIONAL \u2014 default: null",
+    "reference": "any // OPTIONAL \u2014 default: null",
+    "transfer_code": "any // OPTIONAL \u2014 default: null"
 }
 ```
 
@@ -12523,21 +13045,21 @@ Total public schema tables documented: **99**
 - **Foreign Keys:** `recovered_order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the abandoned_carts record. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `guest_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. |
-| `guest_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
-| `cart_payload` | `jsonb` | NO | `NULL` | JSON object storing context payload or metadata. |
-| `last_recovery_sent_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last recovery sent occurred. |
-| `next_recovery_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when next recovery occurred. |
-| `recovery_attempts` | `integer` | NO | `0` | Data field storing recovery attempts for abandoned_carts record. |
-| `is_recovered` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `recovered_order_id` | `uuid` | YES | `NULL` | Data field storing recovered order id for abandoned_carts record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `last_active_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when last active occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the abandoned_carts record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `guest_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `guest_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts. | API Request / Profile | upon record creation | NULL if phone number not provided | None |
+| `cart_payload` | `jsonb` | NO | `NULL` | Data field storing cart payload for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_recovery_sent_at` | `timestamp with time zone` | YES | `NULL` | Data field storing last recovery sent at for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `next_recovery_at` | `timestamp with time zone` | YES | `NULL` | Data field storing next recovery at for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `recovery_attempts` | `integer` | NO | `0` | Data field storing recovery attempts for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_recovered` | `boolean` | NO | `false` | Data field storing is recovered for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `recovered_order_id` | `uuid` | YES | `NULL` | Data field storing recovered order id for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `last_active_at` | `timestamp with time zone` | NO | `now()` | Data field storing last active at for abandoned_carts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_abandoned_carts_next_recovery_at` ON (`next_recovery_at`)
@@ -12559,15 +13081,15 @@ next_recovery_at, last_active_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the academic_levels record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the academic_levels entity. |
-| `value` | `text` | NO | `NULL` | Data field storing value for academic_levels record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for academic_levels record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the academic_levels record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for academic_levels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `value` | `text` | NO | `NULL` | Data field storing value for academic_levels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for academic_levels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for academic_levels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Unique Constraints:**
 - `academic_levels_value_key`: UNIQUE (`value`)
@@ -12583,21 +13105,21 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `actor_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the admin_audit_logs record. |
-| `action` | `text` | NO | `NULL` | Data field storing action for admin_audit_logs record. |
-| `entity_type` | `text` | NO | `NULL` | Data field storing entity type for admin_audit_logs record. |
-| `entity_id` | `text` | YES | `NULL` | Data field storing entity id for admin_audit_logs record. |
-| `actor_id` | `uuid` | YES | `NULL` | Data field storing actor id for admin_audit_logs record. |
-| `actor_role` | `text` | YES | `NULL` | Data field storing actor role for admin_audit_logs record. |
-| `ip_address` | `inet` | YES | `NULL` | Data field storing ip address for admin_audit_logs record. |
-| `user_agent` | `text` | YES | `NULL` | Data field storing user agent for admin_audit_logs record. |
-| `before_value` | `jsonb` | YES | `NULL` | Data field storing before value for admin_audit_logs record. |
-| `after_value` | `jsonb` | YES | `NULL` | Data field storing after value for admin_audit_logs record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `session_id` | `text` | YES | `NULL` | Data field storing session id for admin_audit_logs record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the admin_audit_logs record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `action` | `text` | NO | `NULL` | Data field storing action for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `entity_type` | `text` | NO | `NULL` | Data field storing entity type for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `entity_id` | `text` | YES | `NULL` | Data field storing entity id for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `actor_id` | `uuid` | YES | `NULL` | Data field storing actor id for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `actor_role` | `text` | YES | `NULL` | Data field storing actor role for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ip_address` | `inet` | YES | `NULL` | Data field storing ip address for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_agent` | `text` | YES | `NULL` | Data field storing user agent for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `before_value` | `jsonb` | YES | `NULL` | Data field storing before value for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `after_value` | `jsonb` | YES | `NULL` | Data field storing after value for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `session_id` | `text` | YES | `NULL` | Data field storing session id for admin_audit_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_admin_audit_logs_actor_id` ON (`actor_id`)
@@ -12617,25 +13139,25 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the banners record. |
-| `title` | `text` | NO | `NULL` | Data field storing title for banners record. |
-| `subtitle` | `text` | YES | `NULL` | Data field storing subtitle for banners record. |
-| `image_url` | `text` | YES | `NULL` | Data field storing image url for banners record. |
-| `mobile_image_url` | `text` | YES | `NULL` | Data field storing mobile image url for banners record. |
-| `action_url` | `text` | YES | `NULL` | Data field storing action url for banners record. |
-| `action_label` | `text` | YES | `NULL` | Data field storing action label for banners record. |
-| `placement` | `text` | NO | `'home'::text` | Data field storing placement for banners record. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for banners record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when starts occurred. |
-| `ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ends occurred. |
-| `target_roles` | `text[]` | NO | `'{}'::text[]` | Data field storing target roles for banners record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for banners record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the banners record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `title` | `text` | NO | `NULL` | Data field storing title for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `subtitle` | `text` | YES | `NULL` | Data field storing subtitle for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `mobile_image_url` | `text` | YES | `NULL` | Data field storing mobile image url for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `action_url` | `text` | YES | `NULL` | Data field storing action url for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `action_label` | `text` | YES | `NULL` | Data field storing action label for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `placement` | `text` | NO | `'home'::text` | Data field storing placement for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `starts_at` | `timestamp with time zone` | YES | `NULL` | Data field storing starts at for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ends_at` | `timestamp with time zone` | YES | `NULL` | Data field storing ends at for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `target_roles` | `text[]` | NO | `'{}'::text[]` | Data field storing target roles for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for banners record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_banners_active_placement` ON (`placement, sort_order`)
@@ -12656,14 +13178,14 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `added_by` → `profiles.id`, `batch_id` → `delivery_batches.id`, `order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the batch_orders record. |
-| `batch_id` | `uuid` | NO | `NULL` | Data field storing batch id for batch_orders record. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for batch_orders record. |
-| `sequence` | `integer` | YES | `NULL` | Data field storing sequence for batch_orders record. |
-| `added_by` | `uuid` | YES | `NULL` | Data field storing added by for batch_orders record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the batch_orders record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `batch_id` | `uuid` | NO | `NULL` | Data field storing batch id for batch_orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for batch_orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sequence` | `integer` | YES | `NULL` | Data field storing sequence for batch_orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `added_by` | `uuid` | YES | `NULL` | Data field storing added by for batch_orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_batch_orders_added_by` ON (`added_by`)
@@ -12682,14 +13204,14 @@ next_recovery_at, last_active_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the campuses record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the campuses entity. |
-| `slug` | `text` | NO | `NULL` | Data field storing slug for campuses record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the campuses record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for campuses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for campuses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for campuses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Unique Constraints:**
 - `campuses_name_key`: UNIQUE (`name`)
@@ -12709,16 +13231,16 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `menu_item_id` → `menu_items.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the cart_items record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for cart_items record. |
-| `quantity` | `integer` | NO | `1` | Data field storing quantity for cart_items record. |
-| `options` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options for cart_items record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `added_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when added occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the cart_items record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for cart_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for cart_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `options` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options for cart_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `added_at` | `timestamp with time zone` | NO | `now()` | Data field storing added at for cart_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_cart_items_menu_item_id` ON (`menu_item_id`)
@@ -12743,24 +13265,24 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `assigned_to` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the catering_requests record. |
-| `organizer_name` | `text` | NO | `NULL` | Human-readable display name of the catering_requests entity. |
-| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
-| `phone` | `text` | NO | `NULL` | Contact phone number used for delivery alerts and SMS. |
-| `organization` | `text` | YES | `NULL` | Data field storing organization for catering_requests record. |
-| `event_name` | `text` | NO | `NULL` | Human-readable display name of the catering_requests entity. |
-| `event_date` | `date` | NO | `NULL` | Timestamp recording when event date occurred. |
-| `expected_guests` | `integer` | NO | `NULL` | Data field storing expected guests for catering_requests record. |
-| `budget` | `numeric(14,2)` | YES | `NULL` | Data field storing budget for catering_requests record. |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for catering_requests record. |
-| `status` | `text` | NO | `'new'::text` | Lifecycle status indicator tracking the current state of catering_requests record. |
-| `assigned_to` | `uuid` | YES | `NULL` | Data field storing assigned to for catering_requests record. |
-| `quoted_amount` | `numeric(14,2)` | YES | `NULL` | Monetary value stored in Naira (NGN). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `hp_promo_optin` | `boolean` | NO | `false` | Loyalty points value (Holy Points). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the catering_requests record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `organizer_name` | `text` | NO | `NULL` | Data field storing organizer name for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `phone` | `text` | NO | `NULL` | Contact phone number used for delivery alerts. | API Request / Profile | upon record creation | NULL if phone number not provided | None |
+| `organization` | `text` | YES | `NULL` | Data field storing organization for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `event_name` | `text` | NO | `NULL` | Data field storing event name for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `event_date` | `date` | NO | `NULL` | Data field storing event date for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `expected_guests` | `integer` | NO | `NULL` | Data field storing expected guests for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `budget` | `numeric(14,2)` | YES | `NULL` | Data field storing budget for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'new'::text` | Data field storing status for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `assigned_to` | `uuid` | YES | `NULL` | Data field storing assigned to for catering_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `quoted_amount` | `numeric(14,2)` | YES | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `hp_promo_optin` | `boolean` | NO | `false` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
 
 **Indexes:**
 - `idx_catering_requests_assigned_to` ON (`assigned_to`)
@@ -12780,14 +13302,14 @@ next_recovery_at, last_active_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the challenge_completions record. |
-| `challenge_id` | `uuid` | NO | `NULL` | Data field storing challenge id for challenge_completions record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `completed_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when completed occurred. |
-| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the challenge_completions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `challenge_id` | `uuid` | NO | `NULL` | Data field storing challenge id for challenge_completions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `completed_at` | `timestamp with time zone` | NO | `now()` | Data field storing completed at for challenge_completions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
 
 **Indexes:**
 - `idx_challenge_completions_challenge` ON (`challenge_id`)
@@ -12810,23 +13332,23 @@ own`
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the challenges record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the challenges entity. |
-| `description` | `text` | YES | `NULL` | Data field storing description for challenges record. |
-| `hp_reward` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `criteria` | `jsonb` | NO | `NULL` | Data field storing criteria for challenges record. |
-| `starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when starts occurred. |
-| `ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ends occurred. |
-| `max_completions_per_user` | `integer` | NO | `1` | Data field storing max completions per user for challenges record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `type` | `text` | NO | `'one_time'::text` | Data field storing type for challenges record. |
-| `target_count` | `integer` | NO | `1` | Data field storing target count for challenges record. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for challenges record. |
-| `title` | `text` | YES | `NULL` | Data field storing title for challenges record. |
-| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the challenges record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_reward` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `criteria` | `jsonb` | NO | `NULL` | Data field storing criteria for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `starts_at` | `timestamp with time zone` | YES | `NULL` | Data field storing starts at for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ends_at` | `timestamp with time zone` | YES | `NULL` | Data field storing ends at for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_completions_per_user` | `integer` | NO | `1` | Data field storing max completions per user for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `type` | `text` | NO | `'one_time'::text` | Data field storing type for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `target_count` | `integer` | NO | `1` | Data field storing target count for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `title` | `text` | YES | `NULL` | Data field storing title for challenges record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_challenges_active` ON (`starts_at, ends_at`)
@@ -12849,10 +13371,10 @@ own`
 - **Primary Key:** `job_name`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `job_name` | `text` | NO | `NULL` | Human-readable display name of the cron_locks entity. |
-| `locked_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when locked occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `job_name` | `text` | NO | `NULL` | Data field storing job name for cron_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `locked_at` | `timestamp with time zone` | NO | `now()` | Data field storing locked at for cron_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **RLS Policies:**
 - `Admins manage cron_locks`
@@ -12868,13 +13390,13 @@ own`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the daily_checkins record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `checkin_date` | `date` | NO | `NULL` | Timestamp recording when checkin date occurred. |
-| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the daily_checkins record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `checkin_date` | `date` | NO | `NULL` | Data field storing checkin date for daily_checkins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_daily_checkins_date` ON (`checkin_date`)
@@ -12887,16 +13409,16 @@ own`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_assignments record. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for delivery_assignments record. |
-| `rider_id` | `uuid` | NO | `NULL` | Data field storing rider id for delivery_assignments record. |
-| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for delivery_assignments record. |
-| `status` | `text` | NO | `'assigned'::text` | Lifecycle status indicator tracking the current state of delivery_assignments record. |
-| `note` | `text` | YES | `NULL` | Data field storing note for delivery_assignments record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `completed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when completed occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_assignments record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for delivery_assignments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `rider_id` | `uuid` | NO | `NULL` | Data field storing rider id for delivery_assignments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for delivery_assignments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'assigned'::text` | Data field storing status for delivery_assignments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `note` | `text` | YES | `NULL` | Data field storing note for delivery_assignments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `completed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing completed at for delivery_assignments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_delivery_assignments_batch_id` ON (`batch_id`)
@@ -12917,17 +13439,17 @@ own`
 - **Foreign Keys:** `delivery_window_id` → `delivery_windows.id`, `rider_id` → `profiles.id`, `window_id` → `delivery_windows.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_batches record. |
-| `rider_id` | `uuid` | YES | `NULL` | Data field storing rider id for delivery_batches record. |
-| `status` | `text` | NO | `'open'::text` | Lifecycle status indicator tracking the current state of delivery_batches record. |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for delivery_batches record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `completed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when completed occurred. |
-| `zone` | `text` | YES | `NULL` | Data field storing zone for delivery_batches record. |
-| `delivery_window_id` | `uuid` | YES | `NULL` | Data field storing delivery window id for delivery_batches record. |
-| `window_id` | `uuid` | YES | `NULL` | Data field storing window id for delivery_batches record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_batches record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `rider_id` | `uuid` | YES | `NULL` | Data field storing rider id for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'open'::text` | Data field storing status for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `completed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing completed at for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `zone` | `text` | YES | `NULL` | Data field storing zone for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_window_id` | `uuid` | YES | `NULL` | Data field storing delivery window id for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `window_id` | `uuid` | YES | `NULL` | Data field storing window id for delivery_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_delivery_batches_delivery_window` ON (`delivery_window_id`)
@@ -12956,18 +13478,18 @@ status`)
 - **Foreign Keys:** `created_by` → `profiles.id`, `zone_id` → `delivery_zones.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_windows record. |
-| `label` | `text` | NO | `NULL` | Data field storing label for delivery_windows record. |
-| `starts_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when starts occurred. |
-| `ends_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when ends occurred. |
-| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for delivery_windows record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `zone_id` | `uuid` | YES | `NULL` | Data field storing zone id for delivery_windows record. |
-| `status` | `text` | NO | `'open'::text` | Lifecycle status indicator tracking the current state of delivery_windows record. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for delivery_windows record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_windows record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `label` | `text` | NO | `NULL` | Data field storing label for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `starts_at` | `timestamp with time zone` | NO | `NULL` | Data field storing starts at for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ends_at` | `timestamp with time zone` | NO | `NULL` | Data field storing ends at for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `zone_id` | `uuid` | YES | `NULL` | Data field storing zone id for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'open'::text` | Data field storing status for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for delivery_windows record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_delivery_windows_active` ON (`starts_at,
@@ -12994,17 +13516,17 @@ active`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the delivery_zones record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the delivery_zones entity. |
-| `description` | `text` | YES | `NULL` | Data field storing description for delivery_zones record. |
-| `delivery_fee` | `numeric(10,2)` | NO | `0` | Calculated delivery charge in NGN based on hostel fixed fee or off-campus gate distance. |
-| `min_order` | `numeric(10,2)` | NO | `0` | Data field storing min order for delivery_zones record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `polygon` | `jsonb` | YES | `NULL` | Data field storing polygon for delivery_zones record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the delivery_zones record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for delivery_zones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for delivery_zones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_fee` | `numeric(10,2)` | NO | `0` | Data field storing delivery fee for delivery_zones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_order` | `numeric(10,2)` | NO | `0` | Data field storing min order for delivery_zones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for delivery_zones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `polygon` | `jsonb` | YES | `NULL` | Data field storing polygon for delivery_zones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Check Constraints:**
 - `delivery_zones_delivery_fee_check`: `(delivery_fee >= (0)::numeric)`
@@ -13023,16 +13545,16 @@ active`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the departments record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the departments entity. |
-| `slug` | `text` | NO | `NULL` | Data field storing slug for departments record. |
-| `faculty` | `text` | NO | `NULL` | Data field storing faculty for departments record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for departments record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the departments record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for departments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for departments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `faculty` | `text` | NO | `NULL` | Data field storing faculty for departments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for departments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for departments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_departments_faculty` ON (`faculty`)
@@ -13050,13 +13572,13 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the device_fingerprints record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `fingerprint` | `text` | NO | `NULL` | Data field storing fingerprint for device_fingerprints record. |
-| `platform` | `text` | NO | `'unknown'::text` | Data field storing platform for device_fingerprints record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the device_fingerprints record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `fingerprint` | `text` | NO | `NULL` | Data field storing fingerprint for device_fingerprints record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `platform` | `text` | NO | `'unknown'::text` | Data field storing platform for device_fingerprints record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_device_fingerprints_fingerprint` ON (`fingerprint`)
@@ -13076,15 +13598,15 @@ active`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the device_tokens record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `token` | `text` | NO | `NULL` | Data field storing token for device_tokens record. |
-| `platform` | `text` | NO | `'unknown'::text` | Data field storing platform for device_tokens record. |
-| `device_model` | `text` | YES | `NULL` | Data field storing device model for device_tokens record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the device_tokens record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `token` | `text` | NO | `NULL` | Data field storing token for device_tokens record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `platform` | `text` | NO | `'unknown'::text` | Data field storing platform for device_tokens record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `device_model` | `text` | YES | `NULL` | Data field storing device model for device_tokens record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Unique Constraints:**
 - `device_tokens_user_id_token_key`: UNIQUE (`user_id, token`)
@@ -13103,14 +13625,14 @@ active`
 - **Foreign Keys:** `checked_in_by` → `profiles.id`, `hp_transaction_id` → `hp_transactions.id`, `ticket_id` → `event_tickets.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_checkins record. |
-| `ticket_id` | `uuid` | NO | `NULL` | Data field storing ticket id for event_checkins record. |
-| `qr_code` | `text` | NO | `NULL` | Data field storing qr code for event_checkins record. |
-| `checked_in_by` | `uuid` | YES | `NULL` | Data field storing checked in by for event_checkins record. |
-| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_checkins record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `ticket_id` | `uuid` | NO | `NULL` | Data field storing ticket id for event_checkins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `qr_code` | `text` | NO | `NULL` | Data field storing qr code for event_checkins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `checked_in_by` | `uuid` | YES | `NULL` | Data field storing checked in by for event_checkins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_event_checkins_checked_in_by` ON (`checked_in_by`)
@@ -13131,20 +13653,20 @@ created_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_ticket_tiers record. |
-| `event_id` | `uuid` | NO | `NULL` | Data field storing event id for event_ticket_tiers record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the event_ticket_tiers entity. |
-| `price_naira` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `price_hp` | `integer` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for event_ticket_tiers record. |
-| `sold_count` | `integer` | NO | `0` | Data field storing sold count for event_ticket_tiers record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for event_ticket_tiers record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for event_ticket_tiers record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_ticket_tiers record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `event_id` | `uuid` | NO | `NULL` | Data field storing event id for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price_naira` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `price_hp` | `integer` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sold_count` | `integer` | NO | `0` | Data field storing sold count for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for event_ticket_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_event_ticket_tiers_event_id` ON (`event_id`)
@@ -13160,17 +13682,17 @@ created_at`)
 - **Foreign Keys:** `event_id` → `events.id`, `tier_id` → `event_ticket_tiers.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_tickets record. |
-| `event_id` | `uuid` | NO | `NULL` | Data field storing event id for event_tickets record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `quantity` | `integer` | NO | `1` | Data field storing quantity for event_tickets record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of event_tickets record. |
-| `qr_code` | `text` | YES | `encode(gen_random_bytes(24), 'hex'::text)` | Data field storing qr code for event_tickets record. |
-| `qr_expires_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when qr expires occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `tier_id` | `uuid` | YES | `NULL` | Data field storing tier id for event_tickets record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_tickets record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `event_id` | `uuid` | NO | `NULL` | Data field storing event id for event_tickets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for event_tickets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for event_tickets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `qr_code` | `text` | YES | `encode(gen_random_bytes(24), 'hex'::text)` | Data field storing qr code for event_tickets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `qr_expires_at` | `timestamp with time zone` | YES | `NULL` | Data field storing qr expires at for event_tickets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `tier_id` | `uuid` | YES | `NULL` | Data field storing tier id for event_tickets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_event_tickets_event` ON (`event_id`)
@@ -13197,32 +13719,32 @@ user_id`)
 - **Foreign Keys:** `organizer_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the events record. |
-| `title` | `text` | NO | `NULL` | Data field storing title for events record. |
-| `slug` | `text` | NO | `NULL` | Data field storing slug for events record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for events record. |
-| `starts_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when starts occurred. |
-| `ends_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when ends occurred. |
-| `location` | `text` | NO | `NULL` | Data field storing location for events record. |
-| `image_url` | `text` | YES | `NULL` | Data field storing image url for events record. |
-| `ticket_price` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `hp_reward` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for events record. |
-| `is_published` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `hp_promo_enabled` | `boolean` | NO | `false` | Loyalty points value (Holy Points). |
-| `is_featured` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `organizer_id` | `uuid` | YES | `NULL` | Data field storing organizer id for events record. |
-| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
-| `hp_per_attendee` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `funding_source` | `text` | YES | `NULL` | Data field storing funding source for events record. |
-| `max_attendees` | `integer` | YES | `NULL` | Data field storing max attendees for events record. |
-| `hp_required` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` | Data field storing total value for events record. |
-| `is_paid` | `boolean` | NO | `false` | Boolean toggle flag. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the events record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `title` | `text` | NO | `NULL` | Data field storing title for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `starts_at` | `timestamp with time zone` | NO | `NULL` | Data field storing starts at for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ends_at` | `timestamp with time zone` | NO | `NULL` | Data field storing ends at for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `location` | `text` | NO | `NULL` | Data field storing location for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ticket_price` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `hp_reward` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_published` | `boolean` | NO | `false` | Data field storing is published for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `hp_promo_enabled` | `boolean` | NO | `false` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `is_featured` | `boolean` | NO | `false` | Data field storing is featured for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `organizer_id` | `uuid` | YES | `NULL` | Data field storing organizer id for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `hp_per_attendee` | `integer` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `funding_source` | `text` | YES | `NULL` | Data field storing funding source for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_attendees` | `integer` | YES | `NULL` | Data field storing max attendees for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_required` | `integer` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` | Data field storing total value for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_paid` | `boolean` | NO | `false` | Data field storing is paid for events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_events_featured` ON (`is_featured`)
@@ -13250,15 +13772,15 @@ user_id`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the exclusive_spins record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `spin_count` | `integer` | NO | `0` | Data field storing spin count for exclusive_spins record. |
-| `source` | `text` | NO | `NULL` | Data field storing source for exclusive_spins record. |
-| `month` | `text` | YES | `NULL` | Data field storing month for exclusive_spins record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `expires_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when expires occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the exclusive_spins record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `spin_count` | `integer` | NO | `0` | Data field storing spin count for exclusive_spins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `source` | `text` | NO | `NULL` | Data field storing source for exclusive_spins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `month` | `text` | YES | `NULL` | Data field storing month for exclusive_spins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `expires_at` | `timestamp with time zone` | NO | `NULL` | Data field storing expires at for exclusive_spins record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_exclusive_spins_active` ON (`user_id,
@@ -13284,13 +13806,13 @@ their own exclusive spins`
 - **Foreign Keys:** `updated_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `feature_name` | `text` | NO | `NULL` | Human-readable display name of the feature_flags entity. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `description` | `text` | YES | `NULL` | Data field storing description for feature_flags record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for feature_flags record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `feature_name` | `text` | NO | `NULL` | Data field storing feature name for feature_flags record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for feature_flags record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for feature_flags record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for feature_flags record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_feature_flags_updated_by` ON (`updated_by`)
@@ -13306,14 +13828,14 @@ their own exclusive spins`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the first_order_gifts record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for first_order_gifts record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of first_order_gifts record. |
-| `claimed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when claimed occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the first_order_gifts record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for first_order_gifts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for first_order_gifts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `claimed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing claimed at for first_order_gifts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_first_order_gifts_order_id` ON (`order_id`)
@@ -13340,17 +13862,17 @@ their own exclusive spins`
 - **Foreign Keys:** `reward_id` → `rewards.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the flash_redemptions record. |
-| `reward_id` | `uuid` | NO | `NULL` | Data field storing reward id for flash_redemptions record. |
-| `window_starts_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when window starts occurred. |
-| `window_ends_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when window ends occurred. |
-| `quantity_limit` | `integer` | NO | `5` | Data field storing quantity limit for flash_redemptions record. |
-| `discount_pct` | `numeric(5,2)` | NO | `0.50` | Data field storing discount pct for flash_redemptions record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the flash_redemptions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `reward_id` | `uuid` | NO | `NULL` | Data field storing reward id for flash_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `window_starts_at` | `timestamp with time zone` | NO | `NULL` | Data field storing window starts at for flash_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `window_ends_at` | `timestamp with time zone` | NO | `NULL` | Data field storing window ends at for flash_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `quantity_limit` | `integer` | NO | `5` | Data field storing quantity limit for flash_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `discount_pct` | `numeric(5,2)` | NO | `0.50` | Data field storing discount pct for flash_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for flash_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `flash_redemptions_is_active_idx` ON (`is_active`)
@@ -13371,16 +13893,16 @@ their own exclusive spins`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the free_side_credits record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `credits_remaining` | `integer` | NO | `0` | Data field storing credits remaining for free_side_credits record. |
-| `source` | `text` | NO | `NULL` | Data field storing source for free_side_credits record. |
-| `month` | `text` | YES | `NULL` | Data field storing month for free_side_credits record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `expires_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when expires occurred. |
-| `used_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when used occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the free_side_credits record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `credits_remaining` | `integer` | NO | `0` | Data field storing credits remaining for free_side_credits record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `source` | `text` | NO | `NULL` | Data field storing source for free_side_credits record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `month` | `text` | YES | `NULL` | Data field storing month for free_side_credits record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `expires_at` | `timestamp with time zone` | NO | `NULL` | Data field storing expires at for free_side_credits record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `used_at` | `timestamp with time zone` | YES | `NULL` | Data field storing used at for free_side_credits record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_free_side_credits_active` ON (`user_id,
@@ -13400,18 +13922,18 @@ expires_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the gates record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the gates entity. |
-| `lat` | `double precision` | YES | `NULL` | Data field storing lat for gates record. |
-| `lon` | `double precision` | YES | `NULL` | Data field storing lon for gates record. |
-| `base_fee` | `numeric(10,2)` | NO | `0` | Data field storing base fee for gates record. |
-| `rate_per_km` | `numeric(10,2)` | NO | `0` | Data field storing rate per km for gates record. |
-| `min_fee` | `numeric(10,2)` | NO | `0` | Data field storing min fee for gates record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the gates record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `lat` | `double precision` | YES | `NULL` | Data field storing lat for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `lon` | `double precision` | YES | `NULL` | Data field storing lon for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `base_fee` | `numeric(10,2)` | NO | `0` | Data field storing base fee for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `rate_per_km` | `numeric(10,2)` | NO | `0` | Data field storing rate per km for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_fee` | `numeric(10,2)` | NO | `0` | Data field storing min fee for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for gates record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 ---
 
@@ -13420,16 +13942,16 @@ expires_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hall_of_fame_inductees record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `inducted_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when inducted occurred. |
-| `full_name` | `text` | NO | `NULL` | Human-readable display name of the hall_of_fame_inductees entity. |
-| `photo_url` | `text` | YES | `NULL` | Data field storing photo url for hall_of_fame_inductees record. |
-| `tier_at_induction` | `text` | YES | `NULL` | Data field storing tier at induction for hall_of_fame_inductees record. |
-| `top4_finish_count` | `integer` | NO | `4` | Data field storing top4 finish count for hall_of_fame_inductees record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hall_of_fame_inductees record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `inducted_at` | `timestamp with time zone` | NO | `now()` | Data field storing inducted at for hall_of_fame_inductees record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `full_name` | `text` | NO | `NULL` | Data field storing full name for hall_of_fame_inductees record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `photo_url` | `text` | YES | `NULL` | Data field storing photo url for hall_of_fame_inductees record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `tier_at_induction` | `text` | YES | `NULL` | Data field storing tier at induction for hall_of_fame_inductees record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `top4_finish_count` | `integer` | NO | `4` | Data field storing top4 finish count for hall_of_fame_inductees record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **RLS Policies:**
 - `Admins manage hall_of_fame`
@@ -13442,16 +13964,16 @@ expires_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hall_of_fame_rewards record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `inducted_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when inducted occurred. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of hall_of_fame_rewards record. |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for hall_of_fame_rewards record. |
-| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for hall_of_fame_rewards record. |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hall_of_fame_rewards record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `inducted_at` | `timestamp with time zone` | NO | `now()` | Data field storing inducted at for hall_of_fame_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for hall_of_fame_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for hall_of_fame_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for hall_of_fame_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Data field storing fulfilled at for hall_of_fame_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_hall_of_fame_rewards_fulfilled_by` ON (`fulfilled_by`)
@@ -13468,15 +13990,15 @@ expires_at`)
 - **Foreign Keys:** `gate_id` → `gates.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hostels record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the hostels entity. |
-| `gate_id` | `uuid` | YES | `NULL` | Data field storing gate id for hostels record. |
-| `delivery_fee` | `numeric(10,2)` | NO | `0` | Calculated delivery charge in NGN based on hostel fixed fee or off-campus gate distance. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hostels record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for hostels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `gate_id` | `uuid` | YES | `NULL` | Data field storing gate id for hostels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_fee` | `numeric(10,2)` | NO | `0` | Data field storing delivery fee for hostels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for hostels record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_hostels_gate_id` ON (`gate_id`)
@@ -13488,15 +14010,15 @@ expires_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_bundle_purchases record. |
-| `event_host_id` | `uuid` | NO | `NULL` | Data field storing event host id for hp_bundle_purchases record. |
-| `hp_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `naira_paid` | `numeric(12,2)` | NO | `NULL` | Data field storing naira paid for hp_bundle_purchases record. |
-| `price_per_hp` | `numeric(10,4)` | NO | `5.0` | Monetary value stored in Naira (NGN). |
-| `status` | `text` | NO | `'completed'::text` | Lifecycle status indicator tracking the current state of hp_bundle_purchases record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_bundle_purchases record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `event_host_id` | `uuid` | NO | `NULL` | Data field storing event host id for hp_bundle_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `naira_paid` | `numeric(12,2)` | NO | `NULL` | Data field storing naira paid for hp_bundle_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price_per_hp` | `numeric(10,4)` | NO | `5.0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `status` | `text` | NO | `'completed'::text` | Data field storing status for hp_bundle_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `hp_bundle_purchases_event_host_id_idx` ON (`event_host_id`)
@@ -13514,17 +14036,17 @@ expires_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_bundles record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the hp_bundles entity. |
-| `hp_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `price_naira` | `numeric(10,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `total_price` | `numeric(10,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `description` | `text` | YES | `NULL` | Data field storing description for hp_bundles record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for hp_bundles record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_bundles record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for hp_bundles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `price_naira` | `numeric(10,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `total_price` | `numeric(10,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for hp_bundles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for hp_bundles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for hp_bundles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_hp_bundles_active` ON (`is_active`)
@@ -13544,16 +14066,16 @@ expires_at`)
 - **Foreign Keys:** `hp_transaction_id` → `hp_transactions.id`, `notification_id` → `notifications.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_expiry_log record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `expired_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `previous_balance` | `integer` | NO | `NULL` | Data field storing previous balance for hp_expiry_log record. |
-| `reason` | `text` | NO | `NULL` | Data field storing reason for hp_expiry_log record. |
-| `notification_id` | `uuid` | YES | `NULL` | Data field storing notification id for hp_expiry_log record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_expiry_log record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `expired_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `previous_balance` | `integer` | NO | `NULL` | Data field storing previous balance for hp_expiry_log record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reason` | `text` | NO | `NULL` | Data field storing reason for hp_expiry_log record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notification_id` | `uuid` | YES | `NULL` | Data field storing notification id for hp_expiry_log record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_hp_expiry_log_hp_tx_id` ON (`hp_transaction_id`)
@@ -13574,19 +14096,19 @@ created_at DESC`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_tiers record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the hp_tiers entity. |
-| `min_points` | `integer` | NO | `0` | Data field storing min points for hp_tiers record. |
-| `maintenance_points` | `integer` | NO | `0` | Data field storing maintenance points for hp_tiers record. |
-| `earn_multiplier` | `numeric(8,2)` | NO | `1` | Data field storing earn multiplier for hp_tiers record. |
-| `benefits` | `jsonb` | NO | `'{}'::jsonb` | Data field storing benefits for hp_tiers record. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for hp_tiers record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `slug` | `text` | YES | `NULL` | Data field storing slug for hp_tiers record. |
-| `badge_color_hex` | `text` | YES | `NULL` | Data field storing badge color hex for hp_tiers record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_tiers record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_points` | `integer` | NO | `0` | Data field storing min points for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `maintenance_points` | `integer` | NO | `0` | Data field storing maintenance points for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `earn_multiplier` | `numeric(8,2)` | NO | `1` | Data field storing earn multiplier for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `benefits` | `jsonb` | NO | `'{}'::jsonb` | Data field storing benefits for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `slug` | `text` | YES | `NULL` | Data field storing slug for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `badge_color_hex` | `text` | YES | `NULL` | Data field storing badge color hex for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for hp_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_hp_tiers_sort` ON (`sort_order`)
@@ -13614,21 +14136,21 @@ created_at DESC`)
 - **Foreign Keys:** `issued_by_admin_id` → `profiles.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_transactions record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `type` | `text` | NO | `NULL` | Data field storing type for hp_transactions record. |
-| `amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `balance_after` | `integer` | NO | `NULL` | Data field storing balance after for hp_transactions record. |
-| `source` | `text` | NO | `NULL` | Data field storing source for hp_transactions record. |
-| `reference_type` | `text` | YES | `NULL` | Data field storing reference type for hp_transactions record. |
-| `reference_id` | `uuid` | YES | `NULL` | Data field storing reference id for hp_transactions record. |
-| `issued_by_admin_id` | `uuid` | YES | `NULL` | Data field storing issued by admin id for hp_transactions record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `expires_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when expires occurred. |
-| `remaining_amount` | `integer, status character varying(20)` | NO | `'active'::character varying` | Monetary value stored in Naira (NGN). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_transactions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `type` | `text` | NO | `NULL` | Data field storing type for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `balance_after` | `integer` | NO | `NULL` | Data field storing balance after for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `source` | `text` | NO | `NULL` | Data field storing source for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference_type` | `text` | YES | `NULL` | Data field storing reference type for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference_id` | `uuid` | YES | `NULL` | Data field storing reference id for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `issued_by_admin_id` | `uuid` | YES | `NULL` | Data field storing issued by admin id for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `expires_at` | `timestamp with time zone` | YES | `NULL` | Data field storing expires at for hp_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `remaining_amount` | `integer, status character varying(20)` | NO | `'active'::character varying` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
 
 **Indexes:**
 - `hp_transactions_unique_business_key_idx` ON (`user_id,
@@ -13667,12 +14189,12 @@ reference_type, reference_id`)
 - **Foreign Keys:** `updated_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `key` | `text` | NO | `NULL` | Data field storing key for kitchen_settings record. |
-| `value` | `text` | NO | `''::text` | Data field storing value for kitchen_settings record. |
-| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for kitchen_settings record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `key` | `text` | NO | `NULL` | Data field storing key for kitchen_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `value` | `text` | NO | `''::text` | Data field storing value for kitchen_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for kitchen_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_kitchen_settings_updated_by` ON (`updated_by`)
@@ -13689,17 +14211,17 @@ kitchen_settings`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_entries record. |
-| `period` | `text` | NO | `NULL` | Data field storing period for leaderboard_entries record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `rank` | `integer` | NO | `NULL` | Data field storing rank for leaderboard_entries record. |
-| `hp_total` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `order_count` | `integer` | NO | `0` | Data field storing order count for leaderboard_entries record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_entries record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `period` | `text` | NO | `NULL` | Data field storing period for leaderboard_entries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `rank` | `integer` | NO | `NULL` | Data field storing rank for leaderboard_entries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_total` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for leaderboard_entries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `order_count` | `integer` | NO | `0` | Data field storing order count for leaderboard_entries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_leaderboard_entries_user_id` ON (`user_id`)
@@ -13721,20 +14243,20 @@ rank`)
 - **Foreign Keys:** `fulfilled_by` → `profiles.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_reward_fulfillments record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `rank` | `integer` | NO | `NULL` | Data field storing rank for leaderboard_reward_fulfillments record. |
-| `month` | `text` | NO | `NULL` | Data field storing month for leaderboard_reward_fulfillments record. |
-| `reward_type` | `text` | NO | `'leaderboard_prize'::text` | Data field storing reward type for leaderboard_reward_fulfillments record. |
-| `free_sides` | `integer` | NO | `0` | Data field storing free sides for leaderboard_reward_fulfillments record. |
-| `free_spins` | `integer` | NO | `0` | Data field storing free spins for leaderboard_reward_fulfillments record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of leaderboard_reward_fulfillments record. |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for leaderboard_reward_fulfillments record. |
-| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for leaderboard_reward_fulfillments record. |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_reward_fulfillments record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `rank` | `integer` | NO | `NULL` | Data field storing rank for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `month` | `text` | NO | `NULL` | Data field storing month for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reward_type` | `text` | NO | `'leaderboard_prize'::text` | Data field storing reward type for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `free_sides` | `integer` | NO | `0` | Data field storing free sides for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `free_spins` | `integer` | NO | `0` | Data field storing free spins for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Data field storing fulfilled at for leaderboard_reward_fulfillments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_lb_fulfillments_month` ON (`month`)
@@ -13753,14 +14275,14 @@ rank`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_snapshots record. |
-| `period_key` | `text` | NO | `NULL` | Data field storing period key for leaderboard_snapshots record. |
-| `ranking_type` | `text` | NO | `'weekly'::text` | Data field storing ranking type for leaderboard_snapshots record. |
-| `entries` | `jsonb` | NO | `NULL` | Data field storing entries for leaderboard_snapshots record. |
-| `prizes_awarded` | `jsonb` | NO | `'[]'::jsonb` | Data field storing prizes awarded for leaderboard_snapshots record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_snapshots record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `period_key` | `text` | NO | `NULL` | Data field storing period key for leaderboard_snapshots record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ranking_type` | `text` | NO | `'weekly'::text` | Data field storing ranking type for leaderboard_snapshots record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `entries` | `jsonb` | NO | `NULL` | Data field storing entries for leaderboard_snapshots record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `prizes_awarded` | `jsonb` | NO | `'[]'::jsonb` | Data field storing prizes awarded for leaderboard_snapshots record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **RLS Policies:**
 - `leaderboard_snapshots: admins all`
@@ -13773,13 +14295,13 @@ rank`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the login_streak_rewards record. |
-| `week_number` | `integer` | NO | `NULL` | Data field storing week number for login_streak_rewards record. |
-| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the login_streak_rewards record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `week_number` | `integer` | NO | `NULL` | Data field storing week number for login_streak_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for login_streak_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `uq_login_streak_rewards_week` ON (`week_number`)
@@ -13799,17 +14321,17 @@ rank`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the login_streaks record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `streak_count` | `integer` | NO | `1` | Data field storing streak count for login_streaks record. |
-| `last_login_date` | `date` | NO | `CURRENT_DATE` | Timestamp recording when last login date occurred. |
-| `last_updated` | `timestamp with time zone` | NO | `now()` | Timestamp recording when last updated occurred. |
-| `current_week_start` | `date` | YES | `NULL` | Data field storing current week start for login_streaks record. |
-| `week_state` | `jsonb` | NO | `'{}'::jsonb` | Data field storing week state for login_streaks record. |
-| `cycle_week_number` | `integer` | NO | `1` | Data field storing cycle week number for login_streaks record. |
-| `consecutive_weeks` | `integer` | NO | `0` | Data field storing consecutive weeks for login_streaks record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the login_streaks record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `streak_count` | `integer` | NO | `1` | Data field storing streak count for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_login_date` | `date` | NO | `CURRENT_DATE` | Data field storing last login date for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_updated` | `timestamp with time zone` | NO | `now()` | Data field storing last updated for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `current_week_start` | `date` | YES | `NULL` | Data field storing current week start for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `week_state` | `jsonb` | NO | `'{}'::jsonb` | Data field storing week state for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `cycle_week_number` | `integer` | NO | `1` | Data field storing cycle week number for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `consecutive_weeks` | `integer` | NO | `0` | Data field storing consecutive weeks for login_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_login_streaks_user` ON (`user_id`)
@@ -13833,16 +14355,16 @@ rank`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_access_codes record. |
-| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_access_codes record. |
-| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for marketplace_access_codes record. |
-| `code` | `text` | NO | `NULL` | Data field storing code for marketplace_access_codes record. |
-| `status` | `text` | NO | `'available'::text` | Lifecycle status indicator tracking the current state of marketplace_access_codes record. |
-| `assigned_purchase_id` | `uuid` | YES | `NULL` | Data field storing assigned purchase id for marketplace_access_codes record. |
-| `assigned_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when assigned occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_access_codes record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_access_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for marketplace_access_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `code` | `text` | NO | `NULL` | Data field storing code for marketplace_access_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'available'::text` | Data field storing status for marketplace_access_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `assigned_purchase_id` | `uuid` | YES | `NULL` | Data field storing assigned purchase id for marketplace_access_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `assigned_at` | `timestamp with time zone` | YES | `NULL` | Data field storing assigned at for marketplace_access_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_marketplace_access_codes_status_listing` ON (`status, listing_id`)
@@ -13861,14 +14383,14 @@ all`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_code_batches record. |
-| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_code_batches record. |
-| `uploaded_by` | `uuid` | YES | `NULL` | Data field storing uploaded by for marketplace_code_batches record. |
-| `code_count` | `integer` | NO | `NULL` | Data field storing code count for marketplace_code_batches record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_code_batches record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_code_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `uploaded_by` | `uuid` | YES | `NULL` | Data field storing uploaded by for marketplace_code_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `code_count` | `integer` | NO | `NULL` | Data field storing code count for marketplace_code_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for marketplace_code_batches record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_mkt_code_batches_listing_id` ON (`listing_id`)
@@ -13885,35 +14407,35 @@ all`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_listings record. |
-| `title` | `text` | NO | `NULL` | Data field storing title for marketplace_listings record. |
-| `slug` | `text` | NO | `NULL` | Data field storing slug for marketplace_listings record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for marketplace_listings record. |
-| `vendor_name` | `text` | NO | `NULL` | Human-readable display name of the marketplace_listings entity. |
-| `listing_type` | `text` | NO | `NULL` | Data field storing listing type for marketplace_listings record. |
-| `price` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `hp_price` | `integer` | YES | `NULL` | Monetary value stored in Naira (NGN). |
-| `image_url` | `text` | YES | `NULL` | Data field storing image url for marketplace_listings record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of marketplace_listings record. |
-| `approved_by` | `uuid` | YES | `NULL` | Data field storing approved by for marketplace_listings record. |
-| `approved_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when approved occurred. |
-| `rejection_reason` | `text` | YES | `NULL` | Data field storing rejection reason for marketplace_listings record. |
-| `inventory_count` | `integer` | YES | `NULL` | Data field storing inventory count for marketplace_listings record. |
-| `low_inventory_threshold` | `integer` | YES | `NULL` | Data field storing low inventory threshold for marketplace_listings record. |
-| `is_out_of_stock` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `min_tier_id` | `uuid` | YES | `NULL` | Data field storing min tier id for marketplace_listings record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `is_featured` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for marketplace_listings record. |
-| `available_from` | `timestamp with time zone` | YES | `NULL` | Data field storing available from for marketplace_listings record. |
-| `available_until` | `timestamp with time zone` | YES | `NULL` | Data field storing available until for marketplace_listings record. |
-| `vendor_contact_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. |
-| `cash_price` | `numeric(10,2)` | YES | `NULL::numeric` | Monetary value stored in Naira (NGN). |
-| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` | Data field storing total value for marketplace_listings record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_listings record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `title` | `text` | NO | `NULL` | Data field storing title for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `vendor_name` | `text` | NO | `NULL` | Data field storing vendor name for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `listing_type` | `text` | NO | `NULL` | Data field storing listing type for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `hp_price` | `integer` | YES | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `approved_by` | `uuid` | YES | `NULL` | Data field storing approved by for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `approved_at` | `timestamp with time zone` | YES | `NULL` | Data field storing approved at for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `rejection_reason` | `text` | YES | `NULL` | Data field storing rejection reason for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `inventory_count` | `integer` | YES | `NULL` | Data field storing inventory count for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `low_inventory_threshold` | `integer` | YES | `NULL` | Data field storing low inventory threshold for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_out_of_stock` | `boolean` | NO | `false` | Data field storing is out of stock for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_tier_id` | `uuid` | YES | `NULL` | Data field storing min tier id for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `is_featured` | `boolean` | NO | `false` | Data field storing is featured for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `available_from` | `timestamp with time zone` | YES | `NULL` | Data field storing available from for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `available_until` | `timestamp with time zone` | YES | `NULL` | Data field storing available until for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `vendor_contact_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `cash_price` | `numeric(10,2)` | YES | `NULL::numeric` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` | Data field storing total value for marketplace_listings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_marketplace_active` ON (`sort_order, created_at`)
@@ -13935,24 +14457,24 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_purchases record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_purchases record. |
-| `quantity` | `integer` | NO | `1` | Data field storing quantity for marketplace_purchases record. |
-| `pay_with_hp` | `boolean` | NO | `false` | Loyalty points value (Holy Points). |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of marketplace_purchases record. |
-| `is_fulfilled` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `payment_method` | `text` | YES | `NULL` | Data field storing payment method for marketplace_purchases record. |
-| `wallet_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `card_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `payment_reference` | `text` | YES | `NULL` | Data field storing payment reference for marketplace_purchases record. |
-| `wallet_tx_id` | `uuid` | YES | `NULL` | Data field storing wallet tx id for marketplace_purchases record. |
-| `hp_tx_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_purchases record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `pay_with_hp` | `boolean` | NO | `false` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_fulfilled` | `boolean` | NO | `false` | Data field storing is fulfilled for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Data field storing fulfilled at for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `payment_method` | `text` | YES | `NULL` | Data field storing payment method for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `wallet_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `card_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `payment_reference` | `text` | YES | `NULL` | Data field storing payment reference for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `wallet_tx_id` | `uuid` | YES | `NULL` | Data field storing wallet tx id for marketplace_purchases record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_tx_id` | `uuid` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
 
 **Indexes:**
 - `idx_marketplace_purchases_listing` ON (`listing_id`)
@@ -13973,22 +14495,22 @@ own`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_requests record. |
-| `vendor_name` | `text` | NO | `NULL` | Human-readable display name of the marketplace_requests entity. |
-| `vendor_email` | `text` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
-| `vendor_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
-| `service_title` | `text` | NO | `NULL` | Data field storing service title for marketplace_requests record. |
-| `category` | `text` | NO | `NULL` | Data field storing category for marketplace_requests record. |
-| `description` | `text` | NO | `NULL` | Data field storing description for marketplace_requests record. |
-| `proposed_price` | `numeric` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of marketplace_requests record. |
-| `admin_notes` | `text` | YES | `NULL` | Data field storing admin notes for marketplace_requests record. |
-| `reviewed_by` | `uuid` | YES | `NULL` | Data field storing reviewed by for marketplace_requests record. |
-| `reviewed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when reviewed occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_requests record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `vendor_name` | `text` | NO | `NULL` | Data field storing vendor name for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `vendor_email` | `text` | NO | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `vendor_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts. | API Request / Profile | upon record creation | NULL if phone number not provided | None |
+| `service_title` | `text` | NO | `NULL` | Data field storing service title for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `category` | `text` | NO | `NULL` | Data field storing category for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | NO | `NULL` | Data field storing description for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `proposed_price` | `numeric` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `admin_notes` | `text` | YES | `NULL` | Data field storing admin notes for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reviewed_by` | `uuid` | YES | `NULL` | Data field storing reviewed by for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reviewed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing reviewed at for marketplace_requests record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_marketplace_requests_reviewed_by` ON (`reviewed_by`)
@@ -14005,13 +14527,13 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the membership_rewards record. |
-| `months` | `integer` | NO | `NULL` | Data field storing months for membership_rewards record. |
-| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the membership_rewards record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `months` | `integer` | NO | `NULL` | Data field storing months for membership_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for membership_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `uq_membership_rewards_months` ON (`months`)
@@ -14031,17 +14553,17 @@ created_at DESC`)
 - **Foreign Keys:** `menu_item_id` → `menu_items.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_addon_groups record. |
-| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for menu_addon_groups record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_addon_groups entity. |
-| `is_required` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `min_select` | `integer` | NO | `0` | Data field storing min select for menu_addon_groups record. |
-| `max_select` | `integer` | NO | `1` | Data field storing max select for menu_addon_groups record. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for menu_addon_groups record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_addon_groups record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for menu_addon_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for menu_addon_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_required` | `boolean` | NO | `false` | Data field storing is required for menu_addon_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_select` | `integer` | NO | `0` | Data field storing min select for menu_addon_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_select` | `integer` | NO | `1` | Data field storing max select for menu_addon_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for menu_addon_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_menu_addon_groups_item` ON (`menu_item_id`)
@@ -14064,18 +14586,18 @@ created_at DESC`)
 - **Foreign Keys:** `group_id` → `menu_addon_groups.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_addons record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_addons entity. |
-| `description` | `text` | YES | `''::text` | Data field storing description for menu_addons record. |
-| `price` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `is_available` | `boolean` | YES | `true` | Boolean toggle flag. |
-| `is_archived` | `boolean` | YES | `false` | Boolean toggle flag. |
-| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_addons record. |
-| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
-| `group_id` | `uuid` | YES | `NULL` | Data field storing group id for menu_addons record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_addons record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for menu_addons record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `''::text` | Data field storing description for menu_addons record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `is_available` | `boolean` | YES | `true` | Data field storing is available for menu_addons record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_archived` | `boolean` | YES | `false` | Data field storing is archived for menu_addons record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_addons record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `group_id` | `uuid` | YES | `NULL` | Data field storing group id for menu_addons record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_menu_addons_available` ON (`is_available,
@@ -14096,15 +14618,15 @@ menu_addons`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_categories record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_categories entity. |
-| `slug` | `text` | NO | `NULL` | Data field storing slug for menu_categories record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for menu_categories record. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for menu_categories record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_categories record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for menu_categories record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for menu_categories record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for menu_categories record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for menu_categories record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for menu_categories record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_menu_categories_active` ON (`sort_order`)
@@ -14123,16 +14645,16 @@ menu_addons`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_item_variation_groups record. |
-| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for menu_item_variation_groups record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_item_variation_groups entity. |
-| `is_required` | `boolean` | YES | `false` | Boolean toggle flag. |
-| `min_selections` | `integer` | YES | `0` | Data field storing min selections for menu_item_variation_groups record. |
-| `max_selections` | `integer` | YES | `1` | Data field storing max selections for menu_item_variation_groups record. |
-| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_item_variation_groups record. |
-| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_item_variation_groups record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for menu_item_variation_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for menu_item_variation_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_required` | `boolean` | YES | `false` | Data field storing is required for menu_item_variation_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_selections` | `integer` | YES | `0` | Data field storing min selections for menu_item_variation_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_selections` | `integer` | YES | `1` | Data field storing max selections for menu_item_variation_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_item_variation_groups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_menu_item_variation_groups_item` ON (`menu_item_id`)
@@ -14150,15 +14672,15 @@ menu_item_variation_groups`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_item_variation_options record. |
-| `variation_group_id` | `uuid` | NO | `NULL` | Data field storing variation group id for menu_item_variation_options record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_item_variation_options entity. |
-| `price_delta` | `numeric(10,2)` | YES | `0` | Monetary value stored in Naira (NGN). |
-| `is_available` | `boolean` | YES | `true` | Boolean toggle flag. |
-| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_item_variation_options record. |
-| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_item_variation_options record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `variation_group_id` | `uuid` | NO | `NULL` | Data field storing variation group id for menu_item_variation_options record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for menu_item_variation_options record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price_delta` | `numeric(10,2)` | YES | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `is_available` | `boolean` | YES | `true` | Data field storing is available for menu_item_variation_options record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_item_variation_options record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_menu_item_variation_options_group` ON (`variation_group_id`)
@@ -14180,26 +14702,26 @@ variation_options`
 - **Foreign Keys:** `category_id` → `menu_categories.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_items record. |
-| `category_id` | `uuid` | NO | `NULL` | Data field storing category id for menu_items record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_items entity. |
-| `slug` | `text` | NO | `NULL` | Data field storing slug for menu_items record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for menu_items record. |
-| `image_url` | `text` | YES | `NULL` | Data field storing image url for menu_items record. |
-| `price` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `hp_earn` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `is_available` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `is_featured` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `tags` | `text[]` | NO | `'{}'::text[]` | Data field storing tags for menu_items record. |
-| `options` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options for menu_items record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `deleted_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when deleted occurred. |
-| `daily_limit` | `integer` | YES | `NULL` | Data field storing daily limit for menu_items record. |
-| `hp_earn_value` | `integer` | YES | `0` | Loyalty points value (Holy Points). |
-| `hp_multiplier` | `numeric(3,2)` | NO | `1.0` | Loyalty points value (Holy Points). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_items record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `category_id` | `uuid` | NO | `NULL` | Data field storing category id for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `hp_earn` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `is_available` | `boolean` | NO | `true` | Data field storing is available for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_featured` | `boolean` | NO | `false` | Data field storing is featured for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `tags` | `text[]` | NO | `'{}'::text[]` | Data field storing tags for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `options` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `deleted_at` | `timestamp with time zone` | YES | `NULL` | Data field storing deleted at for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `daily_limit` | `integer` | YES | `NULL` | Data field storing daily limit for menu_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_earn_value` | `integer` | YES | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `hp_multiplier` | `numeric(3,2)` | NO | `1.0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
 
 **Indexes:**
 - `idx_menu_items_available` ON (`category_id`)
@@ -14231,23 +14753,23 @@ variation_options`
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the milestones record. |
-| `title` | `text` | NO | `NULL` | Data field storing title for milestones record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for milestones record. |
-| `trigger_type` | `text` | NO | `NULL` | Data field storing trigger type for milestones record. |
-| `trigger_value` | `integer` | NO | `1` | Data field storing trigger value for milestones record. |
-| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `time_window` | `text` | YES | `NULL` | Data field storing time window for milestones record. |
-| `icon_won` | `text` | YES | `NULL` | Data field storing icon won for milestones record. |
-| `icon_locked` | `text` | YES | `NULL` | Data field storing icon locked for milestones record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for milestones record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `social_link` | `text` | YES | `NULL` | Data field storing social link for milestones record. |
-| `trigger_meta` | `jsonb` | YES | `NULL` | Data field storing trigger meta for milestones record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the milestones record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `title` | `text` | NO | `NULL` | Data field storing title for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `trigger_type` | `text` | NO | `NULL` | Data field storing trigger type for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `trigger_value` | `integer` | NO | `1` | Data field storing trigger value for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `time_window` | `text` | YES | `NULL` | Data field storing time window for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `icon_won` | `text` | YES | `NULL` | Data field storing icon won for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `icon_locked` | `text` | YES | `NULL` | Data field storing icon locked for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `social_link` | `text` | YES | `NULL` | Data field storing social link for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `trigger_meta` | `jsonb` | YES | `NULL` | Data field storing trigger meta for milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_milestones_created_by` ON (`created_by`)
@@ -14268,13 +14790,13 @@ is_active`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the monthly_hp_tracker record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `month` | `text` | NO | `NULL` | Data field storing month for monthly_hp_tracker record. |
-| `total_earned` | `integer` | NO | `0` | Data field storing total earned for monthly_hp_tracker record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the monthly_hp_tracker record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `month` | `text` | NO | `NULL` | Data field storing month for monthly_hp_tracker record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `total_earned` | `integer` | NO | `0` | Data field storing total earned for monthly_hp_tracker record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_monthly_hp_tracker_user_month` ON (`user_id,
@@ -14291,18 +14813,18 @@ month`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the newsletter_subscriptions record. |
-| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
-| `full_name` | `text` | YES | `NULL` | Human-readable display name of the newsletter_subscriptions entity. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `source` | `text` | NO | `'website'::text` | Data field storing source for newsletter_subscriptions record. |
-| `tags` | `text[]` | NO | `'{}'::text[]` | Data field storing tags for newsletter_subscriptions record. |
-| `is_confirmed` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when confirmed occurred. |
-| `unsubscribed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when unsubscribed occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the newsletter_subscriptions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `full_name` | `text` | YES | `NULL` | Data field storing full name for newsletter_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `source` | `text` | NO | `'website'::text` | Data field storing source for newsletter_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `tags` | `text[]` | NO | `'{}'::text[]` | Data field storing tags for newsletter_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_confirmed` | `boolean` | NO | `false` | Data field storing is confirmed for newsletter_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing confirmed at for newsletter_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `unsubscribed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing unsubscribed at for newsletter_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_newsletter_user_id` ON (`user_id`)
@@ -14320,19 +14842,19 @@ insert`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_blasts record. |
-| `title` | `text` | NO | `NULL` | Data field storing title for notification_blasts record. |
-| `body` | `text` | NO | `NULL` | Data field storing body for notification_blasts record. |
-| `channels` | `text[]` | NO | `'{}'::text[]` | Data field storing channels for notification_blasts record. |
-| `segment` | `jsonb` | NO | `'{}'::jsonb` | Data field storing segment for notification_blasts record. |
-| `action_url` | `text` | YES | `NULL` | Data field storing action url for notification_blasts record. |
-| `scheduled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when scheduled occurred. |
-| `status` | `text` | NO | `'draft'::text` | Lifecycle status indicator tracking the current state of notification_blasts record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for notification_blasts record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_blasts record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `title` | `text` | NO | `NULL` | Data field storing title for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `body` | `text` | NO | `NULL` | Data field storing body for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `channels` | `text[]` | NO | `'{}'::text[]` | Data field storing channels for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `segment` | `jsonb` | NO | `'{}'::jsonb` | Data field storing segment for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `action_url` | `text` | YES | `NULL` | Data field storing action url for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `scheduled_at` | `timestamp with time zone` | YES | `NULL` | Data field storing scheduled at for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'draft'::text` | Data field storing status for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for notification_blasts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_notification_blasts_created_by` ON (`created_by`)
@@ -14348,18 +14870,18 @@ insert`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_deliveries record. |
-| `notification_id` | `uuid` | YES | `NULL` | Data field storing notification id for notification_deliveries record. |
-| `blast_id` | `uuid` | YES | `NULL` | Data field storing blast id for notification_deliveries record. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `channel` | `text` | NO | `NULL` | Data field storing channel for notification_deliveries record. |
-| `status` | `text` | NO | `'queued'::text` | Lifecycle status indicator tracking the current state of notification_deliveries record. |
-| `provider_message_id` | `text` | YES | `NULL` | Data field storing provider message id for notification_deliveries record. |
-| `error_message` | `text` | YES | `NULL` | Data field storing error message for notification_deliveries record. |
-| `delivered_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when delivered occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_deliveries record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `notification_id` | `uuid` | YES | `NULL` | Data field storing notification id for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `blast_id` | `uuid` | YES | `NULL` | Data field storing blast id for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `channel` | `text` | NO | `NULL` | Data field storing channel for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'queued'::text` | Data field storing status for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `provider_message_id` | `text` | YES | `NULL` | Data field storing provider message id for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `error_message` | `text` | YES | `NULL` | Data field storing error message for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivered_at` | `timestamp with time zone` | YES | `NULL` | Data field storing delivered at for notification_deliveries record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_notification_deliveries_blast_id` ON (`blast_id`)
@@ -14381,12 +14903,12 @@ insert`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_log record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `type` | `text` | NO | `NULL` | Data field storing type for notification_log record. |
-| `sent_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when sent occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_log record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `type` | `text` | NO | `NULL` | Data field storing type for notification_log record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sent_at` | `timestamp with time zone` | NO | `now()` | Data field storing sent at for notification_log record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_notification_log_user_sent` ON (`user_id,
@@ -14404,18 +14926,18 @@ sent_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_preferences record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `push_enabled` | `boolean` | NO | `true` | Data field storing push enabled for notification_preferences record. |
-| `email_enabled` | `boolean` | NO | `true` | Contact email address used for receipts and notification delivery. |
-| `order_updates` | `boolean` | NO | `true` | Data field storing order updates for notification_preferences record. |
-| `promotions` | `boolean` | NO | `true` | Data field storing promotions for notification_preferences record. |
-| `hp_updates` | `boolean` | NO | `true` | Loyalty points value (Holy Points). |
-| `delivery_updates` | `boolean` | NO | `true` | Data field storing delivery updates for notification_preferences record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_preferences record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `push_enabled` | `boolean` | NO | `true` | Data field storing push enabled for notification_preferences record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `email_enabled` | `boolean` | NO | `true` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `order_updates` | `boolean` | NO | `true` | Data field storing order updates for notification_preferences record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `promotions` | `boolean` | NO | `true` | Data field storing promotions for notification_preferences record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_updates` | `boolean` | NO | `true` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `delivery_updates` | `boolean` | NO | `true` | Data field storing delivery updates for notification_preferences record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **RLS Policies:**
 - `Users manage own notification
@@ -14432,18 +14954,18 @@ preferences`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notifications record. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `title` | `text` | NO | `NULL` | Data field storing title for notifications record. |
-| `body` | `text` | NO | `NULL` | Data field storing body for notifications record. |
-| `channel` | `text` | NO | `'in_app'::text` | Data field storing channel for notifications record. |
-| `action_url` | `text` | YES | `NULL` | Data field storing action url for notifications record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `read_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when read occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `type` | `text` | NO | `'system'::text` | Data field storing type for notifications record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notifications record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `title` | `text` | NO | `NULL` | Data field storing title for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `body` | `text` | NO | `NULL` | Data field storing body for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `channel` | `text` | NO | `'in_app'::text` | Data field storing channel for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `action_url` | `text` | YES | `NULL` | Data field storing action url for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `read_at` | `timestamp with time zone` | YES | `NULL` | Data field storing read at for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `type` | `text` | NO | `'system'::text` | Data field storing type for notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_notifications_unread` ON (`user_id,
@@ -14466,15 +14988,15 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the operating_hour_overrides record. |
-| `date` | `date` | NO | `NULL` | Timestamp recording when date occurred. |
-| `opens_at` | `time without time zone` | YES | `NULL` | Timestamp recording when opens occurred. |
-| `closes_at` | `time without time zone` | YES | `NULL` | Timestamp recording when closes occurred. |
-| `is_closed` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `reason` | `text` | YES | `NULL` | Data field storing reason for operating_hour_overrides record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the operating_hour_overrides record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `date` | `date` | NO | `NULL` | Data field storing date for operating_hour_overrides record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `opens_at` | `time without time zone` | YES | `NULL` | Data field storing opens at for operating_hour_overrides record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `closes_at` | `time without time zone` | YES | `NULL` | Data field storing closes at for operating_hour_overrides record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_closed` | `boolean` | NO | `false` | Data field storing is closed for operating_hour_overrides record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reason` | `text` | YES | `NULL` | Data field storing reason for operating_hour_overrides record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **RLS Policies:**
 - `operating_hour_overrides: admins
@@ -14491,13 +15013,13 @@ read`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the operating_hours record. |
-| `weekday` | `integer` | NO | `NULL` | Data field storing weekday for operating_hours record. |
-| `opens_at` | `time without time zone` | YES | `NULL` | Timestamp recording when opens occurred. |
-| `closes_at` | `time without time zone` | YES | `NULL` | Timestamp recording when closes occurred. |
-| `is_closed` | `boolean` | NO | `false` | Boolean toggle flag. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the operating_hours record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `weekday` | `integer` | NO | `NULL` | Data field storing weekday for operating_hours record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `opens_at` | `time without time zone` | YES | `NULL` | Data field storing opens at for operating_hours record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `closes_at` | `time without time zone` | YES | `NULL` | Data field storing closes at for operating_hours record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_closed` | `boolean` | NO | `false` | Data field storing is closed for operating_hours record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Unique Constraints:**
 - `operating_hours_weekday_key`: UNIQUE (`weekday`)
@@ -14516,16 +15038,16 @@ read`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_addon_selections record. |
-| `order_item_id` | `uuid` | NO | `NULL` | Data field storing order item id for order_addon_selections record. |
-| `addon_id` | `uuid` | NO | `NULL` | Data field storing addon id for order_addon_selections record. |
-| `group_id` | `uuid` | YES | `NULL` | Data field storing group id for order_addon_selections record. |
-| `name_snapshot` | `text` | NO | `NULL` | Human-readable display name of the order_addon_selections entity. |
-| `price_delta_snapshot` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `quantity` | `integer` | NO | `1` | Data field storing quantity for order_addon_selections record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_addon_selections record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_item_id` | `uuid` | NO | `NULL` | Data field storing order item id for order_addon_selections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `addon_id` | `uuid` | NO | `NULL` | Data field storing addon id for order_addon_selections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `group_id` | `uuid` | YES | `NULL` | Data field storing group id for order_addon_selections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name_snapshot` | `text` | NO | `NULL` | Data field storing name snapshot for order_addon_selections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price_delta_snapshot` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for order_addon_selections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_order_addon_selections_addon_id` ON (`addon_id`)
@@ -14547,22 +15069,22 @@ selections`
 - **Foreign Keys:** `addon_id` → `menu_addons.id`, `menu_item_id` → `menu_items.id`, `order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_items record. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_items record. |
-| `menu_item_id` | `uuid` | YES | `NULL` | Data field storing menu item id for order_items record. |
-| `name_snapshot` | `text` | NO | `NULL` | Human-readable display name of the order_items entity. |
-| `price_snapshot` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `hp_earn_snapshot` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `quantity` | `integer` | NO | `NULL` | Data field storing quantity for order_items record. |
-| `options_snapshot` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options snapshot for order_items record. |
-| `line_total` | `numeric(14,2)` | NO | `0` | Data field storing line total for order_items record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `selected_variations` | `jsonb` | YES | `'[]'::jsonb` | Data field storing selected variations for order_items record. |
-| `is_addon` | `boolean` | YES | `false` | Boolean toggle flag. |
-| `addon_id` | `uuid` | YES | `NULL` | Data field storing addon id for order_items record. |
-| `hp_multiplier_snapshot` | `numeric(3,2)` | NO | `1.0` | Frozen snapshot of menu item HP earn multiplier at checkout time to preserve historical calculations. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_items record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `menu_item_id` | `uuid` | YES | `NULL` | Data field storing menu item id for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `name_snapshot` | `text` | NO | `NULL` | Data field storing name snapshot for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `price_snapshot` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `hp_earn_snapshot` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `quantity` | `integer` | NO | `NULL` | Data field storing quantity for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `options_snapshot` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options snapshot for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `line_total` | `numeric(14,2)` | NO | `0` | Data field storing line total for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `selected_variations` | `jsonb` | YES | `'[]'::jsonb` | Data field storing selected variations for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_addon` | `boolean` | YES | `false` | Data field storing is addon for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `addon_id` | `uuid` | YES | `NULL` | Data field storing addon id for order_items record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_multiplier_snapshot` | `numeric(3,2)` | NO | `1.0` | Frozen snapshot of menu item HP earn multiplier at checkout time to preserve historical calculations. | order_service.create_order | at checkout time | defaults to 1.0 | menu_items.hp_multiplier |
 
 **Indexes:**
 - `idx_order_items_addon_id` ON (`addon_id`)
@@ -14588,20 +15110,20 @@ selections`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_locks record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `locked_date` | `date` | NO | `NULL` | Timestamp recording when locked date occurred. |
-| `discount_pct` | `numeric(5,2)` | NO | `10` | Data field storing discount pct for order_locks record. |
-| `status` | `text` | NO | `'active'::text` | Lifecycle status indicator tracking the current state of order_locks record. |
-| `reminder_sent_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when reminder sent occurred. |
-| `reschedule_count` | `integer` | NO | `0` | Data field storing reschedule count for order_locks record. |
-| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for order_locks record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `reward_type` | `text` | NO | `'discount'::text` | Data field storing reward type for order_locks record. |
-| `reward_hp_amount` | `integer` | YES | `NULL` | Monetary value stored in Naira (NGN). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_locks record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `locked_date` | `date` | NO | `NULL` | Data field storing locked date for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `discount_pct` | `numeric(5,2)` | NO | `10` | Data field storing discount pct for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'active'::text` | Data field storing status for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reminder_sent_at` | `timestamp with time zone` | YES | `NULL` | Data field storing reminder sent at for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reschedule_count` | `integer` | NO | `0` | Data field storing reschedule count for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `reward_type` | `text` | NO | `'discount'::text` | Data field storing reward type for order_locks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reward_hp_amount` | `integer` | YES | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
 
 **Indexes:**
 - `idx_order_locks_locked_date` ON (`locked_date`)
@@ -14629,21 +15151,21 @@ selections`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_reviews record. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_reviews record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `rating` | `integer` | NO | `NULL` | Data field storing rating for order_reviews record. |
-| `comment` | `text` | YES | `NULL` | Data field storing comment for order_reviews record. |
-| `hp_rewarded` | `integer` | NO | `30` | Loyalty points value (Holy Points). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `image_urls` | `text[]` | NO | `'{}'::text[]` | Data field storing image urls for order_reviews record. |
-| `is_flagged` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
-| `kitchen_rating` | `smallint` | YES | `NULL` | Data field storing kitchen rating for order_reviews record. |
-| `rider_rating` | `smallint` | YES | `NULL` | Data field storing rider rating for order_reviews record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_reviews record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `rating` | `integer` | NO | `NULL` | Data field storing rating for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `comment` | `text` | YES | `NULL` | Data field storing comment for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_rewarded` | `integer` | NO | `30` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `image_urls` | `text[]` | NO | `'{}'::text[]` | Data field storing image urls for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_flagged` | `boolean` | NO | `false` | Data field storing is flagged for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `kitchen_rating` | `smallint` | YES | `NULL` | Data field storing kitchen rating for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `rider_rating` | `smallint` | YES | `NULL` | Data field storing rider rating for order_reviews record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_order_reviews_kitchen_rating` ON (`kitchen_rating`)
@@ -14671,14 +15193,14 @@ selections`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_share_events record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_share_events record. |
-| `platform` | `text` | NO | `'whatsapp'::text` | Data field storing platform for order_share_events record. |
-| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_share_events record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_share_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `platform` | `text` | NO | `'whatsapp'::text` | Data field storing platform for order_share_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_order_share_events_order_id` ON (`order_id`)
@@ -14700,15 +15222,15 @@ created_at DESC`)
 - **Foreign Keys:** `changed_by` → `profiles.id`, `order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_status_logs record. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_status_logs record. |
-| `status` | `order_status` | NO | `NULL` | Lifecycle status indicator tracking the current state of order_status_logs record. |
-| `changed_by` | `uuid` | YES | `NULL` | Data field storing changed by for order_status_logs record. |
-| `note` | `text` | YES | `NULL` | Data field storing note for order_status_logs record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_status_logs record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_status_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `order_status` | NO | `NULL` | Data field storing status for order_status_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `changed_by` | `uuid` | YES | `NULL` | Data field storing changed by for order_status_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `note` | `text` | YES | `NULL` | Data field storing note for order_status_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for order_status_logs record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_order_status_logs_changed_by` ON (`changed_by`)
@@ -14726,13 +15248,13 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_streak_rewards record. |
-| `weeks` | `integer` | NO | `NULL` | Data field storing weeks for order_streak_rewards record. |
-| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_streak_rewards record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `weeks` | `integer` | NO | `NULL` | Data field storing weeks for order_streak_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for order_streak_rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `uq_order_streak_rewards_weeks` ON (`weeks`)
@@ -14752,14 +15274,14 @@ created_at DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_streaks record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `streak_weeks` | `integer` | NO | `0` | Data field storing streak weeks for order_streaks record. |
-| `longest_streak` | `integer` | NO | `0` | Data field storing longest streak for order_streaks record. |
-| `last_order_week` | `text` | YES | `NULL` | Data field storing last order week for order_streaks record. |
-| `last_updated` | `timestamp with time zone` | NO | `now()` | Timestamp recording when last updated occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_streaks record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `streak_weeks` | `integer` | NO | `0` | Data field storing streak weeks for order_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `longest_streak` | `integer` | NO | `0` | Data field storing longest streak for order_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_order_week` | `text` | YES | `NULL` | Data field storing last order week for order_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_updated` | `timestamp with time zone` | NO | `now()` | Data field storing last updated for order_streaks record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_order_streaks_user` ON (`user_id`)
@@ -14785,58 +15307,58 @@ created_at DESC`)
 - **Foreign Keys:** `batch_id` → `delivery_batches.id`, `delivery_window_id` → `delivery_windows.id`, `promo_code_id` → `promo_codes.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the orders record. |
-| `order_number` | `text` | NO | `('HG-'::text || upper(substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 10)))` | Human-readable unique order reference string (e.g., 'HG-9A8B7C6D5E'). |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `guest_name` | `text` | YES | `NULL` | Human-readable display name of the orders entity. |
-| `guest_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. |
-| `guest_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
-| `status` | `order_status` | NO | `'received'::order_status` | Lifecycle status indicator tracking the current state of orders record. |
-| `payment_status` | `payment_status` | NO | `'pending'::payment_status` | Lifecycle status indicator tracking the current state of orders record. |
-| `subtotal` | `numeric(14,2)` | NO | `0` | Sum of menu item and add-on prices before delivery fees and discounts in NGN. |
-| `delivery_fee` | `numeric(14,2)` | NO | `0` | Calculated delivery charge in NGN based on hostel fixed fee or off-campus gate distance. |
-| `discount_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `total_amount` | `numeric(14,2)` | NO | `0` | Final payable order amount in NGN after applying subtotal discounts and adding delivery fee. |
-| `hp_earned` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `hp_redeemed` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `hp_credited_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when earned HP was credited to profile upon order delivery. |
-| `wallet_amount_used` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `card_amount_used` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `delivery_address_snapshot` | `jsonb` | NO | `'{}'::jsonb` | Data field storing delivery address snapshot for orders record. |
-| `delivery_window_id` | `uuid` | YES | `NULL` | Data field storing delivery window id for orders record. |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for orders record. |
-| `scheduled_for` | `timestamp with time zone` | YES | `NULL` | Data field storing scheduled for for orders record. |
-| `payment_confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when payment confirmed occurred. |
-| `received_at` | `timestamp with time zone` | YES | `now()` | Timestamp recording when received occurred. |
-| `paid_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when paid occurred. |
-| `preparing_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when preparing occurred. |
-| `ready_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ready occurred. |
-| `assigned_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when assigned occurred. |
-| `out_for_delivery_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when out for delivery occurred. |
-| `delivered_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when delivered occurred. |
-| `cancelled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when cancelled occurred. |
-| `refunded_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when refunded occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `promo_code_id` | `uuid` | YES | `NULL` | Data field storing promo code id for orders record. |
-| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for orders record. |
-| `payment_reference` | `text` | YES | `NULL` | Data field storing payment reference for orders record. |
-| `delivery_attempted_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when deliverytempted occurred. |
-| `unclaimed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when unclaimed occurred. |
-| `is_squad_order` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `squad_discount_amount` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `squad_item_count` | `integer` | NO | `0` | Data field storing squad item count for orders record. |
-| `claim_token` | `uuid` | YES | `NULL` | Data field storing claim token for orders record. |
-| `is_scheduled` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `gift_included` | `boolean` | NO | `false` | Data field storing gift included for orders record. |
-| `delivery_type` | `text` | YES | `NULL` | Data field storing delivery type for orders record. |
-| `delivery_location_id` | `uuid` | YES | `NULL` | Data field storing delivery location id for orders record. |
-| `delivery_location_lat` | `double precision` | YES | `NULL` | Data field storing delivery location lat for orders record. |
-| `delivery_location_lon` | `double precision` | YES | `NULL` | Data field storing delivery location lon for orders record. |
-| `squad_name` | `text` | YES | `NULL` | Human-readable display name of the orders entity. |
-| `idempotency_key` | `text` | YES | `NULL` | Data field storing idempotency key for orders record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the orders record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_number` | `text` | NO | `('HG-'::text || upper(substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 10)))` | Data field storing order number for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `guest_name` | `text` | YES | `NULL` | Data field storing guest name for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `guest_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `guest_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts. | API Request / Profile | upon record creation | NULL if phone number not provided | None |
+| `status` | `order_status` | NO | `'received'::order_status` | Data field storing status for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `payment_status` | `payment_status` | NO | `'pending'::payment_status` | Data field storing payment status for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `subtotal` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `delivery_fee` | `numeric(14,2)` | NO | `0` | Data field storing delivery fee for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `discount_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `total_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `hp_earned` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `hp_redeemed` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `hp_credited_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when earned HP was credited to user profile upon order delivery. | Celery / Order Service | when order transitions to 'delivered' status | NULL before order is delivered | orders.status, profiles.hp_balance |
+| `wallet_amount_used` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `card_amount_used` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `delivery_address_snapshot` | `jsonb` | NO | `'{}'::jsonb` | Data field storing delivery address snapshot for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_window_id` | `uuid` | YES | `NULL` | Data field storing delivery window id for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `scheduled_for` | `timestamp with time zone` | YES | `NULL` | Data field storing scheduled for for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `payment_confirmed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing payment confirmed at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `received_at` | `timestamp with time zone` | YES | `now()` | Data field storing received at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `paid_at` | `timestamp with time zone` | YES | `NULL` | Data field storing paid at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `preparing_at` | `timestamp with time zone` | YES | `NULL` | Data field storing preparing at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ready_at` | `timestamp with time zone` | YES | `NULL` | Data field storing ready at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `assigned_at` | `timestamp with time zone` | YES | `NULL` | Data field storing assigned at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `out_for_delivery_at` | `timestamp with time zone` | YES | `NULL` | Data field storing out for delivery at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivered_at` | `timestamp with time zone` | YES | `NULL` | Data field storing delivered at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `cancelled_at` | `timestamp with time zone` | YES | `NULL` | Data field storing cancelled at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `refunded_at` | `timestamp with time zone` | YES | `NULL` | Data field storing refunded at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `promo_code_id` | `uuid` | YES | `NULL` | Data field storing promo code id for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `payment_reference` | `text` | YES | `NULL` | Data field storing payment reference for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_attempted_at` | `timestamp with time zone` | YES | `NULL` | Data field storing delivery attempted at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `unclaimed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing unclaimed at for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_squad_order` | `boolean` | NO | `false` | Data field storing is squad order for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `squad_discount_amount` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `squad_item_count` | `integer` | NO | `0` | Data field storing squad item count for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `claim_token` | `uuid` | YES | `NULL` | Data field storing claim token for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_scheduled` | `boolean` | NO | `false` | Data field storing is scheduled for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `gift_included` | `boolean` | NO | `false` | Data field storing gift included for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_type` | `text` | YES | `NULL` | Data field storing delivery type for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_location_id` | `uuid` | YES | `NULL` | Data field storing delivery location id for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_location_lat` | `double precision` | YES | `NULL` | Data field storing delivery location lat for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `delivery_location_lon` | `double precision` | YES | `NULL` | Data field storing delivery location lon for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `squad_name` | `text` | YES | `NULL` | Data field storing squad name for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `idempotency_key` | `text` | YES | `NULL` | Data field storing idempotency key for orders record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_orders_active` ON (`user_id, status, created_at DESC`)
@@ -14885,20 +15407,20 @@ DESC`)
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the payments record. |
-| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for payments record. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `provider` | `text` | NO | `NULL` | Data field storing provider for payments record. |
-| `reference` | `text` | NO | `NULL` | Data field storing reference for payments record. |
-| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of payments record. |
-| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when confirmed occurred. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for payments record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the payments record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `provider` | `text` | NO | `NULL` | Data field storing provider for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference` | `text` | NO | `NULL` | Data field storing reference for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing confirmed at for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for payments record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_payments_order_id` ON (`order_id`)
@@ -14928,46 +15450,46 @@ DESC`)
 - **Foreign Keys:** `campus_id` → `campuses.id`, `current_tier_id` → `hp_tiers.id`, `deactivated_by` → `profiles.id`, `department_id` → `departments.id`, `referred_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `NULL` | Primary key UUID unique identifier for the profiles record. |
-| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
-| `full_name` | `text` | YES | `NULL` | Human-readable display name of the profiles entity. |
-| `phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
-| `date_of_birth` | `date` | YES | `NULL` | Timestamp recording when date of birth occurred. |
-| `faculty` | `text` | YES | `NULL` | Data field storing faculty for profiles record. |
-| `department` | `text` | YES | `NULL` | Data field storing department for profiles record. |
-| `photo_url` | `text` | YES | `NULL` | Data field storing photo url for profiles record. |
-| `role` | `user_role` | NO | `'student'::user_role` | Data field storing role for profiles record. |
-| `preferences` | `jsonb` | NO | `'{}'::jsonb` | Data field storing preferences for profiles record. |
-| `hp_balance` | `integer` | NO | `0` | Current spendable active loyalty points balance. |
-| `wallet_balance` | `numeric(14,2)` | NO | `0` | Current spendable cash balance in user's in-app wallet in NGN. |
-| `current_tier_id` | `uuid` | YES | `NULL` | Data field storing current tier id for profiles record. |
-| `tier_grace_started_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when tier grace started occurred. |
-| `tier_lost_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when tier lost occurred. |
-| `referral_code` | `text` | YES | `NULL` | Data field storing referral code for profiles record. |
-| `onboarding_completed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when onboarding completed occurred. |
-| `last_seen_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last seen occurred. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `push_enabled` | `boolean` | NO | `false` | Data field storing push enabled for profiles record. |
-| `email_notifications` | `boolean` | NO | `true` | Contact email address used for receipts and notification delivery. |
-| `has_scheduled_order` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `deactivated_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when deactivated occurred. |
-| `deactivated_by` | `uuid` | YES | `NULL` | Data field storing deactivated by for profiles record. |
-| `referred_by` | `uuid` | YES | `NULL` | Data field storing referred by for profiles record. |
-| `tier_grace_ends_at` | `timestamp with time zone` | YES | `NULL` | Expiration timestamp for 30-day tier grace period when rolling 120-day HP drops below maintenance threshold. |
-| `last_hp_activity_at` | `timestamp with time zone` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `deactivation_reason` | `text` | YES | `NULL` | Data field storing deactivation reason for profiles record. |
-| `jwt_version` | `integer` | NO | `0` | Data field storing jwt version for profiles record. |
-| `last_activity_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last activity occurred. |
-| `hp_earned_120day` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `graduation_claimed` | `boolean` | NO | `false` | Data field storing graduation claimed for profiles record. |
-| `top4_finish_count` | `integer` | NO | `0` | Data field storing top4 finish count for profiles record. |
-| `academic_level` | `text` | YES | `NULL` | Data field storing academic level for profiles record. |
-| `department_id` | `uuid` | YES | `NULL` | Data field storing department id for profiles record. |
-| `campus_id` | `uuid` | YES | `NULL` | Foreign key referencing campuses.id enforcing multi-campus isolation. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `NULL` | Primary key UUID unique identifier for the profiles record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `full_name` | `text` | YES | `NULL` | Data field storing full name for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts. | API Request / Profile | upon record creation | NULL if phone number not provided | None |
+| `date_of_birth` | `date` | YES | `NULL` | Data field storing date of birth for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `faculty` | `text` | YES | `NULL` | Data field storing faculty for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `department` | `text` | YES | `NULL` | Data field storing department for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `photo_url` | `text` | YES | `NULL` | Data field storing photo url for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `role` | `user_role` | NO | `'student'::user_role` | Data field storing role for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `preferences` | `jsonb` | NO | `'{}'::jsonb` | Data field storing preferences for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_balance` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `wallet_balance` | `numeric(14,2)` | NO | `0` | Data field storing wallet balance for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `current_tier_id` | `uuid` | YES | `NULL` | Data field storing current tier id for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `tier_grace_started_at` | `timestamp with time zone` | YES | `NULL` | Data field storing tier grace started at for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `tier_lost_at` | `timestamp with time zone` | YES | `NULL` | Data field storing tier lost at for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `referral_code` | `text` | YES | `NULL` | Data field storing referral code for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `onboarding_completed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing onboarding completed at for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_seen_at` | `timestamp with time zone` | YES | `NULL` | Data field storing last seen at for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `push_enabled` | `boolean` | NO | `false` | Data field storing push enabled for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `email_notifications` | `boolean` | NO | `true` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `has_scheduled_order` | `boolean` | NO | `false` | Data field storing has scheduled order for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `deactivated_at` | `timestamp with time zone` | YES | `NULL` | Data field storing deactivated at for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `deactivated_by` | `uuid` | YES | `NULL` | Data field storing deactivated by for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `referred_by` | `uuid` | YES | `NULL` | Data field storing referred by for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `tier_grace_ends_at` | `timestamp with time zone` | YES | `NULL` | Expiration timestamp for 30-day tier grace period when rolling 120-day HP drops below maintenance threshold. | Celery task recalculate_120day_hp | when rolling 120-day HP falls below tier threshold | NULL if user is in good tier standing | profiles.tier |
+| `last_hp_activity_at` | `timestamp with time zone` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `deactivation_reason` | `text` | YES | `NULL` | Data field storing deactivation reason for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `jwt_version` | `integer` | NO | `0` | Data field storing jwt version for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_activity_at` | `timestamp with time zone` | YES | `NULL` | Data field storing last activity at for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_earned_120day` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `graduation_claimed` | `boolean` | NO | `false` | Data field storing graduation claimed for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `top4_finish_count` | `integer` | NO | `0` | Data field storing top4 finish count for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `academic_level` | `text` | YES | `NULL` | Data field storing academic level for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `department_id` | `uuid` | YES | `NULL` | Data field storing department id for profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `campus_id` | `uuid` | YES | `NULL` | Foreign key referencing campuses.id enforcing multi-campus isolation. | API / Auth Middleware | upon record creation | NULL for global platform records | campuses.id |
 
 **Indexes:**
 - `idx_profiles_campus_id` ON (`campus_id`)
@@ -15004,14 +15526,14 @@ DESC`)
 - **Foreign Keys:** `order_id` → `orders.id`, `promo_code_id` → `promo_codes.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the promo_code_uses record. |
-| `promo_code_id` | `uuid` | NO | `NULL` | Data field storing promo code id for promo_code_uses record. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for promo_code_uses record. |
-| `discount_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the promo_code_uses record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `promo_code_id` | `uuid` | NO | `NULL` | Data field storing promo code id for promo_code_uses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for promo_code_uses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `discount_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_promo_code_uses_order` ON (`order_id`)
@@ -15037,25 +15559,25 @@ DESC`)
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the promo_codes record. |
-| `code` | `citext` | NO | `NULL` | Data field storing code for promo_codes record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for promo_codes record. |
-| `discount_type` | `text` | NO | `NULL` | Data field storing discount type for promo_codes record. |
-| `discount_value` | `numeric(14,2)` | NO | `NULL` | Data field storing discount value for promo_codes record. |
-| `scope` | `text` | NO | `'cart'::text` | Data field storing scope for promo_codes record. |
-| `applicable_item_ids` | `uuid[]` | NO | `'{}'::uuid[]` | Data field storing applicable item ids for promo_codes record. |
-| `applicable_category_ids` | `uuid[]` | NO | `'{}'::uuid[]` | Data field storing applicable category ids for promo_codes record. |
-| `max_uses` | `integer` | YES | `NULL` | Data field storing max uses for promo_codes record. |
-| `max_uses_per_user` | `integer` | YES | `NULL` | Data field storing max uses per user for promo_codes record. |
-| `starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when starts occurred. |
-| `ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ends occurred. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `used_count` | `integer` | NO | `0` | Data field storing used count for promo_codes record. |
-| `min_order_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for promo_codes record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the promo_codes record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `code` | `citext` | NO | `NULL` | Data field storing code for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `discount_type` | `text` | NO | `NULL` | Data field storing discount type for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `discount_value` | `numeric(14,2)` | NO | `NULL` | Data field storing discount value for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `scope` | `text` | NO | `'cart'::text` | Data field storing scope for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `applicable_item_ids` | `uuid[]` | NO | `'{}'::uuid[]` | Data field storing applicable item ids for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `applicable_category_ids` | `uuid[]` | NO | `'{}'::uuid[]` | Data field storing applicable category ids for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_uses` | `integer` | YES | `NULL` | Data field storing max uses for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_uses_per_user` | `integer` | YES | `NULL` | Data field storing max uses per user for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `starts_at` | `timestamp with time zone` | YES | `NULL` | Data field storing starts at for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `ends_at` | `timestamp with time zone` | YES | `NULL` | Data field storing ends at for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `used_count` | `integer` | NO | `0` | Data field storing used count for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_order_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for promo_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_promo_codes_active` ON (`code, ends_at`)
@@ -15082,15 +15604,15 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the push_subscriptions record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `subscription` | `jsonb` | NO | `NULL` | Data field storing subscription for push_subscriptions record. |
-| `device_label` | `text` | YES | `NULL` | Data field storing device label for push_subscriptions record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the push_subscriptions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `subscription` | `jsonb` | NO | `NULL` | Data field storing subscription for push_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `device_label` | `text` | YES | `NULL` | Data field storing device label for push_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for push_subscriptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_push_subscriptions_active` ON (`user_id`)
@@ -15110,12 +15632,12 @@ active`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referral_codes record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `code` | `text` | NO | `NULL` | Data field storing code for referral_codes record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referral_codes record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `code` | `text` | NO | `NULL` | Data field storing code for referral_codes record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Unique Constraints:**
 - `referral_codes_code_key`: UNIQUE (`code`)
@@ -15132,15 +15654,15 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referral_milestones record. |
-| `referral_count` | `integer` | NO | `NULL` | Data field storing referral count for referral_milestones record. |
-| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
-| `is_repeating` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `repeat_interval` | `integer` | YES | `NULL` | Data field storing repeat interval for referral_milestones record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referral_milestones record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `referral_count` | `integer` | NO | `NULL` | Data field storing referral count for referral_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `is_repeating` | `boolean` | NO | `false` | Data field storing is repeating for referral_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `repeat_interval` | `integer` | YES | `NULL` | Data field storing repeat interval for referral_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for referral_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `uq_referral_milestones_count` ON (`referral_count`)
@@ -15160,15 +15682,15 @@ active`
 - **Foreign Keys:** `referred_user_id` → `profiles.id`, `referrer_id` → `profiles.id`, `trigger_order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referrals record. |
-| `referrer_id` | `uuid` | NO | `NULL` | Data field storing referrer id for referrals record. |
-| `referred_user_id` | `uuid` | NO | `NULL` | Data field storing referred user id for referrals record. |
-| `trigger_order_id` | `uuid` | YES | `NULL` | Data field storing trigger order id for referrals record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of referrals record. |
-| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referrals record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `referrer_id` | `uuid` | NO | `NULL` | Data field storing referrer id for referrals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `referred_user_id` | `uuid` | NO | `NULL` | Data field storing referred user id for referrals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `trigger_order_id` | `uuid` | YES | `NULL` | Data field storing trigger order id for referrals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for referrals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_referrals_referred` ON (`referred_user_id`)
@@ -15192,18 +15714,18 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the reward_redemptions record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `reward_id` | `uuid` | NO | `NULL` | Data field storing reward id for reward_redemptions record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of reward_redemptions record. |
-| `hp_cost_snapshot` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for reward_redemptions record. |
-| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for reward_redemptions record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the reward_redemptions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `reward_id` | `uuid` | NO | `NULL` | Data field storing reward id for reward_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for reward_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_cost_snapshot` | `integer` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Data field storing fulfilled at for reward_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for reward_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for reward_redemptions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_reward_redemptions_fulfilled_by` ON (`fulfilled_by`)
@@ -15226,28 +15748,28 @@ created_at DESC`)
 - **Foreign Keys:** `min_tier_id` → `hp_tiers.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the rewards record. |
-| `name` | `text` | NO | `NULL` | Human-readable display name of the rewards entity. |
-| `description` | `text` | YES | `NULL` | Data field storing description for rewards record. |
-| `hp_cost` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
-| `reward_type` | `text` | NO | `NULL` | Data field storing reward type for rewards record. |
-| `stock_quantity` | `integer` | YES | `NULL` | Data field storing stock quantity for rewards record. |
-| `min_tier_id` | `uuid` | YES | `NULL` | Data field storing min tier id for rewards record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `expires_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when expires occurred. |
-| `max_per_user` | `integer` | NO | `1` | Data field storing max per user for rewards record. |
-| `image_url` | `text` | YES | `NULL` | Data field storing image url for rewards record. |
-| `flash_enabled` | `boolean` | YES | `false` | Data field storing flash enabled for rewards record. |
-| `flash_hp_cost` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
-| `flash_max_qty` | `integer` | YES | `NULL` | Data field storing flash max qty for rewards record. |
-| `flash_slots_remaining` | `integer` | YES | `NULL` | Data field storing flash slots remaining for rewards record. |
-| `flash_starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when flash starts occurred. |
-| `flash_ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when flash ends occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the rewards record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `name` | `text` | NO | `NULL` | Data field storing name for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_cost` | `integer` | NO | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `reward_type` | `text` | NO | `NULL` | Data field storing reward type for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `stock_quantity` | `integer` | YES | `NULL` | Data field storing stock quantity for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `min_tier_id` | `uuid` | YES | `NULL` | Data field storing min tier id for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `expires_at` | `timestamp with time zone` | YES | `NULL` | Data field storing expires at for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `max_per_user` | `integer` | NO | `1` | Data field storing max per user for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `flash_enabled` | `boolean` | YES | `false` | Data field storing flash enabled for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `flash_hp_cost` | `integer` | YES | `NULL` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `flash_max_qty` | `integer` | YES | `NULL` | Data field storing flash max qty for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `flash_slots_remaining` | `integer` | YES | `NULL` | Data field storing flash slots remaining for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `flash_starts_at` | `timestamp with time zone` | YES | `NULL` | Data field storing flash starts at for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `flash_ends_at` | `timestamp with time zone` | YES | `NULL` | Data field storing flash ends at for rewards record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_rewards_active` ON (`hp_cost`)
@@ -15273,16 +15795,16 @@ created_at DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the rider_profiles record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `is_available` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `availability_updated_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when availability updated occurred. |
-| `location_lat` | `double precision` | YES | `NULL` | Data field storing location lat for rider_profiles record. |
-| `location_lng` | `double precision` | YES | `NULL` | Data field storing location lng for rider_profiles record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the rider_profiles record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `is_available` | `boolean` | NO | `false` | Data field storing is available for rider_profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `availability_updated_at` | `timestamp with time zone` | YES | `NULL` | Data field storing availability updated at for rider_profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `location_lat` | `double precision` | YES | `NULL` | Data field storing location lat for rider_profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `location_lng` | `double precision` | YES | `NULL` | Data field storing location lng for rider_profiles record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Unique Constraints:**
 - `rider_profiles_user_id_key`: UNIQUE (`user_id`)
@@ -15302,15 +15824,15 @@ created_at DESC`)
 - **Foreign Keys:** `menu_item_id` → `menu_items.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the saved_for_later record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for saved_for_later record. |
-| `quantity` | `integer` | NO | `1` | Data field storing quantity for saved_for_later record. |
-| `notes` | `text` | YES | `NULL` | Data field storing notes for saved_for_later record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the saved_for_later record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for saved_for_later record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for saved_for_later record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for saved_for_later record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_saved_for_later_menu_item_id` ON (`menu_item_id`)
@@ -15332,20 +15854,20 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the scheduled_notifications record. |
-| `title` | `text` | NO | `NULL` | Data field storing title for scheduled_notifications record. |
-| `body` | `text` | NO | `NULL` | Data field storing body for scheduled_notifications record. |
-| `frequency` | `text` | NO | `NULL` | Data field storing frequency for scheduled_notifications record. |
-| `send_time` | `text` | NO | `NULL` | Data field storing send time for scheduled_notifications record. |
-| `target_segment` | `text` | NO | `'all'::text` | Data field storing target segment for scheduled_notifications record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `last_sent_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last sent occurred. |
-| `next_send_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when next send occurred. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for scheduled_notifications record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the scheduled_notifications record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `title` | `text` | NO | `NULL` | Data field storing title for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `body` | `text` | NO | `NULL` | Data field storing body for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `frequency` | `text` | NO | `NULL` | Data field storing frequency for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `send_time` | `text` | NO | `NULL` | Data field storing send time for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `target_segment` | `text` | NO | `'all'::text` | Data field storing target segment for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `last_sent_at` | `timestamp with time zone` | YES | `NULL` | Data field storing last sent at for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `next_send_at` | `timestamp with time zone` | YES | `NULL` | Data field storing next send at for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for scheduled_notifications record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_scheduled_notifications_created_by` ON (`created_by`)
@@ -15365,17 +15887,17 @@ scheduled_notifications`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the squad_members record. |
-| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for squad_members record. |
-| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `email` | `text` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
-| `hp_share` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `invite_sent` | `boolean` | NO | `false` | Data field storing invite sent for squad_members record. |
-| `is_registered` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `referral_attributed` | `boolean` | NO | `false` | Data field storing referral attributed for squad_members record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the squad_members record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for squad_members record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `email` | `text` | NO | `NULL` | Contact email address used for receipts and notification delivery. | API Request / Profile | upon record creation | NULL if user registered via phone only | None |
+| `hp_share` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `invite_sent` | `boolean` | NO | `false` | Data field storing invite sent for squad_members record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_registered` | `boolean` | NO | `false` | Data field storing is registered for squad_members record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `referral_attributed` | `boolean` | NO | `false` | Data field storing referral attributed for squad_members record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_squad_members_email` ON (`email`)
@@ -15396,19 +15918,19 @@ scheduled_notifications`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the storefront_sections record. |
-| `key` | `text` | NO | `NULL` | Data field storing key for storefront_sections record. |
-| `title` | `text` | YES | `NULL` | Data field storing title for storefront_sections record. |
-| `section_type` | `text` | NO | `NULL` | Data field storing section type for storefront_sections record. |
-| `content` | `jsonb` | NO | `NULL` | Data field storing content for storefront_sections record. |
-| `sort_order` | `integer` | NO | `0` | Data field storing sort order for storefront_sections record. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `published_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when published occurred. |
-| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for storefront_sections record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the storefront_sections record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `key` | `text` | NO | `NULL` | Data field storing key for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `title` | `text` | YES | `NULL` | Data field storing title for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `section_type` | `text` | NO | `NULL` | Data field storing section type for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `content` | `jsonb` | NO | `NULL` | Data field storing content for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `published_at` | `timestamp with time zone` | YES | `NULL` | Data field storing published at for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for storefront_sections record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_storefront_sections_created_by` ON (`created_by`)
@@ -15429,14 +15951,14 @@ active`
 - **Foreign Keys:** `updated_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `key` | `text` | NO | `NULL` | Data field storing key for system_settings record. |
-| `value` | `jsonb` | NO | `'{}'::jsonb` | Data field storing value for system_settings record. |
-| `description` | `text` | YES | `NULL` | Data field storing description for system_settings record. |
-| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for system_settings record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `is_public` | `boolean` | NO | `false` | Boolean toggle flag. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `key` | `text` | NO | `NULL` | Data field storing key for system_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `value` | `jsonb` | NO | `'{}'::jsonb` | Data field storing value for system_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `description` | `text` | YES | `NULL` | Data field storing description for system_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for system_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `is_public` | `boolean` | NO | `false` | Data field storing is public for system_settings record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_system_settings_public` ON (`is_public`)
@@ -15460,22 +15982,22 @@ nonsensitive`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the user_addresses record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `label` | `text` | YES | `NULL` | Data field storing label for user_addresses record. |
-| `line1` | `text` | NO | `NULL` | Data field storing line1 for user_addresses record. |
-| `line2` | `text` | YES | `NULL` | Data field storing line2 for user_addresses record. |
-| `hostel` | `text` | YES | `NULL` | Data field storing hostel for user_addresses record. |
-| `landmark` | `text` | YES | `NULL` | Data field storing landmark for user_addresses record. |
-| `city` | `text` | NO | `'Akure'::text` | Data field storing city for user_addresses record. |
-| `state` | `text` | NO | `'Ondo'::text` | Data field storing state for user_addresses record. |
-| `latitude` | `numeric(10,7)` | YES | `NULL` | Data field storing latitude for user_addresses record. |
-| `longitude` | `numeric(10,7)` | YES | `NULL` | Data field storing longitude for user_addresses record. |
-| `is_default` | `boolean` | NO | `false` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the user_addresses record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `label` | `text` | YES | `NULL` | Data field storing label for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `line1` | `text` | NO | `NULL` | Data field storing line1 for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `line2` | `text` | YES | `NULL` | Data field storing line2 for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hostel` | `text` | YES | `NULL` | Data field storing hostel for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `landmark` | `text` | YES | `NULL` | Data field storing landmark for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `city` | `text` | NO | `'Akure'::text` | Data field storing city for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `state` | `text` | NO | `'Ondo'::text` | Data field storing state for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `latitude` | `numeric(10,7)` | YES | `NULL` | Data field storing latitude for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `longitude` | `numeric(10,7)` | YES | `NULL` | Data field storing longitude for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_default` | `boolean` | NO | `false` | Data field storing is default for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_user_addresses_default` ON (`user_id`)
@@ -15497,14 +16019,14 @@ nonsensitive`
 - **Foreign Keys:** `milestone_id` → `milestones.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the user_milestones record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `milestone_id` | `uuid` | NO | `NULL` | Data field storing milestone id for user_milestones record. |
-| `completed_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when completed occurred. |
-| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `period_key` | `text` | YES | `NULL` | Data field storing period key for user_milestones record. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the user_milestones record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `milestone_id` | `uuid` | NO | `NULL` | Data field storing milestone id for user_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `completed_at` | `timestamp with time zone` | NO | `now()` | Data field storing completed at for user_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `period_key` | `text` | YES | `NULL` | Data field storing period key for user_milestones record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_user_milestones_milestone_id` ON (`milestone_id`)
@@ -15530,15 +16052,15 @@ milestone_id, period_key`)
 - **Foreign Keys:** `previous_tier_id` → `hp_tiers.id`, `tier_id` → `hp_tiers.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the user_tiers record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `tier_id` | `uuid` | NO | `NULL` | Data field storing tier id for user_tiers record. |
-| `event` | `text` | NO | `NULL` | Data field storing event for user_tiers record. |
-| `hp_at_event` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
-| `previous_tier_id` | `uuid` | YES | `NULL` | Data field storing previous tier id for user_tiers record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the user_tiers record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `tier_id` | `uuid` | NO | `NULL` | Data field storing tier id for user_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `event` | `text` | NO | `NULL` | Data field storing event for user_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `hp_at_event` | `integer` | NO | `0` | Loyalty point value (Holy Points). | HP Service / RPC | upon record creation | NULL if HP bonus not earned | None |
+| `previous_tier_id` | `uuid` | YES | `NULL` | Data field storing previous tier id for user_tiers record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_user_tiers_previous_tier_id` ON (`previous_tier_id`)
@@ -15564,19 +16086,19 @@ DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the virtual_accounts record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `provider` | `text` | NO | `NULL` | Data field storing provider for virtual_accounts record. |
-| `account_number` | `text` | NO | `NULL` | Data field storing account number for virtual_accounts record. |
-| `account_name` | `text` | NO | `NULL` | Human-readable display name of the virtual_accounts entity. |
-| `bank_name` | `text` | NO | `NULL` | Human-readable display name of the virtual_accounts entity. |
-| `provider_customer_id` | `text` | YES | `NULL` | Data field storing provider customer id for virtual_accounts record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the virtual_accounts record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `provider` | `text` | NO | `NULL` | Data field storing provider for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `account_number` | `text` | NO | `NULL` | Data field storing account number for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `account_name` | `text` | NO | `NULL` | Data field storing account name for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `bank_name` | `text` | NO | `NULL` | Data field storing bank name for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `provider_customer_id` | `text` | YES | `NULL` | Data field storing provider customer id for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `is_active` | `boolean` | NO | `true` | Data field storing is active for virtual_accounts record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `uq_virtual_accounts_active_user_provider` ON (`user_id,
@@ -15601,19 +16123,19 @@ provider`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_topups record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `provider` | `text` | NO | `NULL` | Data field storing provider for wallet_topups record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of wallet_topups record. |
-| `callback_url` | `text` | YES | `NULL` | Data field storing callback url for wallet_topups record. |
-| `provider_reference` | `text` | YES | `NULL` | Data field storing provider reference for wallet_topups record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when confirmed occurred. |
-| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for wallet_topups record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_topups record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `provider` | `text` | NO | `NULL` | Data field storing provider for wallet_topups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for wallet_topups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `callback_url` | `text` | YES | `NULL` | Data field storing callback url for wallet_topups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `provider_reference` | `text` | YES | `NULL` | Data field storing provider reference for wallet_topups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing confirmed at for wallet_topups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for wallet_topups record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_wallet_topups_status` ON (`user_id, status`)
@@ -15635,21 +16157,21 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_transactions record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `type` | `text` | NO | `NULL` | Data field storing type for wallet_transactions record. |
-| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `balance_after` | `numeric(14,2)` | NO | `NULL` | Data field storing balance after for wallet_transactions record. |
-| `reason` | `text` | YES | `NULL` | Data field storing reason for wallet_transactions record. |
-| `reference_type` | `text` | YES | `NULL` | Data field storing reference type for wallet_transactions record. |
-| `reference_id` | `uuid` | YES | `NULL` | Data field storing reference id for wallet_transactions record. |
-| `provider` | `text` | YES | `NULL` | Data field storing provider for wallet_transactions record. |
-| `provider_reference` | `text` | YES | `NULL` | Data field storing provider reference for wallet_transactions record. |
-| `issued_by_admin_id` | `uuid` | YES | `NULL` | Data field storing issued by admin id for wallet_transactions record. |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_transactions record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `type` | `text` | NO | `NULL` | Data field storing type for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `balance_after` | `numeric(14,2)` | NO | `NULL` | Data field storing balance after for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reason` | `text` | YES | `NULL` | Data field storing reason for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference_type` | `text` | YES | `NULL` | Data field storing reference type for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference_id` | `uuid` | YES | `NULL` | Data field storing reference id for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `provider` | `text` | YES | `NULL` | Data field storing provider for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `provider_reference` | `text` | YES | `NULL` | Data field storing provider reference for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `issued_by_admin_id` | `uuid` | YES | `NULL` | Data field storing issued by admin id for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | Data field storing metadata for wallet_transactions record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_wallet_tx_issued_by_admin_id` ON (`issued_by_admin_id`)
@@ -15670,22 +16192,22 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_withdrawals record. |
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `amount` | `numeric(12,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
-| `bank_code` | `text` | NO | `NULL` | Data field storing bank code for wallet_withdrawals record. |
-| `account_number` | `text` | NO | `NULL` | Data field storing account number for wallet_withdrawals record. |
-| `account_name` | `text` | NO | `NULL` | Human-readable display name of the wallet_withdrawals entity. |
-| `narration` | `text` | YES | `NULL` | Data field storing narration for wallet_withdrawals record. |
-| `reference` | `text` | NO | `NULL` | Data field storing reference for wallet_withdrawals record. |
-| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of wallet_withdrawals record. |
-| `processed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when processed occurred. |
-| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for wallet_withdrawals record. |
-| `metadata` | `jsonb` | YES | `NULL` | JSON object storing context payload or metadata. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_withdrawals record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `amount` | `numeric(12,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). | API / Order Service | upon record creation | NULL if discount or fee not applicable | None |
+| `bank_code` | `text` | NO | `NULL` | Data field storing bank code for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `account_number` | `text` | NO | `NULL` | Data field storing account number for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `account_name` | `text` | NO | `NULL` | Data field storing account name for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `narration` | `text` | YES | `NULL` | Data field storing narration for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference` | `text` | NO | `NULL` | Data field storing reference for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'pending'::text` | Data field storing status for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `processed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing processed at for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `metadata` | `jsonb` | YES | `NULL` | Data field storing metadata for wallet_withdrawals record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Indexes:**
 - `idx_wallet_withdrawals_user_id` ON (`user_id`)
@@ -15705,13 +16227,13 @@ created_at DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
-| `balance` | `numeric(14,2)` | NO | `0` | Data field storing balance for wallets record. |
-| `currency` | `text` | NO | `'NGN'::text` | Data field storing currency for wallets record. |
-| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. | API / JWT Auth Context | upon record creation | NULL for unauthenticated guest orders | profiles.id |
+| `balance` | `numeric(14,2)` | NO | `0` | Data field storing balance for wallets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `currency` | `text` | NO | `'NGN'::text` | Data field storing currency for wallets record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 
 **Check Constraints:**
 - `chk_wallets_balance_nonneg`: `(balance >= (0)::numeric)`
@@ -15730,17 +16252,17 @@ created_at DESC`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
-|-------------|-----------|----------|---------|------------------------------|
-| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the webhook_events record. |
-| `event_type` | `text` | NO | `NULL` | Data field storing event type for webhook_events record. |
-| `provider` | `text` | YES | `NULL` | Data field storing provider for webhook_events record. |
-| `reference` | `text` | NO | `''::text` | Data field storing reference for webhook_events record. |
-| `payload` | `jsonb` | YES | `NULL` | JSON object storing context payload or metadata. |
-| `status` | `text` | NO | `'processed'::text` | Lifecycle status indicator tracking the current state of webhook_events record. |
-| `error` | `text` | YES | `NULL` | Data field storing error for webhook_events record. |
-| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
-| `processed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when processed occurred. |
+| Column Name | Data Type | Nullable | Default | Business Meaning | Source of Truth | When Set | When NULL | Related Columns |
+|-------------|-----------|----------|---------|------------------|-----------------|----------|-----------|-----------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the webhook_events record. | PostgreSQL gen_random_uuid() | upon record creation | never NULL | None |
+| `event_type` | `text` | NO | `NULL` | Data field storing event type for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `provider` | `text` | YES | `NULL` | Data field storing provider for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `reference` | `text` | NO | `''::text` | Data field storing reference for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `payload` | `jsonb` | YES | `NULL` | Data field storing payload for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `status` | `text` | NO | `'processed'::text` | Data field storing status for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `error` | `text` | YES | `NULL` | Data field storing error for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+| `processed_at` | `timestamp with time zone` | YES | `NULL` | Data field storing processed at for webhook_events record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 
 **Indexes:**
 - `idx_webhook_events_provider_ref` ON (`provider,
@@ -16077,7 +16599,7 @@ All background tasks run via Celery Beat scheduler in West Africa Time (`Africa/
 
 - **Webhook Security**: Verifies HMAC SHA512 signature (`X-Paystack-Signature` header against `PAYSTACK_WEBHOOK_SECRET`).
 
-- **Idempotency**: Webhook events check `payment_webhooks` table on `(provider, event_type, reference)` UNIQUE constraint.
+- **Idempotency**: Webhook events check `payment_webhooks` table on `(provider='paystack', event_type, reference)` UNIQUE constraint.
 
 
 ### 2. Cloudinary Image Storage
