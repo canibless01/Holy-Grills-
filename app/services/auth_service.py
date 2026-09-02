@@ -104,7 +104,10 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         except Exception:
             pass
     if academic_level:
-        profile_data["academic_level"] = str(academic_level).strip()
+        level_row = db.table("academic_levels").select("value").eq("value", str(academic_level).strip()).eq("is_active", True).limit(1).execute()
+        if not level_row:
+            raise ValueError(f"'{academic_level}' is not a valid academic level")
+        profile_data["academic_level"] = level_row[0]["value"]
 
     try:
         existing_profile = db.table("profiles").select("id").eq("id", user_id).execute()
@@ -134,7 +137,9 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                 except Exception:
                     pass
             if academic_level:
-                patch["academic_level"] = str(academic_level).strip()
+                level_row = db.table("academic_levels").select("value").eq("value", str(academic_level).strip()).eq("is_active", True).limit(1).execute()
+                if level_row:
+                    patch["academic_level"] = level_row[0]["value"]
             try:
                 db.table("profiles").eq("id", user_id).update(patch)
             except SupabaseError:

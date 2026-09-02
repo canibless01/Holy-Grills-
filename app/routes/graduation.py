@@ -56,7 +56,6 @@ def claim_graduation():
     if profile.get("graduation_claimed"):
         return jsonify({"error": MSG.GRADUATION_ALREADY_CLAIMED}), 400
 
-    # Read minimum level from system_settings (default 400)
     try:
         setting = (
             db.table("system_settings")
@@ -66,21 +65,28 @@ def claim_graduation():
             .single()
             .execute()
         )
-        graduation_min_level = int((setting or {}).get("value", "400") or "400")
+        graduation_min_rank = int((setting or {}).get("value", "400") or "400")
     except Exception:
-        graduation_min_level = 400
+        graduation_min_rank = 400
 
-    # Validate academic_level
-    try:
-        user_level = int(profile.get("academic_level") or 0)
-    except Exception:
-        user_level = 0
+    user_rank = 0
+    level_value = profile.get("academic_level")
+    if level_value:
+        level_row = (
+            db.table("academic_levels")
+            .select("rank")
+            .eq("value", level_value)
+            .single()
+            .execute()
+        )
+        if level_row and level_row.get("rank") is not None:
+            user_rank = int(level_row["rank"])
 
-    if user_level < graduation_min_level:
+    if user_rank < graduation_min_rank:
         return jsonify({
-            "error": MSG.GRADUATION_LEVEL_REQUIRED.format(required=graduation_min_level, actual=user_level),
-            "required_level": graduation_min_level,
-            "your_level": user_level,
+            "error": MSG.GRADUATION_LEVEL_REQUIRED.format(required=graduation_min_rank, actual=user_rank),
+            "required_level": graduation_min_rank,
+            "your_level": level_value,
         }), 400
 
     # OCC conditional update: mark claimed FIRST to prevent concurrent double-claim

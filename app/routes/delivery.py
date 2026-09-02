@@ -124,12 +124,12 @@ def find_nearest_gate(db, lat: float, lon: float, campus_id: str | None) -> dict
 # Public user endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
-from app.routes.events import _get_campus_id
+from app.routes.events import _require_campus_selection
 
 @delivery_bp.route("/hostels", methods=["GET"])
 def list_hostels():
     """
-    List all active on-campus hostels with their delivery fees.
+    List all active on-campus hostels with their delivery fees for the selected campus.
     ---
     tags: [Delivery]
     security: []
@@ -138,12 +138,14 @@ def list_hostels():
         description: |
           { hostels: [{ id, name, gate_id, delivery_fee, is_active, gates: {...} }] }
     """
+    campus_id, err = _require_campus_selection()
+    if err:
+        return err
     db = get_user_client()
     try:
         q = db.table("hostels").select("*,gates(name,lat,lon)").eq("is_active", "true")
         hostels = q.order("name").execute() or []
-        campus_id = _get_campus_id()
-        if campus_id and isinstance(hostels, list):
+        if isinstance(hostels, list):
             hostels = [h for h in hostels if h.get("campus_id") == campus_id or h.get("campus_id") is None]
     except Exception:
         # Table may not exist yet — return empty list gracefully
@@ -154,7 +156,7 @@ def list_hostels():
 @delivery_bp.route("/gates", methods=["GET"])
 def list_gates():
     """
-    List all active delivery gates (used for off-campus fee calculation).
+    List all active delivery gates (used for off-campus fee calculation) for the selected campus.
     ---
     tags: [Delivery]
     security: []
@@ -163,12 +165,14 @@ def list_gates():
         description: |
           { gates: [{ id, name, lat, lon, base_fee, rate_per_km, min_fee }] }
     """
+    campus_id, err = _require_campus_selection()
+    if err:
+        return err
     db = get_user_client()
     try:
         q = db.table("gates").select("*").eq("is_active", "true")
         gates = q.order("name").execute() or []
-        campus_id = _get_campus_id()
-        if campus_id and isinstance(gates, list):
+        if isinstance(gates, list):
             gates = [g_row for g_row in gates if g_row.get("campus_id") == campus_id or g_row.get("campus_id") is None]
     except Exception:
         gates = []

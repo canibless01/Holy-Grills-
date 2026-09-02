@@ -109,11 +109,18 @@ def redeem_free_side():
     except (ValueError, TypeError, AttributeError):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    order = db.table("orders").select("id,user_id").eq("id", order_id).single().execute()
+    order = db.table("orders").select("id,user_id,status").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
     if order.get("user_id") != user_id:
         return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
+
+    _MODIFIABLE_STATUSES = {
+        "scheduled", "received", "paid", "preparing", "ready",
+        "assigned", "out_for_delivery", "delivery_attempted", "unclaimed",
+    }
+    if order.get("status") not in _MODIFIABLE_STATUSES:
+        return jsonify({"error": "This order can no longer be modified"}), 400
 
     side_choice = (data.get("side_choice") or "").strip()
     if not side_choice:
@@ -128,7 +135,7 @@ def redeem_free_side():
         return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS}), 400
 
     # Use oldest-expiring credit first, try to update atomically using Optimistic Concurrency Control (OCC)
-    write_db = get_user_client()
+    write_db = get_db()
     success = False
     new_remaining = 0
     credit_row_used = None

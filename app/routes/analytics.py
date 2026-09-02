@@ -446,11 +446,16 @@ def export_csv():
     row_limit = min(int(request.args.get("limit", 5000)), 10000)
     capped_rows = rows[:row_limit] if isinstance(rows, list) else rows
 
+    def _csv_safe(value):
+        if isinstance(value, str) and value[:1] in ("=", "+", "-", "@"):
+            return "'" + value
+        return value
+
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
     writer.writeheader()
     for row in capped_rows:
-        writer.writerow(row)
+        writer.writerow({k: _csv_safe(v) for k, v in row.items()})
 
     return Response(
         output.getvalue(),
