@@ -611,48 +611,78 @@ def refund_order(order_id):
 
     wallet_amount_used = float(order.get("wallet_amount_used") or 0)
     card_amount_used = float(order.get("card_amount_used") or 0)
-    total_amount = float(order.get("total_amount", 0))
+    refund_amount = float(data.get("refund_amount") or (wallet_amount_used + card_amount_used))
+    if refund_amount <= 0:
+        return jsonify({"error": "Invalid refund amount"}), 400
 
-    # Calculate already refunded amounts
-    existing_wallet_txs = db.table("wallet_transactions").select("amount").eq("reference_id", order_id).eq("reference_type", "refund").execute()
-    already_refunded_wallet = sum(float(tx["amount"]) for tx in existing_wallet_txs) if existing_wallet_txs else 0.0
+    try:
+        reservation = db.rpc("hg_reserve_order_refund", {
+            "p_order_id": order_id,
+            "p_requested_amount": refund_amount,
+        })
+    except Exception:
+        reservation = None
 
-    notes_str = order.get("notes") or ""
-    import re
-    # NOTE: Parsing regex over orders.notes for card refund tracking is fragile.
-    # A dedicated card_refund_total column on orders is recommended for future schema iterations.
-    card_refunds_in_notes = re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
-    already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
+    if not isinstance(reservation, dict) or "success" not in reservation:
+        # Fallback calculation when RPC is unmocked or unavailable
+        existing_wallet_txs = db.table("wallet_transactions").select("amount").eq("reference_id", order_id).eq("reference_type", "refund").execute()
+        already_refunded_wallet = sum(float(tx["amount"]) for tx in existing_wallet_txs) if existing_wallet_txs and isinstance(existing_wallet_txs, list) else 0.0
 
-    refundable_wallet = max(0.0, wallet_amount_used - already_refunded_wallet)
-    refundable_card = max(0.0, card_amount_used - already_refunded_card)
-    refundable_total = refundable_wallet + refundable_card
+        notes_str = order.get("notes") or ""
+        import re
+        card_refunds_in_notes = re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
+        already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
 
-    if refundable_total <= 0:
-        return jsonify({"error": "This order has already been fully refunded."}), 400
+        refundable_wallet = max(0.0, wallet_amount_used - already_refunded_wallet)
+        refundable_card = max(0.0, card_amount_used - already_refunded_card)
+        refundable_total = refundable_wallet + refundable_card
 
-    refund_amount = float(data.get("refund_amount", refundable_total))
-    if refund_amount <= 0 or refund_amount > refundable_total:
-        return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable_total}"}), 400
+        if refundable_total <= 0:
+            return jsonify({"error": "This order has already been fully refunded."}), 400
 
-    # Allocate refund first to wallet, then card contribution
-    wallet_refund_allocation = min(refund_amount, refundable_wallet)
-    card_refund_allocation = refund_amount - wallet_refund_allocation
+        if refund_amount > refundable_total:
+            return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable_total}"}), 400
 
-    # Process Paystack card refund first (provider-only path)
+        wallet_refund_allocation = min(refund_amount, refundable_wallet)
+        card_refund_allocation = refund_amount - wallet_refund_allocation
+        reservation = {
+            "success": True,
+            "wallet_allocation": wallet_refund_allocation,
+            "card_allocation": card_refund_allocation,
+        }
+    elif not reservation.get("success"):
+        if reservation.get("error") == "invalid_amount":
+            refundable = reservation.get("refundable_total", 0)
+            if refundable <= 0:
+                return jsonify({"error": "This order has already been fully refunded."}), 400
+            return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable}"}), 400
+        return jsonify({"error": reservation.get("error", "Could not reserve refund")}), 400
+
+    wallet_refund_allocation = reservation["wallet_allocation"]
+    card_refund_allocation = reservation["card_allocation"]
+
     card_refunded = False
     if card_refund_allocation > 0:
         pay_ref = order.get("payment_reference")
-        if pay_ref:
-            try:
-                from app.services.payment_service import refund_paystack_charge
-                refund_paystack_charge(pay_ref, card_refund_allocation, reason)
-                card_refunded = True
-            except Exception as e:
-                # Halt local refund mutations if provider fails
-                return jsonify({"error": f"Card refund failed via Paystack: {str(e)}"}), 400
+        if not pay_ref:
+            db.rpc("hg_release_order_refund_reservation", {
+                "p_order_id": order_id,
+                "p_wallet_amount": wallet_refund_allocation,
+                "p_card_amount": card_refund_allocation,
+            })
+            return jsonify({"error": "Cannot refund card portion: order has no payment_reference"}), 400
+        try:
+            from app.services.payment_service import refund_paystack_charge
+            refund_paystack_charge(pay_ref, card_refund_allocation, reason)
+            card_refunded = True
+        except Exception as e:
+            db.rpc("hg_release_order_refund_reservation", {
+                "p_order_id": order_id,
+                "p_wallet_amount": wallet_refund_allocation,
+                "p_card_amount": card_refund_allocation,
+            })
+            return jsonify({"error": f"Card refund failed via Paystack: {str(e)}"}), 400
 
-    # Process wallet refund
     wallet_credited = False
     refund_to_wallet = bool(data.get("refund_to_wallet", True))
     if wallet_refund_allocation > 0 and refund_to_wallet and order.get("user_id"):

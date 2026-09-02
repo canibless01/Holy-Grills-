@@ -1190,7 +1190,7 @@ def _handle_delivery_rewards(order: dict):
     tier = tier_info.get("tier") or {}
     tier_slug = tier.get("slug", "ember")
 
-    db = get_user_client()
+    db = get_db()
     order_items = order.get("order_items")
     if not isinstance(order_items, list):
         try:
@@ -1248,6 +1248,11 @@ def _handle_delivery_rewards(order: dict):
     if result.get("error"):
         logger.error(f"Failed to credit HP for order {order_id}: {result['error']}")
         return
+
+    try:
+        hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=subtotal)
+    except Exception as e:
+        logger.warning("_handle_delivery_rewards: unlock_pending_hp failed for order %s: %s", order_id, e)
 
     welcome_result = hp_service.award_welcome_bonus(user_id, order_id)
 
