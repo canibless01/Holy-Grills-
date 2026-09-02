@@ -23,6 +23,7 @@ from app.routes.admin import admin_bp
 from app.routes.kitchen import kitchen_bp
 from app.routes.riders import riders_bp
 from app.routes.leaderboard import leaderboard_bp
+from app.routes.challenges import challenges_bp
 from app.routes.webhooks import webhooks_bp
 from app.routes.storefront import storefront_bp
 from app.routes.analytics import analytics_bp
@@ -102,6 +103,7 @@ def create_app(config_class=Config):
     app.register_blueprint(kitchen_bp, url_prefix="/api/kitchen")
     app.register_blueprint(riders_bp, url_prefix="/api/riders")
     app.register_blueprint(leaderboard_bp, url_prefix="/api/leaderboard")
+    app.register_blueprint(challenges_bp, url_prefix="/api/challenges")
     app.register_blueprint(webhooks_bp, url_prefix="/api/webhooks")
     app.register_blueprint(storefront_bp, url_prefix="/api/storefront")
     app.register_blueprint(analytics_bp, url_prefix="/api/analytics")
