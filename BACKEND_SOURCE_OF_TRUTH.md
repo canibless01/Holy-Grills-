@@ -1,12 +1,12 @@
 # BACKEND SOURCE OF TRUTH — HOLY GRILLS PLATFORM REST API & ARCHITECTURE
 
-Exhaustive, authoritative reference document covering all 311 REST API endpoints, 99 public database tables, PostgreSQL RPC functions, JWT auth & role security, Celery background tasks, external integrations, and system configuration settings.
+Exhaustive, single-source-of-truth document detailing all 311 REST API endpoints, 99 public database tables, order state machine, calculation formulas, transaction guarantees, complete webhook payloads, error recovery instructions, state persistence & caching, squad order logic, rider assignment logic, campaign/feature flag rules, and system configuration settings.
 
 ## SYSTEM ARCHITECTURE OVERVIEW
 
 - **Framework**: Flask 3.1.3 (Python 3.12)
 
-- **Database**: Supabase PostgreSQL REST API (`postgrest`) with Service-Role and Anon access
+- **Database**: Supabase PostgreSQL (Project ID: `zaxdkrmzyibkvlsrgmvq`) via PostgREST REST API
 
 - **Authentication**: Supabase JWT Auth with silent token rotation and profile role checks
 
@@ -20,7 +20,145 @@ Exhaustive, authoritative reference document covering all 311 REST API endpoints
 
 
 ---
-## SECTION 1: API ENDPOINT INVENTORY
+## SECTION 1: ORDER STATE MACHINE
+
+### Order Status Definitions
+
+- **`scheduled`**: Order created for future fulfillment window; held in lock state until execution time arrives.
+- **`received`**: Order successfully paid and received by the platform; queued for kitchen processing.
+- **`preparing`**: Kitchen staff actively preparing meal items.
+- **`ready`**: Kitchen meal preparation finished; order waiting in dispatch station for rider assignment or pickup.
+- **`assigned`**: Delivery rider assigned to batch containing this order.
+- **`out_for_delivery`**: Rider picked up order and is actively delivering to customer address/gate.
+- **`delivered`**: Order successfully handed over to customer. Triggers HP earn credit and review prompt.
+- **`delivery_attempted`**: Rider arrived at location but customer was unreachable or unavailable.
+- **`unclaimed`**: Order remained uncollected at gate/pickup point past pickup grace timeout.
+- **`cancelled`**: Order voided prior to fulfillment or due to uncollectibility.
+- **`refunded`**: Order cancelled and funds returned to customer wallet/card balance.
+
+### Allowed Status Transitions Matrix
+
+| From Status | To Status | Allowed Roles | Validation Required | Side Effects |
+|-------------|-----------|---------------|---------------------|--------------|
+| `scheduled` | `received` | `system` (Celery) | Window `scheduled_for` timestamp reached | Places order in active kitchen queue |
+| `scheduled` | `cancelled` | `student`, `admin` | Order is in future window | Releases lock reservation |
+| `received` | `preparing` | `kitchen`, `admin` | `payment_status` = `'paid'` | Updates kitchen queue status |
+| `received` | `cancelled` | `student`, `admin` | Order not yet being prepared | Initiates wallet/card refund |
+| `received` | `refunded` | `admin` | Order cancelled prior to cooking | Debits/releases refund reservation |
+| `preparing` | `ready` | `kitchen`, `admin` | Meal preparation completed | Dispatches 'order_ready' push notification |
+| `preparing` | `cancelled` | `admin` | Item out of stock or kitchen issue | Triggers order refund flow |
+| `ready` | `assigned` | `rider`, `admin` | Rider active and batch unassigned | Assigns order to rider batch |
+| `ready` | `out_for_delivery` | `rider`, `admin` | Rider assigned | Dispatches 'out_for_delivery' notification |
+| `assigned` | `out_for_delivery` | `rider`, `admin` | Batch picked up from kitchen | Sends rider contact details to customer |
+| `out_for_delivery` | `delivered` | `rider`, `admin` | Customer handover confirmed | Credits HP earned, unlocks pending HP, sends delivery notification |
+| `out_for_delivery` | `delivery_attempted` | `rider`, `admin` | Rider arrived, customer unreachable | Triggers customer contact alert |
+| `delivery_attempted` | `delivered` | `rider`, `admin` | Customer re-contacted and handed over | Credits HP earned |
+| `delivery_attempted` | `unclaimed` | `rider`, `admin` | Grace timeout elapsed | Marks order unclaimed |
+| `unclaimed` | `cancelled` | `admin` | Uncollected meal discarded | No refund issued unless admin override |
+
+### Disallowed Transition Error Response
+
+- Invalid transition attempt returns HTTP 400 Bad Request: `"Cannot transition order status from '{current_status}' to '{new_status}'"`.
+
+---
+## SECTION 2: CALCULATION FORMULAS
+
+### 1. HP Earn Calculation
+
+- **Formula**: `line_base_hp = int(unit_price * quantity * HP_PER_NAIRA_FOOD)` (default `HP_PER_NAIRA_FOOD` = 0.1, i.e., 1 HP per ₦10 spent).
+
+- **Item Multiplier**: `multiplied_line_hp = round(line_base_hp * hp_multiplier_snapshot)` (1.0x or 2.0x for promotional items).
+
+- **Tier Multiplier**: `tier_multiplier` (Starter=1.0, Regular=1.1, Champion=1.2, Elite=1.3).
+
+- **Total HP Earned**: `sum(round(multiplied_line_hp * tier_multiplier))` across all non-addon food items.
+
+- **Example**: Customer on Champion tier (1.2x) orders 2 Jollof Rice bowls @ ₦1,500 each (`hp_multiplier_snapshot` = 1.0).
+
+  - `line_base_hp` = `int(3000 * 0.1)` = `300 HP`.
+
+  - `total_hp` = `round(300 * 1.2)` = `360 HP` earned upon delivery.
+
+- **Edge Cases**: Discounts do not reduce HP earned on food subtotal; delivery fees earn 0 HP; HP cannot be used to pay for food orders.
+
+- **Location**: `app/services/hp_service.py:calculate_delivery_hp()`.
+
+- **DB Columns**: `orders.hp_earned`, `order_items.hp_multiplier_snapshot`, `profiles.hp_balance`.
+
+
+### 2. Delivery Fee Calculation
+
+- **On-Campus**: Fixed fee lookup per hostel in `hostels.delivery_fee` (e.g. ₦200).
+
+- **Off-Campus**: `fee = round(max(base_fee + (dist_km * rate_per_km), min_fee), 2)` where `dist_km` is great-circle Haversine distance (`R = 6371.0` km) from physically nearest gate (`gate.lat/lon`) to customer pin (`user_lat/lon`).
+
+- **Max Distance**: Checked against `kitchen_settings.max_delivery_radius_km` (e.g. 10 km from campus center). Exceeding radius returns HTTP 400: `"Delivery location is outside the maximum allowed radius of 10.0 km"`.
+
+- **Example**: Off-campus delivery 3.2 km from South Gate (`base_fee` = ₦200, `rate_per_km` = ₦100, `min_fee` = ₦300).
+
+  - `raw_fee` = `200 + (3.2 * 100)` = `₦520.00` (greater than min_fee ₦300) → `Delivery Fee = ₦520.00`.
+
+- **Location**: `app/routes/delivery.py:calculate_off_campus_fee()`.
+
+
+### 3. Discount Application Order
+
+1. **Subtotal**: Sum of item prices.
+
+2. **Delivery Fee**: On-campus or off-campus distance calculation.
+
+3. **Squad Delivery Discount**: Percentage discount applied to delivery fee if squad order criteria met.
+
+4. **Promo Code Discount**: Applied to Subtotal (`percentage` or `fixed`). Verified against `min_order_amount`, `max_uses`, and `max_uses_per_user`.
+
+5. **Squad Subtotal Discount**: Percentage discount applied to Subtotal if enabled.
+
+6. **Order Lock Discount**: Applied to Subtotal if order lock active.
+
+7. **Total Amount**: `max(0, Subtotal - Promo Discount - Squad Discount - Order Lock Discount) + Delivery Fee`.
+
+
+### 4. HP Tier Calculation
+
+- **Metric**: Rolling 120-day active HP earned (`recalculate_120day_hp`).
+
+- **Thresholds**:
+
+  - `starter`: 0 – 999 HP (1.0x multiplier)
+
+  - `regular`: 1,000 – 4,999 HP (1.1x multiplier)
+
+  - `champion`: 5,000 – 11,999 HP (1.2x multiplier)
+
+  - `elite`: 12,000+ HP (1.3x multiplier)
+
+- **Upgrade**: Immediate upon passing threshold on HP transaction credit.
+
+- **Downgrade**: If rolling 120-day HP falls below maintenance threshold, `tier_grace_ends_at` is set to 30 days in future. User retains tier benefits during grace period; if unfulfilled after 30 days, tier is downgraded.
+
+- **Location**: `app/services/hp_service.py:update_user_tier()`.
+
+
+### 5. Leaderboard Ranking Calculation
+
+- **Metric**: Sum of active HP earned in current calendar month (`monthly_hp_earned`). Ties broken by earlier account registration timestamp.
+
+- **Reset Schedule**: 1st of month at 00:01 WAT via `reset_monthly_leaderboard` task.
+
+- **Prizes**: Top 10 rankers receive exclusive spins and free side credits; #1 ranker inducted into Hall of Fame.
+
+
+### 6. Reward Flash Sale Discount Calculation
+
+- **Discount**: 50% discount on HP redemption cost (`flash_hp_cost = reward.hp_cost // 2`).
+
+- **Example**: A reward costing 500 HP costs 250 HP during an active flash sale window.
+
+- **Slot Locking**: Remaining quantity slots locked atomically via `hg_redeem_flash_reward_atomic` RPC.
+
+
+---
+## SECTION 3: API ENDPOINT INVENTORY
 
 Total documented REST API endpoints: **311**
 
@@ -39,7 +177,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -55,12 +193,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -80,7 +213,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -96,14 +229,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Academic level not found"`
+- `"Academic level not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -121,7 +249,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -137,12 +265,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `abandoned_carts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -162,7 +285,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -178,12 +301,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `abandoned_carts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -205,7 +323,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `is_active`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -221,12 +339,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -245,15 +358,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_active": "any",
-    "name": "any",
-    "sort_order": "any",
-    "value": "any"
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "sort_order": "string // OPTIONAL \u2014 default: null",
+    "value": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -269,14 +382,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"'name' and 'value' are required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -294,7 +402,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -310,14 +418,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Academic level not found"`
+- `"Academic level not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -335,7 +438,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -351,15 +454,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Academic level not found"`
-- `"No valid fields to update"`
+- `"Academic level not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"No valid fields to update"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -377,7 +475,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -393,14 +491,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Academic level not found"`
+- `"Academic level not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -420,7 +513,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -436,12 +529,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `admin_audit_logs`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -461,7 +549,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -477,12 +565,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `campuses`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -502,7 +585,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -518,12 +601,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -543,7 +621,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -559,12 +637,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `admin_audit_logs`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -586,7 +659,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, status, window_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -602,12 +675,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -626,15 +694,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "order_ids": "any",
-    "rider_id": "any",
-    "window_id": "any",
-    "zone": "any"
+    "order_ids": "string // OPTIONAL \u2014 default: null",
+    "rider_id": "string // OPTIONAL \u2014 default: null",
+    "window_id": "string // OPTIONAL \u2014 default: null",
+    "zone": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -650,57 +718,11 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, delivery_windows, orders, profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Delivery window belongs to a different campus"`
-- `"Rider account is deactivated"`
-- `"Rider user profile not found"`
-
----
-
-### `GET /api/admin/delivery-batches/<batch_id>`
-
-**Authentication:** `admin` (JWT required)
-
-**Source File:** `app/routes/admin.py` (`get_batch`)
-
-**Summary:** Get a delivery batch with all assigned orders (admin only).
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `delivery_batches, gates, orders`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"Delivery window belongs to a different campus"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Rider account is deactivated"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Rider user profile not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -718,7 +740,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -734,12 +756,43 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, orders`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `GET /api/admin/delivery-batches/<batch_id>`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/admin.py` (`get_batch`)
+
+**Summary:** Get a delivery batch with all assigned orders (admin only).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `delivery_batches, gates, orders`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -759,7 +812,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -775,12 +828,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -800,13 +848,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -816,12 +870,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -843,13 +892,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "delivery_windows": [
+        {
+            "id": "c1a2b3c4",
+            "name": "Lunch Window",
+            "start_time": "12:00:00",
+            "end_time": "14:00:00",
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -859,12 +914,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_windows, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -883,24 +933,30 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "capacity": "any",
-    "ends_at": "any",
-    "is_active": "any",
-    "label": "any",
-    "starts_at": "any",
-    "zone_id": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "capacity": "string // OPTIONAL \u2014 default: null",
+    "ends_at": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "label": "string // OPTIONAL \u2014 default: null",
+    "starts_at": "string // OPTIONAL \u2014 default: null",
+    "zone_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "delivery_windows": [
+        {
+            "id": "c1a2b3c4",
+            "name": "Lunch Window",
+            "start_time": "12:00:00",
+            "end_time": "14:00:00",
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -910,16 +966,11 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_windows`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"capacity must be a positive integer"`
-- `"is_active must be a boolean"`
-- `"label must be a non-empty string"`
+- `"capacity must be a positive integer"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"is_active must be a boolean"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"label must be a non-empty string"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -937,13 +988,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "delivery_windows": [
+        {
+            "id": "c1a2b3c4",
+            "name": "Lunch Window",
+            "start_time": "12:00:00",
+            "end_time": "14:00:00",
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -953,12 +1010,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -978,13 +1030,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "delivery_windows": [
+        {
+            "id": "c1a2b3c4",
+            "name": "Lunch Window",
+            "start_time": "12:00:00",
+            "end_time": "14:00:00",
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -994,12 +1052,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_windows`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1021,7 +1074,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `faculty, is_active`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1037,12 +1090,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1061,16 +1109,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "faculty": "any",
-    "is_active": "any",
-    "name": "any",
-    "slug": "any",
-    "sort_order": "any"
+    "faculty": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "slug": "string // OPTIONAL \u2014 default: null",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1086,14 +1134,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"'name' and 'faculty' are required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1111,7 +1154,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1127,14 +1170,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Department not found"`
+- `"Department not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1152,7 +1190,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1168,15 +1206,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Department not found"`
-- `"No valid fields to update"`
+- `"Department not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"No valid fields to update"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1194,7 +1227,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1210,14 +1243,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Department not found"`
+- `"Department not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1237,7 +1265,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1253,12 +1281,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `exclusive_spin_fulfillments, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1278,7 +1301,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1294,14 +1317,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `exclusive_spin_fulfillments`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Prize record not found"`
+- `"Prize record not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1321,7 +1339,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1337,12 +1355,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `feature_flags`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1361,15 +1374,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "description": "any",
-    "feature_name": "any",
-    "is_active": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "description": "string // OPTIONAL \u2014 default: null",
+    "feature_name": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1385,14 +1398,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `feature_flags`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Feature flag already exists"`
+- `"Feature flag already exists"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -1410,7 +1418,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1426,12 +1434,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `feature_flags`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1450,14 +1453,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "description": "any",
-    "is_active": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "description": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1473,12 +1476,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `feature_flags`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1500,7 +1498,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1516,12 +1514,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `first_order_gifts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1540,12 +1533,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "status": "any"
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1561,12 +1554,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `first_order_gifts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1588,7 +1576,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1604,12 +1592,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hall_of_fame_rewards, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1629,7 +1612,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1645,12 +1628,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hall_of_fame_rewards`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1669,25 +1647,26 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "any",
-    "campus_id": "any",
-    "dry_run": "any",
-    "last_order_after": "any",
-    "last_order_before": "any",
-    "reason": "any",
-    "tier_slug": "any",
-    "user_ids": "any"
+    "amount": "integer / number // OPTIONAL \u2014 default: null",
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "dry_run": "string // OPTIONAL \u2014 default: null",
+    "last_order_after": "string // OPTIONAL \u2014 default: null",
+    "last_order_before": "string // OPTIONAL \u2014 default: null",
+    "reason": "string // OPTIONAL \u2014 default: null",
+    "tier_slug": "string // OPTIONAL \u2014 default: null",
+    "user_ids": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -1697,12 +1676,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_tiers, orders, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1722,13 +1696,14 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -1738,12 +1713,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1765,7 +1735,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `month, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1781,12 +1751,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `leaderboard_reward_fulfillments, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1806,7 +1771,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1822,12 +1787,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `leaderboard_reward_fulfillments`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1849,13 +1809,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, limit, offset, payment_method, status, to_date, user_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -1865,12 +1831,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1892,7 +1853,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1908,12 +1869,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `promo_codes`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1932,16 +1888,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "code": "any",
-    "created_by": "any",
-    "is_active": "any",
-    "used_count": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "code": "string // OPTIONAL \u2014 default: null",
+    "created_by": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "used_count": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1957,12 +1913,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `promo_codes`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -1982,7 +1933,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -1998,15 +1949,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `promo_codes`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"discount_value must not exceed 100 for a percentage discount"`
-- `"is_active must be a boolean"`
+- `"discount_value must not exceed 100 for a percentage discount"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"is_active must be a boolean"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -2024,7 +1970,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2040,12 +1986,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `promo_code_uses, promo_codes`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2067,7 +2008,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `kitchen_rating, limit, offset, rating, rider_rating`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2083,20 +2024,15 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_reviews, orders, profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"kitchen_rating must be an integer between 1 and 5"`
-- `"limit must be a non-negative integer"`
-- `"limit must be between 0 and 200"`
-- `"offset must be >= 0"`
-- `"offset must be a non-negative integer"`
-- `"rating must be an integer between 1 and 5"`
-- `"rider_rating must be an integer between 1 and 5"`
+- `"kitchen_rating must be an integer between 1 and 5"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"limit must be a non-negative integer"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"limit must be between 0 and 200"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"offset must be >= 0"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"offset must be a non-negative integer"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"rating must be an integer between 1 and 5"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"rider_rating must be an integer between 1 and 5"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -2114,7 +2050,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2130,12 +2066,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `system_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2152,15 +2083,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "description": "any",
-    "key": "any",
-    "value": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "description": "string // OPTIONAL \u2014 default: null",
+    "key": "string // OPTIONAL \u2014 default: null",
+    "value": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2176,12 +2107,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `system_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2198,14 +2124,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "description": "any",
-    "value": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "description": "string // OPTIONAL \u2014 default: null",
+    "value": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2221,14 +2147,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `system_settings`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"hp_multiplier must be 0.5, 1.0, or 2.0"`
+- `"hp_multiplier must be 0.5, 1.0, or 2.0"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -2248,7 +2169,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, limit, offset, q, role`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2264,12 +2185,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2289,7 +2205,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2305,14 +2221,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders, profiles, wallets`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"You don"`
+- `"You don't have permission to view users from that campus"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -2330,7 +2241,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2346,12 +2257,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2371,7 +2277,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2387,15 +2293,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Only super_admin users can deactivate a super_admin account"`
-- `"You cannot deactivate your own account"`
+- `"Only super_admin users can deactivate a super_admin account"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"You cannot deactivate your own account"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -2415,13 +2316,14 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -2431,12 +2333,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_transactions, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2458,13 +2355,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -2474,12 +2377,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2498,12 +2396,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "role": "any"
+    "role": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2519,15 +2417,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Cannot change your own role"`
-- `"Only super_admin can assign super_admin role"`
+- `"Cannot change your own role"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Only super_admin can assign super_admin role"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -2547,13 +2440,13 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "wallet_balance": 5000.0,
+    "currency": "NGN",
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
 }
 ```
 
@@ -2563,12 +2456,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles, wallets`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2590,7 +2478,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2606,12 +2494,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `abandoned_carts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2633,7 +2516,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2649,12 +2532,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, delivery_windows, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2676,7 +2554,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, limit, to_date, type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2692,12 +2570,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_transactions, orders, profiles, wallet_transactions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2719,7 +2592,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2735,12 +2608,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `first_order_gifts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2762,13 +2630,14 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, to_date`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -2778,12 +2647,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_tiers, hp_transactions, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2805,7 +2669,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, limit, to_date`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2821,12 +2685,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_items, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2848,7 +2707,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2864,12 +2723,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_access_codes, marketplace_listings, marketplace_purchases`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2891,13 +2745,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, to_date`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -2907,12 +2767,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, delivery_windows, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2934,7 +2789,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2950,12 +2805,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `referrals`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -2974,15 +2824,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "retained": "any",
-    "total": "any"
+    "retained": "string // OPTIONAL \u2014 default: null",
+    "total": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 - **Query Parameters:** `campus_id, weeks`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -2998,12 +2848,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3025,7 +2870,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, to_date`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3041,12 +2886,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3068,7 +2908,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, to_date`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3084,12 +2924,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_tiers, orders, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3108,12 +2943,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "password": "any"
+    "password": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3129,12 +2964,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3154,7 +2984,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3170,12 +3000,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `user_addresses`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3194,22 +3019,22 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "address_line": "any",
-    "city": "any",
-    "hostel": "any",
-    "is_default": "any",
-    "label": "any",
-    "landmark": "any",
-    "latitude": "any",
-    "line1": "any",
-    "line2": "any",
-    "longitude": "any",
-    "state": "any"
+    "address_line": "string // OPTIONAL \u2014 default: null",
+    "city": "string // OPTIONAL \u2014 default: null",
+    "hostel": "string // OPTIONAL \u2014 default: null",
+    "is_default": "boolean // OPTIONAL \u2014 default: null",
+    "label": "string // OPTIONAL \u2014 default: null",
+    "landmark": "string // OPTIONAL \u2014 default: null",
+    "latitude": "string // OPTIONAL \u2014 default: null",
+    "line1": "string // OPTIONAL \u2014 default: null",
+    "line2": "string // OPTIONAL \u2014 default: null",
+    "longitude": "string // OPTIONAL \u2014 default: null",
+    "state": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3225,12 +3050,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `user_addresses`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3250,7 +3070,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3266,12 +3086,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `user_addresses`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3290,13 +3105,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "address_line": "any",
-    "is_default": "any"
+    "address_line": "string // OPTIONAL \u2014 default: null",
+    "is_default": "boolean // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3312,12 +3127,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `user_addresses`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3336,13 +3146,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "current_password": "any",
-    "new_password": "any"
+    "current_password": "string // OPTIONAL \u2014 default: null",
+    "new_password": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3358,12 +3168,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3382,14 +3187,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "device_model": "any",
-    "platform": "any",
-    "token": "any"
+    "device_model": "string // OPTIONAL \u2014 default: null",
+    "platform": "string // OPTIONAL \u2014 default: null",
+    "token": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3405,12 +3210,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `device_tokens`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3429,13 +3229,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "any",
-    "password": "any"
+    "email": "string // REQUIRED \u2014 must be non-empty",
+    "password": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3451,12 +3251,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3476,7 +3271,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3492,12 +3287,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3517,7 +3307,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3533,12 +3323,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3558,7 +3343,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3574,12 +3359,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3599,7 +3379,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3615,12 +3395,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3639,12 +3414,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "photo_url": "any"
+    "photo_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3660,14 +3435,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"photo_url is required"`
+- `"photo_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -3684,13 +3454,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "access_token": "any",
-    "refresh_token": "any"
+    "access_token": "string // OPTIONAL \u2014 default: null",
+    "refresh_token": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3706,12 +3476,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3730,20 +3495,20 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "academic_level": "any",
-    "campus_id": "any",
-    "date_of_birth": "any",
-    "department": "any",
-    "email": "any",
-    "full_name": "any",
-    "password": "any",
-    "phone": "any",
-    "referred_by_code": "any"
+    "academic_level": "string // OPTIONAL \u2014 default: null",
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "date_of_birth": "string // OPTIONAL \u2014 default: null",
+    "department": "string // OPTIONAL \u2014 default: null",
+    "email": "string // REQUIRED \u2014 must be non-empty",
+    "full_name": "string // OPTIONAL \u2014 default: null",
+    "password": "string // REQUIRED \u2014 must be non-empty",
+    "phone": "string // REQUIRED \u2014 must be non-empty",
+    "referred_by_code": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3759,12 +3524,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `campuses`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3783,12 +3543,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "any"
+    "email": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3804,12 +3564,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3829,7 +3584,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3845,12 +3600,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3869,12 +3619,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "any"
+    "email": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3890,12 +3640,43 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `DELETE /api/cart`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/cart.py` (`clear_cart`)
+
+**Summary:** Remove all items from the authenticated user's cart.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `cart_items`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3915,7 +3696,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3931,12 +3712,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `cart_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -3955,16 +3731,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "menu_item_id": "any",
-    "notes": "any",
-    "quantity": "any",
-    "selected_addons": "any",
-    "selected_variations": "any"
+    "menu_item_id": "string // OPTIONAL \u2014 default: null",
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "quantity": "integer / number // OPTIONAL \u2014 default: null",
+    "selected_addons": "string // OPTIONAL \u2014 default: null",
+    "selected_variations": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -3980,55 +3756,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `cart_items, menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Menu item not found"`
-
----
-
-### `DELETE /api/cart`
-
-**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
-
-**Source File:** `app/routes/cart.py` (`clear_cart`)
-
-**Summary:** Remove all items from the authenticated user's cart.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `cart_items`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"Menu item not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4046,7 +3776,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4062,12 +3792,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `cart_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4086,13 +3811,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "any",
-    "quantity": "any"
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "quantity": "integer / number // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4108,12 +3833,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `cart_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4133,7 +3853,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4149,15 +3869,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Check-in failed, please try again"`
-- `"Unable to resolve campus for this request"`
+- `"Check-in failed, please try again"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Unable to resolve campus for this request"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4177,7 +3892,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4193,12 +3908,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `daily_checkins`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4220,7 +3930,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4236,12 +3946,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `gates`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4260,19 +3965,19 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "base_fee": "any",
-    "campus_id": "any",
-    "is_active": "any",
-    "lat": "any",
-    "lon": "any",
-    "min_fee": "any",
-    "name": "any",
-    "rate_per_km": "any"
+    "base_fee": "string // OPTIONAL \u2014 default: null",
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "lat": "string // OPTIONAL \u2014 default: null",
+    "lon": "string // OPTIONAL \u2014 default: null",
+    "min_fee": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "rate_per_km": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4288,15 +3993,11 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `gates`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Unable to resolve campus for this request"`
-- `"campus_id is required for super_admin"`
+- `"'name' is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Unable to resolve campus for this request"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"campus_id is required for super_admin"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4314,7 +4015,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4330,14 +4031,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `gates`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Gate not found"`
+- `"Gate not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4355,7 +4051,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4371,15 +4067,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `gates`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Gate not found"`
-- `"No valid fields to update"`
+- `"Gate not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"No valid fields to update"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4399,7 +4090,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4415,12 +4106,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hostels`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4439,16 +4125,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "delivery_fee": "any",
-    "gate_id": "any",
-    "is_active": "any",
-    "name": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "delivery_fee": "string // OPTIONAL \u2014 default: null",
+    "gate_id": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4464,15 +4150,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hostels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Unable to resolve campus for this request"`
-- `"campus_id is required for super_admin"`
+- `"Unable to resolve campus for this request"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"campus_id is required for super_admin"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4490,7 +4171,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4506,14 +4187,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hostels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Hostel not found"`
+- `"Hostel not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4531,7 +4207,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4547,15 +4223,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hostels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Hostel not found"`
-- `"No valid fields to update"`
+- `"Hostel not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"No valid fields to update"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4572,16 +4243,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "delivery_location_id": "any",
-    "delivery_type": "any",
-    "lat": "any",
-    "lon": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "delivery_location_id": "string // OPTIONAL \u2014 default: null",
+    "delivery_type": "string // OPTIONAL \u2014 default: null",
+    "lat": "string // OPTIONAL \u2014 default: null",
+    "lon": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4597,17 +4268,13 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `gates, hostels`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Gate not found"`
-- `"Hostel not found"`
-- `"This location is outside our delivery area."`
-- `"delivery_type must be "`
+- `"'delivery_location_id' is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Gate not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Hostel not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"This location is outside our delivery area."` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"delivery_type must be 'on_campus' or 'off_campus'"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4625,7 +4292,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4641,12 +4308,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `gates`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4666,7 +4328,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4682,12 +4344,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hostels`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4709,7 +4366,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `faculty, grouped`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4725,12 +4382,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4750,7 +4402,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4766,14 +4418,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Department not found"`
+- `"Department not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -4791,7 +4438,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4807,12 +4454,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `departments`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4832,7 +4474,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4848,12 +4490,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4873,7 +4510,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4889,12 +4526,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4914,7 +4546,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4930,12 +4562,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4955,7 +4582,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -4971,12 +4598,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -4995,19 +4617,19 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "ends_at": "any",
-    "hp_per_attendee": "any",
-    "hp_reward": "any",
-    "is_published": "any",
-    "organizer_id": "any",
-    "slug": "any",
-    "starts_at": "any",
-    "title": "any"
+    "ends_at": "string // OPTIONAL \u2014 default: null",
+    "hp_per_attendee": "string // OPTIONAL \u2014 default: null",
+    "hp_reward": "string // OPTIONAL \u2014 default: null",
+    "is_published": "string // OPTIONAL \u2014 default: null",
+    "organizer_id": "string // OPTIONAL \u2014 default: null",
+    "slug": "string // OPTIONAL \u2014 default: null",
+    "starts_at": "string // OPTIONAL \u2014 default: null",
+    "title": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5023,55 +4645,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `events`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Unable to resolve campus for this request"`
-
----
-
-### `GET /api/events/<event_id>`
-
-**Authentication:** Public (No auth token required)
-
-**Source File:** `app/routes/events.py` (`get_event`)
-
-**Summary:** Get event detail.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `event_checkins, event_tickets, events`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"Unable to resolve campus for this request"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -5089,7 +4665,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5105,12 +4681,43 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_checkins, event_tickets, events`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `GET /api/events/<event_id>`
+
+**Authentication:** Public (No auth token required)
+
+**Source File:** `app/routes/events.py` (`get_event`)
+
+**Summary:** Get event detail.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `event_checkins, event_tickets, events`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5129,13 +4736,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_per_attendee": "any",
-    "hp_reward": "any"
+    "hp_per_attendee": "string // OPTIONAL \u2014 default: null",
+    "hp_reward": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5151,12 +4758,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_tickets, events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5164,7 +4766,7 @@ Total documented REST API endpoints: **311**
 
 ### `POST /api/events/<event_id>/checkin`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/events.py` (`checkin`)
 
@@ -5175,15 +4777,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "any",
-    "guest_email": "any",
-    "qr_token": "any",
-    "ticket_id": "any"
+    "email": "string // REQUIRED \u2014 must be non-empty",
+    "guest_email": "string // OPTIONAL \u2014 default: null",
+    "qr_token": "string // OPTIONAL \u2014 default: null",
+    "ticket_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5199,14 +4801,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_checkins, event_tickets, events, profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Invalid door QR token"`
+- `"Invalid door QR token"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -5223,12 +4820,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5244,14 +4841,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `events`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"image_url is required"`
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -5268,12 +4860,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "qr_token": "any"
+    "qr_token": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5289,12 +4881,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5302,7 +4889,7 @@ Total documented REST API endpoints: **311**
 
 ### `POST /api/events/<event_id>/register`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/events.py` (`register_for_event`)
 
@@ -5313,24 +4900,24 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "callback_url": "any",
-    "email": "any",
-    "guest_email": "any",
-    "guest_name": "any",
-    "guest_phone": "any",
-    "name": "any",
-    "payment_method": "any",
-    "phone": "any",
-    "promo_code": "any",
-    "registration_answers": "any",
-    "tier_id": "any",
-    "use_hp": "any",
-    "wallet_amount": "any"
+    "callback_url": "string // OPTIONAL \u2014 default: null",
+    "email": "string // REQUIRED \u2014 must be non-empty",
+    "guest_email": "string // OPTIONAL \u2014 default: null",
+    "guest_name": "string // OPTIONAL \u2014 default: null",
+    "guest_phone": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "payment_method": "string // REQUIRED \u2014 must be non-empty",
+    "phone": "string // REQUIRED \u2014 must be non-empty",
+    "promo_code": "string // OPTIONAL \u2014 default: null",
+    "registration_answers": "string // OPTIONAL \u2014 default: null",
+    "tier_id": "string // OPTIONAL \u2014 default: null",
+    "use_hp": "boolean // OPTIONAL \u2014 default: null",
+    "wallet_amount": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5346,15 +4933,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, events, profiles, promo_codes`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"This ticket has no HP discount available"`
-- `"Ticket tier not found"`
+- `"This ticket has no HP discount available"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Ticket tier not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -5374,7 +4956,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `format`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5390,12 +4972,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_checkins, event_ticket_tiers, event_tickets, events, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5414,14 +4991,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "custom_message": "any",
-    "host_email": "any",
-    "host_name": "any"
+    "custom_message": "string // OPTIONAL \u2014 default: null",
+    "host_email": "string // OPTIONAL \u2014 default: null",
+    "host_name": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5437,21 +5014,16 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, event_tickets, events, profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Failed to send email — check RESEND_API_KEY"`
-- `"host_email is required"`
+- `"Failed to send email — check RESEND_API_KEY"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"host_email is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
 ### `GET /api/events/<event_id>/tickets/<ticket_id>/pdf`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/events.py` (`download_ticket_pdf`)
 
@@ -5465,7 +5037,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `guest_email`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5481,14 +5053,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, event_tickets, events`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"You do not have access to this ticket"`
+- `"You do not have access to this ticket"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -5506,7 +5073,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5522,12 +5089,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5546,22 +5108,22 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "capacity": "any",
-    "color": "any",
-    "description": "any",
-    "early_bird_deadline": "any",
-    "features": "any",
-    "icon": "any",
-    "is_early_bird": "any",
-    "name": "any",
-    "price_hp": "any",
-    "price_naira": "any",
-    "terms": "any"
+    "capacity": "string // OPTIONAL \u2014 default: null",
+    "color": "string // OPTIONAL \u2014 default: null",
+    "description": "string // OPTIONAL \u2014 default: null",
+    "early_bird_deadline": "string // OPTIONAL \u2014 default: null",
+    "features": "string // OPTIONAL \u2014 default: null",
+    "icon": "string // OPTIONAL \u2014 default: null",
+    "is_early_bird": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "price_hp": "string // OPTIONAL \u2014 default: null",
+    "price_naira": "string // OPTIONAL \u2014 default: null",
+    "terms": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5577,12 +5139,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5602,7 +5159,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5618,12 +5175,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5645,7 +5197,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, published_only`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5661,12 +5213,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5688,7 +5235,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5704,12 +5251,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `catering_requests`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5728,15 +5270,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "event_name": "any",
-    "organizer_name": "any",
-    "status": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "event_name": "string // OPTIONAL \u2014 default: null",
+    "organizer_name": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5752,14 +5294,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `catering_requests, profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"campus_id is required"`
+- `"campus_id is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -5777,7 +5314,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5793,12 +5330,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `catering_requests, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5818,7 +5350,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5834,12 +5366,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_checkins, event_tickets, events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5859,7 +5386,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5875,12 +5402,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5900,7 +5422,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5916,12 +5438,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5941,7 +5458,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5957,12 +5474,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `event_ticket_tiers, events`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -5982,7 +5494,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -5998,12 +5510,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6023,7 +5530,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6039,14 +5546,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `exclusive_spins`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"No spin credits available or concurrent update occurred. Please try again."`
+- `"No spin credits available or concurrent update occurred. Please try again."` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6064,7 +5566,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6080,12 +5582,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6104,13 +5601,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "order_id": "any",
-    "side_choice": "any"
+    "order_id": "string // OPTIONAL \u2014 default: null",
+    "side_choice": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6126,17 +5623,12 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `free_side_credits, order_items, orders`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Failed to apply free side to order — your credit has not been used, please try again"`
-- `"No credits available or concurrent update occurred. Please try again."`
-- `"This order can no longer be modified"`
-- `"order_id is required"`
+- `"Failed to apply free side to order — your credit has not been used, please try again"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"No credits available or concurrent update occurred. Please try again."` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"This order can no longer be modified"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"order_id is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6154,7 +5646,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6170,14 +5662,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `academic_levels, profiles, system_settings`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Failed to award graduation HP — please try again"`
+- `"Failed to award graduation HP — please try again"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6195,7 +5682,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6211,12 +5698,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6235,20 +5717,21 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "any",
-    "notes": "any",
-    "user_id": "any"
+    "amount": "integer / number // OPTIONAL \u2014 default: null",
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "user_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6258,15 +5741,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Cannot expire HP outside your campus"`
-- `"Target user profile not found"`
+- `"Cannot expire HP outside your campus"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Target user profile not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6283,20 +5761,21 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "any",
-    "notes": "any",
-    "user_id": "any"
+    "amount": "integer / number // OPTIONAL \u2014 default: null",
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "user_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6306,16 +5785,11 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Cannot grant HP outside your campus"`
-- `"Target user profile not found"`
-- `"amount must be a positive number — use /admin/expire to reduce HP"`
+- `"Cannot grant HP outside your campus"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Target user profile not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"amount must be a positive number — use /admin/expire to reduce HP"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6333,13 +5807,14 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6349,12 +5824,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6374,13 +5844,14 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6390,12 +5861,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6414,21 +5880,22 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "any",
-    "hp_amount": "any",
-    "paystack_reference": "any",
-    "status": "any"
+    "amount": "integer / number // OPTIONAL \u2014 default: null",
+    "hp_amount": "string // OPTIONAL \u2014 default: null",
+    "paystack_reference": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6438,12 +5905,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_bundle_purchases`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6463,13 +5925,14 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6479,12 +5942,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6504,13 +5962,14 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6520,12 +5979,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_tiers`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6547,13 +6001,14 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6563,12 +6018,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_transactions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6587,20 +6037,21 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "any",
-    "notes": "any",
-    "recipient_id": "any"
+    "amount": "integer / number // OPTIONAL \u2014 default: null",
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "recipient_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6610,15 +6061,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_transactions, orders, profiles, system_settings`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Transfer failed and could not be auto-refunded — contact support"`
-- `"Transfer failed — your HP has been refunded, please try again"`
+- `"Transfer failed and could not be auto-refunded — contact support"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Transfer failed — your HP has been refunded, please try again"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6638,13 +6084,14 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "hp_balance": 1250,
+    "pending_hp_balance": 300,
+    "tier": "regular",
+    "tier_multiplier": 1.1
 }
 ```
 
@@ -6654,12 +6101,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_transactions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6679,7 +6121,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6695,12 +6137,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6719,13 +6156,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "from_status": "any",
-    "notes": "any"
+    "from_status": "string // OPTIONAL \u2014 default: null",
+    "notes": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6741,14 +6178,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"No advanceable orders found in this batch"`
+- `"No advanceable orders found in this batch"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -6768,7 +6200,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `window_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6784,12 +6216,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6811,7 +6238,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `window_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6827,12 +6254,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6854,7 +6276,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `window_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6870,12 +6292,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6895,7 +6312,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6911,12 +6328,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `kitchen_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6935,12 +6347,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "settings": "any"
+    "settings": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6956,12 +6368,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `kitchen_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -6981,7 +6388,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -6997,12 +6404,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `kitchen_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7022,7 +6424,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7038,12 +6440,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_windows, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7065,7 +6462,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, limit, period_type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7081,12 +6478,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `leaderboard_snapshots, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7106,7 +6498,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7122,12 +6514,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hall_of_fame_inductees, leaderboard_snapshots`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7147,7 +6534,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7163,12 +6550,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hall_of_fame_inductees, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7188,7 +6570,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7204,14 +6586,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hall_of_fame_inductees, profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Inductee not found"`
+- `"Inductee not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -7231,7 +6608,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, period_type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7247,12 +6624,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `leaderboard_snapshots, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7274,7 +6646,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, limit, period_type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7290,12 +6662,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders, profiles, squad_members`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7317,7 +6684,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, period_type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7333,12 +6700,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7346,7 +6708,7 @@ Total documented REST API endpoints: **311**
 
 ### `GET /api/marketplace`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/marketplace.py` (`list_listings`)
 
@@ -7360,7 +6722,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `category, listing_type, q`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7376,12 +6738,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listing_availability, marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7401,7 +6758,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7417,12 +6774,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_access_codes, marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7441,15 +6793,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "payment_method": "any",
-    "payment_reference": "any",
-    "use_hp": "any",
-    "wallet_amount": "any"
+    "payment_method": "string // REQUIRED \u2014 must be non-empty",
+    "payment_reference": "string // OPTIONAL \u2014 default: null",
+    "use_hp": "boolean // OPTIONAL \u2014 default: null",
+    "wallet_amount": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7465,12 +6817,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_access_codes, marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7489,12 +6836,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "codes": "any"
+    "codes": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7510,12 +6857,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_access_codes, marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7537,7 +6879,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7553,12 +6895,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7577,13 +6914,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "listing_type": "any",
-    "status": "any"
+    "listing_type": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7599,53 +6936,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `GET /api/marketplace/admin/listings/<listing_id>`
-
-**Authentication:** `admin` (JWT required)
-
-**Source File:** `app/routes/marketplace.py` (`admin_get_listing`)
-
-**Summary:** Get full marketplace listing detail, including archived/rejected listings (admin only).
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `marketplace_access_codes, marketplace_listings, marketplace_purchases`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7665,7 +6956,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7681,12 +6972,43 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_access_codes, marketplace_listings`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `GET /api/marketplace/admin/listings/<listing_id>`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/marketplace.py` (`admin_get_listing`)
+
+**Summary:** Get full marketplace listing detail, including archived/rejected listings (admin only).
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `marketplace_access_codes, marketplace_listings, marketplace_purchases`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7706,7 +7028,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7722,12 +7044,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7744,12 +7061,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7765,15 +7082,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listing_availability`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"At least one availability field is required"`
-- `"campus_id is required"`
+- `"At least one availability field is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"campus_id is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -7790,12 +7102,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7811,14 +7123,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listings`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"image_url is required"`
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -7838,7 +7145,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, listing_id, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7854,12 +7161,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_purchases`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7878,13 +7180,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "admin_note": "any",
-    "status": "any"
+    "admin_note": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7900,14 +7202,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_purchases`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Cannot refund card portion: purchase has no payment_reference"`
+- `"Cannot refund card portion: purchase has no payment_reference"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -7927,7 +7224,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7943,12 +7240,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_requests`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -7967,13 +7259,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "admin_notes": "any",
-    "status": "any"
+    "admin_notes": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -7989,12 +7281,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_requests`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8013,12 +7300,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8034,14 +7321,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_listings`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"image_url is required"`
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8061,7 +7343,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8077,12 +7359,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_purchases`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8101,18 +7378,18 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "category": "any",
-    "description": "any",
-    "proposed_price": "any",
-    "service_title": "any",
-    "vendor_email": "any",
-    "vendor_name": "any",
-    "vendor_phone": "any"
+    "category": "string // OPTIONAL \u2014 default: null",
+    "description": "string // OPTIONAL \u2014 default: null",
+    "proposed_price": "string // OPTIONAL \u2014 default: null",
+    "service_title": "string // OPTIONAL \u2014 default: null",
+    "vendor_email": "string // OPTIONAL \u2014 default: null",
+    "vendor_name": "string // OPTIONAL \u2014 default: null",
+    "vendor_phone": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8128,12 +7405,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `marketplace_requests, profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8141,7 +7413,7 @@ Total documented REST API endpoints: **311**
 
 ### `GET /api/menu/addons`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/menu.py` (`list_addons`)
 
@@ -8153,7 +7425,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8169,12 +7441,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addons`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8193,17 +7460,17 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "description": "any",
-    "group_id": "any",
-    "is_available": "any",
-    "name": "any",
-    "price": "any",
-    "sort_order": "any"
+    "description": "string // OPTIONAL \u2014 default: null",
+    "group_id": "string // OPTIONAL \u2014 default: null",
+    "is_available": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "price": "string // OPTIONAL \u2014 default: null",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8219,12 +7486,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addons`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8244,7 +7506,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8260,14 +7522,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addons`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Add-on not found"`
+- `"Add-on not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8285,7 +7542,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8301,20 +7558,15 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addons`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Add-on not found"`
+- `"Add-on not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
 ### `GET /api/menu/categories`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/menu.py` (`list_categories`)
 
@@ -8326,7 +7578,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8342,12 +7594,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_categories`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8366,16 +7613,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "description": "any",
-    "is_active": "any",
-    "name": "any",
-    "slug": "any",
-    "sort_order": "any"
+    "description": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "slug": "string // OPTIONAL \u2014 default: null",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8391,12 +7638,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_categories`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8416,7 +7658,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8432,12 +7674,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_categories`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8457,7 +7694,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8473,12 +7710,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_categories`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8486,7 +7718,7 @@ Total documented REST API endpoints: **311**
 
 ### `GET /api/menu/items`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/menu.py` (`list_items`)
 
@@ -8500,7 +7732,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `available_only, category, is_featured, q`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8516,12 +7748,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_categories, menu_item_availability, menu_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8540,15 +7767,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_multiplier": "any",
-    "is_available": "any",
-    "name": "any",
-    "slug": "any"
+    "hp_multiplier": "string // OPTIONAL \u2014 default: null",
+    "is_available": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "slug": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8564,14 +7791,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"hp_multiplier must be 0.5, 1.0, or 2.0"`
+- `"hp_multiplier must be 0.5, 1.0, or 2.0"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8589,7 +7811,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8605,14 +7827,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_groups, menu_item_variation_options, menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Item not found"`
+- `"Item not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8629,14 +7846,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "hp_multiplier": "any",
-    "is_available": "any",
-    "updated_at": "any"
+    "hp_multiplier": "string // OPTIONAL \u2014 default: null",
+    "is_available": "string // OPTIONAL \u2014 default: null",
+    "updated_at": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8652,15 +7869,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Menu item not found"`
-- `"hp_multiplier must be 0.5, 1.0, or 2.0"`
+- `"Menu item not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"hp_multiplier must be 0.5, 1.0, or 2.0"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8677,16 +7889,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_required": "any",
-    "max_select": "any",
-    "min_select": "any",
-    "name": "any",
-    "sort_order": "any"
+    "is_required": "string // OPTIONAL \u2014 default: null",
+    "max_select": "string // OPTIONAL \u2014 default: null",
+    "min_select": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8702,12 +7914,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addon_groups, menu_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8727,7 +7934,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8743,12 +7950,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addon_groups`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8768,7 +7970,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8784,12 +7986,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addon_groups`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8809,7 +8006,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8825,12 +8022,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_addon_groups, menu_addons, menu_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8850,7 +8042,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8866,12 +8058,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_items`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -8890,12 +8077,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8911,15 +8098,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_availability, menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"At least one availability field is required"`
-- `"campus_id is required"`
+- `"At least one availability field is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"campus_id is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8936,12 +8118,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -8957,14 +8139,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"image_url is required"`
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8981,16 +8158,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_required": "any",
-    "max_selections": "any",
-    "min_selections": "any",
-    "name": "any",
-    "sort_order": "any"
+    "is_required": "string // OPTIONAL \u2014 default: null",
+    "max_selections": "string // OPTIONAL \u2014 default: null",
+    "min_selections": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9006,12 +8183,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_groups`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9031,7 +8203,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9047,14 +8219,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_groups, menu_item_variation_options`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Variation group not found"`
+- `"Variation group not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9072,7 +8239,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9088,14 +8255,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_groups`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Variation group not found"`
+- `"Variation group not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9112,15 +8274,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_available": "any",
-    "name": "any",
-    "price_delta": "any",
-    "sort_order": "any"
+    "is_available": "string // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "price_delta": "string // OPTIONAL \u2014 default: null",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9136,12 +8298,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_options`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9161,7 +8318,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9177,14 +8334,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_options`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Variation option not found"`
+- `"Variation option not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9202,7 +8354,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9218,14 +8370,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_variation_options`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Variation option not found"`
+- `"Variation option not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9242,14 +8389,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "is_available": "any",
-    "item_ids": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "is_available": "string // OPTIONAL \u2014 default: null",
+    "item_ids": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9265,14 +8412,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_item_availability, menu_items`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"campus_id is required"`
+- `"campus_id is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9290,7 +8432,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9306,12 +8448,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9330,12 +8467,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "daily_order_capacity": "any"
+    "daily_order_capacity": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9351,12 +8488,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `kitchen_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9378,7 +8510,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, unread_only`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9394,12 +8526,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notifications`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9419,7 +8546,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9435,12 +8562,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9462,7 +8584,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, limit, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9478,12 +8600,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notification_blasts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9502,16 +8619,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "created_by": "any",
-    "scheduled_at": "any",
-    "segment": "any",
-    "status": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "created_by": "string // OPTIONAL \u2014 default: null",
+    "scheduled_at": "string // OPTIONAL \u2014 default: null",
+    "segment": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9527,14 +8644,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notification_blasts`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Unable to create blast for the specified campus"`
+- `"Unable to create blast for the specified campus"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9552,7 +8664,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9568,12 +8680,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notification_blasts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9593,7 +8700,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9609,12 +8716,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notification_preferences`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9634,7 +8736,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9650,12 +8752,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notification_preferences`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9675,7 +8772,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9691,12 +8788,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `notifications`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9718,7 +8810,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9734,12 +8826,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9758,17 +8845,17 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "discount_pct": "any",
-    "locked_date": "any",
-    "reschedule_count": "any",
-    "reward_hp_amount": "any",
-    "reward_type": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "discount_pct": "string // OPTIONAL \u2014 default: null",
+    "locked_date": "string // OPTIONAL \u2014 default: null",
+    "reschedule_count": "string // OPTIONAL \u2014 default: null",
+    "reward_hp_amount": "string // OPTIONAL \u2014 default: null",
+    "reward_type": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9784,56 +8871,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"User already has an active lock"`
-- `"reward_type must be "`
-
----
-
-### `GET /api/order-locks/<lock_id>`
-
-**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
-
-**Source File:** `app/routes/order_locks.py` (`get_lock`)
-
-**Summary:** Get a specific order lock.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `order_locks`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"User already has an active lock"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"reward_type must be 'discount' or 'hp'"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -9851,7 +8892,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9867,12 +8908,43 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `GET /api/order-locks/<lock_id>`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/order_locks.py` (`get_lock`)
+
+**Summary:** Get a specific order lock.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `order_locks`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9891,12 +8963,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "locked_date": "any"
+    "locked_date": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9912,12 +8984,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9939,7 +9006,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, date, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -9955,12 +9022,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -9982,13 +9044,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -9998,15 +9066,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10014,7 +9074,7 @@ Total documented REST API endpoints: **311**
 
 ### `POST /api/orders`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/orders.py` (`create_order`)
 
@@ -10023,20 +9083,45 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "items": "any",
-    "payment_method": "any",
-    "user_id": "any"
+    "items": "array // REQUIRED \u2014 array of objects: [{'menu_item_id': 'uuid', 'quantity': integer, 'addons': [{'addon_id': 'uuid'}]}]",
+    "payment_method": "string // REQUIRED \u2014 enum: 'wallet' | 'card' | 'split'",
+    "delivery_type": "string // CONDITIONAL \u2014 enum: 'on_campus' | 'off_campus' (required if delivery requested)",
+    "delivery_location_id": "string // CONDITIONAL \u2014 uuid referencing hostel or gate",
+    "promo_code": "string // OPTIONAL \u2014 promotional code string (e.g. 'SAVE10')",
+    "use_hp": "boolean // OPTIONAL \u2014 default: false",
+    "campus_id": "string // OPTIONAL \u2014 uuid referencing campus",
+    "idempotency_key": "string // OPTIONAL \u2014 unique UUID string preventing duplicate orders",
+    "scheduled_for": "string // CONDITIONAL \u2014 ISO timestamp for future delivery window",
+    "notes": "string // OPTIONAL \u2014 special preparation or delivery instructions",
+    "guest_name": "string // CONDITIONAL \u2014 required for unauthenticated guest checkout",
+    "guest_phone": "string // CONDITIONAL \u2014 required for unauthenticated guest checkout",
+    "guest_email": "string // CONDITIONAL \u2014 required for unauthenticated guest checkout",
+    "squad_name": "string // OPTIONAL \u2014 squad group name if group order",
+    "is_squad_order": "boolean // OPTIONAL \u2014 default: false"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10046,15 +9131,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10062,7 +9139,7 @@ Total documented REST API endpoints: **311**
 
 ### `GET /api/orders/<order_id>`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/orders.py` (`get_order`)
 
@@ -10076,13 +9153,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `claim_token`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -10092,15 +9175,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10120,13 +9195,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -10136,15 +9217,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10163,18 +9236,31 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "reason": "any"
+    "reason": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10184,15 +9270,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10211,18 +9289,31 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "claim_token": "any"
+    "claim_token": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10232,17 +9323,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
-
-- `"Order is already owned or claimed"`
+- `"Order is already owned or claimed"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -10260,13 +9343,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -10276,15 +9365,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_status_logs, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10303,20 +9384,33 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "reason": "any",
-    "refund_amount": "any",
-    "refund_to_wallet": "any"
+    "reason": "string // OPTIONAL \u2014 default: null",
+    "refund_amount": "string // OPTIONAL \u2014 default: null",
+    "refund_to_wallet": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10326,18 +9420,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders, wallet_transactions`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
-
-- `"Cannot refund an unpaid cancelled order"`
-- `"This order has already been fully refunded."`
+- `"Cannot refund an unpaid cancelled order"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"This order has already been fully refunded."` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -10355,13 +9441,26 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10371,15 +9470,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_items, order_items, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10398,21 +9489,34 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "comment": "any",
-    "kitchen_rating": "any",
-    "rating": "any",
-    "rider_rating": "any"
+    "comment": "string // OPTIONAL \u2014 default: null",
+    "kitchen_rating": "string // OPTIONAL \u2014 default: null",
+    "rating": "string // OPTIONAL \u2014 default: null",
+    "rider_rating": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10422,15 +9526,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_reviews, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10449,18 +9545,31 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_urls": "any"
+    "image_urls": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10470,17 +9579,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_reviews`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
-
-- `"image_urls is required"`
+- `"image_urls is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -10497,12 +9598,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "reason": "any"
+    "reason": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -10518,15 +9619,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_locks, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10546,13 +9639,26 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10562,15 +9668,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `order_share_events, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10589,19 +9687,32 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "emails": "any",
-    "split_hp": "any"
+    "emails": "string // OPTIONAL \u2014 default: null",
+    "split_hp": "boolean // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10611,17 +9722,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders, profiles, squad_members`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
-
-- `"At least one email is required"`
+- `"At least one email is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -10638,13 +9741,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "any",
-    "status": "any"
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -10660,15 +9763,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10687,19 +9782,32 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "any",
-    "target_status": "any"
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "target_status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -10709,15 +9817,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10737,13 +9837,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -10753,15 +9859,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10781,13 +9879,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "delivery_windows": [
+        {
+            "id": "c1a2b3c4",
+            "name": "Lunch Window",
+            "start_time": "12:00:00",
+            "end_time": "14:00:00",
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -10797,15 +9901,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_windows`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10825,13 +9921,19 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "delivery_windows": [
+        {
+            "id": "c1a2b3c4",
+            "name": "Lunch Window",
+            "start_time": "12:00:00",
+            "end_time": "14:00:00",
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -10841,15 +9943,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_windows, operating_hour_overrides, operating_hours`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10869,13 +9963,18 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "zones": [
+        {
+            "id": "z1a2b3",
+            "name": "Main Campus North",
+            "delivery_fee": 200.0,
+            "is_active": true
+        }
+    ]
 }
 ```
 
@@ -10885,15 +9984,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_zones`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10915,13 +10006,19 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
 }
 ```
 
@@ -10931,15 +10028,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -10947,7 +10036,7 @@ Total documented REST API endpoints: **311**
 
 ### `POST /api/orders/validate-promo`
 
-**Authentication:** Optional JWT (Public or Authenticated checkout context)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
 **Source File:** `app/routes/orders.py` (`validate_promo`)
 
@@ -10958,19 +10047,20 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "code": "any",
-    "order_subtotal": "any"
+    "code": "string // OPTIONAL \u2014 default: null",
+    "order_subtotal": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "valid": true,
+    "promo_code_id": "p1a2b3",
+    "discount_amount": 300.0,
+    "message": "Promo code SAVE10 applied successfully"
 }
 ```
 
@@ -10980,61 +10070,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Kitchen daily capacity (`kitchen_settings.daily_order_capacity`) and per-item limits verified.
-- Storefront operating hours checked against West Africa Time (`ZoneInfo('Africa/Lagos')`).
-- Wallet balance verified prior to debit; promo codes and HP discounts atomically applied.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `POST /api/push/subscribe`
-
-**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
-
-**Source File:** `app/routes/notifications.py` (`push_subscribe`)
-
-**Summary:** Register a browser Web Push subscription for the authenticated user.
-
-
-**Request Specification:**
-
-```json
-{
-    "device_label": "any",
-    "subscription": "any"
-}
-```
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `push_subscriptions`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11053,12 +10089,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "endpoint": "any"
+    "endpoint": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11074,12 +10110,48 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `push_subscriptions`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `POST /api/push/subscribe`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/notifications.py` (`push_subscribe`)
+
+**Summary:** Register a browser Web Push subscription for the authenticated user.
+
+
+**Request Specification:**
+
+```json
+{
+    "device_label": "string // OPTIONAL \u2014 default: null",
+    "subscription": "string // OPTIONAL \u2014 default: null"
+}
+```
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `push_subscriptions`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11099,7 +10171,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11115,12 +10187,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles, referrals`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11139,13 +10206,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "order_id": "any",
-    "referred_user_id": "any"
+    "order_id": "string // OPTIONAL \u2014 default: null",
+    "referred_user_id": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11161,12 +10228,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `referrals`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11186,7 +10248,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11202,12 +10264,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles, referrals`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11229,7 +10286,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `category, reward_type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11245,12 +10302,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `rewards`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11269,16 +10321,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "campus_id": "any",
-    "is_active": "any",
-    "name": "any",
-    "reward_type": "any",
-    "stock_quantity": "any"
+    "campus_id": "string // OPTIONAL \u2014 default: null",
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "reward_type": "string // OPTIONAL \u2014 default: null",
+    "stock_quantity": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11294,53 +10346,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles, rewards`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `GET /api/rewards/<reward_id>`
-
-**Authentication:** Public (No auth token required)
-
-**Source File:** `app/routes/rewards.py` (`get_reward`)
-
-**Summary:** Get reward detail.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-
-**Response Specification (200 OK Example):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `rewards`
-
-
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11360,7 +10366,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11376,12 +10382,43 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `rewards`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
-**Error Responses:**
+---
+
+### `GET /api/rewards/<reward_id>`
+
+**Authentication:** Public (No auth token required)
+
+**Source File:** `app/routes/rewards.py` (`get_reward`)
+
+**Summary:** Get reward detail.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `rewards`
+
+
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11400,12 +10437,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "updated_at": "any"
+    "updated_at": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11421,12 +10458,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `rewards`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11445,12 +10477,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11466,14 +10498,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `rewards`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"image_url is required"`
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -11491,7 +10518,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11507,12 +10534,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `hp_tiers, rewards`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11534,7 +10556,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, limit, offset, reward_id, status`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11550,12 +10572,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `reward_redemptions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11574,13 +10591,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "fulfilled_at": "any",
-    "status": "any"
+    "fulfilled_at": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11596,14 +10613,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `reward_redemptions, rewards`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Cannot reject an already-fulfilled redemption"`
+- `"Cannot reject an already-fulfilled redemption"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -11621,7 +10633,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11637,12 +10649,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `reward_redemptions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11661,14 +10668,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_available": "any",
-    "location_lat": "any",
-    "location_lng": "any"
+    "is_available": "string // OPTIONAL \u2014 default: null",
+    "location_lat": "string // OPTIONAL \u2014 default: null",
+    "location_lng": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11684,12 +10691,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `rider_profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11709,7 +10711,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11725,12 +10727,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11752,7 +10749,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `period`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11768,12 +10765,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11795,7 +10787,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11811,12 +10803,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11838,7 +10825,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, sequencing`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -11854,12 +10841,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, delivery_windows, gates, order_items, orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11878,18 +10860,31 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "any"
+    "notes": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -11899,12 +10894,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11924,13 +10914,26 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -11940,12 +10943,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -11965,13 +10963,26 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "order_number": "HG-9A8B7C6D5E",
+    "status": "received",
+    "payment_status": "paid",
+    "subtotal": 3000.0,
+    "delivery_fee": 200.0,
+    "discount_amount": 0.0,
+    "total_amount": 3200.0,
+    "hp_earned": 360,
+    "items": [
+        {
+            "menu_item_id": "8a2c1b",
+            "quantity": 2,
+            "unit_price": 1500.0
+        }
+    ]
 }
 ```
 
@@ -11981,12 +10992,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `orders`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12006,7 +11012,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12022,12 +11028,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `delivery_batches, orders, rider_profiles`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12047,7 +11048,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12063,12 +11064,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `saved_for_later`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12087,14 +11083,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "menu_item_id": "any",
-    "notes": "any",
-    "quantity": "any"
+    "menu_item_id": "string // OPTIONAL \u2014 default: null",
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "quantity": "integer / number // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12110,14 +11106,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `menu_items, saved_for_later`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"quantity must be a valid integer"`
+- `"quantity must be a valid integer"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12135,7 +11126,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12151,12 +11142,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `saved_for_later`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12175,13 +11161,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "notes": "any",
-    "quantity": "any"
+    "notes": "string // OPTIONAL \u2014 default: null",
+    "quantity": "integer / number // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12197,14 +11183,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `saved_for_later`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"quantity must be a valid integer"`
+- `"quantity must be a valid integer"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12222,7 +11203,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12238,12 +11219,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `cart_items, saved_for_later`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12263,7 +11239,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12279,12 +11255,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `cart_items, saved_for_later`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12306,7 +11277,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `placement`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12322,12 +11293,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `banners`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12346,12 +11312,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "images": "any"
+    "images": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12367,14 +11333,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `banners`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"'images' must be a non-empty list of URL strings"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12392,7 +11353,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12408,14 +11369,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `banners`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Banner not found"`
+- `"Banner not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12432,12 +11388,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "images": "any"
+    "images": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12453,14 +11409,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `banners`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Banner not found"`
+- `"'images' must be a non-empty list of URL strings"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Banner not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12477,13 +11429,13 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any",
-    "mobile_image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null",
+    "mobile_image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12499,15 +11451,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `banners`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Banner not found"`
-- `"image_url is required"`
+- `"Banner not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12525,7 +11472,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12541,12 +11488,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `system_settings`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12566,7 +11508,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12582,12 +11524,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12606,16 +11543,16 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "name": "any",
-    "note": "any",
-    "photo_url": "any",
-    "social_links": "any",
-    "sort_order": "any"
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "note": "string // OPTIONAL \u2014 default: null",
+    "photo_url": "string // OPTIONAL \u2014 default: null",
+    "social_links": "string // OPTIONAL \u2014 default: null",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12631,14 +11568,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"'name' is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12656,7 +11588,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12672,14 +11604,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Early supporter not found"`
+- `"Early supporter not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12696,14 +11623,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "is_active": "any",
-    "name": "any",
-    "sort_order": "any"
+    "is_active": "boolean // OPTIONAL \u2014 default: null",
+    "name": "string // REQUIRED \u2014 must be non-empty",
+    "sort_order": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12719,14 +11646,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Early supporter not found"`
+- `"Early supporter not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12743,12 +11665,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "photo_url": "any"
+    "photo_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12764,15 +11686,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Early supporter not found"`
-- `"photo_url is required"`
+- `"Early supporter not found"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"photo_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -12792,7 +11709,7 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `active_only, limit, offset`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12808,12 +11725,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `newsletter_subscriptions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12832,14 +11744,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "any",
-    "full_name": "any",
-    "source": "any"
+    "email": "string // REQUIRED \u2014 must be non-empty",
+    "full_name": "string // OPTIONAL \u2014 default: null",
+    "source": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12855,12 +11767,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `newsletter_subscriptions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12879,12 +11786,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "email": "any"
+    "email": "string // REQUIRED \u2014 must be non-empty"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12900,12 +11807,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `newsletter_subscriptions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12925,7 +11827,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12941,12 +11843,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `operating_hour_overrides, operating_hours`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -12965,12 +11862,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "day": "any"
+    "day": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -12986,15 +11883,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `operating_hours`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"At least one of open_time, close_time, is_closed is required"`
-- `"No operating-hours row exists for this campus/weekday yet"`
+- `"At least one of open_time, close_time, is_closed is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"No operating-hours row exists for this campus/weekday yet"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -13011,12 +11903,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "date": "any"
+    "date": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13032,14 +11924,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `operating_hour_overrides`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"date (or override_date) is required"`
+- `"date (or override_date) is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -13056,19 +11943,20 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "code": "any",
-    "order_subtotal": "any"
+    "code": "string // OPTIONAL \u2014 default: null",
+    "order_subtotal": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "valid": true,
+    "promo_code_id": "p1a2b3",
+    "discount_amount": 300.0,
+    "message": "Promo code SAVE10 applied successfully"
 }
 ```
 
@@ -13078,12 +11966,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `promo_codes`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13103,7 +11986,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13119,12 +12002,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13144,7 +12022,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13160,12 +12038,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13185,7 +12058,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13201,12 +12074,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13226,7 +12094,7 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13242,12 +12110,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13266,12 +12129,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "image_url": "any"
+    "image_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13287,14 +12150,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `storefront_sections`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"image_url is required"`
+- `"image_url is required"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -13311,12 +12169,12 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "folder": "any"
+    "folder": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13332,15 +12190,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Cloudinary upload is not configured"`
-- `"Invalid upload folder"`
+- `"Cloudinary upload is not configured"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Invalid upload folder"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -13358,13 +12211,13 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "wallet_balance": 5000.0,
+    "currency": "NGN",
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
 }
 ```
 
@@ -13374,13 +12227,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `virtual_accounts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Wallet transactions execute atomically via `credit_wallet_atomic` / `debit_wallet_atomic` RPCs.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13402,13 +12249,13 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `campus_id, from_date, to_date, type, user_id`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "wallet_balance": 5000.0,
+    "currency": "NGN",
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
 }
 ```
 
@@ -13418,13 +12265,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `wallet_transactions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Wallet transactions execute atomically via `credit_wallet_atomic` / `debit_wallet_atomic` RPCs.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13444,13 +12285,13 @@ Total documented REST API endpoints: **311**
 - **JSON Body:** None required / empty body
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "wallet_balance": 5000.0,
+    "currency": "NGN",
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
 }
 ```
 
@@ -13460,13 +12301,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles, virtual_accounts`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Wallet transactions execute atomically via `credit_wallet_atomic` / `debit_wallet_atomic` RPCs.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13485,19 +12320,19 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "amount": "any",
-    "callback_url": "any"
+    "amount": "integer / number // OPTIONAL \u2014 default: null",
+    "callback_url": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "wallet_balance": 5000.0,
+    "currency": "NGN",
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
 }
 ```
 
@@ -13507,16 +12342,10 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `profiles`
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Wallet transactions execute atomically via `credit_wallet_atomic` / `debit_wallet_atomic` RPCs.
-
-**Error Responses:**
-
-- `"Card payments are not configured on this server."`
-- `"Payment gateway unavailable. Please try again later."`
+- `"Card payments are not configured on this server."` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
+- `"Payment gateway unavailable. Please try again later."` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -13536,13 +12365,13 @@ Total documented REST API endpoints: **311**
 - **Query Parameters:** `type`
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
+    "wallet_balance": 5000.0,
+    "currency": "NGN",
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
 }
 ```
 
@@ -13552,13 +12381,7 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** `wallet_transactions`
 
 
-**Business Rules Enforced:**
-
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-- Wallet transactions execute atomically via `credit_wallet_atomic` / `debit_wallet_atomic` RPCs.
-
-**Error Responses:**
+**Error Responses & Recovery Instructions:**
 
 - Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
@@ -13577,15 +12400,15 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "flw_ref": "any",
-    "id": "any",
-    "status": "any",
-    "tx_ref": "any"
+    "flw_ref": "string // OPTIONAL \u2014 default: null",
+    "id": "string // OPTIONAL \u2014 default: null",
+    "status": "string // OPTIONAL \u2014 default: null",
+    "tx_ref": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13601,14 +12424,9 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Webhook processing failed"`
+- `"Webhook processing failed"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -13625,14 +12443,14 @@ Total documented REST API endpoints: **311**
 
 ```json
 {
-    "id": "any",
-    "reference": "any",
-    "transfer_code": "any"
+    "id": "string // OPTIONAL \u2014 default: null",
+    "reference": "string // OPTIONAL \u2014 default: null",
+    "transfer_code": "string // OPTIONAL \u2014 default: null"
 }
 ```
 
 
-**Response Specification (200 OK Example):**
+**Response Specification (200 OK Response):**
 
 ```json
 {
@@ -13648,18 +12466,50 @@ Total documented REST API endpoints: **311**
 - **Database Tables:** None directly in route handler (delegated to service layer)
 
 
-**Business Rules Enforced:**
+**Error Responses & Recovery Instructions:**
 
-- Request validation & permission checks enforced prior to execution.
-- Campus isolation applied for non-super_admin users via `resolve_scoped_campus_id`.
-
-**Error Responses:**
-
-- `"Webhook processing failed"`
+- `"Webhook processing failed"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
-## SECTION 2: DATABASE SCHEMA
+## SECTION 4: AUTHENTICATION & AUTHORIZATION
+
+### JWT Authentication Flow
+
+1. **Token Issuance**: Supabase Auth issues access tokens (`JWT`) signed with `JWT_SECRET` upon login (`POST /api/auth/login`) or registration (`POST /api/auth/register`).
+
+2. **Token Verification**: `@require_auth` and `@require_role` middleware extract Bearer tokens from HTTP `Authorization` header (`Authorization: Bearer <access_token>`). Tokens are validated via `db.auth_get_user(token)` REST call to Supabase.
+
+3. **Silent Token Rotation**: Clients receive token expiration claims. When tokens are within `JWT_REFRESH_WINDOW_MINUTES` (default 5 minutes), client applications issue `POST /api/auth/refresh` to obtain new active JWTs without interrupting user session.
+
+4. **Guest Flow**: Endpoints decorated with `@optional_auth` allow unauthenticated requests (with `g.user_id = None`), but if a Bearer token is provided, it MUST be valid.
+
+
+### Role Definitions & Hierarchy
+
+| Role | Access Level | Description |
+
+|------|--------------|-------------|
+
+| `student` | Standard User | Can place orders, manage wallet, redeem HP, view marketplace & events |
+
+| `kitchen` | Operations | Kitchen staff; can view and update order preparation statuses |
+
+| `rider` | Delivery | Delivery riders; can accept batches, update delivery statuses, call customers |
+
+| `admin` | Campus Admin | Full admin capabilities scoped to their assigned `campus_id` |
+
+| `super_admin` | Global Admin | Unrestricted access across all campuses, system settings, and administrative routes |
+
+
+### Campus Scoping Helpers
+
+- `resolve_scoped_campus_id(requested_campus_id)`: For `super_admin`, returns requested campus ID or `None` (all campuses). For non-super_admin users, strictly returns `g.campus_id`.
+
+- `assert_owns_campus(record_campus_id)`: Aborts with HTTP 403 Forbidden if a non-super_admin user attempts to mutate/access data belonging to a different campus.
+
+
+## SECTION 5: DATABASE SCHEMA & COLUMN MEANINGS
 
 Total public schema tables documented: **99**
 
@@ -13673,21 +12523,21 @@ Total public schema tables documented: **99**
 - **Foreign Keys:** `recovered_order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `guest_email` | `citext` | YES | `NULL` |
-| `guest_phone` | `text` | YES | `NULL` |
-| `cart_payload` | `jsonb` | NO | `NULL` |
-| `last_recovery_sent_at` | `timestamp with time zone` | YES | `NULL` |
-| `next_recovery_at` | `timestamp with time zone` | YES | `NULL` |
-| `recovery_attempts` | `integer` | NO | `0` |
-| `is_recovered` | `boolean` | NO | `false` |
-| `recovered_order_id` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `last_active_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the abandoned_carts record. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `guest_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. |
+| `guest_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
+| `cart_payload` | `jsonb` | NO | `NULL` | JSON object storing context payload or metadata. |
+| `last_recovery_sent_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last recovery sent occurred. |
+| `next_recovery_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when next recovery occurred. |
+| `recovery_attempts` | `integer` | NO | `0` | Data field storing recovery attempts for abandoned_carts record. |
+| `is_recovered` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `recovered_order_id` | `uuid` | YES | `NULL` | Data field storing recovered order id for abandoned_carts record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `last_active_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when last active occurred. |
 
 **Indexes:**
 - `idx_abandoned_carts_next_recovery_at` ON (`next_recovery_at`)
@@ -13709,15 +12559,15 @@ next_recovery_at, last_active_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `value` | `text` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `sort_order` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the academic_levels record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the academic_levels entity. |
+| `value` | `text` | NO | `NULL` | Data field storing value for academic_levels record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for academic_levels record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Unique Constraints:**
 - `academic_levels_value_key`: UNIQUE (`value`)
@@ -13733,21 +12583,21 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `actor_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `action` | `text` | NO | `NULL` |
-| `entity_type` | `text` | NO | `NULL` |
-| `entity_id` | `text` | YES | `NULL` |
-| `actor_id` | `uuid` | YES | `NULL` |
-| `actor_role` | `text` | YES | `NULL` |
-| `ip_address` | `inet` | YES | `NULL` |
-| `user_agent` | `text` | YES | `NULL` |
-| `before_value` | `jsonb` | YES | `NULL` |
-| `after_value` | `jsonb` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `session_id` | `text` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the admin_audit_logs record. |
+| `action` | `text` | NO | `NULL` | Data field storing action for admin_audit_logs record. |
+| `entity_type` | `text` | NO | `NULL` | Data field storing entity type for admin_audit_logs record. |
+| `entity_id` | `text` | YES | `NULL` | Data field storing entity id for admin_audit_logs record. |
+| `actor_id` | `uuid` | YES | `NULL` | Data field storing actor id for admin_audit_logs record. |
+| `actor_role` | `text` | YES | `NULL` | Data field storing actor role for admin_audit_logs record. |
+| `ip_address` | `inet` | YES | `NULL` | Data field storing ip address for admin_audit_logs record. |
+| `user_agent` | `text` | YES | `NULL` | Data field storing user agent for admin_audit_logs record. |
+| `before_value` | `jsonb` | YES | `NULL` | Data field storing before value for admin_audit_logs record. |
+| `after_value` | `jsonb` | YES | `NULL` | Data field storing after value for admin_audit_logs record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `session_id` | `text` | YES | `NULL` | Data field storing session id for admin_audit_logs record. |
 
 **Indexes:**
 - `idx_admin_audit_logs_actor_id` ON (`actor_id`)
@@ -13767,25 +12617,25 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` |
-| `title` | `text` | NO | `NULL` |
-| `subtitle` | `text` | YES | `NULL` |
-| `image_url` | `text` | YES | `NULL` |
-| `mobile_image_url` | `text` | YES | `NULL` |
-| `action_url` | `text` | YES | `NULL` |
-| `action_label` | `text` | YES | `NULL` |
-| `placement` | `text` | NO | `'home'::text` |
-| `sort_order` | `integer` | NO | `0` |
-| `is_active` | `boolean` | NO | `true` |
-| `starts_at` | `timestamp with time zone` | YES | `NULL` |
-| `ends_at` | `timestamp with time zone` | YES | `NULL` |
-| `target_roles` | `text[]` | NO | `'{}'::text[]` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_by` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the banners record. |
+| `title` | `text` | NO | `NULL` | Data field storing title for banners record. |
+| `subtitle` | `text` | YES | `NULL` | Data field storing subtitle for banners record. |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for banners record. |
+| `mobile_image_url` | `text` | YES | `NULL` | Data field storing mobile image url for banners record. |
+| `action_url` | `text` | YES | `NULL` | Data field storing action url for banners record. |
+| `action_label` | `text` | YES | `NULL` | Data field storing action label for banners record. |
+| `placement` | `text` | NO | `'home'::text` | Data field storing placement for banners record. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for banners record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when starts occurred. |
+| `ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ends occurred. |
+| `target_roles` | `text[]` | NO | `'{}'::text[]` | Data field storing target roles for banners record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for banners record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_banners_active_placement` ON (`placement, sort_order`)
@@ -13806,14 +12656,14 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `added_by` → `profiles.id`, `batch_id` → `delivery_batches.id`, `order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `batch_id` | `uuid` | NO | `NULL` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `sequence` | `integer` | YES | `NULL` |
-| `added_by` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the batch_orders record. |
+| `batch_id` | `uuid` | NO | `NULL` | Data field storing batch id for batch_orders record. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for batch_orders record. |
+| `sequence` | `integer` | YES | `NULL` | Data field storing sequence for batch_orders record. |
+| `added_by` | `uuid` | YES | `NULL` | Data field storing added by for batch_orders record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_batch_orders_added_by` ON (`added_by`)
@@ -13832,14 +12682,14 @@ next_recovery_at, last_active_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `slug` | `text` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the campuses record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the campuses entity. |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for campuses record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Unique Constraints:**
 - `campuses_name_key`: UNIQUE (`name`)
@@ -13859,16 +12709,16 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `menu_item_id` → `menu_items.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `menu_item_id` | `uuid` | NO | `NULL` |
-| `quantity` | `integer` | NO | `1` |
-| `options` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `added_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the cart_items record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for cart_items record. |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for cart_items record. |
+| `options` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options for cart_items record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `added_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when added occurred. |
 
 **Indexes:**
 - `idx_cart_items_menu_item_id` ON (`menu_item_id`)
@@ -13893,23 +12743,24 @@ next_recovery_at, last_active_at`)
 - **Foreign Keys:** `assigned_to` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `organizer_name` | `text` | NO | `NULL` |
-| `email` | `citext` | NO | `NULL` |
-| `phone` | `text` | NO | `NULL` |
-| `organization` | `text` | YES | `NULL` |
-| `event_name` | `text , event_date date` | NO | `NULL` |
-| `expected_guests` | `integer` | NO | `NULL` |
-| `budget` | `numeric(14,2)` | YES | `NULL` |
-| `notes` | `text` | YES | `NULL` |
-| `status` | `text` | NO | `'new'::text` |
-| `assigned_to` | `uuid` | YES | `NULL` |
-| `quoted_amount` | `numeric(14,2)` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `hp_promo_optin` | `boolean` | NO | `false` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the catering_requests record. |
+| `organizer_name` | `text` | NO | `NULL` | Human-readable display name of the catering_requests entity. |
+| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
+| `phone` | `text` | NO | `NULL` | Contact phone number used for delivery alerts and SMS. |
+| `organization` | `text` | YES | `NULL` | Data field storing organization for catering_requests record. |
+| `event_name` | `text` | NO | `NULL` | Human-readable display name of the catering_requests entity. |
+| `event_date` | `date` | NO | `NULL` | Timestamp recording when event date occurred. |
+| `expected_guests` | `integer` | NO | `NULL` | Data field storing expected guests for catering_requests record. |
+| `budget` | `numeric(14,2)` | YES | `NULL` | Data field storing budget for catering_requests record. |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for catering_requests record. |
+| `status` | `text` | NO | `'new'::text` | Lifecycle status indicator tracking the current state of catering_requests record. |
+| `assigned_to` | `uuid` | YES | `NULL` | Data field storing assigned to for catering_requests record. |
+| `quoted_amount` | `numeric(14,2)` | YES | `NULL` | Monetary value stored in Naira (NGN). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `hp_promo_optin` | `boolean` | NO | `false` | Loyalty points value (Holy Points). |
 
 **Indexes:**
 - `idx_catering_requests_assigned_to` ON (`assigned_to`)
@@ -13929,14 +12780,14 @@ next_recovery_at, last_active_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `challenge_id` | `uuid` | NO | `NULL` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `hp_transaction_id` | `uuid` | YES | `NULL` |
-| `completed_at` | `timestamp with time zone` | NO | `now()` |
-| `hp_awarded` | `integer` | NO | `0` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the challenge_completions record. |
+| `challenge_id` | `uuid` | NO | `NULL` | Data field storing challenge id for challenge_completions record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `completed_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when completed occurred. |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
 
 **Indexes:**
 - `idx_challenge_completions_challenge` ON (`challenge_id`)
@@ -13959,23 +12810,23 @@ own`
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `hp_reward` | `integer` | NO | `0` |
-| `criteria` | `jsonb` | NO | `NULL` |
-| `starts_at` | `timestamp with time zone` | YES | `NULL` |
-| `ends_at` | `timestamp with time zone` | YES | `NULL` |
-| `max_completions_per_user` | `integer` | NO | `1` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `type` | `text` | NO | `'one_time'::text` |
-| `target_count` | `integer` | NO | `1` |
-| `created_by` | `uuid` | YES | `NULL` |
-| `title` | `text` | YES | `NULL` |
-| `updated_at` | `timestamp with time zone` | YES | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the challenges record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the challenges entity. |
+| `description` | `text` | YES | `NULL` | Data field storing description for challenges record. |
+| `hp_reward` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `criteria` | `jsonb` | NO | `NULL` | Data field storing criteria for challenges record. |
+| `starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when starts occurred. |
+| `ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ends occurred. |
+| `max_completions_per_user` | `integer` | NO | `1` | Data field storing max completions per user for challenges record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `type` | `text` | NO | `'one_time'::text` | Data field storing type for challenges record. |
+| `target_count` | `integer` | NO | `1` | Data field storing target count for challenges record. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for challenges record. |
+| `title` | `text` | YES | `NULL` | Data field storing title for challenges record. |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_challenges_active` ON (`starts_at, ends_at`)
@@ -13998,10 +12849,10 @@ own`
 - **Primary Key:** `job_name`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `job_name` | `text` | NO | `NULL` |
-| `locked_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `job_name` | `text` | NO | `NULL` | Human-readable display name of the cron_locks entity. |
+| `locked_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when locked occurred. |
 
 **RLS Policies:**
 - `Admins manage cron_locks`
@@ -14017,12 +12868,13 @@ own`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid , checkin_date date` | NO | `NULL` |
-| `hp_awarded` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the daily_checkins record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `checkin_date` | `date` | NO | `NULL` | Timestamp recording when checkin date occurred. |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_daily_checkins_date` ON (`checkin_date`)
@@ -14035,16 +12887,16 @@ own`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `rider_id` | `uuid` | NO | `NULL` |
-| `batch_id` | `uuid` | YES | `NULL` |
-| `status` | `text` | NO | `'assigned'::text` |
-| `note` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `completed_at` | `timestamp with time zone` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_assignments record. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for delivery_assignments record. |
+| `rider_id` | `uuid` | NO | `NULL` | Data field storing rider id for delivery_assignments record. |
+| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for delivery_assignments record. |
+| `status` | `text` | NO | `'assigned'::text` | Lifecycle status indicator tracking the current state of delivery_assignments record. |
+| `note` | `text` | YES | `NULL` | Data field storing note for delivery_assignments record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `completed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when completed occurred. |
 
 **Indexes:**
 - `idx_delivery_assignments_batch_id` ON (`batch_id`)
@@ -14065,17 +12917,17 @@ own`
 - **Foreign Keys:** `delivery_window_id` → `delivery_windows.id`, `rider_id` → `profiles.id`, `window_id` → `delivery_windows.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `rider_id` | `uuid` | YES | `NULL` |
-| `status` | `text` | NO | `'open'::text` |
-| `notes` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `completed_at` | `timestamp with time zone` | YES | `NULL` |
-| `zone` | `text` | YES | `NULL` |
-| `delivery_window_id` | `uuid` | YES | `NULL` |
-| `window_id` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_batches record. |
+| `rider_id` | `uuid` | YES | `NULL` | Data field storing rider id for delivery_batches record. |
+| `status` | `text` | NO | `'open'::text` | Lifecycle status indicator tracking the current state of delivery_batches record. |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for delivery_batches record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `completed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when completed occurred. |
+| `zone` | `text` | YES | `NULL` | Data field storing zone for delivery_batches record. |
+| `delivery_window_id` | `uuid` | YES | `NULL` | Data field storing delivery window id for delivery_batches record. |
+| `window_id` | `uuid` | YES | `NULL` | Data field storing window id for delivery_batches record. |
 
 **Indexes:**
 - `idx_delivery_batches_delivery_window` ON (`delivery_window_id`)
@@ -14104,18 +12956,18 @@ status`)
 - **Foreign Keys:** `created_by` → `profiles.id`, `zone_id` → `delivery_zones.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `label` | `text` | NO | `NULL` |
-| `starts_at` | `timestamp with time zone` | NO | `NULL` |
-| `ends_at` | `timestamp with time zone` | NO | `NULL` |
-| `capacity` | `integer` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `zone_id` | `uuid` | YES | `NULL` |
-| `status` | `text` | NO | `'open'::text` |
-| `created_by` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the delivery_windows record. |
+| `label` | `text` | NO | `NULL` | Data field storing label for delivery_windows record. |
+| `starts_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when starts occurred. |
+| `ends_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when ends occurred. |
+| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for delivery_windows record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `zone_id` | `uuid` | YES | `NULL` | Data field storing zone id for delivery_windows record. |
+| `status` | `text` | NO | `'open'::text` | Lifecycle status indicator tracking the current state of delivery_windows record. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for delivery_windows record. |
 
 **Indexes:**
 - `idx_delivery_windows_active` ON (`starts_at,
@@ -14142,17 +12994,17 @@ active`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` |
-| `name` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `delivery_fee` | `numeric(10,2)` | NO | `0` |
-| `min_order` | `numeric(10,2)` | NO | `0` |
-| `is_active` | `boolean` | NO | `true` |
-| `polygon` | `jsonb` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the delivery_zones record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the delivery_zones entity. |
+| `description` | `text` | YES | `NULL` | Data field storing description for delivery_zones record. |
+| `delivery_fee` | `numeric(10,2)` | NO | `0` | Calculated delivery charge in NGN based on hostel fixed fee or off-campus gate distance. |
+| `min_order` | `numeric(10,2)` | NO | `0` | Data field storing min order for delivery_zones record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `polygon` | `jsonb` | YES | `NULL` | Data field storing polygon for delivery_zones record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Check Constraints:**
 - `delivery_zones_delivery_fee_check`: `(delivery_fee >= (0)::numeric)`
@@ -14171,16 +13023,16 @@ active`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `slug` | `text` | NO | `NULL` |
-| `faculty` | `text` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `sort_order` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the departments record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the departments entity. |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for departments record. |
+| `faculty` | `text` | NO | `NULL` | Data field storing faculty for departments record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for departments record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_departments_faculty` ON (`faculty`)
@@ -14198,13 +13050,13 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `fingerprint` | `text` | NO | `NULL` |
-| `platform` | `text` | NO | `'unknown'::text` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the device_fingerprints record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `fingerprint` | `text` | NO | `NULL` | Data field storing fingerprint for device_fingerprints record. |
+| `platform` | `text` | NO | `'unknown'::text` | Data field storing platform for device_fingerprints record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_device_fingerprints_fingerprint` ON (`fingerprint`)
@@ -14224,15 +13076,15 @@ active`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `token` | `text` | NO | `NULL` |
-| `platform` | `text` | NO | `'unknown'::text` |
-| `device_model` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the device_tokens record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `token` | `text` | NO | `NULL` | Data field storing token for device_tokens record. |
+| `platform` | `text` | NO | `'unknown'::text` | Data field storing platform for device_tokens record. |
+| `device_model` | `text` | YES | `NULL` | Data field storing device model for device_tokens record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Unique Constraints:**
 - `device_tokens_user_id_token_key`: UNIQUE (`user_id, token`)
@@ -14251,14 +13103,14 @@ active`
 - **Foreign Keys:** `checked_in_by` → `profiles.id`, `hp_transaction_id` → `hp_transactions.id`, `ticket_id` → `event_tickets.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `ticket_id` | `uuid` | NO | `NULL` |
-| `qr_code` | `text` | NO | `NULL` |
-| `checked_in_by` | `uuid` | YES | `NULL` |
-| `hp_transaction_id` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_checkins record. |
+| `ticket_id` | `uuid` | NO | `NULL` | Data field storing ticket id for event_checkins record. |
+| `qr_code` | `text` | NO | `NULL` | Data field storing qr code for event_checkins record. |
+| `checked_in_by` | `uuid` | YES | `NULL` | Data field storing checked in by for event_checkins record. |
+| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_event_checkins_checked_in_by` ON (`checked_in_by`)
@@ -14279,20 +13131,20 @@ created_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `event_id` | `uuid` | NO | `NULL` |
-| `name` | `text` | NO | `NULL` |
-| `price_naira` | `numeric(12,2)` | NO | `0` |
-| `price_hp` | `integer` | NO | `0` |
-| `capacity` | `integer` | YES | `NULL` |
-| `sold_count` | `integer` | NO | `0` |
-| `description` | `text` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `sort_order` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_ticket_tiers record. |
+| `event_id` | `uuid` | NO | `NULL` | Data field storing event id for event_ticket_tiers record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the event_ticket_tiers entity. |
+| `price_naira` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `price_hp` | `integer` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for event_ticket_tiers record. |
+| `sold_count` | `integer` | NO | `0` | Data field storing sold count for event_ticket_tiers record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for event_ticket_tiers record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for event_ticket_tiers record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_event_ticket_tiers_event_id` ON (`event_id`)
@@ -14308,17 +13160,17 @@ created_at`)
 - **Foreign Keys:** `event_id` → `events.id`, `tier_id` → `event_ticket_tiers.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `event_id` | `uuid` | NO | `NULL` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `quantity` | `integer` | NO | `1` |
-| `status` | `text` | NO | `'pending'::text` |
-| `qr_code` | `text` | YES | `encode(gen_random_bytes(24), 'hex'::text)` |
-| `qr_expires_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `tier_id` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the event_tickets record. |
+| `event_id` | `uuid` | NO | `NULL` | Data field storing event id for event_tickets record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for event_tickets record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of event_tickets record. |
+| `qr_code` | `text` | YES | `encode(gen_random_bytes(24), 'hex'::text)` | Data field storing qr code for event_tickets record. |
+| `qr_expires_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when qr expires occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `tier_id` | `uuid` | YES | `NULL` | Data field storing tier id for event_tickets record. |
 
 **Indexes:**
 - `idx_event_tickets_event` ON (`event_id`)
@@ -14345,32 +13197,32 @@ user_id`)
 - **Foreign Keys:** `organizer_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `title` | `text` | NO | `NULL` |
-| `slug` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `starts_at` | `timestamp with time zone` | NO | `NULL` |
-| `ends_at` | `timestamp with time zone` | NO | `NULL` |
-| `location` | `text` | NO | `NULL` |
-| `image_url` | `text` | YES | `NULL` |
-| `ticket_price` | `numeric(14,2)` | NO | `0` |
-| `hp_reward` | `integer` | NO | `0` |
-| `capacity` | `integer` | YES | `NULL` |
-| `is_published` | `boolean` | NO | `false` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `hp_promo_enabled` | `boolean` | NO | `false` |
-| `is_featured` | `boolean` | NO | `false` |
-| `organizer_id` | `uuid` | YES | `NULL` |
-| `updated_at` | `timestamp with time zone` | YES | `now()` |
-| `hp_per_attendee` | `integer` | YES | `NULL` |
-| `funding_source` | `text` | YES | `NULL` |
-| `max_attendees` | `integer` | YES | `NULL` |
-| `hp_required` | `integer` | YES | `NULL` |
-| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` |
-| `is_paid` | `boolean` | NO | `false` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the events record. |
+| `title` | `text` | NO | `NULL` | Data field storing title for events record. |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for events record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for events record. |
+| `starts_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when starts occurred. |
+| `ends_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when ends occurred. |
+| `location` | `text` | NO | `NULL` | Data field storing location for events record. |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for events record. |
+| `ticket_price` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `hp_reward` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `capacity` | `integer` | YES | `NULL` | Data field storing capacity for events record. |
+| `is_published` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `hp_promo_enabled` | `boolean` | NO | `false` | Loyalty points value (Holy Points). |
+| `is_featured` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `organizer_id` | `uuid` | YES | `NULL` | Data field storing organizer id for events record. |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| `hp_per_attendee` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `funding_source` | `text` | YES | `NULL` | Data field storing funding source for events record. |
+| `max_attendees` | `integer` | YES | `NULL` | Data field storing max attendees for events record. |
+| `hp_required` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` | Data field storing total value for events record. |
+| `is_paid` | `boolean` | NO | `false` | Boolean toggle flag. |
 
 **Indexes:**
 - `idx_events_featured` ON (`is_featured`)
@@ -14398,15 +13250,15 @@ user_id`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `spin_count` | `integer` | NO | `0` |
-| `source` | `text` | NO | `NULL` |
-| `month` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `expires_at` | `timestamp with time zone` | NO | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the exclusive_spins record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `spin_count` | `integer` | NO | `0` | Data field storing spin count for exclusive_spins record. |
+| `source` | `text` | NO | `NULL` | Data field storing source for exclusive_spins record. |
+| `month` | `text` | YES | `NULL` | Data field storing month for exclusive_spins record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `expires_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when expires occurred. |
 
 **Indexes:**
 - `idx_exclusive_spins_active` ON (`user_id,
@@ -14432,13 +13284,13 @@ their own exclusive spins`
 - **Foreign Keys:** `updated_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `feature_name` | `text` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `description` | `text` | YES | `NULL` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_by` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `feature_name` | `text` | NO | `NULL` | Human-readable display name of the feature_flags entity. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `description` | `text` | YES | `NULL` | Data field storing description for feature_flags record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for feature_flags record. |
 
 **Indexes:**
 - `idx_feature_flags_updated_by` ON (`updated_by`)
@@ -14454,14 +13306,14 @@ their own exclusive spins`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `order_id` | `uuid` | YES | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `claimed_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the first_order_gifts record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for first_order_gifts record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of first_order_gifts record. |
+| `claimed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when claimed occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_first_order_gifts_order_id` ON (`order_id`)
@@ -14488,17 +13340,17 @@ their own exclusive spins`
 - **Foreign Keys:** `reward_id` → `rewards.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `reward_id` | `uuid` | NO | `NULL` |
-| `window_starts_at` | `timestamp with time zone` | NO | `NULL` |
-| `window_ends_at` | `timestamp with time zone` | NO | `NULL` |
-| `quantity_limit` | `integer` | NO | `5` |
-| `discount_pct` | `numeric(5,2)` | NO | `0.50` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the flash_redemptions record. |
+| `reward_id` | `uuid` | NO | `NULL` | Data field storing reward id for flash_redemptions record. |
+| `window_starts_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when window starts occurred. |
+| `window_ends_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when window ends occurred. |
+| `quantity_limit` | `integer` | NO | `5` | Data field storing quantity limit for flash_redemptions record. |
+| `discount_pct` | `numeric(5,2)` | NO | `0.50` | Data field storing discount pct for flash_redemptions record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `flash_redemptions_is_active_idx` ON (`is_active`)
@@ -14519,16 +13371,16 @@ their own exclusive spins`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `credits_remaining` | `integer` | NO | `0` |
-| `source` | `text` | NO | `NULL` |
-| `month` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `expires_at` | `timestamp with time zone` | NO | `NULL` |
-| `used_at` | `timestamp with time zone` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the free_side_credits record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `credits_remaining` | `integer` | NO | `0` | Data field storing credits remaining for free_side_credits record. |
+| `source` | `text` | NO | `NULL` | Data field storing source for free_side_credits record. |
+| `month` | `text` | YES | `NULL` | Data field storing month for free_side_credits record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `expires_at` | `timestamp with time zone` | NO | `NULL` | Timestamp recording when expires occurred. |
+| `used_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when used occurred. |
 
 **Indexes:**
 - `idx_free_side_credits_active` ON (`user_id,
@@ -14548,18 +13400,18 @@ expires_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `lat` | `double precision` | YES | `NULL` |
-| `lon` | `double precision` | YES | `NULL` |
-| `base_fee` | `numeric(10,2)` | NO | `0` |
-| `rate_per_km` | `numeric(10,2)` | NO | `0` |
-| `min_fee` | `numeric(10,2)` | NO | `0` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the gates record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the gates entity. |
+| `lat` | `double precision` | YES | `NULL` | Data field storing lat for gates record. |
+| `lon` | `double precision` | YES | `NULL` | Data field storing lon for gates record. |
+| `base_fee` | `numeric(10,2)` | NO | `0` | Data field storing base fee for gates record. |
+| `rate_per_km` | `numeric(10,2)` | NO | `0` | Data field storing rate per km for gates record. |
+| `min_fee` | `numeric(10,2)` | NO | `0` | Data field storing min fee for gates record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 ---
 
@@ -14568,16 +13420,16 @@ expires_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `inducted_at` | `timestamp with time zone` | NO | `now()` |
-| `full_name` | `text` | NO | `NULL` |
-| `photo_url` | `text` | YES | `NULL` |
-| `tier_at_induction` | `text` | YES | `NULL` |
-| `top4_finish_count` | `integer` | NO | `4` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hall_of_fame_inductees record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `inducted_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when inducted occurred. |
+| `full_name` | `text` | NO | `NULL` | Human-readable display name of the hall_of_fame_inductees entity. |
+| `photo_url` | `text` | YES | `NULL` | Data field storing photo url for hall_of_fame_inductees record. |
+| `tier_at_induction` | `text` | YES | `NULL` | Data field storing tier at induction for hall_of_fame_inductees record. |
+| `top4_finish_count` | `integer` | NO | `4` | Data field storing top4 finish count for hall_of_fame_inductees record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **RLS Policies:**
 - `Admins manage hall_of_fame`
@@ -14590,16 +13442,16 @@ expires_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `inducted_at` | `timestamp with time zone` | NO | `now()` |
-| `status` | `text` | NO | `'pending'::text` |
-| `notes` | `text` | YES | `NULL` |
-| `fulfilled_by` | `uuid` | YES | `NULL` |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hall_of_fame_rewards record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `inducted_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when inducted occurred. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of hall_of_fame_rewards record. |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for hall_of_fame_rewards record. |
+| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for hall_of_fame_rewards record. |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_hall_of_fame_rewards_fulfilled_by` ON (`fulfilled_by`)
@@ -14616,15 +13468,15 @@ expires_at`)
 - **Foreign Keys:** `gate_id` → `gates.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `gate_id` | `uuid` | YES | `NULL` |
-| `delivery_fee` | `numeric(10,2)` | NO | `0` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hostels record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the hostels entity. |
+| `gate_id` | `uuid` | YES | `NULL` | Data field storing gate id for hostels record. |
+| `delivery_fee` | `numeric(10,2)` | NO | `0` | Calculated delivery charge in NGN based on hostel fixed fee or off-campus gate distance. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_hostels_gate_id` ON (`gate_id`)
@@ -14636,15 +13488,15 @@ expires_at`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `event_host_id` | `uuid` | NO | `NULL` |
-| `hp_amount` | `integer` | NO | `NULL` |
-| `naira_paid` | `numeric(12,2)` | NO | `NULL` |
-| `price_per_hp` | `numeric(10,4)` | NO | `5.0` |
-| `status` | `text` | NO | `'completed'::text` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_bundle_purchases record. |
+| `event_host_id` | `uuid` | NO | `NULL` | Data field storing event host id for hp_bundle_purchases record. |
+| `hp_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `naira_paid` | `numeric(12,2)` | NO | `NULL` | Data field storing naira paid for hp_bundle_purchases record. |
+| `price_per_hp` | `numeric(10,4)` | NO | `5.0` | Monetary value stored in Naira (NGN). |
+| `status` | `text` | NO | `'completed'::text` | Lifecycle status indicator tracking the current state of hp_bundle_purchases record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `hp_bundle_purchases_event_host_id_idx` ON (`event_host_id`)
@@ -14662,17 +13514,17 @@ expires_at`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `hp_amount` | `integer` | NO | `NULL` |
-| `price_naira` | `numeric(10,2)` | NO | `NULL` |
-| `total_price` | `numeric(10,2)` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `sort_order` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_bundles record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the hp_bundles entity. |
+| `hp_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `price_naira` | `numeric(10,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `total_price` | `numeric(10,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `description` | `text` | YES | `NULL` | Data field storing description for hp_bundles record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for hp_bundles record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_hp_bundles_active` ON (`is_active`)
@@ -14692,16 +13544,16 @@ expires_at`)
 - **Foreign Keys:** `hp_transaction_id` → `hp_transactions.id`, `notification_id` → `notifications.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `hp_transaction_id` | `uuid` | YES | `NULL` |
-| `expired_amount` | `integer` | NO | `NULL` |
-| `previous_balance` | `integer` | NO | `NULL` |
-| `reason` | `text` | NO | `NULL` |
-| `notification_id` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_expiry_log record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `hp_transaction_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `expired_amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `previous_balance` | `integer` | NO | `NULL` | Data field storing previous balance for hp_expiry_log record. |
+| `reason` | `text` | NO | `NULL` | Data field storing reason for hp_expiry_log record. |
+| `notification_id` | `uuid` | YES | `NULL` | Data field storing notification id for hp_expiry_log record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_hp_expiry_log_hp_tx_id` ON (`hp_transaction_id`)
@@ -14722,19 +13574,19 @@ created_at DESC`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `min_points` | `integer` | NO | `0` |
-| `maintenance_points` | `integer` | NO | `0` |
-| `earn_multiplier` | `numeric(8,2)` | NO | `1` |
-| `benefits` | `jsonb` | NO | `'{}'::jsonb` |
-| `sort_order` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `slug` | `text` | YES | `NULL` |
-| `badge_color_hex` | `text` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_tiers record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the hp_tiers entity. |
+| `min_points` | `integer` | NO | `0` | Data field storing min points for hp_tiers record. |
+| `maintenance_points` | `integer` | NO | `0` | Data field storing maintenance points for hp_tiers record. |
+| `earn_multiplier` | `numeric(8,2)` | NO | `1` | Data field storing earn multiplier for hp_tiers record. |
+| `benefits` | `jsonb` | NO | `'{}'::jsonb` | Data field storing benefits for hp_tiers record. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for hp_tiers record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `slug` | `text` | YES | `NULL` | Data field storing slug for hp_tiers record. |
+| `badge_color_hex` | `text` | YES | `NULL` | Data field storing badge color hex for hp_tiers record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
 
 **Indexes:**
 - `idx_hp_tiers_sort` ON (`sort_order`)
@@ -14762,21 +13614,21 @@ created_at DESC`)
 - **Foreign Keys:** `issued_by_admin_id` → `profiles.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `type` | `text` | NO | `NULL` |
-| `amount` | `integer` | NO | `NULL` |
-| `balance_after` | `integer` | NO | `NULL` |
-| `source` | `text` | NO | `NULL` |
-| `reference_type` | `text` | YES | `NULL` |
-| `reference_id` | `uuid` | YES | `NULL` |
-| `issued_by_admin_id` | `uuid` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `expires_at` | `timestamp with time zone` | YES | `NULL` |
-| `remaining_amount` | `integer, status character varying(20)` | NO | `'active'::character varying` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the hp_transactions record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `type` | `text` | NO | `NULL` | Data field storing type for hp_transactions record. |
+| `amount` | `integer` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `balance_after` | `integer` | NO | `NULL` | Data field storing balance after for hp_transactions record. |
+| `source` | `text` | NO | `NULL` | Data field storing source for hp_transactions record. |
+| `reference_type` | `text` | YES | `NULL` | Data field storing reference type for hp_transactions record. |
+| `reference_id` | `uuid` | YES | `NULL` | Data field storing reference id for hp_transactions record. |
+| `issued_by_admin_id` | `uuid` | YES | `NULL` | Data field storing issued by admin id for hp_transactions record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `expires_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when expires occurred. |
+| `remaining_amount` | `integer, status character varying(20)` | NO | `'active'::character varying` | Monetary value stored in Naira (NGN). |
 
 **Indexes:**
 - `hp_transactions_unique_business_key_idx` ON (`user_id,
@@ -14815,12 +13667,12 @@ reference_type, reference_id`)
 - **Foreign Keys:** `updated_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `key` | `text` | NO | `NULL` |
-| `value` | `text` | NO | `''::text` |
-| `updated_at` | `timestamp with time zone` | YES | `now()` |
-| `updated_by` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `key` | `text` | NO | `NULL` | Data field storing key for kitchen_settings record. |
+| `value` | `text` | NO | `''::text` | Data field storing value for kitchen_settings record. |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for kitchen_settings record. |
 
 **Indexes:**
 - `idx_kitchen_settings_updated_by` ON (`updated_by`)
@@ -14837,17 +13689,17 @@ kitchen_settings`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `period` | `text` | NO | `NULL` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `rank` | `integer` | NO | `NULL` |
-| `hp_total` | `integer` | NO | `0` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `order_count` | `integer` | NO | `0` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_entries record. |
+| `period` | `text` | NO | `NULL` | Data field storing period for leaderboard_entries record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `rank` | `integer` | NO | `NULL` | Data field storing rank for leaderboard_entries record. |
+| `hp_total` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `order_count` | `integer` | NO | `0` | Data field storing order count for leaderboard_entries record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_leaderboard_entries_user_id` ON (`user_id`)
@@ -14869,20 +13721,20 @@ rank`)
 - **Foreign Keys:** `fulfilled_by` → `profiles.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `rank` | `integer` | NO | `NULL` |
-| `month` | `text` | NO | `NULL` |
-| `reward_type` | `text` | NO | `'leaderboard_prize'::text` |
-| `free_sides` | `integer` | NO | `0` |
-| `free_spins` | `integer` | NO | `0` |
-| `status` | `text` | NO | `'pending'::text` |
-| `notes` | `text` | YES | `NULL` |
-| `fulfilled_by` | `uuid` | YES | `NULL` |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_reward_fulfillments record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `rank` | `integer` | NO | `NULL` | Data field storing rank for leaderboard_reward_fulfillments record. |
+| `month` | `text` | NO | `NULL` | Data field storing month for leaderboard_reward_fulfillments record. |
+| `reward_type` | `text` | NO | `'leaderboard_prize'::text` | Data field storing reward type for leaderboard_reward_fulfillments record. |
+| `free_sides` | `integer` | NO | `0` | Data field storing free sides for leaderboard_reward_fulfillments record. |
+| `free_spins` | `integer` | NO | `0` | Data field storing free spins for leaderboard_reward_fulfillments record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of leaderboard_reward_fulfillments record. |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for leaderboard_reward_fulfillments record. |
+| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for leaderboard_reward_fulfillments record. |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_lb_fulfillments_month` ON (`month`)
@@ -14901,14 +13753,14 @@ rank`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `period_key` | `text` | NO | `NULL` |
-| `ranking_type` | `text` | NO | `'weekly'::text` |
-| `entries` | `jsonb` | NO | `NULL` |
-| `prizes_awarded` | `jsonb` | NO | `'[]'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the leaderboard_snapshots record. |
+| `period_key` | `text` | NO | `NULL` | Data field storing period key for leaderboard_snapshots record. |
+| `ranking_type` | `text` | NO | `'weekly'::text` | Data field storing ranking type for leaderboard_snapshots record. |
+| `entries` | `jsonb` | NO | `NULL` | Data field storing entries for leaderboard_snapshots record. |
+| `prizes_awarded` | `jsonb` | NO | `'[]'::jsonb` | Data field storing prizes awarded for leaderboard_snapshots record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **RLS Policies:**
 - `leaderboard_snapshots: admins all`
@@ -14921,13 +13773,13 @@ rank`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `week_number` | `integer` | NO | `NULL` |
-| `hp_awarded` | `integer` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the login_streak_rewards record. |
+| `week_number` | `integer` | NO | `NULL` | Data field storing week number for login_streak_rewards record. |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `uq_login_streak_rewards_week` ON (`week_number`)
@@ -14947,15 +13799,17 @@ rank`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `streak_count` | `integer` | NO | `1, last_login_date date` |
-| `last_updated` | `timestamp with time zone` | NO | `now(), current_week_start date` |
-| `week_state` | `jsonb` | NO | `'{}'::jsonb` |
-| `cycle_week_number` | `integer` | NO | `1` |
-| `consecutive_weeks` | `integer` | NO | `0` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the login_streaks record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `streak_count` | `integer` | NO | `1` | Data field storing streak count for login_streaks record. |
+| `last_login_date` | `date` | NO | `CURRENT_DATE` | Timestamp recording when last login date occurred. |
+| `last_updated` | `timestamp with time zone` | NO | `now()` | Timestamp recording when last updated occurred. |
+| `current_week_start` | `date` | YES | `NULL` | Data field storing current week start for login_streaks record. |
+| `week_state` | `jsonb` | NO | `'{}'::jsonb` | Data field storing week state for login_streaks record. |
+| `cycle_week_number` | `integer` | NO | `1` | Data field storing cycle week number for login_streaks record. |
+| `consecutive_weeks` | `integer` | NO | `0` | Data field storing consecutive weeks for login_streaks record. |
 
 **Indexes:**
 - `idx_login_streaks_user` ON (`user_id`)
@@ -14979,16 +13833,16 @@ rank`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `listing_id` | `uuid` | NO | `NULL` |
-| `batch_id` | `uuid` | YES | `NULL` |
-| `code` | `text` | NO | `NULL` |
-| `status` | `text` | NO | `'available'::text` |
-| `assigned_purchase_id` | `uuid` | YES | `NULL` |
-| `assigned_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_access_codes record. |
+| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_access_codes record. |
+| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for marketplace_access_codes record. |
+| `code` | `text` | NO | `NULL` | Data field storing code for marketplace_access_codes record. |
+| `status` | `text` | NO | `'available'::text` | Lifecycle status indicator tracking the current state of marketplace_access_codes record. |
+| `assigned_purchase_id` | `uuid` | YES | `NULL` | Data field storing assigned purchase id for marketplace_access_codes record. |
+| `assigned_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when assigned occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_marketplace_access_codes_status_listing` ON (`status, listing_id`)
@@ -15007,14 +13861,14 @@ all`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `listing_id` | `uuid` | NO | `NULL` |
-| `uploaded_by` | `uuid` | YES | `NULL` |
-| `code_count` | `integer` | NO | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_code_batches record. |
+| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_code_batches record. |
+| `uploaded_by` | `uuid` | YES | `NULL` | Data field storing uploaded by for marketplace_code_batches record. |
+| `code_count` | `integer` | NO | `NULL` | Data field storing code count for marketplace_code_batches record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_mkt_code_batches_listing_id` ON (`listing_id`)
@@ -15031,35 +13885,35 @@ all`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `title` | `text` | NO | `NULL` |
-| `slug` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `vendor_name` | `text` | NO | `NULL` |
-| `listing_type` | `text` | NO | `NULL` |
-| `price` | `numeric(14,2)` | NO | `0` |
-| `hp_price` | `integer` | YES | `NULL` |
-| `image_url` | `text` | YES | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `approved_by` | `uuid` | YES | `NULL` |
-| `approved_at` | `timestamp with time zone` | YES | `NULL` |
-| `rejection_reason` | `text` | YES | `NULL` |
-| `inventory_count` | `integer` | YES | `NULL` |
-| `low_inventory_threshold` | `integer` | YES | `NULL` |
-| `is_out_of_stock` | `boolean` | NO | `false` |
-| `min_tier_id` | `uuid` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `is_featured` | `boolean` | NO | `false` |
-| `sort_order` | `integer` | NO | `0` |
-| `available_from` | `timestamp with time zone` | YES | `NULL` |
-| `available_until` | `timestamp with time zone` | YES | `NULL` |
-| `vendor_contact_email` | `citext` | YES | `NULL` |
-| `cash_price` | `numeric(10,2)` | YES | `NULL::numeric` |
-| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_listings record. |
+| `title` | `text` | NO | `NULL` | Data field storing title for marketplace_listings record. |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for marketplace_listings record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for marketplace_listings record. |
+| `vendor_name` | `text` | NO | `NULL` | Human-readable display name of the marketplace_listings entity. |
+| `listing_type` | `text` | NO | `NULL` | Data field storing listing type for marketplace_listings record. |
+| `price` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `hp_price` | `integer` | YES | `NULL` | Monetary value stored in Naira (NGN). |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for marketplace_listings record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of marketplace_listings record. |
+| `approved_by` | `uuid` | YES | `NULL` | Data field storing approved by for marketplace_listings record. |
+| `approved_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when approved occurred. |
+| `rejection_reason` | `text` | YES | `NULL` | Data field storing rejection reason for marketplace_listings record. |
+| `inventory_count` | `integer` | YES | `NULL` | Data field storing inventory count for marketplace_listings record. |
+| `low_inventory_threshold` | `integer` | YES | `NULL` | Data field storing low inventory threshold for marketplace_listings record. |
+| `is_out_of_stock` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `min_tier_id` | `uuid` | YES | `NULL` | Data field storing min tier id for marketplace_listings record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `is_featured` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for marketplace_listings record. |
+| `available_from` | `timestamp with time zone` | YES | `NULL` | Data field storing available from for marketplace_listings record. |
+| `available_until` | `timestamp with time zone` | YES | `NULL` | Data field storing available until for marketplace_listings record. |
+| `vendor_contact_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. |
+| `cash_price` | `numeric(10,2)` | YES | `NULL::numeric` | Monetary value stored in Naira (NGN). |
+| `total_value` | `numeric(10,2)` | YES | `NULL::numeric` | Data field storing total value for marketplace_listings record. |
 
 **Indexes:**
 - `idx_marketplace_active` ON (`sort_order, created_at`)
@@ -15081,24 +13935,24 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `listing_id` | `uuid` | NO | `NULL` |
-| `quantity` | `integer` | NO | `1` |
-| `pay_with_hp` | `boolean` | NO | `false` |
-| `status` | `text` | NO | `'pending'::text` |
-| `is_fulfilled` | `boolean` | NO | `false` |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `payment_method` | `text` | YES | `NULL` |
-| `wallet_amount` | `numeric(12,2)` | NO | `0` |
-| `card_amount` | `numeric(12,2)` | NO | `0` |
-| `payment_reference` | `text` | YES | `NULL` |
-| `wallet_tx_id` | `uuid` | YES | `NULL` |
-| `hp_tx_id` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_purchases record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `listing_id` | `uuid` | NO | `NULL` | Data field storing listing id for marketplace_purchases record. |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for marketplace_purchases record. |
+| `pay_with_hp` | `boolean` | NO | `false` | Loyalty points value (Holy Points). |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of marketplace_purchases record. |
+| `is_fulfilled` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `payment_method` | `text` | YES | `NULL` | Data field storing payment method for marketplace_purchases record. |
+| `wallet_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `card_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `payment_reference` | `text` | YES | `NULL` | Data field storing payment reference for marketplace_purchases record. |
+| `wallet_tx_id` | `uuid` | YES | `NULL` | Data field storing wallet tx id for marketplace_purchases record. |
+| `hp_tx_id` | `uuid` | YES | `NULL` | Loyalty points value (Holy Points). |
 
 **Indexes:**
 - `idx_marketplace_purchases_listing` ON (`listing_id`)
@@ -15119,22 +13973,22 @@ own`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `vendor_name` | `text` | NO | `NULL` |
-| `vendor_email` | `text` | NO | `NULL` |
-| `vendor_phone` | `text` | YES | `NULL` |
-| `service_title` | `text` | NO | `NULL` |
-| `category` | `text` | NO | `NULL` |
-| `description` | `text` | NO | `NULL` |
-| `proposed_price` | `numeric` | NO | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `admin_notes` | `text` | YES | `NULL` |
-| `reviewed_by` | `uuid` | YES | `NULL` |
-| `reviewed_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the marketplace_requests record. |
+| `vendor_name` | `text` | NO | `NULL` | Human-readable display name of the marketplace_requests entity. |
+| `vendor_email` | `text` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
+| `vendor_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
+| `service_title` | `text` | NO | `NULL` | Data field storing service title for marketplace_requests record. |
+| `category` | `text` | NO | `NULL` | Data field storing category for marketplace_requests record. |
+| `description` | `text` | NO | `NULL` | Data field storing description for marketplace_requests record. |
+| `proposed_price` | `numeric` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of marketplace_requests record. |
+| `admin_notes` | `text` | YES | `NULL` | Data field storing admin notes for marketplace_requests record. |
+| `reviewed_by` | `uuid` | YES | `NULL` | Data field storing reviewed by for marketplace_requests record. |
+| `reviewed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when reviewed occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_marketplace_requests_reviewed_by` ON (`reviewed_by`)
@@ -15151,13 +14005,13 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `months` | `integer` | NO | `NULL` |
-| `hp_awarded` | `integer` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the membership_rewards record. |
+| `months` | `integer` | NO | `NULL` | Data field storing months for membership_rewards record. |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `uq_membership_rewards_months` ON (`months`)
@@ -15177,17 +14031,17 @@ created_at DESC`)
 - **Foreign Keys:** `menu_item_id` → `menu_items.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `menu_item_id` | `uuid` | NO | `NULL` |
-| `name` | `text` | NO | `NULL` |
-| `is_required` | `boolean` | NO | `false` |
-| `min_select` | `integer` | NO | `0` |
-| `max_select` | `integer` | NO | `1` |
-| `sort_order` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_addon_groups record. |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for menu_addon_groups record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_addon_groups entity. |
+| `is_required` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `min_select` | `integer` | NO | `0` | Data field storing min select for menu_addon_groups record. |
+| `max_select` | `integer` | NO | `1` | Data field storing max select for menu_addon_groups record. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for menu_addon_groups record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_menu_addon_groups_item` ON (`menu_item_id`)
@@ -15210,18 +14064,18 @@ created_at DESC`)
 - **Foreign Keys:** `group_id` → `menu_addon_groups.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `''::text` |
-| `price` | `numeric(10,2)` | NO | `0` |
-| `is_available` | `boolean` | YES | `true` |
-| `is_archived` | `boolean` | YES | `false` |
-| `sort_order` | `integer` | YES | `0` |
-| `created_at` | `timestamp with time zone` | YES | `now()` |
-| `updated_at` | `timestamp with time zone` | YES | `now()` |
-| `group_id` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_addons record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_addons entity. |
+| `description` | `text` | YES | `''::text` | Data field storing description for menu_addons record. |
+| `price` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `is_available` | `boolean` | YES | `true` | Boolean toggle flag. |
+| `is_archived` | `boolean` | YES | `false` | Boolean toggle flag. |
+| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_addons record. |
+| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
+| `group_id` | `uuid` | YES | `NULL` | Data field storing group id for menu_addons record. |
 
 **Indexes:**
 - `idx_menu_addons_available` ON (`is_available,
@@ -15242,15 +14096,15 @@ menu_addons`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `slug` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `sort_order` | `integer` | NO | `0` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_categories record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_categories entity. |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for menu_categories record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for menu_categories record. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for menu_categories record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_menu_categories_active` ON (`sort_order`)
@@ -15269,16 +14123,16 @@ menu_addons`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `menu_item_id` | `uuid` | NO | `NULL` |
-| `name` | `text` | NO | `NULL` |
-| `is_required` | `boolean` | YES | `false` |
-| `min_selections` | `integer` | YES | `0` |
-| `max_selections` | `integer` | YES | `1` |
-| `sort_order` | `integer` | YES | `0` |
-| `created_at` | `timestamp with time zone` | YES | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_item_variation_groups record. |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for menu_item_variation_groups record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_item_variation_groups entity. |
+| `is_required` | `boolean` | YES | `false` | Boolean toggle flag. |
+| `min_selections` | `integer` | YES | `0` | Data field storing min selections for menu_item_variation_groups record. |
+| `max_selections` | `integer` | YES | `1` | Data field storing max selections for menu_item_variation_groups record. |
+| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_item_variation_groups record. |
+| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_menu_item_variation_groups_item` ON (`menu_item_id`)
@@ -15296,15 +14150,15 @@ menu_item_variation_groups`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `variation_group_id` | `uuid` | NO | `NULL` |
-| `name` | `text` | NO | `NULL` |
-| `price_delta` | `numeric(10,2)` | YES | `0` |
-| `is_available` | `boolean` | YES | `true` |
-| `sort_order` | `integer` | YES | `0` |
-| `created_at` | `timestamp with time zone` | YES | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_item_variation_options record. |
+| `variation_group_id` | `uuid` | NO | `NULL` | Data field storing variation group id for menu_item_variation_options record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_item_variation_options entity. |
+| `price_delta` | `numeric(10,2)` | YES | `0` | Monetary value stored in Naira (NGN). |
+| `is_available` | `boolean` | YES | `true` | Boolean toggle flag. |
+| `sort_order` | `integer` | YES | `0` | Data field storing sort order for menu_item_variation_options record. |
+| `created_at` | `timestamp with time zone` | YES | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_menu_item_variation_options_group` ON (`variation_group_id`)
@@ -15326,26 +14180,26 @@ variation_options`
 - **Foreign Keys:** `category_id` → `menu_categories.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `category_id` | `uuid` | NO | `NULL` |
-| `name` | `text` | NO | `NULL` |
-| `slug` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `image_url` | `text` | YES | `NULL` |
-| `price` | `numeric(14,2)` | NO | `NULL` |
-| `hp_earn` | `integer` | NO | `0` |
-| `is_available` | `boolean` | NO | `true` |
-| `is_featured` | `boolean` | NO | `false` |
-| `tags` | `text[]` | NO | `'{}'::text[]` |
-| `options` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `deleted_at` | `timestamp with time zone` | YES | `NULL` |
-| `daily_limit` | `integer` | YES | `NULL` |
-| `hp_earn_value` | `integer` | YES | `0` |
-| `hp_multiplier` | `numeric(3,2)` | NO | `1.0` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the menu_items record. |
+| `category_id` | `uuid` | NO | `NULL` | Data field storing category id for menu_items record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the menu_items entity. |
+| `slug` | `text` | NO | `NULL` | Data field storing slug for menu_items record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for menu_items record. |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for menu_items record. |
+| `price` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `hp_earn` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `is_available` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `is_featured` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `tags` | `text[]` | NO | `'{}'::text[]` | Data field storing tags for menu_items record. |
+| `options` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options for menu_items record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `deleted_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when deleted occurred. |
+| `daily_limit` | `integer` | YES | `NULL` | Data field storing daily limit for menu_items record. |
+| `hp_earn_value` | `integer` | YES | `0` | Loyalty points value (Holy Points). |
+| `hp_multiplier` | `numeric(3,2)` | NO | `1.0` | Loyalty points value (Holy Points). |
 
 **Indexes:**
 - `idx_menu_items_available` ON (`category_id`)
@@ -15377,23 +14231,23 @@ variation_options`
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `title` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `trigger_type` | `text` | NO | `NULL` |
-| `trigger_value` | `integer` | NO | `1` |
-| `hp_awarded` | `integer` | NO | `0` |
-| `time_window` | `text` | YES | `NULL` |
-| `icon_won` | `text` | YES | `NULL` |
-| `icon_locked` | `text` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_by` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `social_link` | `text` | YES | `NULL` |
-| `trigger_meta` | `jsonb` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the milestones record. |
+| `title` | `text` | NO | `NULL` | Data field storing title for milestones record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for milestones record. |
+| `trigger_type` | `text` | NO | `NULL` | Data field storing trigger type for milestones record. |
+| `trigger_value` | `integer` | NO | `1` | Data field storing trigger value for milestones record. |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `time_window` | `text` | YES | `NULL` | Data field storing time window for milestones record. |
+| `icon_won` | `text` | YES | `NULL` | Data field storing icon won for milestones record. |
+| `icon_locked` | `text` | YES | `NULL` | Data field storing icon locked for milestones record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for milestones record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `social_link` | `text` | YES | `NULL` | Data field storing social link for milestones record. |
+| `trigger_meta` | `jsonb` | YES | `NULL` | Data field storing trigger meta for milestones record. |
 
 **Indexes:**
 - `idx_milestones_created_by` ON (`created_by`)
@@ -15414,13 +14268,13 @@ is_active`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `month` | `text` | NO | `NULL` |
-| `total_earned` | `integer` | NO | `0` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the monthly_hp_tracker record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `month` | `text` | NO | `NULL` | Data field storing month for monthly_hp_tracker record. |
+| `total_earned` | `integer` | NO | `0` | Data field storing total earned for monthly_hp_tracker record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_monthly_hp_tracker_user_month` ON (`user_id,
@@ -15437,18 +14291,18 @@ month`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` |
-| `email` | `citext` | NO | `NULL` |
-| `full_name` | `text` | YES | `NULL` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `source` | `text` | NO | `'website'::text` |
-| `tags` | `text[]` | NO | `'{}'::text[]` |
-| `is_confirmed` | `boolean` | NO | `false` |
-| `confirmed_at` | `timestamp with time zone` | YES | `NULL` |
-| `unsubscribed_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the newsletter_subscriptions record. |
+| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
+| `full_name` | `text` | YES | `NULL` | Human-readable display name of the newsletter_subscriptions entity. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `source` | `text` | NO | `'website'::text` | Data field storing source for newsletter_subscriptions record. |
+| `tags` | `text[]` | NO | `'{}'::text[]` | Data field storing tags for newsletter_subscriptions record. |
+| `is_confirmed` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when confirmed occurred. |
+| `unsubscribed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when unsubscribed occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_newsletter_user_id` ON (`user_id`)
@@ -15466,19 +14320,19 @@ insert`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `title` | `text` | NO | `NULL` |
-| `body` | `text` | NO | `NULL` |
-| `channels` | `text[]` | NO | `'{}'::text[]` |
-| `segment` | `jsonb` | NO | `'{}'::jsonb` |
-| `action_url` | `text` | YES | `NULL` |
-| `scheduled_at` | `timestamp with time zone` | YES | `NULL` |
-| `status` | `text` | NO | `'draft'::text` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_by` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_blasts record. |
+| `title` | `text` | NO | `NULL` | Data field storing title for notification_blasts record. |
+| `body` | `text` | NO | `NULL` | Data field storing body for notification_blasts record. |
+| `channels` | `text[]` | NO | `'{}'::text[]` | Data field storing channels for notification_blasts record. |
+| `segment` | `jsonb` | NO | `'{}'::jsonb` | Data field storing segment for notification_blasts record. |
+| `action_url` | `text` | YES | `NULL` | Data field storing action url for notification_blasts record. |
+| `scheduled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when scheduled occurred. |
+| `status` | `text` | NO | `'draft'::text` | Lifecycle status indicator tracking the current state of notification_blasts record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for notification_blasts record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_notification_blasts_created_by` ON (`created_by`)
@@ -15494,18 +14348,18 @@ insert`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `notification_id` | `uuid` | YES | `NULL` |
-| `blast_id` | `uuid` | YES | `NULL` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `channel` | `text` | NO | `NULL` |
-| `status` | `text` | NO | `'queued'::text` |
-| `provider_message_id` | `text` | YES | `NULL` |
-| `error_message` | `text` | YES | `NULL` |
-| `delivered_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_deliveries record. |
+| `notification_id` | `uuid` | YES | `NULL` | Data field storing notification id for notification_deliveries record. |
+| `blast_id` | `uuid` | YES | `NULL` | Data field storing blast id for notification_deliveries record. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `channel` | `text` | NO | `NULL` | Data field storing channel for notification_deliveries record. |
+| `status` | `text` | NO | `'queued'::text` | Lifecycle status indicator tracking the current state of notification_deliveries record. |
+| `provider_message_id` | `text` | YES | `NULL` | Data field storing provider message id for notification_deliveries record. |
+| `error_message` | `text` | YES | `NULL` | Data field storing error message for notification_deliveries record. |
+| `delivered_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when delivered occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_notification_deliveries_blast_id` ON (`blast_id`)
@@ -15527,12 +14381,12 @@ insert`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `type` | `text` | NO | `NULL` |
-| `sent_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_log record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `type` | `text` | NO | `NULL` | Data field storing type for notification_log record. |
+| `sent_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when sent occurred. |
 
 **Indexes:**
 - `idx_notification_log_user_sent` ON (`user_id,
@@ -15550,18 +14404,18 @@ sent_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `push_enabled` | `boolean` | NO | `true` |
-| `email_enabled` | `boolean` | NO | `true` |
-| `order_updates` | `boolean` | NO | `true` |
-| `promotions` | `boolean` | NO | `true` |
-| `hp_updates` | `boolean` | NO | `true` |
-| `delivery_updates` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notification_preferences record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `push_enabled` | `boolean` | NO | `true` | Data field storing push enabled for notification_preferences record. |
+| `email_enabled` | `boolean` | NO | `true` | Contact email address used for receipts and notification delivery. |
+| `order_updates` | `boolean` | NO | `true` | Data field storing order updates for notification_preferences record. |
+| `promotions` | `boolean` | NO | `true` | Data field storing promotions for notification_preferences record. |
+| `hp_updates` | `boolean` | NO | `true` | Loyalty points value (Holy Points). |
+| `delivery_updates` | `boolean` | NO | `true` | Data field storing delivery updates for notification_preferences record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **RLS Policies:**
 - `Users manage own notification
@@ -15578,18 +14432,18 @@ preferences`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `title` | `text` | NO | `NULL` |
-| `body` | `text` | NO | `NULL` |
-| `channel` | `text` | NO | `'in_app'::text` |
-| `action_url` | `text` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `read_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `type` | `text` | NO | `'system'::text` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the notifications record. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `title` | `text` | NO | `NULL` | Data field storing title for notifications record. |
+| `body` | `text` | NO | `NULL` | Data field storing body for notifications record. |
+| `channel` | `text` | NO | `'in_app'::text` | Data field storing channel for notifications record. |
+| `action_url` | `text` | YES | `NULL` | Data field storing action url for notifications record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `read_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when read occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `type` | `text` | NO | `'system'::text` | Data field storing type for notifications record. |
 
 **Indexes:**
 - `idx_notifications_unread` ON (`user_id,
@@ -15612,12 +14466,15 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid(), date date` |
-| `is_closed` | `boolean` | NO | `false` |
-| `reason` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the operating_hour_overrides record. |
+| `date` | `date` | NO | `NULL` | Timestamp recording when date occurred. |
+| `opens_at` | `time without time zone` | YES | `NULL` | Timestamp recording when opens occurred. |
+| `closes_at` | `time without time zone` | YES | `NULL` | Timestamp recording when closes occurred. |
+| `is_closed` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `reason` | `text` | YES | `NULL` | Data field storing reason for operating_hour_overrides record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **RLS Policies:**
 - `operating_hour_overrides: admins
@@ -15634,11 +14491,13 @@ read`
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `weekday` | `integer , opens_at time without time zone, closes_at time without time zone` | NO | `NULL` |
-| `is_closed` | `boolean` | NO | `false` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the operating_hours record. |
+| `weekday` | `integer` | NO | `NULL` | Data field storing weekday for operating_hours record. |
+| `opens_at` | `time without time zone` | YES | `NULL` | Timestamp recording when opens occurred. |
+| `closes_at` | `time without time zone` | YES | `NULL` | Timestamp recording when closes occurred. |
+| `is_closed` | `boolean` | NO | `false` | Boolean toggle flag. |
 
 **Unique Constraints:**
 - `operating_hours_weekday_key`: UNIQUE (`weekday`)
@@ -15657,16 +14516,16 @@ read`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_item_id` | `uuid` | NO | `NULL` |
-| `addon_id` | `uuid` | NO | `NULL` |
-| `group_id` | `uuid` | YES | `NULL` |
-| `name_snapshot` | `text` | NO | `NULL` |
-| `price_delta_snapshot` | `numeric(10,2)` | NO | `0` |
-| `quantity` | `integer` | NO | `1` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_addon_selections record. |
+| `order_item_id` | `uuid` | NO | `NULL` | Data field storing order item id for order_addon_selections record. |
+| `addon_id` | `uuid` | NO | `NULL` | Data field storing addon id for order_addon_selections record. |
+| `group_id` | `uuid` | YES | `NULL` | Data field storing group id for order_addon_selections record. |
+| `name_snapshot` | `text` | NO | `NULL` | Human-readable display name of the order_addon_selections entity. |
+| `price_delta_snapshot` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for order_addon_selections record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_order_addon_selections_addon_id` ON (`addon_id`)
@@ -15688,22 +14547,22 @@ selections`
 - **Foreign Keys:** `addon_id` → `menu_addons.id`, `menu_item_id` → `menu_items.id`, `order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `menu_item_id` | `uuid` | YES | `NULL` |
-| `name_snapshot` | `text` | NO | `NULL` |
-| `price_snapshot` | `numeric(14,2)` | NO | `NULL` |
-| `hp_earn_snapshot` | `integer` | NO | `0` |
-| `quantity` | `integer` | NO | `NULL` |
-| `options_snapshot` | `jsonb` | NO | `'{}'::jsonb` |
-| `line_total` | `numeric(14,2)` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `selected_variations` | `jsonb` | YES | `'[]'::jsonb` |
-| `is_addon` | `boolean` | YES | `false` |
-| `addon_id` | `uuid` | YES | `NULL` |
-| `hp_multiplier_snapshot` | `numeric(3,2)` | NO | `1.0` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_items record. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_items record. |
+| `menu_item_id` | `uuid` | YES | `NULL` | Data field storing menu item id for order_items record. |
+| `name_snapshot` | `text` | NO | `NULL` | Human-readable display name of the order_items entity. |
+| `price_snapshot` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `hp_earn_snapshot` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `quantity` | `integer` | NO | `NULL` | Data field storing quantity for order_items record. |
+| `options_snapshot` | `jsonb` | NO | `'{}'::jsonb` | Data field storing options snapshot for order_items record. |
+| `line_total` | `numeric(14,2)` | NO | `0` | Data field storing line total for order_items record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `selected_variations` | `jsonb` | YES | `'[]'::jsonb` | Data field storing selected variations for order_items record. |
+| `is_addon` | `boolean` | YES | `false` | Boolean toggle flag. |
+| `addon_id` | `uuid` | YES | `NULL` | Data field storing addon id for order_items record. |
+| `hp_multiplier_snapshot` | `numeric(3,2)` | NO | `1.0` | Frozen snapshot of menu item HP earn multiplier at checkout time to preserve historical calculations. |
 
 **Indexes:**
 - `idx_order_items_addon_id` ON (`addon_id`)
@@ -15729,19 +14588,20 @@ selections`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid , locked_date date` | NO | `NULL` |
-| `discount_pct` | `numeric(5,2)` | NO | `10` |
-| `status` | `text` | NO | `'active'::text` |
-| `reminder_sent_at` | `timestamp with time zone` | YES | `NULL` |
-| `reschedule_count` | `integer` | NO | `0` |
-| `order_id` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `reward_type` | `text` | NO | `'discount'::text` |
-| `reward_hp_amount` | `integer` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_locks record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `locked_date` | `date` | NO | `NULL` | Timestamp recording when locked date occurred. |
+| `discount_pct` | `numeric(5,2)` | NO | `10` | Data field storing discount pct for order_locks record. |
+| `status` | `text` | NO | `'active'::text` | Lifecycle status indicator tracking the current state of order_locks record. |
+| `reminder_sent_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when reminder sent occurred. |
+| `reschedule_count` | `integer` | NO | `0` | Data field storing reschedule count for order_locks record. |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for order_locks record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `reward_type` | `text` | NO | `'discount'::text` | Data field storing reward type for order_locks record. |
+| `reward_hp_amount` | `integer` | YES | `NULL` | Monetary value stored in Naira (NGN). |
 
 **Indexes:**
 - `idx_order_locks_locked_date` ON (`locked_date`)
@@ -15769,19 +14629,21 @@ selections`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `rating` | `integer` | NO | `NULL` |
-| `comment` | `text` | YES | `NULL` |
-| `hp_rewarded` | `integer` | NO | `30` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `image_urls` | `text[]` | NO | `'{}'::text[]` |
-| `is_flagged` | `boolean` | NO | `false` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `hp_awarded` | `integer , kitchen_rating smallint, rider_rating smallint` | NO | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_reviews record. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_reviews record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `rating` | `integer` | NO | `NULL` | Data field storing rating for order_reviews record. |
+| `comment` | `text` | YES | `NULL` | Data field storing comment for order_reviews record. |
+| `hp_rewarded` | `integer` | NO | `30` | Loyalty points value (Holy Points). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `image_urls` | `text[]` | NO | `'{}'::text[]` | Data field storing image urls for order_reviews record. |
+| `is_flagged` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
+| `kitchen_rating` | `smallint` | YES | `NULL` | Data field storing kitchen rating for order_reviews record. |
+| `rider_rating` | `smallint` | YES | `NULL` | Data field storing rider rating for order_reviews record. |
 
 **Indexes:**
 - `idx_order_reviews_kitchen_rating` ON (`kitchen_rating`)
@@ -15809,14 +14671,14 @@ selections`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `platform` | `text` | NO | `'whatsapp'::text` |
-| `hp_awarded` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_share_events record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_share_events record. |
+| `platform` | `text` | NO | `'whatsapp'::text` | Data field storing platform for order_share_events record. |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_order_share_events_order_id` ON (`order_id`)
@@ -15838,15 +14700,15 @@ created_at DESC`)
 - **Foreign Keys:** `changed_by` → `profiles.id`, `order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `status` | `order_status` | NO | `NULL` |
-| `changed_by` | `uuid` | YES | `NULL` |
-| `note` | `text` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_status_logs record. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for order_status_logs record. |
+| `status` | `order_status` | NO | `NULL` | Lifecycle status indicator tracking the current state of order_status_logs record. |
+| `changed_by` | `uuid` | YES | `NULL` | Data field storing changed by for order_status_logs record. |
+| `note` | `text` | YES | `NULL` | Data field storing note for order_status_logs record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_order_status_logs_changed_by` ON (`changed_by`)
@@ -15864,13 +14726,13 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `weeks` | `integer` | NO | `NULL` |
-| `hp_awarded` | `integer` | NO | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_streak_rewards record. |
+| `weeks` | `integer` | NO | `NULL` | Data field storing weeks for order_streak_rewards record. |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `uq_order_streak_rewards_weeks` ON (`weeks`)
@@ -15890,14 +14752,14 @@ created_at DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `streak_weeks` | `integer` | NO | `0` |
-| `longest_streak` | `integer` | NO | `0` |
-| `last_order_week` | `text` | YES | `NULL` |
-| `last_updated` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the order_streaks record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `streak_weeks` | `integer` | NO | `0` | Data field storing streak weeks for order_streaks record. |
+| `longest_streak` | `integer` | NO | `0` | Data field storing longest streak for order_streaks record. |
+| `last_order_week` | `text` | YES | `NULL` | Data field storing last order week for order_streaks record. |
+| `last_updated` | `timestamp with time zone` | NO | `now()` | Timestamp recording when last updated occurred. |
 
 **Indexes:**
 - `idx_order_streaks_user` ON (`user_id`)
@@ -15923,58 +14785,58 @@ created_at DESC`)
 - **Foreign Keys:** `batch_id` → `delivery_batches.id`, `delivery_window_id` → `delivery_windows.id`, `promo_code_id` → `promo_codes.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_number` | `text` | NO | `('HG-'::text || upper(substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 10)))` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `guest_name` | `text` | YES | `NULL` |
-| `guest_email` | `citext` | YES | `NULL` |
-| `guest_phone` | `text` | YES | `NULL` |
-| `status` | `order_status` | NO | `'received'::order_status` |
-| `payment_status` | `payment_status` | NO | `'pending'::payment_status` |
-| `subtotal` | `numeric(14,2)` | NO | `0` |
-| `delivery_fee` | `numeric(14,2)` | NO | `0` |
-| `discount_amount` | `numeric(14,2)` | NO | `0` |
-| `total_amount` | `numeric(14,2)` | NO | `0` |
-| `hp_earned` | `integer` | NO | `0` |
-| `hp_redeemed` | `integer` | NO | `0` |
-| `hp_credited_at` | `timestamp with time zone` | YES | `NULL` |
-| `wallet_amount_used` | `numeric(14,2)` | NO | `0` |
-| `card_amount_used` | `numeric(14,2)` | NO | `0` |
-| `delivery_address_snapshot` | `jsonb` | NO | `'{}'::jsonb` |
-| `delivery_window_id` | `uuid` | YES | `NULL` |
-| `notes` | `text` | YES | `NULL` |
-| `scheduled_for` | `timestamp with time zone` | YES | `NULL` |
-| `payment_confirmed_at` | `timestamp with time zone` | YES | `NULL` |
-| `received_at` | `timestamp with time zone` | YES | `now()` |
-| `paid_at` | `timestamp with time zone` | YES | `NULL` |
-| `preparing_at` | `timestamp with time zone` | YES | `NULL` |
-| `ready_at` | `timestamp with time zone` | YES | `NULL` |
-| `assigned_at` | `timestamp with time zone` | YES | `NULL` |
-| `out_for_delivery_at` | `timestamp with time zone` | YES | `NULL` |
-| `delivered_at` | `timestamp with time zone` | YES | `NULL` |
-| `cancelled_at` | `timestamp with time zone` | YES | `NULL` |
-| `refunded_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `promo_code_id` | `uuid` | YES | `NULL` |
-| `batch_id` | `uuid` | YES | `NULL` |
-| `payment_reference` | `text` | YES | `NULL` |
-| `delivery_attempted_at` | `timestamp with time zone` | YES | `NULL` |
-| `unclaimed_at` | `timestamp with time zone` | YES | `NULL` |
-| `is_squad_order` | `boolean` | NO | `false` |
-| `squad_discount_amount` | `numeric(10,2)` | NO | `0` |
-| `squad_item_count` | `integer` | NO | `0` |
-| `claim_token` | `uuid` | YES | `NULL` |
-| `is_scheduled` | `boolean` | NO | `false` |
-| `gift_included` | `boolean` | NO | `false` |
-| `delivery_type` | `text` | YES | `NULL` |
-| `delivery_location_id` | `uuid` | YES | `NULL` |
-| `delivery_location_lat` | `double precision` | YES | `NULL` |
-| `delivery_location_lon` | `double precision` | YES | `NULL` |
-| `squad_name` | `text` | YES | `NULL` |
-| `idempotency_key` | `text` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the orders record. |
+| `order_number` | `text` | NO | `('HG-'::text || upper(substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 10)))` | Human-readable unique order reference string (e.g., 'HG-9A8B7C6D5E'). |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `guest_name` | `text` | YES | `NULL` | Human-readable display name of the orders entity. |
+| `guest_email` | `citext` | YES | `NULL` | Contact email address used for receipts and notification delivery. |
+| `guest_phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
+| `status` | `order_status` | NO | `'received'::order_status` | Lifecycle status indicator tracking the current state of orders record. |
+| `payment_status` | `payment_status` | NO | `'pending'::payment_status` | Lifecycle status indicator tracking the current state of orders record. |
+| `subtotal` | `numeric(14,2)` | NO | `0` | Sum of menu item and add-on prices before delivery fees and discounts in NGN. |
+| `delivery_fee` | `numeric(14,2)` | NO | `0` | Calculated delivery charge in NGN based on hostel fixed fee or off-campus gate distance. |
+| `discount_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `total_amount` | `numeric(14,2)` | NO | `0` | Final payable order amount in NGN after applying subtotal discounts and adding delivery fee. |
+| `hp_earned` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `hp_redeemed` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `hp_credited_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when earned HP was credited to profile upon order delivery. |
+| `wallet_amount_used` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `card_amount_used` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `delivery_address_snapshot` | `jsonb` | NO | `'{}'::jsonb` | Data field storing delivery address snapshot for orders record. |
+| `delivery_window_id` | `uuid` | YES | `NULL` | Data field storing delivery window id for orders record. |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for orders record. |
+| `scheduled_for` | `timestamp with time zone` | YES | `NULL` | Data field storing scheduled for for orders record. |
+| `payment_confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when payment confirmed occurred. |
+| `received_at` | `timestamp with time zone` | YES | `now()` | Timestamp recording when received occurred. |
+| `paid_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when paid occurred. |
+| `preparing_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when preparing occurred. |
+| `ready_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ready occurred. |
+| `assigned_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when assigned occurred. |
+| `out_for_delivery_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when out for delivery occurred. |
+| `delivered_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when delivered occurred. |
+| `cancelled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when cancelled occurred. |
+| `refunded_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when refunded occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `promo_code_id` | `uuid` | YES | `NULL` | Data field storing promo code id for orders record. |
+| `batch_id` | `uuid` | YES | `NULL` | Data field storing batch id for orders record. |
+| `payment_reference` | `text` | YES | `NULL` | Data field storing payment reference for orders record. |
+| `delivery_attempted_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when deliverytempted occurred. |
+| `unclaimed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when unclaimed occurred. |
+| `is_squad_order` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `squad_discount_amount` | `numeric(10,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `squad_item_count` | `integer` | NO | `0` | Data field storing squad item count for orders record. |
+| `claim_token` | `uuid` | YES | `NULL` | Data field storing claim token for orders record. |
+| `is_scheduled` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `gift_included` | `boolean` | NO | `false` | Data field storing gift included for orders record. |
+| `delivery_type` | `text` | YES | `NULL` | Data field storing delivery type for orders record. |
+| `delivery_location_id` | `uuid` | YES | `NULL` | Data field storing delivery location id for orders record. |
+| `delivery_location_lat` | `double precision` | YES | `NULL` | Data field storing delivery location lat for orders record. |
+| `delivery_location_lon` | `double precision` | YES | `NULL` | Data field storing delivery location lon for orders record. |
+| `squad_name` | `text` | YES | `NULL` | Human-readable display name of the orders entity. |
+| `idempotency_key` | `text` | YES | `NULL` | Data field storing idempotency key for orders record. |
 
 **Indexes:**
 - `idx_orders_active` ON (`user_id, status, created_at DESC`)
@@ -16023,20 +14885,20 @@ DESC`)
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_id` | `uuid` | YES | `NULL` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `provider` | `text` | NO | `NULL` |
-| `reference` | `text` | NO | `NULL` |
-| `amount` | `numeric(14,2)` | NO | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `confirmed_at` | `timestamp with time zone` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `failure_reason` | `text` | YES | `NULL` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the payments record. |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for payments record. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `provider` | `text` | NO | `NULL` | Data field storing provider for payments record. |
+| `reference` | `text` | NO | `NULL` | Data field storing reference for payments record. |
+| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of payments record. |
+| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when confirmed occurred. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for payments record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_payments_order_id` ON (`order_id`)
@@ -16066,45 +14928,46 @@ DESC`)
 - **Foreign Keys:** `campus_id` → `campuses.id`, `current_tier_id` → `hp_tiers.id`, `deactivated_by` → `profiles.id`, `department_id` → `departments.id`, `referred_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `NULL` |
-| `email` | `citext` | NO | `NULL` |
-| `full_name` | `text` | YES | `NULL` |
-| `phone` | `text, date_of_birth date` | YES | `NULL` |
-| `faculty` | `text` | YES | `NULL` |
-| `department` | `text` | YES | `NULL` |
-| `photo_url` | `text` | YES | `NULL` |
-| `role` | `user_role` | NO | `'student'::user_role` |
-| `preferences` | `jsonb` | NO | `'{}'::jsonb` |
-| `hp_balance` | `integer` | NO | `0` |
-| `wallet_balance` | `numeric(14,2)` | NO | `0` |
-| `current_tier_id` | `uuid` | YES | `NULL` |
-| `tier_grace_started_at` | `timestamp with time zone` | YES | `NULL` |
-| `tier_lost_at` | `timestamp with time zone` | YES | `NULL` |
-| `referral_code` | `text` | YES | `NULL` |
-| `onboarding_completed_at` | `timestamp with time zone` | YES | `NULL` |
-| `last_seen_at` | `timestamp with time zone` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `push_enabled` | `boolean` | NO | `false` |
-| `email_notifications` | `boolean` | NO | `true` |
-| `has_scheduled_order` | `boolean` | NO | `false` |
-| `deactivated_at` | `timestamp with time zone` | YES | `NULL` |
-| `deactivated_by` | `uuid` | YES | `NULL` |
-| `referred_by` | `uuid` | YES | `NULL` |
-| `tier_grace_ends_at` | `timestamp with time zone` | YES | `NULL` |
-| `last_hp_activity_at` | `timestamp with time zone` | YES | `NULL` |
-| `deactivation_reason` | `text` | YES | `NULL` |
-| `jwt_version` | `integer` | NO | `0` |
-| `last_activity_at` | `timestamp with time zone` | YES | `NULL` |
-| `hp_earned_120day` | `integer` | NO | `0` |
-| `graduation_claimed` | `boolean` | NO | `false` |
-| `top4_finish_count` | `integer` | NO | `0` |
-| `academic_level` | `text` | YES | `NULL` |
-| `department_id` | `uuid` | YES | `NULL` |
-| `campus_id` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `NULL` | Primary key UUID unique identifier for the profiles record. |
+| `email` | `citext` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
+| `full_name` | `text` | YES | `NULL` | Human-readable display name of the profiles entity. |
+| `phone` | `text` | YES | `NULL` | Contact phone number used for delivery alerts and SMS. |
+| `date_of_birth` | `date` | YES | `NULL` | Timestamp recording when date of birth occurred. |
+| `faculty` | `text` | YES | `NULL` | Data field storing faculty for profiles record. |
+| `department` | `text` | YES | `NULL` | Data field storing department for profiles record. |
+| `photo_url` | `text` | YES | `NULL` | Data field storing photo url for profiles record. |
+| `role` | `user_role` | NO | `'student'::user_role` | Data field storing role for profiles record. |
+| `preferences` | `jsonb` | NO | `'{}'::jsonb` | Data field storing preferences for profiles record. |
+| `hp_balance` | `integer` | NO | `0` | Current spendable active loyalty points balance. |
+| `wallet_balance` | `numeric(14,2)` | NO | `0` | Current spendable cash balance in user's in-app wallet in NGN. |
+| `current_tier_id` | `uuid` | YES | `NULL` | Data field storing current tier id for profiles record. |
+| `tier_grace_started_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when tier grace started occurred. |
+| `tier_lost_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when tier lost occurred. |
+| `referral_code` | `text` | YES | `NULL` | Data field storing referral code for profiles record. |
+| `onboarding_completed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when onboarding completed occurred. |
+| `last_seen_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last seen occurred. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `push_enabled` | `boolean` | NO | `false` | Data field storing push enabled for profiles record. |
+| `email_notifications` | `boolean` | NO | `true` | Contact email address used for receipts and notification delivery. |
+| `has_scheduled_order` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `deactivated_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when deactivated occurred. |
+| `deactivated_by` | `uuid` | YES | `NULL` | Data field storing deactivated by for profiles record. |
+| `referred_by` | `uuid` | YES | `NULL` | Data field storing referred by for profiles record. |
+| `tier_grace_ends_at` | `timestamp with time zone` | YES | `NULL` | Expiration timestamp for 30-day tier grace period when rolling 120-day HP drops below maintenance threshold. |
+| `last_hp_activity_at` | `timestamp with time zone` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `deactivation_reason` | `text` | YES | `NULL` | Data field storing deactivation reason for profiles record. |
+| `jwt_version` | `integer` | NO | `0` | Data field storing jwt version for profiles record. |
+| `last_activity_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last activity occurred. |
+| `hp_earned_120day` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `graduation_claimed` | `boolean` | NO | `false` | Data field storing graduation claimed for profiles record. |
+| `top4_finish_count` | `integer` | NO | `0` | Data field storing top4 finish count for profiles record. |
+| `academic_level` | `text` | YES | `NULL` | Data field storing academic level for profiles record. |
+| `department_id` | `uuid` | YES | `NULL` | Data field storing department id for profiles record. |
+| `campus_id` | `uuid` | YES | `NULL` | Foreign key referencing campuses.id enforcing multi-campus isolation. |
 
 **Indexes:**
 - `idx_profiles_campus_id` ON (`campus_id`)
@@ -16141,14 +15004,14 @@ DESC`)
 - **Foreign Keys:** `order_id` → `orders.id`, `promo_code_id` → `promo_codes.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `promo_code_id` | `uuid` | NO | `NULL` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `order_id` | `uuid` | YES | `NULL` |
-| `discount_amount` | `numeric(14,2)` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the promo_code_uses record. |
+| `promo_code_id` | `uuid` | NO | `NULL` | Data field storing promo code id for promo_code_uses record. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `order_id` | `uuid` | YES | `NULL` | Data field storing order id for promo_code_uses record. |
+| `discount_amount` | `numeric(14,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_promo_code_uses_order` ON (`order_id`)
@@ -16174,25 +15037,25 @@ DESC`)
 - **Foreign Keys:** `created_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `code` | `citext` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `discount_type` | `text` | NO | `NULL` |
-| `discount_value` | `numeric(14,2)` | NO | `NULL` |
-| `scope` | `text` | NO | `'cart'::text` |
-| `applicable_item_ids` | `uuid[]` | NO | `'{}'::uuid[]` |
-| `applicable_category_ids` | `uuid[]` | NO | `'{}'::uuid[]` |
-| `max_uses` | `integer` | YES | `NULL` |
-| `max_uses_per_user` | `integer` | YES | `NULL` |
-| `starts_at` | `timestamp with time zone` | YES | `NULL` |
-| `ends_at` | `timestamp with time zone` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `used_count` | `integer` | NO | `0` |
-| `min_order_amount` | `numeric(12,2)` | NO | `0` |
-| `created_by` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the promo_codes record. |
+| `code` | `citext` | NO | `NULL` | Data field storing code for promo_codes record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for promo_codes record. |
+| `discount_type` | `text` | NO | `NULL` | Data field storing discount type for promo_codes record. |
+| `discount_value` | `numeric(14,2)` | NO | `NULL` | Data field storing discount value for promo_codes record. |
+| `scope` | `text` | NO | `'cart'::text` | Data field storing scope for promo_codes record. |
+| `applicable_item_ids` | `uuid[]` | NO | `'{}'::uuid[]` | Data field storing applicable item ids for promo_codes record. |
+| `applicable_category_ids` | `uuid[]` | NO | `'{}'::uuid[]` | Data field storing applicable category ids for promo_codes record. |
+| `max_uses` | `integer` | YES | `NULL` | Data field storing max uses for promo_codes record. |
+| `max_uses_per_user` | `integer` | YES | `NULL` | Data field storing max uses per user for promo_codes record. |
+| `starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when starts occurred. |
+| `ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when ends occurred. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `used_count` | `integer` | NO | `0` | Data field storing used count for promo_codes record. |
+| `min_order_amount` | `numeric(12,2)` | NO | `0` | Monetary value stored in Naira (NGN). |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for promo_codes record. |
 
 **Indexes:**
 - `idx_promo_codes_active` ON (`code, ends_at`)
@@ -16219,15 +15082,15 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `subscription` | `jsonb` | NO | `NULL` |
-| `device_label` | `text` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the push_subscriptions record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `subscription` | `jsonb` | NO | `NULL` | Data field storing subscription for push_subscriptions record. |
+| `device_label` | `text` | YES | `NULL` | Data field storing device label for push_subscriptions record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_push_subscriptions_active` ON (`user_id`)
@@ -16247,12 +15110,12 @@ active`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `code` | `text` | NO | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referral_codes record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `code` | `text` | NO | `NULL` | Data field storing code for referral_codes record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Unique Constraints:**
 - `referral_codes_code_key`: UNIQUE (`code`)
@@ -16269,15 +15132,15 @@ active`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `referral_count` | `integer` | NO | `NULL` |
-| `hp_awarded` | `integer` | NO | `NULL` |
-| `is_repeating` | `boolean` | NO | `false` |
-| `repeat_interval` | `integer` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referral_milestones record. |
+| `referral_count` | `integer` | NO | `NULL` | Data field storing referral count for referral_milestones record. |
+| `hp_awarded` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
+| `is_repeating` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `repeat_interval` | `integer` | YES | `NULL` | Data field storing repeat interval for referral_milestones record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `uq_referral_milestones_count` ON (`referral_count`)
@@ -16297,15 +15160,15 @@ active`
 - **Foreign Keys:** `referred_user_id` → `profiles.id`, `referrer_id` → `profiles.id`, `trigger_order_id` → `orders.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `referrer_id` | `uuid` | NO | `NULL` |
-| `referred_user_id` | `uuid` | NO | `NULL` |
-| `trigger_order_id` | `uuid` | YES | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `hp_awarded` | `integer` | NO | `0` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the referrals record. |
+| `referrer_id` | `uuid` | NO | `NULL` | Data field storing referrer id for referrals record. |
+| `referred_user_id` | `uuid` | NO | `NULL` | Data field storing referred user id for referrals record. |
+| `trigger_order_id` | `uuid` | YES | `NULL` | Data field storing trigger order id for referrals record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of referrals record. |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_referrals_referred` ON (`referred_user_id`)
@@ -16329,18 +15192,18 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `reward_id` | `uuid` | NO | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `hp_cost_snapshot` | `integer` | YES | `NULL` |
-| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `notes` | `text` | YES | `NULL` |
-| `fulfilled_by` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the reward_redemptions record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `reward_id` | `uuid` | NO | `NULL` | Data field storing reward id for reward_redemptions record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of reward_redemptions record. |
+| `hp_cost_snapshot` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `fulfilled_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when fulfilled occurred. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for reward_redemptions record. |
+| `fulfilled_by` | `uuid` | YES | `NULL` | Data field storing fulfilled by for reward_redemptions record. |
 
 **Indexes:**
 - `idx_reward_redemptions_fulfilled_by` ON (`fulfilled_by`)
@@ -16363,28 +15226,28 @@ created_at DESC`)
 - **Foreign Keys:** `min_tier_id` → `hp_tiers.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `name` | `text` | NO | `NULL` |
-| `description` | `text` | YES | `NULL` |
-| `hp_cost` | `integer` | NO | `NULL` |
-| `reward_type` | `text` | NO | `NULL` |
-| `stock_quantity` | `integer` | YES | `NULL` |
-| `min_tier_id` | `uuid` | YES | `NULL` |
-| `is_active` | `boolean` | NO | `true` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `expires_at` | `timestamp with time zone` | YES | `NULL` |
-| `max_per_user` | `integer` | NO | `1` |
-| `image_url` | `text` | YES | `NULL` |
-| `flash_enabled` | `boolean` | YES | `false` |
-| `flash_hp_cost` | `integer` | YES | `NULL` |
-| `flash_max_qty` | `integer` | YES | `NULL` |
-| `flash_slots_remaining` | `integer` | YES | `NULL` |
-| `flash_starts_at` | `timestamp with time zone` | YES | `NULL` |
-| `flash_ends_at` | `timestamp with time zone` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the rewards record. |
+| `name` | `text` | NO | `NULL` | Human-readable display name of the rewards entity. |
+| `description` | `text` | YES | `NULL` | Data field storing description for rewards record. |
+| `hp_cost` | `integer` | NO | `NULL` | Loyalty points value (Holy Points). |
+| `reward_type` | `text` | NO | `NULL` | Data field storing reward type for rewards record. |
+| `stock_quantity` | `integer` | YES | `NULL` | Data field storing stock quantity for rewards record. |
+| `min_tier_id` | `uuid` | YES | `NULL` | Data field storing min tier id for rewards record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `expires_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when expires occurred. |
+| `max_per_user` | `integer` | NO | `1` | Data field storing max per user for rewards record. |
+| `image_url` | `text` | YES | `NULL` | Data field storing image url for rewards record. |
+| `flash_enabled` | `boolean` | YES | `false` | Data field storing flash enabled for rewards record. |
+| `flash_hp_cost` | `integer` | YES | `NULL` | Loyalty points value (Holy Points). |
+| `flash_max_qty` | `integer` | YES | `NULL` | Data field storing flash max qty for rewards record. |
+| `flash_slots_remaining` | `integer` | YES | `NULL` | Data field storing flash slots remaining for rewards record. |
+| `flash_starts_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when flash starts occurred. |
+| `flash_ends_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when flash ends occurred. |
 
 **Indexes:**
 - `idx_rewards_active` ON (`hp_cost`)
@@ -16410,16 +15273,16 @@ created_at DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `is_available` | `boolean` | NO | `false` |
-| `availability_updated_at` | `timestamp with time zone` | YES | `NULL` |
-| `location_lat` | `double precision` | YES | `NULL` |
-| `location_lng` | `double precision` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the rider_profiles record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `is_available` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `availability_updated_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when availability updated occurred. |
+| `location_lat` | `double precision` | YES | `NULL` | Data field storing location lat for rider_profiles record. |
+| `location_lng` | `double precision` | YES | `NULL` | Data field storing location lng for rider_profiles record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Unique Constraints:**
 - `rider_profiles_user_id_key`: UNIQUE (`user_id`)
@@ -16439,15 +15302,15 @@ created_at DESC`)
 - **Foreign Keys:** `menu_item_id` → `menu_items.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `menu_item_id` | `uuid` | NO | `NULL` |
-| `quantity` | `integer` | NO | `1` |
-| `notes` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the saved_for_later record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `menu_item_id` | `uuid` | NO | `NULL` | Data field storing menu item id for saved_for_later record. |
+| `quantity` | `integer` | NO | `1` | Data field storing quantity for saved_for_later record. |
+| `notes` | `text` | YES | `NULL` | Data field storing notes for saved_for_later record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_saved_for_later_menu_item_id` ON (`menu_item_id`)
@@ -16469,20 +15332,20 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `title` | `text` | NO | `NULL` |
-| `body` | `text` | NO | `NULL` |
-| `frequency` | `text` | NO | `NULL` |
-| `send_time` | `text` | NO | `NULL` |
-| `target_segment` | `text` | NO | `'all'::text` |
-| `is_active` | `boolean` | NO | `true` |
-| `last_sent_at` | `timestamp with time zone` | YES | `NULL` |
-| `next_send_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_by` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the scheduled_notifications record. |
+| `title` | `text` | NO | `NULL` | Data field storing title for scheduled_notifications record. |
+| `body` | `text` | NO | `NULL` | Data field storing body for scheduled_notifications record. |
+| `frequency` | `text` | NO | `NULL` | Data field storing frequency for scheduled_notifications record. |
+| `send_time` | `text` | NO | `NULL` | Data field storing send time for scheduled_notifications record. |
+| `target_segment` | `text` | NO | `'all'::text` | Data field storing target segment for scheduled_notifications record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `last_sent_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when last sent occurred. |
+| `next_send_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when next send occurred. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for scheduled_notifications record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_scheduled_notifications_created_by` ON (`created_by`)
@@ -16502,17 +15365,17 @@ scheduled_notifications`
 - **Foreign Keys:** `order_id` → `orders.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `order_id` | `uuid` | NO | `NULL` |
-| `user_id` | `uuid` | YES | `NULL` |
-| `email` | `text` | NO | `NULL` |
-| `hp_share` | `integer` | NO | `0` |
-| `invite_sent` | `boolean` | NO | `false` |
-| `is_registered` | `boolean` | NO | `false` |
-| `referral_attributed` | `boolean` | NO | `false` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the squad_members record. |
+| `order_id` | `uuid` | NO | `NULL` | Data field storing order id for squad_members record. |
+| `user_id` | `uuid` | YES | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `email` | `text` | NO | `NULL` | Contact email address used for receipts and notification delivery. |
+| `hp_share` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `invite_sent` | `boolean` | NO | `false` | Data field storing invite sent for squad_members record. |
+| `is_registered` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `referral_attributed` | `boolean` | NO | `false` | Data field storing referral attributed for squad_members record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_squad_members_email` ON (`email`)
@@ -16533,19 +15396,19 @@ scheduled_notifications`
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `key` | `text` | NO | `NULL` |
-| `title` | `text` | YES | `NULL` |
-| `section_type` | `text` | NO | `NULL` |
-| `content` | `jsonb` | NO | `NULL` |
-| `sort_order` | `integer` | NO | `0` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `published_at` | `timestamp with time zone` | YES | `NULL` |
-| `created_by` | `uuid` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the storefront_sections record. |
+| `key` | `text` | NO | `NULL` | Data field storing key for storefront_sections record. |
+| `title` | `text` | YES | `NULL` | Data field storing title for storefront_sections record. |
+| `section_type` | `text` | NO | `NULL` | Data field storing section type for storefront_sections record. |
+| `content` | `jsonb` | NO | `NULL` | Data field storing content for storefront_sections record. |
+| `sort_order` | `integer` | NO | `0` | Data field storing sort order for storefront_sections record. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `published_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when published occurred. |
+| `created_by` | `uuid` | YES | `NULL` | Data field storing created by for storefront_sections record. |
 
 **Indexes:**
 - `idx_storefront_sections_created_by` ON (`created_by`)
@@ -16566,14 +15429,14 @@ active`
 - **Foreign Keys:** `updated_by` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `key` | `text` | NO | `NULL` |
-| `value` | `jsonb` | NO | `'{}'::jsonb` |
-| `description` | `text` | YES | `NULL` |
-| `updated_by` | `uuid` | YES | `NULL` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `is_public` | `boolean` | NO | `false` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `key` | `text` | NO | `NULL` | Data field storing key for system_settings record. |
+| `value` | `jsonb` | NO | `'{}'::jsonb` | Data field storing value for system_settings record. |
+| `description` | `text` | YES | `NULL` | Data field storing description for system_settings record. |
+| `updated_by` | `uuid` | YES | `NULL` | Data field storing updated by for system_settings record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `is_public` | `boolean` | NO | `false` | Boolean toggle flag. |
 
 **Indexes:**
 - `idx_system_settings_public` ON (`is_public`)
@@ -16597,22 +15460,22 @@ nonsensitive`
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `label` | `text` | YES | `NULL` |
-| `line1` | `text` | NO | `NULL` |
-| `line2` | `text` | YES | `NULL` |
-| `hostel` | `text` | YES | `NULL` |
-| `landmark` | `text` | YES | `NULL` |
-| `city` | `text` | NO | `'Akure'::text` |
-| `state` | `text` | NO | `'Ondo'::text` |
-| `latitude` | `numeric(10,7)` | YES | `NULL` |
-| `longitude` | `numeric(10,7)` | YES | `NULL` |
-| `is_default` | `boolean` | NO | `false` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the user_addresses record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `label` | `text` | YES | `NULL` | Data field storing label for user_addresses record. |
+| `line1` | `text` | NO | `NULL` | Data field storing line1 for user_addresses record. |
+| `line2` | `text` | YES | `NULL` | Data field storing line2 for user_addresses record. |
+| `hostel` | `text` | YES | `NULL` | Data field storing hostel for user_addresses record. |
+| `landmark` | `text` | YES | `NULL` | Data field storing landmark for user_addresses record. |
+| `city` | `text` | NO | `'Akure'::text` | Data field storing city for user_addresses record. |
+| `state` | `text` | NO | `'Ondo'::text` | Data field storing state for user_addresses record. |
+| `latitude` | `numeric(10,7)` | YES | `NULL` | Data field storing latitude for user_addresses record. |
+| `longitude` | `numeric(10,7)` | YES | `NULL` | Data field storing longitude for user_addresses record. |
+| `is_default` | `boolean` | NO | `false` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_user_addresses_default` ON (`user_id`)
@@ -16634,14 +15497,14 @@ nonsensitive`
 - **Foreign Keys:** `milestone_id` → `milestones.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `milestone_id` | `uuid` | NO | `NULL` |
-| `completed_at` | `timestamp with time zone` | NO | `now()` |
-| `hp_awarded` | `integer` | NO | `0` |
-| `period_key` | `text` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the user_milestones record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `milestone_id` | `uuid` | NO | `NULL` | Data field storing milestone id for user_milestones record. |
+| `completed_at` | `timestamp with time zone` | NO | `now()` | Timestamp recording when completed occurred. |
+| `hp_awarded` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `period_key` | `text` | YES | `NULL` | Data field storing period key for user_milestones record. |
 
 **Indexes:**
 - `idx_user_milestones_milestone_id` ON (`milestone_id`)
@@ -16667,15 +15530,15 @@ milestone_id, period_key`)
 - **Foreign Keys:** `previous_tier_id` → `hp_tiers.id`, `tier_id` → `hp_tiers.id`, `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `uuid_generate_v4()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `tier_id` | `uuid` | NO | `NULL` |
-| `event` | `text` | NO | `NULL` |
-| `hp_at_event` | `integer` | NO | `0` |
-| `previous_tier_id` | `uuid` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `uuid_generate_v4()` | Primary key UUID unique identifier for the user_tiers record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `tier_id` | `uuid` | NO | `NULL` | Data field storing tier id for user_tiers record. |
+| `event` | `text` | NO | `NULL` | Data field storing event for user_tiers record. |
+| `hp_at_event` | `integer` | NO | `0` | Loyalty points value (Holy Points). |
+| `previous_tier_id` | `uuid` | YES | `NULL` | Data field storing previous tier id for user_tiers record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_user_tiers_previous_tier_id` ON (`previous_tier_id`)
@@ -16701,19 +15564,19 @@ DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `provider` | `text` | NO | `NULL` |
-| `account_number` | `text` | NO | `NULL` |
-| `account_name` | `text` | NO | `NULL` |
-| `bank_name` | `text` | NO | `NULL` |
-| `provider_customer_id` | `text` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `is_active` | `boolean` | NO | `true` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the virtual_accounts record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `provider` | `text` | NO | `NULL` | Data field storing provider for virtual_accounts record. |
+| `account_number` | `text` | NO | `NULL` | Data field storing account number for virtual_accounts record. |
+| `account_name` | `text` | NO | `NULL` | Human-readable display name of the virtual_accounts entity. |
+| `bank_name` | `text` | NO | `NULL` | Human-readable display name of the virtual_accounts entity. |
+| `provider_customer_id` | `text` | YES | `NULL` | Data field storing provider customer id for virtual_accounts record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `is_active` | `boolean` | NO | `true` | Boolean toggle flag. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `uq_virtual_accounts_active_user_provider` ON (`user_id,
@@ -16738,19 +15601,19 @@ provider`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `amount` | `numeric(14,2)` | NO | `NULL` |
-| `provider` | `text` | NO | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `callback_url` | `text` | YES | `NULL` |
-| `provider_reference` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `confirmed_at` | `timestamp with time zone` | YES | `NULL` |
-| `failure_reason` | `text` | YES | `NULL` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_topups record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `provider` | `text` | NO | `NULL` | Data field storing provider for wallet_topups record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of wallet_topups record. |
+| `callback_url` | `text` | YES | `NULL` | Data field storing callback url for wallet_topups record. |
+| `provider_reference` | `text` | YES | `NULL` | Data field storing provider reference for wallet_topups record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `confirmed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when confirmed occurred. |
+| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for wallet_topups record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_wallet_topups_status` ON (`user_id, status`)
@@ -16772,21 +15635,21 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `type` | `text` | NO | `NULL` |
-| `amount` | `numeric(14,2)` | NO | `NULL` |
-| `balance_after` | `numeric(14,2)` | NO | `NULL` |
-| `reason` | `text` | YES | `NULL` |
-| `reference_type` | `text` | YES | `NULL` |
-| `reference_id` | `uuid` | YES | `NULL` |
-| `provider` | `text` | YES | `NULL` |
-| `provider_reference` | `text` | YES | `NULL` |
-| `issued_by_admin_id` | `uuid` | YES | `NULL` |
-| `metadata` | `jsonb` | NO | `'{}'::jsonb` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_transactions record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `type` | `text` | NO | `NULL` | Data field storing type for wallet_transactions record. |
+| `amount` | `numeric(14,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `balance_after` | `numeric(14,2)` | NO | `NULL` | Data field storing balance after for wallet_transactions record. |
+| `reason` | `text` | YES | `NULL` | Data field storing reason for wallet_transactions record. |
+| `reference_type` | `text` | YES | `NULL` | Data field storing reference type for wallet_transactions record. |
+| `reference_id` | `uuid` | YES | `NULL` | Data field storing reference id for wallet_transactions record. |
+| `provider` | `text` | YES | `NULL` | Data field storing provider for wallet_transactions record. |
+| `provider_reference` | `text` | YES | `NULL` | Data field storing provider reference for wallet_transactions record. |
+| `issued_by_admin_id` | `uuid` | YES | `NULL` | Data field storing issued by admin id for wallet_transactions record. |
+| `metadata` | `jsonb` | NO | `'{}'::jsonb` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_wallet_tx_issued_by_admin_id` ON (`issued_by_admin_id`)
@@ -16807,22 +15670,22 @@ created_at DESC`)
 - **Campus Scoped:** NO (Nullable: YES)
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `user_id` | `uuid` | NO | `NULL` |
-| `amount` | `numeric(12,2)` | NO | `NULL` |
-| `bank_code` | `text` | NO | `NULL` |
-| `account_number` | `text` | NO | `NULL` |
-| `account_name` | `text` | NO | `NULL` |
-| `narration` | `text` | YES | `NULL` |
-| `reference` | `text` | NO | `NULL` |
-| `status` | `text` | NO | `'pending'::text` |
-| `processed_at` | `timestamp with time zone` | YES | `NULL` |
-| `failure_reason` | `text` | YES | `NULL` |
-| `metadata` | `jsonb` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the wallet_withdrawals record. |
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `amount` | `numeric(12,2)` | NO | `NULL` | Monetary value stored in Naira (NGN). |
+| `bank_code` | `text` | NO | `NULL` | Data field storing bank code for wallet_withdrawals record. |
+| `account_number` | `text` | NO | `NULL` | Data field storing account number for wallet_withdrawals record. |
+| `account_name` | `text` | NO | `NULL` | Human-readable display name of the wallet_withdrawals entity. |
+| `narration` | `text` | YES | `NULL` | Data field storing narration for wallet_withdrawals record. |
+| `reference` | `text` | NO | `NULL` | Data field storing reference for wallet_withdrawals record. |
+| `status` | `text` | NO | `'pending'::text` | Lifecycle status indicator tracking the current state of wallet_withdrawals record. |
+| `processed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when processed occurred. |
+| `failure_reason` | `text` | YES | `NULL` | Data field storing failure reason for wallet_withdrawals record. |
+| `metadata` | `jsonb` | YES | `NULL` | JSON object storing context payload or metadata. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Indexes:**
 - `idx_wallet_withdrawals_user_id` ON (`user_id`)
@@ -16842,13 +15705,13 @@ created_at DESC`)
 - **Foreign Keys:** `user_id` → `profiles.id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `user_id` | `uuid` | NO | `NULL` |
-| `balance` | `numeric(14,2)` | NO | `0` |
-| `currency` | `text` | NO | `'NGN'::text` |
-| `updated_at` | `timestamp with time zone` | NO | `now()` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `user_id` | `uuid` | NO | `NULL` | Foreign key referencing profiles.id identifying the user account owner. |
+| `balance` | `numeric(14,2)` | NO | `0` | Data field storing balance for wallets record. |
+| `currency` | `text` | NO | `'NGN'::text` | Data field storing currency for wallets record. |
+| `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
 
 **Check Constraints:**
 - `chk_wallets_balance_nonneg`: `(balance >= (0)::numeric)`
@@ -16867,17 +15730,17 @@ created_at DESC`)
 - **Primary Key:** `id`
 
 
-| Column Name | Data Type | Nullable | Default |
-|-------------|-----------|----------|---------|
-| `id` | `uuid` | NO | `gen_random_uuid()` |
-| `event_type` | `text` | NO | `NULL` |
-| `provider` | `text` | YES | `NULL` |
-| `reference` | `text` | NO | `''::text` |
-| `payload` | `jsonb` | YES | `NULL` |
-| `status` | `text` | NO | `'processed'::text` |
-| `error` | `text` | YES | `NULL` |
-| `created_at` | `timestamp with time zone` | NO | `now()` |
-| `processed_at` | `timestamp with time zone` | YES | `NULL` |
+| Column Name | Data Type | Nullable | Default | Business Meaning & Lifecycle |
+|-------------|-----------|----------|---------|------------------------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Primary key UUID unique identifier for the webhook_events record. |
+| `event_type` | `text` | NO | `NULL` | Data field storing event type for webhook_events record. |
+| `provider` | `text` | YES | `NULL` | Data field storing provider for webhook_events record. |
+| `reference` | `text` | NO | `''::text` | Data field storing reference for webhook_events record. |
+| `payload` | `jsonb` | YES | `NULL` | JSON object storing context payload or metadata. |
+| `status` | `text` | NO | `'processed'::text` | Lifecycle status indicator tracking the current state of webhook_events record. |
+| `error` | `text` | YES | `NULL` | Data field storing error for webhook_events record. |
+| `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp auto-populated by database default now(). |
+| `processed_at` | `timestamp with time zone` | YES | `NULL` | Timestamp recording when processed occurred. |
 
 **Indexes:**
 - `idx_webhook_events_provider_ref` ON (`provider,
@@ -16895,9 +15758,9 @@ DESC`)
 
 ---
 
-## SECTION 3: RPC FUNCTIONS
+## SECTION 6: RPC FUNCTIONS & TRANSACTION GUARANTEES
 
-List of atomic PostgreSQL RPC functions defined in Supabase and invoked by Python service/route handlers:
+All critical mutations execute inside atomic PostgreSQL transactions via RPCs:
 
 
 ### `hg_create_order_atomic`
@@ -17044,45 +15907,7 @@ List of atomic PostgreSQL RPC functions defined in Supabase and invoked by Pytho
 
 
 ---
-## SECTION 4: AUTHENTICATION & AUTHORIZATION
-
-### JWT Authentication Flow
-
-1. **Token Issuance**: Supabase Auth issues access tokens (`JWT`) signed with `JWT_SECRET` upon login (`POST /api/auth/login`) or registration (`POST /api/auth/register`).
-
-2. **Token Verification**: `@require_auth` and `@require_role` middleware extract Bearer tokens from HTTP `Authorization` header (`Authorization: Bearer <access_token>`). Tokens are validated via `db.auth_get_user(token)` REST call to Supabase.
-
-3. **Silent Token Rotation**: Clients receive token expiration claims. When tokens are within `JWT_REFRESH_WINDOW_MINUTES` (default 5 minutes), client applications issue `POST /api/auth/refresh` to obtain new active JWTs without interrupting user session.
-
-4. **Guest Flow**: Endpoints decorated with `@optional_auth` allow unauthenticated requests (with `g.user_id = None`), but if a Bearer token is provided, it MUST be valid.
-
-
-### Role Definitions & Hierarchy
-
-| Role | Access Level | Description |
-
-|------|--------------|-------------|
-
-| `student` | Standard User | Can place orders, manage wallet, redeem HP, view marketplace & events |
-
-| `kitchen` | Operations | Kitchen staff; can view and update order preparation statuses |
-
-| `rider` | Delivery | Delivery riders; can accept batches, update delivery statuses, call customers |
-
-| `admin` | Campus Admin | Full admin capabilities scoped to their assigned `campus_id` |
-
-| `super_admin` | Global Admin | Unrestricted access across all campuses, system settings, and administrative routes |
-
-
-### Campus Scoping Helpers
-
-- `resolve_scoped_campus_id(requested_campus_id)`: For `super_admin`, returns requested campus ID or `None` (all campuses). For non-super_admin users, strictly returns `g.campus_id`.
-
-- `assert_owns_campus(record_campus_id)`: Aborts with HTTP 403 Forbidden if a non-super_admin user attempts to mutate/access data belonging to a different campus.
-
-
----
-## SECTION 5: BACKGROUND JOBS & SCHEDULED TASKS
+## SECTION 7: BACKGROUND JOBS & SCHEDULED TASKS
 
 All background tasks run via Celery Beat scheduler in West Africa Time (`Africa/Lagos` = UTC+1).
 
@@ -17242,7 +16067,7 @@ All background tasks run via Celery Beat scheduler in West Africa Time (`Africa/
 
 
 ---
-## SECTION 6: EXTERNAL INTEGRATIONS
+## SECTION 8: EXTERNAL INTEGRATIONS
 
 ### 1. Paystack Payment Gateway
 
@@ -17288,7 +16113,174 @@ All background tasks run via Celery Beat scheduler in West Africa Time (`Africa/
 
 
 ---
-## SECTION 7: SYSTEM SETTINGS
+## SECTION 9: STATE PERSISTENCE & CACHING
+
+- **JWT Sessions**: Access token TTL = `3600`s (1 hour). Refresh token TTL = `2592000`s (30 days). Silent rotation window = `5` minutes (`JWT_REFRESH_WINDOW_MINUTES`).
+
+- **Server Carts**: Server-side `cart_items` persist until cleared upon successful order placement (`create_order`). Carts idle >60 minutes are scanned into `abandoned_carts`.
+
+- **Order Archiving**: Orders persist indefinitely for financial auditability. Closed orders remain queryable by customer.
+
+- **HP Expiry & Decay**: Inactivity beyond `HP_EXPIRY_INACTIVITY_DAYS` (90 days) triggers 10% monthly decay check (`hp_decay_check`).
+
+- **Redis Cache Keys & TTLs**:
+
+  - Task result backend: `3600`s TTL.
+
+  - Cron job distributed lock (`try_acquire_cron_lock`): `600`s – `1800`s TTL.
+
+  - IP rate limiting bucket: `60`s – `3600`s window TTL.
+
+
+---
+## SECTION 10: SQUAD ORDER LOGIC
+
+- **Squad Creation**: Initiated during order checkout by adding squad member emails (`POST /api/orders/<order_id>/squad-members`).
+
+- **Member Limits**: Min items = 3 (`SQUAD_ORDER_MIN_ITEMS`), Max items = 20 (`SQUAD_ORDER_MAX_ITEMS`).
+
+- **HP Splitting**: Earned HP on delivered squad order is split evenly among registered members + organizer via `award_active_hp` RPC (`share = total_hp // len(registered_ids)`).
+
+- **Discounts**: Squad subtotal discount (5%) and squad delivery discount (50%) applied when item threshold met.
+
+- **Referral Attribution**: If a referee joins a squad order, referrer earns referral HP bonus upon referee's first delivered order.
+
+- **Payment Failures**: Organizer pays total amount upfront or via split payment; squad members receive HP bonus post-delivery.
+
+
+---
+## SECTION 11: RIDER ASSIGNMENT LOGIC
+
+- **Batching**: Orders grouped by gate/zone into delivery batches (`delivery_batches`). Max capacity = 5 orders per batch.
+
+- **Rider Selection**: Active available riders (`is_available = true` on `rider_profiles`) assigned to batch. Stops ordered via nearest-neighbour sequencing starting from batch gate position (`find_nearest_gate`).
+
+- **Batch Progression**: `assigned` → `out_for_delivery` (rider picks up batch) → `delivered` or `delivery_attempted`.
+
+
+---
+## SECTION 12: FEATURE FLAGS & CAMPAIGN LOGIC
+
+- **Feature Flags**: Managed in `feature_flags` table (e.g. `squad_order_enabled`, `whatsapp_support_enabled`). Can be global or campus-scoped.
+
+- **Promo Codes**: Validated against `min_order_amount`, `starts_at`, `ends_at`, `max_uses`, `max_uses_per_user`, and campus scope.
+
+- **Referrals**: `REFERRAL_HP` awarded to referrer when referee completes first order (`complete_referral`).
+
+- **Rewards & Flash Sales**: 50% discount during active flash window (`flash_hp_cost = reward.hp_cost // 2`). Quantity slots locked atomically via `hg_redeem_flash_reward_atomic` RPC.
+
+- **First-Order Gift**: Configured via `first_order_gift_enabled` setting; awards gift item on user's first order.
+
+- **Birthday HP**: `BIRTHDAY_HP` (150 HP) awarded automatically on user's birthday by `birthday_hp_awards` task.
+
+- **Graduation Bonus**: Awarded to graduating students (level >= `graduation_min_level`, default 400).
+
+
+---
+## SECTION 13: COMPLETE WEBHOOK PAYLOADS
+
+### 1. Paystack Webhook (`POST /api/webhooks/paystack`)
+
+- **Verification Header**: `X-Paystack-Signature` verified against HMAC SHA512 hash of raw body using `PAYSTACK_WEBHOOK_SECRET`.
+
+- **Idempotency**: Checked against `payment_webhooks` table on `(provider='paystack', event_type, reference)` UNIQUE constraint.
+
+- **Sample `charge.success` Payload**:
+
+```json
+{
+    "event": "charge.success",
+    "data": {
+        "id": 30092831,
+        "domain": "test",
+        "status": "success",
+        "reference": "HG-WAL-172839210-9A8B",
+        "amount": 500000,
+        "gateway_response": "Successful",
+        "paid_at": "2026-03-31T12:00:00.000Z",
+        "channel": "card",
+        "currency": "NGN",
+        "ip_address": "102.89.23.1",
+        "metadata": {
+            "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "type": "wallet_funding"
+        },
+        "customer": {
+            "id": 128391,
+            "first_name": "John",
+            "last_name": "Doe",
+            "email": "student@futa.edu.ng",
+            "phone": "08012345678"
+        }
+    }
+}
+```
+
+- **Sample `charge.failed` Payload**:
+
+```json
+{
+    "event": "charge.failed",
+    "data": {
+        "id": 30092832,
+        "domain": "test",
+        "status": "failed",
+        "reference": "HG-WAL-172839210-FAIL",
+        "amount": 500000,
+        "gateway_response": "Declined - Insufficient Funds",
+        "paid_at": "2026-03-31T12:01:00.000Z",
+        "channel": "card",
+        "currency": "NGN"
+    }
+}
+```
+
+- **Sample `transfer.success` Payload**:
+
+```json
+{
+    "event": "transfer.success",
+    "data": {
+        "amount": 100000,
+        "currency": "NGN",
+        "domain": "test",
+        "failures": null,
+        "id": 102938,
+        "reason": "Wallet refund",
+        "reference": "HG-REF-10293",
+        "source": "balance",
+        "status": "success",
+        "transfer_code": "TRF_10293"
+    }
+}
+```
+
+### 2. Flutterwave Webhook (`POST /api/webhooks/flutterwave`)
+
+- **Verification Header**: `verif-hash` header matched against `FLUTTERWAVE_SECRET_HASH`.
+
+- **Sample `charge.completed` Payload**:
+
+```json
+{
+    "event": "charge.completed",
+    "data": {
+        "id": 123456,
+        "tx_ref": "HG-FLW-102938120",
+        "flw_ref": "FLW-MOCK-192830",
+        "amount": 2500,
+        "currency": "NGN",
+        "status": "successful",
+        "customer": {
+            "email": "guest@example.com",
+            "name": "Guest Customer"
+        }
+    }
+}
+```
+
+---
+## SECTION 14: SYSTEM SETTINGS REFERENCE
 
 The `system_settings` table stores runtime configuration key-values. Settings can be global (`campus_id IS NULL`) or overridden per-campus (`campus_id = <uuid>`).
 
@@ -17297,30 +16289,18 @@ The `system_settings` table stores runtime configuration key-values. Settings ca
 
 |-------------|---------------|---------|-----------------|
 
-| `hp_multiplier` | `1` | Active loyalty points earn multiplier (e.g., 2 for double HP events) | `app/services/hp_service.py` |
+| `hp_multiplier` | `1` | Active loyalty points earn multiplier | `app/services/hp_service.py` |
 
-| `multiplier_expires_at` | `NULL` | Expiration timestamp for active HP multiplier event | `app/services/hp_service.py` |
+| `daily_checkin_hp` | `10` | HP awarded for daily check-in | `app/routes/daily_checkin.py` |
 
-| `daily_checkin_hp` | `10` | HP awarded for daily app check-in | `app/routes/daily_checkin.py` |
+| `free_side_options` | `["Coleslaw", "Extra Sauce", "Soft Drink"]` | Side credit choices | `app/routes/free_sides.py` |
 
-| `free_side_options` | `["Coleslaw", "Extra Sauce", "Soft Drink"]` | Admin-configurable options for free side credits | `app/routes/free_sides.py` |
-
-| `first_order_gift_enabled` | `true` | Toggle for first-order welcome gift | `app/services/gift_service.py` |
-
-| `first_order_gift_item_name` | `"First-Order Gift — Hot Dog"` | Display name of welcome gift item | `app/services/gift_service.py` |
-
-| `launch_window_end_date` | `"2026-12-31"` | End date for welcome gift eligibility window | `app/services/gift_service.py` |
+| `first_order_gift_enabled` | `true` | Welcome gift toggle | `app/services/gift_service.py` |
 
 | `monthly_pending_cap` | `1000` | Monthly cap on pending HP unlock | `app/services/streak_service.py` |
 
-| `graduation_min_level` | `400` | Minimum academic level for graduation reward eligibility | `app/routes/graduation.py` |
+| `graduation_min_level` | `400` | Minimum academic level for graduation eligibility | `app/routes/graduation.py` |
 
-| `whatsapp_support_number` | `"2348000000000"` | WhatsApp customer support contact phone number | `app/routes/storefront.py` |
+| `whatsapp_support_number` | `"2348000000000"` | Support contact number | `app/routes/storefront.py` |
 
-| `whatsapp_support_enabled` | `true` | Toggle floating WhatsApp support button in app | `app/routes/storefront.py` |
-
-| `whatsapp_support_message` | `"Hello I need help with my order"` | Pre-filled support message template | `app/routes/storefront.py` |
-
-| `notification_throttle_window_minutes` | `30` | Time window for notification rate limiting | `app/services/notification_service.py` |
-
-| `notification_throttle_max_per_window` | `20` | Max non-critical notifications per window | `app/services/notification_service.py` |
+| `whatsapp_support_enabled` | `true` | Toggle support button in app | `app/routes/storefront.py` |
