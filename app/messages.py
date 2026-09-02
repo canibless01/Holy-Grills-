@@ -242,6 +242,7 @@ class MSG:
     REWARD_OUT_OF_STOCK          = "Reward is out of stock"
     REWARD_EXPIRED               = "Reward has expired"
     REWARD_TIER_TOO_LOW          = "Your tier is not high enough to redeem this reward"
+    REWARD_MAX_PER_USER_REACHED  = "Maximum redemptions reached for this reward"
     REWARD_INSUFFICIENT_HP       = "Insufficient {currency}. Need {need}, have {have}"
     REWARD_DEACTIVATED           = "Reward deactivated"
     REWARD_REDEMPTION_NOT_FOUND  = "Redemption not found"

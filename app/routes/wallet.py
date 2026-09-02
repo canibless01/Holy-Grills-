@@ -67,11 +67,15 @@ def fund_via_card():
       200:
         description: Paystack authorization_url returned
     """
-    data = request.get_json(force=True)
+    import math
+    data = request.get_json(silent=True) or {}
     from flask import current_app
-    amount = float(data.get("amount", 0))
     min_topup = current_app.config.get("WALLET_MIN_CARD_TOPUP", 100)
-    if amount < min_topup:
+    try:
+        amount = float(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=0)}), 400
+    if not math.isfinite(amount) or amount < min_topup:
         return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=min_topup)}), 400
 
     db = get_user_client()
@@ -211,7 +215,19 @@ def request_virtual_account():
         admin_db = get_db()
         admin_db.table("virtual_accounts").insert(va_payload).execute()
     except Exception as ins_err:
+        from app.db import SupabaseError
         from flask import current_app
+        err_str = str(ins_err)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            existing_now = (
+                db.table("virtual_accounts")
+                .select("account_number,bank_name,account_name,provider_reference")
+                .eq("user_id", g.user_id)
+                .limit(1)
+                .execute()
+            )
+            if existing_now:
+                return jsonify({"virtual_account": existing_now[0], "created": False}), 200
         current_app.logger.error(
             "request_virtual_account: DB insert failed for user %s, account %s: %s",
             g.user_id, account.get("account_number"), ins_err
@@ -225,6 +241,19 @@ def request_virtual_account():
 
 
 
+def _parse_int(name, default, max_value=None):
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if val < 0:
+        return default
+    return min(val, max_value) if max_value is not None else val
+
+
 @wallet_bp.route("/admin/transactions", methods=["GET"])
 @require_role("admin")
 def admin_wallet_transactions():
@@ -232,8 +261,8 @@ def admin_wallet_transactions():
     List wallet transactions (admin only). Scoped to caller campus_id unless super_admin.
     """
     db = get_user_client()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    limit = _parse_int("limit", 50, max_value=200)
+    offset = _parse_int("offset", 0)
     q = db.table("wallet_transactions").select("*,profiles!user_id(full_name,email)")
 
     caller_role = getattr(g, "user_role", None)
@@ -285,14 +314,11 @@ def wallet_transactions():
         description: Wallet transaction history
     """
     db = get_user_client()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    limit = _parse_int("limit", 50, max_value=200)
+    offset = _parse_int("offset", 0)
     tx_type = request.args.get("type") or None
     q = db.table("wallet_transactions").select("*").eq("user_id", g.user_id)
     if tx_type:
         q = q.eq("reference_type", tx_type)
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
     txns = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(txns), 200

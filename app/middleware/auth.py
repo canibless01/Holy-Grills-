@@ -127,6 +127,9 @@ def require_auth(f):
         except SupabaseError:
             abort(401, "User profile not found")
 
+        if not profile:
+            abort(401, "User profile not found")
+
         if not profile.get("is_active", True):
             abort(403, "Account is deactivated")
 

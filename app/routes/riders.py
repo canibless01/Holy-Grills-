@@ -62,6 +62,10 @@ def my_batch():
         except Exception:
             batch["delivery_window"] = None
 
+    sequencing_mode = request.args.get("sequencing", DEFAULT_SEQUENCING_MODE)
+    if sequencing_mode not in VALID_SEQUENCING_MODES:
+        sequencing_mode = DEFAULT_SEQUENCING_MODE
+
     orders = (
         db.table("orders")
         .select("id,status,notes,delivery_address_snapshot,user_id,delivery_location_lat,delivery_location_lon")
@@ -69,95 +73,31 @@ def my_batch():
         .execute()
     ) or []
 
-    # Order the stops so the rider isn't zigzagging: nearest-neighbour, starting
-    # from the batch's gate. Stops with no known coordinates (hostel deliveries —
-    # hostels have no lat/lon in this database) are appended at the end, in
-    # whatever order they were added, since there's no position to sort them by.
     if orders:
-        gate = db.table("gates").select("lat,lon").eq("id", batch.get("gate_id")).single().execute() if batch.get("gate_id") else None
+        gate = (
+            db.table("gates").select("lat,lon").eq("id", batch.get("gate_id")).single().execute()
+            if batch.get("gate_id") else None
+        )
         if gate and gate.get("lat") is not None and gate.get("lon") is not None:
-            from app.routes.delivery import haversine_km
-            with_coords = [o for o in orders if o.get("delivery_location_lat") is not None and o.get("delivery_location_lon") is not None]
-            without_coords = [o for o in orders if o not in with_coords]
-            sequenced = []
-            cur_lat, cur_lon = gate["lat"], gate["lon"]
-            remaining = with_coords[:]
-            while remaining:
-                nearest = min(remaining, key=lambda o: haversine_km(cur_lat, cur_lon, o["delivery_location_lat"], o["delivery_location_lon"]))
-                sequenced.append(nearest)
-                cur_lat, cur_lon = nearest["delivery_location_lat"], nearest["delivery_location_lon"]
-                remaining.remove(nearest)
-            orders = sequenced + without_coords
-
-    # Fetch gate coordinates for distance ranking (look up via batch zone name or gate table)
-    gate_lat = None
-    gate_lon = None
-    try:
-        zone_name = batch.get("zone", "")
-        if zone_name:
-            gate_row = (
-                db.table("gates")
-                .select("lat,lon")
-                .ilike("name", f"%{zone_name}%")
-                .eq("is_active", "true")
-                .limit(1)
-                .execute()
-            )
-            if gate_row:
-                gate_lat = gate_row[0].get("lat")
-                gate_lon = gate_row[0].get("lon")
-    except Exception:
-        pass
-
-    # Fetch full order details for distance sorting
-    orders_full = (
-        db.table("orders")
-        .select("id,status,notes,delivery_address_snapshot,user_id,delivery_location_lat,delivery_location_lon")
-        .eq("batch_id", batch_id)
-        .execute()
-    ) if orders else []
+            if sequencing_mode == "nearest_neighbour":
+                orders = _sequence_nearest_neighbour(orders, gate["lat"], gate["lon"])
+            else:
+                orders = _sequence_distance_from_gate(orders, gate["lat"], gate["lon"])
 
     safe_orders = []
-    for order in (orders_full or orders):
+    for order in orders:
         customer_name = None
         try:
             if order.get("user_id"):
                 from app.db import get_db
-                profile = (
-                    get_db().table("profiles")
-                    .select("full_name")
-                    .eq("id", order["user_id"])
-                    .single()
-                    .execute()
-                )
+                profile = get_db().table("profiles").select("full_name").eq("id", order["user_id"]).single().execute()
                 customer_name = profile.get("full_name") if profile else None
         except Exception:
             pass
-
         try:
-            items = (
-                db.table("order_items")
-                .select("name_snapshot,quantity")
-                .eq("order_id", order["id"])
-                .execute()
-            ) or []
+            items = db.table("order_items").select("name_snapshot,quantity").eq("order_id", order["id"]).execute() or []
         except Exception:
             items = []
-
-        # Calculate distance from gate to this order's delivery location
-        distance_km = None
-        if (gate_lat is not None and gate_lon is not None
-                and order.get("delivery_location_lat") is not None
-                and order.get("delivery_location_lon") is not None):
-            try:
-                distance_km = round(_haversine_km(
-                    gate_lat, gate_lon,
-                    order["delivery_location_lat"],
-                    order["delivery_location_lon"],
-                ), 2)
-            except Exception:
-                pass
-
         safe_orders.append({
             "id": order["id"],
             "status": order["status"],
@@ -165,19 +105,12 @@ def my_batch():
             "customer_name": customer_name,
             "delivery_address": order.get("delivery_address_snapshot"),
             "items": items,
-            "distance_km": distance_km,
         })
 
-    # Sort by distance ascending (closest first); orders without coordinates sort last
-    safe_orders.sort(key=lambda o: (o["distance_km"] is None, o["distance_km"] or 0))
-
-    # Add delivery rank labels
     for i, o in enumerate(safe_orders, 1):
         o["delivery_rank"] = i
-        if o["distance_km"] is not None:
-            o["delivery_hint"] = f"Order #{str(o['id'])[:6].upper()} — {o['distance_km']} km (deliver {'first' if i == 1 else ('second' if i == 2 else f'#{i}')})"
 
-    return jsonify({"batch": batch, "orders": safe_orders}), 200
+    return jsonify({"batch": batch, "orders": safe_orders, "sequencing_mode": sequencing_mode}), 200
 
 
 @riders_bp.route("/orders/<order_id>/deliver", methods=["POST"])

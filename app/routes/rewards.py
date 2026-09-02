@@ -158,6 +158,10 @@ def redeem_reward(reward_id):
         })
     except Exception as exc:
         err_str = str(exc)
+        if "MAX_PER_USER" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_MAX_PER_USER_REACHED}), 400
+        if "TIER_TOO_LOW" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_TIER_TOO_LOW}), 400
         if "INSUFFICIENT" in err_str.upper() or "BALANCE" in err_str.upper():
             balance = get_hp_balance(g.user_id)
             return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
@@ -169,6 +173,10 @@ def redeem_reward(reward_id):
 
     if isinstance(rpc_res, dict) and rpc_res.get("error"):
         err_str = str(rpc_res["error"])
+        if "MAX_PER_USER" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_MAX_PER_USER_REACHED}), 400
+        if "TIER_TOO_LOW" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_TIER_TOO_LOW}), 400
         if "INSUFFICIENT" in err_str.upper() or "BALANCE" in err_str.upper():
             balance = get_hp_balance(g.user_id)
             return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
@@ -310,6 +318,19 @@ def admin_update_redemption(redemption_id):
                 )
             except Exception as e:
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
+
+        # Restore the stock unit this redemption had claimed
+        try:
+            reward_id = row.get("reward_id")
+            current_reward = (
+                db.table("rewards").select("stock_quantity").eq("id", reward_id).single().execute()
+            )
+            if current_reward and current_reward.get("stock_quantity") is not None:
+                db.table("rewards").eq("id", reward_id).update(
+                    {"stock_quantity": current_reward["stock_quantity"] + 1}
+                )
+        except Exception as e:
+            return jsonify({"error": f"Stock restore failed: {str(e)}"}), 400
 
     update = {"status": new_status}
     if new_status == "fulfilled":

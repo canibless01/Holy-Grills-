@@ -964,16 +964,8 @@ def walk_order_to_status(
                 pass
 
         if caller_role == "rider":
-            batch_id = order.get("batch_id")
-            assigned_rider_id = None
-            if batch_id:
-                try:
-                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
-                    if batch:
-                        assigned_rider_id = batch.get("rider_id")
-                except Exception:
-                    pass
-            if not assigned_rider_id or assigned_rider_id != changed_by:
+            effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id}).execute()
+            if not effective_rider or str(effective_rider) != str(changed_by):
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
