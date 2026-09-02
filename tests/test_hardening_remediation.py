@@ -257,7 +257,7 @@ def test_free_sides_redeem_occ_failure(mock_get_db, client):
         # 1. Auth profile lookup
         yield {"id": "user-123", "role": "student", "is_active": True, "campus_id": None}
         # 2. Order lookup
-        yield {"id": "00000000-0000-0000-0000-000000000000", "user_id": "user-123"}
+        yield {"id": "00000000-0000-0000-0000-000000000000", "user_id": "user-123", "status": "paid"}
         # 3. _get_free_side_options system settings lookup
         yield None
 

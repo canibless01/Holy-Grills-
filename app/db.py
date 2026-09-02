@@ -30,10 +30,11 @@ class SupabaseClient:
             "Prefer": "return=representation",
         }
 
-    def _user_headers(self, user_jwt: str) -> dict:
+    def _user_headers(self, user_jwt: str = None) -> dict:
+        token = user_jwt or self.anon_key
         return {
             "apikey": self.anon_key,
-            "Authorization": f"Bearer {user_jwt}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         }
@@ -280,15 +281,32 @@ class TableQuery:
         self._single = True
         return self
 
+    def or_(self, filter_str: str) -> "TableQuery":
+        """Add PostgREST or=(...) filter parameter."""
+        self._filters.append(f"or=({filter_str})")
+        return self
+
     def with_jwt(self, jwt: str) -> "TableQuery":
         self._user_jwt = jwt
+        self._use_user_headers = True
         return self
 
     def _build_params(self) -> dict:
+        """
+        Build PostgREST query parameters dictionary from select, filters, ordering, and limit/offset.
+        Accumulates duplicate filter keys (e.g. gte and lte date range filters on created_at) into lists
+        so PostgREST receives both boundaries instead of overwriting earlier bounds.
+        """
         params = {"select": self._select}
         for f in self._filters:
             k, v = f.split("=", 1)
-            params[k] = v
+            if k in params:
+                if isinstance(params[k], list):
+                    params[k].append(v)
+                else:
+                    params[k] = [params[k], v]
+            else:
+                params[k] = v
         if self._order:
             params["order"] = self._order
         if self._limit is not None:
@@ -298,7 +316,8 @@ class TableQuery:
         return params
 
     def _headers(self) -> dict:
-        h = self._client._user_headers(self._user_jwt) if self._user_jwt else self._client._service_headers()
+        use_user = getattr(self, "_use_user_headers", False) or bool(self._user_jwt)
+        h = self._client._user_headers(self._user_jwt) if use_user else self._client._service_headers()
         if self._single:
             h["Accept"] = "application/vnd.pgrst.object+json"
         if self._count:
@@ -438,7 +457,7 @@ class UserSupabaseClient:
 def get_user_client() -> SupabaseClient | UserSupabaseClient:
     """
     Returns a user-authenticated Supabase client using g.jwt_token if present in
-    Flask request context. Falls back to get_db() (service role) if no user JWT token exists.
+    Flask request context. Unauthenticated guests receive visitor-scoped access using the anon key.
     """
     import sys
     try:
@@ -450,10 +469,11 @@ def get_user_client() -> SupabaseClient | UserSupabaseClient:
 
     try:
         from flask import g, has_app_context
-        if has_app_context() and getattr(g, "jwt_token", None):
+        if has_app_context():
+            jwt = getattr(g, "jwt_token", None)
             if not isinstance(db, SupabaseClient):
                 return db
-            return UserSupabaseClient(db, g.jwt_token)
+            return UserSupabaseClient(db, jwt)
     except Exception:
         pass
     return db

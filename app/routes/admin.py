@@ -494,7 +494,7 @@ def list_windows():
         description: Delivery windows
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     q = db.table("delivery_windows").select("*")
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -773,9 +773,14 @@ def create_batch():
         return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
 
     # 1. Verify window exists
-    window = db.table("delivery_windows").select("id").eq("id", window_id).single().execute()
+    window = db.table("delivery_windows").select("id,campus_id").eq("id", window_id).single().execute()
     if not window:
         return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
+
+    resolved_campus_id = window.get("campus_id") or getattr(g, "campus_id", None)
+    if getattr(g, "user_role", None) != "super_admin":
+        if window.get("campus_id") and window["campus_id"] != getattr(g, "campus_id", None):
+            return jsonify({"error": "Delivery window belongs to a different campus"}), 403
 
     # 2. Verify rider exists, is active, and has 'rider' role
     rider_profile = db.table("profiles").select("id,role,is_active").eq("id", rider_id).single().execute()
@@ -811,6 +816,7 @@ def create_batch():
         "rider_id": rider_id,
         "zone": data.get("zone", ""),
         "status": "assigned",
+        "campus_id": resolved_campus_id,
     }).execute()
     batch_row = batch[0] if isinstance(batch, list) else batch
     batch_id = batch_row["id"]
@@ -1347,7 +1353,7 @@ def cron_status():
       200:
         description: Cron job status map
     """
-    db = get_user_client()
+    db = get_db()
 
     KNOWN_JOBS = [
         "birthday-hp",
@@ -1619,38 +1625,11 @@ def hp_report():
 
     today = datetime.now(timezone.utc).date().isoformat()
 
-    try:
-        # DB RPC aggregation fallback to bounded queries
-        summary = db.rpc("get_hp_program_report_summary", {"p_today_date": today})
-        if summary and isinstance(summary, dict):
-            total_issued = int(summary.get("total_issued", 0))
-            total_spent = int(summary.get("total_spent", 0))
-            issued_today = int(summary.get("issued_today", 0))
-            tier_counts = summary.get("users_by_tier", {})
-        else:
-            raise Exception("RPC summary empty")
-    except Exception:
-        # Bounded query fallback (max 1000 latest rows per category)
-        issued_rows = db.table("hp_transactions").select("amount").gt("amount", 0).limit(1000).execute() or []
-        spent_rows  = db.table("hp_transactions").select("amount").lt("amount", 0).limit(1000).execute() or []
-        total_issued = sum(int(r.get("amount", 0)) for r in issued_rows)
-        total_spent  = abs(sum(int(r.get("amount", 0)) for r in spent_rows))
-
-        issued_today_rows = (
-            db.table("hp_transactions")
-            .select("amount")
-            .gt("amount", 0)
-            .gte("created_at", f"{today}T00:00:00Z")
-            .limit(1000)
-            .execute()
-        ) or []
-        issued_today = sum(int(r.get("amount", 0)) for r in issued_today_rows)
-
-        tier_rows = db.table("profiles").select("current_tier_id").limit(1000).execute() or []
-        tier_counts = {}
-        for r in tier_rows:
-            tid = r.get("current_tier_id") or "none"
-            tier_counts[tid] = tier_counts.get(tid, 0) + 1
+    summary = db.rpc("get_hp_program_report_summary", {"p_today_date": today}) or {}
+    total_issued = int(summary.get("total_issued", 0))
+    total_spent = int(summary.get("total_spent", 0))
+    issued_today = int(summary.get("issued_today", 0))
+    tier_counts = summary.get("users_by_tier", {})
 
     top_rows = (
         db.table("profiles")
@@ -1830,11 +1809,12 @@ def _audit(actor_id, table, target_id, action, after_data=None):
     try:
         db.table("admin_audit_logs").insert({
             "actor_id": actor_id,
-            "actor_role": "admin",
+            "actor_role": getattr(g, "user_role", None) or "admin",
             "entity_type": table,
             "entity_id": target_id,
             "action": action,
             "after_value": after_data,
+            "campus_id": getattr(g, "campus_id", None),
         }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("_audit: failed to log %s/%s/%s: %s", table, target_id, action, e)

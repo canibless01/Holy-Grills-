@@ -148,19 +148,24 @@ def login():
     except Exception as e:
         return jsonify({"error": MSG.AUTH_LOGIN_FAILED, "detail": str(e)}), 500
 
-    # Process login streak synchronously so it doesn't fail if process restarts
     user_id = (result.get("user") or {}).get("id")
     if user_id:
+        campus_id = None
         try:
-            from app.services.streak_service import process_login_streak as _pls
-            _pls(user_id)
+            profile = get_db().table("profiles").select("campus_id").eq("id", user_id).single().execute()
+            campus_id = (profile or {}).get("campus_id")
         except Exception:
             pass
 
-        # Auto check-in on login (synchronous)
         try:
-            from app.routes.daily_checkin import record_checkin as _record_checkin
-            _record_checkin(user_id)
+            from app.services.streak_service import process_login_streak as _pls
+            _pls(user_id, campus_id)
+        except Exception:
+            pass
+
+        try:
+            from app.routes.daily_checkin import _do_record_checkin
+            _do_record_checkin(user_id, campus_id)
         except Exception:
             pass
 

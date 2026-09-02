@@ -1,7 +1,7 @@
 """Events routes — discovery, catering requests, QR check-in, ticket tiers, admin export."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth, require_role, optional_auth, ADMIN_ROLES
+from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client, SupabaseError
@@ -39,13 +39,27 @@ def _get_campus_id():
 
     return None
 
+
+def _require_campus_selection():
+    """
+    Guard for guest/user browse endpoints where campus selection is mandatory.
+    Returns (campus_id, None) or (None, (json_response, status_code)).
+    """
+    campus_id = _get_campus_id()
+    if not campus_id:
+        return None, (jsonify({
+            "error": "Please select a campus to continue",
+            "code": "CAMPUS_SELECTION_REQUIRED",
+        }), 400)
+    return campus_id, None
+
 CATERING_STATUSES = ("new", "reviewed", "quoted", "accepted", "completed", "rejected", "cancelled")
 
 
 @events_bp.route("", methods=["GET"])
 def list_events():
     """
-    List active upcoming events.
+    List published upcoming events for the selected campus (or all if unspecified).
     ---
     tags: [Events]
     security: []
@@ -53,6 +67,7 @@ def list_events():
       200:
         description: Event list
     """
+    campus_id = _get_campus_id()
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
     q = (
@@ -61,7 +76,6 @@ def list_events():
         .eq("is_published", "true")
         .gte("starts_at", now)
     )
-    campus_id = _get_campus_id()
     events = q.order("starts_at").execute() or []
     if campus_id:
         events = [
@@ -329,9 +343,10 @@ def update_event(event_id):
         description: Not found
     """
     db = get_user_client()
-    event = db.table("events").select("id,starts_at,ends_at,capacity,title").eq("id", event_id).single().execute()
+    event = db.table("events").select("id,starts_at,ends_at,capacity,title,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    assert_owns_campus(event.get("campus_id"))
     data = request.get_json(force=True, silent=True) or {}
     EVENT_UPDATE_COLS = {
         "title", "description", "location", "starts_at", "ends_at",
@@ -402,9 +417,10 @@ def delete_event(event_id):
         description: Not found
     """
     db = get_user_client()
-    event = db.table("events").select("id,title").eq("id", event_id).single().execute()
+    event = db.table("events").select("id,title,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    assert_owns_campus(event.get("campus_id"))
     # Cascade: remove check-ins and tickets before deleting event
     try:
         tickets = db.table("event_tickets").select("id").eq("event_id", event_id).execute() or []
@@ -994,16 +1010,21 @@ def submit_catering_request():
     result = db.table("catering_requests").insert(data)
     saved = result[0] if isinstance(result, list) else result
 
-    admins = db.table("profiles").select("id").eq("role", "admin").execute()
+    admins = (
+        db.table("profiles")
+        .select("id")
+        .eq("role", "admin")
+        .eq("campus_id", campus_id)
+        .execute()
+    ) or []
+    super_admins = get_db().table("profiles").select("id").eq("role", "super_admin").execute() or []
+
     from app.services.notification_service import send_notification
-    for admin in (admins or []):
+    for admin in list(admins) + list(super_admins):
         send_notification(
             user_id=admin["id"],
             notif_type="catering_request",
-            template_data={
-                "organizer": data["organizer_name"],
-                "event_name": data["event_name"],
-            },
+            template_data={"organizer": data["organizer_name"], "event_name": data["event_name"]},
             reference_id=saved["id"],
             reference_type="catering_request",
         )
@@ -1280,9 +1301,10 @@ def list_event_registrants(event_id):
         description: Event not found
     """
     db = get_user_client()
-    event = db.table("events").select("id,title,starts_at,location").eq("id", event_id).single().execute()
+    event = db.table("events").select("id,title,starts_at,location,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    assert_owns_campus(event.get("campus_id"))
 
     try:
         tickets = (
@@ -1488,7 +1510,7 @@ def send_registrants_to_host(event_id):
 def get_tier_comparison(event_id):
     """Fetch tier comparison view for an event (public)."""
     db = get_user_client()
-    event = db.table("events").select("id,campus_id,title").eq("id", event_id).single().execute()
+    event = db.table("events").select("id,title,starts_at,location,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 

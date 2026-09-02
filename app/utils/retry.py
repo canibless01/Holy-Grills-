@@ -48,16 +48,18 @@ def with_retry(
     backoff: float = 0.5,
     backoff_multiplier: float = 2.0,
     retryable_statuses: Tuple[int, ...] = (429, 500, 502, 503, 504),
+    retry_on_connection_errors: bool = True,
 ) -> Callable:
     """
     Decorator factory that retries the wrapped function on transient failures.
 
     Args:
-        max_attempts:      Total number of attempts (1 = no retry).
-        backoff:           Initial wait in seconds between attempts.
-        backoff_multiplier: Each retry multiplies the wait by this factor.
-        retryable_statuses: HTTP status codes that trigger a retry (when the
-                            wrapped function returns a requests.Response).
+        max_attempts:               Total number of attempts (1 = no retry).
+        backoff:                    Initial wait in seconds between attempts.
+        backoff_multiplier:         Each retry multiplies the wait by this factor.
+        retryable_statuses:         HTTP status codes that trigger a retry.
+        retry_on_connection_errors: Set False for non-idempotent operations (like refunds)
+                                    where connection timeouts could result in duplicate execution.
 
     The decorator transparently propagates the final exception if all
     attempts fail, so callers keep their existing error handling.
@@ -65,7 +67,7 @@ def with_retry(
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            retryable = _get_retryable_exceptions()
+            retryable = _get_retryable_exceptions() if retry_on_connection_errors else ()
             delay = backoff
             last_exc: Exception | None = None
 

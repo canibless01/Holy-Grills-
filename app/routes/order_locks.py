@@ -80,13 +80,13 @@ def create_lock():
 
     try:
         if reward_type == "discount":
-            # order_lock_default_discount: default 10.0
+            env_default = float(current_app.config.get("ORDER_LOCK_DEFAULT_DISCOUNT_PCT", 10.0))
             discount_pct = get_validated_setting(
                 db,
                 "order_lock_default_discount",
-                default=10.0,
+                default=env_default,
                 minimum=1.0,
-                maximum=100.0,
+                maximum=50.0,
                 required=False
             )
         elif reward_type == "hp":

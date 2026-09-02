@@ -24,8 +24,9 @@ def _paystack_headers() -> dict:
     }
 
 
-@with_retry(max_attempts=3, backoff=0.5)
+@with_retry(max_attempts=3, backoff=0.5, retry_on_connection_errors=False)
 def _paystack_post(url: str, headers: dict, payload: dict) -> "http_requests.Response":
+    """Post payload to Paystack API. Connection errors are not auto-retried to avoid duplicate charges/refunds."""
     return http_requests.post(url, headers=headers, json=payload, timeout=15)
 
 

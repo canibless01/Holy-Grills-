@@ -31,6 +31,56 @@ def _get_checkin_hp() -> int:
     return _DEFAULT_CHECKIN_HP
 
 
+def _do_record_checkin(user_id: str, campus_id: str = None) -> dict:
+    db = get_db()
+    today = date.today().isoformat()
+
+    existing = (
+        db.table("daily_checkins")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("checkin_date", today)
+        .execute()
+    )
+    if existing:
+        return {"already_checked_in": True, "checkin_date": today, "hp_awarded": 0}
+
+    if not campus_id:
+        profile = db.table("profiles").select("campus_id").eq("id", user_id).single().execute()
+        campus_id = (profile or {}).get("campus_id")
+    if not campus_id:
+        return {"error": "no_campus"}
+
+    hp = _get_checkin_hp()
+    try:
+        db.table("daily_checkins").insert({
+            "user_id": user_id,
+            "checkin_date": today,
+            "hp_awarded": hp,
+            "campus_id": campus_id,
+        })
+    except Exception as e:
+        if getattr(e, "code", None) == "23505" or "23505" in str(e):
+            return {"already_checked_in": True, "checkin_date": today, "hp_awarded": 0}
+        logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
+        return {"error": str(e)}
+
+    hp_awarded = 0
+    if hp > 0:
+        try:
+            from app.services.hp_service import award_active_hp
+            award_active_hp(
+                user_id=user_id, amount=hp, source_type="daily_checkin",
+                reference_type="daily_checkin", reference_id=today,
+                notes=f"Daily check-in bonus — {today}",
+            )
+            hp_awarded = hp
+        except Exception as e:
+            logger.warning("record_checkin: HP award failed for user %s: %s", user_id, e)
+
+    return {"checkin_date": today, "hp_awarded": hp_awarded}
+
+
 @checkin_bp.route("", methods=["POST"])
 @require_auth
 def record_checkin():
@@ -47,64 +97,17 @@ def record_checkin():
       409:
         description: Already checked in today
     """
-    user_id = g.user_id
-    db = get_user_client()
-    today = date.today().isoformat()
-
-    # Idempotency check
-    existing = (
-        db.table("daily_checkins")
-        .select("id,checkin_date")
-        .eq("user_id", user_id)
-        .eq("checkin_date", today)
-        .execute()
-    )
-    if existing and len(existing) > 0:
-        return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
-
-    campus_id = getattr(g, "campus_id", None)
-    if not campus_id:
+    result = _do_record_checkin(g.user_id, getattr(g, "campus_id", None))
+    if result.get("error") == "no_campus":
         return jsonify({"error": "Unable to resolve campus for this request"}), 400
-
-    hp = _get_checkin_hp()
-
-    try:
-        insert_data = {
-            "user_id": user_id,
-            "checkin_date": today,
-            "hp_awarded": hp,
-            "campus_id": campus_id,
-        }
-        db.table("daily_checkins").insert(insert_data)
-    except Exception as e:
-        is_unique_violation = getattr(e, "code", None) == "23505" or "23505" in str(e)
-        if is_unique_violation:
-            logger.info("record_checkin: duplicate check-in for user %s", user_id)
-            return jsonify({"message": "Already checked in today", "already_checked_in": True}), 200
-        logger.error("record_checkin: insert failed for user %s: %s", user_id, e)
+    if result.get("error"):
         return jsonify({"error": "Check-in failed, please try again"}), 500
-
-    # Award HP if configured
-    hp_awarded = 0
-    if hp > 0:
-        try:
-            from app.services.hp_service import award_active_hp
-            award_active_hp(
-                user_id=user_id,
-                amount=hp,
-                source_type="daily_checkin",
-                reference_type="daily_checkin",
-                reference_id=today,
-                notes=f"Daily check-in bonus — {today}",
-            )
-            hp_awarded = hp
-        except Exception as e:
-            logger.warning("record_checkin: HP award failed for user %s: %s", user_id, e)
-
+    if result.get("already_checked_in"):
+        return jsonify({"message": MSG.CHECKIN_ALREADY_DONE, "already_checked_in": True}), 200
     return jsonify({
-        "message": resolve_msg(MSG.CHECKIN_HP_AWARDED, hp=hp_awarded) if hp_awarded else MSG.CHECKIN_SUCCESS,
-        "checkin_date": today,
-        "hp_awarded": hp_awarded,
+        "message": resolve_msg(MSG.CHECKIN_HP_AWARDED, hp=result["hp_awarded"]) if result["hp_awarded"] else MSG.CHECKIN_SUCCESS,
+        "checkin_date": result["checkin_date"],
+        "hp_awarded": result["hp_awarded"],
     }), 201
 
 

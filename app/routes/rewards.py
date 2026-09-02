@@ -1,7 +1,7 @@
 """Rewards store routes — list, redeem, flash sales."""
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.services.hp_service import spend_hp, get_hp_balance, get_user_tier
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
@@ -158,6 +158,10 @@ def redeem_reward(reward_id):
         })
     except Exception as exc:
         err_str = str(exc)
+        if "MAX_PER_USER" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_MAX_PER_USER_REACHED}), 400
+        if "TIER_TOO_LOW" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_TIER_TOO_LOW}), 400
         if "INSUFFICIENT" in err_str.upper() or "BALANCE" in err_str.upper():
             balance = get_hp_balance(g.user_id)
             return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
@@ -169,6 +173,10 @@ def redeem_reward(reward_id):
 
     if isinstance(rpc_res, dict) and rpc_res.get("error"):
         err_str = str(rpc_res["error"])
+        if "MAX_PER_USER" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_MAX_PER_USER_REACHED}), 400
+        if "TIER_TOO_LOW" in err_str.upper():
+            return jsonify({"error": MSG.REWARD_TIER_TOO_LOW}), 400
         if "INSUFFICIENT" in err_str.upper() or "BALANCE" in err_str.upper():
             balance = get_hp_balance(g.user_id)
             return jsonify({"error": resolve_msg(MSG.REWARD_INSUFFICIENT_HP, need=hp_cost, have=balance["active"])}), 400
@@ -229,7 +237,7 @@ def admin_list_redemptions():
     q = db.table("reward_redemptions").select(
         "*,rewards(name,reward_type,hp_cost,image_url),profiles!user_id(full_name,email)"
     )
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
@@ -310,6 +318,19 @@ def admin_update_redemption(redemption_id):
                 )
             except Exception as e:
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
+
+        # Restore the stock unit this redemption had claimed
+        try:
+            reward_id = row.get("reward_id")
+            current_reward = (
+                db.table("rewards").select("stock_quantity").eq("id", reward_id).single().execute()
+            )
+            if current_reward and current_reward.get("stock_quantity") is not None:
+                db.table("rewards").eq("id", reward_id).update(
+                    {"stock_quantity": current_reward["stock_quantity"] + 1}
+                )
+        except Exception as e:
+            return jsonify({"error": f"Stock restore failed: {str(e)}"}), 400
 
     update = {"status": new_status}
     if new_status == "fulfilled":

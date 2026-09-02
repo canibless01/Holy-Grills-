@@ -9,6 +9,19 @@ from datetime import datetime, timezone
 kitchen_bp = Blueprint("kitchen", __name__)
 
 
+def _resolve_kitchen_campus_id():
+    """
+    admin/kitchen staff: always see their assigned campus (g.campus_id).
+    super_admin: must specify ?campus_id=<id> in the query string, so they view one campus at a time.
+    """
+    if getattr(g, "user_role", None) == "super_admin":
+        campus_id = request.args.get("campus_id")
+        if not campus_id:
+            return None, (jsonify({"error": "campus_id is required for super_admin"}), 400)
+        return campus_id, None
+    return getattr(g, "campus_id", None), None
+
+
 @kitchen_bp.route("/settings", methods=["GET"])
 @require_role("kitchen", "admin")
 def get_kitchen_settings():
@@ -20,9 +33,11 @@ def get_kitchen_settings():
       200:
         description: Kitchen settings key/value map
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     q = db.table("kitchen_settings").select("*")
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     rows = q.execute() or []
@@ -51,9 +66,11 @@ def get_kitchen_setting(key):
       404:
         description: Setting not found
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     q = db.table("kitchen_settings").select("*").eq("key", key)
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     row = q.limit(1).execute()
@@ -92,9 +109,11 @@ def update_kitchen_settings():
     if not settings or not isinstance(settings, dict):
         return jsonify({"error": MSG.KITCHEN_SETTINGS_REQUIRED}), 400
 
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
-    campus_id = getattr(g, 'campus_id', None)
     updated = {}
     for key, value in settings.items():
         payload = {
@@ -110,7 +129,7 @@ def update_kitchen_settings():
             result = res.execute() if hasattr(res, "execute") else res
             updated[key] = (result[0] if isinstance(result, list) and len(result) > 0 else result) or payload
 
-        return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
           
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")
@@ -128,13 +147,15 @@ def live_queue():
       200:
         description: Kitchen order queue
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     q = (
         db.table("orders")
         .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
         .in_("status", ["received", "preparing"])
     )
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.order("received_at")
@@ -157,9 +178,11 @@ def delivery_windows():
       200:
         description: Delivery windows
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
-    campus_id = getattr(g, 'campus_id', None)
     q = db.table("delivery_windows").select("id,label,starts_at,ends_at,status").gte("ends_at", now)
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -203,6 +226,9 @@ def scheduled_orders():
       200:
         description: List of scheduled orders with items and window info
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     # Scheduled orders: is_scheduled=True AND status='received' (not yet activated).
     # The DB enum does not include a 'scheduled' status value; the is_scheduled
@@ -218,7 +244,6 @@ def scheduled_orders():
         .eq("is_scheduled", "true")
         .eq("status", "received")
     )
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.order("scheduled_for", ascending=True)
@@ -246,9 +271,11 @@ def kitchen_metrics():
       200:
         description: Kitchen metrics summary
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     q = db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -317,6 +344,9 @@ def batch_summary(window_id):
       200:
         description: Aggregated item summary for kitchen preparation
     """
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     q = (
         db.table("orders")
@@ -324,7 +354,6 @@ def batch_summary(window_id):
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "preparing", "ready"])
     )
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -375,6 +404,9 @@ def batch_advance(batch_id):
         description: No orders found in this batch
     """
     from app.services.order_service import update_order_status, VALID_TRANSITIONS
+    campus_id, err = _resolve_kitchen_campus_id()
+    if err:
+        return err
     db = get_user_client()
     data = request.get_json(force=True) or {}
     from_status_filter = data.get("from_status")
@@ -385,7 +417,6 @@ def batch_advance(batch_id):
         .select("id,status")
         .eq("delivery_window_id", batch_id)
     )
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])

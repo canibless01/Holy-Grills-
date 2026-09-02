@@ -964,16 +964,8 @@ def walk_order_to_status(
                 pass
 
         if caller_role == "rider":
-            batch_id = order.get("batch_id")
-            assigned_rider_id = None
-            if batch_id:
-                try:
-                    batch = db.table("delivery_batches").select("rider_id").eq("id", batch_id).single().execute()
-                    if batch:
-                        assigned_rider_id = batch.get("rider_id")
-                except Exception:
-                    pass
-            if not assigned_rider_id or assigned_rider_id != changed_by:
+            effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id}).execute()
+            if not effective_rider or str(effective_rider) != str(changed_by):
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
@@ -1136,9 +1128,11 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
-            order_campus = order.get("campus_id")
-            if caller_campus and order_campus and caller_campus != order_campus:
+            if order.get("campus_id") != caller_campus:
                 raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
+        elif caller_role == "admin":
+            if order.get("campus_id") != caller_campus:
+                raise ValueError("Unauthorized: Admin is scoped to a different campus")
 
     current_status = order["status"]
     allowed = VALID_TRANSITIONS.get(current_status, [])
@@ -1152,6 +1146,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
         update_data[ts_field] = now
 
     updated = db.table("orders").eq("id", order_id).update(update_data).execute()
+    if not updated:
+        raise ValueError("Order status update failed — no matching order or insufficient permissions")
     _log_status_change(order_id, current_status, new_status, changed_by, notes)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery

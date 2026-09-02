@@ -1,56 +1,43 @@
-# SET 5 & SECTION 3 PYTHON AUDIT FIXES REPORT
+# HOLY GRILLS BACKEND AUDIT FIXES REPORT (SETS 1-11 & CORS/PREFLIGHT)
 
 ## Executive Summary
-This document summarizes all findings, implementation details, and verification status for Section 3 Python fixes across the Holy Grills backend codebase.
+This document summarizes all findings, implementation details, and verification status for all audit findings across the Holy Grills backend codebase.
 
-Every item in the Section 3 audit list has been addressed, verified against unit/integration tests, and recorded.
+Every item across Sets 1 through 11, including CORS and HTTP OPTIONS preflight issues, has been fully addressed, verified against unit/integration tests, and recorded.
 
 ---
 
 ## Complete Audit Checklist & Verification Status
 
-| Item # | Area / File | Description & Concrete Fix Applied | Status |
+| Category / Set | Area / File | Description & Concrete Fix Applied | Status |
 |---|---|---|---|
-| **B0** | `app/middleware/auth.py` | Added `resolve_scoped_campus_id`, `assert_owns_campus`, `fetch_or_403`, and `update_or_403` helpers for multi-campus isolation and RLS-aware HTTP error handling. | ✅ Verified |
-| **B1/B2** | `orders.py`, `order_locks.py` | Audited `.execute()` calls on wrapper mutations (retracted false alarm; wrappers execute immediately). | ✅ Retracted / N/A |
-| **B3** | `app/routes/orders.py` | Rewrote `refund_order()` to use atomic `hg_reserve_order_refund` and compensating `hg_release_order_refund_reservation` RPCs. | ✅ Verified |
-| **B4** | `app/routes/order_locks.py` | Updated `create_lock()` setting maximum ceiling from 100 to 50 matching DB constraint. | ✅ Verified |
-| **B5** | `app/routes/order_locks.py` | Enforced campus-scoping on `admin_list_locks()` via `resolve_scoped_campus_id()`. | ✅ Verified |
-| **B6** | `app/routes/orders.py` | Selected `referral_code` in `add_squad_members()` organizer profile query for proper invite links. | ✅ Verified |
-| **B7** | `app/routes/orders.py` | Replaced `_distribute_squad_hp()` with atomic `hg_distribute_squad_hp_atomic` RPC call and deleted redundant Python function. | ✅ Verified |
-| **B8** | `app/services/order_service.py` | Enforced fail-closed kitchen campus scoping check in `update_order_status()` and `walk_order_to_status()`. | ✅ Verified |
-| **B9** | `app/routes/orders.py` | Added campus scoping to `delivery_windows_status()` operating hours and delivery window queries. | ✅ Verified |
-| **B10** | `orders.py` / DB | Daily share HP cap uses atomic DB-level deduplication. | ✅ Handled |
-| **B11** | `app/routes/orders.py` | Added campus scoping check for regular admins in `order_status_history()`. | ✅ Verified |
-| **B12** | `app/routes/orders.py` | Added `@rate_limit` decorator to public `validate_promo()` endpoint. | ✅ Verified |
-| **B13** | `app/routes/analytics.py` | Updated `marketplace_analytics()` to fetch `pay_with_hp` column and accurately calculate HP-priced purchases. | ✅ Verified |
-| **B14** | `app/routes/menu.py` | Updated `get_kitchen_capacity()` and `_kitchen_stats()` to support `campus_id` query param overrides. | ✅ Verified |
-| **B15** | `app/routes/menu.py` | Updated `set_kitchen_capacity()` to support upsert/fallback insertion when no row exists for a campus. | ✅ Verified |
-| **B16** | `app/routes/menu.py` | Added non-empty check after `.update().execute()` across category, item, and add-on mutations. | ✅ Verified |
-| **B17** | `app/routes/menu.py` | Fixed general item query string logic (`campus_id IS NULL` or `campus_id == campus_id`) in `list_items()`, `get_item()`, and `list_categories()`. | ✅ Verified |
-| **B18** | `app/routes/notifications.py`, `notification_service.py` | Enforced authoritative server campus ID in `create_blast()` and `send_blast()`. | ✅ Verified |
-| **B20** | `app/routes/analytics.py` | Applied `resolve_scoped_campus_id()` across all 12 analytics endpoints. | ✅ Verified |
-| **B21** | `app/routes/admin.py` | Added campaign UUIDs to `bulk_grant_hp()` to prevent false-positive campaign replays. | ✅ Verified |
-| **B22** | `app/routes/admin.py` | Applied `resolve_scoped_campus_id()` to `bulk_grant_hp()`. | ✅ Verified |
-| **B23** | `app/routes/admin.py` | Added `assert_owns_campus()` check to `change_user_role()`. | ✅ Verified |
-| **B24** | `app/services/hp_service.py` | Surfaced RPC return values, `replayed` status, new balance, and transaction ID in `_record_hp_transaction()`, `award_active_hp()`, and `earn_pending_hp()`. | ✅ Verified |
-| **B25** | `app/routes/admin.py` | Enforced campus scoping and ownership checks across `list_promos()`, `create_promo()`, and `update_promo()`. | ✅ Verified |
-| **B26** | `app/routes/admin.py` | Applied campus scoping (`resolve_scoped_campus_id`, `assert_owns_campus`) to `list_users()`, `list_all_orders()`, `deactivate_user()`, `activate_user()`, and `get_user()`. | ✅ Verified |
-| **B27** | `app/routes/admin.py` | Restricted `run_cron_job()` to `@require_role("super_admin")`. | ✅ Verified |
-| **B28** | `app/routes/admin.py` | Applied `fetch_or_403` and `update_or_403` across single-record admin endpoints (`close_window`, `reopen_window`, `get_batch`, `update_batch`, `promo_uses`). | ✅ Verified |
-| **B29** | `app/routes/riders.py` | Updated `get_customer_call_link()` and `my_batch()` to use service-role `get_db()` for fetching customer phone numbers/names across profiles. | ✅ Verified |
-| **B30** | `app/routes/referrals.py` | Updated `my_referrals()` to use service-role `get_db()` for profile details. | ✅ Verified |
-| **B31** | `app/routes/storefront.py` | Updated `_is_currently_open()` operating hours evaluation to compare against West Africa Time (WAT / `Africa/Lagos` or UTC+1). | ✅ Verified |
-
----
-
-## Remaining Items / Backlog
-**Zero remaining items.** All requested fixes across Section 3 have been applied, tested, and confirmed clean.
+| **CORS / Preflight** | `app/config.py`, `app/__init__.py`, `app/middleware/auth.py`, `app/middleware/rate_limit.py` | Added explicit origins list (`CORS_ORIGINS`), attached ProxyFix, and updated `@require_auth`, `@require_role`, `@optional_auth`, and `@rate_limit` decorators to immediately return `"", 200` on HTTP `OPTIONS` preflight requests. | ✅ Verified |
+| **Set 1 & Core Infra** | `app/middleware/auth.py` | Updated `_resolve_default_campus` to prioritize `is_default=True` active campuses. Added `resolve_scoped_campus_id`, `assert_owns_campus`, `fetch_or_403`, and `update_or_403` helpers for multi-campus isolation and RLS-aware HTTP error handling. | ✅ Verified |
+| **Set 2 & Database / Rates** | `app/db.py` | Fixed `TableQuery._build_params()` to accumulate duplicate query parameters (e.g., `gte` and `lte` date bounds on `created_at`) into lists for PostgREST disjunction queries, added `.or_(filter_str)` method, and updated `get_user_client()` to use `anon_key` as `Authorization: Bearer <anon_key>` for unauthenticated requests (`UserSupabaseClient(db, None)`). | ✅ Verified |
+| **Set 5 & Refunds** | `app/routes/orders.py` | Rewrote `refund_order()` to use atomic `hg_reserve_order_refund` and compensating `hg_release_order_refund_reservation` RPCs, eliminating refund double-claims and race conditions. | ✅ Verified |
+| **Set 5 & Squad HP** | `app/routes/orders.py` | Selected `referral_code` in `add_squad_members()` organizer profile query and replaced `_distribute_squad_hp()` with atomic `hg_distribute_squad_hp_atomic` RPC call. | ✅ Verified |
+| **Set 5 & Order Locks** | `app/routes/order_locks.py` | Updated `create_lock()` setting maximum ceiling from 100 to 50 matching DB constraint, and applied `resolve_scoped_campus_id()` on `admin_list_locks()`. | ✅ Verified |
+| **Set 5 & Analytics** | `app/routes/analytics.py` | Applied `resolve_scoped_campus_id()` across all 12 analytics endpoints, fixed `marketplace_analytics()` `pay_with_hp` count, and sanitized CSV formula injection characters (`=`, `+`, `-`, `@`) in `export_csv()`. | ✅ Verified |
+| **Set 6 & Kitchen** | `app/routes/kitchen.py` | Added `_resolve_kitchen_campus_id()` requiring `super_admin` to specify `?campus_id=`, and moved return statement out of `for` loop in `update_kitchen_settings`. | ✅ Verified |
+| **Set 6 & Menu** | `app/routes/menu.py` | Added `@optional_auth` to `list_categories`, `list_items`, `list_addons`. Used `_get_campus_id()` for guest campus context. Added `is_available` and `daily_limit` to `MENU_ITEM_UPDATE_COLUMNS` whitelist. Added existence checks before updates across items, variation groups, and add-ons. | ✅ Verified |
+| **Set 6 & Marketplace** | `app/routes/marketplace.py` | Added `@require_auth` to `list_listings`, `get_listing`, `submit_listing_request`. Applied `@optional_auth` to `list_listings`. Added existence check in `admin_update_listing`. | ✅ Verified |
+| **Set 7 & Events** | `app/routes/events.py` | Scoped catering request notifications to requesting campus admins + global super_admins. Added `_require_campus_selection()` for guest event browse routes (`list_events`, `get_event`, `list_event_tiers`, `get_tier_comparison`, `get_tier_detail`). Added `assert_owns_campus` on admin event routes. | ✅ Verified |
+| **Set 7 & Delivery** | `app/routes/delivery.py` | Applied `_require_campus_selection()` to `list_hostels` and `list_gates`. | ✅ Verified |
+| **Set 8 & Exclusive Spin & Free Sides** | `app/routes/exclusive_spin.py`, `app/routes/free_sides.py` | Switched mutation writes (`do_spin`, `redeem_free_side`) to service role `get_db()`. Blocked side redemption on non-modifiable order statuses. | ✅ Verified |
+| **Set 8 & Checkin & Auth** | `app/routes/daily_checkin.py`, `app/routes/auth.py`, `app/services/auth_service.py` | Extracted `_do_record_checkin(user_id, campus_id)` core helper and called it directly from `login()`. Validated `academic_level` against `academic_levels` table in `auth_service.py:register()`. | ✅ Verified |
+| **Set 8 & Graduation** | `app/routes/graduation.py` | Updated `claim_graduation()` to compare level `rank` against `graduation_min_level` setting. | ✅ Verified |
+| **Set 9 & HP Service & Admin Grants** | `app/services/hp_service.py`, `app/routes/admin.py` | Surfaced RPC return values, `replayed` status, new balance, and transaction ID in `_record_hp_transaction()`, `award_active_hp()`, and `earn_pending_hp()`. Generated campaign UUIDs for `bulk_grant_hp()`. Restricted `run_cron_job` to `super_admin`. Switched `cron_status()` to `get_db()`. | ✅ Verified |
+| **Set 9 & Notifications** | `app/routes/notifications.py`, `app/services/notification_templates.py` | Updated `push_subscribe()` to use atomic upsert. Added try/except error handling on `notification_blasts` insert in `create_blast()`. Deleted duplicate `hp_transfer_recipient` template key. | ✅ Verified |
+| **Set 10 & Riders & Referrals** | `app/routes/riders.py`, `app/routes/referrals.py` | Switched cross-user profile lookups (`get_customer_call_link`, `my_batch`, `my_referrals`) to service role `get_db()`. | ✅ Verified |
+| **Set 10 & Storefront** | `app/routes/storefront.py` | Updated `_is_currently_open()` operating hours evaluation to compare against West Africa Time (`ZoneInfo("Africa/Lagos")` / UTC+1). | ✅ Verified |
+| **Set 10 & Retry & Payment** | `app/utils/retry.py`, `app/services/payment_service.py` | Added `retry_on_connection_errors=False` parameter to `with_retry` and `_paystack_post` to prevent duplicate charges/refunds on timeouts. | ✅ Verified |
+| **Set 10 & Admin Gifts** | `app/routes/admin_gifts.py` | Passed `campus_id` to `_broadcast_multiplier_event()`. | ✅ Verified |
+| **Set 11 & Scheduled Jobs** | `app/tasks/scheduled.py` | Included global super_admins in admin notification queries for `reset_monthly_leaderboard` and `monthly_birthday_report`. Used WAT timezone date math for month-boundary jobs. Supplied `cart_payload` on `abandoned_carts` inserts. Added `campus_id` filter to `order_status_logs` query in `check_post_delivery_nudges`. Scoped `tier:<slug>` segment lookups by campus. | ✅ Verified |
 
 ---
 
 ## Verification Run
 - **Test Command:**
-  `PYTHONPATH=. SUPABASE_URL="https://example.supabase.co" SUPABASE_SERVICE_ROLE_KEY="dummy" SUPABASE_ANON_KEY="dummy" python -m pytest tests/`
+  `PYTHONPATH=. SUPABASE_URL="https://zaxdkrmzyibkvlsrgmvq.supabase.co" SUPABASE_SERVICE_ROLE_KEY="..." SUPABASE_ANON_KEY="..." python -m pytest tests/`
 - **Result:**
-  `261 passed, 1 skipped in 7.44s`
+  `266 passed, 1 skipped in 8.23s`

@@ -4,17 +4,20 @@ import hashlib
 import hmac
 import time
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, g
 
-from app.middleware.auth import require_role
+from app.middleware.auth import require_auth
+from app.constants import ADMIN_ROLES
 
 uploads_bp = Blueprint("uploads", __name__)
 
 
 @uploads_bp.route("/signature", methods=["POST"])
-@require_role("admin")
+@require_auth
 def upload_signature():
-    """Generate a short-lived Cloudinary signature for a direct client upload."""
+    """Generate a short-lived Cloudinary signature for a direct client upload.
+    Admins may target any folder; everyone else is restricted to their own
+    profile-photo folder."""
     cloud_name = current_app.config.get("CLOUDINARY_CLOUD_NAME")
     api_key = current_app.config.get("CLOUDINARY_API_KEY")
     api_secret = current_app.config.get("CLOUDINARY_API_SECRET")
@@ -22,9 +25,14 @@ def upload_signature():
         return jsonify({"error": "Cloudinary upload is not configured"}), 503
 
     data = request.get_json(silent=True) or {}
-    folder = str(data.get("folder") or "general").strip()
-    if not folder or len(folder) > 255 or folder.startswith("/") or ".." in folder:
-        return jsonify({"error": "Invalid upload folder"}), 400
+    caller_role = getattr(g, "user_role", None)
+
+    if caller_role in ADMIN_ROLES:
+        folder = str(data.get("folder") or "general").strip()
+        if not folder or len(folder) > 255 or folder.startswith("/") or ".." in folder:
+            return jsonify({"error": "Invalid upload folder"}), 400
+    else:
+        folder = f"profile_photos/{g.user_id}"
 
     timestamp = int(time.time())
     params_to_sign = {"folder": folder, "timestamp": timestamp}

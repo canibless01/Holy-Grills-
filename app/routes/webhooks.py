@@ -38,10 +38,7 @@ def paystack_webhook():
         computed = hmac.new(secret.encode(), payload_bytes, hashlib.sha512).hexdigest()
         if not hmac.compare_digest(computed, signature):
             return jsonify({"error": MSG.WEBHOOK_INVALID_SIGNATURE}), 401
-    elif not current_app.config.get("DEBUG"):
-        # No webhook secret configured — never trust an unsigned payment
-        # webhook outside of local debug development. Fail closed rather
-        # than silently accepting money-moving events with no verification.
+    elif not current_app.config.get("ALLOW_UNSIGNED_WEBHOOKS"):
         current_app.logger.error("PAYSTACK_WEBHOOK_SECRET not configured — rejecting unsigned webhook")
         return jsonify({"error": MSG.WEBHOOK_INVALID_SIGNATURE}), 401
 
@@ -83,19 +80,23 @@ def paystack_webhook():
         raise
 
     try:
+        resolved_campus_id = None
         if event_type == "charge.success":
-            _handle_charge_success(data)
+            resolved_campus_id = _handle_charge_success(data)
         elif event_type == "dedicatedaccount.assign.success":
-            _handle_dva_assign(data)
+            resolved_campus_id = _handle_dva_assign(data)
         elif event_type == "transfer.success":
-            _handle_transfer(data)
+            resolved_campus_id = _handle_transfer(data)
 
         # Mark as processed
         if reference:
-            get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update({
+            update_fields = {
                 "status": "processed",
                 "processed_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
+            }
+            if resolved_campus_id:
+                update_fields["campus_id"] = resolved_campus_id
+            get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update(update_fields).execute()
     except Exception as e:
         # Mark as failed
         if reference:
@@ -133,10 +134,7 @@ def flutterwave_webhook():
     if secret:
         if not hmac.compare_digest(signature, secret):
             return jsonify({"error": MSG.WEBHOOK_INVALID_SIGNATURE}), 401
-    elif not current_app.config.get("DEBUG"):
-        # No webhook secret configured — never trust an unsigned payment
-        # webhook outside of local debug development. Fail closed rather
-        # than silently accepting money-moving events with no verification.
+    elif not current_app.config.get("ALLOW_UNSIGNED_WEBHOOKS"):
         current_app.logger.error("FLUTTERWAVE_WEBHOOK_SECRET not configured — rejecting unsigned webhook")
         return jsonify({"error": MSG.WEBHOOK_INVALID_SIGNATURE}), 401
 
@@ -180,15 +178,19 @@ def flutterwave_webhook():
         raise
 
     try:
+        resolved_campus_id = None
         if event_type == "charge.completed" and data.get("status") == "successful":
-            _handle_flutterwave_charge_success(data)
+            resolved_campus_id = _handle_flutterwave_charge_success(data)
 
         # Mark as processed
         if reference:
-            get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update({
+            update_fields = {
                 "status": "processed",
                 "processed_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
+            }
+            if resolved_campus_id:
+                update_fields["campus_id"] = resolved_campus_id
+            get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update(update_fields).execute()
     except Exception as e:
         # Mark as failed
         if reference:
@@ -238,6 +240,13 @@ def _handle_flutterwave_charge_success(data: dict):
         if order.get("user_id") and str(order.get("user_id")) != str(user_id):
             raise ValueError("Order user mismatch")
 
+        if order.get("payment_status") == "paid":
+            current_app.logger.warning(
+                "Duplicate payment webhook for already-paid order %s (ref %s) — skipping",
+                order_id, reference,
+            )
+            return order.get("campus_id")
+
         expected_amount = float(order.get("total_amount") or 0)
         if abs(amount_naira - expected_amount) > 0.01:
             raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
@@ -246,6 +255,7 @@ def _handle_flutterwave_charge_success(data: dict):
             raise ValueError(f"Order is already {order.get('status')}")
 
         confirm_order_payment(order_id, reference, provider_response=data)
+        return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":
         ticket_id = meta.get("ticket_id")
@@ -256,6 +266,12 @@ def _handle_flutterwave_charge_success(data: dict):
             raise ValueError(f"Ticket {ticket_id} not found")
         if user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(user_id):
             raise ValueError("Ticket user mismatch")
+        if ticket.get("payment_status") == "paid":
+            current_app.logger.warning(
+                "Duplicate payment webhook for already-paid ticket %s (ref %s) — skipping",
+                ticket_id, reference,
+            )
+            return ticket.get("campus_id")
         expected_amount = float(ticket.get("card_amount_used") or 0)
         if abs(amount_naira - expected_amount) > 0.01:
             raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Ticket: {expected_amount}")
@@ -263,6 +279,7 @@ def _handle_flutterwave_charge_success(data: dict):
             raise ValueError("Ticket is already cancelled")
         from app.routes.events import confirm_event_ticket_payment
         confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
+        return ticket.get("campus_id")
 
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:
@@ -289,6 +306,8 @@ def _handle_flutterwave_charge_success(data: dict):
             template_data={"amount": _fmt_amt},
             campus_id=campus_id,
         )
+        return campus_id
+    return None
 
 
 def _handle_charge_success(data: dict):
@@ -325,6 +344,13 @@ def _handle_charge_success(data: dict):
         if order.get("user_id") and str(order.get("user_id")) != str(user_id):
             raise ValueError("Order user mismatch")
 
+        if order.get("payment_status") == "paid":
+            current_app.logger.warning(
+                "Duplicate payment webhook for already-paid order %s (ref %s) — skipping",
+                order_id, reference,
+            )
+            return order.get("campus_id")
+
         expected_amount = float(order.get("total_amount") or 0)
         if abs(amount_naira - expected_amount) > 0.01:
             raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
@@ -333,6 +359,7 @@ def _handle_charge_success(data: dict):
             raise ValueError(f"Order is already {order.get('status')}")
 
         confirm_order_payment(order_id, reference, provider_response=data)
+        return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":
         ticket_id = metadata.get("ticket_id")
@@ -343,6 +370,12 @@ def _handle_charge_success(data: dict):
             raise ValueError(f"Ticket {ticket_id} not found")
         if user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(user_id):
             raise ValueError("Ticket user mismatch")
+        if ticket.get("payment_status") == "paid":
+            current_app.logger.warning(
+                "Duplicate payment webhook for already-paid ticket %s (ref %s) — skipping",
+                ticket_id, reference,
+            )
+            return ticket.get("campus_id")
         expected_amount = float(ticket.get("card_amount_used") or 0)
         if abs(amount_naira - expected_amount) > 0.01:
             raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Ticket: {expected_amount}")
@@ -350,6 +383,7 @@ def _handle_charge_success(data: dict):
             raise ValueError("Ticket is already cancelled")
         from app.routes.events import confirm_event_ticket_payment
         confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
+        return ticket.get("campus_id")
 
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:
@@ -376,6 +410,8 @@ def _handle_charge_success(data: dict):
             template_data={"amount": _fmt_amt},
             campus_id=campus_id,
         )
+        return campus_id
+    return None
 
 
 def _handle_dva_assign(data: dict):
@@ -386,11 +422,11 @@ def _handle_dva_assign(data: dict):
     account = data.get("dedicated_account", {})
     user_email = customer.get("email")
     if not user_email:
-        return
+        return None
     db = get_db()
     user_rows = db.table("profiles").select("id,campus_id").eq("email", user_email).limit(1).execute()
     if not user_rows:
-        return
+        return None
     user_id = user_rows[0]["id"]
     campus_id = user_rows[0].get("campus_id")
 
@@ -416,6 +452,7 @@ def _handle_dva_assign(data: dict):
             "campus_id": campus_id,
         }
         db.table("virtual_accounts").insert(va_data).execute()
+    return campus_id
 
 
 def _handle_transfer(data: dict):
@@ -478,6 +515,7 @@ def _handle_transfer(data: dict):
         template_data={"amount": _fmt_amt},
         campus_id=campus_id,
     )
+    return campus_id
 
 
 def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -> None:

@@ -183,8 +183,11 @@ def update_hours():
     q = db.table("operating_hours").eq("weekday", weekday_int)
     if campus_id:
         q = q.eq("campus_id", campus_id)
+    existing = q.execute()
+    if not existing:
+        return jsonify({"error": "No operating-hours row exists for this campus/weekday yet"}), 404
     result = q.update(update)
-    return jsonify(result[0] if isinstance(result, list) else result), 200
+    return jsonify(result[0] if isinstance(result, list) and result else result), 200
 
 
 @storefront_bp.route("/operating-hours/override", methods=["POST"])
@@ -423,29 +426,28 @@ def create_early_supporter():
         "social_links": data.get("social_links") or {},
         "note": data.get("note"),
     }
+    campus_id = getattr(g, "campus_id", None)
+    payload = {
+        "key": slug_key,
+        "title": name,
+        "section_type": "early_supporter",
+        "content": content,
+        "is_active": True,
+        "sort_order": int(data.get("sort_order", 0)),
+    }
+    if campus_id:
+        payload["campus_id"] = campus_id
+
     try:
-        result = db.table("storefront_sections").insert({
-            "key": slug_key,
-            "title": name,
-            "section_type": "early_supporter",
-            "content": content,
-            "is_active": True,
-            "sort_order": int(data.get("sort_order", 0)),
-        })
+        result = db.table("storefront_sections").insert(payload)
     except Exception as e:
         err_str = str(e)
         if "duplicate" in err_str.lower() or "unique" in err_str.lower() or "23505" in err_str:
             # Deduplicate key: append timestamp suffix and retry
             import time as _time
             slug_key = f"{slug_key}_{int(_time.time())}"
-            result = db.table("storefront_sections").insert({
-                "key": slug_key,
-                "title": name,
-                "section_type": "early_supporter",
-                "content": content,
-                "is_active": True,
-                "sort_order": int(data.get("sort_order", 0)),
-            })
+            payload["key"] = slug_key
+            result = db.table("storefront_sections").insert(payload)
         else:
             raise
     row = result[0] if isinstance(result, list) else result
@@ -530,8 +532,18 @@ def update_early_supporter_photo(section_id):
         return jsonify({"error": "photo_url is required"}), 400
 
     db = get_user_client()
-    section = db.table("storefront_sections").select("content").eq("id", section_id).single().execute()
-    content = (section.get("content") or {}) if isinstance(section, dict) else {}
+    section = (
+        db.table("storefront_sections")
+        .select("content")
+        .eq("id", section_id)
+        .eq("section_type", "early_supporter")
+        .single()
+        .execute()
+    )
+    if not section:
+        return jsonify({"error": "Early supporter not found"}), 404
+
+    content = section.get("content") or {}
     content["photo_url"] = photo_url
 
     db.table("storefront_sections").eq("id", section_id).update({

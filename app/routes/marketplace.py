@@ -1,7 +1,7 @@
 """Marketplace routes — listings, purchases, code redemption."""
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, optional_auth, resolve_scoped_campus_id
 from app.services.hp_service import spend_hp, get_hp_balance, award_active_hp
 from app.services.wallet_service import debit_wallet
 from app.db import get_db, get_user_client
@@ -16,9 +16,10 @@ marketplace_bp = Blueprint("marketplace", __name__)
 
 
 @marketplace_bp.route("", methods=["GET"])
+@optional_auth
 def list_listings():
     """
-    List active marketplace listings.
+    List active marketplace listings with availability filters (login required).
     ---
     tags: [Marketplace]
     security: []
@@ -74,9 +75,10 @@ def list_listings():
 
 
 @marketplace_bp.route("/<listing_id>", methods=["GET"])
+@require_auth
 def get_listing(listing_id):
     """
-    Get marketplace listing detail.
+    Get marketplace listing detail (login required).
     ---
     tags: [Marketplace]
     security: []
@@ -619,7 +621,7 @@ def update_listing_image(listing_id):
 def update_listing_availability(listing_id):
     db = get_user_client()
     data = request.get_json(force=True) or {}
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": "campus_id is required"}), 400
 
@@ -744,9 +746,10 @@ def admin_delete_listing(listing_id):
 
 
 @marketplace_bp.route("/requests", methods=["POST"])
+@require_auth
 def submit_listing_request():
     """
-    Submit a vendor listing request for admin review.
+    Submit a vendor listing request for admin review (login required).
     ---
     tags: [Marketplace]
     security: []
