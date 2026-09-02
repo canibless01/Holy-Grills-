@@ -281,6 +281,22 @@ def _handle_flutterwave_charge_success(data: dict):
         confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
         return ticket.get("campus_id")
 
+    elif payment_type == "marketplace_purchase":
+        from app.routes.marketplace import _complete_marketplace_purchase
+        listing_id = meta.get("listing_id")
+        quantity = meta.get("quantity", 1)
+        wallet_amount = meta.get("wallet_amount", 0.0)
+        pay_with_hp = meta.get("pay_with_hp", False)
+        _complete_marketplace_purchase(
+            user_id=user_id,
+            listing_id=listing_id,
+            quantity=quantity,
+            wallet_amount=wallet_amount,
+            pay_with_hp=pay_with_hp,
+            payment_reference=reference,
+        )
+        return None
+
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:
             raise ValueError(f"Invalid top-up amount: {amount_naira}")
@@ -384,6 +400,22 @@ def _handle_charge_success(data: dict):
         from app.routes.events import confirm_event_ticket_payment
         confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
         return ticket.get("campus_id")
+
+    elif payment_type == "marketplace_purchase":
+        from app.routes.marketplace import _complete_marketplace_purchase
+        listing_id = metadata.get("listing_id")
+        quantity = metadata.get("quantity", 1)
+        wallet_amount = metadata.get("wallet_amount", 0.0)
+        pay_with_hp = metadata.get("pay_with_hp", False)
+        _complete_marketplace_purchase(
+            user_id=user_id,
+            listing_id=listing_id,
+            quantity=quantity,
+            wallet_amount=wallet_amount,
+            pay_with_hp=pay_with_hp,
+            payment_reference=reference,
+        )
+        return None
 
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:

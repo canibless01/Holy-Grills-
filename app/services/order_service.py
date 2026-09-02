@@ -395,14 +395,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     # Users cannot choose their own window; this prevents gaming the queue.
     window_id = None
     try:
-        open_windows = (
-            db.table("delivery_windows")
-            .select("id,status,starts_at")
-            .eq("status", "open")
-            .order("starts_at", ascending=True)
-            .limit(1)
-            .execute()
-        ) or []
+        q_win = db.table("delivery_windows").select("id,status,starts_at").eq("status", "open")
+        if campus_id_for_check:
+            q_win = q_win.eq("campus_id", campus_id_for_check)
+        open_windows = q_win.order("starts_at", ascending=True).limit(1).execute() or []
         if open_windows:
             window_id = open_windows[0]["id"]
     except Exception:
@@ -428,14 +424,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             # supplies is_scheduled=True (and optionally a date hint via
             # scheduled_date YYYY-MM-DD); no window ID required.
             now_iso = datetime.now(timezone.utc).isoformat()
-            _future = (
-                db.table("delivery_windows")
-                .select("id,status,starts_at")
-                .gt("starts_at", now_iso)
-                .order("starts_at", ascending=True)
-                .limit(1)
-                .execute()
-            ) or []
+            q_fut = db.table("delivery_windows").select("id,status,starts_at").gt("starts_at", now_iso)
+            if campus_id_for_check:
+                q_fut = q_fut.eq("campus_id", campus_id_for_check)
+            _future = q_fut.order("starts_at", ascending=True).limit(1).execute() or []
             if _future:
                 scheduled_window = _future[0]
                 scheduled_window_id = scheduled_window["id"]

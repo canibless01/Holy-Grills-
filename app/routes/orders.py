@@ -839,24 +839,6 @@ def cancel_scheduled_order(order_id):
         )
         wallet_refunded = wallet_amount_used
 
-    hp_refunded = 0
-    hp_redeemed = int(order.get("hp_redeemed") or 0)
-    if hp_redeemed > 0 and order.get("payment_status") == "paid":
-        try:
-            from app.services.hp_service import award_active_hp
-            award_active_hp(
-                user_id=g.user_id,
-                amount=hp_redeemed,
-                txn_type="earn",
-                reference_id=order_id,
-                reference_type="order_cancel_hp_refund",
-                source_type="order",
-                notes=f"HP refund for cancelled scheduled order #{order_id[:8].upper()}",
-            )
-            hp_refunded = hp_redeemed
-        except Exception:
-            pass
-
     # Restore order lock if one was used
     try:
         lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
@@ -874,7 +856,6 @@ def cancel_scheduled_order(order_id):
         "order_id": order_id,
         "status": "cancelled",
         "wallet_refunded": wallet_refunded,
-        "hp_refunded": hp_refunded,
     }), 200
 
 
@@ -1140,12 +1121,10 @@ def cancel_order(order_id):
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
-    # ── Refund: wallet→wallet, card→wallet, HP→HP ────────────────────────────
+    # ── Refund: wallet→wallet, card→wallet ────────────────────────────────────
     wallet_refunded = 0.0
-    hp_refunded = 0
     wallet_amount = float(order.get("wallet_amount_used") or 0)
     card_amount = float(order.get("card_amount_used") or 0)
-    hp_redeemed = int(order.get("hp_redeemed") or 0)
 
     if wallet_amount > 0:
         try:
@@ -1175,23 +1154,6 @@ def cancel_order(order_id):
                 notes=f"Card refund to wallet for cancelled order #{order_id[:8].upper()}",
             )
             wallet_refunded += card_amount
-        except Exception:
-            pass
-
-    if hp_redeemed > 0 and order.get("payment_status") == "paid":
-        # Restore redeemed HP
-        try:
-            from app.services.hp_service import award_active_hp
-            award_active_hp(
-                user_id=g.user_id,
-                amount=hp_redeemed,
-                txn_type="earn",
-                reference_id=order_id,
-                reference_type="order_cancel_hp_refund",
-                source_type="order",
-                notes=f"HP refund for cancelled order #{order_id[:8].upper()}",
-            )
-            hp_refunded = hp_redeemed
         except Exception:
             pass
 
@@ -1228,7 +1190,6 @@ def cancel_order(order_id):
         "order_id": order_id,
         "status": "cancelled",
         "wallet_refunded": wallet_refunded,
-        "hp_refunded": hp_refunded,
     }), 200
 
 
@@ -1385,6 +1346,7 @@ def record_order_share(order_id):
             reference_id=order_id,
             notes=f"Order share on {platform} — {actual_hp} HP pending",
         )
+        update_monthly_tracker(g.user_id, actual_hp)
 
     return jsonify({
         "message": resolve_msg(MSG.SHARE_PROMPT_HP_TITLE, hp=actual_hp) if actual_hp else MSG.SHARE_PROMPT_ALREADY_TODAY,
@@ -1549,7 +1511,7 @@ def _distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str):
             return
 
         share = max(1, total_hp // len(registered_ids))
-        from app.services.hp_service import earn_pending_hp
+        from app.services.hp_service import award_active_hp
 
         for uid in registered_ids:
             try:
