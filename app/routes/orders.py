@@ -927,9 +927,10 @@ def list_delivery_windows():
         description: Available delivery windows
     """
     db = get_user_client()
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
     now = datetime.now(timezone.utc).isoformat()
     q = db.table("delivery_windows").select("*").gte("ends_at", now).eq("status", "open")
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     windows = q.order("starts_at").execute() or []
@@ -1040,13 +1041,12 @@ def list_delivery_zones():
         description: Delivery zones
     """
     db = get_user_client()
-    zones = (
-        db.table("delivery_zones")
-        .select("*")
-        .eq("is_active", "true")
-        .order("name")
-        .execute()
-    ) or []
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
+    q = db.table("delivery_zones").select("*").eq("is_active", "true")
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    zones = q.order("name").execute() or []
     return jsonify(zones), 200
 
 

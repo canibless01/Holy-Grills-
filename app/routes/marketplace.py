@@ -19,7 +19,7 @@ marketplace_bp = Blueprint("marketplace", __name__)
 @optional_auth
 def list_listings():
     """
-    List active marketplace listings with availability filters (login required).
+    List active marketplace listings with availability filters.
     ---
     tags: [Marketplace]
     security: []
@@ -34,9 +34,10 @@ def list_listings():
       200:
         description: Marketplace listings
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     category = request.args.get("category") or request.args.get("listing_type")
@@ -75,10 +76,10 @@ def list_listings():
 
 
 @marketplace_bp.route("/<listing_id>", methods=["GET"])
-@require_auth
+@optional_auth
 def get_listing(listing_id):
     """
-    Get marketplace listing detail (login required).
+    Get marketplace listing detail.
     ---
     tags: [Marketplace]
     security: []
@@ -93,11 +94,12 @@ def get_listing(listing_id):
       404:
         description: Not found
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id and listing.get("campus_id") and listing.get("campus_id") != campus_id:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     codes_available = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()

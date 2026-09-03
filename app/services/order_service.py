@@ -961,9 +961,11 @@ def walk_order_to_status(
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
-            order_campus = order.get("campus_id")
-            if caller_campus and order_campus and caller_campus != order_campus:
+            if order.get("campus_id") != caller_campus:
                 raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
+        elif caller_role == "admin":
+            if order.get("campus_id") != caller_campus:
+                raise ValueError("Unauthorized: Admin is scoped to a different campus")
 
     path = _find_status_path(order["status"], target_status)
     if path is None:

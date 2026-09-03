@@ -117,7 +117,7 @@ def _get_hp_multiplier() -> float:
     Returns 1.0 if disabled, expired, or invalid.
     """
     try:
-        db = get_user_client()
+        db = get_db()
         m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").is_("campus_id", "null").single().execute()
         m_val = (m_row or {}).get("value", "1") or "1"
         if isinstance(m_val, str) and m_val.startswith('"') and m_val.endswith('"'):

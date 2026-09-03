@@ -79,7 +79,8 @@ def _kitchen_stats(db):
     Return (capacity, orders_today_count, is_at_capacity).
     capacity is None when the kitchen has no daily cap configured.
     """
-    campus_id = getattr(g, "campus_id", None)
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
     ks_q = db.table("kitchen_settings").select("value").eq("key", "daily_order_capacity")
     if campus_id:
         ks_q = ks_q.eq("campus_id", campus_id)
@@ -101,7 +102,8 @@ def _daily_item_counts(db):
     Return {menu_item_id: total_qty_ordered_today} for all of today's orders.
     Filtered server-side by today's order IDs and aggregated in Python.
     """
-    campus_id = getattr(g, "campus_id", None)
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
     orders_q = db.table("orders").select("id").gte("created_at", _today_start_iso())
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)
@@ -1310,6 +1312,7 @@ def list_addons():
       200:
         description: List of add-ons
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
     addons = (
         db.table("menu_addons")
@@ -1320,7 +1323,7 @@ def list_addons():
         .order("sort_order")
         .execute()
     ) or []
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id:
         addons = [a for a in addons if not a.get("campus_id") or a.get("campus_id") == campus_id]
     return jsonify(addons), 200
