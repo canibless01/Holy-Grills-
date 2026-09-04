@@ -41,17 +41,43 @@ def _available_spins(db, user_id: str) -> list:
 
 
 def _spin_prizes() -> list:
-    """Load prize table from config. Each entry: {"name": str, "weight": int}."""
-    return current_app.config.get("EXCLUSIVE_SPIN_TEMPLATE_ITEMS", [
-        {"name": "Free Sausage ×2", "weight": 15},
-        {"name": "Free Gizzard ×3", "weight": 15},
-        {"name": "Free Side",       "weight": 10},
-        {"name": "Free Coleslaw",   "weight": 10},
-        {"name": "HP Jackpot +750", "weight": 5},
-        {"name": "HP Bolt +300",    "weight": 20},
-        {"name": "HP Boost +150",   "weight": 15},
-        {"name": "Double HP next order", "weight": 10},
-    ])
+    """Load prize table from the database, falling back to the full config/env default if empty or unreachable."""
+    prizes = []
+    try:
+        db = get_db()
+        campus_id = getattr(g, "campus_id", None)
+
+        q = db.table("exclusive_spin_prizes").select("name,weight").eq("is_active", True)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        prizes = q.execute() or []
+
+        if not prizes and campus_id:
+            # no campus-specific rows — fall back to global (campus_id IS NULL) rows before giving up
+            prizes = (
+                db.table("exclusive_spin_prizes")
+                .select("name,weight")
+                .eq("is_active", True)
+                .is_("campus_id", "null")
+                .execute()
+            ) or []
+    except Exception:
+        prizes = []
+
+    if not prizes or not isinstance(prizes, list):
+        # table genuinely empty (e.g. pre-seed) or DB error — use the same full default the app shipped with
+        prizes = current_app.config.get("EXCLUSIVE_SPIN_TEMPLATE_ITEMS", [
+            {"name": "Free Sausage ×2", "weight": 15},
+            {"name": "Free Gizzard ×3", "weight": 15},
+            {"name": "Free Side",       "weight": 10},
+            {"name": "Free Coleslaw",   "weight": 10},
+            {"name": "HP Jackpot +750", "weight": 5},
+            {"name": "HP Bolt +300",    "weight": 20},
+            {"name": "HP Boost +150",   "weight": 15},
+            {"name": "Double HP next order", "weight": 10},
+        ])
+
+    return prizes
 
 
 def _draw_prize(prizes: list) -> str:
