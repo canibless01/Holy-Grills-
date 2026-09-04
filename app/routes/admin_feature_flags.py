@@ -232,8 +232,9 @@ def fulfil_leaderboard_prize(record_id):
 
     data = request.get_json(force=True, silent=True) or {}
     safe = {k: v for k, v in data.items() if k in {"status", "notes"}}
-    safe["fulfilled_by"] = g.user_id
-    safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
+    if "status" in safe:
+        safe["fulfilled_by"] = g.user_id
+        safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
 
     result = db.table("leaderboard_reward_fulfillments").eq("id", record_id).update(safe)
     updated = result[0] if isinstance(result, list) else result
@@ -312,8 +313,9 @@ def fulfil_hof_reward(record_id):
 
     data = request.get_json(force=True, silent=True) or {}
     safe = {k: v for k, v in data.items() if k in {"status", "notes"}}
-    safe["fulfilled_by"] = g.user_id
-    safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
+    if "status" in safe:
+        safe["fulfilled_by"] = g.user_id
+        safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
 
     result = db.table("hall_of_fame_rewards").eq("id", record_id).update(safe)
     updated = result[0] if isinstance(result, list) else result
@@ -381,8 +383,9 @@ def fulfil_exclusive_spin_prize(record_id):
         return jsonify({"error": "Prize record not found"}), 404
     data = request.get_json(force=True, silent=True) or {}
     safe = {k: v for k, v in data.items() if k in {"status", "notes"}}
-    safe["fulfilled_by"] = g.user_id
-    safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
+    if "status" in safe:
+        safe["fulfilled_by"] = g.user_id
+        safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
     result = db.table("exclusive_spin_fulfillments").eq("id", record_id).update(safe)
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": "Prize marked fulfilled", "record": updated}), 200
