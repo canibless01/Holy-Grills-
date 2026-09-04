@@ -570,7 +570,7 @@ def claim_guest_order(order_id):
 def refund_order(order_id):
     """
     Initiate a refund for an order (admin only).
-    Transitions the order to 'refunded' status and credits the wallet or logs the refund.
+    Transitions the order to 'refunded' status and credits the entire refund amount to wallet.
     ---
     tags: [Orders]
     parameters:
@@ -586,7 +586,6 @@ def refund_order(order_id):
           properties:
             reason: {type: string, description: "Reason for the refund"}
             refund_amount: {type: number, description: "Partial refund amount in Naira. Defaults to remaining refundable amount."}
-            refund_to_wallet: {type: boolean, default: true, description: "If true, credit the wallet. If false, log as manual refund."}
     responses:
       200:
         description: Refund processed
@@ -630,7 +629,7 @@ def refund_order(order_id):
 
         notes_str = order.get("notes") or ""
         import re
-        card_refunds_in_notes = re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
+        card_refunds_in_notes = re.findall(r"\[CARD_PORTION_TO_WALLET:\s*([\d\.]+)\]", notes_str) + re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
         already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
 
         refundable_wallet = max(0.0, wallet_amount_used - already_refunded_wallet)
@@ -660,37 +659,15 @@ def refund_order(order_id):
 
     wallet_refund_allocation = reservation["wallet_allocation"]
     card_refund_allocation = reservation["card_allocation"]
-
-    card_refunded = False
-    if card_refund_allocation > 0:
-        pay_ref = order.get("payment_reference")
-        if not pay_ref:
-            db.rpc("hg_release_order_refund_reservation", {
-                "p_order_id": order_id,
-                "p_wallet_amount": wallet_refund_allocation,
-                "p_card_amount": card_refund_allocation,
-            })
-            return jsonify({"error": "Cannot refund card portion: order has no payment_reference"}), 400
-        try:
-            from app.services.payment_service import refund_paystack_charge
-            refund_paystack_charge(pay_ref, card_refund_allocation, reason)
-            card_refunded = True
-        except Exception as e:
-            db.rpc("hg_release_order_refund_reservation", {
-                "p_order_id": order_id,
-                "p_wallet_amount": wallet_refund_allocation,
-                "p_card_amount": card_refund_allocation,
-            })
-            return jsonify({"error": f"Card refund failed via Paystack: {str(e)}"}), 400
+    total_wallet_credit = wallet_refund_allocation + card_refund_allocation
 
     wallet_credited = False
-    refund_to_wallet = bool(data.get("refund_to_wallet", True))
-    if wallet_refund_allocation > 0 and refund_to_wallet and order.get("user_id"):
+    if total_wallet_credit > 0 and order.get("user_id"):
         try:
             from app.services.wallet_service import credit_wallet
             credit_wallet(
                 user_id=order["user_id"],
-                amount=wallet_refund_allocation,
+                amount=total_wallet_credit,
                 payment_reference=f"REFUND-{order_id[:8].upper()}",
                 reference_id=order_id,
                 reference_type="refund",
@@ -717,9 +694,7 @@ def refund_order(order_id):
     # Construct rich notes snapshot for history tracking
     new_notes = f"[REFUNDED by {g.user_id[:8]}] {reason}"
     if card_refund_allocation > 0:
-        new_notes += f" [CARD_REFUND: {card_refund_allocation}]"
-    if wallet_refund_allocation > 0 and not wallet_credited:
-        new_notes += f" [MANUAL_WALLET_REFUND: {wallet_refund_allocation}]"
+        new_notes += f" [CARD_PORTION_TO_WALLET: {card_refund_allocation}]"
 
     updated_notes = (order.get("notes") or "") + " | " + new_notes
 
@@ -735,11 +710,7 @@ def refund_order(order_id):
                 user_id=order["user_id"],
                 notif_type="order_refunded",
                 title=MSG.ORDER_REFUND_TITLE,
-                body=(
-                    MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{refund_amount:.0f}", reason=reason)
-                    if wallet_credited
-                    else MSG.ORDER_REFUND_BODY_OTHER.format(amount=f"{refund_amount:.0f}", reason=reason)
-                ),
+                body=MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{refund_amount:.0f}", reason=reason),
                 reference_id=order_id,
                 reference_type="order",
                 channels=["push", "in_app", "email"],
@@ -754,7 +725,7 @@ def refund_order(order_id):
         "refund_amount": refund_amount,
         "reason": reason,
         "wallet_credited": wallet_credited,
-        "card_refunded": card_refunded,
+        "card_refunded": False,
     }), 200
 
 

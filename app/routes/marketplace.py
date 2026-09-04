@@ -384,19 +384,20 @@ def admin_update_purchase(purchase_id):
                         return jsonify({"error": f"HP refund failed and wallet reversal also failed — manual correction needed. {str(e)}"}), 500
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
 
-        # 3. Refund card portion via Paystack if card_amount > 0
-        if card_amt > 0:
-            if not payment_ref:
-                return jsonify({"error": "Cannot refund card portion: purchase has no payment_reference"}), 400
+        # 3. Refund card portion — policy: all refunds credit wallet, never Paystack
+        if card_amt > 0 and user_id:
             try:
-                from app.services.payment_service import refund_paystack_charge
-                refund_paystack_charge(
-                    transaction_reference=payment_ref,
-                    amount_naira=card_amt,
-                    reason=f"Marketplace purchase #{purchase_id[:8].upper()} {new_status}",
+                from app.services.wallet_service import credit_wallet
+                credit_wallet(
+                    user_id=user_id,
+                    amount=card_amt,
+                    payment_reference=f"REFUND-MKT-CARD-{purchase_id[:8].upper()}",
+                    reference_id=purchase_id,
+                    reference_type="marketplace_refund",
+                    notes=f"Refund (card portion) for marketplace purchase #{purchase_id[:8].upper()}: {new_status}",
                 )
             except Exception as e:
-                return jsonify({"error": f"Card refund failed: {str(e)}"}), 400
+                return jsonify({"error": f"Card-portion refund failed: {str(e)}"}), 400
 
         from app.utils.logger import get_logger
         restore_inventory_on_refund(db, purchase, get_logger(__name__))
