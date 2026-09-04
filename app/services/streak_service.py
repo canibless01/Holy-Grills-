@@ -63,7 +63,7 @@ def check_monthly_cap(user_id: str, hp_to_add: int) -> dict:
     Does NOT update the tracker — call update_monthly_tracker() after awarding.
     Cap key: 'monthly_pending_cap' in system_settings (default 1000).
     """
-    db = get_user_client()
+    db = get_db()
     cap = int(_get_setting(db, "monthly_pending_cap", "1000"))
     month = datetime.now(timezone.utc).strftime("%Y-%m")
 
@@ -92,7 +92,7 @@ def update_monthly_tracker(user_id: str, hp_awarded: int) -> None:
     """Record awarded HP against the monthly cap tracker."""
     if hp_awarded <= 0:
         return
-    db = get_user_client()
+    db = get_db()
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     now = datetime.now(timezone.utc).isoformat()
     try:
@@ -392,7 +392,7 @@ def try_reclaim_checkin(user_id: str, reclaim_type: str = "order") -> dict:
 
     Returns {"reclaimed": bool, "day_offset": int | None}
     """
-    db = get_user_client()
+    db = get_db()
     today = date.today()
     now = datetime.now(timezone.utc)
 

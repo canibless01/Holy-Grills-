@@ -242,8 +242,7 @@ def get_current_user(access_token: str) -> dict:
 
 def update_profile(user_id: str, data: dict) -> dict:
     db = get_user_client()
-    # department, academic_level, faculty are live columns on profiles (confirmed against DB).
-    # faculty is derived from department mapping.
+    config = current_app.config
     allowed = {
         "full_name", "phone", "date_of_birth",
         "push_enabled", "email_notifications",
@@ -252,6 +251,22 @@ def update_profile(user_id: str, data: dict) -> dict:
     update_data = {k: v for k, v in data.items() if k in allowed}
     if not update_data:
         raise ValueError("No valid fields to update")
+
+    if "phone" in update_data and update_data["phone"]:
+        phone_pattern = config.get("PHONE_REGEX_PATTERN", r"^\+234[0-9]{10}$")
+        if not re.match(phone_pattern, update_data["phone"]):
+            raise ValueError("Invalid phone number format. Use international format e.g. +2348012345678.")
+
+    if "date_of_birth" in update_data and update_data["date_of_birth"]:
+        try:
+            dob = date.fromisoformat(str(update_data["date_of_birth"])[:10])
+        except ValueError:
+            raise ValueError("Invalid date of birth. Use YYYY-MM-DD format.")
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        minimum_age = config.get("MINIMUM_AGE", 16)
+        if age < minimum_age:
+            raise ValueError(f"You must be at least {minimum_age} years old.")
 
     # Securely derive faculty and department_id from department mapping
     dept_name = update_data.get("department")

@@ -117,7 +117,7 @@ def _get_hp_multiplier() -> float:
     Returns 1.0 if disabled, expired, or invalid.
     """
     try:
-        db = get_user_client()
+        db = get_db()
         m_row = db.table("system_settings").select("value").eq("key", "hp_multiplier").is_("campus_id", "null").single().execute()
         m_val = (m_row or {}).get("value", "1") or "1"
         if isinstance(m_val, str) and m_val.startswith('"') and m_val.endswith('"'):
@@ -359,7 +359,7 @@ def award_signup_bonus(user_id: str) -> dict:
     amount = current_app.config.get("SIGNUP_BONUS_HP", 0)
     if not amount:
         return {"awarded": 0, "reason": "Signup bonus disabled"}
-    db = get_user_client()
+    db = get_db()
     already = (
         db.table("hp_transactions")
         .select("id")
@@ -382,7 +382,7 @@ def award_signup_bonus(user_id: str) -> dict:
 
 def award_welcome_bonus(user_id: str, order_id: str) -> dict:
     """Award WELCOME_BONUS_HP active HP on the user's first delivered order. Checks if already awarded."""
-    db = get_user_client()
+    db = get_db()
     already = (
         db.table("hp_transactions")
         .select("id")
@@ -559,7 +559,7 @@ def process_hp_bundle_purchase(event_host_id: str, hp_amount: int, naira_paid: f
     if abs(naira_paid - expected_naira) > 1:
         raise ValueError(f"Payment mismatch: ₦{naira_paid} received, ₦{expected_naira} expected")
 
-    db = get_user_client()
+    db = get_db()
     try:
         db.table("hp_bundle_purchases").insert({
             "event_host_id": event_host_id,

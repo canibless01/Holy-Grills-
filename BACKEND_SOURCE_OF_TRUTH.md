@@ -1321,6 +1321,44 @@ Total documented REST API endpoints: **324**
 
 ---
 
+### `GET /api/admin/feature-flags`
+
+**Authentication:** `admin` (JWT required)
+
+**Source File:** `app/routes/admin_feature_flags.py` (`list_feature_flags`)
+
+**Summary:** List all feature flags.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+- **Query Parameters:** `campus_id`
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `feature_flags`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
 ### `POST /api/admin/feature-flags`
 
 **Authentication:** `admin` (JWT required)
@@ -1361,44 +1399,6 @@ Total documented REST API endpoints: **324**
 **Error Responses & Recovery Instructions:**
 
 - `"Feature flag already exists"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
-
----
-
-### `GET /api/admin/feature-flags`
-
-**Authentication:** `admin` (JWT required)
-
-**Source File:** `app/routes/admin_feature_flags.py` (`list_feature_flags`)
-
-**Summary:** List all feature flags.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-- **Query Parameters:** `campus_id`
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `feature_flags`
-
-
-**Error Responses & Recovery Instructions:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
 ---
 
@@ -7325,7 +7325,7 @@ Total documented REST API endpoints: **324**
 
 **Database & Service Interactions:**
 
-- **Database Tables:** `marketplace_access_codes, marketplace_listings`
+- **Database Tables:** `marketplace_listings, profiles`
 
 
 **Error Responses & Recovery Instructions:**
@@ -7480,12 +7480,12 @@ Total documented REST API endpoints: **324**
 
 **Database & Service Interactions:**
 
-- **Database Tables:** `marketplace_access_codes, marketplace_listings`
+- **Database Tables:** `marketplace_access_codes, marketplace_listings, marketplace_purchases`
 
 
 **Error Responses & Recovery Instructions:**
 
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+- `"Cannot delete listing with existing purchase history"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 
 ---
 
@@ -8075,26 +8075,18 @@ Total documented REST API endpoints: **324**
 
 ---
 
-### `POST /api/menu/categories`
+### `GET /api/menu/categories`
 
-**Authentication:** `admin` (JWT required)
+**Authentication:** Optional JWT (Authenticated or Guest checkout context)
 
-**Source File:** `app/routes/menu.py` (`create_category`)
+**Source File:** `app/routes/menu.py` (`list_categories`)
 
-**Summary:** Create a new menu category (admin only).
+**Summary:** List all active menu categories for the current campus (guest or authenticated).
 
 
 **Request Specification:**
 
-```json
-{
-    "description": "any // OPTIONAL \u2014 default: null",
-    "is_active": "any // OPTIONAL \u2014 default: null",
-    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
-    "slug": "any // OPTIONAL \u2014 default: null",
-    "sort_order": "any // OPTIONAL \u2014 default: null"
-}
-```
+- **JSON Body:** None required / empty body
 
 
 **Response Specification (200 OK Response):**
@@ -8119,18 +8111,26 @@ Total documented REST API endpoints: **324**
 
 ---
 
-### `GET /api/menu/categories`
+### `POST /api/menu/categories`
 
-**Authentication:** Optional JWT (Authenticated or Guest checkout context)
+**Authentication:** `admin` (JWT required)
 
-**Source File:** `app/routes/menu.py` (`list_categories`)
+**Source File:** `app/routes/menu.py` (`create_category`)
 
-**Summary:** List all active menu categories for the current campus (guest or authenticated).
+**Summary:** Create a new menu category (admin only).
 
 
 **Request Specification:**
 
-- **JSON Body:** None required / empty body
+```json
+{
+    "description": "any // OPTIONAL \u2014 default: null",
+    "is_active": "any // OPTIONAL \u2014 default: null",
+    "name": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "slug": "any // OPTIONAL \u2014 default: null",
+    "sort_order": "any // OPTIONAL \u2014 default: null"
+}
+```
 
 
 **Response Specification (200 OK Response):**
@@ -9305,6 +9305,44 @@ Total documented REST API endpoints: **324**
 
 ---
 
+### `GET /api/order-locks`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/order_locks.py` (`list_locks`)
+
+**Summary:** List the authenticated user's order locks.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+- **Query Parameters:** `status`
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {}
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `order_locks`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
 ### `POST /api/order-locks`
 
 **Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
@@ -9348,44 +9386,6 @@ Total documented REST API endpoints: **324**
 
 - `"User already has an active lock"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
 - `"reward_type must be 'discount' or 'hp'"` → **User Action**: Show alert to user; **Retry Allowed**: Yes; **Recovery Flow**: Prompt user for input correction or retry request.
-
----
-
-### `GET /api/order-locks`
-
-**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
-
-**Source File:** `app/routes/order_locks.py` (`list_locks`)
-
-**Summary:** List the authenticated user's order locks.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-- **Query Parameters:** `status`
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "status": "success",
-    "message": "Operation completed successfully",
-    "data": {}
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `order_locks`
-
-
-**Error Responses & Recovery Instructions:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
 
 ---
 
@@ -9539,6 +9539,50 @@ Total documented REST API endpoints: **324**
 
 ---
 
+### `GET /api/orders`
+
+**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
+
+**Source File:** `app/routes/orders.py` (`list_orders`)
+
+**Summary:** List authenticated user's orders.
+
+
+**Request Specification:**
+
+- **JSON Body:** None required / empty body
+
+- **Query Parameters:** `limit, offset, status`
+
+
+**Response Specification (200 OK Response):**
+
+```json
+{
+    "orders": [
+        {
+            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "order_number": "HG-9A8B7C6D5E",
+            "status": "delivered",
+            "payment_status": "paid",
+            "total_amount": 3200.0
+        }
+    ]
+}
+```
+
+
+**Database & Service Interactions:**
+
+- **Database Tables:** `orders`
+
+
+**Error Responses & Recovery Instructions:**
+
+- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
+
+---
+
 ### `POST /api/orders`
 
 **Authentication:** Optional JWT (Authenticated or Guest checkout context)
@@ -9584,50 +9628,6 @@ Total documented REST API endpoints: **324**
 **Database & Service Interactions:**
 
 - **Database Tables:** None directly in route handler (delegated to service layer)
-
-
-**Error Responses & Recovery Instructions:**
-
-- Standard error payload structure: `{"error": "<description>", "message": "<details>", "request_id": "<id>"}` (HTTP 400 / 401 / 403 / 404 / 500)
-
----
-
-### `GET /api/orders`
-
-**Authentication:** Authenticated user (`student`, `admin`, `kitchen`, `rider`, `super_admin`) (JWT required)
-
-**Source File:** `app/routes/orders.py` (`list_orders`)
-
-**Summary:** List authenticated user's orders.
-
-
-**Request Specification:**
-
-- **JSON Body:** None required / empty body
-
-- **Query Parameters:** `limit, offset, status`
-
-
-**Response Specification (200 OK Response):**
-
-```json
-{
-    "orders": [
-        {
-            "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-            "order_number": "HG-9A8B7C6D5E",
-            "status": "delivered",
-            "payment_status": "paid",
-            "total_amount": 3200.0
-        }
-    ]
-}
-```
-
-
-**Database & Service Interactions:**
-
-- **Database Tables:** `orders`
 
 
 **Error Responses & Recovery Instructions:**
@@ -12208,24 +12208,20 @@ Total documented REST API endpoints: **324**
 
 ---
 
-### `POST /api/storefront/newsletter`
+### `GET /api/storefront/newsletter`
 
-**Authentication:** Public (No auth token required)
+**Authentication:** `admin` (JWT required)
 
-**Source File:** `app/routes/storefront.py` (`newsletter_subscribe`)
+**Source File:** `app/routes/storefront.py` (`newsletter_list`)
 
-**Summary:** Subscribe an email address to the Holy Grills newsletter.
+**Summary:** List newsletter subscribers (admin only).
 
 
 **Request Specification:**
 
-```json
-{
-    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
-    "full_name": "any // OPTIONAL \u2014 default: null",
-    "source": "any // OPTIONAL \u2014 default: null"
-}
-```
+- **JSON Body:** None required / empty body
+
+- **Query Parameters:** `active_only, limit, offset`
 
 
 **Response Specification (200 OK Response):**
@@ -12250,20 +12246,24 @@ Total documented REST API endpoints: **324**
 
 ---
 
-### `GET /api/storefront/newsletter`
+### `POST /api/storefront/newsletter`
 
-**Authentication:** `admin` (JWT required)
+**Authentication:** Public (No auth token required)
 
-**Source File:** `app/routes/storefront.py` (`newsletter_list`)
+**Source File:** `app/routes/storefront.py` (`newsletter_subscribe`)
 
-**Summary:** List newsletter subscribers (admin only).
+**Summary:** Subscribe an email address to the Holy Grills newsletter.
 
 
 **Request Specification:**
 
-- **JSON Body:** None required / empty body
-
-- **Query Parameters:** `active_only, limit, offset`
+```json
+{
+    "email": "any // REQUIRED \u2014 validation: must be provided and non-empty",
+    "full_name": "any // OPTIONAL \u2014 default: null",
+    "source": "any // OPTIONAL \u2014 default: null"
+}
+```
 
 
 **Response Specification (200 OK Response):**

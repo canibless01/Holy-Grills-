@@ -395,14 +395,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     # Users cannot choose their own window; this prevents gaming the queue.
     window_id = None
     try:
-        open_windows = (
-            db.table("delivery_windows")
-            .select("id,status,starts_at")
-            .eq("status", "open")
-            .order("starts_at", ascending=True)
-            .limit(1)
-            .execute()
-        ) or []
+        q_win = db.table("delivery_windows").select("id,status,starts_at").eq("status", "open")
+        if campus_id_for_check:
+            q_win = q_win.eq("campus_id", campus_id_for_check)
+        open_windows = q_win.order("starts_at", ascending=True).limit(1).execute() or []
         if open_windows:
             window_id = open_windows[0]["id"]
     except Exception:
@@ -428,14 +424,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             # supplies is_scheduled=True (and optionally a date hint via
             # scheduled_date YYYY-MM-DD); no window ID required.
             now_iso = datetime.now(timezone.utc).isoformat()
-            _future = (
-                db.table("delivery_windows")
-                .select("id,status,starts_at")
-                .gt("starts_at", now_iso)
-                .order("starts_at", ascending=True)
-                .limit(1)
-                .execute()
-            ) or []
+            q_fut = db.table("delivery_windows").select("id,status,starts_at").gt("starts_at", now_iso)
+            if campus_id_for_check:
+                q_fut = q_fut.eq("campus_id", campus_id_for_check)
+            _future = q_fut.order("starts_at", ascending=True).limit(1).execute() or []
             if _future:
                 scheduled_window = _future[0]
                 scheduled_window_id = scheduled_window["id"]
@@ -969,9 +961,11 @@ def walk_order_to_status(
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
-            order_campus = order.get("campus_id")
-            if caller_campus and order_campus and caller_campus != order_campus:
+            if order.get("campus_id") != caller_campus:
                 raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
+        elif caller_role == "admin":
+            if order.get("campus_id") != caller_campus:
+                raise ValueError("Unauthorized: Admin is scoped to a different campus")
 
     path = _find_status_path(order["status"], target_status)
     if path is None:
@@ -1198,7 +1192,7 @@ def _handle_delivery_rewards(order: dict):
     tier = tier_info.get("tier") or {}
     tier_slug = tier.get("slug", "ember")
 
-    db = get_user_client()
+    db = get_db()
     order_items = order.get("order_items")
     if not isinstance(order_items, list):
         try:
@@ -1256,6 +1250,11 @@ def _handle_delivery_rewards(order: dict):
     if result.get("error"):
         logger.error(f"Failed to credit HP for order {order_id}: {result['error']}")
         return
+
+    try:
+        hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=subtotal)
+    except Exception as e:
+        logger.warning("_handle_delivery_rewards: unlock_pending_hp failed for order %s: %s", order_id, e)
 
     welcome_result = hp_service.award_welcome_bonus(user_id, order_id)
 

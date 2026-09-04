@@ -1818,3 +1818,89 @@ def _audit(actor_id, table, target_id, action, after_data=None):
         }).execute()
     except Exception as e:
         logger.error("_audit: failed to log %s/%s/%s: %s", table, target_id, action, e)
+
+
+@admin_bp.route("/exclusive-spin-pool", methods=["GET"])
+@require_role("admin")
+def list_spin_pool():
+    """List all exclusive spin prize-pool entries (odds/weights), not fulfilment records."""
+    db = get_user_client()
+    campus_id = getattr(g, "campus_id", None)
+    q = db.table("exclusive_spin_prizes").select("*").order("weight", ascending=False)
+    if campus_id:
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    prizes = q.execute() or []
+    return jsonify({"prizes": prizes}), 200
+
+
+@admin_bp.route("/exclusive-spin-pool", methods=["POST"])
+@require_role("admin")
+def create_spin_pool_prize():
+    """Create a new exclusive spin prize-pool entry."""
+    db = get_user_client()
+    data = request.get_json(force=True) or {}
+
+    if not data.get("name"):
+        return jsonify({"error": "name is required"}), 400
+
+    weight = data.get("weight", 1)
+    if not isinstance(weight, int) or weight <= 0:
+        return jsonify({"error": "weight must be a positive integer"}), 400
+
+    campus_id = getattr(g, "campus_id", None)
+    result = db.table("exclusive_spin_prizes").insert({
+        "name": data["name"],
+        "weight": weight,
+        "is_active": bool(data.get("is_active", True)),
+        "campus_id": campus_id,
+    }).execute()
+
+    row = result[0] if isinstance(result, list) else result
+    return jsonify(row), 201
+
+
+@admin_bp.route("/exclusive-spin-pool/<prize_id>", methods=["PATCH"])
+@require_role("admin")
+def update_spin_pool_prize(prize_id):
+    """Update an exclusive spin prize-pool entry."""
+    db = get_user_client()
+    data = request.get_json(force=True) or {}
+
+    existing = db.table("exclusive_spin_prizes").select("id").eq("id", prize_id).single().execute()
+    if not existing:
+        return jsonify({"error": "Prize not found"}), 404
+
+    allowed = {"name", "weight", "is_active"}
+    safe = {k: v for k, v in data.items() if k in allowed}
+    if "weight" in safe and (not isinstance(safe["weight"], int) or safe["weight"] <= 0):
+        return jsonify({"error": "weight must be a positive integer"}), 400
+    if not safe:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    safe["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = db.table("exclusive_spin_prizes").eq("id", prize_id).update(safe).execute()
+    if not result:
+        return jsonify({"error": "Update failed"}), 404
+
+    row = result[0] if isinstance(result, list) else result
+    return jsonify(row), 200
+
+
+@admin_bp.route("/exclusive-spin-pool/<prize_id>", methods=["DELETE"])
+@require_role("admin")
+def delete_spin_pool_prize(prize_id):
+    """Soft-delete (deactivate) an exclusive spin prize-pool entry."""
+    db = get_user_client()
+
+    existing = db.table("exclusive_spin_prizes").select("id").eq("id", prize_id).single().execute()
+    if not existing:
+        return jsonify({"error": "Prize not found"}), 404
+
+    result = db.table("exclusive_spin_prizes").eq("id", prize_id).update({
+        "is_active": False,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).execute()
+    if not result:
+        return jsonify({"error": "Deactivation failed"}), 404
+
+    return jsonify({"message": "Prize deactivated"}), 200

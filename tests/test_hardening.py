@@ -437,9 +437,9 @@ def test_refund_split_and_partial_validations():
                 resp, code = refund_order("order-1")
 
                 assert code == 200
-                # ₦1,500 refund: wallet allocation = ₦1,000 (fully refunded), card allocation = ₦500
-                assert mock_credit_wallet.call_args[1]["amount"] == 1000.0
-                assert mock_paystack_refund.call_args[0][1] == 500.0
+                # All refunds credit 100% of the requested refund amount to the wallet
+                assert mock_credit_wallet.call_args[1]["amount"] == 1500.0
+                assert mock_paystack_refund.call_count == 0
 
 
 def test_refund_exceeds_refundable_amount():
@@ -491,18 +491,16 @@ def test_refund_exceeds_refundable_amount():
                 assert "Invalid refund amount" in resp.json["error"]
 
 
-def test_refund_paystack_provider_failure_halts_local_mutation():
+def test_refund_all_credited_to_wallet_no_paystack():
     app = Flask(__name__)
 
-    with app.test_request_context("/admin/orders/order-1/refund", method="POST", json={"reason": "Cancel", "refund_amount": 2500.0}):
+    with app.test_request_context("/admin/orders/order-1/refund", method="POST", json={"reason": "Cancel", "refund_amount": 3000.0}):
         g.user_id = "admin-1"
         g.user_role = "admin"
         with patch("app.routes.orders.get_db") as mock_get_db, \
+             patch("app.routes.orders.order_service.update_order_status") as mock_update_status, \
              patch("app.services.payment_service.refund_paystack_charge") as mock_paystack_refund, \
              patch("app.services.wallet_service.credit_wallet") as mock_credit_wallet:
-
-            # Force Paystack provider failure
-            mock_paystack_refund.side_effect = Exception("Paystack API connection timeout")
 
             db_mock = MagicMock()
 
@@ -543,9 +541,9 @@ def test_refund_paystack_provider_failure_halts_local_mutation():
                 from app.routes.orders import refund_order
                 resp, code = refund_order("order-1")
 
-                assert code == 400
-                assert "Card refund failed via Paystack" in resp.json["error"]
-                assert mock_credit_wallet.call_count == 0
+                assert code == 200
+                assert mock_credit_wallet.call_args[1]["amount"] == 3000.0
+                assert mock_paystack_refund.call_count == 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

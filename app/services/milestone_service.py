@@ -67,7 +67,9 @@ def get_user_milestones(user_id: str) -> dict:
     q = db.table("milestones").select("*").eq("is_active", "true").not_.in_("trigger_type", list(ADMIN_ONLY_TRIGGERS))
     campus_id = getattr(g, 'campus_id', None) if has_app_context() else None
     if campus_id:
-        q = q.eq("campus_id", campus_id)
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    else:
+        q = q.is_("campus_id", "null")
     all_milestones = q.execute() or []
 
     earned_rows = (
@@ -236,7 +238,9 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
         q = db.table("milestones").select("id,trigger_value,hp_awarded,time_window,title").eq("trigger_type", trigger_type).eq("is_active", "true").lte("trigger_value", current_value)
         campus_id = getattr(g, 'campus_id', None) if has_app_context() else None
         if campus_id:
-            q = q.eq("campus_id", campus_id)
+            q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+        else:
+            q = q.is_("campus_id", "null")
         milestones = q.execute() or []
 
         for m in milestones:
@@ -297,6 +301,7 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
     if already:
         return {"message": "Already completed", "already_completed": True}
 
+    db = get_db()
     # Record completion first to defend against concurrent race conditions before awarding HP
     try:
         db.table("user_milestones").insert({
@@ -304,6 +309,7 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
             "milestone_id": milestone_id,
             "hp_awarded": hp,
             "period_key": period_key,
+            "campus_id": milestone.get("campus_id"),
         })
     except Exception as e:
         err_str = str(e)

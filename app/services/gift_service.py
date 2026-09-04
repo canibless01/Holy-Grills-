@@ -55,7 +55,7 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = N
 
     Returns {"granted": bool, "reason": str}
     """
-    db = get_user_client()
+    db = get_db()
     try:
         enabled = _get_setting(db, "first_order_gift_enabled", "false")
         if enabled.lower() != "true":
@@ -146,13 +146,15 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = N
         # Notify kitchen/admin staff
         try:
             short_id = order_id[:8].upper()
-            kitchen_staff = (
+            q_staff = (
                 db.table("profiles")
                 .select("id")
                 .in_("role", ["admin", "kitchen"])
                 .eq("is_active", "true")
-                .execute()
-            ) or []
+            )
+            if campus_id:
+                q_staff = q_staff.eq("campus_id", campus_id)
+            kitchen_staff = q_staff.execute() or []
             for member in kitchen_staff:
                 send_notification(
                     user_id=member["id"],
@@ -193,7 +195,7 @@ def mark_gift_returned(user_id: str, order_id: str) -> dict:
     Mark a first-order gift as 'returned' (failed delivery).
     Sends push+in_app notification to the user.
     """
-    db = get_user_client()
+    db = get_db()
     try:
         # NOTE: first_order_gifts has no `updated_at` column in the live schema
         # (only `created_at`) — drop it from the update payload to avoid a

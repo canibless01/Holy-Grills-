@@ -19,7 +19,7 @@ marketplace_bp = Blueprint("marketplace", __name__)
 @optional_auth
 def list_listings():
     """
-    List active marketplace listings with availability filters (login required).
+    List active marketplace listings with availability filters.
     ---
     tags: [Marketplace]
     security: []
@@ -34,9 +34,10 @@ def list_listings():
       200:
         description: Marketplace listings
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
     q = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("status", "active").eq("is_out_of_stock", False)
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     category = request.args.get("category") or request.args.get("listing_type")
@@ -75,10 +76,10 @@ def list_listings():
 
 
 @marketplace_bp.route("/<listing_id>", methods=["GET"])
-@require_auth
+@optional_auth
 def get_listing(listing_id):
     """
-    Get marketplace listing detail (login required).
+    Get marketplace listing detail.
     ---
     tags: [Marketplace]
     security: []
@@ -93,11 +94,12 @@ def get_listing(listing_id):
       404:
         description: Not found
     """
+    from app.routes.events import _get_campus_id
     db = get_user_client()
     listing = db.table("marketplace_listings").select("*,hp_tiers(name,slug)").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = _get_campus_id()
     if campus_id and listing.get("campus_id") and listing.get("campus_id") != campus_id:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
     codes_available = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
@@ -145,63 +147,46 @@ def purchase(listing_id):
         elif payment_method == "split":
             wallet_amount = min(float(data.get("wallet_amount", 0)), cash_due)
 
+    card_amount = cash_due - wallet_amount
+    if card_amount > 0:
+        from app.services.payment_service import initialize_payment
+        profile = db.table("profiles").select("email").eq("id", g.user_id).single().execute()
+        user_email = profile.get("email") if isinstance(profile, dict) else (g.user.get("email") if getattr(g, "user", None) else None)
+        if not user_email:
+            return jsonify({"error": "User profile has no registered email for payment initialization"}), 400
+        pay_result = initialize_payment(
+            email=user_email,
+            amount_naira=card_amount,
+            reference=f"MKT-{listing_id[:8]}-{uuid.uuid4().hex[:8]}",
+            metadata={
+                "type": "marketplace_purchase",
+                "user_id": g.user_id,
+                "listing_id": listing_id,
+                "quantity": 1,
+                "wallet_amount": wallet_amount,
+                "pay_with_hp": use_hp,
+            },
+        )
+        return jsonify({
+            "payment_required": True,
+            "authorization_url": pay_result["authorization_url"],
+            "reference": pay_result.get("reference"),
+        }), 200
+
     try:
-        purchase_row = db.rpc("hg_purchase_marketplace_item", {
-            "p_user_id": g.user_id,
-            "p_listing_id": listing_id,
-            "p_quantity": 1,
-            "p_pay_with_hp": use_hp,
-            "p_wallet_amount": wallet_amount,
-            "p_payment_reference": data.get("payment_reference"),
-        })
+        purchase_row, code_value, marketplace_hp = _complete_marketplace_purchase(
+            user_id=g.user_id,
+            listing_id=listing_id,
+            quantity=1,
+            wallet_amount=wallet_amount,
+            pay_with_hp=use_hp,
+            payment_reference=data.get("payment_reference"),
+        )
     except Exception as exc:
         err_str = str(exc)
         if "out of stock" in err_str.lower() or "insufficient inventory" in err_str.lower() or "no_codes" in err_str.upper():
             return jsonify({"error": MSG.LISTING_NO_CODES}), 400
         return jsonify({"error": err_str}), 400
-
-    if isinstance(purchase_row, dict) and purchase_row.get("error"):
-        err_str = str(purchase_row["error"])
-        if "out of stock" in err_str.lower() or "insufficient inventory" in err_str.lower() or "no_codes" in err_str.upper():
-            return jsonify({"error": MSG.LISTING_NO_CODES}), 400
-        return jsonify({"error": err_str}), 400
-
-    purchase_id = purchase_row.get("id") if isinstance(purchase_row, dict) else str(purchase_row)
-    code_value = (purchase_row.get("metadata") or {}).get("code") if isinstance(purchase_row, dict) else None
-
-    marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
-    if marketplace_hp > 0:
-        try:
-            award_active_hp(
-                user_id=g.user_id,
-                amount=marketplace_hp,
-                reference_id=purchase_id,
-                reference_type="marketplace_purchase",
-                source_type="marketplace_purchase_reward",
-                notes="HP earned on marketplace purchase",
-            )
-        except Exception as e:
-            from app.utils.logger import get_logger
-            get_logger(__name__).error("purchase: bonus HP award failed for %s, purchase %s: %s", g.user_id, purchase_id, e)
-            marketplace_hp = 0
-
-    _purchase_body = MSG.MARKETPLACE_PURCHASE_BODY.format(title=listing["title"])
-    if code_value:
-        _purchase_body += MSG.MARKETPLACE_PURCHASE_CODE_SUFFIX.format(code=code_value)
-    send_notification(
-        user_id=g.user_id,
-        notif_type="marketplace_purchase",
-        title=MSG.MARKETPLACE_PURCHASE_TITLE,
-        body=_purchase_body,
-        reference_id=purchase_id,
-        reference_type="marketplace_purchase",
-        channels=["push", "in_app", "email"],
-    )
-
-    if listing.get("listing_type") in ("code", "digital_code", "voucher", "subscription"):
-        codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
-        if len(codes_left or []) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
-            _alert_admin_low_inventory(listing_id, listing["title"], len(codes_left or []))
 
     return jsonify({
         "purchase": purchase_row,
@@ -399,19 +384,20 @@ def admin_update_purchase(purchase_id):
                         return jsonify({"error": f"HP refund failed and wallet reversal also failed — manual correction needed. {str(e)}"}), 500
                 return jsonify({"error": f"HP refund failed: {str(e)}"}), 400
 
-        # 3. Refund card portion via Paystack if card_amount > 0
-        if card_amt > 0:
-            if not payment_ref:
-                return jsonify({"error": "Cannot refund card portion: purchase has no payment_reference"}), 400
+        # 3. Refund card portion — policy: all refunds credit wallet, never Paystack
+        if card_amt > 0 and user_id:
             try:
-                from app.services.payment_service import refund_paystack_charge
-                refund_paystack_charge(
-                    transaction_reference=payment_ref,
-                    amount_naira=card_amt,
-                    reason=f"Marketplace purchase #{purchase_id[:8].upper()} {new_status}",
+                from app.services.wallet_service import credit_wallet
+                credit_wallet(
+                    user_id=user_id,
+                    amount=card_amt,
+                    payment_reference=f"REFUND-MKT-CARD-{purchase_id[:8].upper()}",
+                    reference_id=purchase_id,
+                    reference_type="marketplace_refund",
+                    notes=f"Refund (card portion) for marketplace purchase #{purchase_id[:8].upper()}: {new_status}",
                 )
             except Exception as e:
-                return jsonify({"error": f"Card refund failed: {str(e)}"}), 400
+                return jsonify({"error": f"Card-portion refund failed: {str(e)}"}), 400
 
         from app.utils.logger import get_logger
         restore_inventory_on_refund(db, purchase, get_logger(__name__))
@@ -422,6 +408,9 @@ def admin_update_purchase(purchase_id):
     }
     if data.get("admin_note"):
         update_payload["admin_note"] = data["admin_note"]
+
+    if new_status == "completed" and not purchase.get("is_fulfilled"):
+        fulfill_marketplace_purchase(purchase_id)
 
     db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload).execute()
 
@@ -730,6 +719,8 @@ def admin_delete_listing(listing_id):
     responses:
       200:
         description: Listing deleted
+      400:
+        description: Listing has purchase history
       404:
         description: Not found
     """
@@ -737,6 +728,11 @@ def admin_delete_listing(listing_id):
     listing = db.table("marketplace_listings").select("id,title").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
+
+    purchases = db.table("marketplace_purchases").select("id").eq("listing_id", listing_id).limit(1).execute()
+    if purchases:
+        return jsonify({"error": "Cannot delete listing with existing purchase history"}), 400
+
     try:
         db.table("marketplace_access_codes").eq("listing_id", listing_id).delete().execute()
     except Exception:
@@ -986,6 +982,113 @@ def guard_refund_eligibility(db, purchase, jsonify):
     return None
 
 
+def _complete_marketplace_purchase(
+    user_id: str,
+    listing_id: str,
+    quantity: int = 1,
+    wallet_amount: float = 0.0,
+    pay_with_hp: bool = False,
+    payment_reference: str = None,
+):
+    """
+    Shared helper called for wallet/HP-only purchases, or from webhook for card purchases.
+    """
+    db = get_db()
+    purchase_row = db.rpc("hg_purchase_marketplace_item", {
+        "p_user_id": user_id,
+        "p_listing_id": listing_id,
+        "p_quantity": quantity,
+        "p_pay_with_hp": pay_with_hp,
+        "p_wallet_amount": wallet_amount,
+        "p_payment_reference": payment_reference,
+    })
+    if isinstance(purchase_row, dict) and purchase_row.get("error"):
+        raise ValueError(str(purchase_row["error"]))
+
+    purchase_id = purchase_row.get("id") if isinstance(purchase_row, dict) else str(purchase_row)
+    code_value = (purchase_row.get("metadata") or {}).get("code") if isinstance(purchase_row, dict) else None
+
+    from flask import current_app
+    from app.services.notification_service import send_notification
+
+    marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
+    if marketplace_hp > 0:
+        try:
+            award_active_hp(
+                user_id=user_id,
+                amount=marketplace_hp,
+                reference_id=purchase_id,
+                reference_type="marketplace_purchase",
+                source_type="marketplace_purchase_reward",
+                notes="HP earned on marketplace purchase",
+            )
+        except Exception as e:
+            from app.utils.logger import get_logger
+            get_logger(__name__).error("purchase: bonus HP award failed for %s, purchase %s: %s", user_id, purchase_id, e)
+            marketplace_hp = 0
+
+    listing = db.table("marketplace_listings").select("title,listing_type").eq("id", listing_id).single().execute()
+    listing_title = listing.get("title", "Marketplace item") if listing else "item"
+
+    _purchase_body = MSG.MARKETPLACE_PURCHASE_BODY.format(title=listing_title)
+    if code_value:
+        _purchase_body += MSG.MARKETPLACE_PURCHASE_CODE_SUFFIX.format(code=code_value)
+
+    send_notification(
+        user_id=user_id,
+        notif_type="marketplace_purchase",
+        title=MSG.MARKETPLACE_PURCHASE_TITLE,
+        body=_purchase_body,
+        reference_id=purchase_id,
+        reference_type="marketplace_purchase",
+        channels=["push", "in_app", "email"],
+    )
+
+    if listing and listing.get("listing_type") in ("code", "digital_code", "voucher", "subscription"):
+        codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
+        if len(codes_left or []) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
+            _alert_admin_low_inventory(listing_id, listing_title, len(codes_left or []))
+
+    return purchase_row, code_value, marketplace_hp
+
+
+def fulfill_marketplace_purchase(purchase_id: str, reference: str = None):
+    db = get_db()
+    purchase = db.table("marketplace_purchases").select("id,listing_id,is_fulfilled,status").eq("id", purchase_id).single().execute()
+    if not purchase or purchase.get("is_fulfilled"):
+        return purchase
+
+    update_payload = {
+        "status": "completed",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if reference:
+        update_payload["payment_reference"] = reference
+
+    code_row = (
+        db.table("marketplace_access_codes")
+        .select("id,code")
+        .eq("listing_id", purchase["listing_id"])
+        .eq("status", "available")
+        .limit(1)
+        .execute()
+    )
+    code_row = code_row[0] if code_row else None
+    if code_row:
+        db.table("marketplace_access_codes").eq("id", code_row["id"]).update({
+            "status": "assigned",
+            "assigned_purchase_id": purchase_id,
+            "assigned_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+        update_payload["metadata"] = {"code": code_row["code"], "code_id": code_row["id"]}
+
+    update_payload["is_fulfilled"] = True
+    update_payload["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
+
+    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload).execute()
+    return db.table("marketplace_purchases").eq("id", purchase_id).single().execute()
+
+
 def restore_inventory_on_refund(db, purchase, logger):
     """
     Insert this in admin_update_purchase(), after guard_refund_eligibility
@@ -1022,12 +1125,17 @@ def restore_inventory_on_refund(db, purchase, logger):
 
 
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
-    from app.db import get_db, get_user_client
+    from app.db import get_db
     from app.constants import ADMIN_ROLES
-    db = get_user_client()
-    admins = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).execute()
+    db = get_db()
+    admins = db.table("profiles").select("id,campus_id").in_("role", list(ADMIN_ROLES)).execute()
     from app.services.notification_service import send_notification
-    for admin in admins:
+    listing_campus = db.table("marketplace_listings").select("campus_id").eq("id", listing_id).single().execute()
+    listing_campus_id = listing_campus.get("campus_id") if listing_campus else None
+
+    for admin in admins or []:
+        if listing_campus_id and admin.get("campus_id") and admin["campus_id"] != listing_campus_id:
+            continue
         send_notification(
             user_id=admin["id"],
             notif_type="low_inventory",

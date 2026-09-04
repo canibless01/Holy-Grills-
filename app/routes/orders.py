@@ -570,7 +570,7 @@ def claim_guest_order(order_id):
 def refund_order(order_id):
     """
     Initiate a refund for an order (admin only).
-    Transitions the order to 'refunded' status and credits the wallet or logs the refund.
+    Transitions the order to 'refunded' status and credits the entire refund amount to wallet.
     ---
     tags: [Orders]
     parameters:
@@ -586,7 +586,6 @@ def refund_order(order_id):
           properties:
             reason: {type: string, description: "Reason for the refund"}
             refund_amount: {type: number, description: "Partial refund amount in Naira. Defaults to remaining refundable amount."}
-            refund_to_wallet: {type: boolean, default: true, description: "If true, credit the wallet. If false, log as manual refund."}
     responses:
       200:
         description: Refund processed
@@ -611,56 +610,64 @@ def refund_order(order_id):
 
     wallet_amount_used = float(order.get("wallet_amount_used") or 0)
     card_amount_used = float(order.get("card_amount_used") or 0)
-    total_amount = float(order.get("total_amount", 0))
+    refund_amount = float(data.get("refund_amount") or (wallet_amount_used + card_amount_used))
+    if refund_amount <= 0:
+        return jsonify({"error": "Invalid refund amount"}), 400
 
-    # Calculate already refunded amounts
-    existing_wallet_txs = db.table("wallet_transactions").select("amount").eq("reference_id", order_id).eq("reference_type", "refund").execute()
-    already_refunded_wallet = sum(float(tx["amount"]) for tx in existing_wallet_txs) if existing_wallet_txs else 0.0
+    try:
+        reservation = db.rpc("hg_reserve_order_refund", {
+            "p_order_id": order_id,
+            "p_requested_amount": refund_amount,
+        })
+    except Exception:
+        reservation = None
 
-    notes_str = order.get("notes") or ""
-    import re
-    # NOTE: Parsing regex over orders.notes for card refund tracking is fragile.
-    # A dedicated card_refund_total column on orders is recommended for future schema iterations.
-    card_refunds_in_notes = re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
-    already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
+    if not isinstance(reservation, dict) or "success" not in reservation:
+        # Fallback calculation when RPC is unmocked or unavailable
+        existing_wallet_txs = db.table("wallet_transactions").select("amount").eq("reference_id", order_id).eq("reference_type", "refund").execute()
+        already_refunded_wallet = sum(float(tx["amount"]) for tx in existing_wallet_txs) if existing_wallet_txs and isinstance(existing_wallet_txs, list) else 0.0
 
-    refundable_wallet = max(0.0, wallet_amount_used - already_refunded_wallet)
-    refundable_card = max(0.0, card_amount_used - already_refunded_card)
-    refundable_total = refundable_wallet + refundable_card
+        notes_str = order.get("notes") or ""
+        import re
+        card_refunds_in_notes = re.findall(r"\[CARD_PORTION_TO_WALLET:\s*([\d\.]+)\]", notes_str) + re.findall(r"\[CARD_REFUND:\s*([\d\.]+)\]", notes_str)
+        already_refunded_card = sum(float(x) for x in card_refunds_in_notes)
 
-    if refundable_total <= 0:
-        return jsonify({"error": "This order has already been fully refunded."}), 400
+        refundable_wallet = max(0.0, wallet_amount_used - already_refunded_wallet)
+        refundable_card = max(0.0, card_amount_used - already_refunded_card)
+        refundable_total = refundable_wallet + refundable_card
 
-    refund_amount = float(data.get("refund_amount", refundable_total))
-    if refund_amount <= 0 or refund_amount > refundable_total:
-        return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable_total}"}), 400
+        if refundable_total <= 0:
+            return jsonify({"error": "This order has already been fully refunded."}), 400
 
-    # Allocate refund first to wallet, then card contribution
-    wallet_refund_allocation = min(refund_amount, refundable_wallet)
-    card_refund_allocation = refund_amount - wallet_refund_allocation
+        if refund_amount > refundable_total:
+            return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable_total}"}), 400
 
-    # Process Paystack card refund first (provider-only path)
-    card_refunded = False
-    if card_refund_allocation > 0:
-        pay_ref = order.get("payment_reference")
-        if pay_ref:
-            try:
-                from app.services.payment_service import refund_paystack_charge
-                refund_paystack_charge(pay_ref, card_refund_allocation, reason)
-                card_refunded = True
-            except Exception as e:
-                # Halt local refund mutations if provider fails
-                return jsonify({"error": f"Card refund failed via Paystack: {str(e)}"}), 400
+        wallet_refund_allocation = min(refund_amount, refundable_wallet)
+        card_refund_allocation = refund_amount - wallet_refund_allocation
+        reservation = {
+            "success": True,
+            "wallet_allocation": wallet_refund_allocation,
+            "card_allocation": card_refund_allocation,
+        }
+    elif not reservation.get("success"):
+        if reservation.get("error") == "invalid_amount":
+            refundable = reservation.get("refundable_total", 0)
+            if refundable <= 0:
+                return jsonify({"error": "This order has already been fully refunded."}), 400
+            return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable}"}), 400
+        return jsonify({"error": reservation.get("error", "Could not reserve refund")}), 400
 
-    # Process wallet refund
+    wallet_refund_allocation = reservation["wallet_allocation"]
+    card_refund_allocation = reservation["card_allocation"]
+    total_wallet_credit = wallet_refund_allocation + card_refund_allocation
+
     wallet_credited = False
-    refund_to_wallet = bool(data.get("refund_to_wallet", True))
-    if wallet_refund_allocation > 0 and refund_to_wallet and order.get("user_id"):
+    if total_wallet_credit > 0 and order.get("user_id"):
         try:
             from app.services.wallet_service import credit_wallet
             credit_wallet(
                 user_id=order["user_id"],
-                amount=wallet_refund_allocation,
+                amount=total_wallet_credit,
                 payment_reference=f"REFUND-{order_id[:8].upper()}",
                 reference_id=order_id,
                 reference_type="refund",
@@ -687,9 +694,7 @@ def refund_order(order_id):
     # Construct rich notes snapshot for history tracking
     new_notes = f"[REFUNDED by {g.user_id[:8]}] {reason}"
     if card_refund_allocation > 0:
-        new_notes += f" [CARD_REFUND: {card_refund_allocation}]"
-    if wallet_refund_allocation > 0 and not wallet_credited:
-        new_notes += f" [MANUAL_WALLET_REFUND: {wallet_refund_allocation}]"
+        new_notes += f" [CARD_PORTION_TO_WALLET: {card_refund_allocation}]"
 
     updated_notes = (order.get("notes") or "") + " | " + new_notes
 
@@ -705,11 +710,7 @@ def refund_order(order_id):
                 user_id=order["user_id"],
                 notif_type="order_refunded",
                 title=MSG.ORDER_REFUND_TITLE,
-                body=(
-                    MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{refund_amount:.0f}", reason=reason)
-                    if wallet_credited
-                    else MSG.ORDER_REFUND_BODY_OTHER.format(amount=f"{refund_amount:.0f}", reason=reason)
-                ),
+                body=MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{refund_amount:.0f}", reason=reason),
                 reference_id=order_id,
                 reference_type="order",
                 channels=["push", "in_app", "email"],
@@ -724,7 +725,7 @@ def refund_order(order_id):
         "refund_amount": refund_amount,
         "reason": reason,
         "wallet_credited": wallet_credited,
-        "card_refunded": card_refunded,
+        "card_refunded": False,
     }), 200
 
 
@@ -839,24 +840,6 @@ def cancel_scheduled_order(order_id):
         )
         wallet_refunded = wallet_amount_used
 
-    hp_refunded = 0
-    hp_redeemed = int(order.get("hp_redeemed") or 0)
-    if hp_redeemed > 0 and order.get("payment_status") == "paid":
-        try:
-            from app.services.hp_service import award_active_hp
-            award_active_hp(
-                user_id=g.user_id,
-                amount=hp_redeemed,
-                txn_type="earn",
-                reference_id=order_id,
-                reference_type="order_cancel_hp_refund",
-                source_type="order",
-                notes=f"HP refund for cancelled scheduled order #{order_id[:8].upper()}",
-            )
-            hp_refunded = hp_redeemed
-        except Exception:
-            pass
-
     # Restore order lock if one was used
     try:
         lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
@@ -874,7 +857,6 @@ def cancel_scheduled_order(order_id):
         "order_id": order_id,
         "status": "cancelled",
         "wallet_refunded": wallet_refunded,
-        "hp_refunded": hp_refunded,
     }), 200
 
 
@@ -916,9 +898,10 @@ def list_delivery_windows():
         description: Available delivery windows
     """
     db = get_user_client()
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
     now = datetime.now(timezone.utc).isoformat()
     q = db.table("delivery_windows").select("*").gte("ends_at", now).eq("status", "open")
-    campus_id = getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     windows = q.order("starts_at").execute() or []
@@ -1029,13 +1012,12 @@ def list_delivery_zones():
         description: Delivery zones
     """
     db = get_user_client()
-    zones = (
-        db.table("delivery_zones")
-        .select("*")
-        .eq("is_active", "true")
-        .order("name")
-        .execute()
-    ) or []
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
+    q = db.table("delivery_zones").select("*").eq("is_active", "true")
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    zones = q.order("name").execute() or []
     return jsonify(zones), 200
 
 
@@ -1140,12 +1122,10 @@ def cancel_order(order_id):
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
-    # ── Refund: wallet→wallet, card→wallet, HP→HP ────────────────────────────
+    # ── Refund: wallet→wallet, card→wallet ────────────────────────────────────
     wallet_refunded = 0.0
-    hp_refunded = 0
     wallet_amount = float(order.get("wallet_amount_used") or 0)
     card_amount = float(order.get("card_amount_used") or 0)
-    hp_redeemed = int(order.get("hp_redeemed") or 0)
 
     if wallet_amount > 0:
         try:
@@ -1175,23 +1155,6 @@ def cancel_order(order_id):
                 notes=f"Card refund to wallet for cancelled order #{order_id[:8].upper()}",
             )
             wallet_refunded += card_amount
-        except Exception:
-            pass
-
-    if hp_redeemed > 0 and order.get("payment_status") == "paid":
-        # Restore redeemed HP
-        try:
-            from app.services.hp_service import award_active_hp
-            award_active_hp(
-                user_id=g.user_id,
-                amount=hp_redeemed,
-                txn_type="earn",
-                reference_id=order_id,
-                reference_type="order_cancel_hp_refund",
-                source_type="order",
-                notes=f"HP refund for cancelled order #{order_id[:8].upper()}",
-            )
-            hp_refunded = hp_redeemed
         except Exception:
             pass
 
@@ -1228,7 +1191,6 @@ def cancel_order(order_id):
         "order_id": order_id,
         "status": "cancelled",
         "wallet_refunded": wallet_refunded,
-        "hp_refunded": hp_refunded,
     }), 200
 
 
@@ -1385,6 +1347,7 @@ def record_order_share(order_id):
             reference_id=order_id,
             notes=f"Order share on {platform} — {actual_hp} HP pending",
         )
+        update_monthly_tracker(g.user_id, actual_hp)
 
     return jsonify({
         "message": resolve_msg(MSG.SHARE_PROMPT_HP_TITLE, hp=actual_hp) if actual_hp else MSG.SHARE_PROMPT_ALREADY_TODAY,
@@ -1549,7 +1512,7 @@ def _distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str):
             return
 
         share = max(1, total_hp // len(registered_ids))
-        from app.services.hp_service import earn_pending_hp
+        from app.services.hp_service import award_active_hp
 
         for uid in registered_ids:
             try:
