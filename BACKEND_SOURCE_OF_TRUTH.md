@@ -16826,3 +16826,61 @@ The `system_settings` table stores runtime configuration key-values. Settings ca
 | `whatsapp_support_number` | `"2348000000000"` | Support contact number | `app/routes/storefront.py` |
 
 | `whatsapp_support_enabled` | `true` | Toggle support button in app | `app/routes/storefront.py` |
+
+
+---
+## SECTION 15: POST-AUDIT BACKEND ENHANCEMENTS & RECENT FIXES
+
+This section documents all system architecture enhancements, blueprint registrations, new endpoints, and policy refactorings implemented across the backend codebase.
+
+### 1. Challenges Blueprint Registration (`/api/challenges`)
+- **Blueprint**: `challenges_bp` in `app/routes/challenges.py`
+- **Registration**: Mounted under `/api/challenges` in `app/__init__.py`.
+- **Endpoints**:
+  - `GET /api/challenges` — List active challenges (scoped to user's campus or global).
+  - `GET /api/challenges/<id>` — Get single challenge detail and user progress.
+  - `POST /api/challenges/<id>/join` — Join a challenge.
+  - `POST /api/challenges/<id>/claim` — Claim challenge completion reward HP.
+  - `GET /api/challenges/admin/all` — Admin list all challenges (including drafts/inactive).
+  - `POST /api/challenges/admin` — Admin create challenge.
+  - `PATCH /api/challenges/admin/<id>` — Admin update challenge.
+  - `DELETE /api/challenges/admin/<id>` — Admin soft-delete challenge.
+
+### 2. Marketplace Card Payments & Webhook Fulfillment
+- **Card Payment Initialization**: `POST /api/marketplace/<id>/purchase` with `payment_method="card"` or `payment_method="split"` initializes Paystack transactions (`initialize_payment`) and returns `payment_required: true` and `authorization_url`.
+- **Shared Completion Helpers**: Extracted `_complete_marketplace_purchase()` and `fulfill_marketplace_purchase()` to handle wallet/HP-only purchases synchronously, and card-paid purchases via Paystack/Flutterwave `charge.success` webhooks.
+- **Admin Delete Guard**: `DELETE /api/marketplace/admin/listings/<id>` verifies `marketplace_purchases` for existing history, returning `400 Bad Request` if purchase history exists instead of throwing unhandled FK violation errors.
+- **Low Inventory Alerts**: `_alert_admin_low_inventory` uses service-role `get_db()` client to query admin profiles across RLS boundaries, filtered by campus ID.
+
+### 3. Guest Campus Scoping Resolution (`_get_campus_id()`)
+- Unauthenticated / guest calls on public endpoints now evaluate campus scoping using `_get_campus_id()` from `app.routes.events`.
+- Resolution evaluation chain: `request.args.get("campus_id")` → `request.headers.get("X-Campus-Id")` → `session.get("campus_id")` → `None`.
+- Applied across:
+  - `GET /api/orders/delivery-zones`
+  - `GET /api/orders/delivery-windows`
+  - `GET /api/menu/categories`
+  - `GET /api/menu/items`
+  - `GET /api/menu/addons`
+  - `GET /api/menu/kitchen-capacity` (`_kitchen_stats` & `_daily_item_counts`)
+  - `GET /api/menu/items/<id>`
+  - `GET /api/marketplace` (`list_listings`)
+  - `GET /api/marketplace/<id>` (`get_listing`)
+
+### 4. Closed-Loop Wallet-Only Refund Policy
+- **Policy**: 100% of order and marketplace refunds credit the customer's closed-loop wallet balance (`credit_wallet()`). No funds ever leave the platform or trigger Paystack card refunds (`refund_paystack_charge` calls removed from refund handlers).
+- **Order Refunds**: `POST /api/orders/<id>/refund` calculates `total_wallet_credit = wallet_refund_allocation + card_refund_allocation` and issues a single `credit_wallet()` call. Notes snapshot logs `[CARD_PORTION_TO_WALLET: x]`.
+- **Marketplace Refunds**: `PATCH /api/admin/marketplace/purchases/<id>` with `status="refunded"` or `status="cancelled"` credits both wallet and card-paid cash portions to `credit_wallet()`.
+
+### 5. Exclusive Spin Prize Pool Database Integration & Admin CRUD
+- **Dynamic Prize Pool**: `_spin_prizes()` in `app/routes/exclusive_spin.py` queries `exclusive_spin_prizes` table (scoped to caller's campus, falling back to global `campus_id IS NULL`), then defaults to the full 8-item template list (`EXCLUSIVE_SPIN_TEMPLATE_ITEMS`) if empty or unreachable.
+- **Admin CRUD Endpoints** (in `app/routes/admin.py`):
+  - `GET /api/admin/exclusive-spin-pool` — List all spin pool entries with weights.
+  - `POST /api/admin/exclusive-spin-pool` — Create a spin pool entry.
+  - `PATCH /api/admin/exclusive-spin-pool/<id>` — Update a spin pool entry (name, weight, is_active).
+  - `DELETE /api/admin/exclusive-spin-pool/<id>` — Soft-delete (deactivate) a spin pool entry.
+
+### 6. Conditional Fulfillment Timestamp Stamping
+- **Behavior**: Fulfillment update endpoints (`fulfil_leaderboard_prize`, `fulfil_hof_reward`, and `fulfil_exclusive_spin_prize` in `app/routes/admin_feature_flags.py`) only stamp `fulfilled_by` and `fulfilled_at` when `"status"` is present in the request payload. Notes-only PATCH requests preserve existing fulfillment timestamps and actor IDs.
+
+### 7. Service Role (`get_db()`) Context & RLS Security Fixes
+- Critical background processes, system settings reads, and administrative triggers (such as `gift_service.py`, `streak_service.py`, `hp_service.py`, `milestone_service.py`, `order_service.py`, `wallet_service.py`) use the service-role `get_db()` client to execute unhindered by end-user Row Level Security (RLS) restrictions.
