@@ -522,6 +522,12 @@ class MSG:
     SQUAD_ORDER_ADDED_BODY       = "{organizer} added you to a squad order."
     SQUAD_INVITE_SUBJECT         = "You've been invited to join {platform}!"
     SQUAD_INVITE_BODY            = "{organizer} added you to a squad order. Create an account to start earning {currency}!"
+    SQUAD_MEMBER_NOT_FOUND       = "Squad member not found."
+    SQUAD_MAX_MEMBERS_REACHED    = "This squad has reached its member limit."
+    SQUAD_ORGANIZER_ONLY         = "Only the squad organizer can do this."
+    SQUAD_NAME_REQUIRED          = "Squad name is required."
+    SQUAD_EMAIL_REQUIRED         = "Email is required."
+    SQUAD_CROSS_CAMPUS_BLOCKED   = "This person is on a different campus and can't join your squad."
 
     # ── Monthly HP Cap ─────────────────────────────────────────────────────────
     MONTHLY_HP_CAP_REACHED       = "Monthly free-activity {currency} cap reached. Cap resets on the 1st of next month."

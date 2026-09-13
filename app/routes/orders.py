@@ -239,6 +239,18 @@ def get_order(order_id):
         if rider:
             order["assigned_rider"] = rider
 
+    if order.get("is_squad_order"):
+        members = db.table("squad_members").select("email,user_id,hp_share,is_registered").eq("order_id", order_id).execute() or []
+        user_ids = [m["user_id"] for m in members if m.get("user_id")]
+        names = {}
+        if user_ids:
+            profs = db.table("profiles").select("id,nickname,full_name,email,department,campus_id").in_("id", user_ids).execute() or []
+            from app.services.squad_service import resolve_display_names_batch
+            names = resolve_display_names_batch(profs)
+        order["squad_members_detail"] = [
+            {**m, "display_name": names.get(m.get("user_id"), m["email"])} for m in members
+        ]
+
     return jsonify(order), 200
 
 
@@ -1393,7 +1405,7 @@ def add_squad_members(order_id):
     db = get_user_client()
     order = (
         db.table("orders")
-        .select("id,user_id,status,hp_earned")
+        .select("id,user_id,status,hp_earned,campus_id,squad_id")
         .eq("id", order_id)
         .eq("user_id", g.user_id)
         .single()
@@ -1409,13 +1421,17 @@ def add_squad_members(order_id):
 
     split_hp = data.get("split_hp", True)
     organizer_profile = (
-        db.table("profiles").select("full_name,email").eq("id", g.user_id).single().execute()
+        db.table("profiles").select("id,nickname,full_name,email,department,campus_id,referral_code").eq("id", g.user_id).single().execute()
     ) or {}
-    organizer_name = organizer_profile.get("full_name") or "Someone"
+    from app.services.squad_service import resolve_display_name
+    organizer_name = resolve_display_name(profile=organizer_profile) if organizer_profile else "Someone"
+    order_campus_id = order.get("campus_id")
+    squad_id_for_order = order.get("squad_id")
     frontend_url = current_app.config.get("FRONTEND_URL", "")
 
     from app.services.notification_service import send_notification
     results = []
+    successfully_added_names = []
     now = datetime.now(timezone.utc).isoformat()
 
     for email in emails:
@@ -1432,7 +1448,7 @@ def add_squad_members(order_id):
             continue
 
         profile = (
-            db.table("profiles").select("id,full_name").eq("email", email).single().execute()
+            db.table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("email", email).single().execute()
         )
         member_payload = {
             "order_id": order_id,
@@ -1442,6 +1458,7 @@ def add_squad_members(order_id):
             "is_registered": bool(profile),
             "referral_attributed": False,
             "created_at": now,
+            "campus_id": order_campus_id,
         }
         if profile:
             member_payload["user_id"] = profile["id"]
@@ -1451,6 +1468,16 @@ def add_squad_members(order_id):
         except Exception:
             results.append({"email": email, "status": "error"})
             continue
+        successfully_added_names.append(resolve_display_name(profile=profile) if profile else email)
+
+        if squad_id_for_order:
+            try:
+                db.table("squad_roster").insert({
+                    "squad_id": squad_id_for_order, "email": email,
+                    "user_id": profile["id"] if profile else None,
+                })
+            except Exception:
+                pass  # already on roster
 
         if not profile:
             # Send auto-invite for referral vector
@@ -1483,58 +1510,73 @@ def add_squad_members(order_id):
                 pass
             results.append({"email": email, "status": "notified"})
 
+    if successfully_added_names:
+        member_desc = (
+            successfully_added_names[0] if len(successfully_added_names) == 1
+            else f"{len(successfully_added_names)} people"
+        )
+        try:
+            send_notification(
+                user_id=g.user_id, notif_type="squad_member_added",
+                template_data={"member_desc": member_desc}, channels=["push"],
+            )
+        except Exception:
+            pass
+
     # If order is already delivered and split_hp is enabled, distribute HP now
     if split_hp and order.get("status") == "delivered" and order.get("hp_earned", 0) > 0:
-        _distribute_squad_hp(order_id, order["hp_earned"], g.user_id)
+        from app.services.squad_service import distribute_squad_hp
+        distribute_squad_hp(order_id, order["hp_earned"], g.user_id, campus_id=order_campus_id)
 
     return jsonify({"message": "Squad members recorded", "results": results}), 200
 
 
-def _distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str):
-    """Split HP evenly among registered squad members + organizer."""
-    if total_hp <= 0:
-        return
+@orders_bp.route("/<order_id>/squad-members", methods=["GET"])
+@require_auth
+def get_order_squad_members(order_id):
     db = get_user_client()
-    try:
-        members = (
-            db.table("squad_members")
-            .select("id,user_id,email,is_registered")
-            .eq("order_id", order_id)
-            .eq("is_registered", "true")
-            .execute()
-        ) or []
+    order = db.table("orders").select("id,user_id").eq("id", order_id).eq("user_id", g.user_id).single().execute()
+    if not order:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+    members = db.table("squad_members").select("*").eq("order_id", order_id).execute() or []
+    return jsonify(members), 200
 
-        registered_ids = [m["user_id"] for m in members if m.get("user_id")]
-        if organizer_id not in registered_ids:
-            registered_ids.insert(0, organizer_id)
 
-        if not registered_ids:
-            return
+@orders_bp.route("/<order_id>/squad-members/<member_id>", methods=["DELETE"])
+@require_auth
+def remove_order_squad_member(order_id, member_id):
+    """Order-scoped trim only — roster untouched."""
+    db = get_user_client()
+    order = db.table("orders").select("id,user_id,status").eq("id", order_id).eq("user_id", g.user_id).single().execute()
+    if not order:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+    if order.get("status") == "delivered":
+        return jsonify({"error": "Cannot modify squad members after delivery"}), 400
+    db.table("squad_members").eq("id", member_id).eq("order_id", order_id).delete()
+    return jsonify({"message": "Removed from this order"}), 200
 
-        share = max(1, total_hp // len(registered_ids))
-        from app.services.hp_service import award_active_hp
 
-        for uid in registered_ids:
-            try:
-                award_active_hp(
-                    user_id=uid,
-                    amount=share,
-                    source_type="squad_bonus",
-                    reference_id=order_id,
-                    notes=f"Squad HP split — {share} HP from order {order_id[:8]}",
-                )
-            except Exception:
-                pass
-
-        # Record hp_share on squad_members rows
-        for m in members:
-            if m.get("user_id") in registered_ids:
-                try:
-                    db.table("squad_members").eq("id", m["id"]).update({"hp_share": share})
-                except Exception:
-                    pass
-    except Exception as e:
-        pass
+@orders_bp.route("/<order_id>/squad-members/<member_id>/resend", methods=["POST"])
+@require_auth
+def resend_squad_invite(order_id, member_id):
+    """Force-resend, always allowed."""
+    db = get_user_client()
+    order = db.table("orders").select("id,user_id").eq("id", order_id).eq("user_id", g.user_id).single().execute()
+    if not order:
+        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+    member = db.table("squad_members").select("email,is_registered").eq("id", member_id).eq("order_id", order_id).single().execute()
+    if not member or member.get("is_registered"):
+        return jsonify({"error": "Nothing to resend"}), 400
+    organizer_profile = db.table("profiles").select("nickname,full_name,email,department,campus_id,referral_code").eq("id", g.user_id).single().execute() or {}
+    from app.services.squad_service import resolve_display_name
+    from app.utils.email import send_email
+    frontend_url = current_app.config.get("FRONTEND_URL", "")
+    ref_code = organizer_profile.get("referral_code", "")
+    invite_link = f"{frontend_url}/register?ref={ref_code}&email={member['email']}" if ref_code else f"{frontend_url}/register"
+    send_email(to_email=member["email"], to_name="", template_key="squad_invite",
+               data={"organizer": resolve_display_name(profile=organizer_profile), "invite_link": invite_link})
+    db.table("squad_members").eq("id", member_id).update({"invite_sent": True})
+    return jsonify({"message": "Invite resent"}), 200
 
 
 @orders_bp.route("/<order_id>/history", methods=["GET"])

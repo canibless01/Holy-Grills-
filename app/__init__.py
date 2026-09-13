@@ -40,6 +40,7 @@ from app.routes.free_sides import free_sides_bp
 from app.routes.exclusive_spin import exclusive_spin_bp
 from app.routes.admin_feature_flags import admin_flags_bp
 from app.routes.uploads import uploads_bp
+from app.routes.squads import squads_bp
 
 
 def create_app(config_class=Config):
@@ -122,6 +123,7 @@ def create_app(config_class=Config):
     app.register_blueprint(exclusive_spin_bp, url_prefix="/api/exclusive-spin")
     app.register_blueprint(admin_flags_bp, url_prefix="/api/admin")
     app.register_blueprint(uploads_bp, url_prefix="/api/upload")
+    app.register_blueprint(squads_bp, url_prefix="/api/squads")
     app.register_blueprint(health_bp, url_prefix="/api")
 
     _logger = get_logger("holy_grills.app")

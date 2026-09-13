@@ -119,19 +119,20 @@ def reset_monthly_leaderboard(self):
                 top_ids = [uid for uid, _ in sorted_users]
                 profiles_data = (
                     db.table("profiles")
-                    .select("id,full_name")
+                    .select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
                     .in_("id", top_ids)
                     .eq("campus_id", campus_id)
                     .execute()
                 )
-                profile_map = {p["id"]: p for p in (profiles_data or [])}
+                from app.services.squad_service import resolve_leaderboard_names_batch
+                names = resolve_leaderboard_names_batch(profiles_data or [])
 
                 entries = []
                 for i, (user_id, hp_earned) in enumerate(sorted_users):
                     entries.append({
                         "rank": i + 1,
                         "user_id": user_id,
-                        "full_name": profile_map.get(user_id, {}).get("full_name"),
+                        "full_name": names.get(user_id),
                         "hp_earned": hp_earned,
                         "campus_id": campus_id,
                     })
@@ -171,7 +172,11 @@ def reset_monthly_leaderboard(self):
                         db.table("profiles").eq("id", uid).update({"top4_finish_count": new_count})
                         if new_count == 3:
                             try:
-                                _hof_profile = db.table("profiles").select("full_name,current_tier_id").eq("id", uid).single().execute() or {}
+                                _hof_profile = db.table("profiles").select(
+                                    "id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name,current_tier_id"
+                                ).eq("id", uid).single().execute() or {}
+                                from app.services.squad_service import resolve_leaderboard_name
+                                _display_name = resolve_leaderboard_name(_hof_profile) if _hof_profile else "Platform Member"
                                 _tier_name = None
                                 _tier_id = _hof_profile.get("current_tier_id")
                                 if _tier_id:
@@ -184,7 +189,7 @@ def reset_monthly_leaderboard(self):
                                 db.table("hall_of_fame_inductees").insert({
                                     "user_id": uid,
                                     "inducted_at": now.isoformat(),
-                                    "full_name": _hof_profile.get("full_name") or ("Platform Member"),
+                                    "full_name": _display_name,
                                     "tier_at_induction": _tier_name or "Unknown",
                                     "top4_finish_count": new_count,
                                     "campus_id": campus_id,
@@ -211,7 +216,9 @@ def reset_monthly_leaderboard(self):
                             try:
                                 from app.constants import ADMIN_ROLES
                                 _admin_ids = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).eq("campus_id", campus_id).execute() or []
-                                _hof_name = (db.table("profiles").select("full_name").eq("id", uid).single().execute() or {}).get("full_name", "A user")
+                                _admin_prof = db.table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("id", uid).single().execute() or {}
+                                from app.services.squad_service import resolve_display_name
+                                _hof_name = resolve_display_name(profile=_admin_prof) if _admin_prof else "A user"
                                 for _adm in _admin_ids:
                                     try:
                                         send_notification(

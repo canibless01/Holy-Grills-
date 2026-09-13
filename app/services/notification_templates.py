@@ -332,10 +332,14 @@ NOTIFICATION_TEMPLATES: dict = {
 
     # ── Squad ──────────────────────────────────────────────────────────────────
     "squad_member_added": {
-        "title":        MSG.NOTIF_SQUAD_MEMBER_ADDED_TITLE,
-        "body":         MSG.SQUAD_ORDER_ADDED_BODY,
-        "include_name": True,
-        "channels":     None,
+        "title":        "Squad member added!",
+        "body":         "You added {member_desc} to your squad order.",
+        "include_name": False,
+        "channels":     ["push"],
+    },
+    "squad_hp_share": {
+        "title":        "Your squad HP share!",
+        "body":         "You earned {hp} HP from your squad order.",
     },
     "squad_hp_split": {
         "title":        MSG.SQUAD_HP_SPLIT_TITLE,

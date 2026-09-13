@@ -69,6 +69,7 @@ def register():
             referred_by_code: {type: string}
             department: {type: string, description: "Department name — use name field from GET /api/departments"}
             academic_level: {type: string, description: "Academic level value from GET /api/academic-levels (e.g. 100L, 200L, PG)"}
+            nickname: {type: string}
     responses:
       201:
         description: Registration successful, returns session tokens
@@ -101,6 +102,7 @@ def register():
             department=data.get("department"),
             academic_level=data.get("academic_level"),
             campus_id=campus_id,
+            nickname=data.get("nickname"),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

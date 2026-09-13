@@ -623,8 +623,24 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     squad_delivery_discount = 0.0
     squad_item_count = sum(oi["quantity"] for oi in order_items if not oi.get("is_addon"))
     is_squad_order = False
+    squad_id = None
+    squad_roster_rows = []
 
-    if config.get("SQUAD_ORDER_ENABLED", True):
+    requested_squad_id = payload.get("squad_id")
+    if requested_squad_id:
+        squad_row = db.table("squads").select("id,name,creator_id,campus_id").eq("id", requested_squad_id).single().execute()
+        if not squad_row:
+            raise ValueError("Squad not found")
+        is_member = (squad_row["creator_id"] == user_id) or bool(
+            db.table("squad_roster").select("id").eq("squad_id", requested_squad_id).eq("user_id", user_id).eq("is_active", True).execute()
+        )
+        if not is_member:
+            raise ValueError("You are not a member of this squad")
+        squad_id = requested_squad_id
+        is_squad_order = True
+        squad_roster_rows = db.table("squad_roster").select("id,user_id,email").eq("squad_id", squad_id).eq("is_active", True).execute() or []
+
+    if not is_squad_order and config.get("SQUAD_ORDER_ENABLED", True):
         min_items = int(config.get("SQUAD_ORDER_MIN_ITEMS", 3))
         max_items = int(config.get("SQUAD_ORDER_MAX_ITEMS", 20))
         if min_items <= squad_item_count <= max_items:
@@ -854,6 +870,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "p_scheduled_for": scheduled_for,
         "p_is_squad_order": is_squad_order,
         "p_squad_name": payload.get("squad_name"),
+        "p_squad_id": squad_id,
         "p_squad_discount_amount": squad_discount,
         "p_squad_item_count": squad_item_count,
         "p_notes": payload.get("notes", ""),
@@ -876,6 +893,37 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         raise ValueError(result["error"])
 
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
+
+    order_id = result.get("order_id")
+    if squad_id and order_id and not result.get("idempotent"):
+        excluded_ids = set(payload.get("excluded_member_ids") or [])
+        extra_members = [e.strip().lower() for e in (payload.get("extra_members") or []) if e and e.strip()]
+        campus_id_for_squad = campus_id
+        snapshot = []
+        for r in squad_roster_rows:
+            if r["id"] in excluded_ids:
+                continue
+            try:
+                db.table("squad_members").insert({
+                    "order_id": order_id, "email": r["email"], "user_id": r.get("user_id"),
+                    "is_registered": bool(r.get("user_id")), "campus_id": campus_id_for_squad,
+                })
+            except Exception:
+                pass  # duplicate (order_id, email) — ignore
+            snapshot.append({"email": r["email"], "user_id": r.get("user_id")})
+        for email in extra_members:
+            prof = db.table("profiles").select("id").eq("email", email).single().execute()
+            try:
+                db.table("squad_members").insert({
+                    "order_id": order_id, "email": email,
+                    "user_id": prof["id"] if prof else None,
+                    "is_registered": bool(prof), "campus_id": campus_id_for_squad,
+                })
+            except Exception:
+                pass
+            snapshot.append({"email": email, "user_id": prof["id"] if prof else None})
+        if snapshot:
+            db.table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot})
 
     order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
     if order and isinstance(order, dict):
@@ -1304,6 +1352,17 @@ def _handle_delivery_rewards(order: dict):
             )
 
     _t.Thread(target=_send_delivery_notifications, daemon=True).start()
+
+    if order.get("is_squad_order") and order.get("squad_id") and not order.get("squad_hp_distributed"):
+        try:
+            from app.services.squad_service import distribute_squad_hp
+            distribute_squad_hp(order_id, hp_amount, user_id, campus_id=order.get("campus_id"))
+            db.table("orders").eq("id", order_id).update({
+                "squad_hp_distributed": True,
+                "squad_hp_distributed_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logger.warning("_handle_delivery_rewards: squad HP distribution failed for order %s: %s", order_id, e)
 
     # Try to reclaim a missed login-streak day via this order
     try:
