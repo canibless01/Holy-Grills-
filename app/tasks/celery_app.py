@@ -56,6 +56,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.scheduled.birthday_hp_awards",
         "schedule": crontab(hour=8, minute=0),
     },
+    "grant-monthly-tier-perks": {
+        "task": "app.tasks.scheduled.grant_monthly_tier_perks",
+        "schedule": crontab(hour=0, minute=5, day_of_month=1),
+    },
     "abandoned-cart-scan": {
         "task": "app.tasks.scheduled.scan_abandoned_carts",
         "schedule": crontab(minute="*/30"),

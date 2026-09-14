@@ -90,17 +90,19 @@ def get_leaderboard():
             "message": "Rankings for this period are being calculated — check back shortly.",
         }), 200
 
-    q = db.table("profiles").select("id,full_name,hp_balance").eq("is_active", "true").eq("role", "student")
+    q = db.table("profiles").select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name,hp_balance").eq("is_active", "true").eq("role", "student")
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     profile_data = q.order("hp_balance", ascending=False).limit(limit).execute()
+    from app.services.squad_service import resolve_leaderboard_names_batch
+    names = resolve_leaderboard_names_batch(profile_data or [])
     rankings = []
     for i, p in enumerate(profile_data or []):
         rankings.append({
             "rank": i + 1,
             "user_id": p["id"],
-            "full_name": p.get("full_name"),
+            "full_name": names.get(p["id"]),
             "hp_total": p.get("hp_balance", 0) or 0,
         })
     return jsonify({"period_key": period_key, "period_type": period_type, "rankings": rankings}), 200
@@ -330,187 +332,68 @@ def my_rank():
 
 @leaderboard_bp.route("/squad", methods=["GET"])
 def squad_leaderboard():
-    """
-    Squad leaderboard — ranks squads by combined HP earned from squad orders.
-    A squad is identified by its organiser (the user who placed the squad order).
-    ---
-    tags: [Leaderboard]
-    security: []
-    parameters:
-      - in: query
-        name: period_type
-        type: string
-        default: monthly
-        enum: [monthly, weekly, all_time]
-      - in: query
-        name: limit
-        type: integer
-        default: 10
-    responses:
-      200:
-        description: Squad leaderboard rankings
-    """
-    db = get_user_client()
-    period_type = request.args.get("period_type", "monthly")
-    if period_type not in ("monthly", "weekly", "all_time"):
-        period_type = "monthly"
-    default_limit = current_app.config.get("LEADERBOARD_DEFAULT_LIMIT", 10)
-    max_limit = current_app.config.get("LEADERBOARD_MAX_LIMIT", 50)
-    limit = min(int(request.args.get("limit", default_limit)), max_limit)
-    period_key = _period_key_for(period_type)
-    today = date.today()
+    db = get_db()
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    orders_q = db.table("orders").select("squad_id,hp_earned").eq("is_squad_order", "true").eq("status", "delivered")
+    if campus_id:
+        orders_q = orders_q.eq("campus_id", campus_id)
+    squad_orders = orders_q.execute() or []
 
-    try:
-        campus_id = getattr(g, "campus_id", None) or request.args.get("campus_id")
-        # Fetch delivered squad orders
-        q = (
-            db.table("orders")
-            .select("id,user_id,hp_earned,created_at")
-            .eq("is_squad_order", "true")
-            .eq("status", "delivered")
-        )
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
-        squad_orders = q.execute() or []
+    hp_by_squad = {}
+    for o in squad_orders:
+        if o.get("squad_id"):
+            hp_by_squad[o["squad_id"]] = hp_by_squad.get(o["squad_id"], 0) + (o.get("hp_earned") or 0)
 
-        # Filter by period
-        if period_type == "monthly":
-            prefix = today.strftime("%Y-%m")
-            squad_orders = [o for o in squad_orders if (o.get("created_at") or "").startswith(prefix)]
-        elif period_type == "weekly":
-            week_start = (today - timedelta(days=today.weekday())).isoformat()
-            squad_orders = [o for o in squad_orders if (o.get("created_at") or "")[:10] >= week_start]
+    if not hp_by_squad:
+        return jsonify([]), 200
 
-        if not squad_orders:
-            return jsonify({"period_key": period_key, "period_type": period_type, "rankings": []}), 200
+    squads_rows = db.table("squads").select("id,name,creator_id").in_("id", list(hp_by_squad.keys())).execute() or []
+    creator_ids = [s["creator_id"] for s in squads_rows if s.get("creator_id")]
+    creator_profiles = []
+    if creator_ids:
+        creator_profiles = db.table("profiles").select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name").in_("id", creator_ids).execute() or []
+    from app.services.squad_service import resolve_leaderboard_names_batch
+    creator_names = resolve_leaderboard_names_batch(creator_profiles)
 
-        order_ids = [o["id"] for o in squad_orders]
-
-        # Accumulate HP and squad-order count per organiser
-        org_hp: dict = {}
-        org_count: dict = {}
-        for o in squad_orders:
-            uid = o.get("user_id")
-            if not uid:
-                continue
-            org_hp[uid] = org_hp.get(uid, 0) + (o.get("hp_earned") or 0)
-            org_count[uid] = org_count.get(uid, 0) + 1
-
-        # Fetch squad members for all orders in batches of 50 (avoids URL-length cap)
-        all_members = []
-        for _i in range(0, len(order_ids), 50):
-            _batch = order_ids[_i:_i + 50]
-            _batch_members = (
-                db.table("squad_members")
-                .select("order_id,user_id,is_registered")
-                .in_("order_id", _batch)
-                .execute()
-            ) or []
-            all_members.extend(_batch_members)
-
-        # Build order_id → organiser_id map
-        oid_to_org = {o["id"]: o.get("user_id") for o in squad_orders}
-        org_members: dict = {}
-        for m in all_members:
-            org_id = oid_to_org.get(m.get("order_id"))
-            if org_id and m.get("user_id"):
-                org_members.setdefault(org_id, set()).add(m["user_id"])
-
-        # Rank by combined HP
-        ranked = sorted(org_hp.items(), key=lambda x: x[1], reverse=True)[:limit]
-
-        # Batch-fetch profiles for organiser names
-        org_ids = [uid for uid, _ in ranked]
-        profiles_raw = (
-            db.table("profiles")
-            .select("id,full_name")
-            .in_("id", org_ids)
-            .execute()
-        ) or []
-        profile_map = {p["id"]: p.get("full_name") for p in profiles_raw}
-
-        rankings = []
-        for rank, (uid, total_hp) in enumerate(ranked, 1):
-            members = org_members.get(uid, set())
-            rankings.append({
-                "rank": rank,
-                "organiser_id": uid,
-                "organiser_name": profile_map.get(uid) or "Unknown",
-                "total_hp": total_hp,
-                "squad_order_count": org_count.get(uid, 0),
-                "squad_size": len(members) + 1,  # +1 for organiser
-            })
-
-        return jsonify({
-            "period_key": period_key,
-            "period_type": period_type,
-            "rankings": rankings,
-        }), 200
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    ranked = sorted(squads_rows, key=lambda s: hp_by_squad.get(s["id"], 0), reverse=True)
+    return jsonify([
+        {
+            "rank": i + 1, "squad_id": s["id"], "squad_name": s["name"],
+            "organizer_name": creator_names.get(s["creator_id"]),
+            "hp_total": hp_by_squad.get(s["id"], 0),
+        }
+        for i, s in enumerate(ranked)
+    ]), 200
 
 
 @leaderboard_bp.route("/squad/my-rank", methods=["GET"])
 @require_auth
 def squad_my_rank():
-    """
-    Get the authenticated user's position in the squad leaderboard.
-    ---
-    tags: [Leaderboard]
-    parameters:
-      - in: query
-        name: period_type
-        type: string
-        default: monthly
-    responses:
-      200:
-        description: User's squad rank and HP stats
-    """
     db = get_user_client()
-    period_type = request.args.get("period_type", "monthly")
-    if period_type not in ("monthly", "weekly", "all_time"):
-        period_type = "monthly"
-    period_key = _period_key_for(period_type)
-    today = date.today()
+    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
 
-    try:
-        campus_id = getattr(g, "campus_id", None) or request.args.get("campus_id")
-        q = (
-            db.table("orders")
-            .select("id,user_id,hp_earned,created_at")
-            .eq("is_squad_order", "true")
-            .eq("status", "delivered")
-        )
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
-        squad_orders = q.execute() or []
+    my_squads = db.table("squads").select("id").eq("creator_id", g.user_id).execute() or []
+    roster_rows = db.table("squad_roster").select("squad_id").eq("user_id", g.user_id).eq("is_active", True).execute() or []
+    squad_ids = list({s["id"] for s in my_squads} | {r["squad_id"] for r in roster_rows})
 
-        if period_type == "monthly":
-            prefix = today.strftime("%Y-%m")
-            squad_orders = [o for o in squad_orders if (o.get("created_at") or "").startswith(prefix)]
-        elif period_type == "weekly":
-            week_start = (today - timedelta(days=today.weekday())).isoformat()
-            squad_orders = [o for o in squad_orders if (o.get("created_at") or "")[:10] >= week_start]
+    if not squad_ids:
+        return jsonify([]), 200
 
-        org_hp: dict = {}
-        org_count: dict = {}
-        for o in squad_orders:
-            uid = o.get("user_id")
-            if not uid:
-                continue
-            org_hp[uid] = org_hp.get(uid, 0) + (o.get("hp_earned") or 0)
-            org_count[uid] = org_count.get(uid, 0) + 1
+    orders_q = db.table("orders").select("squad_id,hp_earned").eq("is_squad_order", "true").not_.is_("squad_id", "null")
+    if campus_id:
+        orders_q = orders_q.eq("campus_id", campus_id)
+    squad_orders = orders_q.execute() or []
 
-        ranked = sorted(org_hp.items(), key=lambda x: x[1], reverse=True)
-        user_hp = org_hp.get(g.user_id, 0)
-        user_rank = next((i + 1 for i, (uid, _) in enumerate(ranked) if uid == g.user_id), None)
+    hp_by_squad = {}
+    for o in squad_orders:
+        if o.get("squad_id"):
+            hp_by_squad[o["squad_id"]] = hp_by_squad.get(o["squad_id"], 0) + (o.get("hp_earned") or 0)
 
-        return jsonify({
-            "period_key": period_key,
-            "period_type": period_type,
-            "rank": user_rank,
-            "total_hp": user_hp,
-            "squad_order_count": org_count.get(g.user_id, 0),
-        }), 200
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    ranked = sorted(hp_by_squad.items(), key=lambda item: item[1], reverse=True)
+    ranks = {squad_id: i + 1 for i, (squad_id, _) in enumerate(ranked)}
+
+    my_rankings = [
+        {"squad_id": sid, "rank": ranks.get(sid), "hp_total": hp_by_squad.get(sid, 0)}
+        for sid in squad_ids
+    ]
+    return jsonify(my_rankings), 200

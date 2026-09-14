@@ -119,19 +119,20 @@ def reset_monthly_leaderboard(self):
                 top_ids = [uid for uid, _ in sorted_users]
                 profiles_data = (
                     db.table("profiles")
-                    .select("id,full_name")
+                    .select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
                     .in_("id", top_ids)
                     .eq("campus_id", campus_id)
                     .execute()
                 )
-                profile_map = {p["id"]: p for p in (profiles_data or [])}
+                from app.services.squad_service import resolve_leaderboard_names_batch
+                names = resolve_leaderboard_names_batch(profiles_data or [])
 
                 entries = []
                 for i, (user_id, hp_earned) in enumerate(sorted_users):
                     entries.append({
                         "rank": i + 1,
                         "user_id": user_id,
-                        "full_name": profile_map.get(user_id, {}).get("full_name"),
+                        "full_name": names.get(user_id),
                         "hp_earned": hp_earned,
                         "campus_id": campus_id,
                     })
@@ -171,7 +172,11 @@ def reset_monthly_leaderboard(self):
                         db.table("profiles").eq("id", uid).update({"top4_finish_count": new_count})
                         if new_count == 3:
                             try:
-                                _hof_profile = db.table("profiles").select("full_name,current_tier_id").eq("id", uid).single().execute() or {}
+                                _hof_profile = db.table("profiles").select(
+                                    "id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name,current_tier_id"
+                                ).eq("id", uid).single().execute() or {}
+                                from app.services.squad_service import resolve_leaderboard_name
+                                _display_name = resolve_leaderboard_name(_hof_profile) if _hof_profile else "Platform Member"
                                 _tier_name = None
                                 _tier_id = _hof_profile.get("current_tier_id")
                                 if _tier_id:
@@ -184,7 +189,7 @@ def reset_monthly_leaderboard(self):
                                 db.table("hall_of_fame_inductees").insert({
                                     "user_id": uid,
                                     "inducted_at": now.isoformat(),
-                                    "full_name": _hof_profile.get("full_name") or ("Platform Member"),
+                                    "full_name": _display_name,
                                     "tier_at_induction": _tier_name or "Unknown",
                                     "top4_finish_count": new_count,
                                     "campus_id": campus_id,
@@ -211,7 +216,9 @@ def reset_monthly_leaderboard(self):
                             try:
                                 from app.constants import ADMIN_ROLES
                                 _admin_ids = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).eq("campus_id", campus_id).execute() or []
-                                _hof_name = (db.table("profiles").select("full_name").eq("id", uid).single().execute() or {}).get("full_name", "A user")
+                                _admin_prof = db.table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("id", uid).single().execute() or {}
+                                from app.services.squad_service import resolve_display_name
+                                _hof_name = resolve_display_name(profile=_admin_prof) if _admin_prof else "A user"
                                 for _adm in _admin_ids:
                                     try:
                                         send_notification(
@@ -568,9 +575,13 @@ def birthday_hp_awards(self):
                         if already:
                             continue
 
+                        from app.services.tier_service import resolve_perk
+                        resolved_bday = resolve_perk(profile["id"], "birthday_hp")
+                        user_bday_hp = resolved_bday if resolved_bday is not None and resolved_bday > 0 else birthday_hp
+
                         award_active_hp(
                             user_id=profile["id"],
-                            amount=birthday_hp,
+                            amount=user_bday_hp,
                             txn_type="earn_birthday",
                             reference_type="birthday",
                             notes=f"Birthday HP — {today.strftime('%B %d, %Y')}",
@@ -1713,3 +1724,43 @@ def check_post_delivery_nudges(self):
             db.rpc("release_cron_lock", {"p_job_name": "check_post_delivery_nudges"})
         except Exception:
             pass
+
+
+@celery_app.task(name="app.tasks.scheduled.grant_monthly_tier_perks")
+def grant_monthly_tier_perks():
+    db = get_db()
+    curr_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    users = db.table("profiles").select("id,campus_id").eq("is_active", True).execute() or []
+    from app.services.tier_service import resolve_perk
+    from flask import current_app
+
+    for u in users:
+        uid = u["id"]
+        campus_id = u.get("campus_id")
+        side_credits = resolve_perk(uid, "free_side_credits_monthly")
+        if side_credits and int(side_credits) > 0:
+            already = db.table("free_side_credits").select("id").eq("user_id", uid).eq("source", "tier_grant").gte("created_at", f"{curr_month}-01T00:00:00").execute()
+            if not already:
+                try:
+                    validity_days = int(current_app.config.get("FREE_SIDE_CREDIT_VALIDITY_DAYS", 30))
+                    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
+                    for _ in range(int(side_credits)):
+                        db.table("free_side_credits").insert({
+                            "user_id": uid, "source": "tier_grant", "status": "available",
+                            "expires_at": expires_at, "campus_id": campus_id,
+                        })
+                except Exception as e:
+                    logger.warning("grant_monthly_tier_perks side credits failed for user %s: %s", uid, e)
+
+        spins = resolve_perk(uid, "exclusive_spins_monthly")
+        if spins and int(spins) > 0:
+            already_spin = db.table("exclusive_spins").select("id").eq("user_id", uid).eq("source", "tier_grant").gte("created_at", f"{curr_month}-01T00:00:00").execute()
+            if not already_spin:
+                try:
+                    for _ in range(int(spins)):
+                        db.table("exclusive_spins").insert({
+                            "user_id": uid, "source": "tier_grant", "status": "available",
+                            "campus_id": campus_id,
+                        })
+                except Exception as e:
+                    logger.warning("grant_monthly_tier_perks spins failed for user %s: %s", uid, e)

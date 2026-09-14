@@ -142,11 +142,8 @@ def redeem_reward(reward_id):
         return jsonify({"error": MSG.REWARD_OUT_OF_STOCK}), 400
 
     if reward.get("min_tier_id"):
-        user_tier = get_user_tier(g.user_id)
-        user_tier_order = user_tier["tier"].get("sort_order", 0) if user_tier.get("tier") else 0
-        all_tiers = db.table("hp_tiers").select("id,sort_order").execute()
-        req_tier = next((t for t in all_tiers if t["id"] == reward["min_tier_id"]), None)
-        if req_tier and user_tier_order < req_tier.get("sort_order", 0):
+        from app.services.tier_service import can_access_tier_resource
+        if not can_access_tier_resource(g.user_id, reward["min_tier_id"]):
             return jsonify({"error": MSG.REWARD_TIER_TOO_LOW}), 400
 
     hp_cost = reward.get("hp_cost", 0)

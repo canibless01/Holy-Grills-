@@ -88,11 +88,12 @@ def _kitchen_stats(db):
     raw = row.get("value") if row else ""
     capacity = int(raw) if raw and raw.isdigit() else None
 
-    orders_q = db.table("orders").select("id").gte("created_at", _today_start_iso())
+    orders_q = db.table("orders").select("id,is_squad_order,squad_item_count").gte("created_at", _today_start_iso())
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)
-    today_orders = orders_q.execute()
-    count = len(today_orders) if isinstance(today_orders, list) else 0
+    today_orders = orders_q.execute() or []
+    from app.services.order_service import _order_capacity_weight
+    count = sum(_order_capacity_weight(o) for o in (today_orders if isinstance(today_orders, list) else []))
     at_capacity = capacity is not None and count >= capacity
     return capacity, count, at_capacity
 
@@ -416,6 +417,8 @@ def list_items():
     search = request.args.get("q")
     if search:
         q = q.ilike("name", f"%{search}%")
+    else:
+        q = q.eq("is_secret", "false")
 
     available_only = request.args.get("available_only", "true").lower() != "false"
     if available_only:
@@ -786,7 +789,7 @@ def create_item():
     MENU_ITEM_COLUMNS = {
         "name", "slug", "category_id", "price", "hp_earn_value", "description",
         "tags", "daily_limit", "is_available", "image_url", "is_featured",
-        "hp_multiplier",
+        "hp_multiplier", "is_secret",
     }
     safe = {k: v for k, v in data.items() if k in MENU_ITEM_COLUMNS}
     campus_id = getattr(g, 'campus_id', None)
@@ -850,7 +853,7 @@ def update_item(item_id):
     MENU_ITEM_UPDATE_COLUMNS = {
         "name", "slug", "category_id", "price", "hp_earn_value", "description",
         "tags", "image_url", "is_featured", "hp_multiplier",
-        "is_available", "daily_limit",
+        "is_available", "daily_limit", "is_secret",
     }
     db = get_user_client()
     data = request.get_json(force=True)

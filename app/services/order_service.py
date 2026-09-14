@@ -315,146 +315,34 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     # Reject if kitchen is already at daily capacity
     _check_kitchen_capacity(db)
 
-    # ── Ordering window gate (non-scheduled orders only) ──────────────────────
-    # Checks (in priority order):
-    #   1. operating_hour_overrides for today — if a DB override exists, use it.
-    #   2. operating_hours table for today's weekday.
-    #   3. Fall back to ORDERING_WINDOW_OPEN_TIME/CLOSE_TIME config.
-    # Scheduled orders may be placed at any time.
     is_scheduled = bool(payload.get("is_scheduled", False))
+    ordering_window_id = None
+    linked_delivery_window_id = None
     if not is_scheduled:
-        try:
-            from datetime import date as _date, time as _time, timedelta as _td, timezone as _tz
+        if payload.get("accept_next_available_date"):
+            try:
+                from datetime import timedelta as _td, timezone as _tz
+                _now_wat_dt = datetime.now(_tz.utc) + _td(hours=1)
+                tomorrow = (_now_wat_dt + _td(days=1)).date()
+                next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
+                if next_slot and next_slot.get("date"):
+                    is_scheduled = True
+                    ordering_window_id = next_slot.get("window_id")
+                    scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}"
+                    if ordering_window_id:
+                        ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
+                        if ow_row:
+                            linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
+            except Exception as _nse:
+                logger.warning("create_order: accept_next_available_date failed: %s", _nse)
 
-            def _parse_hm(s, default_h=8, default_m=0):
-                try:
-                    parts = str(s).split(":")
-                    return _time(int(parts[0]), int(parts[1]))
-                except Exception:
-                    return _time(default_h, default_m)
+        if not is_scheduled:
+            _win = resolve_ordering_window(db, campus_id)
+            ordering_window_id = _win.get("id")
+            linked_delivery_window_id = _win.get("linked_delivery_window_id")
 
-            _now_utc = datetime.now(_tz.utc)
-            _now_wat_dt = _now_utc + _td(hours=1)
-            _now_wat = _now_wat_dt.time()
-            _today_iso = _now_wat_dt.date().isoformat()
-            from flask import has_request_context, g
-            campus_id = getattr(g, "campus_id", None) if has_request_context() else None
-
-            # 1. Check DB override for today
-            _override_rows = (
-                db.table("operating_hour_overrides")
-                .select("is_closed,opens_at,closes_at")
-                .eq("date", _today_iso)
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
-            _override = _override_rows[0] if _override_rows else None
-
-            if _override is not None:
-                if _override.get("is_closed"):
-                    raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-                _ov_open = _override.get("opens_at")
-                _ov_close = _override.get("closes_at")
-                if _ov_open and _ov_close:
-                    if not (_parse_hm(_ov_open, 0, 0) <= _now_wat <= _parse_hm(_ov_close, 23, 59)):
-                        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-                # Override says open with no specific times → open all day, allow
-            else:
-                # 2. Check operating_hours table for today's weekday (WAT weekday, not UTC)
-                _weekday = _now_wat_dt.weekday()
-                _oh_rows = (
-                    db.table("operating_hours")
-                    .select("is_closed,opens_at,closes_at")
-                    .eq("weekday", _weekday)
-                    .eq("campus_id", campus_id)
-                    .execute()
-                ) or []
-                _oh = _oh_rows[0] if _oh_rows else None
-
-                if _oh is not None:
-                    if _oh.get("is_closed"):
-                        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-                    _oh_open = _oh.get("opens_at")
-                    _oh_close = _oh.get("closes_at")
-                    if _oh_open and _oh_close:
-                        if not (_parse_hm(_oh_open, 0, 0) <= _now_wat <= _parse_hm(_oh_close, 23, 59)):
-                            raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-                else:
-                    # 3. Fall back to config-based window
-                    _open_str = current_app.config.get("ORDERING_WINDOW_OPEN_TIME", "08:00")
-                    _close_str = current_app.config.get("ORDERING_WINDOW_CLOSE_TIME", "16:00")
-                    if not (_parse_hm(_open_str, 8, 0) <= _now_wat <= _parse_hm(_close_str, 16, 0)):
-                        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
-        except ValueError:
-            raise
-        except Exception:
-            pass  # If hours config is malformed, allow the order
-
-    # §22: delivery_window_id is NOT accepted from the client payload.
-    # The system always auto-assigns the current open delivery window.
-    # Users cannot choose their own window; this prevents gaming the queue.
-    window_id = None
-    try:
-        q_win = db.table("delivery_windows").select("id,status,starts_at").eq("status", "open")
-        if campus_id_for_check:
-            q_win = q_win.eq("campus_id", campus_id_for_check)
-        open_windows = q_win.order("starts_at", ascending=True).limit(1).execute() or []
-        if open_windows:
-            window_id = open_windows[0]["id"]
-    except Exception:
-        pass  # window_id stays None; order proceeds without one
-    scheduled_for = None
-    if is_scheduled:
-        scheduled_window_id = payload.get("scheduled_for_window_id")
-        scheduled_window = None
-        if scheduled_window_id:
-            # Explicit window ID provided — validate it (backward compatible)
-            scheduled_window = (
-                db.table("delivery_windows")
-                .select("id,status,starts_at")
-                .eq("id", scheduled_window_id)
-                .single()
-                .execute()
-            )
-            if not scheduled_window or scheduled_window.get("status") != "open":
-                raise ValueError(MSG.ORDER_SCHEDULE_WINDOW_INVALID)
-        else:
-            # §Spec §18: date-only scheduling — auto-assign to next available
-            # delivery window starting after the current moment. The client
-            # supplies is_scheduled=True (and optionally a date hint via
-            # scheduled_date YYYY-MM-DD); no window ID required.
-            now_iso = datetime.now(timezone.utc).isoformat()
-            q_fut = db.table("delivery_windows").select("id,status,starts_at").gt("starts_at", now_iso)
-            if campus_id_for_check:
-                q_fut = q_fut.eq("campus_id", campus_id_for_check)
-            _future = q_fut.order("starts_at", ascending=True).limit(1).execute() or []
-            if _future:
-                scheduled_window = _future[0]
-                scheduled_window_id = scheduled_window["id"]
-            # If no future window exists, order proceeds without one (graceful degradation)
-        scheduled_for = payload.get("scheduled_for") or (scheduled_window.get("starts_at") if scheduled_window else None)
-        if not window_id and scheduled_window_id:
-            window_id = scheduled_window_id
-
-        # Capacity check: count non-cancelled orders already booked into this window
-        window_orders = (
-            db.table("orders")
-            .select("id")
-            .eq("delivery_window_id", scheduled_window_id)
-            .not_.in_("status", ["cancelled", "refunded"])
-            .execute()
-        ) or []
-        # Per-window cap stored in kitchen_settings as "window_capacity" (optional)
-        cap_row = (
-            db.table("kitchen_settings")
-            .select("value")
-            .eq("key", "window_capacity")
-            .single()
-            .execute()
-        )
-        raw_cap = cap_row.get("value") if cap_row else None
-        if raw_cap and str(raw_cap).isdigit() and len(window_orders) >= int(raw_cap):
-            raise ValueError(MSG.ORDER_WINDOW_AT_CAPACITY)
+    window_id = linked_delivery_window_id
+    scheduled_for = payload.get("scheduled_for") if is_scheduled else None
 
     raw_items = payload.get("items", [])
     if not raw_items:
@@ -623,8 +511,24 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     squad_delivery_discount = 0.0
     squad_item_count = sum(oi["quantity"] for oi in order_items if not oi.get("is_addon"))
     is_squad_order = False
+    squad_id = None
+    squad_roster_rows = []
 
-    if config.get("SQUAD_ORDER_ENABLED", True):
+    requested_squad_id = payload.get("squad_id")
+    if requested_squad_id:
+        squad_row = db.table("squads").select("id,name,creator_id,campus_id").eq("id", requested_squad_id).single().execute()
+        if not squad_row:
+            raise ValueError("Squad not found")
+        is_member = (squad_row["creator_id"] == user_id) or bool(
+            db.table("squad_roster").select("id").eq("squad_id", requested_squad_id).eq("user_id", user_id).eq("is_active", True).execute()
+        )
+        if not is_member:
+            raise ValueError("You are not a member of this squad")
+        squad_id = requested_squad_id
+        is_squad_order = True
+        squad_roster_rows = db.table("squad_roster").select("id,user_id,email").eq("squad_id", squad_id).eq("is_active", True).execute() or []
+
+    if not is_squad_order and config.get("SQUAD_ORDER_ENABLED", True):
         min_items = int(config.get("SQUAD_ORDER_MIN_ITEMS", 3))
         max_items = int(config.get("SQUAD_ORDER_MAX_ITEMS", 20))
         if min_items <= squad_item_count <= max_items:
@@ -854,6 +758,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "p_scheduled_for": scheduled_for,
         "p_is_squad_order": is_squad_order,
         "p_squad_name": payload.get("squad_name"),
+        "p_squad_id": squad_id,
         "p_squad_discount_amount": squad_discount,
         "p_squad_item_count": squad_item_count,
         "p_notes": payload.get("notes", ""),
@@ -877,10 +782,51 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
 
+    order_id = result.get("order_id")
+    if squad_id and order_id and not result.get("idempotent"):
+        excluded_ids = set(payload.get("excluded_member_ids") or [])
+        extra_members = [e.strip().lower() for e in (payload.get("extra_members") or []) if e and e.strip()]
+        campus_id_for_squad = campus_id
+        snapshot = []
+        for r in squad_roster_rows:
+            if r["id"] in excluded_ids:
+                continue
+            try:
+                db.table("squad_members").insert({
+                    "order_id": order_id, "email": r["email"], "user_id": r.get("user_id"),
+                    "is_registered": bool(r.get("user_id")), "campus_id": campus_id_for_squad,
+                })
+            except Exception:
+                pass  # duplicate (order_id, email) — ignore
+            snapshot.append({"email": r["email"], "user_id": r.get("user_id")})
+        for email in extra_members:
+            prof = db.table("profiles").select("id").eq("email", email).single().execute()
+            try:
+                db.table("squad_members").insert({
+                    "order_id": order_id, "email": email,
+                    "user_id": prof["id"] if prof else None,
+                    "is_registered": bool(prof), "campus_id": campus_id_for_squad,
+                })
+            except Exception:
+                pass
+            snapshot.append({"email": email, "user_id": prof["id"] if prof else None})
+        if snapshot:
+            db.table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot})
+
     order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
     if order and isinstance(order, dict):
         order["total_amount"] = rpc_total
         order["order_lock_discount_applied"] = discount_applied
+
+        if user_id and not is_squad_order:
+            try:
+                from app.services.tier_service import try_claim_monthly_free_delivery
+                if try_claim_monthly_free_delivery(user_id, order_id=result["order_id"]):
+                    db.table("orders").eq("id", result["order_id"]).update({"delivery_fee": 0.0}).execute()
+                    order["delivery_fee"] = 0.0
+            except Exception as _fe:
+                logger.warning("create_order: monthly free delivery perk claim failed: %s", _fe)
+
     if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
 
@@ -1305,6 +1251,17 @@ def _handle_delivery_rewards(order: dict):
 
     _t.Thread(target=_send_delivery_notifications, daemon=True).start()
 
+    if order.get("is_squad_order") and order.get("squad_id") and not order.get("squad_hp_distributed"):
+        try:
+            from app.services.squad_service import distribute_squad_hp
+            distribute_squad_hp(order_id, hp_amount, user_id, campus_id=order.get("campus_id"))
+            db.table("orders").eq("id", order_id).update({
+                "squad_hp_distributed": True,
+                "squad_hp_distributed_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            logger.warning("_handle_delivery_rewards: squad HP distribution failed for order %s: %s", order_id, e)
+
     # Try to reclaim a missed login-streak day via this order
     try:
         from app.services.streak_service import try_reclaim_checkin, process_order_streak
@@ -1449,3 +1406,181 @@ def _send_status_notification(order: dict, new_status: str):
                 )
             except Exception:
                 pass
+
+
+def _order_capacity_weight(order_row: dict) -> int:
+    """Needs 'is_squad_order','squad_item_count' selected."""
+    if order_row.get("is_squad_order"):
+        return max(int(order_row.get("squad_item_count") or 1), 1)
+    return 1
+
+
+def resolve_ordering_window(db, campus_id):
+    """
+    Raises ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS) or
+    ValueError(MSG.ORDERING_WINDOW_AT_CAPACITY). Returns
+    {'id':..., 'capacity':..., 'linked_delivery_window_id':...} on success.
+    """
+    from datetime import time as _time, timedelta as _td, timezone as _tz
+
+    def _parse_hm(s, default_h=8, default_m=0):
+        try:
+            parts = str(s).split(":")
+            return _time(int(parts[0]), int(parts[1]))
+        except Exception:
+            return _time(default_h, default_m)
+
+    _now_utc = datetime.now(_tz.utc)
+    _now_wat_dt = _now_utc + _td(hours=1)
+    _now_wat = _now_wat_dt.time()
+    _today_iso = _now_wat_dt.date().isoformat()
+    _weekday = _now_wat_dt.weekday()
+
+    candidates = (
+        db.table("ordering_windows")
+        .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
+        .eq("date", _today_iso).eq("campus_id", campus_id).execute()
+    ) or []
+    if not candidates:
+        candidates = (
+            db.table("ordering_windows")
+            .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
+            .eq("weekday", _weekday).eq("campus_id", campus_id).execute()
+        ) or []
+
+    if not candidates:
+        from flask import current_app
+        _open_str = current_app.config.get("ORDERING_WINDOW_OPEN_TIME", "08:00")
+        _close_str = current_app.config.get("ORDERING_WINDOW_CLOSE_TIME", "16:00")
+        if _parse_hm(_open_str, 8, 0) <= _now_wat <= _parse_hm(_close_str, 16, 0):
+            return {"id": None, "capacity": None, "linked_delivery_window_id": None}
+        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+
+    open_rows = [r for r in candidates if not r.get("is_closed") and r.get("opens_at") and r.get("closes_at")]
+    if not open_rows:
+        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+
+    open_rows.sort(key=lambda r: _parse_hm(r["opens_at"], 0, 0))
+    earliest_open = _parse_hm(open_rows[0]["opens_at"], 0, 0)
+    latest_close = max(_parse_hm(r["closes_at"], 23, 59) for r in open_rows)
+    if _now_wat < earliest_open or _now_wat > latest_close:
+        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+
+    any_time_eligible = False
+    for row in open_rows:
+        if _now_wat > _parse_hm(row["closes_at"], 23, 59):
+            continue
+        any_time_eligible = True
+        if row.get("capacity") is not None:
+            _rows = (
+                db.table("orders")
+                .select("id,is_squad_order,squad_item_count")
+                .eq("ordering_window_id", row["id"])
+                .gte("created_at", _today_start_iso())
+                .not_.in_("status", ["cancelled", "refunded"])
+                .execute()
+            ) or []
+            if sum(_order_capacity_weight(o) for o in _rows) >= int(row["capacity"]):
+                continue
+        return row
+
+    if any_time_eligible:
+        try:
+            tomorrow = (_now_wat_dt + _td(days=1)).date()
+            next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
+            if next_slot and next_slot.get("date"):
+                exc = ValueError(MSG.ORDERING_WINDOW_AT_CAPACITY)
+                exc.next_available_date = next_slot["date"]
+                raise exc
+        except ValueError:
+            raise
+        except Exception:
+            pass
+        raise ValueError(MSG.ORDERING_WINDOW_AT_CAPACITY)
+    raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+
+
+def get_ordering_window_status(db, campus_id, for_date=None):
+    from datetime import time as _time, timedelta as _td, timezone as _tz
+    _now_utc = datetime.now(_tz.utc)
+    _now_wat_dt = _now_utc + _td(hours=1)
+    target_dt = for_date if for_date else _now_wat_dt.date()
+    _today_iso = target_dt.isoformat() if hasattr(target_dt, "isoformat") else str(target_dt)
+
+    try:
+        dt_obj = datetime.fromisoformat(_today_iso) if isinstance(_today_iso, str) else target_dt
+        _weekday = dt_obj.weekday()
+    except Exception:
+        _weekday = _now_wat_dt.weekday()
+
+    candidates = (
+        db.table("ordering_windows")
+        .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
+        .eq("date", _today_iso).eq("campus_id", campus_id).execute()
+    ) or []
+    if not candidates:
+        candidates = (
+            db.table("ordering_windows")
+            .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
+            .eq("weekday", _weekday).eq("campus_id", campus_id).execute()
+        ) or []
+
+    windows_out = []
+    any_capacity = False
+    for row in candidates:
+        deliv = None
+        if row.get("linked_delivery_window_id"):
+            try:
+                deliv = db.table("delivery_windows").select("opens_at,closes_at").eq("id", row["linked_delivery_window_id"]).single().execute()
+            except Exception:
+                deliv = None
+
+        is_full = False
+        remaining = None
+        if row.get("capacity") is not None:
+            _rows = (
+                db.table("orders")
+                .select("id,is_squad_order,squad_item_count")
+                .eq("ordering_window_id", row["id"])
+                .gte("created_at", f"{_today_iso}T00:00:00")
+                .not_.in_("status", ["cancelled", "refunded"])
+                .execute()
+            ) or []
+            used = sum(_order_capacity_weight(o) for o in _rows)
+            remaining = max(0, int(row["capacity"]) - used)
+            is_full = used >= int(row["capacity"])
+
+        if not row.get("is_closed") and not is_full:
+            any_capacity = True
+
+        windows_out.append({
+            "id": row["id"],
+            "is_closed": bool(row.get("is_closed")),
+            "is_full": is_full,
+            "remaining": remaining,
+            "delivery_starts_at": (deliv or {}).get("opens_at"),
+            "delivery_ends_at": (deliv or {}).get("closes_at"),
+        })
+
+    return {
+        "date": _today_iso,
+        "is_open": any_capacity,
+        "windows": windows_out,
+        "any_capacity_remaining": any_capacity,
+    }
+
+
+def find_next_available_ordering_slot(db, campus_id, start_date, max_days_ahead=14):
+    from datetime import timedelta as _td
+    curr = start_date
+    for _ in range(max_days_ahead):
+        status = get_ordering_window_status(db, campus_id, for_date=curr)
+        if status.get("any_capacity_remaining"):
+            open_wins = [w for w in status.get("windows", []) if not w["is_closed"] and not w["is_full"]]
+            return {
+                "date": status["date"],
+                "window_id": open_wins[0]["id"] if open_wins else None,
+                "opens_at": open_wins[0].get("delivery_starts_at") if open_wins else None,
+            }
+        curr = curr + _td(days=1)
+    return None

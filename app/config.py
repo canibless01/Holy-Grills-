@@ -88,25 +88,26 @@ class Config:
     SUBSCRIPTION_HP = int(os.environ.get("SUBSCRIPTION_HP", "50"))
     SOCIAL_SHARE_HP = int(os.environ.get("SOCIAL_SHARE_HP", "25"))
 
-    # Tier multipliers (slugs match live hp_tiers table)
-    # Override via TIER_MULTIPLIERS env var as JSON, e.g.:
-    # '{"starter":1.0,"ember":1.0,"regular":1.1,"flame":1.08,"champion":1.25,"blaze":1.15,"elite":1.5,"holy":1.25}'
-    _tier_mult_default = '{"starter":1.00,"ember":1.00,"regular":1.10,"flame":1.08,"champion":1.25,"blaze":1.15,"elite":1.50,"holy":1.25}'
+    _tier_perks_default = '''{
+      "ember": {"earn_multiplier": 1.00, "monthly_free_delivery": false,
+                "birthday_hp": 0, "free_side_credits_monthly": 0,
+                "exclusive_spins_monthly": 0},
+      "flame": {"earn_multiplier": 1.08, "monthly_free_delivery": false,
+                "birthday_hp": 0, "free_side_credits_monthly": 0,
+                "exclusive_spins_monthly": 0},
+      "blaze": {"earn_multiplier": 1.15, "monthly_free_delivery": true,
+                "birthday_hp": 0, "free_side_credits_monthly": 0,
+                "exclusive_spins_monthly": 0},
+      "holy":  {"earn_multiplier": 1.25, "monthly_free_delivery": true,
+                "birthday_hp": 0, "free_side_credits_monthly": 0,
+                "exclusive_spins_monthly": 0}
+    }'''
     try:
         import json as _json
-        TIER_MULTIPLIERS = _json.loads(os.environ.get("TIER_MULTIPLIERS", _tier_mult_default))
+        TIER_PERKS = _json.loads(os.environ.get("TIER_PERKS", _tier_perks_default))
     except Exception:
-        TIER_MULTIPLIERS = {"starter": 1.00, "ember": 1.00, "regular": 1.10, "flame": 1.08, "champion": 1.25, "blaze": 1.15, "elite": 1.50, "holy": 1.25}
-
-    # Tier HP thresholds (rolling 120-day)
-    # Override via TIER_THRESHOLDS env var as JSON, e.g.:
-    # '{"starter":0,"regular":1000,"champion":5000,"elite":12000}'
-    _tier_thresh_default = '{"starter":0,"regular":1000,"champion":5000,"elite":12000}'
-    try:
         import json as _json
-        TIER_THRESHOLDS = _json.loads(os.environ.get("TIER_THRESHOLDS", _tier_thresh_default))
-    except Exception:
-        TIER_THRESHOLDS = {"starter": 0, "regular": 1000, "champion": 5000, "elite": 12000}
+        TIER_PERKS = _json.loads(_tier_perks_default)
 
     # Flash redemption
     FLASH_DISCOUNT_PCT = float(os.environ.get("FLASH_DISCOUNT_PCT", "0.50"))
@@ -155,6 +156,7 @@ class Config:
     SQUAD_ORDER_ENABLED = os.environ.get("SQUAD_ORDER_ENABLED", "true").lower() == "true"
     SQUAD_ORDER_MIN_ITEMS = int(os.environ.get("SQUAD_ORDER_MIN_ITEMS", "3"))
     SQUAD_ORDER_MAX_ITEMS = int(os.environ.get("SQUAD_ORDER_MAX_ITEMS", "6"))
+    SQUAD_MAX_MEMBERS = int(os.environ.get("SQUAD_MAX_MEMBERS", "20"))
     # Delivery-fee discount: percentage of delivery_fee to waive (0-100)
     SQUAD_DELIVERY_DISCOUNT_ENABLED = os.environ.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", "true").lower() == "true"
     SQUAD_DELIVERY_DISCOUNT_PCT = float(os.environ.get("SQUAD_DELIVERY_DISCOUNT_PCT", "100"))

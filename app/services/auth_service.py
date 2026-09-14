@@ -12,7 +12,7 @@ from app.services.notification_service import send_notification
 from app.services import hp_service
 
 
-def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None) -> dict:
+def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None, nickname: str = None) -> dict:
     """
     Create a Supabase Auth user and profile.
     Returns Supabase auth session (access_token, refresh_token, user).
@@ -39,6 +39,11 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             if "must be at least" in str(e):
                 raise
             raise ValueError("Invalid date of birth. Use YYYY-MM-DD format.")
+
+    if nickname:
+        nickname = nickname.strip()
+        if not re.match(r"^[A-Za-z0-9_ ]{2,20}$", nickname):
+            raise ValueError("Nickname must be 2-20 characters: letters, numbers, underscores, and spaces only.")
 
     existing = db.table("profiles").select("id").eq("email", email).execute()
     if existing and len(existing) > 0:
@@ -93,6 +98,8 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         "preferences": {},
         "campus_id": campus_id,
     }
+    if nickname:
+        profile_data["nickname"] = nickname
     # Populate department / level if provided at sign-up (RUN 9)
     if department:
         profile_data["department"] = department.strip()
@@ -127,6 +134,8 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                 patch["phone"] = phone
             if date_of_birth:
                 patch["date_of_birth"] = date_of_birth
+            if nickname:
+                patch["nickname"] = nickname
             # Always persist department/level on the trigger path too (RUN 9)
             if department:
                 patch["department"] = department.strip()
@@ -175,6 +184,48 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     except Exception as e:
         from app.utils.logger import get_logger
         get_logger(__name__).error("register: award_signup_bonus failed for user %s: %s", user_id, e)
+
+    try:
+        newly_linked_orders = (
+            db.table("orders")
+            .select("id,user_id,status,subtotal,is_squad_order,squad_id,campus_id")
+            .eq("user_id", user_id)
+            .eq("status", "delivered")
+            .is_("hp_credited_at", "null")
+            .execute()
+        ) or []
+        if newly_linked_orders:
+            from app.services.order_service import _handle_delivery_rewards
+            for o in newly_linked_orders:
+                try:
+                    _handle_delivery_rewards(o)
+                except Exception as e:
+                    from app.utils.logger import get_logger
+                    get_logger(__name__).warning("register: retroactive HP credit failed for order %s: %s", o["id"], e)
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).warning("register: retroactive guest-order HP backfill failed for %s: %s", email, e)
+
+    try:
+        db.table("squad_roster").eq("email", email).update({"user_id": user_id})
+        pending = db.table("pending_squad_hp").select("id,order_id,hp_amount,campus_id").eq("email", email).eq("status", "pending").execute() or []
+        if pending:
+            from app.services.hp_service import award_active_hp
+            for p in pending:
+                try:
+                    award_active_hp(
+                        user_id=user_id, amount=p["hp_amount"], source_type="squad_bonus_claimed",
+                        reference_id=p["order_id"], notes=f"Squad HP claimed from order {p['order_id'][:8]}",
+                    )
+                    db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"})
+                    from app.services.notification_service import send_notification
+                    send_notification(user_id=user_id, notif_type="squad_hp_share", template_data={"hp": p["hp_amount"]})
+                except Exception:
+                    pass
+        db.table("squad_members").eq("email", email).update({"user_id": user_id, "is_registered": True})
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).warning("register: squad backfill failed for %s: %s", email, e)
 
     return auth_result
 
@@ -244,13 +295,26 @@ def update_profile(user_id: str, data: dict) -> dict:
     db = get_user_client()
     config = current_app.config
     allowed = {
-        "full_name", "phone", "date_of_birth",
+        "full_name", "phone", "date_of_birth", "nickname",
+        "leaderboard_show_full_name",
         "push_enabled", "email_notifications",
         "department", "academic_level",
     }
     update_data = {k: v for k, v in data.items() if k in allowed}
     if not update_data:
         raise ValueError("No valid fields to update")
+
+    if "nickname" in update_data:
+        nickname = (update_data["nickname"] or "").strip()
+        if nickname == "":
+            update_data["nickname"] = None  # explicit clear allowed
+        elif not re.match(r"^[A-Za-z0-9_ ]{2,20}$", nickname):
+            raise ValueError("Nickname must be 2-20 characters: letters, numbers, underscores, and spaces only.")
+        else:
+            update_data["nickname"] = nickname
+
+    if "leaderboard_show_full_name" in update_data:
+        update_data["leaderboard_show_full_name"] = bool(update_data["leaderboard_show_full_name"])
 
     if "phone" in update_data and update_data["phone"]:
         phone_pattern = config.get("PHONE_REGEX_PATTERN", r"^\+234[0-9]{10}$")

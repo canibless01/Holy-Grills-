@@ -103,8 +103,15 @@ def my_referrals():
         if referred_user_ids:
             try:
                 from app.db import get_db
-                prof_rows = get_db().table("profiles").select("id,full_name,created_at").in_("id", referred_user_ids).execute() or []
-                profiles_map = {p["id"]: p for p in prof_rows}
+                prof_rows = get_db().table("profiles").select(
+                    "id,nickname,full_name,email,department,campus_id,created_at"
+                ).in_("id", referred_user_ids).execute() or []
+                from app.services.squad_service import resolve_display_names_batch
+                names = resolve_display_names_batch(prof_rows)
+                profiles_map = {
+                    p["id"]: {**p, "full_name": names.get(p["id"], p.get("full_name"))}
+                    for p in prof_rows
+                }
             except Exception:
                 profiles_map = {}
 

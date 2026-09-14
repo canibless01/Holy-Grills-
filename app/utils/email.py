@@ -367,19 +367,20 @@ def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str) ->
 
 
 def get_user_email_and_name(user_id: str) -> tuple:
-    """Fetch user email + name from Supabase profiles table."""
+    """Fetch user email + display name (nickname-first) from profiles."""
     from app.db import get_db
+    from app.services.squad_service import resolve_display_name
     db = get_db()
     try:
         profile = (
             db.table("profiles")
-            .select("full_name,email")
+            .select("id,nickname,full_name,email,department,campus_id")
             .eq("id", user_id)
             .single()
             .execute()
         )
         if profile:
-            return profile.get("email", ""), profile.get("full_name", "")
+            return profile.get("email", ""), resolve_display_name(profile=profile)
         return "", ""
     except Exception:
         return "", ""

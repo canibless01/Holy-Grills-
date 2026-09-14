@@ -289,6 +289,7 @@ class MSG:
     ORDER_CANCEL_WINDOW_CLOSED     = "Orders cannot be cancelled once the ordering window has closed"
     ORDER_CANCEL_WRONG_STATUS      = "Only orders in 'received' status can be cancelled by the customer"
     ORDER_OUTSIDE_ORDERING_HOURS   = "Orders can only be placed during operating hours"
+    ORDERING_WINDOW_AT_CAPACITY    = "This ordering window has reached capacity."
 
     # ── Webhooks ──────────────────────────────────────────────────────────────
     WEBHOOK_INVALID_SIGNATURE    = "Invalid signature"
@@ -369,6 +370,7 @@ class MSG:
     LISTING_OUT_OF_STOCK         = "Listing is out of stock"
     LISTING_INSUFFICIENT_HP      = "Insufficient {currency}: need {need}, have {have}"
     LISTING_NO_CODES             = "No codes available. Listing is now out of stock."
+    LISTING_TIER_TOO_LOW         = "Your tier is not high enough to purchase this item."
     LISTING_VENDOR_UNAVAILABLE   = "Vendor listing requests are not currently available. Please contact us directly."
     MARKETPLACE_REQUEST_SUBMITTED = "Your listing request has been submitted for review."
     MARKETPLACE_REQUEST_NOT_FOUND = "Vendor request not found"
@@ -522,6 +524,12 @@ class MSG:
     SQUAD_ORDER_ADDED_BODY       = "{organizer} added you to a squad order."
     SQUAD_INVITE_SUBJECT         = "You've been invited to join {platform}!"
     SQUAD_INVITE_BODY            = "{organizer} added you to a squad order. Create an account to start earning {currency}!"
+    SQUAD_MEMBER_NOT_FOUND       = "Squad member not found."
+    SQUAD_MAX_MEMBERS_REACHED    = "This squad has reached its member limit."
+    SQUAD_ORGANIZER_ONLY         = "Only the squad organizer can do this."
+    SQUAD_NAME_REQUIRED          = "Squad name is required."
+    SQUAD_EMAIL_REQUIRED         = "Email is required."
+    SQUAD_CROSS_CAMPUS_BLOCKED   = "This person is on a different campus and can't join your squad."
 
     # ── Monthly HP Cap ─────────────────────────────────────────────────────────
     MONTHLY_HP_CAP_REACHED       = "Monthly free-activity {currency} cap reached. Cap resets on the 1st of next month."
