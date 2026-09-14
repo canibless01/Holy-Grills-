@@ -148,7 +148,53 @@ def _get_hp_multiplier() -> float:
         return 1.0
 
 
-def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None) -> int:
+def _get_food_earn_rate() -> float:
+    try:
+        row = get_db().table("system_settings").select("value").eq(
+            "key", "hp_per_naira_food").is_("campus_id", "null").single().execute()
+        if row and row.get("value") is not None:
+            return float(row["value"])
+    except Exception:
+        pass
+    return current_app.config["HP_PER_NAIRA_FOOD"]
+
+
+def _get_unlock_rate() -> float:
+    try:
+        row = get_db().table("system_settings").select("value").eq(
+            "key", "hp_unlock_rate_pct").is_("campus_id", "null").single().execute()
+        if row and row.get("value") is not None:
+            return float(row["value"])
+    except Exception:
+        pass
+    return current_app.config.get("HP_UNLOCK_RATE_PCT", 0.30)
+
+
+def _get_menu_multiplier(campus_id: str = None) -> float:
+    db = get_db()
+    row = None
+    if campus_id:
+        try:
+            row = db.table("system_settings").select("value").eq(
+                "key", "menu_hp_multiplier").eq("campus_id", campus_id).single().execute()
+        except Exception:
+            row = None
+    if not row:
+        try:
+            row = db.table("system_settings").select("value").eq(
+                "key", "menu_hp_multiplier").is_("campus_id", "null").single().execute()
+        except Exception:
+            row = None
+    if not row:
+        return 1.0
+    try:
+        multiplier = float(row.get("value", "1") or "1")
+        return multiplier if multiplier in (0.5, 1.0, 2.0) else 1.0
+    except Exception:
+        return 1.0
+
+
+def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None) -> int:
     """Pure calculation — no DB writes. Extracted from award_food_order_hp."""
     config = current_app.config
     tier_multiplier = 1.0
@@ -161,6 +207,10 @@ def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = No
     else:
         tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
 
+    food_earn_rate = _get_food_earn_rate()
+    event_multiplier = _get_hp_multiplier()
+    menu_multiplier = _get_menu_multiplier(campus_id)
+
     if order_items:
         base_hp = 0
         multiplied_base_hp = 0
@@ -171,7 +221,7 @@ def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = No
             line_base_hp = int(
                 float(item.get("price_snapshot") or 0)
                 * int(item.get("quantity") or 1)
-                * config["HP_PER_NAIRA_FOOD"]
+                * food_earn_rate
             )
             base_hp += line_base_hp
             try:
@@ -180,13 +230,12 @@ def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = No
                 item_multiplier = 1.0
             if item_multiplier not in (0.5, 1.0, 2.0):
                 item_multiplier = 1.0
-            multiplied_line_hp = round(line_base_hp * item_multiplier)
+            multiplied_line_hp = round(line_base_hp * item_multiplier * event_multiplier * menu_multiplier)
             multiplied_base_hp += multiplied_line_hp
             total_hp += round(multiplied_line_hp * tier_multiplier)
     else:
-        base_hp = int(order_total * config["HP_PER_NAIRA_FOOD"])
+        base_hp = int(order_total * food_earn_rate)
         tier_bonus_hp = round(base_hp * (tier_multiplier - 1.0))
-        event_multiplier = _get_hp_multiplier()
         total_hp = round(base_hp * event_multiplier) + tier_bonus_hp
 
     return total_hp
@@ -233,10 +282,9 @@ logger = _logging.getLogger(__name__)
 
 def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: str = None, notes: str = "", campus_id: str = None) -> dict:
     """
-    Add HP to pending pool.
-    Referral HP goes to ACTIVE (referral → active per brand spec).
-    All other source types (event, review, challenge, social, bundle_purchase) → pending.
-    HP multiplier is applied to all HP earning.
+    Add HP to pending pool or active pool.
+    source_type == 'event' -> ACTIVE HP.
+    All other source types -> pending HP subject to monthly pending cap.
     """
     if amount <= 0:
         return {"added_to_pending": 0, "added_to_overflow": 0, "source_type": source_type}
@@ -246,8 +294,17 @@ def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: s
     if multiplier > 1.0:
         amount = round(amount * multiplier)
 
-    is_referral = source_type in ("referral", "earn_referral")
-    status = "active" if is_referral else "pending"
+    is_instant_active = source_type == "event"
+    status = "active" if is_instant_active else "pending"
+
+    if status == "pending":
+        from app.services.streak_service import check_monthly_cap, update_monthly_tracker
+        cap_check = check_monthly_cap(user_id, amount)
+        if not cap_check["allowed"]:
+            return {"success": False, "hp_awarded": 0, "capped": True, "reason": "monthly_pending_cap_reached"}
+        amount = cap_check["capped_amount"]
+        if amount <= 0:
+            return {"success": False, "hp_awarded": 0, "capped": True, "reason": "monthly_pending_cap_reached"}
 
     txn_type = _resolve_txn_type(source_type)
     _record_hp_transaction(
@@ -261,10 +318,15 @@ def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: s
         status=status,
         campus_id=campus_id,
     )
-    if is_referral:
+
+    if status == "pending" and amount > 0:
+        from app.services.streak_service import update_monthly_tracker
+        update_monthly_tracker(user_id, amount)
+    if is_instant_active:
         _update_earned_counters(user_id, amount)
+
     return {
-        "added_to_pending": 0 if is_referral else amount,
+        "added_to_pending": 0 if is_instant_active else amount,
         "added_to_overflow": 0,
         "source_type": source_type,
     }

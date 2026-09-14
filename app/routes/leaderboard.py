@@ -377,7 +377,7 @@ def squad_my_rank():
     squad_ids = list({s["id"] for s in my_squads} | {r["squad_id"] for r in roster_rows})
 
     if not squad_ids:
-        return jsonify({"rank": None, "hp_total": 0}), 200
+        return jsonify([]), 200
 
     orders_q = db.table("orders").select("squad_id,hp_earned").eq("is_squad_order", "true").not_.is_("squad_id", "null")
     if campus_id:

@@ -417,6 +417,8 @@ def list_items():
     search = request.args.get("q")
     if search:
         q = q.ilike("name", f"%{search}%")
+    else:
+        q = q.eq("is_secret", "false")
 
     available_only = request.args.get("available_only", "true").lower() != "false"
     if available_only:
@@ -787,7 +789,7 @@ def create_item():
     MENU_ITEM_COLUMNS = {
         "name", "slug", "category_id", "price", "hp_earn_value", "description",
         "tags", "daily_limit", "is_available", "image_url", "is_featured",
-        "hp_multiplier",
+        "hp_multiplier", "is_secret",
     }
     safe = {k: v for k, v in data.items() if k in MENU_ITEM_COLUMNS}
     campus_id = getattr(g, 'campus_id', None)
@@ -851,7 +853,7 @@ def update_item(item_id):
     MENU_ITEM_UPDATE_COLUMNS = {
         "name", "slug", "category_id", "price", "hp_earn_value", "description",
         "tags", "image_url", "is_featured", "hp_multiplier",
-        "is_available", "daily_limit",
+        "is_available", "daily_limit", "is_secret",
     }
     db = get_user_client()
     data = request.get_json(force=True)

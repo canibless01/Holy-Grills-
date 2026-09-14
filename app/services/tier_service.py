@@ -71,7 +71,7 @@ def try_claim_monthly_free_delivery(user_id: str, order_id: str = None) -> bool:
             "p_month": curr_month,
             "p_perk_key": "monthly_free_delivery",
             "p_order_id": order_id,
-        })
+        }).execute()
         if isinstance(res, dict):
             return bool(res.get("claimed"))
         return False
