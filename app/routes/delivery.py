@@ -248,6 +248,17 @@ def calculate_fee():
             return jsonify({"error": "'delivery_location_id' is required"}), 400
 
     try:
+        tier_free_avail = False
+        if getattr(g, "user_id", None):
+            try:
+                from app.services.tier_service import resolve_perk
+                if resolve_perk(g.user_id, "monthly_free_delivery"):
+                    curr_m = datetime.now(timezone.utc).strftime("%Y-%m")
+                    used = db.table("tier_monthly_perk_usage").select("id").eq("user_id", g.user_id).eq("month", curr_m).eq("perk_key", "monthly_free_delivery").execute() or []
+                    tier_free_avail = not bool(used)
+            except Exception:
+                pass
+
         if delivery_type == "on_campus":
             hostel = (
                 db.table("hostels")
@@ -264,6 +275,7 @@ def calculate_fee():
                 "delivery_fee": float(hostel.get("delivery_fee") or 0),
                 "hostel": hostel,
                 "distance_km": None,
+                "tier_free_delivery_available": tier_free_avail,
             }), 200
 
         # off_campus
@@ -283,6 +295,7 @@ def calculate_fee():
             "delivery_fee": fee,
             "gate": gate,
             "distance_km": distance_km,
+            "tier_free_delivery_available": tier_free_avail,
         }), 200
 
     except Exception as exc:

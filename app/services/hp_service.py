@@ -148,10 +148,19 @@ def _get_hp_multiplier() -> float:
         return 1.0
 
 
-def calculate_delivery_hp(order_total, tier_slug, order_items) -> int:
+def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None) -> int:
     """Pure calculation — no DB writes. Extracted from award_food_order_hp."""
     config = current_app.config
-    tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
+    tier_multiplier = 1.0
+    if user_id:
+        try:
+            from app.services.tier_service import resolve_perk
+            tier_multiplier = float(resolve_perk(user_id, "earn_multiplier") or 1.0)
+        except Exception:
+            tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
+    else:
+        tier_multiplier = config.get("TIER_MULTIPLIERS", {}).get(str(tier_slug).lower() if tier_slug else "ember", 1.0)
+
     if order_items:
         base_hp = 0
         multiplied_base_hp = 0

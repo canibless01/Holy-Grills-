@@ -575,9 +575,13 @@ def birthday_hp_awards(self):
                         if already:
                             continue
 
+                        from app.services.tier_service import resolve_perk
+                        resolved_bday = resolve_perk(profile["id"], "birthday_hp")
+                        user_bday_hp = resolved_bday if resolved_bday is not None and resolved_bday > 0 else birthday_hp
+
                         award_active_hp(
                             user_id=profile["id"],
-                            amount=birthday_hp,
+                            amount=user_bday_hp,
                             txn_type="earn_birthday",
                             reference_type="birthday",
                             notes=f"Birthday HP — {today.strftime('%B %d, %Y')}",
@@ -1720,3 +1724,43 @@ def check_post_delivery_nudges(self):
             db.rpc("release_cron_lock", {"p_job_name": "check_post_delivery_nudges"})
         except Exception:
             pass
+
+
+@celery_app.task(name="app.tasks.scheduled.grant_monthly_tier_perks")
+def grant_monthly_tier_perks():
+    db = get_db()
+    curr_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    users = db.table("profiles").select("id,campus_id").eq("is_active", True).execute() or []
+    from app.services.tier_service import resolve_perk
+    from flask import current_app
+
+    for u in users:
+        uid = u["id"]
+        campus_id = u.get("campus_id")
+        side_credits = resolve_perk(uid, "free_side_credits_monthly")
+        if side_credits and int(side_credits) > 0:
+            already = db.table("free_side_credits").select("id").eq("user_id", uid).eq("source", "tier_grant").gte("created_at", f"{curr_month}-01T00:00:00").execute()
+            if not already:
+                try:
+                    validity_days = int(current_app.config.get("FREE_SIDE_CREDIT_VALIDITY_DAYS", 30))
+                    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
+                    for _ in range(int(side_credits)):
+                        db.table("free_side_credits").insert({
+                            "user_id": uid, "source": "tier_grant", "status": "available",
+                            "expires_at": expires_at, "campus_id": campus_id,
+                        })
+                except Exception as e:
+                    logger.warning("grant_monthly_tier_perks side credits failed for user %s: %s", uid, e)
+
+        spins = resolve_perk(uid, "exclusive_spins_monthly")
+        if spins and int(spins) > 0:
+            already_spin = db.table("exclusive_spins").select("id").eq("user_id", uid).eq("source", "tier_grant").gte("created_at", f"{curr_month}-01T00:00:00").execute()
+            if not already_spin:
+                try:
+                    for _ in range(int(spins)):
+                        db.table("exclusive_spins").insert({
+                            "user_id": uid, "source": "tier_grant", "status": "available",
+                            "campus_id": campus_id,
+                        })
+                except Exception as e:
+                    logger.warning("grant_monthly_tier_perks spins failed for user %s: %s", uid, e)

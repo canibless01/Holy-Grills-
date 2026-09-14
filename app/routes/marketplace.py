@@ -124,6 +124,12 @@ def purchase(listing_id):
     if listing.get("is_out_of_stock"):
         return jsonify({"error": MSG.LISTING_OUT_OF_STOCK}), 400
 
+    min_tier_id = listing.get("min_tier_id")
+    if min_tier_id:
+        from app.services.tier_service import can_access_tier_resource
+        if not can_access_tier_resource(g.user_id, min_tier_id):
+            return jsonify({"error": MSG.LISTING_TIER_TOO_LOW}), 400
+
     requested_use_hp = bool(data.get("use_hp", False))
     payment_method = data.get("payment_method", "wallet")
 

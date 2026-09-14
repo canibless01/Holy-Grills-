@@ -922,93 +922,44 @@ def list_delivery_windows():
 
 @orders_bp.route("/delivery-windows/status", methods=["GET"])
 def delivery_windows_status():
-    """
-    Return whether the kitchen is currently open and list available delivery
-    windows for scheduling. Used by the frontend to decide whether to show
-    the normal checkout or the "Schedule Your Order" popup.
-    ---
-    tags: [Orders]
-    security: []
-    responses:
-      200:
-        description: |
-          {
-            is_open: bool,
-            can_schedule: bool,
-            available_windows: [...],
-            next_window: {...} | null
-          }
-    """
     db = get_user_client()
-    now = datetime.now(timezone.utc)
-    now_iso = now.isoformat()
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
 
-    # ── 1. Determine if the kitchen is currently open ─────────────────────────
-    from datetime import time as _time, date as _date
+    from app.services.order_service import get_ordering_window_status, find_next_available_ordering_slot
+    status = get_ordering_window_status(db, campus_id)
 
-    def _parse_t(t_str: str) -> _time:
-        try:
-            parts = str(t_str).split(":")
-            return _time(int(parts[0]), int(parts[1]))
-        except Exception:
-            return _time(0, 0)
+    next_avail_date = None
+    next_opens_at = None
+    if not status.get("any_capacity_remaining"):
+        from datetime import datetime, timezone, timedelta as _td
+        _now_wat = datetime.now(timezone.utc) + _td(hours=1)
+        next_slot = find_next_available_ordering_slot(db, campus_id, start_date=(_now_wat + _td(days=1)).date())
+        if next_slot:
+            next_avail_date = next_slot.get("date")
+            next_opens_at = next_slot.get("opens_at")
 
-    today_iso = _date.today().isoformat()
-    override_rows = (
-        db.table("operating_hour_overrides")
-        .select("*")
-        .eq("date", today_iso)
-        .execute()
-    ) or []
-    override = override_rows[0] if override_rows else None
-
-    hours = db.table("operating_hours").select("*").order("weekday").execute() or []
-
-    is_open = False
-    today_weekday = now.weekday()
-
-    if override:
-        if override.get("is_closed"):
-            is_open = False
-        else:
-            open_val = override.get("open_time") or override.get("opens_at")
-            close_val = override.get("close_time") or override.get("closes_at")
-            if open_val and close_val:
-                is_open = _parse_t(open_val) <= now.time() <= _parse_t(close_val)
-            else:
-                # Override says open but no specific hours — treat as open all day
-                is_open = True
-    else:
-        for row in hours:
-            if row.get("weekday") == today_weekday:
-                if row.get("is_closed"):
-                    is_open = False
-                else:
-                    open_val = row.get("open_time") or row.get("opens_at", "00:00")
-                    close_val = row.get("close_time") or row.get("closes_at", "23:59")
-                    is_open = _parse_t(open_val) <= now.time() <= _parse_t(close_val)
-                break
-
-    # ── 2. Fetch upcoming open windows for scheduling ─────────────────────────
-    windows = (
-        db.table("delivery_windows")
-        .select("*")
-        .gte("ends_at", now_iso)
-        .eq("status", "open")
-        .order("starts_at")
-        .execute()
-    ) or []
-
-    next_window = windows[0] if windows else None
-
-    next_window_starts_at = next_window.get("starts_at") if next_window else None
+    calendar = None
+    if request.args.get("calendar", "").lower() == "true":
+        calendar = []
+        from datetime import datetime, timezone, timedelta as _td
+        _now_wat_date = (datetime.now(timezone.utc) + _td(hours=1)).date()
+        for i in range(7):
+            d = _now_wat_date + _td(days=i)
+            st = get_ordering_window_status(db, campus_id, for_date=d)
+            calendar.append({
+                "date": st["date"],
+                "is_open": st["is_open"],
+                "any_capacity_remaining": st["any_capacity_remaining"],
+            })
 
     return jsonify({
-        "is_open": is_open,
-        "can_schedule": len(windows) > 0,
-        "available_windows": windows,
-        "next_window": next_window,
-        "next_window_starts_at": next_window_starts_at,
+        "is_open": status.get("is_open", False),
+        "windows": status.get("windows", []),
+        "any_capacity_remaining": status.get("any_capacity_remaining", False),
+        "next_available_date": next_avail_date,
+        "next_opens_at": next_opens_at,
+        "calendar": calendar,
     }), 200
 
 

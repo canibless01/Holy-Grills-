@@ -609,21 +609,6 @@ def close_window(window_id):
 @admin_bp.route("/delivery-windows/<window_id>/reopen", methods=["POST"])
 @require_role("admin")
 def reopen_window(window_id):
-    """
-    Reopen a previously closed delivery window (admin only).
-    ---
-    tags: [Admin]
-    parameters:
-      - in: path
-        name: window_id
-        type: string
-        required: true
-    responses:
-      200:
-        description: Window reopened
-      404:
-        description: Window not found
-    """
     db = get_user_client()
     window, err = fetch_or_403(db, "delivery_windows", window_id, select="id,status", not_found_msg=MSG.ADMIN_WINDOW_NOT_FOUND)
     if err:
@@ -633,6 +618,93 @@ def reopen_window(window_id):
     db.table("delivery_windows").eq("id", window_id).update({"status": "open"}).execute()
     _audit(g.user_id, "delivery_windows", window_id, "reopen_window")
     return jsonify({"message": MSG.ADMIN_WINDOW_REOPENED, "window_id": window_id, "status": "open"}), 200
+
+
+@admin_bp.route("/ordering-windows", methods=["GET"])
+@require_role("admin")
+def list_ordering_windows():
+    db = get_user_client()
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    q = db.table("ordering_windows").select("*")
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    return jsonify(q.execute() or []), 200
+
+
+@admin_bp.route("/ordering-windows", methods=["POST"])
+@require_role("admin")
+def create_ordering_window():
+    db = get_user_client()
+    data = request.get_json(force=True) or {}
+    campus_id = resolve_scoped_campus_id(data.get("campus_id"))
+    allowed = {"weekday", "date", "opens_at", "closes_at", "capacity", "label", "linked_delivery_window_id", "is_closed"}
+    safe = {k: v for k, v in data.items() if k in allowed}
+    safe["campus_id"] = campus_id
+    res = db.table("ordering_windows").insert(safe).execute()
+    created = res[0] if isinstance(res, list) else res
+    _audit(g.user_id, "ordering_windows", created.get("id"), "create", after_data=safe)
+    return jsonify(created), 201
+
+
+@admin_bp.route("/ordering-windows/<window_id>", methods=["PATCH"])
+@require_role("admin")
+def update_ordering_window(window_id):
+    db = get_user_client()
+    data = request.get_json(force=True) or {}
+    allowed = {"weekday", "date", "opens_at", "closes_at", "capacity", "label", "linked_delivery_window_id", "is_closed"}
+    safe = {k: v for k, v in data.items() if k in allowed}
+
+    before = db.table("ordering_windows").select("*").eq("id", window_id).single().execute() or {}
+    res = db.table("ordering_windows").eq("id", window_id).update(safe).execute()
+    updated = res[0] if isinstance(res, list) else res
+    _audit(g.user_id, "ordering_windows", window_id, "update", before_data=before, after_data=safe)
+
+    # Capacity increase reassignment check
+    try:
+        old_cap = int(before.get("capacity") or 0) if before.get("capacity") is not None else 0
+        new_cap = int(updated.get("capacity") or 0) if updated.get("capacity") is not None else 0
+        target_date = updated.get("date")
+
+        if new_cap > old_cap and target_date:
+            candidates = db.table("orders").select("id,user_id,squad_item_count,is_squad_order,originally_requested_date").eq("capacity_deferred", True).eq("status", "received").lte("originally_requested_date", target_date).order("originally_requested_date", ascending=True).execute() or []
+            if candidates:
+                from app.services.order_service import _order_capacity_weight
+                existing_orders = db.table("orders").select("id,is_squad_order,squad_item_count").eq("ordering_window_id", window_id).not_.in_("status", ["cancelled", "refunded"]).execute() or []
+                used = sum(_order_capacity_weight(o) for o in existing_orders)
+                room = new_cap - used
+
+                for c in candidates:
+                    weight = _order_capacity_weight(c)
+                    if room >= weight:
+                        deliv_start = updated.get("opens_at", "18:00")
+                        deliv_end = updated.get("closes_at", "19:00")
+                        if updated.get("linked_delivery_window_id"):
+                            deliv = db.table("delivery_windows").select("opens_at,closes_at").eq("id", updated["linked_delivery_window_id"]).single().execute()
+                            if deliv:
+                                deliv_start = deliv.get("opens_at") or deliv_start
+                                deliv_end = deliv.get("closes_at") or deliv_end
+
+                        db.table("orders").eq("id", c["id"]).update({
+                            "ordering_window_id": window_id,
+                            "scheduled_for": f"{target_date}T{deliv_start}",
+                            "capacity_deferred": False,
+                        }).execute()
+                        room -= weight
+
+                        from app.services.notification_service import send_notification
+                        send_notification(
+                            user_id=c["user_id"],
+                            notif_type="order_moved_up",
+                            title="Order Moved Up!",
+                            body=f"Good news — your order originally requested for {c.get('originally_requested_date')} has room today! Now scheduled for {target_date}, delivery between {deliv_start}–{deliv_end}.",
+                            reference_id=c["id"],
+                            reference_type="order",
+                        )
+    except Exception as _re:
+        import logging
+        logging.getLogger(__name__).warning("update_ordering_window reassignment error: %s", _re)
+
+    return jsonify(updated), 200
 
 
 @admin_bp.route("/delivery-batches", methods=["GET"])
@@ -1286,7 +1358,7 @@ def run_cron_job(job_name):
         process_scheduled_orders,
     )
 
-    from app.tasks.scheduled import check_post_delivery_nudges
+    from app.tasks.scheduled import check_post_delivery_nudges, grant_monthly_tier_perks
 
     task_map = {
         "birthday-hp":                  birthday_hp_awards,
@@ -1303,6 +1375,7 @@ def run_cron_job(job_name):
         "send-scheduled-notifications": send_scheduled_notifications,
         "process-scheduled-orders":     process_scheduled_orders,
         "check-post-delivery-nudges":   check_post_delivery_nudges,
+        "grant-monthly-tier-perks":     grant_monthly_tier_perks,
     }
 
     task_fn = task_map.get(job_name)
@@ -1370,6 +1443,7 @@ def cron_status():
         "send-scheduled-notifications",
         "process-scheduled-orders",
         "check-post-delivery-nudges",
+        "grant-monthly-tier-perks",
     ]
 
     EXPECTED_CADENCE = {
@@ -1387,6 +1461,7 @@ def cron_status():
         "send-scheduled-notifications": "every 15 minutes",
         "process-scheduled-orders":     "every 5 minutes",
         "check-post-delivery-nudges":   "every 30 minutes",
+        "grant-monthly-tier-perks":     "1st of month @ 00:05 WAT",
     }
 
     try:

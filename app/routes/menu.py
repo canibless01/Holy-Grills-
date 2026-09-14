@@ -88,11 +88,12 @@ def _kitchen_stats(db):
     raw = row.get("value") if row else ""
     capacity = int(raw) if raw and raw.isdigit() else None
 
-    orders_q = db.table("orders").select("id").gte("created_at", _today_start_iso())
+    orders_q = db.table("orders").select("id,is_squad_order,squad_item_count").gte("created_at", _today_start_iso())
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)
-    today_orders = orders_q.execute()
-    count = len(today_orders) if isinstance(today_orders, list) else 0
+    today_orders = orders_q.execute() or []
+    from app.services.order_service import _order_capacity_weight
+    count = sum(_order_capacity_weight(o) for o in (today_orders if isinstance(today_orders, list) else []))
     at_capacity = capacity is not None and count >= capacity
     return capacity, count, at_capacity
 
