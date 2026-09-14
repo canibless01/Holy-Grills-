@@ -280,7 +280,7 @@ def update_profile(user_id: str, data: dict) -> dict:
             pass
 
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    updated = db.table("profiles").eq("id", user_id).update(update_data)
+    updated = db.table("profiles").eq("id", user_id).update(update_data).execute()
     return updated[0] if isinstance(updated, list) else updated
 
 

@@ -236,7 +236,7 @@ def fulfil_leaderboard_prize(record_id):
         safe["fulfilled_by"] = g.user_id
         safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
 
-    result = db.table("leaderboard_reward_fulfillments").eq("id", record_id).update(safe)
+    result = db.table("leaderboard_reward_fulfillments").eq("id", record_id).update(safe).execute()
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.LEADERBOARD_PRIZE_FULFILLED, "record": updated}), 200
 
@@ -317,7 +317,7 @@ def fulfil_hof_reward(record_id):
         safe["fulfilled_by"] = g.user_id
         safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
 
-    result = db.table("hall_of_fame_rewards").eq("id", record_id).update(safe)
+    result = db.table("hall_of_fame_rewards").eq("id", record_id).update(safe).execute()
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.HOF_REWARD_FULFILLED, "record": updated}), 200
 
@@ -386,6 +386,6 @@ def fulfil_exclusive_spin_prize(record_id):
     if "status" in safe:
         safe["fulfilled_by"] = g.user_id
         safe["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("exclusive_spin_fulfillments").eq("id", record_id).update(safe)
+    result = db.table("exclusive_spin_fulfillments").eq("id", record_id).update(safe).execute()
     updated = result[0] if isinstance(result, list) else result
     return jsonify({"message": "Prize marked fulfilled", "record": updated}), 200
