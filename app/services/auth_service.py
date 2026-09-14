@@ -186,6 +186,27 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         get_logger(__name__).error("register: award_signup_bonus failed for user %s: %s", user_id, e)
 
     try:
+        newly_linked_orders = (
+            db.table("orders")
+            .select("id,user_id,status,subtotal,is_squad_order,squad_id,campus_id")
+            .eq("user_id", user_id)
+            .eq("status", "delivered")
+            .is_("hp_credited_at", "null")
+            .execute()
+        ) or []
+        if newly_linked_orders:
+            from app.services.order_service import _handle_delivery_rewards
+            for o in newly_linked_orders:
+                try:
+                    _handle_delivery_rewards(o)
+                except Exception as e:
+                    from app.utils.logger import get_logger
+                    get_logger(__name__).warning("register: retroactive HP credit failed for order %s: %s", o["id"], e)
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).warning("register: retroactive guest-order HP backfill failed for %s: %s", email, e)
+
+    try:
         db.table("squad_roster").eq("email", email).update({"user_id": user_id})
         pending = db.table("pending_squad_hp").select("id,order_id,hp_amount,campus_id").eq("email", email).eq("status", "pending").execute() or []
         if pending:
