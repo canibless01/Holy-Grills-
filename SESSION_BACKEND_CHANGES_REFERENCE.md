@@ -254,7 +254,7 @@ This document captures **all backend additions, modifications, endpoints, busine
 
 ---
 
-## 12. Stage 16 — HP Economics Module
+## 12. Stage 16 — HP Economics & Admin Economics Reporting
 
 - `app/services/economics_service.py`:
   - `calculate_food_reward_value()`
@@ -262,7 +262,48 @@ This document captures **all backend additions, modifications, endpoints, busine
   - `calculate_hp_price()`
   - `calculate_hp_liability()`
   - `validate_event_margin()`
-- Applied in `POST /api/rewards` / `PATCH /api/rewards/<id>` to calculate `reward_value`, `hp_cost`, and `hp_liability`. Logs actual costs to `redemption_cost_log` upon fulfillment.
+- **Admin Economics Blueprint (`app/routes/admin_economics.py` - Prefix `/api/admin/economics`)**:
+  1. `GET /api/admin/economics/overview`
+     - **Response (200)**:
+       ```json
+       {
+         "food_revenue": 150000.0,
+         "hp_issued": 12000,
+         "pending_hp": 3000,
+         "active_hp": 9000,
+         "hp_redeemed": 4000,
+         "hp_outstanding": 12000,
+         "theoretical_liability": 2220.0,
+         "actual_redemption_cost": 750.0,
+         "actual_programme_cost_pct": 0.005,
+         "target_programme_cost_pct": 0.025,
+         "variance_from_target": -0.02,
+         "programme_efficiency": 0.3378
+       }
+       ```
+  2. `GET /api/admin/economics/tier-breakdown`
+     - **Response (200)**:
+       ```json
+       [
+         {
+           "tier": "Ember",
+           "revenue": 50000.0,
+           "hp_issued": 3000,
+           "hp_redeemed": 1000,
+           "actual_cost": 200.0,
+           "effective_pct": 0.004
+         }
+       ]
+       ```
+  3. `GET /api/admin/economics/redemption-analytics`
+     - **Response (200)**:
+       ```json
+       {
+         "cost_by_type": {"food": 500.0, "merch": 250.0},
+         "total_actual_cost": 750.0,
+         "actual_cost_per_redeemed_hp": 0.1875
+       }
+       ```
 
 ---
 
