@@ -50,14 +50,12 @@ def create_app(config_class=Config):
 
     CORS(
         app,
-        resources={r"/*": {
-            "origins": app.config["CORS_ORIGINS"],
-            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
-            "expose_headers": ["Authorization"],
-            "supports_credentials": True,
-            "max_age": 86400,
-        }},
+        origins="*",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "Accept", "Origin", "X-Requested-With"],
+        expose_headers=["Authorization"],
+        supports_credentials=False,
+        max_age=86400,
     )
 
     @app.before_request
