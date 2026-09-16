@@ -5,6 +5,7 @@ from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_o
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
 from datetime import datetime, timezone
+from app.utils.tz import today_wat
 from app.messages import MSG
 from app.utils.logger import get_logger
 from app.utils.validators import (
@@ -1698,7 +1699,7 @@ def hp_report():
     """
     db = get_user_client()
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = today_wat().isoformat()
 
     summary = db.rpc("get_hp_program_report_summary", {"p_today_date": today}) or {}
     total_issued = int(summary.get("total_issued", 0))

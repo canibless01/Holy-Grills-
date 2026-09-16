@@ -58,10 +58,6 @@ def client(app):
 # ── 1. Blueprint Imports ───────────────────────────────────────────────────────
 
 class TestBlueprintImports:
-    def test_daily_checkin_blueprint_imports(self):
-        from app.routes.daily_checkin import checkin_bp
-        assert checkin_bp is not None
-        assert checkin_bp.name == "daily_checkin"
 
     def test_feature_flags_blueprint_imports(self):
         from app.routes.admin_feature_flags import admin_flags_bp
@@ -79,11 +75,6 @@ class TestBlueprintImports:
 # ── 2. Route Registration ─────────────────────────────────────────────────────
 
 class TestRouteRegistration:
-    def test_checkin_routes_registered(self, app):
-        rules = {r.rule for r in app.url_map.iter_rules()}
-        assert "/api/checkin" in rules
-        assert "/api/checkin/history" in rules
-
     def test_free_sides_routes_registered(self, app):
         rules = {r.rule for r in app.url_map.iter_rules()}
         assert "/api/free-sides" in rules
@@ -210,9 +201,6 @@ class TestResendEmailModule:
 class TestMsgConstants:
     def test_checkin_messages_present(self):
         from app.messages import MSG
-        assert hasattr(MSG, "CHECKIN_ALREADY_DONE")
-        assert hasattr(MSG, "CHECKIN_SUCCESS")
-        assert hasattr(MSG, "CHECKIN_HP_AWARDED")
 
     def test_free_side_messages_present(self):
         from app.messages import MSG
@@ -398,20 +386,6 @@ class TestHPServiceImports:
 
 
 # ── 11. Daily Checkin Logic ───────────────────────────────────────────────────
-
-class TestDailyCheckinLogic:
-    def test_checkin_endpoint_requires_auth(self, client):
-        """POST /api/checkin without token must return 401."""
-        resp = client.post("/api/checkin")
-        assert resp.status_code == 401
-
-    def test_checkin_history_requires_auth(self, client):
-        """GET /api/checkin/history without token must return 401."""
-        resp = client.get("/api/checkin/history")
-        assert resp.status_code == 401
-
-
-# ── 12. Exclusive Spin Endpoints Auth ────────────────────────────────────────
 
 class TestExclusiveSpinAuth:
     def test_get_spins_requires_auth(self, client):

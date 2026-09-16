@@ -4,12 +4,13 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.db import get_db, get_user_client
 from datetime import date, timedelta, datetime, timezone
+from app.utils.tz import today_wat
 
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
 
 def _period_key_for(period_type: str):
-    today = date.today()
+    today = today_wat()
     if period_type == "monthly":
         return today.strftime("%Y-%m")
     elif period_type == "weekly":

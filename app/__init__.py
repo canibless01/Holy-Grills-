@@ -35,7 +35,6 @@ from app.routes.delivery import delivery_bp
 from app.routes.graduation import graduation_bp
 from app.routes.departments import departments_bp, admin_departments_bp
 from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
-from app.routes.daily_checkin import checkin_bp
 from app.routes.free_sides import free_sides_bp
 from app.routes.exclusive_spin import exclusive_spin_bp
 from app.routes.admin_feature_flags import admin_flags_bp
@@ -49,7 +48,24 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
+    CORS(
+        app,
+        resources={r"/*": {
+            "origins": app.config["CORS_ORIGINS"],
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+            "expose_headers": ["Authorization"],
+            "supports_credentials": True,
+            "max_age": 86400,
+        }},
+    )
+
+    @app.before_request
+    def handle_options_preflight():
+        if request.method == "OPTIONS":
+            response = app.make_default_options_response()
+            response.status_code = 204
+            return response
 
     swagger_config = {
         "headers": [],
@@ -119,7 +135,6 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_departments_bp, url_prefix="/api/admin")
     app.register_blueprint(academic_levels_bp, url_prefix="/api/academic-levels")
     app.register_blueprint(admin_academic_levels_bp, url_prefix="/api/admin")
-    app.register_blueprint(checkin_bp, url_prefix="/api/checkin")
     app.register_blueprint(free_sides_bp, url_prefix="/api/free-sides")
     app.register_blueprint(exclusive_spin_bp, url_prefix="/api/exclusive-spin")
     app.register_blueprint(admin_flags_bp, url_prefix="/api/admin")

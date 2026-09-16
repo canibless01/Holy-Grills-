@@ -90,16 +90,6 @@ def test_cart_item_quantity_capped_and_campus_id_set():
     assert "campus_id" in src_add
 
 
-def test_daily_checkin_hp_awarded_and_history_total():
-    """daily_checkin records actual hp_awarded value and history returns total."""
-    import inspect
-    import app.routes.daily_checkin as checkin_mod
-    src_checkin = inspect.getsource(checkin_mod.record_checkin)
-    src_hist = inspect.getsource(checkin_mod.checkin_history)
-    assert "hp_awarded" in src_checkin
-    assert "total" in src_hist or "count" in src_hist
-
-
 def test_double_hp_spin_prize_applied_to_next_order():
     """Double HP next order multiplier is applied and reset in order rewards."""
     import inspect

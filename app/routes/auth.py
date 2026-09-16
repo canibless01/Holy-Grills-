@@ -5,7 +5,7 @@ import requests as _req
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, optional_auth, _resolve_default_campus
 from app.middleware.rate_limit import rate_limit
-from app.services import auth_service
+from app.services import auth_service, streak_service
 from app.utils.retry import with_retry
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
@@ -165,11 +165,6 @@ def login():
         except Exception:
             pass
 
-        try:
-            from app.routes.daily_checkin import _do_record_checkin
-            _do_record_checkin(user_id, campus_id)
-        except Exception:
-            pass
 
     return jsonify(result), 200
 
@@ -265,6 +260,12 @@ def refresh():
     try:
         result = auth_service.refresh_token(data["refresh_token"])
         result["rotated"] = True
+        refreshed_user_id = (result.get("user") or {}).get("id")
+        if refreshed_user_id:
+            try:
+                streak_service.process_login_streak(refreshed_user_id, getattr(g, "campus_id", None))
+            except Exception as e:
+                logger.warning("refresh: process_login_streak failed for %s: %s", refreshed_user_id, e)
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 401

@@ -26,6 +26,7 @@ MONTHLY PENDING CAP:
 import math
 from datetime import datetime, timezone, date, timedelta
 from app.db import get_db, get_user_client
+from app.utils.tz import today_wat
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -138,7 +139,7 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
        "week_progress": {...}}
     """
     now = datetime.now(timezone.utc)
-    today = now.date()
+    today = today_wat()
 
     # Check fraud flag
     profile = (
@@ -393,7 +394,7 @@ def try_reclaim_checkin(user_id: str, reclaim_type: str = "order") -> dict:
     Returns {"reclaimed": bool, "day_offset": int | None}
     """
     db = get_db()
-    today = date.today()
+    today = today_wat()
     now = datetime.now(timezone.utc)
 
     try:
@@ -473,7 +474,7 @@ def _build_week_progress(week_state: dict, week_start: date, today: date) -> dic
 def get_streak(user_id: str) -> dict:
     """Return the user's current login streak info."""
     db = get_user_client()
-    today = date.today()
+    today = today_wat()
     try:
         row = (
             db.table("login_streaks")
@@ -527,7 +528,7 @@ def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> 
     Returns {"streak_weeks": int, "hp_awarded": int, "new_week": bool}
     """
     db = get_db()
-    today = date.today()
+    today = today_wat()
     current_week = _week_key(today)
     now = datetime.now(timezone.utc).isoformat()
 

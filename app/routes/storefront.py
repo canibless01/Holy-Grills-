@@ -6,6 +6,7 @@ from app.db import get_db, get_user_client
 from app.messages import MSG
 from app.routes.events import _get_campus_id
 from datetime import datetime, timezone
+from app.utils.tz import today_wat
 
 storefront_bp = Blueprint("storefront", __name__)
 
@@ -122,9 +123,8 @@ def get_hours():
     if campus_id and isinstance(hours, list):
         hours = [h for h in hours if h.get("campus_id") == campus_id or h.get("campus_id") is None]
 
-    from datetime import date
-    today = date.today().isoformat()
-    override_q = db.table("operating_hour_overrides").select("*").eq("date", today)
+    today_iso = today_wat().isoformat()
+    override_q = db.table("operating_hour_overrides").select("*").eq("date", today_iso)
     override_rows = override_q.execute() or []
     if campus_id and isinstance(override_rows, list):
         override_rows = [o for o in override_rows if o.get("campus_id") == campus_id or o.get("campus_id") is None]

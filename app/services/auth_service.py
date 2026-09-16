@@ -6,6 +6,7 @@ Profile is created automatically via Supabase trigger on auth.users insert.
 import uuid
 import re
 from datetime import datetime, timezone, date
+from app.utils.tz import today_wat
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services.notification_service import send_notification
@@ -30,7 +31,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     if date_of_birth:
         try:
             dob = date.fromisoformat(str(date_of_birth)[:10])
-            today = date.today()
+            today = today_wat()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
             minimum_age = config.get("MINIMUM_AGE", 16)
             if age < minimum_age:
@@ -326,7 +327,7 @@ def update_profile(user_id: str, data: dict) -> dict:
             dob = date.fromisoformat(str(update_data["date_of_birth"])[:10])
         except ValueError:
             raise ValueError("Invalid date of birth. Use YYYY-MM-DD format.")
-        today = date.today()
+        today = today_wat()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         minimum_age = config.get("MINIMUM_AGE", 16)
         if age < minimum_age:

@@ -28,6 +28,7 @@ class Config:
     if frontend_env and frontend_env.strip() != "*":
         origins_set.add(frontend_env.strip())
     origins_set.update([
+        "https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app",
         "https://holy-grills-frontend.vercel.app",
         "http://localhost:3000",
         "http://127.0.0.1:3000",

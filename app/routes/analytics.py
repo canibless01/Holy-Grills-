@@ -5,6 +5,7 @@ from app.middleware.auth import require_role
 from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone, timedelta
+from app.utils.tz import today_wat
 import csv
 import io
 
@@ -32,8 +33,8 @@ def sales_analytics():
         description: Sales analytics summary
     """
     db = get_user_client()
-    from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
-    to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
+    from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
+    to_date = request.args.get("to_date", today_wat().isoformat())
 
     q = (
         db.table("orders")
@@ -87,8 +88,8 @@ def hp_analytics():
         description: HP analytics
     """
     db = get_user_client()
-    from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
-    to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
+    from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
+    to_date = request.args.get("to_date", today_wat().isoformat())
 
     EARN_SOURCES = {"food_order", "welcome", "referral", "review", "event_checkin",
                     "birthday", "challenge", "admin_grant", "squad_bonus", "streak",
@@ -177,7 +178,7 @@ def dashboard_summary():
         description: Live dashboard snapshot
     """
     db = get_user_client()
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = today_wat().isoformat()
     today_start = f"{today}T00:00:00Z"
     today_end   = f"{today}T23:59:59Z"
 
@@ -285,8 +286,8 @@ def orders_analytics():
         description: Order flow analytics
     """
     db = get_user_client()
-    from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat())
-    to_date   = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
+    from_date = request.args.get("from_date", (today_wat() - timedelta(days=7)).isoformat())
+    to_date   = request.args.get("to_date", today_wat().isoformat())
 
     q = (
         db.table("orders")
@@ -388,8 +389,8 @@ def export_csv():
     """
     db = get_user_client()
     export_type = request.args.get("type", "").lower()
-    from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
-    to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
+    from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
+    to_date = request.args.get("to_date", today_wat().isoformat())
 
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
 
@@ -438,7 +439,7 @@ def export_csv():
             q = q.eq("campus_id", campus_id)
         rows = q.order("created_at", ascending=False).execute() or []
         fieldnames = ["id", "full_name", "phone", "role", "is_active", "hp_balance", "wallet_balance", "current_tier_id", "created_at"]
-        filename = f"users_{datetime.now(timezone.utc).date().isoformat()}.csv"
+        filename = f"users_{today_wat().isoformat()}.csv"
 
     else:
         return jsonify({"error": MSG.ANALYTICS_UNKNOWN_EXPORT.format(export_type=export_type)}), 400
@@ -585,8 +586,8 @@ def items_analytics():
         description: Per-item sales breakdown sorted by qty desc
     """
     db = get_user_client()
-    from_date = request.args.get("from_date", (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat())
-    to_date = request.args.get("to_date", datetime.now(timezone.utc).date().isoformat())
+    from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
+    to_date = request.args.get("to_date", today_wat().isoformat())
     limit = min(int(request.args.get("limit", 50)), 200)
 
     # Fetch delivered orders in range
@@ -660,11 +661,11 @@ def users_analytics():
     """
     db = get_user_client()
     now = datetime.now(timezone.utc)
-    to_date = request.args.get("to_date", now.date().isoformat())
-    from_date = request.args.get("from_date", (now - timedelta(days=30)).date().isoformat())
+    to_date = request.args.get("to_date", today_wat().isoformat())
+    from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
 
     # DAU: unique users who placed or received an order today
-    today_str = now.date().isoformat()
+    today_str = today_wat().isoformat()
     campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
 
     q_daily = (
