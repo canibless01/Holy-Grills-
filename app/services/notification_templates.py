@@ -869,13 +869,6 @@ NOTIFICATION_TEMPLATES: dict = {
         "channels":     ["push", "in_app"],   # Prize is shown inline — no email needed
     },
 
-    # ── Phase 3 — Daily Check-in HP ──────────────────────────────────────────
-    "daily_checkin": {
-        "title":        MSG.DAILY_CHECKIN_TITLE,
-        "body":         MSG.DAILY_CHECKIN_BODY,
-        "include_name": True,
-        "channels":     ["push", "in_app"],   # Lightweight — no email
-    },
 
     # ── Phase 3 — Admin: New HoF Induction Alert ─────────────────────────────
     "admin_hof_induction": {

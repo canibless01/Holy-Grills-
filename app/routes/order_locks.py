@@ -16,6 +16,7 @@ from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.settings import get_validated_setting, SettingError
 from datetime import datetime, timezone, date, timedelta
+from app.utils.tz import today_wat
 
 order_locks_bp = Blueprint("order_locks", __name__)
 
@@ -53,7 +54,7 @@ def create_lock():
     except ValueError:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_INVALID}), 400
 
-    if locked_date <= date.today():
+    if locked_date <= today_wat():
         return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
 
     # Prevent users from having multiple active locks
@@ -261,7 +262,7 @@ def reschedule_lock(lock_id):
         new_date = date.fromisoformat(new_date_str)
     except ValueError:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_INVALID}), 400
-    if new_date <= date.today():
+    if new_date <= today_wat():
         return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
 
     now = datetime.now(timezone.utc).isoformat()

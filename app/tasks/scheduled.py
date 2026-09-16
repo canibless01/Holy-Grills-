@@ -9,6 +9,7 @@ from app.tasks.celery_app import celery_app
 from app.db import get_db
 from datetime import datetime, timezone, timedelta, date
 from app.utils.logger import get_logger
+from app.utils.tz import today_wat
 from app.utils.settings import get_validated_setting
 from app.messages import MSG
 
@@ -1132,7 +1133,7 @@ def check_order_locks(self):
     try:
         from app.services.notification_service import send_notification
         now = datetime.now(timezone.utc)
-        today = now.date()
+        today = today_wat()
 
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         campus_results = {}
@@ -1292,7 +1293,7 @@ def membership_anniversary_awards(self):
 
     try:
         now = datetime.now(timezone.utc)
-        today = now.date()
+        today = today_wat()
 
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}

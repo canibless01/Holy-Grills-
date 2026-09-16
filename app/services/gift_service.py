@@ -15,6 +15,7 @@ Gift is also inserted into order_items with is_gift=True and price=0.
 
 from datetime import datetime, timezone, date
 from app.db import get_db, get_user_client
+from app.utils.tz import today_wat
 from app.utils.logger import get_logger
 from app.messages import MSG
 
@@ -65,7 +66,7 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = N
         if end_date_str:
             try:
                 end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00")).date() if "T" in end_date_str else date.fromisoformat(end_date_str[:10])
-                if date.today() > end_date:
+                if today_wat() > end_date:
                     return {"granted": False, "reason": "launch_window_closed"}
             except ValueError:
                 pass

@@ -36,6 +36,7 @@ trigger_type values and their verification logic:
 from datetime import datetime, timezone, timedelta
 from app.db import get_db, get_user_client
 from app.utils.logger import get_logger
+from app.utils.tz import today_wat
 
 logger = get_logger(__name__)
 
@@ -60,8 +61,8 @@ def get_user_milestones(user_id: str) -> dict:
     """
     db = get_user_client()
     now = datetime.now(timezone.utc)
-    period_weekly  = _period_key("weekly", now.date())
-    period_monthly = _period_key("monthly", now.date())
+    period_weekly  = _period_key("weekly", today_wat())
+    period_monthly = _period_key("monthly", today_wat())
 
     from flask import has_app_context, g
     q = db.table("milestones").select("*").eq("is_active", "true").not_.in_("trigger_type", list(ADMIN_ONLY_TRIGGERS))
@@ -147,7 +148,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
         raise ValueError("This milestone is awarded by admins only")
 
     # Determine period key for dedup
-    period_key = _period_key(time_window, now.date()) if time_window else None
+    period_key = _period_key(time_window, today_wat()) if time_window else None
 
     # Check if already completed (for this period / lifetime)
     already = _is_already_completed(db, user_id, milestone_id, period_key)
@@ -246,7 +247,7 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
         for m in milestones:
             mid = m["id"]
             tw  = m.get("time_window")
-            period_key = _period_key(tw, now.date()) if tw else None
+            period_key = _period_key(tw, today_wat()) if tw else None
 
             if _is_already_completed(db, user_id, mid, period_key):
                 continue
@@ -294,7 +295,7 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
         raise ValueError("Milestone not found")
 
     tw = milestone.get("time_window")
-    period_key = _period_key(tw, now.date()) if tw else None
+    period_key = _period_key(tw, today_wat()) if tw else None
     hp = int(milestone.get("hp_awarded") or 0)
 
     already = _is_already_completed(db, user_id, milestone_id, period_key)

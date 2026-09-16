@@ -29,6 +29,7 @@ HP Flow on Delivery:
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from app.utils.tz import today_wat
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services import hp_service
@@ -412,7 +413,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             if qty > remaining:
                 raise ValueError(MSG.ORDER_MENU_ITEM_SOLD_OUT_TODAY.format(name=menu_item["name"], remaining=remaining))
 
-        from decimal import Decimal
         base_price = availability.get("price_override") if (availability and availability.get("price_override") is not None) else menu_item["price"]
         unit_price = Decimal(str(base_price))
 
@@ -487,7 +487,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     order_lock_discount = 0.0
     if user_id:
         try:
-            today_date = datetime.now(timezone.utc).date().isoformat()
+            today_date = today_wat().isoformat()
             _lock_rows = (
                 db.table("order_locks")
                 .select("*")
@@ -622,7 +622,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 raise ValueError(str(e))
             pass  # Table may not exist yet — fee stays 0
 
-    from decimal import Decimal
     # Apply squad delivery-fee discount
     delivery_fee_dec = Decimal(str(delivery_fee))
     if is_squad_order and config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True):

@@ -322,10 +322,6 @@ class MSG:
     TIER_NAME_REQUIRED            = "Tier name is required"
     TIER_DELETE_HAS_SALES         = "Cannot delete a tier with existing ticket sales"
 
-    # ── Daily Check-in ────────────────────────────────────────────────────────
-    CHECKIN_ALREADY_DONE         = "You have already checked in today"
-    CHECKIN_SUCCESS              = "Daily check-in recorded"
-    CHECKIN_HP_AWARDED           = "Daily check-in complete — {hp} {currency} earned"
 
     # ── Free Sides ────────────────────────────────────────────────────────────
     FREE_SIDE_NO_CREDITS         = "You have no free side credits"

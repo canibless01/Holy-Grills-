@@ -36,7 +36,6 @@ from app.routes.cart import cart_bp
 from app.routes.saved_for_later import saved_bp
 from app.routes.order_locks import order_locks_bp
 from app.routes.graduation import graduation_bp
-from app.routes.daily_checkin import checkin_bp
 from app.routes.challenges import challenges_bp
 
 
@@ -67,7 +66,6 @@ def app():
     app.register_blueprint(saved_bp, url_prefix="/api/saved")
     app.register_blueprint(order_locks_bp, url_prefix="/api/order-locks")
     app.register_blueprint(graduation_bp, url_prefix="/api/graduation")
-    app.register_blueprint(checkin_bp, url_prefix="/api/checkin")
     app.register_blueprint(challenges_bp, url_prefix="/api/challenges")
     return app
 
@@ -186,8 +184,6 @@ def test_simulation_student_journey(client):
 
     headers = {"Authorization": "Bearer token_student_1"}
     with patch("app.middleware.auth.get_db", return_value=mock_db), \
-         patch("app.routes.daily_checkin.get_user_client", return_value=mock_db), \
-         patch("app.routes.daily_checkin.get_db", return_value=mock_db), \
          patch("app.routes.challenges.get_user_client", return_value=mock_db), \
          patch("app.routes.challenges.get_db", return_value=mock_db), \
          patch("app.services.milestone_service.get_db", return_value=mock_db), \
@@ -197,9 +193,6 @@ def test_simulation_student_journey(client):
          patch("app.routes.cart.get_db", return_value=mock_db), \
          patch("app.services.hp_service.award_active_hp", return_value={"active": 50}):
 
-        # Daily Checkin
-        res = client.post("/api/checkin", headers=headers)
-        assert res.status_code == 201
 
         # Claim PWA Install
         res = client.post("/api/challenges/pwa-installed", headers=headers)
