@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, jsonify, request, g
 
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
+from app.messages import MSG
 
 uploads_bp = Blueprint("uploads", __name__)
 
@@ -45,4 +46,5 @@ def upload_signature():
         "api_key": api_key,
         "cloud_name": cloud_name,
         "folder": folder,
+        "message": MSG.UPLOAD_SIGNATURE_ISSUED,
     }), 200

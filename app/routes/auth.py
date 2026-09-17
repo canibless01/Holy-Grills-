@@ -8,7 +8,7 @@ from app.middleware.rate_limit import rate_limit
 from app.services import auth_service, streak_service
 from app.utils.retry import with_retry
 from app.db import get_db, get_user_client, SupabaseError
-from app.messages import MSG
+from app.messages import MSG, resolve_msg
 from datetime import datetime, timezone
 
 auth_bp = Blueprint("auth", __name__)
@@ -104,6 +104,7 @@ def register():
             campus_id=campus_id,
             nickname=data.get("nickname"),
         )
+        result["message"] = resolve_msg(MSG.REGISTER_SUCCESS)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -166,6 +167,7 @@ def login():
             pass
 
 
+    result["message"] = MSG.LOGIN_SUCCESS
     return jsonify(result), 200
 
 
@@ -260,6 +262,7 @@ def refresh():
     try:
         result = auth_service.refresh_token(data["refresh_token"])
         result["rotated"] = True
+        result["message"] = MSG.SESSION_REFRESHED
         refreshed_user_id = (result.get("user") or {}).get("id")
         if refreshed_user_id:
             try:
@@ -305,7 +308,7 @@ def update_profile_photo():
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
 
-    return jsonify({"photo_url": photo_url}), 200
+    return jsonify({"photo_url": photo_url, "message": MSG.PROFILE_PHOTO_UPDATED}), 200
 
 
 @auth_bp.route("/profile", methods=["PATCH"])
@@ -335,6 +338,7 @@ def update_profile():
     data = request.get_json(force=True)
     try:
         result = auth_service.update_profile(g.user_id, data)
+        result["message"] = MSG.PROFILE_UPDATED
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -419,7 +423,9 @@ def add_address():
         "is_default": bool(data.get("is_default", False)),
         "campus_id": getattr(g, 'campus_id', None),
     })
-    return jsonify(row[0] if isinstance(row, list) else row), 201
+    res = row[0] if isinstance(row, list) else row
+    res["message"] = MSG.ADDRESS_ADDED
+    return jsonify(res), 201
 
 
 @auth_bp.route("/addresses/<address_id>", methods=["PATCH"])
@@ -466,7 +472,9 @@ def update_address(address_id):
     if "address_line" in data and "line1" not in payload:
         payload["line1"] = data["address_line"]
     result = db.table("user_addresses").eq("id", address_id).update(payload)
-    return jsonify(result[0] if isinstance(result, list) else result), 200
+    res = result[0] if isinstance(result, list) else result
+    res["message"] = MSG.ADDRESS_UPDATED
+    return jsonify(res), 200
 
 
 @auth_bp.route("/addresses/<address_id>", methods=["DELETE"])
@@ -649,6 +657,7 @@ def verify_email():
     if not data.get("email"):
         return jsonify({"error": MSG.AUTH_VERIFY_EMAIL_MISSING}), 400
     result = auth_service.resend_verification_email(data["email"])
+    result["message"] = MSG.VERIFICATION_EMAIL_SENT
     return jsonify(result), 200
 
 
@@ -676,6 +685,7 @@ def reset_password():
     if not data.get("email"):
         return jsonify({"error": MSG.AUTH_EMAIL_REQUIRED}), 400
     result = auth_service.reset_password_request(data["email"])
+    result["message"] = MSG.PASSWORD_RESET_SENT
     return jsonify(result), 200
 
 

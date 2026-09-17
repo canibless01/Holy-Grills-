@@ -144,6 +144,8 @@ def create_order():
             return jsonify({"error": MSG.ORDER_WALLET_LOGIN_REQUIRED}), 400
     try:
         order = order_service.create_order(user_id, data)
+        if isinstance(order, dict):
+            order["message"] = MSG.ORDER_PLACED
         return jsonify(order), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -415,7 +417,7 @@ def add_review_images(order_id):
     if not result:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    return jsonify({"image_urls": image_urls}), 200
+    return jsonify({"image_urls": image_urls, "message": MSG.REVIEW_IMAGES_UPLOADED}), 200
 
 
 @orders_bp.route("/<order_id>/review", methods=["POST"])
@@ -516,7 +518,7 @@ def submit_review(order_id):
     )
     db.table("order_reviews").eq("id", review_id).update({"hp_awarded": hp_amount})
 
-    return jsonify({"review": review_row, "hp_awarded": hp_amount}), 201
+    return jsonify({"review": review_row, "hp_awarded": hp_amount, "message": MSG.REVIEW_SUBMITTED}), 201
 
 
 @orders_bp.route("/<order_id>/claim", methods=["POST"])
@@ -572,6 +574,8 @@ def claim_guest_order(order_id):
             "p_user_id": g.user_id,
             "p_claim_token": claim_token,
         })
+        if isinstance(result, dict):
+            result["message"] = MSG.ORDER_CLAIMED
         return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -1029,6 +1033,7 @@ def validate_promo():
         "code": code.upper(),
         "calculated_discount": result["discount"],
         "promo_code_id": result["promo_code_id"],
+        "message": MSG.PROMO_CODE_VALID,
     }), 200
 
 

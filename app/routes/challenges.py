@@ -221,6 +221,7 @@ def pwa_installed():
             "milestone": "pwa_install",
             "hp_awarded": hp_awarded,
             "already_completed": already_completed,
+            "message": MSG.PWA_INSTALL_RECORDED,
         }), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -335,6 +336,7 @@ def push_subscribed_challenge():
             "milestone": "push_subscribe",
             "hp_awarded": hp_awarded,
             "already_completed": already_completed,
+            "message": MSG.PUSH_SUBSCRIBED,
         }), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

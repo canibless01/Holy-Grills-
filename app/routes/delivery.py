@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
 from app.db import get_db, get_user_client
 from datetime import datetime, timezone
+from app.messages import MSG
 
 delivery_bp = Blueprint("delivery", __name__)
 
@@ -34,14 +35,14 @@ def validate_coordinates(lat, lon):
         f_lat = float(lat)
         f_lon = float(lon)
     except (ValueError, TypeError):
-        raise ValueError("Latitude and Longitude must be valid numbers")
+        raise ValueError(MSG.COORDINATES_INVALID)
 
     if not (-90.0 <= f_lat <= 90.0) or not (-180.0 <= f_lon <= 180.0):
-        raise ValueError("Latitude and Longitude must be within standard bounds")
+        raise ValueError(MSG.COORDINATES_OUT_OF_BOUNDS)
 
     # Nigerian geographical bounding box (generous bounds)
     if not (4.0 <= f_lat <= 14.0) or not (2.5 <= f_lon <= 15.0):
-        raise ValueError("Coordinates are outside the supported region")
+        raise ValueError(MSG.COORDINATES_UNSUPPORTED_REGION)
     return f_lat, f_lon
 
 
@@ -276,6 +277,7 @@ def calculate_fee():
                 "hostel": hostel,
                 "distance_km": None,
                 "tier_free_delivery_available": tier_free_avail,
+                "message": MSG.DELIVERY_FEE_CALCULATED,
             }), 200
 
         # off_campus
@@ -296,6 +298,7 @@ def calculate_fee():
             "gate": gate,
             "distance_km": distance_km,
             "tier_free_delivery_available": tier_free_avail,
+            "message": MSG.DELIVERY_FEE_CALCULATED,
         }), 200
 
     except Exception as exc:

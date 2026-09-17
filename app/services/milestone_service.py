@@ -37,6 +37,7 @@ from datetime import datetime, timezone, timedelta
 from app.db import get_db, get_user_client
 from app.utils.logger import get_logger
 from app.utils.tz import today_wat
+from app.messages import MSG
 
 logger = get_logger(__name__)
 
@@ -136,7 +137,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
         .execute()
     )
     if not milestone:
-        raise ValueError("Milestone not found or inactive")
+        raise ValueError(MSG.MILESTONE_NOT_FOUND)
 
     trigger_type  = milestone.get("trigger_type", "")
     trigger_value = int(milestone.get("trigger_value") or 1)
@@ -145,7 +146,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
 
     # Admin-only triggers cannot be self-completed
     if trigger_type in ADMIN_ONLY_TRIGGERS:
-        raise ValueError("This milestone is awarded by admins only")
+        raise ValueError(MSG.MILESTONE_ADMIN_ONLY)
 
     # Determine period key for dedup
     period_key = _period_key(time_window, today_wat()) if time_window else None
@@ -292,7 +293,7 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str) -> dic
     now = datetime.now(timezone.utc)
     milestone = db.table("milestones").select("*").eq("id", milestone_id).single().execute()
     if not milestone:
-        raise ValueError("Milestone not found")
+        raise ValueError(MSG.MILESTONE_NOT_FOUND)
 
     tw = milestone.get("time_window")
     period_key = _period_key(tw, today_wat()) if tw else None

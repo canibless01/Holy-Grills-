@@ -209,6 +209,7 @@ def flash_redeem(reward_id):
     from app.services.hp_service import process_flash_redeem
     try:
         result = process_flash_redeem(reward_id=reward_id, user_id=g.user_id)
+        result["message"] = MSG.FLASH_REWARD_REDEEMED
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
