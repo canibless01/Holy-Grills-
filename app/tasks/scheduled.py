@@ -52,6 +52,110 @@ def with_cron_logging(job_name: str):
     return decorator
 
 
+@celery_app.task(name="app.tasks.scheduled.reset_weekly_leaderboard", bind=True, max_retries=3)
+@with_cron_logging("reset-weekly-leaderboard")
+def reset_weekly_leaderboard(self):
+    """
+    Runs: Every Monday at 00:01 WAT.
+    Creates a leaderboard snapshot (ranking_type='weekly') for the
+    previous week (Mon-Sun), per campus, ranked by HP earned that week.
+    """
+    db = get_db()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_weekly_leaderboard"})
+    except Exception as e:
+        logger.error("reset_weekly_leaderboard: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
+
+    try:
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            now = datetime.now(timezone.utc)
+            this_week_start = (now - timedelta(days=now.weekday())).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            last_week_start = this_week_start - timedelta(days=7)
+            last_week_end = this_week_start
+            period = last_week_start.date().isoformat()
+
+            # Duplicate-run guard: check if snapshot already created for this period & campus
+            existing_snap = (
+                db.table("leaderboard_snapshots")
+                .select("id")
+                .eq("ranking_type", "weekly")
+                .eq("period_key", period)
+                .eq("campus_id", campus_id)
+                .execute()
+            ) or []
+            if existing_snap:
+                results[campus_id] = {"period": period, "skipped": "Snapshot already exists for period"}
+                continue
+
+            EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
+                          "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
+                          "earn_squad_bonus", "earn_streak", "earn"]
+            week_txns = (
+                db.table("hp_transactions")
+                .select("user_id,amount")
+                .in_("type", EARN_TYPES)
+                .gte("created_at", last_week_start.isoformat())
+                .lt("created_at", last_week_end.isoformat())
+                .eq("campus_id", campus_id)
+                .execute()
+            )
+
+            from collections import defaultdict
+            user_hp = defaultdict(int)
+            for t in (week_txns or []):
+                if t.get("amount", 0) > 0:
+                    user_hp[t["user_id"]] += t["amount"]
+
+            sorted_users = sorted(user_hp.items(), key=lambda x: x[1], reverse=True)[:10]
+
+            if sorted_users:
+                top_ids = [uid for uid, _ in sorted_users]
+                profiles_data = (
+                    db.table("profiles")
+                    .select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
+                    .in_("id", top_ids)
+                    .eq("campus_id", campus_id)
+                    .execute()
+                )
+                from app.services.squad_service import resolve_leaderboard_names_batch
+                names = resolve_leaderboard_names_batch(profiles_data or [])
+
+                entries = [
+                    {"rank": i + 1, "user_id": uid, "full_name": names.get(uid),
+                     "hp_earned": hp, "campus_id": campus_id}
+                    for i, (uid, hp) in enumerate(sorted_users)
+                ]
+
+                try:
+                    db.table("leaderboard_snapshots").insert({
+                        "ranking_type": "weekly",
+                        "period_key": period,
+                        "entries": entries,
+                        "campus_id": campus_id,
+                    })
+                except Exception as e:
+                    logger.error("reset_weekly_leaderboard: snapshot insert failed for campus %s: %s", campus_id, e)
+
+                results[campus_id] = {"period": period, "entries": len(entries)}
+            else:
+                results[campus_id] = {"period": period, "entries": 0}
+
+        return results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "reset_weekly_leaderboard"})
+        except Exception:
+            pass
+
+
 @celery_app.task(name="app.tasks.scheduled.reset_monthly_leaderboard", bind=True, max_retries=3)
 @with_cron_logging("reset-monthly-leaderboard")
 def reset_monthly_leaderboard(self):

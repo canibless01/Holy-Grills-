@@ -121,3 +121,14 @@ def test_admin_academic_calendar_crud(client):
             json={"is_active": False}
         )
         assert resp_patch.status_code == 200
+
+def test_reset_weekly_leaderboard_task():
+    mock_db = MagicMock()
+    mock_db.rpc.return_value = True
+    mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value = [{"id": "campus-1"}]
+    mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.execute.return_value = []
+
+    with patch("app.tasks.scheduled.get_db", return_value=mock_db):
+        from app.tasks.scheduled import reset_weekly_leaderboard
+        res = reset_weekly_leaderboard()
+        assert "campus-1" in res

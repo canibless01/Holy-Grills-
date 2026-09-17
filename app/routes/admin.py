@@ -1346,6 +1346,7 @@ def run_cron_job(job_name):
     from app.tasks.scheduled import (
         birthday_hp_awards,
         reset_monthly_leaderboard,
+        reset_weekly_leaderboard,
         recalculate_120day_hp,
         tier_grace_period_check,
         scan_abandoned_carts,
@@ -1364,6 +1365,7 @@ def run_cron_job(job_name):
     task_map = {
         "birthday-hp":                  birthday_hp_awards,
         "reset-monthly-leaderboard":    reset_monthly_leaderboard,
+        "reset-weekly-leaderboard":     reset_weekly_leaderboard,
         "recalculate-120day-hp":        recalculate_120day_hp,
         "tier-grace-period-check":      tier_grace_period_check,
         "scan-abandoned-carts":         scan_abandoned_carts,
@@ -1436,6 +1438,7 @@ def cron_status():
         "recalculate-120day-hp",
         "hp-decay-check",
         "reset-monthly-leaderboard",
+        "reset-weekly-leaderboard",
         "scan-abandoned-carts",
         "win-back-notifications",
         "check-order-locks",
@@ -1454,6 +1457,7 @@ def cron_status():
         "recalculate-120day-hp":        "daily @ 02:00 WAT",
         "hp-decay-check":               "daily @ 05:00 WAT",
         "reset-monthly-leaderboard":    "1st of month @ 00:01 WAT",
+        "reset-weekly-leaderboard":     "every Monday @ 00:01 WAT",
         "scan-abandoned-carts":         "every 30 minutes",
         "win-back-notifications":       "daily @ 10:00 WAT",
         "check-order-locks":            "daily @ 09:00 WAT",

@@ -7,6 +7,7 @@ Production start commands (in Procfile):
 
 Scheduled Jobs (all times WAT = UTC+1):
   1. reset_monthly_leaderboard   — 1st of each month at 00:01 WAT
+ 12. reset_weekly_leaderboard    — Every Monday at 00:01 WAT
   2. recalculate_120day_hp       — Daily at 02:00 WAT
   3. tier_grace_period_check     — Daily at 03:00 WAT
   4. hp_decay_check              — Daily at 05:00 WAT (120-day onset, 10 %/month decay)
@@ -43,6 +44,10 @@ celery_app.conf.beat_schedule = {
     "reset-monthly-leaderboard": {
         "task": "app.tasks.scheduled.reset_monthly_leaderboard",
         "schedule": crontab(hour=0, minute=1, day_of_month=1),
+    },
+    "reset-weekly-leaderboard": {
+        "task": "app.tasks.scheduled.reset_weekly_leaderboard",
+        "schedule": crontab(hour=0, minute=1, day_of_week="monday"),
     },
     "recalculate-120day-hp": {
         "task": "app.tasks.scheduled.recalculate_120day_hp",
