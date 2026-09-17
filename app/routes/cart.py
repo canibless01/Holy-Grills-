@@ -111,7 +111,7 @@ def add_to_cart():
     if not menu_item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
     if campus_id and menu_item.get("campus_id") != campus_id:
-        return jsonify({"error": "Menu item not found"}), 404
+        return jsonify({"error": MSG.CART_MENU_ITEM_NOT_FOUND}), 404
 
     now = datetime.now(timezone.utc).isoformat()
 

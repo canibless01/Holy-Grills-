@@ -193,7 +193,7 @@ def do_spin():
             logger.error("do_spin OCC update failed for spin row %s: %s", spin_row["id"], e)
 
     if not success:
-        return jsonify({"error": "No spin credits available or concurrent update occurred. Please try again."}), 409
+        return jsonify({"error": MSG.SPIN_NO_CREDITS_RETRY}), 409
 
     prizes = _spin_prizes()
     prize  = _draw_prize(prizes)

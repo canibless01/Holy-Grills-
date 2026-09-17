@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, jsonify, request, g
 
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
+from app.messages import MSG
 
 uploads_bp = Blueprint("uploads", __name__)
 
@@ -22,7 +23,7 @@ def upload_signature():
     api_key = current_app.config.get("CLOUDINARY_API_KEY")
     api_secret = current_app.config.get("CLOUDINARY_API_SECRET")
     if not cloud_name or not api_key or not api_secret:
-        return jsonify({"error": "Cloudinary upload is not configured"}), 503
+        return jsonify({"error": MSG.UPLOAD_NOT_CONFIGURED}), 503
 
     data = request.get_json(silent=True) or {}
     caller_role = getattr(g, "user_role", None)
@@ -30,7 +31,7 @@ def upload_signature():
     if caller_role in ADMIN_ROLES:
         folder = str(data.get("folder") or "general").strip()
         if not folder or len(folder) > 255 or folder.startswith("/") or ".." in folder:
-            return jsonify({"error": "Invalid upload folder"}), 400
+            return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
     else:
         folder = f"profile_photos/{g.user_id}"
 

@@ -4,6 +4,7 @@ import math
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role
 from app.db import get_db, get_user_client
+from app.messages import MSG
 from datetime import datetime, timezone
 
 delivery_bp = Blueprint("delivery", __name__)
@@ -222,7 +223,7 @@ def calculate_fee():
     delivery_type = data.get("delivery_type")
 
     if delivery_type not in ("on_campus", "off_campus"):
-        return jsonify({"error": "delivery_type must be 'on_campus' or 'off_campus'"}), 400
+        return jsonify({"error": MSG.DELIVERY_TYPE_INVALID}), 400
 
     location_id = data.get("delivery_location_id")
     user_lat = data.get("lat")
@@ -238,7 +239,7 @@ def calculate_fee():
         if data.get("delivery_type") == "off_campus" and user_lat is not None and user_lon is not None:
             campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
             if not is_within_delivery_area(db, user_lat, user_lon, campus_id):
-                return jsonify({"error": "This location is outside our delivery area."}), 400
+                return jsonify({"error": MSG.DELIVERY_OUTSIDE_AREA}), 400
             nearest = find_nearest_gate(db, user_lat, user_lon, campus_id)
             if nearest:
                 location_id = nearest["id"]
@@ -269,7 +270,7 @@ def calculate_fee():
                 .execute()
             )
             if not hostel:
-                return jsonify({"error": "Hostel not found"}), 404
+                return jsonify({"error": MSG.DELIVERY_HOSTEL_NOT_FOUND}), 404
             return jsonify({
                 "delivery_type": "on_campus",
                 "delivery_fee": float(hostel.get("delivery_fee") or 0),
@@ -288,7 +289,7 @@ def calculate_fee():
             .execute()
         )
         if not gate:
-            return jsonify({"error": "Gate not found"}), 404
+            return jsonify({"error": MSG.DELIVERY_GATE_NOT_FOUND}), 404
         fee, distance_km = calculate_off_campus_fee(gate, user_lat, user_lon)
         return jsonify({
             "delivery_type": "off_campus",

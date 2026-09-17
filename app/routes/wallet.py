@@ -88,7 +88,7 @@ def fund_via_card():
 
     from flask import current_app as _cur_app
     if not _cur_app.config.get("PAYSTACK_SECRET_KEY"):
-        return jsonify({"error": "Card payments are not configured on this server."}), 502
+        return jsonify({"error": MSG.CARD_PAYMENTS_NOT_CONFIGURED}), 502
 
     try:
         profile = (
@@ -116,7 +116,7 @@ def fund_via_card():
         return jsonify({"error": str(e)}), 502
     except Exception as e:
         _cur_app.logger.error("wallet fund/card error: %s", e)
-        return jsonify({"error": "Payment gateway unavailable. Please try again later."}), 502
+        return jsonify({"error": MSG.PAYMENT_GATEWAY_UNAVAILABLE}), 502
 
 
 @wallet_bp.route("/fund/bank", methods=["POST"])

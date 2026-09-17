@@ -159,7 +159,7 @@ def purchase(listing_id):
         profile = db.table("profiles").select("email").eq("id", g.user_id).single().execute()
         user_email = profile.get("email") if isinstance(profile, dict) else (g.user.get("email") if getattr(g, "user", None) else None)
         if not user_email:
-            return jsonify({"error": "User profile has no registered email for payment initialization"}), 400
+            return jsonify({"error": MSG.PROFILE_EMAIL_REQUIRED_FOR_PAYMENT}), 400
         pay_result = initialize_payment(
             email=user_email,
             amount_naira=card_amount,
