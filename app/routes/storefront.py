@@ -38,6 +38,29 @@ def get_public_config():
         config_dict = {row["key"]: row["value"] for row in settings if row.get("key")}
     except Exception:
         config_dict = {}
+
+    # Delivery radius and campus center coordinates
+    max_radius = 15.0
+    c_lat, c_lon = None, None
+    try:
+        ks_row = db.table("kitchen_settings").select("value").eq("key", "max_delivery_radius_km")
+        if campus_id:
+            ks_row = ks_row.eq("campus_id", campus_id)
+        ks_res = ks_row.execute() or []
+        if ks_res and ks_res[0].get("value"):
+            max_radius = float(ks_res[0]["value"])
+        if campus_id:
+            c_row = db.table("campuses").select("lat,lon").eq("id", campus_id).single().execute()
+            if c_row:
+                c_lat = c_row.get("lat")
+                c_lon = c_row.get("lon")
+    except Exception:
+        pass
+
+    config_dict["max_delivery_radius_km"] = max_radius
+    config_dict["campus_lat"] = c_lat
+    config_dict["campus_lon"] = c_lon
+
     return jsonify(config_dict), 200
 
 

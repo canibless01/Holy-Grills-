@@ -165,6 +165,61 @@ def mark_attempted(order_id):
         return jsonify({"error": str(e)}), 400
 
 
+@riders_bp.route("/location-update", methods=["POST"])
+@require_role("rider", "admin")
+def location_update():
+    """
+    Continuous rider location ping. Accepts { location_lat, location_lng },
+    writes to rider_profiles.location_lat / location_lng.
+    ---
+    tags: [Riders]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            location_lat: {type: number}
+            location_lng: {type: number}
+    responses:
+      200:
+        description: Location updated
+    """
+    data = request.get_json(force=True) or {}
+    lat = data.get("location_lat")
+    lng = data.get("location_lng") if data.get("location_lng") is not None else data.get("location_lon")
+    if lat is None or lng is None:
+        return jsonify({"error": "location_lat and location_lng are required"}), 400
+
+    db = get_user_client()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    update = {
+        "location_lat": float(lat),
+        "location_lng": float(lng),
+        "availability_updated_at": now,
+    }
+    campus_id = getattr(g, "campus_id", None)
+    if campus_id:
+        update["campus_id"] = campus_id
+
+    try:
+        existing = db.table("rider_profiles").select("id").eq("user_id", g.user_id).single().execute()
+        if existing:
+            db.table("rider_profiles").eq("user_id", g.user_id).update(update)
+        else:
+            db.table("rider_profiles").insert({"user_id": g.user_id, **update})
+    except Exception:
+        pass
+
+    return jsonify({
+        "message": "Location updated",
+        "location_lat": float(lat),
+        "location_lng": float(lng),
+        "updated_at": now,
+    }), 200
+
+
 @riders_bp.route("/availability", methods=["PATCH"])
 @require_role("rider", "admin")
 def toggle_availability():

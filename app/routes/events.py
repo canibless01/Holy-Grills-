@@ -965,6 +965,29 @@ def update_catering_request(request_id):
             return jsonify({"error": MSG.EVENT_ASSIGNED_TO_NOT_STAFF}), 400
 
     result = db.table("catering_requests").eq("id", request_id).update(safe)
+
+    if "status" in safe and safe["status"] in ("quoted", "completed", "cancelled") and row.get("email"):
+        try:
+            from app.utils.email import send_email_raw, _build_html
+            requester_name = row.get("organizer_name") or "there"
+            new_status = safe["status"]
+            subject = f"Catering Request Update: {new_status.title()}"
+            body_text = f"Hello {requester_name},\n\nYour catering request status has been updated to '{new_status}'."
+            if safe.get("quoted_amount") is not None:
+                body_text += f"\nQuoted Amount: ₦{safe['quoted_amount']:.2f}"
+            if safe.get("notes"):
+                body_text += f"\nNotes: {safe['notes']}"
+
+            html_body = _build_html(requester_name, body_text, "Holy Grills")
+            import threading
+            threading.Thread(
+                target=send_email_raw,
+                args=(row["email"], requester_name, subject, html_body),
+                daemon=True,
+            ).start()
+        except Exception as e:
+            logger.warning("update_catering_request: email notification failed for %s: %s", row.get("email"), e)
+
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
