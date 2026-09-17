@@ -1396,10 +1396,62 @@ def membership_anniversary_awards(self):
             pass
 
 
+@celery_app.task(name="app.tasks.scheduled.send_scheduled_blasts", bind=True, max_retries=3)
+@with_cron_logging("send-scheduled-blasts")
+def send_scheduled_blasts(self):
+    """
+    Runs: Every 15 minutes.
+    System 1 Scheduled Marketing Engine:
+    Queries notification_blasts where status = "scheduled" and scheduled_at <= now(),
+    and calls send_blast(blast_id) to execute the campaign and set status = "sent".
+    """
+    db = get_db()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "send_scheduled_blasts"})
+    except Exception as e:
+        logger.error("send_scheduled_blasts: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        blasts = (
+            db.table("notification_blasts")
+            .select("id")
+            .eq("status", "scheduled")
+            .lte("scheduled_at", now)
+            .execute()
+        ) or []
+
+        processed = 0
+        from app.services.notification_service import send_blast
+        for b in blasts:
+            blast_id = b.get("id")
+            if not blast_id:
+                continue
+            try:
+                send_blast(blast_id)
+                processed += 1
+            except Exception as e:
+                logger.error("send_scheduled_blasts: blast %s failed: %s", blast_id, e)
+
+        return {"processed": processed, "checked_at": now}
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})
+        except Exception:
+            pass
+
+
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_notifications", bind=True, max_retries=3)
 @with_cron_logging("send-scheduled-notifications")
 def send_scheduled_notifications(self):
     """
+    LEGACY / UNUSED SYSTEM 2 ENGINE:
+    Left in place for backwards compatibility with scheduled_notifications table.
+    Active scheduled campaigns consolidate onto System 1 (notification_blasts) via send_scheduled_blasts.
+
     Runs: Every 15 minutes.
     Delivers admin-created scheduled notification campaigns whose
     next_send_at has passed and is_active=True.
