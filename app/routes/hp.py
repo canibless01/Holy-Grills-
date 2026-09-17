@@ -477,8 +477,8 @@ def transfer_hp():
             )
         except Exception as refund_err:
             logger.error("transfer_hp: refund-on-failure ALSO failed, sender=%s amount=%s: %s", g.user_id, amount, refund_err)
-            return jsonify({"error": "Transfer failed and could not be auto-refunded — contact support"}), 500
-        return jsonify({"error": "Transfer failed — your HP has been refunded, please try again"}), 500
+            return jsonify({"error": MSG.HP_TRANSFER_FAILED_NO_REFUND}), 500
+        return jsonify({"error": MSG.HP_TRANSFER_FAILED_REFUNDED}), 500
 
     # Notify the recipient that they received HP
     try:

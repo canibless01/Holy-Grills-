@@ -142,9 +142,10 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             if department:
                 patch["department"] = department.strip()
                 try:
-                    dept_row = db.table("departments").select("id").eq("name", department.strip()).limit(1).execute()
+                    dept_row = db.table("departments").select("id, faculty").eq("name", department.strip()).limit(1).execute()
                     if dept_row:
                         patch["department_id"] = dept_row[0]["id"]
+                        patch["faculty"] = dept_row[0].get("faculty")
                 except Exception:
                     pass
             if academic_level:
