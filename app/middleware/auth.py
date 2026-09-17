@@ -87,10 +87,10 @@ def _resolve_default_campus(db, user_role: str = None):
 def _get_token_from_header() -> str:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        abort(401, "Missing or malformed Authorization header")
+        abort(401, MSG.SESSION_MALFORMED)
     parts = auth_header.split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        abort(401, "Missing or malformed Authorization header")
+        abort(401, MSG.SESSION_MALFORMED)
     return parts[1].strip()
 
 def require_auth(f):
@@ -110,7 +110,7 @@ def require_auth(f):
             g.jwt_payload = auth_user
 
         except SupabaseError:
-            abort(401, "Invalid token")
+            abort(401, MSG.SESSION_INVALID)
 
         try:
             profile = (
@@ -131,7 +131,7 @@ def require_auth(f):
             abort(401, "User profile not found")
 
         if not profile.get("is_active", True):
-            abort(403, "Account is deactivated")
+            abort(403, MSG.ACCOUNT_DEACTIVATED)
 
         g.user = profile
         g.user_role = profile.get("role", "student")
@@ -159,7 +159,7 @@ def require_role(*roles):
                 g.jwt_token = token
                 g.jwt_payload = auth_user
             except SupabaseError:
-                abort(401, "Invalid token")
+                abort(401, MSG.SESSION_INVALID)
 
             try:
                 profile = (
@@ -180,7 +180,7 @@ def require_role(*roles):
                 abort(401, "User profile not found")
 
             if not profile.get("is_active", True):
-                abort(403, "Account is deactivated")
+                abort(403, MSG.ACCOUNT_DEACTIVATED)
 
             allowed_roles = set()
             for r in roles:
@@ -218,11 +218,11 @@ def optional_auth(f):
         if auth_header is not None:
             # An Authorization header is supplied. We must parse and validate it.
             if not auth_header.startswith("Bearer "):
-                abort(401, "Malformed Bearer header")
+                abort(401, MSG.SESSION_MALFORMED)
 
             parts = auth_header.split(" ", 1)
             if len(parts) < 2 or not parts[1].strip():
-                abort(401, "Malformed Bearer header")
+                abort(401, MSG.SESSION_MALFORMED)
 
             token = parts[1].strip()
             db = get_db()
@@ -230,7 +230,7 @@ def optional_auth(f):
                 auth_user = db.auth_get_user(token)
             except Exception:
                 # Any invalid or expired token must produce a 401 error instead of silently becoming guest
-                abort(401, "Invalid or expired token")
+                abort(401, MSG.SESSION_INVALID)
 
             g.user_id = auth_user["id"]
             g.jwt_token = token
@@ -255,7 +255,7 @@ def optional_auth(f):
                 abort(401, "User profile not found")
 
             if not profile.get("is_active", True):
-                abort(403, "Account is deactivated")
+                abort(403, MSG.ACCOUNT_DEACTIVATED)
 
             g.user = profile
             g.user_role = profile.get("role", "student")

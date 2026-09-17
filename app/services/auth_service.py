@@ -11,6 +11,7 @@ from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services.notification_service import send_notification
 from app.services import hp_service
+from app.messages import MSG
 
 
 def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None, nickname: str = None) -> dict:
@@ -25,7 +26,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     if phone:
         phone_pattern = config.get("PHONE_REGEX_PATTERN", r"^\+234[0-9]{10}$")
         if not re.match(phone_pattern, phone):
-            raise ValueError("Invalid phone number format. Use international format e.g. +2348012345678.")
+            raise ValueError(MSG.PHONE_FORMAT_INVALID)
 
     # DOB validation — user must meet minimum age
     if date_of_birth:
@@ -39,7 +40,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         except ValueError as e:
             if "must be at least" in str(e):
                 raise
-            raise ValueError("Invalid date of birth. Use YYYY-MM-DD format.")
+            raise ValueError(MSG.DOB_FORMAT_INVALID)
 
     if nickname:
         nickname = nickname.strip()
@@ -48,7 +49,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
 
     existing = db.table("profiles").select("id").eq("email", email).execute()
     if existing and len(existing) > 0:
-        raise ValueError("If this email can be registered, you'll receive a confirmation shortly. If you already have an account, try logging in or resetting your password.")
+        raise ValueError(MSG.REGISTER_EMAIL_AMBIGUOUS)
 
     try:
         auth_result = db.auth_sign_up(
@@ -59,7 +60,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     except SupabaseError as e:
         error_msg = str(e).lower()
         if "user already registered" in error_msg or "duplicate" in error_msg:
-            raise ValueError("If this email can be registered, you'll receive a confirmation shortly. If you already have an account, try logging in or resetting your password.")
+            raise ValueError(MSG.REGISTER_EMAIL_AMBIGUOUS)
         raise ValueError(f"Registration failed: {error_msg}")
 
     user_id = auth_result.get("user", {}).get("id") or auth_result.get("id")
@@ -156,7 +157,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             except SupabaseError:
                 pass
     except SupabaseError:
-        raise ValueError("Registration failed. Please try again.")
+        raise ValueError(MSG.REGISTER_FAILED_RETRY)
 
     if referred_by_user_id:
         try:
@@ -304,7 +305,7 @@ def update_profile(user_id: str, data: dict) -> dict:
     }
     update_data = {k: v for k, v in data.items() if k in allowed}
     if not update_data:
-        raise ValueError("No valid fields to update")
+        raise ValueError(MSG.NO_VALID_FIELDS_TO_UPDATE)
 
     if "nickname" in update_data:
         nickname = (update_data["nickname"] or "").strip()
@@ -321,13 +322,13 @@ def update_profile(user_id: str, data: dict) -> dict:
     if "phone" in update_data and update_data["phone"]:
         phone_pattern = config.get("PHONE_REGEX_PATTERN", r"^\+234[0-9]{10}$")
         if not re.match(phone_pattern, update_data["phone"]):
-            raise ValueError("Invalid phone number format. Use international format e.g. +2348012345678.")
+            raise ValueError(MSG.PHONE_FORMAT_INVALID)
 
     if "date_of_birth" in update_data and update_data["date_of_birth"]:
         try:
             dob = date.fromisoformat(str(update_data["date_of_birth"])[:10])
         except ValueError:
-            raise ValueError("Invalid date of birth. Use YYYY-MM-DD format.")
+            raise ValueError(MSG.DOB_FORMAT_INVALID)
         today = today_wat()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         minimum_age = config.get("MINIMUM_AGE", 16)

@@ -46,4 +46,5 @@ def upload_signature():
         "api_key": api_key,
         "cloud_name": cloud_name,
         "folder": folder,
+        "message": MSG.UPLOAD_SIGNATURE_ISSUED,
     }), 200

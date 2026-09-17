@@ -198,6 +198,7 @@ def purchase(listing_id):
         "purchase": purchase_row,
         "code": code_value,
         "hp_earned": marketplace_hp,
+        "message": MSG.MARKETPLACE_PURCHASE_SUCCESS,
     }), 201
 
 

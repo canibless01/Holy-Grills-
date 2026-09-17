@@ -834,7 +834,7 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
     db = get_user_client()
     ticket = db.table("event_tickets").select("*").eq("id", ticket_id).single().execute()
     if not ticket:
-        raise ValueError("Ticket not found")
+        raise ValueError(MSG.TICKET_NOT_FOUND)
 
     if ticket.get("payment_status") == "paid":
         return ticket  # idempotent

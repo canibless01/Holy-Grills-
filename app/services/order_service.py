@@ -546,7 +546,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     # ── Delivery location fee resolution ──────────────────────────────────────
     delivery_type = payload.get("delivery_type")  # "on_campus" | "off_campus" | None
     if delivery_type is not None and delivery_type not in ("on_campus", "off_campus"):
-        raise ValueError("Invalid delivery type")
+        raise ValueError(MSG.DELIVERY_TYPE_VALUE_INVALID)
 
     delivery_location_id = payload.get("delivery_location_id")
     delivery_location_lat = payload.get("delivery_location_lat")
@@ -559,7 +559,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             addr = db.table("user_addresses").eq("id", delivery_address_id).single().execute()
             if addr:
                 if addr.get("user_id") != user_id:
-                    raise ValueError("Unauthorized address access")
+                    raise ValueError(MSG.ADDRESS_ACCESS_UNAUTHORIZED)
                 if addr.get("latitude") is not None and addr.get("longitude") is not None:
                     delivery_location_lat = float(addr["latitude"])
                     delivery_location_lon = float(addr["longitude"])
@@ -581,7 +581,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             and delivery_location_lat is not None and delivery_location_lon is not None):
         campus_id_for_check = getattr(g, "campus_id", None) if has_request_context() else None
         if not is_within_delivery_area(db, delivery_location_lat, delivery_location_lon, campus_id_for_check):
-            raise ValueError("This location is outside our delivery area.")
+            raise ValueError(MSG.DELIVERY_OUTSIDE_AREA)
         nearest_gate = find_nearest_gate(db, delivery_location_lat, delivery_location_lon, campus_id_for_check)
         if nearest_gate:
             delivery_location_id = nearest_gate["id"]
@@ -664,9 +664,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     if user_id is None:
         if payment_method in ("wallet", "split") and wallet_amount_used > 0:
-            raise ValueError("Guest orders cannot use wallet payments.")
+            raise ValueError(MSG.GUEST_NO_WALLET_PAYMENTS)
         if not payload.get("guest_name") or not payload.get("guest_phone") or not payload.get("guest_email"):
-            raise ValueError("Guest orders require guest_name, guest_phone, and guest_email.")
+            raise ValueError(MSG.GUEST_DETAILS_REQUIRED)
 
     # Pre-check wallet balance before inserting order (for both wallet and split payment methods)
     if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
@@ -813,9 +813,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             db.table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot})
 
     order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
+    order_source = payload.get("order_source") or payload.get("source")
+    if order_source and result.get("order_id"):
+        try:
+            db.table("orders").eq("id", result["order_id"]).update({"order_source": order_source}).execute()
+        except Exception as _ose:
+            logger.warning("create_order: failed to set order_source: %s", _ose)
+
     if order and isinstance(order, dict):
         order["total_amount"] = rpc_total
         order["order_lock_discount_applied"] = discount_applied
+        if order_source:
+            order["order_source"] = order_source
 
         if payload.get("order_source"):
             try:
@@ -1355,7 +1364,7 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
             .execute()
         )
         if len(user_uses or []) >= int(promo["max_uses_per_user"]):
-            raise ValueError("You have already used this promo code the maximum number of times")
+            raise ValueError(MSG.PROMO_CODE_MAX_USES)
 
     if promo["discount_type"] == "percentage":
         discount = order_subtotal * float(promo["discount_value"]) / 100

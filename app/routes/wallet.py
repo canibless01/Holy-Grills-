@@ -110,6 +110,7 @@ def fund_via_card():
             "authorization_url": result["authorization_url"],
             "access_code": result["access_code"],
             "reference": reference,
+            "message": MSG.WALLET_CARD_FUNDING_INITIATED,
         }), 200
     except ValueError as e:
         # Payment gateway rejected the request (bad key, validation error, etc.)
@@ -145,7 +146,7 @@ def request_virtual_account():
         .execute()
     )
     if existing:
-        return jsonify({"virtual_account": existing[0], "created": False}), 200
+        return jsonify({"virtual_account": existing[0], "created": False, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 200
 
     profile = (
         db.table("profiles")
@@ -190,7 +191,7 @@ def request_virtual_account():
             if campus_id:
                 mock_payload["campus_id"] = campus_id
             db.table("virtual_accounts").insert(mock_payload).execute()
-            return jsonify({"virtual_account": mock_account, "created": True, "mock": True}), 201
+            return jsonify({"virtual_account": mock_account, "created": True, "mock": True, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 201
         return jsonify({
             "error": MSG.WALLET_VA_FAILED.format(error=err_str),
             "sandbox_info": (
@@ -227,7 +228,7 @@ def request_virtual_account():
                 .execute()
             )
             if existing_now:
-                return jsonify({"virtual_account": existing_now[0], "created": False}), 200
+                return jsonify({"virtual_account": existing_now[0], "created": False, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 200
         current_app.logger.error(
             "request_virtual_account: DB insert failed for user %s, account %s: %s",
             g.user_id, account.get("account_number"), ins_err
@@ -237,7 +238,7 @@ def request_virtual_account():
             "virtual_account": account,
         }), 500
 
-    return jsonify({"virtual_account": account, "created": True}), 201
+    return jsonify({"virtual_account": account, "created": True, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 201
 
 
 

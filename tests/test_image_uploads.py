@@ -72,7 +72,8 @@ def test_profile_photo_upload_success(client):
             json={"photo_url": "https://cloudinary.com/user.jpg"},
         )
         assert resp.status_code == 200
-        assert resp.get_json() == {"photo_url": "https://cloudinary.com/user.jpg"}
+        assert resp.get_json()["photo_url"] == "https://cloudinary.com/user.jpg"
+        assert resp.get_json()["message"] == "Profile photo updated"
 
 
 def test_profile_photo_upload_missing_param(client):
@@ -234,7 +235,8 @@ def test_review_images_upload_success(client):
             json={"image_urls": ["https://cloudinary.com/rev1.jpg", "https://cloudinary.com/rev2.jpg"]},
         )
         assert resp.status_code == 200
-        assert resp.get_json() == {"image_urls": ["https://cloudinary.com/rev1.jpg", "https://cloudinary.com/rev2.jpg"]}
+        assert resp.get_json()["image_urls"] == ["https://cloudinary.com/rev1.jpg", "https://cloudinary.com/rev2.jpg"]
+        assert resp.get_json()["message"] == "Photos added to your review"
 
 
 def test_review_images_upload_missing_param(client):

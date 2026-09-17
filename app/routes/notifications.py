@@ -196,6 +196,8 @@ def mark_read(notification_id):
     """
     from app.services.notification_service import mark_read as _mark_read
     result = _mark_read(notification_id, g.user_id)
+    if isinstance(result, dict):
+        result["message"] = MSG.NOTIFICATION_MARKED_READ
     return jsonify(result), 200
 
 
@@ -313,6 +315,8 @@ def update_preferences():
             .single()
             .execute()
         )
+        if isinstance(result, dict):
+            result["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
         return jsonify(result), 200
     except Exception as exc:
         err = str(exc)
@@ -327,6 +331,7 @@ def update_preferences():
                 "delivery_updates": True,
             }
             merged.update({k: v for k, v in update.items() if k != "updated_at"})
+            merged["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
             return jsonify(merged), 200
         raise
 

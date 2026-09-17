@@ -234,7 +234,7 @@ def test_validate_coordinates_futa_bounds():
         validate_coordinates(95.0, 5.20)
 
     # Geographic boundary violation (not in Nigeria)
-    with pytest.raises(ValueError, match="outside the supported region"):
+    with pytest.raises(ValueError, match="outside.*supported.*region"):
         validate_coordinates(45.0, -120.0)
 
 
