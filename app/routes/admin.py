@@ -1980,3 +1980,64 @@ def delete_spin_pool_prize(prize_id):
         return jsonify({"error": "Deactivation failed"}), 404
 
     return jsonify({"message": "Prize deactivated"}), 200
+
+
+@admin_bp.route("/webhook-events", methods=["GET"])
+@require_role("admin")
+def list_webhook_events():
+    """
+    List webhook event logs (admin only).
+    Uses service-role client (get_db()) because RLS is enabled on webhook_events.
+    ---
+    tags: [Admin]
+    parameters:
+      - in: query
+        name: provider
+        type: string
+      - in: query
+        name: status
+        type: string
+      - in: query
+        name: from_date
+        type: string
+        format: date
+      - in: query
+        name: to_date
+        type: string
+        format: date
+      - in: query
+        name: limit
+        type: integer
+        default: 50
+      - in: query
+        name: offset
+        type: integer
+        default: 0
+    responses:
+      200:
+        description: Webhook events list
+    """
+    db = get_db()
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+
+    q = db.table("webhook_events").select("*")
+
+    provider = request.args.get("provider")
+    if provider:
+        q = q.eq("provider", provider)
+
+    status = request.args.get("status")
+    if status:
+        q = q.eq("status", status)
+
+    from_date = request.args.get("from_date")
+    if from_date:
+        q = q.gte("created_at", from_date)
+
+    to_date = request.args.get("to_date")
+    if to_date:
+        q = q.lte("created_at", to_date + ("T23:59:59Z" if "T" not in to_date else ""))
+
+    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    return jsonify({"webhook_events": rows, "count": len(rows)}), 200

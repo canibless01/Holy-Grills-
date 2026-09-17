@@ -628,7 +628,7 @@ def register_for_event(event_id):
     use_hp = bool(data.get("use_hp"))  # explicit opt-in only -- never automatic
     if use_hp:
         if price_hp <= 0:
-            return jsonify({"error": "This ticket has no HP discount available"}), 400
+            return jsonify({"error": MSG.TICKET_NO_HP_DISCOUNT}), 400
         from app.services.hp_service import get_hp_balance
         balance = get_hp_balance(user_id)
         if balance.get("active", 0) < price_hp:
@@ -768,11 +768,11 @@ def download_ticket_pdf(event_id, ticket_id):
     user_id = getattr(g, "user_id", None)
     if ticket.get("user_id"):
         if not user_id or str(ticket["user_id"]) != str(user_id):
-            return jsonify({"error": "You do not have access to this ticket"}), 403
+            return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
     else:
         provided_email = (request.args.get("guest_email") or "").strip().lower()
         if not provided_email or provided_email != (ticket.get("guest_email") or "").lower():
-            return jsonify({"error": "You do not have access to this ticket"}), 403
+            return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
 
     event = db.table("events").select("title,starts_at,ends_at,location").eq("id", event_id).single().execute() or {}
     tier = None
@@ -965,6 +965,29 @@ def update_catering_request(request_id):
             return jsonify({"error": MSG.EVENT_ASSIGNED_TO_NOT_STAFF}), 400
 
     result = db.table("catering_requests").eq("id", request_id).update(safe)
+
+    if "status" in safe and safe["status"] in ("quoted", "completed", "cancelled") and row.get("email"):
+        try:
+            from app.utils.email import send_email_raw, _build_html
+            requester_name = row.get("organizer_name") or "there"
+            new_status = safe["status"]
+            subject = f"Catering Request Update: {new_status.title()}"
+            body_text = f"Hello {requester_name},\n\nYour catering request status has been updated to '{new_status}'."
+            if safe.get("quoted_amount") is not None:
+                body_text += f"\nQuoted Amount: ₦{safe['quoted_amount']:.2f}"
+            if safe.get("notes"):
+                body_text += f"\nNotes: {safe['notes']}"
+
+            html_body = _build_html(requester_name, body_text, "Holy Grills")
+            import threading
+            threading.Thread(
+                target=send_email_raw,
+                args=(row["email"], requester_name, subject, html_body),
+                daemon=True,
+            ).start()
+        except Exception as e:
+            logger.warning("update_catering_request: email notification failed for %s: %s", row.get("email"), e)
+
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -1004,7 +1027,7 @@ def submit_catering_request():
 
     campus_id = getattr(g, "campus_id", None) or _get_campus_id()
     if not campus_id:
-        return jsonify({"error": "campus_id is required"}), 400
+        return jsonify({"error": MSG.CAMPUS_ID_REQUIRED}), 400
     data["campus_id"] = campus_id
     data["status"] = "new"
     result = db.table("catering_requests").insert(data)

@@ -817,6 +817,13 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         order["total_amount"] = rpc_total
         order["order_lock_discount_applied"] = discount_applied
 
+        if payload.get("order_source"):
+            try:
+                db.table("orders").eq("id", result["order_id"]).update({"order_source": payload.get("order_source")}).execute()
+                order["order_source"] = payload.get("order_source")
+            except Exception:
+                pass
+
         if user_id and not is_squad_order:
             try:
                 from app.services.tier_service import try_claim_monthly_free_delivery
