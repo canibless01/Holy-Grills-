@@ -439,11 +439,16 @@ def transfer_hp():
             "completed_orders": completed_count,
         }), 400
 
-    recipient = db.table("profiles").select("id,full_name").eq("id", recipient_id).single().execute()
+    recipient = db.table("profiles").select("id,full_name,campus_id").eq("id", recipient_id).single().execute()
     if not recipient:
         return jsonify({"error": MSG.HP_TRANSFER_USER_NOT_FOUND}), 404
 
-    sender = db.table("profiles").select("full_name").eq("id", g.user_id).single().execute()
+    sender = db.table("profiles").select("full_name,campus_id").eq("id", g.user_id).single().execute()
+    sender_campus = getattr(g, "campus_id", None) or (sender or {}).get("campus_id")
+    recipient_campus = recipient.get("campus_id")
+    if sender_campus and recipient_campus and sender_campus != recipient_campus:
+        return jsonify({"error": "You can only transfer HP to students on your own campus."}), 400
+
     sender_name = (sender or {}).get("full_name", "Someone")
     recipient_name = recipient.get("full_name", "Someone")
 

@@ -9,7 +9,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from app.config import Config
 from app.utils.logger import get_logger
 from app.routes.health import health_bp
-from app.routes.auth import auth_bp
+from app.routes.auth import auth_bp, users_bp
 from app.routes.menu import menu_bp
 from app.routes.orders import orders_bp
 from app.routes.hp import hp_bp
@@ -35,7 +35,7 @@ from app.routes.delivery import delivery_bp
 from app.routes.graduation import graduation_bp
 from app.routes.departments import departments_bp, admin_departments_bp
 from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
-from app.routes.academic_calendar import admin_academic_calendar_bp
+from app.routes.academic_calendar import academic_calendar_bp, admin_academic_calendar_bp
 from app.routes.free_sides import free_sides_bp
 from app.routes.exclusive_spin import exclusive_spin_bp
 from app.routes.admin_feature_flags import admin_flags_bp
@@ -106,6 +106,7 @@ def create_app(config_class=Config):
     Swagger(app, config=swagger_config, template=swagger_template)
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
+    app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(menu_bp, url_prefix="/api/menu")
     app.register_blueprint(orders_bp, url_prefix="/api/orders")
     app.register_blueprint(hp_bp, url_prefix="/api/hp")
@@ -136,6 +137,7 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_departments_bp, url_prefix="/api/admin")
     app.register_blueprint(academic_levels_bp, url_prefix="/api/academic-levels")
     app.register_blueprint(admin_academic_levels_bp, url_prefix="/api/admin")
+    app.register_blueprint(academic_calendar_bp, url_prefix="/api/academic-calendar")
     app.register_blueprint(admin_academic_calendar_bp, url_prefix="/api/admin")
     app.register_blueprint(free_sides_bp, url_prefix="/api/free-sides")
     app.register_blueprint(exclusive_spin_bp, url_prefix="/api/exclusive-spin")

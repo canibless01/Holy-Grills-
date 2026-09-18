@@ -1372,8 +1372,18 @@ def add_squad_members(order_id):
 
     data = request.get_json(force=True) or {}
     emails = [e.strip().lower() for e in (data.get("emails") or []) if e and e.strip()]
+    user_ids = [u.strip() for u in (data.get("user_ids") or []) if u and u.strip()]
+    if user_ids:
+        try:
+            u_profiles = db.table("profiles").select("id,email").in_("id", user_ids).execute() or []
+            for p in (u_profiles if isinstance(u_profiles, list) else []):
+                if p.get("email"):
+                    emails.append(p["email"].strip().lower())
+        except Exception:
+            pass
+    emails = list(dict.fromkeys(emails))
     if not emails:
-        return jsonify({"error": MSG.SQUAD_EMAILS_REQUIRED}), 400
+        return jsonify({"error": "At least one email or user_id is required"}), 400
 
     split_hp = data.get("split_hp", True)
     organizer_profile = (

@@ -12,6 +12,7 @@ from app.messages import MSG, resolve_msg
 from datetime import datetime, timezone
 
 auth_bp = Blueprint("auth", __name__)
+users_bp = Blueprint("users", __name__)
 
 
 @with_retry()
@@ -821,3 +822,81 @@ def logout_all_devices():
         "message": MSG.LOGOUT_ALL_DEVICES_OK,
         "devices_revoked": devices_revoked,
     }), 200
+
+
+@users_bp.route("/search", methods=["GET"])
+@auth_bp.route("/users/search", methods=["GET"])
+@require_auth
+def search_users():
+    """
+    Search users on the requesting user's campus by name, nickname, or email.
+    ---
+    tags: [Auth]
+    parameters:
+      - in: query
+        name: q
+        type: string
+        required: true
+        description: Search term (e.g. "chidi" or "chidi@futa.edu.ng")
+    responses:
+      200:
+        description: Search results
+      400:
+        description: Search term missing
+    """
+    q_raw = (request.args.get("q") or "").strip()
+    if not q_raw:
+        return jsonify({"results": []}), 200
+
+    db = get_user_client()
+    campus_id = getattr(g, "campus_id", None)
+    my_user_id = g.user_id
+
+    q_clean = q_raw.replace("%", "").replace("*", "").replace("(", "").replace(")", "").strip()
+    if not q_clean:
+        return jsonify({"results": []}), 200
+
+    q_pattern = f"*{q_clean}*"
+    or_conds = [f"full_name.ilike.{q_pattern}", f"nickname.ilike.{q_pattern}"]
+    if "@" in q_raw:
+        or_conds.append(f"email.ilike.{q_pattern}")
+    or_filter = ",".join(or_conds)
+
+    results = []
+    try:
+        query = db.table("profiles").select("id,full_name,nickname,email,campus_id").neq("id", my_user_id)
+        if campus_id:
+            query = query.eq("campus_id", campus_id)
+        query = query.or_(or_filter).limit(20)
+        rows = query.execute() or []
+        for r in rows:
+            results.append({
+                "id": r.get("id"),
+                "full_name": r.get("full_name") or r.get("nickname") or "Student",
+                "nickname": r.get("nickname"),
+                "email": r.get("email"),
+            })
+    except Exception:
+        try:
+            base_q = db.table("profiles").select("id,full_name,nickname,email,campus_id").neq("id", my_user_id)
+            if campus_id:
+                base_q = base_q.eq("campus_id", campus_id)
+            all_rows = base_q.limit(100).execute() or []
+            q_lower = q_clean.lower()
+            for r in all_rows:
+                fn = (r.get("full_name") or "").lower()
+                nk = (r.get("nickname") or "").lower()
+                em = (r.get("email") or "").lower()
+                if q_lower in fn or q_lower in nk or ("@" in q_raw and q_lower in em):
+                    results.append({
+                        "id": r.get("id"),
+                        "full_name": r.get("full_name") or r.get("nickname") or "Student",
+                        "nickname": r.get("nickname"),
+                        "email": r.get("email"),
+                    })
+                    if len(results) >= 20:
+                        break
+        except Exception:
+            results = []
+
+    return jsonify({"results": results}), 200
