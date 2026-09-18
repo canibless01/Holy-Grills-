@@ -33,9 +33,9 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "order_cancelled", "order_refunded", "order_unclaimed",
     "order_thank_you", "satisfaction_check", "reengagement_nudge",
     # HP
-    "hp_earned", "hp_unlocked", "hp_decay",
+    "hp_earned", "hp_unlocked", "hp_decay_applied",
     # Tier
-    "tier_upgrade", "tier_dropped", "tier_grace_period",
+    "tier_upgrade", "tier_downgrade", "tier_grace_period",
     # Wallet
     "wallet_funded", "wallet_funded_card", "wallet_funded_bank",
     "payment_confirmed",
