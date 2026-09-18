@@ -149,6 +149,12 @@ NOTIFICATION_TEMPLATES: dict = {
         "include_name": True,
         "channels":     None,
     },
+    "order_scheduled_deferred": {
+        "title":        MSG.ORDER_SCHEDULED_DEFERRED_TITLE,
+        "body":         MSG.ORDER_SCHEDULED_DEFERRED_BODY,
+        "include_name": True,
+        "channels":     None,
+    },
     "account_deactivated": {
         "title":        MSG.NOTIF_ACCOUNT_DEACTIVATED_TITLE,
         "body":         MSG.NOTIF_ACCOUNT_DEACTIVATED_BODY,
