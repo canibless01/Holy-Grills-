@@ -532,20 +532,24 @@ def create_window():
     """
     db = get_user_client()
     data = request.get_json(force=True) or {}
-    if "opens_at" in data:
-        data["starts_at"] = data.pop("opens_at")
-    if "closes_at" in data:
-        data["ends_at"] = data.pop("closes_at")
+    if "starts_at" in data and "ends_at" in data:
+        for f in ("label", "starts_at", "ends_at"):
+            if not data.get(f):
+                return jsonify({"error": MSG.ADMIN_FIELD_REQUIRED.format(field=f)}), 400
+        ok, err = validate_datetime_order(data["starts_at"], data["ends_at"])
+        if not ok:
+            return jsonify({"error": err}), 400
+    elif "opens_at" in data and "closes_at" in data:
+        for f in ("label", "opens_at", "closes_at"):
+            if not data.get(f):
+                return jsonify({"error": MSG.ADMIN_FIELD_REQUIRED.format(field=f)}), 400
+    else:
+        for f in ("label", "starts_at", "ends_at"):
+            if not data.get(f):
+                return jsonify({"error": MSG.ADMIN_FIELD_REQUIRED.format(field=f)}), 400
 
-    for f in ("label", "starts_at", "ends_at"):
-        if not data.get(f):
-            return jsonify({"error": MSG.ADMIN_FIELD_REQUIRED.format(field=f)}), 400
-    if not isinstance(data["label"], str) or not data["label"].strip():
+    if not isinstance(data.get("label"), str) or not data["label"].strip():
         return jsonify({"error": "label must be a non-empty string"}), 400
-
-    ok, err = validate_datetime_order(data["starts_at"], data["ends_at"])
-    if not ok:
-        return jsonify({"error": err}), 400
 
     if "capacity" in data and data["capacity"] is not None:
         try:
@@ -559,8 +563,12 @@ def create_window():
     if "is_active" in data and not isinstance(data["is_active"], bool):
         return jsonify({"error": "is_active must be a boolean"}), 400
 
-    # Only insert columns that exist in delivery_windows
-    WINDOW_COLS = {"label", "starts_at", "ends_at", "capacity", "is_active", "campus_id", "zone_id"}
+    WINDOW_COLS = {
+        "label", "starts_at", "ends_at", "capacity", "is_active",
+        "campus_id", "zone_id",
+        "weekday", "date", "opens_at", "closes_at", "is_closed", "reason",
+        "linked_delivery_window_id",
+    }
     safe = {k: v for k, v in data.items() if k in WINDOW_COLS}
     campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id and "campus_id" not in safe:

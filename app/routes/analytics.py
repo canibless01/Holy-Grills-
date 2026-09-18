@@ -768,7 +768,7 @@ def academic_calendar_analytics():
         description: Order trends across academic calendar periods
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     q = db.table("academic_calendar").select("*")
     if campus_id:
@@ -829,7 +829,7 @@ def order_sources_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -875,7 +875,7 @@ def order_motivations_analytics():
     """
     db = get_user_client()
     q = db.table("order_motivations").select("id,motivation")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     rows = q.execute() or []
