@@ -1,32 +1,92 @@
-"""Academic Calendar routes — admin management of academic periods.
+"""Academic Calendar routes — public listing and admin CRUD.
 
-Admin endpoints:
-  POST  /api/admin/academic-calendar       — create entry
+Public / Student-facing:
+  GET /api/academic-calendar          — list active entries for campus
+  GET /api/academic-calendar/current  — get currently active term/period
+
+Admin:
   GET   /api/admin/academic-calendar       — list entries
+  POST  /api/admin/academic-calendar       — create entry
   PATCH /api/admin/academic-calendar/<id>  — update entry or set is_active: false
 """
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, optional_auth
 from app.db import get_user_client
+from app.utils.tz import today_wat
 from datetime import datetime, timezone
 
+academic_calendar_bp = Blueprint("academic_calendar", __name__)
 admin_academic_calendar_bp = Blueprint("admin_academic_calendar", __name__)
 
+
+# ---------------------------------------------------------------------------
+# Public / Student-facing endpoints
+# ---------------------------------------------------------------------------
+
+@academic_calendar_bp.route("", methods=["GET"])
+@optional_auth
+def list_active_academic_calendar():
+    """
+    List active academic calendar entries for the campus.
+    """
+    db = get_user_client()
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    try:
+        q = db.table("academic_calendar").select("*").eq("is_active", True)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        if request.args.get("period_type"):
+            q = q.eq("period_type", request.args.get("period_type"))
+        if request.args.get("academic_year"):
+            q = q.eq("academic_year", request.args.get("academic_year"))
+
+        rows = q.order("start_date", ascending=False).execute() or []
+    except Exception:
+        rows = []
+    return jsonify({"academic_calendar": rows, "count": len(rows)}), 200
+
+
+@academic_calendar_bp.route("/current", methods=["GET"])
+@optional_auth
+def get_current_academic_period():
+    """
+    Get the currently active academic term/period based on today's WAT date.
+    """
+    db = get_user_client()
+    today_str = today_wat().isoformat()
+    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    try:
+        q = db.table("academic_calendar").select("*").eq("is_active", True)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+        q = q.lte("start_date", today_str).gte("end_date", today_str)
+        rows = q.order("start_date", ascending=False).execute() or []
+        current_period = rows[0] if rows else None
+    except Exception:
+        current_period = None
+
+    if not current_period:
+        return jsonify({"current_period": None, "message": "No active term for current date"}), 200
+    return jsonify({"current_period": current_period}), 200
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
 
 @admin_academic_calendar_bp.route("/academic-calendar", methods=["GET"])
 @require_role("admin")
 def list_academic_calendar_entries():
     """
-    List academic calendar entries.
-    Admin only.
+    List academic calendar entries (admin only).
     """
     db = get_user_client()
     try:
         q = db.table("academic_calendar").select("*")
         if request.args.get("campus_id"):
             q = q.eq("campus_id", request.args.get("campus_id"))
-        elif getattr(g, "campus_id", None) and g.user_role != "super_admin":
+        elif getattr(g, "campus_id", None) and getattr(g, "user_role", None) != "super_admin":
             q = q.eq("campus_id", g.campus_id)
 
         if request.args.get("period_type"):
@@ -46,8 +106,7 @@ def list_academic_calendar_entries():
 @require_role("admin")
 def create_academic_calendar_entry():
     """
-    Create an academic calendar entry.
-    Admin only. Requires period_type, name, start_date, end_date, academic_year.
+    Create an academic calendar entry (admin only).
     """
     data = request.get_json(force=True) or {}
     required = ["period_type", "name", "start_date", "end_date", "academic_year"]
@@ -90,8 +149,7 @@ def create_academic_calendar_entry():
 @require_role("admin")
 def update_academic_calendar_entry(entry_id):
     """
-    Update an academic calendar entry or set is_active: false.
-    Admin only.
+    Update an academic calendar entry or set is_active: false (admin only).
     """
     db = get_user_client()
     existing = None

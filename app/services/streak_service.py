@@ -605,14 +605,15 @@ def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> 
 def _award_order_streak_hp(db, user_id: str, streak_weeks: int) -> int:
     """
     Award HP for hitting an order streak milestone.
-    Reads from order_streak_rewards (exact weeks match only).
+    Reads from order_streak_rewards (capped at week 12 so week 13+ plateaus at 350 HP).
     HP destination: Active.
     """
+    lookup_weeks = min(streak_weeks, 12)
     try:
         row = (
             db.table("order_streak_rewards")
             .select("hp_awarded")
-            .eq("weeks", streak_weeks)
+            .eq("weeks", lookup_weeks)
             .eq("is_active", "true")
             .single()
             .execute()

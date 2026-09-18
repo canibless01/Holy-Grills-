@@ -12,6 +12,7 @@ from app.messages import MSG, resolve_msg
 from datetime import datetime, timezone
 
 auth_bp = Blueprint("auth", __name__)
+users_bp = Blueprint("users", __name__)
 
 
 @with_retry()
@@ -823,6 +824,7 @@ def logout_all_devices():
     }), 200
 
 
+@users_bp.route("/search", methods=["GET"])
 @auth_bp.route("/users/search", methods=["GET"])
 @require_auth
 def search_users():

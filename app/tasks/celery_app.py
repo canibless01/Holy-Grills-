@@ -99,6 +99,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.scheduled.membership_anniversary_awards",
         "schedule": crontab(hour=6, minute=0),
     },
+    "send-scheduled-blasts": {
+        "task": "app.tasks.scheduled.send_scheduled_blasts",
+        "schedule": crontab(minute="*/15"),
+    },
     "send-scheduled-notifications": {
         "task": "app.tasks.scheduled.send_scheduled_notifications",
         "schedule": crontab(minute="*/15"),

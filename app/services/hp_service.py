@@ -63,7 +63,7 @@ def get_hp_balance(user_id: str) -> dict:
     try:
         profile = (
             db.table("profiles")
-            .select("hp_balance,hp_earned_120day")
+            .select("hp_balance,hp_earned_120day,tier_grace_ends_at,tier_grace_started_at")
             .eq("id", user_id)
             .single()
             .execute()
@@ -107,6 +107,8 @@ def get_hp_balance(user_id: str) -> dict:
         "hp_earned_120day": max(0, hp_earned_120day),
         "tier_bonus_multiplier": multiplier,
         "tier": tier_info,
+        "tier_grace_ends_at": profile.get("tier_grace_ends_at"),
+        "tier_grace_started_at": profile.get("tier_grace_started_at"),
     }
 
 
