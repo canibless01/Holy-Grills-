@@ -116,6 +116,7 @@ class MSG:
     GUEST_NAME_REQUIRED               = "Full name is required for guest registration."
     GUEST_PHONE_REQUIRED              = "Phone number is required for guest registration."
     GUEST_ALREADY_REGISTERED          = "This email is already registered for this event."
+    ALREADY_REGISTERED_FOR_EVENT      = "You are already registered for this event."
     TIER_FEATURES_INVALID             = "Features must be an array of strings."
     TIER_TERMS_INVALID                = "Terms must be an array of strings."
     TIER_EARLY_BIRD_DEADLINE_REQUIRED = "Early bird deadline is required when is_early_bird is true."
