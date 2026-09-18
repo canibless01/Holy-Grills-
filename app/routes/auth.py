@@ -7,12 +7,14 @@ from app.middleware.auth import require_auth, optional_auth, _resolve_default_ca
 from app.middleware.rate_limit import rate_limit
 from app.services import auth_service, streak_service
 from app.utils.retry import with_retry
+from app.utils.logger import get_logger
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG, resolve_msg
 from datetime import datetime, timezone
 
 auth_bp = Blueprint("auth", __name__)
 users_bp = Blueprint("users", __name__)
+logger = get_logger(__name__)
 
 
 @with_retry()
@@ -158,14 +160,14 @@ def login():
         try:
             profile = get_db().table("profiles").select("campus_id").eq("id", user_id).single().execute()
             campus_id = (profile or {}).get("campus_id")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("login: failed to load campus for streak processing for user %s: %s", user_id, exc)
 
         try:
             from app.services.streak_service import process_login_streak as _pls
             _pls(user_id, campus_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("login: process_login_streak failed for user %s: %s", user_id, exc)
 
 
     result["message"] = MSG.LOGIN_SUCCESS
