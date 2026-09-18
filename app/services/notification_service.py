@@ -149,8 +149,8 @@ def _log_notification(db, user_id: str, notif_type: str) -> None:
             "type": notif_type,
             "sent_at": datetime.now(timezone.utc).isoformat(),
         })
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("notification_log: failed to record throttle event for user %s, type %s: %s", user_id, notif_type, exc)
 
 
 def get_notification_channels(notif_type: str, extra: list = None) -> list:
@@ -674,7 +674,7 @@ def send_blast(blast_id: str) -> dict:
             first = (full_name or "").split()[0] if full_name else "there"
             notif_title = title_tpl.replace("{name}", first)
             notif_body = body_tpl.replace("{name}", first)
-        send_notification(
+        sent_records = send_notification(
             user_id=uid,
             notif_type=f"blast_{blast_id}",
             title=notif_title,
@@ -682,7 +682,8 @@ def send_blast(blast_id: str) -> dict:
             channels=channels,
             email_provider=blast.get("email_provider"),  # Part B4 — per-blast provider override
         )
-        count += 1
+        if sent_records:
+            count += 1
 
     db.table("notification_blasts").eq("id", blast_id).update({"status": "sent"})
     return {"sent_to": count}
