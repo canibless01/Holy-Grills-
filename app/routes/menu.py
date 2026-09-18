@@ -507,7 +507,7 @@ def get_item(item_id):
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
     if campus_id and item.get("campus_id") and item.get("campus_id") != campus_id:
-        return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
+        return jsonify({"error": "Item not found"}), 404
 
     groups = (
         db.table("menu_item_variation_groups")

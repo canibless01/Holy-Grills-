@@ -68,12 +68,12 @@ def create_lock():
         has_active = True
 
     if has_active:
-        return jsonify({"error": MSG.ORDER_LOCK_ALREADY_ACTIVE}), 400
+        return jsonify({"error": "User already has an active lock"}), 400
 
     # reward_type: 'discount' (default) or 'hp'
     reward_type = (data.get("reward_type") or "discount").lower()
     if reward_type not in ("discount", "hp"):
-        return jsonify({"error": MSG.ORDER_LOCK_REWARD_TYPE_INVALID}), 400
+        return jsonify({"error": "reward_type must be 'discount' or 'hp'"}), 400
 
     # Retrieve values strictly from system settings (client-provided values are strictly ignored)
     discount_pct = None
@@ -136,7 +136,7 @@ def create_lock():
     except SupabaseError as exc:
         err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
         if "uq_order_locks_one_active_per_user" in err_msg or "unique constraint" in err_msg.lower():
-            return jsonify({"error": MSG.ORDER_LOCK_ALREADY_ACTIVE}), 400
+            return jsonify({"error": "User already has an active lock"}), 400
         is_missing_col = "column" in err_msg and "does not exist" in err_msg
         if is_missing_col:
             # Fallback: strip columns that may not exist yet in older schemas

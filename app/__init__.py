@@ -20,7 +20,7 @@ from app.routes.events import events_bp
 from app.routes.referrals import referrals_bp
 from app.routes.notifications import notifications_bp, push_bp
 from app.routes.admin import admin_bp
-from app.routes.kitchen import kitchen_bp, units_bp, stock_bp
+from app.routes.kitchen import kitchen_bp
 from app.routes.riders import riders_bp
 from app.routes.leaderboard import leaderboard_bp
 from app.routes.challenges import challenges_bp
@@ -118,8 +118,6 @@ def create_app(config_class=Config):
     app.register_blueprint(push_bp, url_prefix="/api/push")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(kitchen_bp, url_prefix="/api/kitchen")
-    app.register_blueprint(units_bp, url_prefix="/api/measurement-units")
-    app.register_blueprint(stock_bp, url_prefix="/api/admin/stock-items")
     app.register_blueprint(riders_bp, url_prefix="/api/riders")
     app.register_blueprint(leaderboard_bp, url_prefix="/api/leaderboard")
     app.register_blueprint(challenges_bp, url_prefix="/api/challenges")

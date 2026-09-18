@@ -119,7 +119,7 @@ def claim_graduation():
         )
     except Exception as e:
         db.table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
-        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 500
+        return jsonify({"error": "Failed to award graduation HP — please try again"}), 500
 
     # Fire graduation badge trigger
     try:

@@ -176,26 +176,29 @@ def update_setting(key):
         try:
             mult_val = float(str(value))
             if mult_val > 1.0:
-                _broadcast_multiplier_event(db, mult_val)
+                _broadcast_multiplier_event(db, mult_val, campus_id=campus_id)
         except Exception:
             pass  # non-critical — setting is saved regardless
 
     return jsonify({"message": MSG.SETTING_UPDATED, "key": key, "value": str(value)}), 200
 
 
-def _broadcast_multiplier_event(db, multiplier: float):
-    """Send a push + in-app notification to all active users when a multiplier event goes live."""
+def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
+    """Send a push + in-app notification to active users when a multiplier event goes live."""
     try:
         from app.services.notification_service import send_notification
-        from app.messages import MSG
-        users = db.table("profiles").select("id").eq("is_active", True).execute() or []
+        from app.messages import MSG, resolve_msg
+        query = db.table("profiles").select("id").eq("is_active", True)
+        if campus_id is not None:
+            query = query.eq("campus_id", campus_id)
+        users = query.execute() or []
         for user in users:
             try:
                 send_notification(
                     user_id=user["id"],
                     notif_type="multiplier_live",
                     title=MSG.MULTIPLIER_LIVE_TITLE,
-                    body=MSG.MULTIPLIER_LIVE_BODY.format(multiplier=multiplier),
+                    body=resolve_msg(MSG.MULTIPLIER_LIVE_BODY, multiplier=multiplier),
                     channels=["push", "in_app"],
                 )
             except Exception:

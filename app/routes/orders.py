@@ -400,7 +400,7 @@ def add_review_images(order_id):
     image_urls = data.get("image_urls")
 
     if not image_urls or not isinstance(image_urls, list):
-        return jsonify({"error": MSG.REVIEW_IMAGES_REQUIRED}), 400
+        return jsonify({"error": "image_urls is required"}), 400
 
     db = get_user_client()
     result = (
@@ -563,7 +563,7 @@ def claim_guest_order(order_id):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     if order.get("user_id"):
-        return jsonify({"error": MSG.ORDER_ALREADY_CLAIMED}), 400
+        return jsonify({"error": "Order is already owned or claimed"}), 400
 
     if not order.get("claim_token") or order["claim_token"] != claim_token:
         return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
@@ -622,13 +622,13 @@ def refund_order(order_id):
 
     # Pre-checks for final canceled / unrefundable states
     if order.get("status") == "cancelled" and order.get("payment_status") != "paid":
-        return jsonify({"error": MSG.REFUND_UNPAID_CANCELLED}), 400
+        return jsonify({"error": "Cannot refund an unpaid cancelled order"}), 400
 
     wallet_amount_used = float(order.get("wallet_amount_used") or 0)
     card_amount_used = float(order.get("card_amount_used") or 0)
     refund_amount = float(data.get("refund_amount") or (wallet_amount_used + card_amount_used))
     if refund_amount <= 0:
-        return jsonify({"error": MSG.REFUND_AMOUNT_INVALID}), 400
+        return jsonify({"error": "Invalid refund amount"}), 400
 
     try:
         reservation = db.rpc("hg_reserve_order_refund", {
@@ -653,7 +653,7 @@ def refund_order(order_id):
         refundable_total = refundable_wallet + refundable_card
 
         if refundable_total <= 0:
-            return jsonify({"error": MSG.REFUND_ALREADY_FULL}), 400
+            return jsonify({"error": "This order has already been fully refunded."}), 400
 
         if refund_amount > refundable_total:
             return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable_total}"}), 400
@@ -1372,8 +1372,18 @@ def add_squad_members(order_id):
 
     data = request.get_json(force=True) or {}
     emails = [e.strip().lower() for e in (data.get("emails") or []) if e and e.strip()]
+    user_ids = [u.strip() for u in (data.get("user_ids") or []) if u and u.strip()]
+    if user_ids:
+        try:
+            u_profiles = db.table("profiles").select("id,email").in_("id", user_ids).execute() or []
+            for p in (u_profiles if isinstance(u_profiles, list) else []):
+                if p.get("email"):
+                    emails.append(p["email"].strip().lower())
+        except Exception:
+            pass
+    emails = list(dict.fromkeys(emails))
     if not emails:
-        return jsonify({"error": MSG.SQUAD_EMAILS_REQUIRED}), 400
+        return jsonify({"error": "At least one email is required"}), 400
 
     split_hp = data.get("split_hp", True)
     organizer_profile = (

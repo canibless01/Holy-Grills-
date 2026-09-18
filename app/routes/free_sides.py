@@ -101,7 +101,7 @@ def redeem_free_side():
 
     order_id = data.get("order_id")
     if not order_id:
-        return jsonify({"error": MSG.FREE_SIDE_ORDER_ID_REQUIRED}), 400
+        return jsonify({"error": "order_id is required"}), 400
 
     import uuid as _uuid
     try:
@@ -120,7 +120,7 @@ def redeem_free_side():
         "assigned", "out_for_delivery", "delivery_attempted", "unclaimed",
     }
     if order.get("status") not in _MODIFIABLE_STATUSES:
-        return jsonify({"error": MSG.ORDER_NOT_MODIFIABLE}), 400
+        return jsonify({"error": "This order can no longer be modified"}), 400
 
     side_choice = (data.get("side_choice") or "").strip()
     if not side_choice:
@@ -159,7 +159,7 @@ def redeem_free_side():
             logger.error("redeem_free_side OCC update failed for credit row %s: %s", credit_row["id"], e)
 
     if not success:
-        return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS_RETRY}), 409
+        return jsonify({"error": "No credits available or concurrent update occurred. Please try again."}), 409
 
     # Attach free line item to the order in order_items table using service role write_db
     try:
@@ -184,7 +184,7 @@ def redeem_free_side():
         except Exception as refund_err:
             logger.error("redeem_free_side: refund-on-failure also failed for credit %s: %s",
                          credit_row_used["id"], refund_err)
-        return jsonify({"error": MSG.FREE_SIDE_APPLY_FAILED}), 500
+        return jsonify({"error": "Failed to apply free side to order — your credit has not been used, please try again"}), 500
 
     return jsonify({
         "message": MSG.FREE_SIDE_REDEEMED,

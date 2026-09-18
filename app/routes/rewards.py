@@ -329,10 +329,10 @@ def admin_update_redemption(redemption_id):
         except Exception as e:
             return jsonify({"error": f"Stock restore failed: {str(e)}"}), 400
 
-    update = {"status": new_status, "fulfilled_by": g.user_id}
+    update = {"status": new_status}
     if new_status == "fulfilled":
         from datetime import datetime, timezone
-        update["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
+        update["fulfilled_at"] = data.get("fulfilled_at") or datetime.now(timezone.utc).isoformat()
     result = db.table("reward_redemptions").eq("id", redemption_id).update(update)
     # Notify the user
     try:

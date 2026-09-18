@@ -439,9 +439,14 @@ def transfer_hp():
             "completed_orders": completed_count,
         }), 400
 
-    recipient = db.table("profiles").select("id,full_name").eq("id", recipient_id).single().execute()
+    recipient = db.table("profiles").select("id,full_name,campus_id").eq("id", recipient_id).single().execute()
     if not recipient:
         return jsonify({"error": MSG.HP_TRANSFER_USER_NOT_FOUND}), 404
+
+    sender_campus = getattr(g, "campus_id", None)
+    recipient_campus = recipient.get("campus_id")
+    if sender_campus and recipient_campus and sender_campus != recipient_campus:
+        return jsonify({"error": "You can only transfer HP to students on your own campus."}), 400
 
     sender = db.table("profiles").select("full_name").eq("id", g.user_id).single().execute()
     sender_name = (sender or {}).get("full_name", "Someone")
@@ -477,8 +482,8 @@ def transfer_hp():
             )
         except Exception as refund_err:
             logger.error("transfer_hp: refund-on-failure ALSO failed, sender=%s amount=%s: %s", g.user_id, amount, refund_err)
-            return jsonify({"error": MSG.HP_TRANSFER_FAILED_NO_REFUND}), 500
-        return jsonify({"error": MSG.HP_TRANSFER_FAILED_REFUNDED}), 500
+            return jsonify({"error": "Transfer failed and could not be auto-refunded — contact support"}), 500
+        return jsonify({"error": "Transfer failed — your HP has been refunded, please try again"}), 500
 
     # Notify the recipient that they received HP
     try:

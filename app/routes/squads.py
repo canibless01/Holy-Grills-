@@ -23,6 +23,16 @@ def create_squad():
     if not name:
         return jsonify({"error": MSG.SQUAD_NAME_REQUIRED}), 400
     emails = [e.strip().lower() for e in (data.get("emails") or []) if e and e.strip()]
+    user_ids = [u.strip() for u in (data.get("user_ids") or []) if u and u.strip()]
+    if user_ids:
+        try:
+            u_profiles = db.table("profiles").select("id,email").in_("id", user_ids).execute() or []
+            for p in (u_profiles if isinstance(u_profiles, list) else []):
+                if p.get("email"):
+                    emails.append(p["email"].strip().lower())
+        except Exception:
+            pass
+    emails = list(dict.fromkeys(emails))
 
     max_members = int(current_app.config.get("SQUAD_MAX_MEMBERS", 20))
     if len(emails) > max_members:
@@ -135,6 +145,13 @@ def add_roster_member(squad_id):
 
     data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip().lower()
+    if not email and data.get("user_id"):
+        try:
+            u_prof = db.table("profiles").select("email").eq("id", data["user_id"]).single().execute()
+            if u_prof and u_prof.get("email"):
+                email = u_prof["email"].strip().lower()
+        except Exception:
+            pass
     if not email:
         return jsonify({"error": MSG.SQUAD_EMAIL_REQUIRED}), 400
 

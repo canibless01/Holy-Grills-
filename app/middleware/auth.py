@@ -48,7 +48,7 @@ def fetch_or_403(db, table, record_id, select="*", not_found_msg=None):
         from app.db import get_db
         exists = get_db().table(table).select("id").eq("id", record_id).single().execute()
         if exists:
-            return None, (jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403)
+            return None, (jsonify({"error": "You don't have permission to access this resource"}), 403)
     except Exception:
         pass
 
@@ -59,7 +59,7 @@ def update_or_403(db, table, record_id, patch):
     result = db.table(table).eq("id", record_id).update(patch).execute()
     from flask import jsonify
     if not result or (isinstance(result, list) and len(result) == 0):
-        return None, (jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403)
+        return None, (jsonify({"error": "Update not permitted or record not found"}), 403)
     return result, None
 
 def _resolve_default_campus(db, user_role: str = None):
