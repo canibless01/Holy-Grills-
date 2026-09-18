@@ -146,7 +146,10 @@ def create_order():
         order = order_service.create_order(user_id, data)
         return jsonify(order), 201
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        resp = {"error": str(e)}
+        if hasattr(e, "next_available_date") and getattr(e, "next_available_date"):
+            resp["next_available_date"] = getattr(e, "next_available_date")
+        return jsonify(resp), 400
     except Exception as e:
         return jsonify({"error": MSG.ORDER_CREATE_FAILED, "detail": str(e)}), 500
 

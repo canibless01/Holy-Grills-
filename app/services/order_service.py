@@ -107,12 +107,13 @@ def _check_kitchen_capacity(db):
     capacity = int(raw)
     orders_today = (
         db.table("orders")
-        .select("id")
+        .select("id,is_squad_order,squad_item_count")
         .eq("campus_id", campus_id)
         .gte("created_at", _today_start_iso())
+        .not_.in_("status", ["cancelled", "refunded"])
         .execute()
     ) or []
-    if len(orders_today) >= capacity:
+    if sum(_order_capacity_weight(o) for o in orders_today) >= capacity:
         from app.messages import MSG
         raise ValueError(MSG.ORDER_KITCHEN_AT_CAPACITY)
 
