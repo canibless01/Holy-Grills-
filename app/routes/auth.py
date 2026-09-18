@@ -690,6 +690,48 @@ def reset_password():
     return jsonify(result), 200
 
 
+@auth_bp.route("/reset-password/confirm", methods=["POST"])
+@rate_limit("RATE_LIMIT_RESET_PW_REQUESTS", "RATE_LIMIT_RESET_PW_WINDOW")
+def reset_password_confirm():
+    """
+    Confirm password reset with access_token and new_password.
+    ---
+    tags: [Auth]
+    security: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [access_token, new_password]
+          properties:
+            access_token: {type: string}
+            new_password: {type: string, minLength: 8}
+    responses:
+      200:
+        description: Password reset successfully
+      400:
+        description: Validation error or invalid/expired token
+    """
+    data = request.get_json(force=True) or {}
+    access_token = data.get("access_token")
+    new_password = data.get("new_password")
+
+    if not access_token or not new_password:
+        return jsonify({"error": "access_token and new_password are required"}), 400
+    if len(new_password) < 8:
+        return jsonify({"error": MSG.AUTH_PASSWORD_TOO_SHORT}), 400
+
+    db = get_db()
+    try:
+        res = db.auth_update_user(access_token, {"password": new_password})
+        return jsonify({"message": MSG.PASSWORD_CHANGED, "user": res.get("user") or res}), 200
+    except SupabaseError as e:
+        return jsonify({"error": e.args[0] if e.args else "Password reset failed", "detail": e.details}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @auth_bp.route("/device-token", methods=["POST"])
 @require_auth
 @rate_limit("RATE_LIMIT_DEVICE_TOKEN_REQUESTS", "RATE_LIMIT_DEVICE_TOKEN_WINDOW")
