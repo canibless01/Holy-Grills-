@@ -226,6 +226,20 @@ Join the squad order in the app to choose your meal and earn {d.get('currency', 
 — {d.get('app_tagline', '')}
 """,
     },
+    "guest_order_confirmed": {
+        "subject": lambda d: f"Guest Order Confirmed — {d.get('app_name', 'Holy Grills')}",
+        "body": lambda d: f"""
+Hi {d.get('name', 'there')},
+
+Your order #{d.get('order_id', '')} has been placed successfully!
+
+Claim token: {d.get('claim_token', '')}
+
+Create an account or log in with this email to claim your order and earn {d.get('currency', 'HP')}.
+
+— {d.get('app_tagline', '')}
+""",
+    },
 }
 
 

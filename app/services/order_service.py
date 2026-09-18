@@ -776,7 +776,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "p_idempotency_key": idempotency_key,
         "p_promo_code_id": promo_code_id,
         "p_items": order_items,
-        "p_order_lock_id": order_lock.get("id") if order_lock else None
+        "p_order_lock_id": order_lock.get("id") if order_lock else None,
+        "p_ordering_window_id": ordering_window_id,
+        "p_capacity_deferred": bool(payload.get("accept_next_available_date") and is_scheduled),
+        "p_originally_requested_date": today_wat().isoformat() if (payload.get("accept_next_available_date") and is_scheduled) else None,
     }
 
     try:
@@ -837,12 +840,17 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if order_source:
             order["order_source"] = order_source
 
-        if payload.get("order_source"):
+        delivery_start = delivery_end = None
+        if linked_delivery_window_id:
             try:
-                db.table("orders").eq("id", result["order_id"]).update({"order_source": payload.get("order_source")}).execute()
-                order["order_source"] = payload.get("order_source")
+                dw = db.table("delivery_windows").select("opens_at,closes_at").eq("id", linked_delivery_window_id).single().execute()
+                if dw:
+                    delivery_start = dw.get("opens_at")
+                    delivery_end = dw.get("closes_at")
             except Exception:
                 pass
+        order["delivery_window_start"] = delivery_start or "18:00"
+        order["delivery_window_end"] = delivery_end or "19:00"
 
         if user_id and not is_squad_order:
             try:
@@ -855,12 +863,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
         if is_scheduled and payload.get("accept_next_available_date") and user_id:
             try:
-                delivery_start = delivery_end = None
-                if linked_delivery_window_id:
-                    dw = db.table("delivery_windows").select("opens_at,closes_at").eq("id", linked_delivery_window_id).single().execute()
-                    if dw:
-                        delivery_start = dw.get("opens_at")
-                        delivery_end = dw.get("closes_at")
                 scheduled_date_display = (scheduled_for or "")[:10]
                 send_notification(
                     user_id=user_id,
@@ -875,6 +877,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 )
             except Exception as _dn:
                 logger.warning("create_order: order_scheduled_deferred notify failed: %s", _dn)
+
+        if user_id is None and payload.get("guest_email"):
+            try:
+                from app.utils.email import send_email
+                send_email(
+                    to_email=payload["guest_email"],
+                    to_name=payload.get("guest_name", ""),
+                    template_key="guest_order_confirmed",
+                    data={"order_id": result["order_id"][:8].upper(), "claim_token": claim_token},
+                )
+            except Exception as _ge:
+                logger.warning("create_order: guest email failed: %s", _ge)
 
     if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
