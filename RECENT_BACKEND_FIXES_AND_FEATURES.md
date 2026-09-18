@@ -120,3 +120,77 @@ This document details exclusively the new features, route additions, bug fixes, 
 - **Streak Reclaim Trigger**: `credit_wallet` triggers `try_reclaim_checkin(user_id)` when top-up meets `STREAK_RECLAIM_MIN_TOPUP` threshold.
 - **Delivery Window Scoping**: Automatic delivery window assignment filters by campus ID.
 - **Walk Status Authorization**: `walk_order_to_status` enforces kitchen and admin campus isolation rules matching `update_order_status`.
+
+---
+
+## 10. Ingredient & Stock Tracking (General Store Model)
+
+- **Location**: `app/routes/kitchen.py` & `app/__init__.py`
+- **Blueprint Registration**:
+  - `units_bp` registered under `/api/measurement-units`.
+  - `stock_bp` registered under `/api/admin/stock-items`.
+- **Endpoints Implemented**:
+  - `GET /api/measurement-units` — Return full list of measurement units (`spoon`, `sachet`, `bag`, etc.).
+  - `POST /api/admin/stock-items` — Create new ingredient with buying unit, usage unit, conversion factor, low stock threshold, and campus scoping.
+  - `GET /api/admin/stock-items` — List stock items with live `current_balance` and `is_low_stock` flag (`current_balance < low_stock_threshold`).
+  - `POST /api/admin/stock-items/<id>/purchase` — Log incoming stock in purchase units, convert to usage units (`quantity * conversion_factor`), update balance, and record a `purchase` ledger entry.
+  - `POST /api/admin/stock-items/<id>/usage` — Log stock consumption (`usage`, `waste`, `correction`) in usage units, update balance, record ledger entry, and trigger `low_stock_ingredient` notification if balance is below threshold.
+  - `GET /api/admin/stock-items/<id>/ledger` — Return complete append-only ledger history for an ingredient.
+
+---
+
+## 11. Scheduled Marketing Engine (System 1 Consolidation)
+
+- **Location**: `app/tasks/scheduled.py` & `app/tasks/celery_app.py`
+- **Background Task (`send_scheduled_blasts`)**:
+  - Scheduled Celery task running every 15 minutes (`minute="*/15"`).
+  - Uses distributed cron locking (`try_acquire_cron_lock`).
+  - Queries `notification_blasts` where `status = "scheduled"` and `scheduled_at <= now()`.
+  - Calls `send_blast(blast_id)` for each, executing recipient resolution and updating status to `"sent"`.
+  - Flagged legacy `send_scheduled_notifications` (System 2) as unused.
+
+---
+
+## 12. Analytics & Data Infrastructure
+
+- **Location**: `app/routes/analytics.py` & `app/services/order_service.py`
+- **Order Source Tracking**: `create_order` populates `orders.order_source` when supplied in request payload.
+- **Unified 4-Branch Payment Mix**: Centralized `_derive_payment_method()` across sales, payment method, and dashboard analytics (`split`, `wallet`, `card`, `hp_or_free`).
+- **Endpoints Implemented / Updated**:
+  - `GET /api/analytics/order-timing` (A1) — Hourly (0-23) and weekday distributions.
+  - `GET /api/analytics/addon-acceptance` (A2) — Parse `_addon_selections` JSON in `order_items` for attachment rates and top add-ons.
+  - `GET /api/analytics/delivery-locations` (A3) — Order volume and revenue grouped by hostel and gate names.
+  - `GET /api/analytics/squad-orders` (A4) — Squad order volume, percentage, and size distributions.
+  - `GET /api/analytics/demographics` (A5) — Revenue/orders by department, faculty, level with fallback join on `departments.faculty`.
+  - `GET /api/analytics/engagement` (A6) — Reviews, referrals, and event check-in engagement.
+  - `GET /api/analytics/payment-methods` (A7) — Exact 4-branch payment classification.
+  - `GET /api/analytics/retention-ltv` (A8) — Cohort repeat order rates and customer LTV.
+  - `GET /api/analytics/referral-network` (A9) — Top referrers list and conversion stats.
+  - `GET /api/analytics/hp-ecosystem` (A10) — HP circulation and distribution across all 4 tiers (Ember, Flame, Blaze/Inferno, Holy).
+  - `GET /api/analytics/items-menu` (A11) — Sales quantity and revenue per dish.
+  - `GET /api/analytics/revenue` (A12) — Total revenue and 4-branch payment method revenue split.
+  - `GET /api/analytics/academic-calendar` (B1) — Order volume/revenue trends during active academic calendar periods.
+  - `GET /api/analytics/order-sources` (B2) — Order volume by channel (`order_source`).
+  - `GET /api/analytics/order-motivations` (B3) — Customer motivation breakdown from `order_motivations`.
+  - `GET /api/admin/brand-partnerships` (B4) — Super-admin brand partnership requests list and status updates.
+
+---
+
+## 13. Part A Features & Fixes
+
+- **Location**: `app/services/hp_service.py`, `app/routes/riders.py`, `app/routes/admin.py`, `app/routes/storefront.py`, `app/routes/rewards.py`, `app/services/streak_service.py`, `app/routes/events.py`
+- **A1 — Tier Grace Fields in HP Balance**: `get_hp_balance()` returns `tier_grace_ends_at` and `tier_grace_started_at`.
+- **A2 — Continuous Rider Location Ping**: `POST /api/riders/location-update` accepts `{ location_lat, location_lng }` and updates `rider_profiles`.
+- **A3 — Admin Webhook Events Listing**: `GET /api/admin/webhook-events` queries `webhook_events` using service-role `get_db()` client with provider, status, date range filters and pagination.
+- **A4 — Pre-Checkout Delivery Radius Config**: `GET /api/storefront/config/public` includes `max_delivery_radius_km`, `campus_lat`, and `campus_lon`.
+- **A5 — Reward Redemption Fulfillment Fix**: `PATCH /api/rewards/admin/redemptions/<id>` sets `fulfilled_by = g.user_id` and server-side `fulfilled_at = now()`.
+- **A6 — Order Streak HP Reward Plateau**: `_award_order_streak_hp` caps streak lookup at 12 (`min(streak_weeks, 12)`), ensuring week 13+ plateaus at 350 HP instead of matching nothing and awarding 0 HP.
+- **A7 — Catering Request Status Email**: `update_catering_request` dispatches async email notifications to requesters on status transitions (`quoted`, `completed`, `cancelled`).
+
+---
+
+## 14. Consumer Message Centralization
+
+- **Location**: `app/messages.py`, `app/middleware/auth.py`, and consumer route modules (`cart`, `delivery`, `events`, `exclusive_spin`, `free_sides`, `graduation`, `hp`, `marketplace`, `menu`, `order_locks`, `orders`, `saved_for_later`, `uploads`, `wallet`)
+- **Central Registry (`MSG`)**: Added 32 consumer-facing error message constants.
+- **Route Refactoring**: Replaced hardcoded inline error strings across consumer endpoints with centralized `MSG` references.
