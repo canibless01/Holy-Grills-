@@ -27,7 +27,17 @@ HP Flow on Delivery:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+class OrderingWindowUnavailable(ValueError):
+    """Raised when an ordering window is closed or at capacity.
+
+    Carries an optional `next_available_date` so callers (routes) can surface
+    a "schedule for {date}" prompt instead of a plain rejection.
+    """
+    def __init__(self, message: str, next_available_date: str = None):
+        super().__init__(message)
+        self.next_available_date = next_available_date
 from decimal import Decimal
 from app.utils.tz import today_wat
 from flask import current_app
@@ -107,12 +117,14 @@ def _check_kitchen_capacity(db):
     capacity = int(raw)
     orders_today = (
         db.table("orders")
-        .select("id")
+        .select("id,is_squad_order,squad_item_count")
         .eq("campus_id", campus_id)
         .gte("created_at", _today_start_iso())
+        .not_.in_("status", ["cancelled", "refunded"])
         .execute()
     ) or []
-    if len(orders_today) >= capacity:
+    used = sum(_order_capacity_weight(o) for o in orders_today)
+    if used >= capacity:
         from app.messages import MSG
         raise ValueError(MSG.ORDER_KITCHEN_AT_CAPACITY)
 
@@ -319,31 +331,29 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     is_scheduled = bool(payload.get("is_scheduled", False))
     ordering_window_id = None
     linked_delivery_window_id = None
-    if not is_scheduled:
-        if payload.get("accept_next_available_date"):
-            try:
-                from datetime import timedelta as _td, timezone as _tz
-                _now_wat_dt = datetime.now(_tz.utc) + _td(hours=1)
-                tomorrow = (_now_wat_dt + _td(days=1)).date()
-                next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
-                if next_slot and next_slot.get("date"):
-                    is_scheduled = True
-                    ordering_window_id = next_slot.get("window_id")
-                    scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}"
-                    if ordering_window_id:
-                        ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
-                        if ow_row:
-                            linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
-            except Exception as _nse:
-                logger.warning("create_order: accept_next_available_date failed: %s", _nse)
+    scheduled_for = payload.get("scheduled_for") if is_scheduled else None
 
-        if not is_scheduled:
+    if not is_scheduled:
+        try:
             _win = resolve_ordering_window(db, campus_id)
             ordering_window_id = _win.get("id")
             linked_delivery_window_id = _win.get("linked_delivery_window_id")
+        except OrderingWindowUnavailable:
+            if not payload.get("accept_next_available_date"):
+                raise
+            tomorrow = (datetime.now(timezone.utc) + timedelta(hours=1) + timedelta(days=1)).date()
+            next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
+            if not next_slot or not next_slot.get("date"):
+                raise
+            is_scheduled = True
+            ordering_window_id = next_slot.get("window_id")
+            scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}"
+            if ordering_window_id:
+                ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
+                if ow_row:
+                    linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
 
     window_id = linked_delivery_window_id
-    scheduled_for = payload.get("scheduled_for") if is_scheduled else None
 
     raw_items = payload.get("items", [])
     if not raw_items:
@@ -842,6 +852,29 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             except Exception as _fe:
                 logger.warning("create_order: monthly free delivery perk claim failed: %s", _fe)
 
+        if is_scheduled and payload.get("accept_next_available_date") and user_id:
+            try:
+                delivery_start = delivery_end = None
+                if linked_delivery_window_id:
+                    dw = db.table("delivery_windows").select("opens_at,closes_at").eq("id", linked_delivery_window_id).single().execute()
+                    if dw:
+                        delivery_start = dw.get("opens_at")
+                        delivery_end = dw.get("closes_at")
+                scheduled_date_display = (scheduled_for or "")[:10]
+                send_notification(
+                    user_id=user_id,
+                    notif_type="order_scheduled_deferred",
+                    template_data={
+                        "scheduled_date": scheduled_date_display,
+                        "delivery_window_start": delivery_start or "18:00",
+                        "delivery_window_end": delivery_end or "19:00",
+                    },
+                    reference_id=result["order_id"],
+                    reference_type="order",
+                )
+            except Exception as _dn:
+                logger.warning("create_order: order_scheduled_deferred notify failed: %s", _dn)
+
     if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
 
@@ -1030,10 +1063,24 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     )
 
     if order.get("user_id"):
+        delivery_start = delivery_end = None
+        delivery_window_id = order.get("delivery_window_id")
+        if delivery_window_id:
+            try:
+                dw = db.table("delivery_windows").select("opens_at,closes_at").eq("id", delivery_window_id).single().execute()
+                if dw:
+                    delivery_start = dw.get("opens_at")
+                    delivery_end = dw.get("closes_at")
+            except Exception:
+                pass
         send_notification(
             user_id=order["user_id"],
             notif_type="order_confirmed",
-            template_data={"order_id": order_id[:8].upper()},
+            template_data={
+                "order_id": order_id[:8].upper(),
+                "delivery_window_start": delivery_start or "18:00",
+                "delivery_window_end": delivery_end or "19:00",
+            },
             reference_id=order_id,
             reference_type="order",
         )
@@ -1469,17 +1516,17 @@ def resolve_ordering_window(db, campus_id):
         _close_str = current_app.config.get("ORDERING_WINDOW_CLOSE_TIME", "16:00")
         if _parse_hm(_open_str, 8, 0) <= _now_wat <= _parse_hm(_close_str, 16, 0):
             return {"id": None, "capacity": None, "linked_delivery_window_id": None}
-        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+        raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
 
     open_rows = [r for r in candidates if not r.get("is_closed") and r.get("opens_at") and r.get("closes_at")]
     if not open_rows:
-        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+        raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
 
     open_rows.sort(key=lambda r: _parse_hm(r["opens_at"], 0, 0))
     earliest_open = _parse_hm(open_rows[0]["opens_at"], 0, 0)
     latest_close = max(_parse_hm(r["closes_at"], 23, 59) for r in open_rows)
     if _now_wat < earliest_open or _now_wat > latest_close:
-        raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+        raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
 
     any_time_eligible = False
     for row in open_rows:
@@ -1500,19 +1547,16 @@ def resolve_ordering_window(db, campus_id):
         return row
 
     if any_time_eligible:
+        next_slot = None
         try:
             tomorrow = (_now_wat_dt + _td(days=1)).date()
             next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
-            if next_slot and next_slot.get("date"):
-                exc = ValueError(MSG.ORDERING_WINDOW_AT_CAPACITY)
-                exc.next_available_date = next_slot["date"]
-                raise exc
-        except ValueError:
-            raise
-        except Exception:
-            pass
-        raise ValueError(MSG.ORDERING_WINDOW_AT_CAPACITY)
-    raise ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+        except Exception as _nse:
+            logger.warning("resolve_ordering_window: next-slot lookup failed: %s", _nse)
+        next_date = (next_slot or {}).get("date")
+        raise OrderingWindowUnavailable(MSG.ORDERING_WINDOW_AT_CAPACITY, next_available_date=next_date)
+
+    raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
 
 
 def get_ordering_window_status(db, campus_id, for_date=None):
