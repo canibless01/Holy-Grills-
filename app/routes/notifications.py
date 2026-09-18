@@ -1,7 +1,7 @@
 """Notification routes — in-app inbox, mark read, admin blasts, web push subscriptions."""
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.services.notification_service import send_blast
 from app.db import get_db, get_user_client
 from app.messages import MSG
@@ -364,7 +364,7 @@ def list_blasts():
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
     q = db.table("notification_blasts").select("*")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     status = request.args.get("status")

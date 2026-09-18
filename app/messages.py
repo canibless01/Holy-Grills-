@@ -320,6 +320,7 @@ class MSG:
     TIER_NOT_FOUND               = "Ticket tier not found"
     TIER_CAPACITY_EXCEEDED        = "This ticket tier is sold out"
     TIER_ALREADY_REGISTERED       = "You are already registered for this event"
+    ALREADY_REGISTERED_FOR_EVENT = "Already registered for this event"
     TIER_PRICE_INVALID            = "price_naira and price_hp must be non-negative"
     TIER_CAPACITY_INVALID_TIER    = "capacity must be a positive integer or null"
     TIER_NAME_REQUIRED            = "Tier name is required"

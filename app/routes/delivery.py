@@ -2,7 +2,7 @@
 
 import math
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
@@ -323,7 +323,7 @@ def admin_list_hostels():
     """
     db = get_user_client()
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+        campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
         q = db.table("hostels").select("*,gates(name)").order("name")
         if campus_id:
             q = q.eq("campus_id", campus_id)
@@ -469,7 +469,7 @@ def admin_list_gates():
     """
     db = get_user_client()
     try:
-        campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+        campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
         q = db.table("gates").select("*").order("name")
         if campus_id:
             q = q.eq("campus_id", campus_id)

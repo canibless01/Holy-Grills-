@@ -8,7 +8,7 @@ PATCH  /admin/settings/<key>             — update a system setting
 """
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
@@ -37,7 +37,7 @@ def list_first_order_gifts():
         db.table("first_order_gifts")
         .select("*,profiles(full_name,email,phone),orders(id,total_amount,created_at)")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     status = request.args.get("status")

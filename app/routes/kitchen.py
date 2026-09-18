@@ -724,7 +724,7 @@ def batch_advance(batch_id):
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    q = q.not_.in_("status", ["delivered", "cancelled", "delivery_attempted", "unclaimed"])
+    q = q.not_.in_("status", ["delivered", "cancelled", "refunded", "delivery_attempted", "unclaimed"])
     if from_status_filter:
         q = q.eq("status", from_status_filter)
 

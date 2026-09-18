@@ -11,7 +11,7 @@ GET    /admin/order-locks/pending-gifts — admin: list pending first-order gift
 """
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth, require_role
+from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.settings import get_validated_setting, SettingError
@@ -343,7 +343,7 @@ def admin_list_locks():
         .order("locked_date", ascending=True)
     )
     # Allow query param, but super_admin sees al
-    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id and getattr(g, "user_role", None) != "super_admin":
       q = q.eq("campus_id", campus_id)
       

@@ -239,6 +239,18 @@ NOTIFICATION_TEMPLATES: dict = {
     },
 
     # ── Orders ─────────────────────────────────────────────────────────────────
+    "order": {
+        "title":        "Order Update",
+        "body":         "Your order status has been updated.",
+        "include_name": True,
+        "channels":     None,
+    },
+    "scheduled_notification": {
+        "title":        "{title}",
+        "body":         "{body}",
+        "include_name": False,
+        "channels":     None,
+    },
     "order_confirmed": {
         "title":        MSG.ORDER_CONFIRMED_TITLE,
         "body":         MSG.ORDER_CONFIRMED_BODY,
@@ -1121,6 +1133,31 @@ NOTIFICATION_TEMPLATES: dict = {
         "title":        MSG.NOTIF_SYSTEM_TITLE,   # overridden at call site via title=
         "body":         MSG.NOTIF_SYSTEM_BODY,    # overridden at call site via body=
         "include_name": False,
+        "channels":     None,
+    },
+
+    "system_alert": {
+        "title":        MSG.NOTIF_SYSTEM_TITLE,
+        "body":         MSG.NOTIF_SYSTEM_BODY,
+        "include_name": False,
+        "channels":     None,
+    },
+    "low_stock_ingredient": {
+        "title":        "Low Stock Alert",
+        "body":         "Low stock alert: '{name}' balance ({balance}) is below threshold ({threshold}).",
+        "include_name": False,
+        "channels":     None,
+    },
+    "menu_item_sold_out": {
+        "title":        MSG.MENU_ITEM_SOLD_OUT_TITLE,
+        "body":         MSG.MENU_ITEM_SOLD_OUT_BODY,
+        "include_name": False,
+        "channels":     None,
+    },
+    "order_moved_up": {
+        "title":        "Order Moved Up!",
+        "body":         "Good news — your order originally requested for {originally_requested_date} has room today! Now scheduled for {target_date}, delivery between {deliv_start}–{deliv_end}.",
+        "include_name": True,
         "channels":     None,
     },
 

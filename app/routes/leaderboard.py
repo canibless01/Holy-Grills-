@@ -1,7 +1,7 @@
 """Leaderboard routes — individual rankings, squad leaderboard, hall of fame."""
 
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth
+from app.middleware.auth import require_auth, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from datetime import date, timedelta, datetime, timezone
 from app.utils.tz import today_wat
@@ -261,7 +261,7 @@ def my_rank():
         period_type = "monthly"
     period_key = _period_key_for(period_type)
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     snap_q = (
         db.table("leaderboard_snapshots")
         .select("*")
@@ -371,7 +371,7 @@ def squad_leaderboard():
 @require_auth
 def squad_my_rank():
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     my_squads = db.table("squads").select("id").eq("creator_id", g.user_id).execute() or []
     roster_rows = db.table("squad_roster").select("squad_id").eq("user_id", g.user_id).eq("is_active", True).execute() or []

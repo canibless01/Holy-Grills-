@@ -89,26 +89,17 @@ class Config:
     SUBSCRIPTION_HP = int(os.environ.get("SUBSCRIPTION_HP", "50"))
     SOCIAL_SHARE_HP = int(os.environ.get("SOCIAL_SHARE_HP", "25"))
 
-    _tier_perks_default = '''{
-      "ember": {"earn_multiplier": 1.00, "monthly_free_delivery": false,
-                "birthday_hp": 0, "free_side_credits_monthly": 0,
-                "exclusive_spins_monthly": 0},
-      "flame": {"earn_multiplier": 1.08, "monthly_free_delivery": false,
-                "birthday_hp": 0, "free_side_credits_monthly": 0,
-                "exclusive_spins_monthly": 0},
-      "blaze": {"earn_multiplier": 1.15, "monthly_free_delivery": true,
-                "birthday_hp": 0, "free_side_credits_monthly": 0,
-                "exclusive_spins_monthly": 0},
-      "holy":  {"earn_multiplier": 1.25, "monthly_free_delivery": true,
-                "birthday_hp": 0, "free_side_credits_monthly": 0,
-                "exclusive_spins_monthly": 0}
-    }'''
     try:
         import json as _json
-        TIER_PERKS = _json.loads(os.environ.get("TIER_PERKS", _tier_perks_default))
+        _env_perks = os.environ.get("TIER_PERKS")
+        if _env_perks:
+            TIER_PERKS = _json.loads(_env_perks)
+        else:
+            from app.services.tier_service import DEFAULT_TIER_PERKS
+            TIER_PERKS = DEFAULT_TIER_PERKS
     except Exception:
-        import json as _json
-        TIER_PERKS = _json.loads(_tier_perks_default)
+        from app.services.tier_service import DEFAULT_TIER_PERKS
+        TIER_PERKS = DEFAULT_TIER_PERKS
 
     # Flash redemption
     FLASH_DISCOUNT_PCT = float(os.environ.get("FLASH_DISCOUNT_PCT", "0.50"))

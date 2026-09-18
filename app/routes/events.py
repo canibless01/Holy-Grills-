@@ -429,8 +429,9 @@ def delete_event(event_id):
             for tid in ticket_ids:
                 db.table("event_checkins").eq("ticket_id", tid).delete()
         db.table("event_tickets").eq("event_id", event_id).delete()
-    except Exception:
-        pass
+    except Exception as e:
+        from app.utils.logger import get_logger
+        get_logger(__name__).warning("delete_event ticket cascade delete error: %s", e)
     db.table("events").eq("id", event_id).delete()
     return jsonify({"message": MSG.EVENT_DELETED.format(title=event.get("title", event_id))}), 200
 
