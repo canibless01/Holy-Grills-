@@ -250,51 +250,68 @@ def _build_html(name: str, body_text: str, app_tagline: str) -> str:
     )
 
 
-def send_email(to_email: str, to_name: str, template_key: str, data: dict = None) -> bool:
+def send_email(to_email: str, to_name: str, template_key: str, data: dict = None, provider: str = None) -> bool:
     """
-    Send a transactional email via Resend.
-    Returns True on success, False on failure (never raises).
+    Send a transactional email via whichever provider get_email_provider
+    resolves to. Template resolution: email_templates DB row (admin-edited)
+    takes precedence; falls back to the hardcoded TEMPLATES dict if no row
+    exists for this template_key.
     """
-    api_key = _resend_api_key()
-    if not api_key:
-        logger.debug("send_email: RESEND_API_KEY not configured — skipping email to %s", to_email)
-        return False
-
-    template = TEMPLATES.get(template_key)
-    if not template:
-        logger.warning("send_email: unknown template_key '%s'", template_key)
-        return False
-
     data = data or {}
     data.setdefault("name", to_name)
     data.setdefault("app_tagline", os.environ.get("APP_TAGLINE", "Holy Grills FUTA"))
     data.setdefault("app_name", os.environ.get("APP_NAME", "Holy Grills"))
     data.setdefault("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
 
-    from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
-    from_name  = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
+    db_template = None
+    try:
+        from app.db import get_db
+        db_template = get_db().table("email_templates").select("subject,body").eq("template_key", template_key).single().execute()
+    except Exception:
+        db_template = None
 
-    subject_tpl = template["subject"]
-    subject = subject_tpl(data) if callable(subject_tpl) else subject_tpl
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return "{" + key + "}"  # leave unresolvable placeholders visible rather than raising
 
-    body_text = template["body"](data)
+    if db_template:
+        try:
+            subject = db_template["subject"].format_map(_SafeDict(data))
+            body_text = db_template["body"].format_map(_SafeDict(data))
+        except Exception as e:
+            logger.error("send_email: malformed admin template '%s': %s — falling back to hardcoded", template_key, e)
+            db_template = None
 
-    # Resolve {platform} and {currency} placeholders
+    if not db_template:
+        template = TEMPLATES.get(template_key)
+        if not template:
+            logger.warning("send_email: unknown template_key '%s'", template_key)
+            return False
+        subject_tpl = template["subject"]
+        subject = subject_tpl(data) if callable(subject_tpl) else subject_tpl
+        body_text = template["body"](data)
+
     _app_name = data.get("app_name", os.environ.get("APP_NAME", "Holy Grills"))
-    _currency  = data.get("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
+    _currency = data.get("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
     if isinstance(subject, str):
         subject = subject.replace("{platform}", _app_name).replace("{currency}", _currency)
     body_text = body_text.replace("{platform}", _app_name).replace("{currency}", _currency)
 
     html_body = _build_html(to_name or "there", body_text, data.get("app_tagline", ""))
 
-    payload = {
-        "from": f"{from_name} <{from_email}>",
-        "to":   [to_email],
-        "subject": subject,
-        "html": html_body,
-    }
+    from app.services.notification_service import get_email_provider, _dispatch_email_via_onesignal
+    chosen = get_email_provider(scope="transactional", override=provider)
 
+    if chosen == "onesignal":
+        return _dispatch_email_via_onesignal(to_email, to_name, subject, html_body)
+
+    api_key = _resend_api_key()
+    if not api_key:
+        logger.debug("send_email: RESEND_API_KEY not configured — skipping email to %s", to_email)
+        return False
+    from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
+    from_name = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
+    payload = {"from": f"{from_name} <{from_email}>", "to": [to_email], "subject": subject, "html": html_body}
     try:
         from app.utils.retry import with_retry
 
@@ -302,12 +319,8 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         def _post():
             return requests.post(
                 f"{RESEND_BASE}/emails",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type":  "application/json",
-                },
-                json=payload,
-                timeout=10,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload, timeout=10,
             )
 
         resp = _post()

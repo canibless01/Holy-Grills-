@@ -1571,10 +1571,27 @@ def send_scheduled_notifications(self):
 
     try:
         now = datetime.now(timezone.utc)
+        from app.services.notification_service import send_blast, send_notification, resolve_segment_user_ids
+        from datetime import timedelta
+
+        try:
+            due_blasts = (
+                db.table("notification_blasts")
+                .select("id")
+                .eq("status", "scheduled")
+                .lte("scheduled_at", now.isoformat())
+                .execute()
+            ) or []
+            for b in due_blasts:
+                try:
+                    send_blast(b["id"])
+                except Exception as e:
+                    logger.error("send_scheduled_notifications: due blast %s failed: %s", b["id"], e)
+        except Exception as e:
+            logger.error("send_scheduled_notifications: due-blast scan failed: %s", e)
+
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
-        from app.services.notification_service import send_notification
-        from datetime import timedelta
 
         for campus in (campuses if isinstance(campuses, list) else []):
             campus_id = campus["id"]
@@ -1599,12 +1616,14 @@ def send_scheduled_notifications(self):
                 send_time  = campaign.get("send_time", "09:00")
 
                 try:
-                    if segment == "all":
+                    segment_filter = campaign.get("segment_filter")
+                    if segment_filter:
+                        user_ids = list(resolve_segment_user_ids(segment_filter, campus_id=campus_id, db=db))
+                    elif segment == "all":
                         recipients = (
                             db.table("profiles").select("id").eq("is_active", "true").eq("campus_id", campus_id).execute()
                         ) or []
                         user_ids = [r["id"] for r in recipients]
-
                     elif segment.startswith("tier:"):
                         tier_slug = segment[5:]
                         tier_row = (
@@ -1622,12 +1641,21 @@ def send_scheduled_notifications(self):
                                 .execute()
                             ) or []
                             user_ids = [p["id"] for p in profs]
-
                     elif segment.startswith("user:"):
                         user_ids = [segment[5:]]
-
                     else:
                         user_ids = []
+
+                    if campaign.get("notify_new_matches_only") and user_ids:
+                        already_sent = (
+                            db.table("scheduled_notification_sends")
+                            .select("user_id")
+                            .eq("campaign_id", campaign_id)
+                            .in_("user_id", user_ids)
+                            .execute()
+                        ) or []
+                        already_ids = {r["user_id"] for r in already_sent}
+                        user_ids = [uid for uid in user_ids if uid not in already_ids]
 
                     for uid in user_ids:
                         try:
@@ -1641,6 +1669,13 @@ def send_scheduled_notifications(self):
                                 channels=channels,
                                 campus_id=campus_id,
                             )
+                            if campaign.get("notify_new_matches_only"):
+                                try:
+                                    db.table("scheduled_notification_sends").insert({
+                                        "campaign_id": campaign_id, "user_id": uid,
+                                    })
+                                except Exception:
+                                    pass  # duplicate (campaign_id, user_id) — already logged
                         except Exception as e:
                             logger.warning("send_scheduled_notifications: notify failed for user %s: %s", uid, e)
 

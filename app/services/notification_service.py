@@ -223,6 +223,7 @@ def send_notification(
     urgency: str = None,
     metadata: dict = None,
     campus_id: str = None,
+    email_provider: str = None,
 ) -> list:
     """
     Write notification record(s) for each channel and dispatch externally.
@@ -354,7 +355,7 @@ def send_notification(
             if channel == "email":
                 t = threading.Thread(
                     target=_dispatch_email_async,
-                    args=(user_id, title, body, saved.get("id", "")),
+                    args=(user_id, title, body, saved.get("id", ""), email_provider),
                     daemon=True,
                 )
                 t.start()
@@ -376,39 +377,18 @@ def send_notification(
     return records
 
 
-def send_blast(blast_id: str) -> dict:
+def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> set:
     """
-    Send a notification blast to a segment of users.
-
-    Supported segment keys (all optional, combinable):
-      tier               — tier slug: "ember"|"flame"|"blaze"|"holy"|"all"
-      role               — "student"|"admin"|"kitchen"|"rider"|"all"
-      department         — exact department name or "all"
-      faculty            — faculty name or "all"
-      has_pending_hp     — bool: True = has pending HP > 0
-      hp_balance         — "low" (<100 HP) | "medium" (100–500) | "high" (>500)
-      last_login_days    — int: users who logged in within last N days (or "any")
-      last_order_days    — int: users who placed an order within last N days (or "any")
-      total_orders       — "0"|"1-5"|"6-20"|"20+"
-      has_referral       — bool: True = user has at least one referral
-      has_squad_order    — bool: True = user has at least one squad order
-      has_reviewed       — bool: True = user has left at least one review
-      has_shared         — bool: True = user has at least one social share
-      event_attendance   — "0"|"1-2"|"3+"
-      has_graduated      — bool: True = user has graduated
-      level_department   — "LEVEL:DEPT" e.g. "200:Computer Science"
-      level              — academic level e.g. "200"
-
-    Title/body may use {name} — it is substituted with the recipient's first name.
+    Resolve a segment filter dict (see send_blast's docstring for supported
+    keys) into a set of matching user_ids. Extracted from send_blast so both
+    manual blasts and the automated scheduled_notifications evaluator
+    share one implementation instead of diverging.
     """
     from datetime import timedelta
+    if db is None:
+        db = get_db()  # the scheduled-task caller has no request/user JWT to scope with
 
-    db = get_user_client()
-    blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
-    if not blast:
-        raise ValueError("Blast not found")
-
-    segment = blast.get("segment") or {}
+    segment = segment or {}
 
     # ── Step 1: DB-level filters on profiles ────────────────────────────────
     profiles_q = (
@@ -421,7 +401,6 @@ def send_blast(blast_id: str) -> dict:
         .eq("is_active", True)
     )
 
-    campus_id = segment.get("campus_id") or segment.get("campus") or blast.get("campus_id")
     if campus_id and campus_id != "all":
         profiles_q = profiles_q.eq("campus_id", campus_id)
 
@@ -643,6 +622,43 @@ def send_blast(blast_id: str) -> dict:
 
         _shrink({uid for uid in user_ids if _att_ok(uid)})
 
+    return user_ids
+
+
+def send_blast(blast_id: str) -> dict:
+    """
+    Send a notification blast to a segment of users.
+
+    Supported segment keys (all optional, combinable):
+      tier               — tier slug: "ember"|"flame"|"blaze"|"holy"|"all"
+      role               — "student"|"admin"|"kitchen"|"rider"|"all"
+      department         — exact department name or "all"
+      faculty            — faculty name or "all"
+      has_pending_hp     — bool: True = has pending HP > 0
+      hp_balance         — "low" (<100 HP) | "medium" (100–500) | "high" (>500)
+      last_login_days    — int: users who logged in within last N days (or "any")
+      last_order_days    — int: users who placed an order within last N days (or "any")
+      total_orders       — "0"|"1-5"|"6-20"|"20+"
+      has_referral       — bool: True = user has at least one referral
+      has_squad_order    — bool: True = user has at least one squad order
+      has_reviewed       — bool: True = user has left at least one review
+      has_shared         — bool: True = user has at least one social share
+      event_attendance   — "0"|"1-2"|"3+"
+      has_graduated      — bool: True = user has graduated
+      level_department   — "LEVEL:DEPT" e.g. "200:Computer Science"
+      level              — academic level e.g. "200"
+
+    Title/body may use {name} — it is substituted with the recipient's first name.
+    """
+    db = get_user_client()
+    blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    if not blast:
+        raise ValueError("Blast not found")
+
+    segment = blast.get("segment") or {}
+    campus_id = segment.get("campus_id") or segment.get("campus") or blast.get("campus_id")
+    user_ids = resolve_segment_user_ids(segment, campus_id=campus_id, db=db)
+
     # ── Step 3: Send — personalise {name} if present in title/body ──────────
     channels = blast.get("channels", ["in_app"])
     title_tpl = blast.get("title", "")
@@ -664,6 +680,7 @@ def send_blast(blast_id: str) -> dict:
             title=notif_title,
             body=notif_body,
             channels=channels,
+            email_provider=blast.get("email_provider"),  # Part B4 — per-blast provider override
         )
         count += 1
 
@@ -693,24 +710,89 @@ def _get_onesignal_creds() -> tuple:
     return app_id, api_key
 
 
-def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str):
+def get_email_provider(scope: str = "transactional", override: str = None) -> str:
     """
-    Send a transactional email via Resend to the user's registered email address.
-    Looks up user email from profiles. Silently skips if credentials or email not found.
+    Resolve which email provider to use: 'resend' or 'onesignal'.
+    Precedence: explicit override (e.g. a specific blast's email_provider
+    column) > system_settings key `email_provider_{scope}_default` >
+    hardcoded fallback 'resend'. scope: 'transactional' | 'blast'.
+    Matches the existing system_settings override-layer pattern used
+    elsewhere in this codebase (e.g. hp_multiplier).
+    """
+    if override in ("resend", "onesignal"):
+        return override
+    try:
+        db = get_db()
+        row = (
+            db.table("system_settings")
+            .select("value")
+            .eq("key", f"email_provider_{scope}_default")
+            .is_("campus_id", "null")
+            .single()
+            .execute()
+        )
+        if row and row.get("value"):
+            val = row["value"]
+            provider = val.get("provider") if isinstance(val, dict) else val
+            if provider in ("resend", "onesignal"):
+                return provider
+    except Exception:
+        pass
+    return "resend"
+
+
+def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
+    """
+    Send email via OneSignal's email channel. Returns True on success, False
+    on failure (never raises) — same contract as send_email_raw.
     """
     try:
-        api_key = os.environ.get("RESEND_API_KEY", "")
-        if not api_key:
-            return
+        app_id, api_key = _get_onesignal_creds()
+        if not app_id or not api_key:
+            return False
+        payload = {
+            "app_id": app_id,
+            "target_channel": "email",
+            "include_email_tokens": [to_email],
+            "email_subject": subject,
+            "email_body": html_body,
+        }
+        resp = _onesignal_post(
+            f"{_ONESIGNAL_BASE}/notifications",
+            headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
+            payload=payload,
+        )
+        if resp.status_code not in (200, 202):
+            logger.warning("OneSignal email error %s for %s: %s", resp.status_code, to_email, resp.text[:200])
+            return False
+        return True
+    except Exception as e:
+        logger.error("OneSignal email dispatch error for %s: %s", to_email, e)
+        return False
 
+
+def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None):
+    """
+    Send a transactional email to the user's registered email address, via
+    whichever provider get_email_provider resolves to.
+    """
+    try:
         from app.utils.email import get_user_email_and_name, send_email_raw, _build_html
         email, name = get_user_email_and_name(user_id)
         if not email:
             return
 
+        chosen = get_email_provider(scope="transactional", override=provider)
         app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
         html_body = _build_html(name or "there", body, app_tagline)
-        send_email_raw(email, name or "there", subject, html_body)
+
+        if chosen == "onesignal":
+            _dispatch_email_via_onesignal(email, name or "there", subject, html_body)
+        else:
+            api_key = os.environ.get("RESEND_API_KEY", "")
+            if not api_key:
+                return
+            send_email_raw(email, name or "there", subject, html_body)
     except Exception as e:
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 
