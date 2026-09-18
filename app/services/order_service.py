@@ -950,7 +950,7 @@ def walk_order_to_status(
                 pass
 
         if caller_role == "rider":
-            effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id}).execute()
+            effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id})
             if not effective_rider or str(effective_rider) != str(changed_by):
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
