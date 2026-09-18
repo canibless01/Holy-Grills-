@@ -1,7 +1,7 @@
 """Analytics routes — admin-only reporting and insights."""
 
 from flask import Blueprint, request, jsonify, g, current_app, Response
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone, timedelta
@@ -64,7 +64,7 @@ def sales_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -121,7 +121,7 @@ def payment_method_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -172,7 +172,7 @@ def order_timing_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -224,7 +224,7 @@ def addon_acceptance_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -296,7 +296,7 @@ def delivery_location_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -366,7 +366,7 @@ def squad_order_analytics():
         .lte("created_at", to_date + "T23:59:59Z")
         .neq("status", "cancelled")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -422,7 +422,7 @@ def demographics_analytics():
         .neq("status", "cancelled")
         .not_.is_("user_id", "null")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -503,7 +503,7 @@ def engagement_analytics():
         description: Engagement metrics
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     q_rev = db.table("order_reviews").select("id", count="exact")
     q_ref = db.table("referrals").select("id", count="exact")
@@ -532,7 +532,7 @@ def retention_ltv_analytics():
         description: Retention and LTV metrics
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     q_prof = db.table("profiles").select("id").eq("role", "student")
     if campus_id:
@@ -585,7 +585,7 @@ def referral_network_analytics():
         description: Referral network and top referrers
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     q = db.table("referrals").select("id,referrer_id,hp_awarded")
     if campus_id:
@@ -651,7 +651,7 @@ def hp_analytics():
         .gte("created_at", from_date)
         .lte("created_at", to_date + "T23:59:59Z")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     hp_txns = q.execute() or []
@@ -718,7 +718,7 @@ def items_analytics():
         .gte("delivered_at", from_date)
         .lte("delivered_at", to_date + "T23:59:59Z")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -950,7 +950,7 @@ def referral_analytics():
     """
     db = get_user_client()
     q = db.table("referrals").select("id,hp_awarded")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     all_referrals = q.execute() or []
@@ -988,7 +988,7 @@ def dashboard_summary():
         .gte("created_at", today_start)
         .lte("created_at", today_end)
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders_today = q.execute()
@@ -1083,7 +1083,7 @@ def orders_analytics():
         .gte("created_at", from_date)
         .lte("created_at", to_date + "T23:59:59Z")
     )
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute()
@@ -1176,7 +1176,7 @@ def export_csv():
     from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
     to_date = request.args.get("to_date", today_wat().isoformat())
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     if export_type == "orders":
         q = (
@@ -1262,7 +1262,7 @@ def gifts_analytics():
     """
     db = get_user_client()
     q = db.table("first_order_gifts").select("id,status,created_at")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     gifts = q.execute() or []
@@ -1290,7 +1290,7 @@ def abandoned_carts_analytics():
     """
     db = get_user_client()
     q = db.table("abandoned_carts").select("id,is_recovered,created_at")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     carts = q.execute() or []
@@ -1317,7 +1317,7 @@ def marketplace_analytics():
         description: Marketplace stats
     """
     db = get_user_client()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     q_p = db.table("marketplace_purchases").select("id,wallet_amount,card_amount")
     if campus_id:
         q_p = q_p.eq("campus_id", campus_id)
@@ -1371,7 +1371,7 @@ def users_analytics():
     from_date = request.args.get("from_date", (today_wat() - timedelta(days=30)).isoformat())
 
     today_str = today_wat().isoformat()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
     q_daily = (
         db.table("orders")
@@ -1461,7 +1461,7 @@ def retention_analytics():
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(weeks=weeks)).isoformat()
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     q_prof = (
         db.table("profiles")
         .select("id,created_at")

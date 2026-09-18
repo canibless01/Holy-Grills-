@@ -121,6 +121,7 @@ def _check_kitchen_capacity(db):
         .eq("campus_id", campus_id)
         .gte("created_at", _today_start_iso())
         .not_.in_("status", ["cancelled", "refunded"])
+        .limit(1000)
         .execute()
     ) or []
     used = sum(_order_capacity_weight(o) for o in orders_today)
@@ -1275,8 +1276,8 @@ def _handle_delivery_rewards(order: dict):
 
     try:
         db.table("orders").eq("id", order_id).update(order_updates).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_handle_delivery_rewards: order hp_earned update failed for %s: %s", order_id, e)
 
     # All HP/tier/referral logic above is synchronous so callers see updated
     # balances immediately. Notifications are fire-and-forget — queue them as
@@ -1360,8 +1361,8 @@ def _handle_delivery_rewards(order: dict):
         get_user_client().table("profiles").eq("id", user_id).update({
             "last_activity_at": datetime.now(timezone.utc).isoformat()
         }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_handle_delivery_rewards: last_activity_at update failed for %s: %s", user_id, e)
 
 
 def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
@@ -1540,6 +1541,7 @@ def resolve_ordering_window(db, campus_id):
                 .eq("ordering_window_id", row["id"])
                 .gte("created_at", _today_start_iso())
                 .not_.in_("status", ["cancelled", "refunded"])
+                .limit(1000)
                 .execute()
             ) or []
             if sum(_order_capacity_weight(o) for o in _rows) >= int(row["capacity"]):
@@ -1603,6 +1605,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
                 .eq("ordering_window_id", row["id"])
                 .gte("created_at", f"{_today_iso}T00:00:00")
                 .not_.in_("status", ["cancelled", "refunded"])
+                .limit(1000)
                 .execute()
             ) or []
             used = sum(_order_capacity_weight(o) for o in _rows)

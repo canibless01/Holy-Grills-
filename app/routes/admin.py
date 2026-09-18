@@ -1905,7 +1905,7 @@ def _audit(actor_id, table, target_id, action, after_data=None):
 def list_spin_pool():
     """List all exclusive spin prize-pool entries (odds/weights), not fulfilment records."""
     db = get_user_client()
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     q = db.table("exclusive_spin_prizes").select("*").order("weight", ascending=False)
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")

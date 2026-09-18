@@ -13,7 +13,7 @@ PATCH  /api/admin/hall-of-fame-rewards/<user_id> — update status
 """
 
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_role
+from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -69,7 +69,7 @@ def list_feature_flags():
     """
     db = get_user_client()
     q = db.table("feature_flags").select("*")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
     rows = q.order("feature_name").execute() or []

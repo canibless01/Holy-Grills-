@@ -5,8 +5,44 @@ from flask import current_app
 from app.db import get_db, get_user_client
 
 
+DEFAULT_TIER_PERKS = {
+    "ember": {
+        "earn_multiplier": 1.00,
+        "monthly_free_delivery": False,
+        "birthday_hp": 0,
+        "free_side_credits_monthly": 0,
+        "exclusive_spins_monthly": 0,
+    },
+    "flame": {
+        "earn_multiplier": 1.08,
+        "monthly_free_delivery": False,
+        "birthday_hp": 0,
+        "free_side_credits_monthly": 0,
+        "exclusive_spins_monthly": 0,
+    },
+    "blaze": {
+        "earn_multiplier": 1.15,
+        "monthly_free_delivery": True,
+        "birthday_hp": 0,
+        "free_side_credits_monthly": 0,
+        "exclusive_spins_monthly": 0,
+    },
+    "holy": {
+        "earn_multiplier": 1.25,
+        "monthly_free_delivery": True,
+        "birthday_hp": 0,
+        "free_side_credits_monthly": 0,
+        "exclusive_spins_monthly": 0,
+    },
+}
+
+
 def get_tier_perks(tier_slug: str) -> dict:
-    return current_app.config.get("TIER_PERKS", {}).get(str(tier_slug).lower(), {})
+    slug = str(tier_slug).lower()
+    config_perks = current_app.config.get("TIER_PERKS", {})
+    if slug in config_perks:
+        return config_perks[slug]
+    return DEFAULT_TIER_PERKS.get(slug, {})
 
 
 def can_access_tier_resource(user_id: str, min_tier_id: str) -> bool:
@@ -56,7 +92,7 @@ def resolve_perk(user_id: str, perk_key: str):
     except Exception:
         pass
 
-    default_perks = current_app.config.get("TIER_PERKS", {}).get(slug, {})
+    default_perks = get_tier_perks(slug)
     return default_perks.get(perk_key, False if perk_key == "monthly_free_delivery" else 0)
 
 

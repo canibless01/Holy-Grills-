@@ -1657,6 +1657,16 @@ def send_scheduled_notifications(self):
                         already_ids = {r["user_id"] for r in already_sent}
                         user_ids = [uid for uid in user_ids if uid not in already_ids]
 
+                    sends_to_insert = []
+                    profile_names = {}
+                    if user_ids:
+                        try:
+                            from app.services.squad_service import resolve_display_names_batch
+                            p_rows = db.table("profiles").select("id,nickname,full_name,email,department,campus_id").in_("id", user_ids).execute() or []
+                            profile_names = resolve_display_names_batch(p_rows)
+                        except Exception:
+                            profile_names = {}
+
                     for uid in user_ids:
                         try:
                             send_notification(
@@ -1664,20 +1674,22 @@ def send_scheduled_notifications(self):
                                 notif_type=notif_type,
                                 title=title,
                                 body=body,
+                                template_data={"name": profile_names.get(uid, "there")},
                                 reference_id=campaign_id,
                                 reference_type="scheduled_notification",
                                 channels=channels,
                                 campus_id=campus_id,
                             )
                             if campaign.get("notify_new_matches_only"):
-                                try:
-                                    db.table("scheduled_notification_sends").insert({
-                                        "campaign_id": campaign_id, "user_id": uid,
-                                    })
-                                except Exception:
-                                    pass  # duplicate (campaign_id, user_id) — already logged
+                                sends_to_insert.append({"campaign_id": campaign_id, "user_id": uid})
                         except Exception as e:
                             logger.warning("send_scheduled_notifications: notify failed for user %s: %s", uid, e)
+
+                    if sends_to_insert:
+                        try:
+                            db.table("scheduled_notification_sends").insert(sends_to_insert)
+                        except Exception as e:
+                            logger.warning("send_scheduled_notifications: batch insert sends failed for campaign %s: %s", campaign_id, e)
 
                     update_payload: dict = {"last_sent_at": now.isoformat()}
                     if frequency == "once":

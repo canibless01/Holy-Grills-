@@ -67,7 +67,6 @@ class MSG:
 
     ORDER_REFUND_TITLE           = "Your refund is being processed"
     ORDER_REFUND_BODY_WALLET     = "\u20a6{amount} has been credited to your wallet. Reason: {reason}"
-    ORDER_REFUND_BODY_OTHER      = "\u20a6{amount} has been approved for refund. Reason: {reason}"
     ORDER_REFUND_SUCCESS         = "Refund processed"
 
     # ── Holy Points (HP) ──────────────────────────────────────────────────────
@@ -115,14 +114,10 @@ class MSG:
     GUEST_EMAIL_REQUIRED              = "Email is required for guest registration."
     GUEST_NAME_REQUIRED               = "Full name is required for guest registration."
     GUEST_PHONE_REQUIRED              = "Phone number is required for guest registration."
-    GUEST_ALREADY_REGISTERED          = "This email is already registered for this event."
     TIER_FEATURES_INVALID             = "Features must be an array of strings."
     TIER_TERMS_INVALID                = "Terms must be an array of strings."
     TIER_EARLY_BIRD_DEADLINE_REQUIRED = "Early bird deadline is required when is_early_bird is true."
-    REGISTRATION_FIELD_INVALID        = "Invalid registration field configuration."
     REGISTRATION_FIELD_REQUIRED       = "{field} is required."
-    REGISTRATION_SELECT_OPTIONS_REQUIRED = "Select fields must have options array."
-    REGISTRATION_FIELD_TYPE_INVALID   = "Invalid field type. Allowed: text, email, tel, textarea, select, number, date."
     TICKET_NOT_FOUND                  = "Ticket not found."
     TICKET_ALREADY_CHECKED_IN        = "This ticket has already been used for check-in."
     TICKET_LINKED_TO_ACCOUNT          = "Your guest ticket has been linked to your account. HP awarded!"
@@ -138,13 +133,9 @@ class MSG:
 
     # ── Notifications ─────────────────────────────────────────────────────────
     NOTIF_ALL_READ           = "All notifications marked as read"
-    NOTIF_TOKEN_UPDATED      = "Device token updated"
     NOTIF_TOKEN_REGISTERED   = "Device token registered"
-    NOTIF_TOKEN_NOT_PROVISIONED = "push notifications not yet provisioned"
-    NOTIF_BLAST_SCHEDULED    = "Blast scheduled"
     NOTIF_BLAST_NOT_FOUND    = "Notification blast not found"
     PUSH_SUBSCRIPTION_REQUIRED = "'subscription' is required"
-    PUSH_SUBSCRIPTION_UPDATED  = "Push subscription updated"
     PUSH_UNSUBSCRIBED          = "Push subscription(s) deactivated"
 
     # ── Referrals ─────────────────────────────────────────────────────────────
@@ -176,7 +167,6 @@ class MSG:
 
     # ── Admin ─────────────────────────────────────────────────────────────────
     ADMIN_USER_DEACTIVATED       = "User deactivated"
-    ADMIN_USER_ACTIVATED         = "User activated"
     ADMIN_USER_ALREADY_ACTIVE    = "User is already active"
     ADMIN_USER_REACTIVATED       = "User reactivated"
     ADMIN_WINDOW_CLOSED          = "Window closed"
@@ -190,8 +180,6 @@ class MSG:
     # ── Wallet ────────────────────────────────────────────────────────────────
     WALLET_FUNDED_TITLE          = "Wallet Funded \u20a6{amount}"
     WALLET_FUNDED_BODY           = "Your wallet has been credited with \u20a6{amount}."
-    WALLET_TRANSFER_TITLE        = "Wallet Credited \u20a6{amount}"
-    WALLET_TRANSFER_BODY         = "Your bank transfer of \u20a6{amount} has been confirmed."
 
     # ── Menu ──────────────────────────────────────────────────────────────────
     MENU_ADDON_GROUP_DELETED     = "Add-on group deleted"
@@ -199,8 +187,6 @@ class MSG:
     MENU_ITEM_ARCHIVED           = "Item archived"
     MENU_CATEGORY_DEACTIVATED    = "Category '{name}' deactivated"
     MENU_CAPACITY_LIMIT_REMOVED  = "Daily capacity limit removed"
-    MENU_ADDON_GROUP_CREATED     = "Add-on group created"
-    MENU_ADDON_GROUP_UPDATED     = "Add-on group updated"
     MENU_ADDON_GROUP_NOT_FOUND   = "Add-on group not found"
     MENU_ITEM_SOLD_OUT_TITLE     = "Item Sold Out: {name}"
     MENU_ITEM_SOLD_OUT_BODY      = "'{name}' has been marked as unavailable. Update the menu if stock is replenished."
@@ -233,7 +219,6 @@ class MSG:
     ADMIN_TIER_NOT_FOUND         = "Tier slug '{slug}' not found"
     ADMIN_PROMO_NOT_FOUND        = "Promo code not found"
     ADMIN_PROMO_UPDATED          = "Promo code updated"
-    ADMIN_PROMO_CODE_EXISTS      = "A promo code with this code already exists"
     ADMIN_BATCH_NOT_FOUND        = "Delivery batch not found"
     ADMIN_BATCH_NO_FIELDS        = "No valid fields to update"
     ADMIN_BATCH_INVALID_STATUS   = "Invalid status — must be one of: assigned, completed, cancelled"
@@ -289,7 +274,6 @@ class MSG:
     LEADERBOARD_RANK_BODY        = "You finished #{rank} on the {period} leaderboard with {hp} {currency} earned. Keep going!"
 
     # ── Order cancellation / placement window ─────────────────────────────────
-    ORDER_CANCEL_WINDOW_CLOSED     = "Orders cannot be cancelled once the ordering window has closed"
     ORDER_CANCEL_WRONG_STATUS      = "Only orders in 'received' status can be cancelled by the customer"
     ORDER_OUTSIDE_ORDERING_HOURS   = "Orders can only be placed during operating hours"
     ORDERING_WINDOW_AT_CAPACITY    = "This ordering window has reached capacity."
@@ -318,8 +302,7 @@ class MSG:
     # ── Events ────────────────────────────────────────────────────────────────
     # ── Ticket Tiers ──────────────────────────────────────────────────────────
     TIER_NOT_FOUND               = "Ticket tier not found"
-    TIER_CAPACITY_EXCEEDED        = "This ticket tier is sold out"
-    TIER_ALREADY_REGISTERED       = "You are already registered for this event"
+    ALREADY_REGISTERED_FOR_EVENT = "Already registered for this event"
     TIER_PRICE_INVALID            = "price_naira and price_hp must be non-negative"
     TIER_CAPACITY_INVALID_TIER    = "capacity must be a positive integer or null"
     TIER_NAME_REQUIRED            = "Tier name is required"
@@ -330,22 +313,13 @@ class MSG:
     FREE_SIDE_NO_CREDITS         = "You have no free side credits"
     FREE_SIDE_REDEEMED           = "Free side credit redeemed"
     FREE_SIDE_INVALID_CHOICE     = "Invalid side choice"
-    FREE_SIDE_EXPIRED            = "Your free side credits have expired"
 
     # ── Exclusive Spin ────────────────────────────────────────────────────────
     SPIN_NO_CREDITS              = "You have no exclusive spins available"
-    SPIN_INSUFFICIENT_HP         = "Not enough {currency} to purchase an extra spin"
     SPIN_SUCCESS                 = "You spun and won: {prize}"
-    SPIN_BOUGHT                  = "Extra spin purchased successfully"
-    SPIN_EXPIRED                 = "Your exclusive spin has expired"
-    HP_SPIN_INSUFFICIENT         = "Insufficient {currency}. Need {cost} {currency} for extra spins today."
 
     # ── Challenges ────────────────────────────────────────────────────────────
     CHALLENGE_NOT_FOUND          = "Challenge not found or inactive"
-    CHALLENGE_ENDED              = "Challenge has ended"
-    CHALLENGE_MAX_REACHED        = "Challenge already completed (max completions reached)"
-    CHALLENGE_HP_EXCEEDS_MAX     = "{currency} reward cannot exceed {max_hp} {currency} per challenge"
-    CHALLENGE_CREATE_FAILED      = "Failed to create challenge: {error}"
     CHALLENGE_COMPLETE_TITLE     = "Challenge Complete: {title}"
     CHALLENGE_COMPLETE_BODY      = "You earned {hp} {currency} (pending). Order food to unlock!"
     CHALLENGE_DEACTIVATED        = "Challenge deactivated"
@@ -367,7 +341,6 @@ class MSG:
     LISTING_NOT_FOUND            = "Listing not found"
     LISTING_NOT_AVAILABLE        = "Listing not available"
     LISTING_OUT_OF_STOCK         = "Listing is out of stock"
-    LISTING_INSUFFICIENT_HP      = "Insufficient {currency}: need {need}, have {have}"
     LISTING_NO_CODES             = "No codes available. Listing is now out of stock."
     LISTING_TIER_TOO_LOW         = "Your tier is not high enough to purchase this item."
     LISTING_VENDOR_UNAVAILABLE   = "Vendor listing requests are not currently available. Please contact us directly."
@@ -387,22 +360,17 @@ class MSG:
 
     # ── Orders ────────────────────────────────────────────────────────────────
     ORDER_WALLET_LOGIN_REQUIRED  = "Wallet payment requires a logged-in account"
-    ORDER_HP_LOGIN_REQUIRED      = "{currency} redemption requires a logged-in account"
     ORDER_CREATE_FAILED          = "Order creation failed"
     ORDER_NOT_FOUND              = "Order not found"
     ORDER_ACCESS_DENIED          = "Access denied"
     ORDER_INVALID_CLAIM          = "Invalid claim token"
-    ORDER_AUTH_REQUIRED          = "Authentication or claim_token required"
     ORDER_REVIEW_DELIVERED_ONLY  = "Can only review delivered orders"
     ORDER_ALREADY_REVIEWED       = "Order already reviewed"
-    ORDER_ALREADY_STATUS         = "Order is already {status} and cannot be refunded"
     ORDER_ADDON_GROUP_REQUIRED   = "'{group_name}' requires at least {min_select} selection(s) for '{item_name}'"
     ORDER_ADDON_GROUP_TOO_MANY   = "'{group_name}' allows at most {max_select} selection(s) for '{item_name}'"
     ORDER_ADDON_NOT_FOUND        = "Add-on {addon_id} not found"
     ORDER_ADDON_UNAVAILABLE      = "Add-on '{name}' is not currently available"
     ORDER_ADDON_WRONG_ITEM       = "Add-on '{name}' does not belong to '{item_name}'"
-    ORDER_SCHEDULE_WINDOW_REQUIRED = "'scheduled_for_window_id' is required when 'is_scheduled' is true"
-    ORDER_SCHEDULE_WINDOW_INVALID  = "Selected scheduled delivery window is not open"
 
     # ── Storefront ────────────────────────────────────────────────────────────
     STOREFRONT_INVALID_DAY       = "Invalid day '{day}'. Must be a full weekday name."
@@ -418,7 +386,6 @@ class MSG:
     WALLET_USER_NOT_FOUND        = "User not found"
     WALLET_PROFILE_NOT_FOUND     = "Profile not found"
     WALLET_VA_FAILED             = "Could not provision virtual account: {error}"
-    WALLET_INSUFFICIENT          = "Insufficient balance. Available: \u20a6{balance:.2f}"
 
     # ── Cart ──────────────────────────────────────────────────────────────────
     CART_ITEM_ADDED          = "Item added to cart"
@@ -428,13 +395,11 @@ class MSG:
     CART_ITEM_NOT_FOUND      = "Cart item not found"
 
     # ── Scheduled orders ──────────────────────────────────────────────────────
-    ORDER_WINDOW_AT_CAPACITY     = "This delivery window is fully booked. Please choose another window."
     SCHEDULED_ORDER_DUE_TITLE    = "Scheduled Order Due"
     SCHEDULED_ORDER_DUE_BODY     = "Order #{order_id} is now due for preparation."
 
     # ── Order cancellation / reorder ──────────────────────────────────────────
     ORDER_CANCELLED_OK       = "Order cancelled"
-    ORDER_CANNOT_CANCEL      = "Order cannot be cancelled once it is being prepared"
     ORDER_CANCEL_NOT_OWNER   = "You can only cancel your own orders"
     ORDER_REORDER_ITEMS      = "Reorder items fetched"
     ORDER_NOT_SCHEDULED_PENDING = "Order is not a pending scheduled order"
@@ -476,7 +441,6 @@ class MSG:
     ORDER_LOCK_DATE_INVALID      = "Invalid date format. Use YYYY-MM-DD"
     ORDER_LOCK_DATE_FUTURE       = "locked_date must be a future date"
     ORDER_LOCK_RESCHEDULE_LIMIT  = "This lock has already been rescheduled once"
-    ORDER_LOCK_DISCOUNT_RANGE    = "discount_pct must be between 1 and {max}"
     ORDER_LOCK_REMINDER_TITLE    = "🔒 Locked Order Reminder — {days} day{plural} to go"
     ORDER_LOCK_REMINDER_BODY     = "Your {pct:.0f}% discount is reserved for {date}. Don't miss it!"
     ORDER_LOCK_EXPIRY_TITLE      = "Order Lock Expired"
@@ -486,7 +450,6 @@ class MSG:
     ORDER_LOCK_REDEEMED_HP_TITLE = "🔒 Order Lock {currency} Reward!"
     ORDER_LOCK_REDEEMED_HP_BODY  = "You earned {hp} {currency} for placing your order on your locked date!"
     ORDER_LOCK_REMINDER_BODY_HP  = "Your {hp} {currency} reward is waiting for {date}. Place an order to claim it!"
-    ORDER_LOCK_HP_AWARDED_NOTES  = "Order lock {currency} reward — {hp} {currency} awarded on locked-date order"
     BIRTHDAY_BLAST_TITLE         = "🎂 It's {name}'s Birthday Today!"
     BIRTHDAY_BLAST_BODY          = "Celebrate {name}'s birthday — tap to send them {currency} as a gift! 🎉"
 
@@ -508,8 +471,6 @@ class MSG:
     # ── Login Streak ───────────────────────────────────────────────────────────
     LOGIN_STREAK_TITLE           = "🔥 {streak}-Day Login Streak!"
     LOGIN_STREAK_BODY            = "You've logged in {streak} days in a row. Keep it up — you earned {hp} {currency}!"
-    LOGIN_STREAK_RESET_TITLE     = "Streak Reset"
-    LOGIN_STREAK_RESET_BODY      = "Your login streak reset to 1. Log in every day to build it back up!"
 
     # ── Order Share Prompt ─────────────────────────────────────────────────────
     SHARE_PROMPT_HP_TITLE        = "+{hp} {currency} for Sharing!"
@@ -521,9 +482,6 @@ class MSG:
     SQUAD_HP_SPLIT_TITLE         = "Squad {currency} Earned!"
     SQUAD_HP_SPLIT_BODY          = "You earned {hp} {currency} from the squad order placed by {organizer}."
     SQUAD_ORDER_ADDED_BODY       = "{organizer} added you to a squad order."
-    SQUAD_INVITE_SUBJECT         = "You've been invited to join {platform}!"
-    SQUAD_INVITE_BODY            = "{organizer} added you to a squad order. Create an account to start earning {currency}!"
-    SQUAD_MEMBER_NOT_FOUND       = "Squad member not found."
     SQUAD_MAX_MEMBERS_REACHED    = "This squad has reached its member limit."
     SQUAD_ORGANIZER_ONLY         = "Only the squad organizer can do this."
     SQUAD_NAME_REQUIRED          = "Squad name is required."
@@ -531,7 +489,6 @@ class MSG:
     SQUAD_CROSS_CAMPUS_BLOCKED   = "This person is on a different campus and can't join your squad."
 
     # ── Monthly HP Cap ─────────────────────────────────────────────────────────
-    MONTHLY_HP_CAP_REACHED       = "Monthly free-activity {currency} cap reached. Cap resets on the 1st of next month."
 
     # ── Dormancy Win-Back ──────────────────────────────────────────────────────
     WINBACK_DAY70_TITLE          = "We miss you! 👋"
@@ -540,8 +497,6 @@ class MSG:
     WINBACK_DAY95_BODY           = "You haven't ordered in a while. {currency} decay starts in {days} days — place an order now!"
     WINBACK_DAY118_TITLE         = "⏰ Last chance — {currency} decay starts in 2 days"
     WINBACK_DAY118_BODY          = "Your {currency} will start decaying in 2 days. Place an order to protect them!"
-    WINBACK_DECAY_TITLE          = "📉 {currency} Decay Started"
-    WINBACK_DECAY_BODY           = "Your {currency} balance has decreased by {amount} {currency} due to inactivity. Place an order to stop further decay."
 
     # ── HP Decay ──────────────────────────────────────────────────────────────
     HP_DECAY_TITLE               = "{currency} Decay — {amount} {currency} Reduced"
@@ -570,13 +525,11 @@ class MSG:
 
     # ── Order validation ───────────────────────────────────────────────────────
     ORDER_ITEMS_REQUIRED           = "'items' is required"
-    ORDER_DELIVERY_ADDRESS_REQUIRED = "'delivery_address' is required"
     ORDER_PAYMENT_METHOD_REQUIRED  = "'payment_method' is required"
     ORDER_STATUS_REQUIRED          = "status is required"
     ORDER_TARGET_STATUS_REQUIRED   = "target_status is required"
     ORDER_CLAIM_TOKEN_REQUIRED     = "claim_token is required"
     ORDER_REFUND_REASON_REQUIRED   = "'reason' is required"
-    ORDER_REFUND_AMOUNT_INVALID    = "refund_amount must be between 0 and {max:.2f}"
 
     # ── Referral validation ────────────────────────────────────────────────────
     REFERRAL_FIELDS_REQUIRED      = "referred_user_id and order_id are required"
@@ -590,22 +543,11 @@ class MSG:
     ADMIN_REASON_REQUIRED         = "'reason' is required"
 
     # ── Generic API errors ────────────────────────────────────────────────────
-    ERR_NOT_FOUND            = "Not found"
-    ERR_UNAUTHORIZED         = "Unauthorized"
-    ERR_FORBIDDEN            = "Access denied"
     ERR_BAD_REQUEST          = "Bad request"
-    ERR_SERVER               = "An unexpected error occurred. Please try again."
 
     # ── Event (checkin fallback path) ─────────────────────────────────────────
-    EVENT_NO_TICKET              = "No ticket found for this event"
-    EVENT_INVALID_QR             = "Invalid QR token"
-    EVENT_ALREADY_CHECKED_IN     = "Already checked in to this event"
-    EVENT_AT_CAPACITY            = "Event is at full capacity"
 
     # ── Paid event ticket ─────────────────────────────────────────────────────
-    PAID_EVENT_PAYMENT_REQUIRED  = "payment_method is required for paid events (wallet or card)"
-    PAID_EVENT_HP_USED           = "Ticket issued. {hp} {currency} deducted, ₦{cash:.0f} charged."
-    PAID_EVENT_CASH_ONLY         = "Ticket issued. Full price ₦{total:.0f} charged (insufficient {currency})."
 
     # ── HP Transfer — recipient notification ──────────────────────────────────
     HP_TRANSFER_RECEIVED_TITLE   = "You received {amount} {currency}! 🎉"
@@ -642,8 +584,6 @@ class MSG:
     LEADERBOARD_PRIZE_BODY       = "You ranked #{rank} in {period}! You've earned: {prize}. Your reward is being processed."
     EXCLUSIVE_SPIN_WON_TITLE     = "🎡 Spin Result!"
     EXCLUSIVE_SPIN_WON_BODY      = "You spun the exclusive wheel and won: {prize}! Check the app for details."
-    DAILY_CHECKIN_TITLE          = "✅ Daily Check-in!"
-    DAILY_CHECKIN_BODY           = "You've checked in for today and earned {hp} {currency}. Keep the streak going!"
     ADMIN_HOF_INDUCTION_TITLE    = "🏅 New Hall of Fame Inductee"
     ADMIN_HOF_INDUCTION_BODY     = "{inducted_name} has been inducted into the Hall of Fame! Fulfil their reward box when ready."
 
@@ -659,13 +599,10 @@ class MSG:
     # ── Login streak reclaim ──────────────────────────────────────────────────
     LOGIN_STREAK_RECLAIM_TITLE       = "Missed Day Recovered ✅"
     LOGIN_STREAK_RECLAIM_BODY_ORDER  = "Your order recovered your missed check-in today. Streak saved!"
-    LOGIN_STREAK_RECLAIM_BODY_TOPUP  = "Your top-up recovered your missed check-in today. Streak saved!"
 
     # ── Order streak ──────────────────────────────────────────────────────────
     ORDER_STREAK_TITLE               = "Order Streak: {weeks} Week{plural}! 🔥"
     ORDER_STREAK_BODY                = "You earned {hp} {currency} for ordering every week for {weeks} week{plural}!"
-    LOGIN_STREAK_CYCLE_FAILED_TITLE  = "💔 Check-In Cycle Reset"
-    LOGIN_STREAK_CYCLE_FAILED_BODY   = "Too many missed days this week — you're back to Week 1. Fresh start! 💪"
     MULTIPLIER_LIVE_TITLE            = "🔥 {currency} Multiplier Is LIVE!"
     MULTIPLIER_LIVE_BODY             = "Earn {multiplier}x {currency} on all food orders right now — don't miss it!"
     MARKETPLACE_PURCHASE_STATUS_TITLE = "🛒 Purchase Update"
@@ -687,7 +624,6 @@ class MSG:
 
     # ── Wallet / Payment errors ───────────────────────────────────────────────
     ORDER_WALLET_INSUFFICIENT    = "Insufficient wallet balance: need ₦{need:.2f}"
-    ORDER_WALLET_PAYMENT_FAILED  = "Wallet payment failed: {error}"
 
     # ── Order / Menu validation errors ────────────────────────────────────────
     ORDER_KITCHEN_AT_CAPACITY    = "The kitchen has reached its daily order capacity. Please try again tomorrow or check back later."
@@ -696,7 +632,6 @@ class MSG:
     ORDER_MENU_ITEM_UNAVAILABLE  = "'{name}' is not currently available"
     ORDER_MENU_ITEM_SOLD_OUT_TODAY = "'{name}' only has {remaining} serving(s) left today"
     ORDER_VARIATION_UNAVAILABLE  = "Variation option '{name}' is not currently available"
-    ORDER_DELIVERY_WINDOW_NOT_OPEN = "Selected delivery window is not open"
     ORDER_PROMO_INVALID          = "Promo code '{code}' is not valid"
     ORDER_PROMO_MIN_ORDER        = "Minimum order value ₦{min_amount:.0f} required for this code"
 
@@ -956,7 +891,6 @@ class MSG:
     REFUND_UNPAID_CANCELLED = "Cannot refund an unpaid cancelled order"
     REFUND_AMOUNT_INVALID = "Invalid refund amount"
     REFUND_ALREADY_FULL = "This order has already been fully refunded."
-    SQUAD_EMAILS_REQUIRED = "At least one email is required"
     SAVED_QUANTITY_INVALID = "quantity must be a valid integer"
     UPLOAD_NOT_CONFIGURED = "Uploads are not configured on this server"
     UPLOAD_FOLDER_INVALID = "Invalid upload folder"
