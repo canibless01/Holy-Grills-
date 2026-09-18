@@ -142,11 +142,17 @@ def create_order():
                 return jsonify({"error": f"'{field}' required for guest checkout"}), 400
         if data.get("payment_method") in ("wallet", "split"):
             return jsonify({"error": MSG.ORDER_WALLET_LOGIN_REQUIRED}), 400
+    from app.services.order_service import OrderingWindowUnavailable
     try:
         order = order_service.create_order(user_id, data)
         if isinstance(order, dict):
             order["message"] = MSG.ORDER_PLACED
         return jsonify(order), 201
+    except OrderingWindowUnavailable as e:
+        resp = {"error": str(e)}
+        if getattr(e, "next_available_date", None):
+            resp["next_available_date"] = e.next_available_date
+        return jsonify(resp), 409
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:

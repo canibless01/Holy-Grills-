@@ -30,7 +30,10 @@ class MSG:
 
     # ── Order status — notification titles & bodies ───────────────────────────
     ORDER_CONFIRMED_TITLE        = "Order Confirmed!"
-    ORDER_CONFIRMED_BODY         = "Your order #{order_id} is received and heading to the kitchen."
+    ORDER_CONFIRMED_BODY         = "Your order #{order_id} is received! Expect delivery between {delivery_window_start}–{delivery_window_end}."
+
+    ORDER_SCHEDULED_DEFERRED_TITLE = "Order Scheduled"
+    ORDER_SCHEDULED_DEFERRED_BODY  = "Today's orders are full — your order is scheduled for {scheduled_date}, delivery between {delivery_window_start}–{delivery_window_end}."
 
     ORDER_PREPARING_TITLE        = "Your order is being prepared"
     ORDER_PREPARING_BODY         = "The kitchen is on it! Won't be long."
