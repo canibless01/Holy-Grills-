@@ -1659,7 +1659,7 @@ def send_scheduled_notifications(self):
 
                     for uid in user_ids:
                         try:
-                            send_notification(
+                            sent_records = send_notification(
                                 user_id=uid,
                                 notif_type=notif_type,
                                 title=title,
@@ -1669,7 +1669,7 @@ def send_scheduled_notifications(self):
                                 channels=channels,
                                 campus_id=campus_id,
                             )
-                            if campaign.get("notify_new_matches_only"):
+                            if campaign.get("notify_new_matches_only") and sent_records:
                                 try:
                                     db.table("scheduled_notification_sends").insert({
                                         "campaign_id": campaign_id, "user_id": uid,
