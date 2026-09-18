@@ -80,8 +80,10 @@ def push_subscribe():
         result = db.table("push_subscriptions").upsert(record, on_conflict="user_id,endpoint").execute()
         row = result[0] if isinstance(result, list) and len(result) > 0 else result
         return jsonify(row if isinstance(row, dict) else {"message": MSG.NOTIF_TOKEN_REGISTERED}), 200
-    except Exception:
-        return jsonify({"message": MSG.NOTIF_TOKEN_REGISTERED}), 200
+    except Exception as exc:
+        from app.utils.logger import get_logger
+        get_logger(__name__).error("push_subscribe: failed to persist subscription for user %s: %s", g.user_id, exc)
+        return jsonify({"error": "Unable to register push subscription"}), 500
 
 
 @push_bp.route("/subscribe", methods=["DELETE"])
