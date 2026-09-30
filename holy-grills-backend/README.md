@@ -34,22 +34,36 @@
 ## Quick Start
 
 ```bash
-# 1. Clone the repo
 git clone <repo-url>
 cd holy-grills-backend
+make setup      # create .venv, install dependencies, create .env if missing
+make check      # connect to Supabase (validates keys, project ref, signatures)
+make smoke      # read-only end-to-end run against the live project
+make e2e        # full end-to-end run (creates its own test user, deletes it after)
+make server     # start the API on :5000
+```
 
-# 2. Install Python dependencies
-pip install -r requirements.txt
+`make` on its own lists every target. Requires Python 3.9+.
 
-# 3. Copy env template and fill in values
-cp .env.example .env
-# Edit .env with your credentials
+**No `make`** (plain Windows, some CI images)? Do the same by hand:
 
-# 4. Start the API
-python run.py
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt     # Windows: .venv\Scripts\pip
+cp .env.example .env                          # then fill in the Supabase values
+.venv/bin/python scripts/check_supabase.py
+.venv/bin/python scripts/live_test.py --read-only
+.venv/bin/python run.py
+```
 
-# 5. (Optional) Start Celery worker for background jobs
+**Already have a virtualenv elsewhere?** Point `make` at it:
+`make check VENV=../.venv`
+
+Celery worker and beat, when you need background jobs:
+
+```bash
 celery -A app.tasks.celery_app worker --loglevel=info
+celery -A app.tasks.celery_app beat --loglevel=info
 ```
 
 ---
@@ -215,6 +229,8 @@ returns HTTP 200, so callers must read the `status` field.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `make: .venv/bin/python: No such file or directory` | `make setup` has not been run yet (or your venv lives elsewhere) | `make setup`, or point at yours: `make check VENV=../.venv` |
+| `missing: SUPABASE_URL, …` from the checker | No `.env` (the file is git-ignored, so a fresh clone has none) | `make env` then fill in the Supabase block |
 | `unreachable: … Max retries exceeded` / `SSLError` | No network route to `*.supabase.co` (offline, firewall, egress allow-list, sandbox) | Run where the internet is open, or allow `*.supabase.co:443` |
 | `error:401` / `Invalid API key` | Key rotated, revoked, or copied with a trailing newline | Re-copy from Project Settings → API |
 | Checker: `key belongs to project 'x' but SUPABASE_URL is 'y'` | Keys and URL from different projects | Use one project's URL + keys together |
@@ -328,6 +344,7 @@ holy-grills-backend/
 │   ├── check_supabase.py    # Connection preflight (config + live probes)
 │   ├── contract_check.py    # Code ↔ database contract check (tables/columns/RPCs)
 │   └── live_test.py         # Playwright-style live end-to-end suite
+├── Makefile                 # make setup / check / contract / smoke / e2e / serve
 ├── .env.example             # Environment variable template
 ├── requirements.txt         # Python dependencies
 ├── Procfile                 # Gunicorn start command for deployment
