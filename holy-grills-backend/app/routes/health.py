@@ -11,8 +11,9 @@ Response shape:
         "api": "<APP_NAME from config>",
         "version": "1.0.0",
         "checks": {
-            "supabase": "connected" | "error:<status>" | "unreachable:<msg>",
-            "redis":    "connected" | "error:<msg>"    | "not_configured"
+            "supabase":      "connected" | "error:<status>" | "unreachable:<msg>",   # PostgREST (database)
+            "supabase_auth": "connected" | "error:<status>" | "unreachable:<msg>",   # GoTrue (auth)
+            "redis":         "connected" | "error:<msg>"    | "not_configured"
         }
     }
 
@@ -61,6 +62,18 @@ def health():
         checks["supabase"] = MSG.HEALTH_CONNECTED if r.status_code < 400 else f"error:{r.status_code}"
     except Exception as exc:
         checks["supabase"] = f"unreachable:{str(exc)[:80]}"
+
+    # ── Supabase Auth ─────────────────────────────────────────────────────────
+    # Same project, different service: PostgREST can be up while GoTrue (auth) is
+    # not, and every login/register/refresh goes through GoTrue.  Reported
+    # separately so a deploy can tell "database down" from "auth down".
+    try:
+        url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        r = _req.get(f"{url}/auth/v1/health", headers={"apikey": key}, timeout=5)
+        checks["supabase_auth"] = MSG.HEALTH_CONNECTED if r.status_code < 400 else f"error:{r.status_code}"
+    except Exception as exc:
+        checks["supabase_auth"] = f"unreachable:{str(exc)[:80]}"
 
     # ── Redis ─────────────────────────────────────────────────────────────────
     redis_url = os.environ.get("REDIS_URL", "")

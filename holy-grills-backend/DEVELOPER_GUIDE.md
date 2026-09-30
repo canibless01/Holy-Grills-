@@ -583,6 +583,17 @@ Two seed options — both are fully idempotent (safe to run multiple times):
 
 Both seed the same 8 tables in FK-dependency order. After seeding, all API endpoints that depend on menu data, operating hours, promo codes, and delivery windows will work.
 
+### Verifying a Supabase connection
+
+```bash
+python scripts/check_supabase.py
+```
+
+Validates `SUPABASE_URL` / keys / JWT secret offline (roles, signatures, project
+`ref`, expiry), then probes Auth, PostgREST and **every table the code queries**
+— discovered at runtime by scanning `app/` for `db.table("…")` calls, so the
+list never drifts. Read-only; exits non-zero when something is wrong.
+
 ---
 
 ## 16. Common Pitfalls

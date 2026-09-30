@@ -103,6 +103,75 @@ See `.env.example` for the full list including all HP economy and squad-order tu
 
 ---
 
+## Connecting to Supabase
+
+All database access goes through Supabase's REST API (PostgREST) and all
+authentication through Supabase Auth (GoTrue) — there is no direct Postgres
+connection, so the only thing the app needs is the project URL plus its keys.
+
+### 1. Collect the four values
+
+Supabase Dashboard → **Project Settings → API**:
+
+| Value | Env var |
+|-------|---------|
+| Project URL | `SUPABASE_URL` |
+| `service_role` secret key | `SUPABASE_SERVICE_ROLE_KEY` |
+| `anon` public key | `SUPABASE_ANON_KEY` |
+| JWT secret | `SUPABASE_JWT_SECRET` (or `JWT_SECRET`) |
+
+Put them in `.env` (that file is git-ignored — keep it that way, the
+service-role key is a full-access database credential).
+
+### 2. Verify the connection
+
+```bash
+python scripts/check_supabase.py             # full preflight
+python scripts/check_supabase.py --offline   # config only, no network
+python scripts/check_supabase.py --json      # machine-readable (CI)
+```
+
+The checker validates the URL, the key roles, the JWT signatures and the
+`ref` claim (catching keys from *another* project), then performs live
+Auth + PostgREST round-trips and confirms every table the code queries via
+`db.table("…")` actually exists. Exit code is `0` when healthy, `1` on
+failure — drop it into a deploy step to fail fast instead of at first request.
+
+### 3. Start the app and confirm
+
+```bash
+python run.py
+curl -s http://localhost:5000/api/health
+```
+
+```json
+{
+  "status": "ok",
+  "checks": {
+    "supabase": "connected",
+    "supabase_auth": "connected",
+    "redis": "not_configured"
+  }
+}
+```
+
+`status` is `degraded` if a dependency is unreachable — the endpoint always
+returns HTTP 200, so callers must read the `status` field.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `unreachable: … Max retries exceeded` / `SSLError` | No network route to `*.supabase.co` (offline, firewall, egress allow-list, sandbox) | Run where the internet is open, or allow `*.supabase.co:443` |
+| `error:401` / `Invalid API key` | Key rotated, revoked, or copied with a trailing newline | Re-copy from Project Settings → API |
+| Checker: `key belongs to project 'x' but SUPABASE_URL is 'y'` | Keys and URL from different projects | Use one project's URL + keys together |
+| Checker: `NOT signed by the configured JWT secret` | `SUPABASE_JWT_SECRET` is stale (rotated) | Re-copy the JWT secret; auth still works without it, refresh optimisation does not |
+| `error:404` + `PGRST205` on a table | Schema/migration not applied | Run the SQL in the Supabase SQL editor |
+| `error:403` / `RESOURCE_ACCESS_DENIED` | RLS policy or wrong key role | Check the table's policies; server calls use the service-role key |
+| Production boot: `SECRET_KEY is unset or still the public default` | Flask session secret missing | Set a long random `SECRET_KEY` (see line above) |
+
+---
+
 ## Running the App
 
 ```bash
@@ -149,7 +218,8 @@ Obtain tokens via `POST /api/auth/login` or `POST /api/auth/register`.
 GET /api/health
 ```
 
-Returns connectivity status for Supabase and Redis. No auth required.
+Returns connectivity status for Supabase (PostgREST), Supabase Auth (GoTrue) and Redis.
+No auth required. `status` is `ok` or `degraded`; the endpoint always returns HTTP 200.
 
 ---
 
@@ -201,15 +271,19 @@ holy-grills-backend/
 │       ├── logger.py        # ★ Structured logging — use get_logger(__name__)
 │       ├── retry.py         # ★ @with_retry decorator for external API calls
 │       └── validators.py    # Input validation helpers
-├── migrations/
-│   └── schema.sql           # Idempotent SQL for tables not in Supabase migrations
 ├── scripts/
-│   └── seed.py              # Dev seed data
+│   └── check_supabase.py    # Supabase connection preflight (config + live probes)
 ├── .env.example             # Environment variable template
 ├── requirements.txt         # Python dependencies
 ├── Procfile                 # Gunicorn start command for deployment
 └── DEVELOPER_GUIDE.md       # Deep-dive developer reference
 ```
+
+> **Note:** `DEVELOPER_GUIDE.md` also references `migrations/schema.sql`,
+> `scripts/seed.py` and `scripts/live_test.py`. Those files are not part of this
+> repository checkout — the live database is managed directly in the Supabase
+> SQL editor — so `scripts/check_supabase.py` is the entry point for verifying
+> a connection.
 
 ---
 

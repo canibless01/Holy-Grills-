@@ -41,6 +41,17 @@ Every environment variable the app reads, what it controls, its default, and
 | `JWT_REFRESH_TOKEN_EXPIRES` | Refresh token TTL (seconds) | `2592000` |
 | `JWT_REFRESH_WINDOW_MINUTES` | Rotate token when N minutes remain | `5` |
 
+After filling these in, verify the connection end-to-end:
+
+```bash
+python scripts/check_supabase.py            # config + live Auth/PostgREST/table probes
+python scripts/check_supabase.py --offline  # config only (no network needed)
+```
+
+It exits `0` when the keys, the project ref, the JWT signatures and the
+expected tables all line up, and `1` otherwise — see the README's
+"Connecting to Supabase" section for the troubleshooting table.
+
 ### 1.3 Payments — Paystack
 
 | Variable | Description | Default |

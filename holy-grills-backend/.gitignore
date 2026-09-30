@@ -1,6 +1,24 @@
-echo "__pycache__/" >> .gitignore
-echo "*.pyc" >> .gitignore
-echo ".env" >> .gitignore
+# ── Python ────────────────────────────────────
 __pycache__/
-*.pyc __pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# ── Environment / secrets ─────────────────────
+# .env holds the Supabase service-role key and JWT secret — never commit it.
 .env
+.env.*
+!.env.example
+
+# ── Local artefacts ───────────────────────────
+*.log
+.DS_Store
+.idea/
+.vscode/
