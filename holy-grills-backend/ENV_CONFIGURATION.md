@@ -50,7 +50,10 @@ python scripts/check_supabase.py --offline  # config only (no network needed)
 
 It exits `0` when the keys, the project ref, the JWT signatures and the
 expected tables all line up, and `1` otherwise — see the README's
-"Connecting to Supabase" section for the troubleshooting table.
+"Connecting to Supabase" section for the troubleshooting table. Two companion
+checks live beside it: `scripts/contract_check.py` (every table/column/RPC the
+code references exists in the database) and `scripts/live_test.py` (live
+end-to-end run with automatic cleanup).
 
 ### 1.3 Payments — Paystack
 

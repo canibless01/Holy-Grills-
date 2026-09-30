@@ -594,6 +594,24 @@ Validates `SUPABASE_URL` / keys / JWT secret offline (roles, signatures, project
 — discovered at runtime by scanning `app/` for `db.table("…")` calls, so the
 list never drifts. Read-only; exits non-zero when something is wrong.
 
+Then verify the contract and the runtime, in that order:
+
+```bash
+python scripts/contract_check.py   # every table/column/RPC the code uses exists in the DB
+python scripts/live_test.py        # full E2E against the live project (creates + deletes its own user)
+python scripts/live_test.py --read-only   # GET-only smoke test
+```
+
+`live_test.py` is the Playwright equivalent for this backend: it drives real
+requests and reads the resulting rows back with the service-role key. Every
+step declares the route it calls, so `--self-check` can validate the whole plan
+against the app's URL map without touching the network:
+
+```bash
+python scripts/live_test.py --self-check
+python scripts/live_test.py --list
+```
+
 ---
 
 ## 16. Common Pitfalls

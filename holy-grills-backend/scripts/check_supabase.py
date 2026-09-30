@@ -34,6 +34,11 @@ Usage
     python scripts/check_supabase.py --skip-tables
     python scripts/check_supabase.py --env-file .env.production
 
+See also
+--------
+    scripts/contract_check.py   does every table/column/RPC the code uses exist?
+    scripts/live_test.py        live end-to-end suite (writes + cleanup)
+
 Exit codes
 ----------
     0  all checks passed (warnings allowed)

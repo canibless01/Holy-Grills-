@@ -137,7 +137,60 @@ Auth + PostgREST round-trips and confirms every table the code queries via
 `db.table("…")` actually exists. Exit code is `0` when healthy, `1` on
 failure — drop it into a deploy step to fail fast instead of at first request.
 
-### 3. Start the app and confirm
+### 3. Prove the code↔database contract
+
+```bash
+python scripts/contract_check.py
+```
+
+`check_supabase.py` proves you can *reach* Supabase; this proves every request
+the code makes matches what the database *has*. It parses the source (no
+execution) for every `.table(...)`, `.select(...)`, `.insert({...})`, filter
+column and `.rpc(...)` call, then probes the live project read-only:
+
+* tables that don't exist
+* columns the code selects/filters/writes that don't exist
+  (a 400 is re-probed column-by-column so the report names the exact offender)
+* RPCs and RPC parameter names the database doesn't expose
+  (RPCs are resolved from the OpenAPI spec — never executed)
+
+```
+  FAIL  missing columns orders.legacy_price   [app/services/order_service.py:412]
+```
+
+### 4. Run the live end-to-end suite
+
+```bash
+python scripts/live_test.py                # full run: writes + automatic cleanup
+python scripts/live_test.py --read-only    # GET-only smoke test
+python scripts/live_test.py --login-email you@example.com --login-password '…'
+python scripts/live_test.py --keep-data --verbose   # debug a failure
+```
+
+Playwright-style: each step drives the API for real and then reads the row back
+out of Postgres through the service-role key, so a green run means the whole
+chain works — endpoint, service, REST call, SQL, and response.
+
+| Phase | What it exercises |
+|-------|-------------------|
+| preflight | `/api/health` reports Supabase + Supabase Auth connected |
+| public | menu, campuses, departments, levels, calendar, leaderboard, challenges, rewards, delivery windows/zones, hostels/gates, storefront |
+| auth | register → duplicate register → login → wrong password 401 → `/me` → refresh → streak → profile patch → device token |
+| addresses | create → list → update → delete (each verified in `user_addresses`) |
+| cart & saved | add → read → update quantity → save for later → back to cart |
+| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger) |
+| economy | HP balance/transactions/tiers, wallet + ledger, rewards, referrals |
+| notifications | list, preferences round-trip, read-all |
+| admin | optional (`--admin-token`): settings, users, orders, audit log, dashboard, economics |
+
+A throwaway account (`e2e.<timestamp>.<rand>@e2e.holygrills.test`) is created
+for the run and hard-deleted afterwards, together with every row the run
+touched. `--read-only` never writes; `--login-email` reuses an existing account
+and switches writes off unless you add `--write-existing`. Exit code is `0`
+when every executed step passed (`SKIP` is not a failure), `1` on any failure —
+so it can gate a deploy.
+
+### 5. Start the app and confirm
 
 ```bash
 python run.py
@@ -272,18 +325,21 @@ holy-grills-backend/
 │       ├── retry.py         # ★ @with_retry decorator for external API calls
 │       └── validators.py    # Input validation helpers
 ├── scripts/
-│   └── check_supabase.py    # Supabase connection preflight (config + live probes)
+│   ├── check_supabase.py    # Connection preflight (config + live probes)
+│   ├── contract_check.py    # Code ↔ database contract check (tables/columns/RPCs)
+│   └── live_test.py         # Playwright-style live end-to-end suite
 ├── .env.example             # Environment variable template
 ├── requirements.txt         # Python dependencies
 ├── Procfile                 # Gunicorn start command for deployment
 └── DEVELOPER_GUIDE.md       # Deep-dive developer reference
 ```
 
-> **Note:** `DEVELOPER_GUIDE.md` also references `migrations/schema.sql`,
-> `scripts/seed.py` and `scripts/live_test.py`. Those files are not part of this
-> repository checkout — the live database is managed directly in the Supabase
-> SQL editor — so `scripts/check_supabase.py` is the entry point for verifying
-> a connection.
+> **Note:** `DEVELOPER_GUIDE.md` also references `migrations/schema.sql` and
+> `scripts/seed.py`. Those are not part of this repository checkout — the live
+> database is managed directly in the Supabase SQL editor — so the `scripts/`
+> folder here is the entry point for verifying a connection
+> (`check_supabase.py`), the schema contract (`contract_check.py`) and behaviour
+> (`live_test.py`).
 
 ---
 
