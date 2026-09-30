@@ -1,0 +1,531 @@
+from flask import Blueprint, request, jsonify, g, current_app
+from app.middleware.auth import require_auth, require_role
+from app.services.hp_service import (
+    get_hp_balance, get_user_tier, earn_pending_hp, award_active_hp
+)
+from app.db import get_db, get_user_client
+from app.messages import MSG, resolve_msg
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+hp_bp = Blueprint("hp", __name__)
+
+
+@hp_bp.route("/balance", methods=["GET"])
+@require_auth
+def balance():
+    """
+    Get user's HP balance: active, pending, total_visible.
+    HP value in ₦ terms is NOT returned (internal admin/analytics only).
+    ---
+    tags: [HP]
+    responses:
+      200:
+        description: HP balance breakdown
+    """
+    bal = get_hp_balance(g.user_id)
+    tier = get_user_tier(g.user_id)
+    # §24: overflow field removed. §15: no HP→₦ conversion in user-facing response.
+    safe_bal = {k: v for k, v in bal.items() if k not in ("overflow", "overflow_hp", "hp_naira_value")}
+    return jsonify({**safe_bal, "tier": tier}), 200
+
+
+@hp_bp.route("/transactions", methods=["GET"])
+@require_auth
+def transactions():
+    """
+    Get HP transaction history for the authenticated user.
+    ---
+    tags: [HP]
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        default: 50
+      - in: query
+        name: offset
+        type: integer
+        default: 0
+      - in: query
+        name: type
+        type: string
+        description: Filter by transaction type
+    responses:
+      200:
+        description: HP transaction list
+    """
+    db = get_user_client()
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id)
+    if g.campus_id:
+        q = q.eq("campus_id", g.campus_id)
+    txn_type = request.args.get("type")
+    if txn_type:
+        q = q.eq("type", txn_type)
+    txns = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
+    return jsonify(txns), 200
+
+
+@hp_bp.route("/tiers", methods=["GET"])
+def list_tiers():
+    """
+    List all tiers with thresholds and perks.
+    ---
+    tags: [HP]
+    security: []
+    responses:
+      200:
+        description: All tier definitions
+    """
+    from app.routes.events import _get_campus_id
+    db = get_user_client()
+    campus_id = _get_campus_id()
+    q = db.table("hp_tiers").select("*")
+    if campus_id:
+        q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    tiers = q.order("sort_order").execute()
+    return jsonify(tiers), 200
+
+
+@hp_bp.route("/admin/grant", methods=["POST"])
+@require_role("admin")
+def admin_grant():
+    """
+    Admin manually grants HP to a user.
+    ---
+    tags: [HP]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [user_id, amount]
+          properties:
+            user_id: {type: string}
+            amount: {type: integer}
+            notes: {type: string}
+    responses:
+      200:
+        description: HP granted
+    """
+    data = request.get_json(force=True) or {}
+    if not data.get("user_id") or data.get("amount") is None:
+        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+    try:
+        _amount_check = int(data["amount"])
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+    if _amount_check <= 0:
+        return jsonify({"error": "amount must be a positive number — use /admin/expire to reduce HP"}), 400
+
+    db = get_user_client()
+    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
+    if not target:
+        return jsonify({"error": "Target user profile not found"}), 404
+    if getattr(g, "user_role", None) == "admin":
+        if target.get("campus_id") != getattr(g, "campus_id", None):
+            return jsonify({"error": "Cannot grant HP outside your campus"}), 403
+
+    try:
+        result = award_active_hp(
+            user_id=data["user_id"],
+            amount=int(data["amount"]),
+            txn_type="earn",
+            notes=data.get("notes", "Admin-issued HP"),
+            issued_by_admin_id=g.user_id,
+            campus_id=target.get("campus_id"),
+        )
+        _log_admin_action(g.user_id, "profiles", data["user_id"], "hp_grant", {"amount": data["amount"]})
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@hp_bp.route("/admin/expire", methods=["POST"])
+@require_role("admin")
+def admin_expire():
+    """
+    Admin manually expires HP for a user.
+    ---
+    tags: [HP]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [user_id, amount]
+          properties:
+            user_id: {type: string}
+            amount: {type: integer}
+            notes: {type: string}
+    responses:
+      200:
+        description: HP expired
+    """
+    from app.services.hp_service import expire_hp, get_hp_balance
+    data = request.get_json(force=True) or {}
+    if not data.get("user_id"):
+        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+
+    db = get_user_client()
+    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
+    if not target:
+        return jsonify({"error": "Target user profile not found"}), 404
+    if getattr(g, "user_role", None) == "admin":
+        if target.get("campus_id") != getattr(g, "campus_id", None):
+            return jsonify({"error": "Cannot expire HP outside your campus"}), 403
+
+    amount = data.get("amount")
+    if amount is None:
+        # Expire all active HP if amount not specified
+        balance = get_hp_balance(data["user_id"])
+        amount = int(balance.get("active", 0))
+    if amount <= 0:
+        return jsonify({"message": "No active HP to expire", "expired": 0}), 200
+    result = expire_hp(data["user_id"], int(amount), data.get("notes", "Manual HP expiry"), campus_id=target.get("campus_id"))
+    return jsonify(result), 200
+
+
+@hp_bp.route("/flash-redeem/<reward_id>", methods=["POST"])
+@require_auth
+def flash_redeem(reward_id):
+    """
+    Redeem a reward at the flash-sale price (50% HP discount, limited slots, 24h window).
+
+    Checks for an active flash_redemptions record linked to the reward, verifies
+    the user has enough HP at the discounted rate, and calls process_flash_redeem
+    from hp_service to deduct HP and record the redemption.
+    ---
+    tags: [HP]
+    parameters:
+      - in: path
+        name: reward_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Flash redemption successful
+      400:
+        description: No active flash sale, sold out, insufficient HP, or window closed
+    """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("flash_redemptions"):
+        return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="Flash redemptions")}), 403
+    from app.services.hp_service import process_flash_redeem
+    try:
+        result = process_flash_redeem(reward_id=reward_id, user_id=g.user_id)
+        result["message"] = MSG.FLASH_REWARD_REDEEMED
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@hp_bp.route("/unlock-history", methods=["GET"])
+@require_auth
+def unlock_history():
+    """
+    Get HP unlock history for the authenticated user (from hp_transactions type=unlock).
+    ---
+    tags: [HP]
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        default: 50
+      - in: query
+        name: offset
+        type: integer
+        default: 0
+    responses:
+      200:
+        description: HP unlock log entries
+    """
+    db = get_user_client()
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+    q = db.table("hp_transactions").select("*").eq("user_id", g.user_id).eq("source", "unlock")
+    if g.campus_id:
+        q = q.eq("campus_id", g.campus_id)
+    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
+    return jsonify(rows or []), 200
+
+
+@hp_bp.route("/bundles", methods=["GET"])
+def list_hp_bundles():
+    """
+    List available HP bundle tiers that can be purchased.
+    ---
+    tags: [HP]
+    responses:
+      200:
+        description: List of HP bundle options with naira pricing
+    """
+    price_per_hp = float(current_app.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
+    min_purchase = int(current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))
+    # Bundle tiers are configured via HP_BUNDLES (JSON) in config / env so they
+    # can be changed without a deploy. Each entry must have {hp, label}.
+    bundles_config = current_app.config.get("HP_BUNDLES") or [
+        {"hp": 100,  "label": "Starter"},
+        {"hp": 250,  "label": "Basic"},
+        {"hp": 500,  "label": "Standard"},
+        {"hp": 1000, "label": "Premium"},
+        {"hp": 2500, "label": "Elite"},
+    ]
+    bundles = [
+        {"hp": b["hp"], "naira": round(b["hp"] * price_per_hp, 2), "label": b["label"]}
+        for b in bundles_config
+        if isinstance(b, dict) and int(b.get("hp", 0)) >= min_purchase
+    ]
+    return jsonify({
+        "bundles": bundles,
+        "price_per_hp": price_per_hp,
+        "min_purchase_hp": min_purchase,
+        "currency": "NGN",
+    }), 200
+
+
+@hp_bp.route("/bundles/purchase", methods=["POST"])
+@require_auth
+def purchase_hp_bundle():
+    """
+    Purchase an HP bundle (event hosts). Charges card via Paystack reference, credits HP.
+    ---
+    tags: [HP]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [hp_amount, paystack_reference]
+          properties:
+            hp_amount: {type: integer, minimum: 100, example: 500}
+            paystack_reference: {type: string}
+    responses:
+      201:
+        description: HP bundle purchased and credited
+      400:
+        description: Validation error
+    """
+    db = get_user_client()
+    from app.services.hp_service import process_hp_bundle_purchase
+    data = request.get_json(force=True)
+    hp_amount = int(data.get("hp_amount", 0))
+    reference = data.get("paystack_reference", "").strip()
+
+    min_purchase = int(current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))
+    if hp_amount < min_purchase:
+        return jsonify({"error": resolve_msg(MSG.HP_BUNDLE_MIN, min_hp=min_purchase)}), 400
+    if not reference:
+        return jsonify({"error": MSG.HP_BUNDLE_REF_REQUIRED}), 400
+
+    price_per_hp = float(current_app.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
+    naira_paid = hp_amount * price_per_hp
+
+    # Idempotency check: see if this reference has already been successfully processed
+    existing = db.table("hp_bundle_purchases").select("*").eq("provider", "paystack").eq("provider_reference", reference).execute()
+    if existing:
+        record = existing[0]
+        return jsonify({
+            "message": "Payment already processed",
+            "hp_credited_to_pending": int(record.get("hp_amount", 0)),
+            "hp_to_overflow": 0,
+            "idempotent": True,
+        }), 201
+
+    try:
+        from app.services.payment_service import verify_payment
+        txn_data = verify_payment(reference)
+        if txn_data.get("status") != "success":
+            return jsonify({"error": MSG.HP_PAYMENT_NOT_CONFIRMED.format(status=txn_data.get("status"))}), 402
+        paid_kobo = txn_data.get("amount", 0)
+        expected_kobo = int(naira_paid * 100)
+        if paid_kobo < expected_kobo:
+            return jsonify({"error": MSG.HP_PAYMENT_MISMATCH.format(expected=naira_paid, received=paid_kobo / 100)}), 402
+    except Exception as e:
+        return jsonify({"error": MSG.HP_PAYMENT_VERIFY_FAILED.format(error=str(e))}), 402
+
+    try:
+        result = process_hp_bundle_purchase(
+            event_host_id=g.user_id,
+            hp_amount=hp_amount,
+            naira_paid=naira_paid,
+            provider="paystack",
+            provider_reference=reference,
+        )
+        return jsonify(result), 201
+    except Exception as e:
+        if "already processed" in str(e):
+            # Concurrent race condition safety fallback
+            return jsonify({
+                "message": "Payment already processed",
+                "hp_credited_to_pending": hp_amount,
+                "hp_to_overflow": 0,
+                "idempotent": True,
+            }), 201
+        return jsonify({"error": str(e)}), 400
+
+
+@hp_bp.route("/transfer", methods=["POST"])
+@require_auth
+def transfer_hp():
+    """
+    Transfer active HP to another user.
+    ---
+    tags: [HP]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [recipient_id, amount]
+          properties:
+            recipient_id:
+              type: string
+              description: UUID of the recipient user
+            amount:
+              type: integer
+              description: HP amount to transfer
+            notes:
+              type: string
+              description: Optional message to recipient
+    responses:
+      200:
+        description: Transfer successful
+      400:
+        description: Insufficient HP, self-transfer, or minimum not met
+      404:
+        description: Recipient not found
+    """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("hp_transfer"):
+        return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="HP transfer")}), 403
+
+    data = request.get_json(force=True) or {}
+    recipient_id = (data.get("recipient_id") or "").strip()
+    amount = data.get("amount")
+    notes = (data.get("notes") or "").strip()
+
+    if not recipient_id or not amount:
+        return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
+
+    min_transfer = int(current_app.config.get("HP_TRANSFER_MIN_AMOUNT", 10))
+    if amount < min_transfer:
+        return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_MIN, min=min_transfer)}), 400
+
+    if recipient_id == g.user_id:
+        return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_SELF)}), 400
+
+    db = get_user_client()
+
+    # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
+    # min_orders is read from system_settings first (admin-editable), falling back to
+    # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
+    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
+    _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
+    min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
+    completed_orders = (
+        db.table("orders")
+        .select("id")
+        .eq("user_id", g.user_id)
+        .eq("status", "delivered")
+        .execute()
+    )
+    # execute() returns a list on success, None / dict / empty on no-rows edge cases
+    if isinstance(completed_orders, list):
+        completed_count = len(completed_orders)
+    elif isinstance(completed_orders, dict) and completed_orders.get("id"):
+        completed_count = 1
+    else:
+        completed_count = 0
+    if completed_count < min_orders:
+        return jsonify({
+            "error": resolve_msg(MSG.HP_TRANSFER_MIN_ORDERS, min_orders=min_orders, completed=completed_count),
+            "min_orders_required": min_orders,
+            "completed_orders": completed_count,
+        }), 400
+
+    recipient = db.table("profiles").select("id,full_name,campus_id").eq("id", recipient_id).single().execute()
+    if not recipient:
+        return jsonify({"error": MSG.HP_TRANSFER_USER_NOT_FOUND}), 404
+
+    sender = db.table("profiles").select("full_name,campus_id").eq("id", g.user_id).single().execute()
+    sender_campus = getattr(g, "campus_id", None) or (sender or {}).get("campus_id")
+    recipient_campus = recipient.get("campus_id")
+    if sender_campus and recipient_campus and sender_campus != recipient_campus:
+        return jsonify({"error": "You can only transfer HP to students on your own campus."}), 400
+
+    sender_name = (sender or {}).get("full_name", "Someone")
+    recipient_name = recipient.get("full_name", "Someone")
+
+    balance = get_hp_balance(g.user_id)
+    if balance.get("active", 0) < amount:
+        return jsonify({
+            "error": resolve_msg(MSG.HP_TRANSFER_INSUFFICIENT, have=balance.get("active", 0), need=amount)
+        }), 400
+
+    transfer_note = notes or f"HP transfer from {sender_name}"
+    result = db.rpc("hg_transfer_hp_atomic", {
+        "p_sender_id": g.user_id,
+        "p_recipient_id": recipient_id,
+        "p_amount": amount,
+        "p_notes": transfer_note,
+        "p_campus_id": sender_campus,
+    })
+    if isinstance(result, dict) and not result.get("success"):
+        logger.error("transfer_hp: hg_transfer_hp_atomic failed, sender=%s recipient=%s amount=%s: %s",
+                      g.user_id, recipient_id, amount, result.get("error"))
+        return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_FAILED_NO_REFUND)}), 400
+
+    # Notify the recipient that they received HP
+    try:
+        from app.services.notification_service import send_notification
+        send_notification(
+            user_id=recipient_id,
+            notif_type="hp_transfer_recipient",
+            template_data={"amount": amount, "sender": sender_name},
+        )
+    except Exception:
+        pass
+
+    # Fire first_hp_gift_sent badge trigger
+    try:
+        from app.services.milestone_service import check_milestone_trigger
+        # Count HP transfers sent by this user
+        transfers = db.table("hp_transactions").select("id").eq("user_id", g.user_id).eq("reference_type", "hp_transfer").eq("source", "hp_transfer").execute()
+        transfer_count = len(transfers or [])
+        check_milestone_trigger(g.user_id, "first_hp_gift_sent", transfer_count)
+    except Exception:
+        pass
+
+    return jsonify({
+        "message": resolve_msg(MSG.HP_TRANSFER_OK),
+        "amount": amount,
+        "recipient_id": recipient_id,
+        "recipient_name": recipient_name,
+    }), 200
+
+
+def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
+    from app.db import get_db, get_user_client
+    db = get_user_client()
+    actor_role = getattr(g, "user_role", "admin")
+    cid = campus_id or getattr(g, "campus_id", None)
+    
+    try:
+        db.table("admin_audit_logs").insert({
+            "actor_id": actor_id,
+            "actor_role": actor_role,
+            "entity_type": table,
+            "entity_id": target_id,
+            "action": action,
+            "after_value": after_data,
+            "campus_id": cid,
+        }).execute()
+    except Exception:
+        pass  # Silent fail

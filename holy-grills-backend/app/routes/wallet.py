@@ -1,0 +1,330 @@
+"""
+Wallet routes — balance, card top-up (Paystack), dedicated virtual account, transaction history.
+"""
+
+from flask import Blueprint, request, jsonify, g, current_app
+from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
+from app.services.wallet_service import get_wallet, get_wallet_transactions
+from app.services.payment_service import initialize_payment, verify_payment
+from app.db import get_db, get_user_client
+from app.messages import MSG
+import uuid
+
+wallet_bp = Blueprint("wallet", __name__)
+
+
+@wallet_bp.route("", methods=["GET"])
+@require_auth
+def get_balance():
+    """
+    Get wallet balance and virtual account info.
+    ---
+    tags: [Wallet]
+    responses:
+      200:
+        description: Wallet details
+    """
+    wallet = get_wallet(g.user_id)
+    if not wallet:
+        return jsonify({"error": MSG.WALLET_NOT_FOUND}), 404
+
+    db = get_user_client()
+    virtual_account = None
+    try:
+        va_rows = (
+            db.table("virtual_accounts")
+            .select("account_number,bank_name,account_name,provider_reference")
+            .eq("user_id", g.user_id)
+            .limit(1)
+            .execute()
+        )
+        virtual_account = va_rows[0] if va_rows else None
+    except Exception as exc:
+        # [D10] was a bare `pass` -- a failing lookup was invisible; the balance is still returned
+        current_app.logger.warning("virtual_accounts lookup failed for %s: %s", g.user_id, exc)
+        virtual_account = None
+
+    return jsonify({
+        "balance": float(wallet.get("balance", 0)),
+        "currency": wallet.get("currency", "NGN"),
+        "virtual_account": virtual_account,
+    }), 200
+
+
+@wallet_bp.route("/fund/card", methods=["POST"])
+@require_auth
+def fund_via_card():
+    """
+    Initialize a card payment to top up wallet.
+    ---
+    tags: [Wallet]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [amount]
+          properties:
+            amount: {type: number, description: "Amount in Naira"}
+            callback_url: {type: string}
+    responses:
+      200:
+        description: Paystack authorization_url returned
+    """
+    import math
+    data = request.get_json(silent=True) or {}
+    from flask import current_app
+    min_topup = current_app.config.get("WALLET_MIN_CARD_TOPUP", 100)
+    try:
+        amount = float(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=0)}), 400
+    if not math.isfinite(amount) or amount < min_topup:
+        return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=min_topup)}), 400
+
+    db = get_user_client()
+    auth_user_rows = db.table("profiles").select("id").eq("id", g.user_id).single().execute()
+    if not auth_user_rows:
+        return jsonify({"error": MSG.WALLET_USER_NOT_FOUND}), 404
+
+    ref_prefix = current_app.config.get("WALLET_REF_PREFIX", "HG-WALLET-")
+    reference = f"{ref_prefix}{uuid.uuid4().hex}"    # [D10] full 128 bits (was 8 chars = 32 bits)
+
+    from flask import current_app as _cur_app
+    if not _cur_app.config.get("PAYSTACK_SECRET_KEY"):
+        return jsonify({"error": MSG.CARD_PAYMENTS_NOT_CONFIGURED}), 502
+
+    try:
+        profile = (
+            db.table("profiles")
+            .select("email")
+            .eq("id", g.user_id)
+            .single()
+            .execute()
+        ) or {}
+        email = (g.jwt_payload or {}).get("email") or profile.get("email") or ""
+        result = initialize_payment(
+            email=email,
+            amount_naira=amount,
+            reference=reference,
+            metadata={"user_id": g.user_id, "type": "wallet_topup"},
+            callback_url=data.get("callback_url"),
+        )
+        return jsonify({
+            "authorization_url": result["authorization_url"],
+            "access_code": result["access_code"],
+            "reference": reference,
+            "message": MSG.WALLET_CARD_FUNDING_INITIATED,
+        }), 200
+    except ValueError as e:
+        # Payment gateway rejected the request (bad key, validation error, etc.). The gateway's own text -- e.g.
+        # "Invalid key" -- tells the caller how the server is misconfigured, so it is logged, not returned.
+        _cur_app.logger.error("wallet fund/card: gateway rejected initialization: %s", e)
+        return jsonify({"error": MSG.PAYMENT_GATEWAY_UNAVAILABLE}), 502
+    except Exception as e:
+        _cur_app.logger.error("wallet fund/card error: %s", e)
+        return jsonify({"error": MSG.PAYMENT_GATEWAY_UNAVAILABLE}), 502
+
+
+@wallet_bp.route("/fund/bank", methods=["POST"])
+@require_auth
+def request_virtual_account():
+    """
+    Provision a Paystack Dedicated Virtual Account for bank transfers.
+    Idempotent — returns existing account if one already exists.
+    ---
+    tags: [Wallet]
+    responses:
+      200:
+        description: Virtual account details
+      201:
+        description: New virtual account created
+      502:
+        description: Paystack error creating account
+    """
+    db = get_user_client()
+
+    existing = (
+        db.table("virtual_accounts")
+        .select("account_number,bank_name,account_name,provider_reference")
+        .eq("user_id", g.user_id)
+        .limit(1)
+        .execute()
+    )
+    if existing:
+        return jsonify({"virtual_account": existing[0], "created": False, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 200
+
+    profile = (
+        db.table("profiles")
+        .select("email,full_name,phone,campus_id")
+        .eq("id", g.user_id)
+        .single()
+        .execute()
+    )
+    if not profile:
+        return jsonify({"error": MSG.WALLET_PROFILE_NOT_FOUND}), 404
+
+    campus_id = profile.get("campus_id") or getattr(g, "campus_id", None)
+    email = profile.get("email") or g.jwt_payload.get("email", "")
+    from app.services.payment_service import create_virtual_account
+    try:
+        account = create_virtual_account(
+            user_id=g.user_id,
+            email=email,
+            full_name=profile.get("full_name") or "HG User",
+            phone=profile.get("phone"),
+        )
+    except Exception as exc:
+        err_str = str(exc)
+        # In sandbox/development, Paystack dedicated NUBAN requires a live API key.
+        # Set PAYSTACK_SANDBOX_MOCK_NUBAN=true to receive a mock response for UI testing.
+        from flask import current_app as _app
+        if _app.config.get("PAYSTACK_SANDBOX_MOCK_NUBAN"):
+            mock_account = {
+                "account_number": "0000000000",
+                "bank_name": "Test Bank (Sandbox Mock)",
+                "account_name": profile.get("full_name") or "HG User",
+                "provider_reference": "mock-nuban-sandbox",
+            }
+            mock_payload = {
+                "user_id": g.user_id,
+                "account_number": mock_account["account_number"],
+                "bank_name": mock_account["bank_name"],
+                "account_name": mock_account["account_name"],
+                "provider_reference": str(mock_account.get("provider_reference", "")),
+                "provider": "paystack",
+            }
+            if campus_id:
+                mock_payload["campus_id"] = campus_id
+            get_db().table("virtual_accounts").insert(mock_payload).execute()    # service client: customers have no INSERT policy (RLS)
+            return jsonify({"virtual_account": mock_account, "created": True, "mock": True, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 201
+        return jsonify({
+            "error": MSG.WALLET_VA_FAILED.format(error=err_str),
+            "sandbox_info": (
+                "Paystack dedicated NUBAN is not available on sandbox/test keys. "
+                "Set PAYSTACK_SANDBOX_MOCK_NUBAN=true in your environment to enable "
+                "a mock virtual account for development."
+            ),
+        }), 400
+
+    va_payload = {
+        "user_id": g.user_id,
+        "account_number": account["account_number"],
+        "bank_name": account["bank_name"],
+        "account_name": account["account_name"],
+        "provider_reference": str(account.get("reference", "")),
+        "provider": "paystack",
+    }
+    if campus_id:
+        va_payload["campus_id"] = campus_id
+
+    try:
+        admin_db = get_db()
+        admin_db.table("virtual_accounts").insert(va_payload).execute()
+    except Exception as ins_err:
+        from app.db import SupabaseError
+        from flask import current_app
+        err_str = str(ins_err)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            existing_now = (
+                db.table("virtual_accounts")
+                .select("account_number,bank_name,account_name,provider_reference")
+                .eq("user_id", g.user_id)
+                .limit(1)
+                .execute()
+            )
+            if existing_now:
+                return jsonify({"virtual_account": existing_now[0], "created": False, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 200
+        current_app.logger.error(
+            "request_virtual_account: DB insert failed for user %s, account %s: %s",
+            g.user_id, account.get("account_number"), ins_err
+        )
+        return jsonify({
+            "error": "Virtual account created at provider but failed to save record locally. Please contact support.",
+            "virtual_account": account,
+        }), 500
+
+    return jsonify({"virtual_account": account, "created": True, "message": MSG.WALLET_BANK_TRANSFER_INITIATED}), 201
+
+
+
+def _parse_int(name, default, max_value=None):
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if val < 0:
+        return default
+    return min(val, max_value) if max_value is not None else val
+
+
+@wallet_bp.route("/admin/transactions", methods=["GET"])
+@require_role("admin")
+def admin_wallet_transactions():
+    """
+    List wallet transactions (admin only). Scoped to caller campus_id unless super_admin.
+    """
+    db = get_user_client()
+    limit = _parse_int("limit", 50, max_value=200)
+    offset = _parse_int("offset", 0)
+    q = db.table("wallet_transactions").select("*,profiles!user_id(full_name,email)")
+
+    # [D10] resolve_scoped_campus_id already does the right thing per role: super_admin -> the requested value
+    # (None = all campuses); everyone else -> their own campus. The old `caller_role != "super_admin"` guard
+    # silently dropped a super_admin's explicit ?campus_id= filter.
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+
+    uid = request.args.get("user_id")
+    if uid:
+        q = q.eq("user_id", uid)
+    tx_type = request.args.get("type")
+    if tx_type:
+        q = q.eq("reference_type", tx_type)
+    from_date = request.args.get("from_date")
+    if from_date:
+        q = q.gte("created_at", from_date)
+    to_date = request.args.get("to_date")
+    if to_date:
+        q = q.lte("created_at", to_date + "T23:59:59Z")
+    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    return jsonify({"transactions": rows, "count": len(rows)}), 200
+
+
+@wallet_bp.route("/transactions", methods=["GET"])
+@require_auth
+def wallet_transactions():
+    """
+    Get wallet transaction history. Filter by type: topup, order_payment, refund, withdrawal, bank_transfer.
+    ---
+    tags: [Wallet]
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        default: 50
+      - in: query
+        name: offset
+        type: integer
+        default: 0
+      - in: query
+        name: type
+        type: string
+        description: Filter by reference_type (topup, order_payment, refund, withdrawal, bank_transfer)
+    responses:
+      200:
+        description: Wallet transaction history
+    """
+    db = get_user_client()
+    limit = _parse_int("limit", 50, max_value=200)
+    offset = _parse_int("offset", 0)
+    tx_type = request.args.get("type") or None
+    q = db.table("wallet_transactions").select("*").eq("user_id", g.user_id)
+    if tx_type:
+        q = q.eq("reference_type", tx_type)
+    txns = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
+    return jsonify(txns), 200

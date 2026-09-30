@@ -1,0 +1,54 @@
+"""
+app/routes/uploads.py
+
+Admin-only direct-upload helpers.
+"""
+
+import hashlib
+import hmac
+import time
+
+from flask import Blueprint, current_app, jsonify, request, g
+
+from app.middleware.auth import require_auth
+from app.constants import ADMIN_ROLES
+from app.messages import MSG
+
+uploads_bp = Blueprint("uploads", __name__)
+
+
+@uploads_bp.route("/signature", methods=["POST"])
+@require_auth
+def upload_signature():
+    """Generate a short-lived Cloudinary signature for a direct client upload.
+    Admins may target any folder; everyone else is restricted to their own
+    profile-photo folder."""
+    cloud_name = current_app.config.get("CLOUDINARY_CLOUD_NAME")
+    api_key = current_app.config.get("CLOUDINARY_API_KEY")
+    api_secret = current_app.config.get("CLOUDINARY_API_SECRET")
+    if not cloud_name or not api_key or not api_secret:
+        return jsonify({"error": MSG.UPLOAD_NOT_CONFIGURED}), 503
+
+    data = request.get_json(silent=True) or {}
+    caller_role = getattr(g, "user_role", None)
+
+    if caller_role in ADMIN_ROLES:
+        folder = str(data.get("folder") or "general").strip()
+        if not folder or len(folder) > 255 or folder.startswith("/") or ".." in folder:
+            return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
+    else:
+        folder = f"profile_photos/{g.user_id}"
+
+    timestamp = int(time.time())
+    params_to_sign = {"folder": folder, "timestamp": timestamp}
+    to_sign = "&".join(f"{k}={params_to_sign[k]}" for k in sorted(params_to_sign)) + api_secret
+    signature = hashlib.sha1(to_sign.encode("utf-8")).hexdigest()
+
+    return jsonify({
+        "signature": signature,
+        "timestamp": timestamp,
+        "api_key": api_key,
+        "cloud_name": cloud_name,
+        "folder": folder,
+        "message": MSG.UPLOAD_SIGNATURE_ISSUED,
+    }), 200

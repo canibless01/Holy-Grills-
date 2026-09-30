@@ -1,0 +1,130 @@
+from flask import Blueprint, request, jsonify, g, current_app
+from app.middleware.auth import require_auth
+from app.db import get_db, get_user_client
+from app.messages import MSG, resolve_msg
+from app.services.hp_service import award_active_hp
+from app.utils.reference_data import resolve_level
+from datetime import datetime, timezone
+
+graduation_bp = Blueprint("graduation", __name__)
+
+# HP awarded on graduation claim — read from config/env so admin can adjust without deploy.
+# Falls back to 1000 if GRADUATION_HP env var is not set.
+# Not subject to the HP multiplier (use apply_multiplier=False).
+_GRADUATION_HP_DEFAULT = 1000
+
+
+@graduation_bp.route("/claim", methods=["POST"])
+@require_auth
+def claim_graduation():
+    """
+    Claim the graduation HP bonus. One-time only.
+    Requires academic_level (on user profile) >= graduation_min_level setting.
+    ---
+    tags: [Graduation]
+    responses:
+      200:
+        description: Graduation HP claimed
+      400:
+        description: Not eligible or already claimed
+    """
+    db = get_user_client()
+
+    # Fetch user profile
+    profile = (
+        db.table("profiles")
+        .select("id,academic_level,campus_id,graduation_claimed,full_name")
+        .eq("id", g.user_id)
+        .single()
+        .execute()
+    )
+    if not profile:
+        return jsonify({"error": MSG.GRADUATION_PROFILE_NOT_FOUND}), 404
+
+    # Check already claimed
+    if profile.get("graduation_claimed"):
+        return jsonify({"error": resolve_msg(MSG.GRADUATION_ALREADY_CLAIMED)}), 400
+
+    try:
+        setting = (
+            db.table("system_settings")
+            .select("value")
+            .eq("key", "graduation_min_level")
+            .is_("campus_id", "null")
+            .single()
+            .execute()
+        )
+        graduation_min_rank = int((setting or {}).get("value", "400") or "400")
+    except Exception:
+        graduation_min_rank = 400
+
+    user_rank = 0
+    level_value = profile.get("academic_level")
+    if level_value:
+        level_row = resolve_level(get_db(), level_value, profile.get("campus_id"), active_only=False)
+        if level_row and level_row.get("rank") is not None:
+            user_rank = int(level_row["rank"])
+
+    if user_rank < graduation_min_rank:
+        return jsonify({
+            "error": MSG.GRADUATION_LEVEL_REQUIRED.format(required=graduation_min_rank, actual=user_rank),
+            "required_level": graduation_min_rank,
+            "your_level": level_value,
+        }), 400
+
+    # OCC conditional update: mark claimed FIRST to prevent concurrent double-claim
+    updated = (
+        get_db().table("profiles")
+        .eq("id", g.user_id)
+        .eq("graduation_claimed", False)
+        .update({
+            "graduation_claimed": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    )
+    if not updated or (isinstance(updated, list) and len(updated) == 0):
+        return jsonify({"error": resolve_msg(MSG.GRADUATION_ALREADY_CLAIMED)}), 400
+
+    # HP amount: read from env/config so it can be changed without a deploy
+    graduation_hp = int(current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT))
+
+    campus_id = getattr(g, 'campus_id', None)
+    # Award HP — not subject to HP multiplier (graduation is a fixed life event)
+    try:
+        award_result = award_active_hp(
+            user_id=g.user_id,
+            amount=graduation_hp,
+            txn_type="earn_graduation",
+            reference_type="graduation",
+            notes=f"Graduation milestone HP — Level {level_value}",
+            apply_multiplier=False,
+            campus_id=campus_id,
+        )
+    except Exception as e:
+        db.table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
+        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 500
+
+    # Fire graduation badge trigger
+    try:
+        from app.services.milestone_service import check_milestone_trigger
+        check_milestone_trigger(g.user_id, "graduation", 1)
+    except Exception:
+        pass
+
+    # Notify
+    try:
+        from app.services.notification_service import send_notification
+        name = (profile.get("full_name") or "").split()[0] or "Graduate"
+        send_notification(
+            user_id=g.user_id,
+            notif_type="graduation_hp",
+            template_data={"name": name, "hp": graduation_hp, "level": level_value},
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "message": resolve_msg(MSG.GRADUATION_CLAIMED_OK),
+        "hp_awarded": award_result.get("awarded", graduation_hp),
+        "academic_level": level_value,
+    }), 200
