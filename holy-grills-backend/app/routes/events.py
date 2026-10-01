@@ -2,15 +2,14 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
-from app.db import get_db, get_user_client, SupabaseError
-from app.messages import MSG, resolve_msg
+from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
+from app.messages import MSG
 from app.utils.validators import (
     validate_choice, validate_non_negative_number, validate_uuid,
     validate_datetime_order, sanitize_string,
 )
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
-import uuid
 
 logger = get_logger(__name__)
 
@@ -263,8 +262,10 @@ def checkin(event_id):
                 from app.services.milestone_service import check_milestone_trigger
                 check_milestone_trigger(target_user_id, "first_event", 1)
                 check_milestone_trigger(target_user_id, "event_checkins", 1)
-            except Exception:
-                pass
+            except Exception as exc:
+                # The HP was credited; only the badge trigger was lost. Record who to re-run for.
+                logger.warning("checkin: milestone trigger failed for %s (event %s): %s",
+                               target_user_id, event_id, exc)
 
             msg_text = MSG.TICKET_LINKED_TO_ACCOUNT if was_guest_linked else MSG.EVENT_CHECKIN_SUCCESS
             return jsonify({
@@ -508,7 +509,6 @@ def register_for_event(event_id):
       404:
         description: Event not found
     """
-    import uuid
     db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
@@ -884,9 +884,19 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
             ticket_id=ticket_id, event_id=updated["event_id"],
             event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
         )
-    except Exception:
-        pass
+        email_sent = True
+    except Exception as exc:
+        # The customer has already paid. A silent failure here means no ticket and no way
+        # for anyone to notice — log it loudly and record it on the returned row. NOTE:
+        # this function is called by the payment webhook, not by a route, so it must keep
+        # returning the ticket dict (returning a (response, status) tuple here would be
+        # handed straight back to Paystack as the webhook body).
+        logger.error("confirm_event_ticket_payment: QR ticket email failed for ticket %s (%s): %s",
+                     ticket_id, locals().get("email"), exc)
+        email_sent = False
 
+    if isinstance(updated, dict):
+        updated["email_sent"] = email_sent
     return updated
 
 
@@ -1118,7 +1128,7 @@ def create_event():
     data["is_published"] = True
     data["organizer_id"] = g.user_id
     if not data.get("ends_at"):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
         starts = datetime.fromisoformat(data["starts_at"].replace("Z", "+00:00"))
         data["ends_at"] = (starts + timedelta(hours=3)).isoformat()
     EVENT_COLUMNS = {
@@ -1139,9 +1149,16 @@ def create_event():
     safe["campus_id"] = campus_id
     try:
         result = db.table("events").insert(safe).execute()
-    except Exception as _exc:
-        # New columns may not exist yet — strip them and retry
-        PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees", "hp_required", "total_value", "is_paid"}
+    except SupabaseError as exc:
+        # Retry WITHOUT the phase-2 columns only when the schema is the problem.
+        # This used to fire on any exception, so an RLS denial or a bad value made the
+        # second insert succeed with hp_per_attendee / is_paid / max_attendees silently
+        # dropped — an event created with the HP-per-attendee zeroed and no trace of why.
+        if not is_missing_column_error(exc):
+            raise
+        logger.warning("create_event: %s — retrying without the phase-2 columns", exc)
+        PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees",
+                       "hp_required", "total_value", "is_paid"}
         safe2 = {k: v for k, v in safe.items() if k not in PHASE2_COLS}
         result = db.table("events").insert(safe2).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201
@@ -1360,6 +1377,80 @@ def delete_event_tier(tier_id):
 
 @events_bp.route("/<event_id>/registrants", methods=["GET"])
 @require_role("admin")
+def _event_has_priced_tier(db, event_id: str) -> bool:
+    """True when at least one tier of this event costs money.
+
+    Decides whether the registrant list/email must exclude unpaid card tickets:
+    for a free event every ticket is legitimate ('not_required'), for a paid one
+    a 'pending' ticket is someone who started checkout and walked away.
+    """
+    try:
+        tiers = (
+            db.table("event_ticket_tiers")
+            .select("id,price_naira,price_naira_full")
+            .eq("event_id", event_id)
+            .execute()
+        ) or []
+    except Exception as exc:                       # noqa: BLE001
+        logger.warning("_event_has_priced_tier: lookup failed for %s: %s", event_id, exc)
+        return False
+    for tier in tiers:
+        if float(tier.get("price_naira_full") or tier.get("price_naira") or 0) > 0:
+            return True
+    return False
+
+
+# A ticket is "counted" when the customer actually owes nothing more.
+TICKET_COUNTED_PAYMENT_STATUSES = ("paid", "not_required")
+TICKET_UNPAID_STATUSES = ("pending", "pending_payment")
+# Cancelled/expired tickets never belong in a host list, even if they were once
+# paid (refunded). Cancellation belongs to the database's hg_event_ticket_payment_expiry
+# job (every 15 minutes), which sets status 'cancelled' and payment_status 'expired'
+# and releases the tier seat. 'canceled' is accepted as a spelling variant.
+TICKET_EXCLUDED_STATUSES = ("cancelled", "canceled", "expired")
+
+
+def _registrants_for_event(db, event_id: str, include_unpaid: bool = False) -> tuple[list, dict]:
+    """Tickets for an event, with the unpaid-card and cancelled filters applied.
+
+    Returns (rows, counts) where counts explains exactly what was left out.
+    Expired unpaid tickets are cancelled by a database job (every 15 minutes),
+    so the 15-minute window before that runs is covered by the payment_status
+    filter here.
+    """
+    tickets = (
+        db.table("event_tickets")
+        .select("id,user_id,tier_id,status,payment_status,payment_expires_at,"
+                "created_at,qr_code,guest_name,guest_email,guest_phone")
+        .eq("event_id", event_id)
+        .order("created_at")
+        .execute()
+    ) or []
+
+    total_all = len(tickets)
+    priced = _event_has_priced_tier(db, event_id)
+
+    cancelled = [t for t in tickets
+                 if str(t.get("status") or "").lower() in TICKET_EXCLUDED_STATUSES]
+    live = [t for t in tickets if t not in cancelled]
+    unpaid = [t for t in live
+              if str(t.get("payment_status") or "").lower() not in TICKET_COUNTED_PAYMENT_STATUSES]
+
+    counted = list(live)
+    if priced and not include_unpaid:
+        counted = [t for t in live
+                   if str(t.get("payment_status") or "").lower() in TICKET_COUNTED_PAYMENT_STATUSES]
+
+    return counted, {
+        "total_all": total_all,
+        "included": len(counted),
+        "excluded_unpaid": len(unpaid),
+        "excluded_cancelled": len(cancelled),
+        "priced_event": priced,
+        "include_unpaid": bool(include_unpaid),
+    }
+
+
 def list_event_registrants(event_id):
     """
     List all registrants for an event (admin only).
@@ -1388,22 +1479,8 @@ def list_event_registrants(event_id):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     assert_owns_campus(event.get("campus_id"))
 
-    try:
-        tickets = (
-            db.table("event_tickets")
-            .select("id,user_id,tier_id,status,created_at,qr_code,guest_name,guest_email,guest_phone")
-            .eq("event_id", event_id)
-            .order("created_at")
-            .execute()
-        ) or []
-    except Exception:
-        tickets = (
-            db.table("event_tickets")
-            .select("id,user_id,tier_id,status,created_at,qr_code,guest_name,guest_email,guest_phone")
-            .eq("event_id", event_id)
-            .order("created_at")
-            .execute()
-        ) or []
+    include_unpaid = request.args.get("include_unpaid", "").lower() in ("1", "true", "yes")
+    tickets, counts = _registrants_for_event(db, event_id, include_unpaid=include_unpaid)
 
     # Enrich with profile and tier info
     user_ids = list({t["user_id"] for t in tickets if t.get("user_id")})
@@ -1437,6 +1514,8 @@ def list_event_registrants(event_id):
             "email":        prof.get("email") or t.get("guest_email"),
             "tier_name":    tier.get("name"),
             "status":       t.get("status"),
+            "payment_status": t.get("payment_status"),
+            "payment_expires_at": t.get("payment_expires_at"),
             "registered_at": t.get("created_at"),
             "checked_in":   bool(checkins.get(t["id"])),
             "checked_in_at": checkins.get(t["id"]),
@@ -1448,7 +1527,7 @@ def list_event_registrants(event_id):
         si = io.StringIO()
         writer = csv.DictWriter(si, fieldnames=[
             "ticket_id", "full_name", "phone", "email", "tier_name",
-            "status", "registered_at", "checked_in", "checked_in_at",
+            "status", "payment_status", "registered_at", "checked_in", "checked_in_at",
         ])
         writer.writeheader()
         writer.writerows(enriched)
@@ -1462,6 +1541,14 @@ def list_event_registrants(event_id):
         "event": event,
         "registrants": enriched,
         "total": len(enriched),
+        # A paid event only lists tickets that are paid or free; unpaid card
+        # tickets are still being checked out (or expired — see the
+        # cancel-expired-event-tickets job). ?include_unpaid=true shows them.
+        "total_all_statuses": counts["total_all"],
+        "excluded_unpaid": counts["excluded_unpaid"],
+        "excluded_cancelled": counts["excluded_cancelled"],
+        "include_unpaid": counts["include_unpaid"],
+        "priced_event": counts["priced_event"],
     }), 200
 
 
@@ -1528,14 +1615,10 @@ def send_registrants_to_host(event_id):
     if not host_email:
         return jsonify({"error": "host_email is required"}), 400
 
-    # Build registrant table (reuse list_event_registrants logic inline)
-    tickets = (
-        db.table("event_tickets")
-        .select("id,user_id,tier_id,status,created_at,guest_name,guest_email,guest_phone")
-        .eq("event_id", event_id)
-        .order("created_at")
-        .execute()
-    ) or []
+    # Build registrant table. A paid event emails only tickets that are paid or
+    # free — an unpaid card ticket is someone who abandoned checkout.
+    include_unpaid = bool(data.get("include_unpaid"))
+    tickets, counts = _registrants_for_event(db, event_id, include_unpaid=include_unpaid)
 
     user_ids = list({t["user_id"] for t in tickets if t.get("user_id")})
     tier_ids = list({t["tier_id"] for t in tickets if t.get("tier_id")})
@@ -1560,19 +1643,28 @@ def send_registrants_to_host(event_id):
             f"<td>{_html.escape(str(prof.get('phone') or t.get('guest_phone') or ''))}</td>"
             f"<td>{_html.escape(str(prof.get('email') or t.get('guest_email') or ''))}</td>"
             f"<td>{_html.escape(str(tier.get('name','')))}</td>"
-            f"<td>{_html.escape(str(t.get('status','')))}</td></tr>"
+            f"<td>{_html.escape(str(t.get('status','')))}</td>"
+            f"<td>{_html.escape(str(t.get('payment_status') or ''))}</td></tr>"
         )
 
     custom_msg_html = f"<p>{_html.escape(custom_message)}</p>" if custom_message else ""
+    total_line = f"<p>Total: {len(tickets)}</p>"
+    if counts["excluded_unpaid"]:
+        total_line += (f"<p>{counts['excluded_unpaid']} unpaid registration(s) excluded "
+                       f"(checkout not completed); pass include_unpaid to list them.</p>")
+    if counts["excluded_cancelled"]:
+        total_line += (f"<p>{counts['excluded_cancelled']} cancelled ticket(s) excluded "
+                       f"(expired payment or refund).</p>")
     html = (
         f"<html><body style='font-family:sans-serif'>"
         f"<h2>Registrants for: {event.get('title', event_id)}</h2>"
         f"<p>Date: {event.get('starts_at','')}</p>"
         f"<p>Location: {event.get('location','')}</p>"
-        f"<p>Total: {len(tickets)}</p>"
+        f"{total_line}"
         f"{custom_msg_html}"
         f"<table border='1' cellpadding='6' cellspacing='0'>"
-        f"<tr><th>Name</th><th>Phone</th><th>Email</th><th>Tier</th><th>Status</th></tr>"
+        f"<tr><th>Name</th><th>Phone</th><th>Email</th><th>Tier</th><th>Status</th>"
+        f"<th>Payment</th></tr>"
         f"{rows_html}"
         f"</table></body></html>"
     )
@@ -1591,6 +1683,10 @@ def send_registrants_to_host(event_id):
         "message": "Registrant list sent",
         "host_email": host_email,
         "count": len(tickets),
+        "total_all_statuses": counts["total_all"],
+        "excluded_unpaid": counts["excluded_unpaid"],
+        "excluded_cancelled": counts["excluded_cancelled"],
+        "include_unpaid": counts["include_unpaid"],
     }), 200
 
 
@@ -1610,8 +1706,10 @@ def get_tier_comparison(event_id):
         rpc_tiers = db.rpc("get_event_tier_comparison", {"p_event_id": event_id})
         if isinstance(rpc_tiers, list):
             return jsonify({"tiers": rpc_tiers}), 200
-    except Exception:
-        pass
+    except Exception as exc:
+        # Falls through to the slower per-tier path below; guests still get an answer,
+        # but a persistent failure here is worth seeing.
+        logger.warning("tier comparison: RPC failed for event %s, falling back: %s", event_id, exc)
 
     try:
         tiers = (

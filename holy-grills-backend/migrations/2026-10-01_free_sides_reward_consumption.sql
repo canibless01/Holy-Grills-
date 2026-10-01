@@ -1,0 +1,130 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  APPLIED ON TEST 2 (zaxdkrmzyibkvlsrgmvq) ON 2026-10-01 — record, not a script.
+--
+--  This file no longer contains DDL. It was written as a proposal, then changed
+--  on the database side while being applied, so the canonical definitions live
+--  in the database itself. Re-running the old draft would OVERWRITE the live
+--  functions with a reconstruction — do not do that.
+--
+--  Want the exact bodies mirrored here? Run the query at the bottom of this file
+--  and paste the output back; the file gets the verbatim DDL, not a paraphrase.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+--  1. public.hg_consume_free_sides_atomic(p_user_id, p_order_id, p_campus_id)
+--     LIVE. Applied as proposed, plus two hardening changes made during review:
+--       * row locks on the selections — two simultaneous checkouts can no longer
+--         double-spend the same credit;
+--       * campus_id written on the ₦0 order line.
+--
+--  Contract the Python side relies on:
+--       - one credit decremented per selection, oldest-expiry first;
+--       - an order_items row at price 0 (now carrying campus_id);
+--       - the selection row deleted as it is consumed, so a retry cannot
+--         double-spend;
+--       - expired credits are not usable;
+--       - returns jsonb with at least {"consumed": <int>}.
+--     Called from app/services/order_service.py::_consume_free_sides(), right
+--     after hg_create_order_atomic returns. Failure never fails the order.
+-- ───────────────────────────────────────────────────────────────────────────
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+--  2. public.hg_claim_reward_redemption_for_order(p_redemption_id, p_user_id,
+--                                                 p_order_id)
+--     LIVE, and now mostly a safety net: hg_create_order_atomic claims
+--     p_redemption_id inside its own transaction.
+--
+--  Contract:
+--       - a reward can ride exactly one order;
+--       - a spent / unfulfilled / foreign reward makes hg_create_order_atomic
+--         refuse the WHOLE order with:
+--           "Reward redemption is not available (already used, not fulfilled, or not yours)"
+--         (app/services/order_service.py::_normalize_rpc_error maps that to
+--          MSG.REWARD_REDEMPTION_UNAVAILABLE, so the customer sees a clean 400);
+--       - this helper still returns claimed = true with already_attached = true
+--         when the order already carries the reward — that is success, not an
+--         error, and order_service treats it that way;
+--       - applied alongside: reward_redemptions.used_at and the partial index
+--         ix_reward_redemptions_attached_order (attached_order_id is not null).
+--
+--  The Python pre-check (_assert_redemption_claimable) stays: it gives the
+--  customer a clean 400 before anything is priced or charged.
+-- ───────────────────────────────────────────────────────────────────────────
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+--  3. Verification — these must hold on the live database.
+-- ───────────────────────────────────────────────────────────────────────────
+--
+-- 3a. both functions exist, are SECURITY DEFINER with a pinned search_path, and
+--     are not executable by anon/authenticated
+--
+--     SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ','),
+--            has_function_privilege('anon', p.oid, 'EXECUTE')          AS anon_can_run,
+--            has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_can_run
+--     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--     WHERE n.nspname = 'public'
+--       AND p.proname IN ('hg_consume_free_sides_atomic','hg_claim_reward_redemption_for_order');
+--
+--     Expect: prosecdef = true, proconfig = 'search_path=public, pg_temp',
+--             anon_can_run = false, auth_can_run = false
+--
+-- 3b. the claim is now inside the order transaction — prove it by looking at the
+--     definition (this is also the mirror query, see below)
+--
+--     SELECT pg_get_functiondef('public.hg_create_order_atomic'::regproc);
+--
+--     Expect the body to reference p_redemption_id / reward_redemptions and to
+--     raise the 'Reward redemption is not available' message.
+--
+-- 3c. after the next E2E order, a consumed free side looks like this
+--
+--     SELECT s.* FROM cart_free_side_selections s WHERE s.user_id = <user>;
+--     SELECT c.credits_remaining, c.used_at FROM free_side_credits c WHERE c.user_id = <user>;
+--     SELECT i.* FROM order_items i WHERE i.order_id = <order> AND i.price_snapshot = 0;
+--
+--     Expect: no selection row left, credits_remaining one lower, one ₦0 line
+--     carrying the campus id.
+--
+-- 3d. a reward ridden by more than one order must be impossible
+--
+--     SELECT r.id, count(o.id)
+--     FROM reward_redemptions r JOIN orders o ON o.redemption_id = r.id
+--     GROUP BY r.id HAVING count(o.id) > 1;
+--
+--     Expect: no rows. (Before the fix: one row per reused reward.)
+--
+-- 3e. nothing in the database consumes free sides at order time other than the
+--     function above — the original bug was that nothing did
+--
+--     SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--     WHERE n.nspname = 'public'
+--       AND pg_get_functiondef(p.oid) ILIKE '%free_side%';
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+--  Mirror the exact live DDL into this repo (optional — the database is the
+--  source of truth). Paste the output back and it goes in verbatim.
+-- ───────────────────────────────────────────────────────────────────────────
+--
+--     SELECT p.proname, pg_get_functiondef(p.oid)
+--     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--     WHERE n.nspname = 'public'
+--       AND p.proname IN ('hg_consume_free_sides_atomic',
+--                         'hg_claim_reward_redemption_for_order');
+--
+--     SELECT pg_get_functiondef('public.hg_create_order_atomic'::regproc);
+--
+--     SELECT column_name, data_type FROM information_schema.columns
+--     WHERE table_schema = 'public' AND table_name = 'reward_redemptions'
+--       AND column_name IN ('used_at','attached_order_id');
+--
+-- ───────────────────────────────────────────────────────────────────────────
+--  Related, but NOT in this file: expired event tickets. The database owns that
+--  too — hg_event_ticket_payment_expiry runs every 15 minutes, cancels expired
+--  unpaid tickets, sets payment_status 'expired' and releases the tier seat.
+--  This repo deliberately ships no Python equivalent; only the registrant list
+--  and host email filter live in Python (app/routes/events.py).
+-- ───────────────────────────────────────────────────────────────────────────

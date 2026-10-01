@@ -3,7 +3,7 @@ Analytics routes — admin-only reporting and insights.
 """
 from flask import Blueprint, request, jsonify, current_app, Response
 from app.middleware.auth import require_role, resolve_scoped_campus_id
-from app.db import get_db, get_user_client
+from app.db import get_user_client
 from app.messages import MSG
 from datetime import date, datetime, timezone, timedelta
 from dateutil.parser import isoparse

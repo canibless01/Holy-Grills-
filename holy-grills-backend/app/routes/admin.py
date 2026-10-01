@@ -1098,9 +1098,19 @@ def list_batches():
         if status:
             q = q.eq("status", status)
         batches = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+        # One query for the whole page instead of one per batch (this was N+1: a page of
+        # 50 batches cost 51 REST round-trips). Same response shape — `order_count` is
+        # still set on every batch, and a batch with no orders still reports 0.
+        batch_ids = [b["id"] for b in batches if b.get("id")]
+        counts: dict = {}
+        if batch_ids:
+            rows = (db.table("orders").select("batch_id")
+                    .in_("batch_id", batch_ids).limit(10000).execute()) or []
+            for r in rows:
+                bid = r.get("batch_id")
+                counts[bid] = counts.get(bid, 0) + 1
         for b in batches:
-            counted = db.table("orders").select("id", count="exact").eq("batch_id", b["id"]).limit(1).execute()
-            b["order_count"] = (counted or {}).get("count") or 0
+            b["order_count"] = counts.get(b.get("id"), 0)
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_batches")
     return jsonify({"batches": batches, "count": len(batches), "limit": limit, "offset": offset}), 200
@@ -1679,6 +1689,7 @@ _CRON_INTERVAL_MINUTES = {
     "process-scheduled-orders":      (5, "every 5 minutes"),
     "check-post-delivery-nudges":    (30, "every 30 minutes"),
     "grant-monthly-tier-perks":      (44640, "1st of month @ 00:05 WAT"),
+    "send-newsletter-campaigns":     (5, "every 5 minutes"),
 }
 
 
@@ -2049,6 +2060,25 @@ def _notify_grant(recipients, amount, reason, flask_app):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _hp_grant_denied(exc) -> bool:
+    """True when the database refused the segment query for want of admin rights.
+
+    hg_hp_grant_segment now requires the caller to be an admin of p_campus or a
+    super_admin. That refusal must read as 403, not as a generic failure.
+    """
+    details = getattr(exc, "details", None)
+    code = str((details or {}).get("code") or "") if isinstance(details, dict) else ""
+    if code == "42501" or getattr(exc, "status_code", None) == 403:
+        return True
+    text = str(exc).lower()
+    return any(m in text for m in (
+        "not an admin", "must be an admin", "admin of p_campus", "admin of the campus",
+        "requires an admin", "only admin", "insufficient privilege",
+        "insufficient_privilege",                      # the live wording (SQLSTATE 42501)
+        "permission denied",
+    ))
+
+
 @admin_bp.route("/hp/bulk-grant", methods=["POST"])
 @require_role("admin")
 def bulk_grant_hp():
@@ -2118,6 +2148,10 @@ def bulk_grant_hp():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     db = get_user_client()
     campus_id = resolve_scoped_campus_id(requested_campus)
+    # A campus admin must never run an unscoped segment: hg_hp_grant_segment now
+    # rejects it on the database side, but a clean 400 beats an opaque RPC error.
+    if campus_id is None and getattr(g, "user_role", None) != "super_admin":
+        return jsonify({"error": MSG.ACCOUNT_NO_CAMPUS}), 400
     skipped = []
     try:
         if explicit:
@@ -2143,6 +2177,9 @@ def bulk_grant_hp():
                 "p_limit": _BULK_GRANT_MAX + 1,
             }) or []
     except (SupabaseError, requests.RequestException) as e:
+        if _hp_grant_denied(e):
+            logger.warning("bulk_grant_hp: segment query refused — %s", e)
+            return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
         return db_error_response(e, "bulk_grant_hp.segment")
     if len(profiles) > _BULK_GRANT_MAX:
         return jsonify({"error": MSG.BULK_GRANT_TOO_MANY.format(max=_BULK_GRANT_MAX)}), 400
@@ -2365,6 +2402,108 @@ def create_spin_pool_prize():
 
     row = result[0] if isinstance(result, list) else result
     return jsonify(row), 201
+
+
+@admin_bp.route("/exclusive-spin-grant", methods=["POST"])
+@require_role("admin")
+def grant_exclusive_spins():
+    """
+    Grant exclusive-spin credits to one user (admin only).
+    Body: { "user_id": "<uuid>", "spins": 1, "validity_days": 60, "reason": "..." }
+    ---
+    tags: [Admin]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [user_id]
+          properties:
+            user_id: {type: string, format: uuid}
+            spins: {type: integer, default: 1, description: 1-10}
+            validity_days: {type: integer}
+            reason: {type: string}
+    responses:
+      201:
+        description: Spins granted
+      400:
+        description: Invalid user or spin count
+      404:
+        description: User not found in your campus
+    """
+    from app.middleware.auth import fetch_or_403
+    from app.services.notification_service import send_notification
+
+    db = get_user_client()
+    data = get_json_object()
+    if data is None:
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+
+    user_id = as_uuid(data.get("user_id"))
+    if not user_id:
+        return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="user_id")}), 400
+    try:
+        spins = int(data.get("spins", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "spins must be a whole number"}), 400
+    if not 1 <= spins <= 10:
+        return jsonify({"error": "spins must be between 1 and 10"}), 400
+
+    target, err = fetch_or_403(db, "profiles", user_id, select="id,campus_id",
+                               not_found_msg=MSG.RESOURCE_NOT_FOUND)
+    if err:
+        return err
+
+    validity_days = data.get("validity_days")
+    if validity_days is None:
+        try:
+            row = db.table("system_settings").select("value").eq("key", "exclusive_spin_validity_days").is_("campus_id", "null").single().execute()
+            validity_days = int((row or {}).get("value") or 60)
+        except Exception:                                    # noqa: BLE001 - a setting, not a guard
+            validity_days = 60
+    try:
+        validity_days = int(validity_days)
+    except (TypeError, ValueError):
+        return jsonify({"error": "validity_days must be a whole number"}), 400
+    if not 1 <= validity_days <= 365:
+        return jsonify({"error": "validity_days must be between 1 and 365"}), 400
+
+    reason = as_text(data.get("reason"), 200) or "Admin grant"
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    # source='admin_grant' is accepted on read (see SPIN_GRANT_SOURCES in
+    # app/routes/exclusive_spin.py) — without that entry this row would be invisible.
+    result = db.table("exclusive_spins").insert({
+        "user_id": user_id,
+        "spin_count": spins,
+        "source": "admin_grant",
+        "month": month,
+        "expires_at": expires_at,
+        "campus_id": target.get("campus_id") or getattr(g, "campus_id", None),
+    }).execute()
+    row = result[0] if isinstance(result, list) else result
+
+    _audit(g.user_id, "exclusive_spins", (row or {}).get("id"), "grant",
+           after_data={"user_id": user_id, "spins": spins, "expires_at": expires_at, "reason": reason},
+           target_campus_id=target.get("campus_id"))
+    try:
+        send_notification(
+            user_id=user_id,
+            notif_type="exclusive_spin_granted",
+            template_data={"spins": spins, "expires_at": expires_at[:10]},
+            campus_id=target.get("campus_id") or getattr(g, "campus_id", None),
+        )
+    except Exception as exc:                                 # noqa: BLE001 - the grant already happened
+        logger.warning("grant_exclusive_spins: notify failed for %s: %s", user_id, exc)
+
+    return jsonify({
+        "message": "Exclusive spins granted",
+        "spin_id": (row or {}).get("id"),
+        "user_id": user_id,
+        "spins": spins,
+        "expires_at": expires_at,
+    }), 201
 
 
 @admin_bp.route("/exclusive-spin-pool/<prize_id>", methods=["PATCH"])

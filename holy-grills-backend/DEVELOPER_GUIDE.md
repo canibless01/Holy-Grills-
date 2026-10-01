@@ -583,6 +583,35 @@ Two seed options — both are fully idempotent (safe to run multiple times):
 
 Both seed the same 8 tables in FK-dependency order. After seeding, all API endpoints that depend on menu data, operating hours, promo codes, and delivery windows will work.
 
+### Verifying a Supabase connection
+
+```bash
+python scripts/check_supabase.py
+```
+
+Validates `SUPABASE_URL` / keys / JWT secret offline (roles, signatures, project
+`ref`, expiry), then probes Auth, PostgREST and **every table the code queries**
+— discovered at runtime by scanning `app/` for `db.table("…")` calls, so the
+list never drifts. Read-only; exits non-zero when something is wrong.
+
+Then verify the contract and the runtime, in that order:
+
+```bash
+python scripts/contract_check.py   # every table/column/RPC the code uses exists in the DB
+python scripts/live_test.py        # full E2E against the live project (creates + deletes its own user)
+python scripts/live_test.py --read-only   # GET-only smoke test
+```
+
+`live_test.py` is the Playwright equivalent for this backend: it drives real
+requests and reads the resulting rows back with the service-role key. Every
+step declares the route it calls, so `--self-check` can validate the whole plan
+against the app's URL map without touching the network:
+
+```bash
+python scripts/live_test.py --self-check
+python scripts/live_test.py --list
+```
+
 ---
 
 ## 16. Common Pitfalls

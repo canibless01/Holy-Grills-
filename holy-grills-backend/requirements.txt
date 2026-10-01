@@ -11,6 +11,8 @@ pyjwt==2.12.1
 pytest==8.4.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
+qrcode[pil]==8.2
 redis==5.2.1
+reportlab==5.0.1
 requests==2.33.1
 supabase

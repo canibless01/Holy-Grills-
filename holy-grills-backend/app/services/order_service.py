@@ -16,10 +16,10 @@ class OrderingWindowUnavailable(ValueError):
         self.next_available_date = next_available_date
 from decimal import Decimal
 from app.utils.tz import today_wat
+from app.utils.schedule import effective_ordering_windows
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services import hp_service
-from app.services.wallet_service import debit_wallet
 from app.services.notification_service import send_notification
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -319,6 +319,104 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
     return round(price_delta_total, 2), resolved_selections
 
 
+def _assert_redemption_claimable(db, redemption_id: str, user_id: str) -> None:
+    """Reject an already-spent reward *before* anything is charged.
+
+    The database is the authority (hg_claim_reward_redemption_for_order), but
+    failing here gives the customer a clear 400 instead of an error after the
+    money moved. A reward is spendable exactly once: status 'fulfilled' and not
+    yet attached to an order.
+    """
+    try:
+        rows = (
+            db.table("reward_redemptions")
+            .select("id,user_id,status,attached_order_id")
+            .eq("id", redemption_id)
+            .execute()
+        ) or []
+    except SupabaseError as exc:
+        # e.g. attached_order_id does not exist yet (migration not applied) —
+        # let the RPC be the judge rather than blocking a legitimate order.
+        logger.warning("create_order: reward pre-check unavailable (%s) — deferring to the RPC", exc)
+        return
+
+    if not rows:
+        raise ValueError("Reward redemption not found for this account.")
+    row = rows[0]
+    if str(row.get("user_id")) != str(user_id):
+        raise ValueError("Reward redemption not found for this account.")
+    if row.get("attached_order_id"):
+        raise ValueError("This reward has already been used on an order.")
+    if str(row.get("status") or "").lower() != "fulfilled":
+        raise ValueError("This reward must be marked fulfilled before it can be used.")
+
+
+def _claim_reward_redemption(db, redemption_id: str, user_id: str, order_id: str) -> dict:
+    """Attach one redemption to one order — first writer wins, later calls no-op.
+
+    Uses the conditional UPDATE in hg_claim_reward_redemption_for_order, so two
+    concurrent checkouts holding the same redemption cannot both spend it.
+    """
+    res = db.rpc("hg_claim_reward_redemption_for_order", {
+        "p_redemption_id": redemption_id,
+        "p_user_id": user_id,
+        "p_order_id": order_id,
+    })
+    return res if isinstance(res, dict) else {"claimed": False, "reason": "unexpected_rpc_result"}
+
+
+def _consume_free_sides(db, user_id: str, campus_id, order_id: str) -> dict:
+    """Spend this user's free-side selections on `order_id`.
+
+    Primary path: hg_consume_free_sides_atomic does the credit decrement, the ₦0
+    order line and the selection deletion in one transaction. If that migration
+    is not applied yet, fall back to the Python consumer, which uses the same
+    compare-and-set decrement, so a retry cannot double-spend either way.
+    """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("free_side_credits"):
+        return {"consumed": 0, "skipped": "feature_disabled"}
+
+    try:
+        res = db.rpc("hg_consume_free_sides_atomic", {
+            "p_user_id": user_id,
+            "p_order_id": order_id,
+            "p_campus_id": campus_id,
+        })
+        if isinstance(res, dict):
+            return res
+    except SupabaseError as exc:
+        code = str((getattr(exc, "details", None) or {}).get("code") or "")
+        if code not in ("PGRST202", "42883") and exc.status_code != 404:
+            raise
+        logger.warning("create_order: hg_consume_free_sides_atomic missing (%s) — "
+                       "using the Python consumer", exc)
+
+    from app.routes.free_sides import consume_free_side_selections
+    inserted = consume_free_side_selections(db, user_id, campus_id, order_id) or []
+    return {"consumed": len(inserted), "source": "python_fallback"}
+
+
+# The order RPC now claims p_redemption_id inside its own transaction and refuses
+# the whole order when the reward cannot be spent. Its message wording is the
+# database's; translate the known cases so the customer gets a stable 400.
+_RPC_ERROR_MAP = (
+    ("reward redemption is not available", MSG.REWARD_REDEMPTION_UNAVAILABLE),
+    ("redemption is not available", MSG.REWARD_REDEMPTION_UNAVAILABLE),
+    ("reward redemption is not yours", MSG.REWARD_REDEMPTION_UNAVAILABLE),
+)
+
+
+def _normalize_rpc_error(message: str) -> str:
+    """Map a raw RPC refusal to the customer-facing wording, else pass it through."""
+    text = str(message or "")
+    low = text.lower()
+    for marker, friendly in _RPC_ERROR_MAP:
+        if marker in low:
+            return friendly
+    return text
+
+
 def create_order(user_id: str | None, payload: dict) -> dict:
     """
     Create a new order. Supports authenticated and guest checkout.
@@ -339,8 +437,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         try:
             from app.routes.events import _get_campus_id
             campus_id = _get_campus_id()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("create_order: campus resolution from the request context failed: %s", exc)
     if not campus_id:
         raise ValueError("campus_id could not be resolved for this order")
 
@@ -550,7 +648,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     # ── Squad Order discount ──────────────────────────────────────────────────
     config = current_app.config
     squad_discount = 0.0
-    squad_delivery_discount = 0.0
     squad_item_count = sum(oi["quantity"] for oi in order_items if not oi.get("is_addon"))
     is_squad_order = False
     squad_id = None
@@ -617,8 +714,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     delivery_type = addr["delivery_type"]
         except ValueError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("create_order: saved-address lookup failed — using the payload's delivery fields: %s",
+                          exc)
 
     from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
@@ -652,8 +750,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             )
             if hostel:
                 delivery_fee = float(hostel.get("delivery_fee") or 0)
-        except Exception:
-            pass  # Table may not exist yet — fee stays 0
+        except Exception as exc:
+            logger.warning("create_order: hostel delivery_fee unreadable — the order charges ₦0 delivery: %s",
+                            exc)
     elif delivery_type == "off_campus" and delivery_location_id:
         try:
             gate = (
@@ -681,7 +780,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if is_squad_order and config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True):
         pct = Decimal(str(config.get("SQUAD_DELIVERY_DISCOUNT_PCT", 100)))
         squad_delivery_discount_dec = (delivery_fee_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
-        squad_delivery_discount = float(squad_delivery_discount_dec)
         delivery_fee_dec = max(Decimal("0.0"), delivery_fee_dec - squad_delivery_discount_dec)
         delivery_fee = float(delivery_fee_dec)
 
@@ -775,13 +873,15 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         try:
             tier_info = hp_service.get_user_tier(user_id)
             tier_slug = (tier_info.get("tier") or {}).get("slug", "ember")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("create_order: tier lookup failed for %s — the HP preview uses the default tier: %s",
+                            user_id, exc)
         try:
             prof = db.table("profiles").select("next_order_hp_multiplier").eq("id", user_id).single().execute()
             next_order_hp_mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("create_order: next_order_hp_multiplier unreadable for %s — the bonus may be lost: %s",
+                            user_id, exc)
 
     hp_preview_total = hp_service.calculate_delivery_hp(
         subtotal, tier_slug, order_items, user_id=user_id, campus_id=campus_id
@@ -802,6 +902,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
+    # A reward may ride exactly one order. Check before anything is charged; the
+    # authoritative claim happens after the order exists (see below).
+    redemption_id = payload.get("redemption_id")
+    if redemption_id:
+        _assert_redemption_claimable(get_db(), redemption_id, user_id)
+
     rpc_payload = {
         "p_user_id": user_id,
         "p_campus_id": campus_id,
@@ -818,7 +924,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "p_wallet_amount_used": wallet_amount_used,
         "p_card_amount_used": card_amount_used,
         "p_hp_redeemed": int(payload.get("hp_redeemed") or 0),
-        "p_redemption_id": payload.get("redemption_id"),
+        "p_redemption_id": redemption_id,
         "p_delivery_type": delivery_type,
         "p_delivery_location_id": delivery_location_id,
         "p_delivery_location_lat": delivery_location_lat,
@@ -853,11 +959,43 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         result = {}
 
     if result.get("error"):
-        raise ValueError(result["error"])
+        raise ValueError(_normalize_rpc_error(result["error"]))
 
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
 
     order_id = result.get("order_id")
+
+    # ── Free sides: spend the credits and add the ₦0 lines ──────────────────
+    # The one place a free-side credit is actually consumed. Runs after the order
+    # exists (it needs order_id) and must never fail the order: the customer has
+    # paid for the real items, and an unconsumed selection simply stays for the
+    # next checkout.
+    if order_id and not result.get("idempotent"):
+        try:
+            _consume_free_sides(get_db(), user_id, campus_id, str(order_id))
+        except Exception as exc:                                    # noqa: BLE001
+            logger.warning("create_order: free-side consumption failed for order %s: %s",
+                           order_id, exc)
+
+    # ── Reward redemption: attach it to this order exactly once ─────────────
+    # The authoritative claim happens inside hg_create_order_atomic, so this call
+    # is a safety net: it returns claimed=true with already_attached=true when the
+    # order already carries the reward — that is success. Only a genuine refusal
+    # (the reward was spent elsewhere in the meantime) is logged, because by then
+    # the customer has already received the discount on this order.
+    claim = None
+    if order_id and redemption_id and not result.get("idempotent"):
+        try:
+            claim = _claim_reward_redemption(get_db(), redemption_id, user_id, str(order_id)) or {}
+            attached = bool(claim.get("claimed")) or bool(claim.get("already_attached"))
+            if not attached:
+                logger.error("create_order: reward redemption %s could not be attached to order %s "
+                             "(%s) — the reward may have been used twice", redemption_id, order_id,
+                             claim.get("reason"))
+        except Exception as exc:                                    # noqa: BLE001
+            logger.error("create_order: reward claim call failed for redemption %s / order %s: %s",
+                         redemption_id, order_id, exc)
+
     if squad_id and order_id and not result.get("idempotent"):
         excluded_ids = set(payload.get("excluded_member_ids") or [])
         extra_members = [e.strip().lower() for e in (payload.get("extra_members") or []) if e and e.strip()]
@@ -871,8 +1009,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     "order_id": order_id, "email": r["email"], "user_id": r.get("user_id"),
                     "is_registered": bool(r.get("user_id")), "campus_id": campus_id_for_squad,
                 })
-            except Exception:
-                pass  # duplicate (order_id, email) — ignore
+            except Exception as exc:
+                logger.warning("create_order: squad member row not written for %s on order %s: %s",
+                                r.get("email"), order_id, exc)
             snapshot.append({"email": r["email"], "user_id": r.get("user_id")})
         for email in extra_members:
             prof = db.table("profiles").select("id").eq("email", email).single().execute()
@@ -882,11 +1021,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     "user_id": prof["id"] if prof else None,
                     "is_registered": bool(prof), "campus_id": campus_id_for_squad,
                 })
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("create_order: squad member row not written for %s on order %s: %s",
+                                email, order_id, exc)
             snapshot.append({"email": email, "user_id": prof["id"] if prof else None})
         if snapshot:
-            db.table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot})
+            get_db().table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot}).execute()
 
     order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
     order_source = payload.get("order_source") or payload.get("source") or "website"
@@ -894,7 +1034,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         order_source = "other"          # the orders.order_source CHECK only allows these six values
     if order_source and result.get("order_id"):
         try:
-            db.table("orders").eq("id", result["order_id"]).update({"order_source": order_source}).execute()
+            get_db().table("orders").eq("id", result["order_id"]).update({"order_source": order_source}).execute()
         except Exception as _ose:
             logger.warning("create_order: failed to set order_source: %s", _ose)
 
@@ -922,8 +1062,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 if dw:
                     delivery_start = dw.get("opens_at")
                     delivery_end = dw.get("closes_at")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("create_order: delivery window %s unreadable — the customer sees the 18:00-19:00 default: %s",
+                                linked_delivery_window_id, exc)
         order["delivery_window_start"] = delivery_start or "18:00"
         order["delivery_window_end"] = delivery_end or "19:00"
 
@@ -931,7 +1072,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             try:
                 from app.services.tier_service import try_claim_monthly_free_delivery
                 if try_claim_monthly_free_delivery(user_id, order_id=result["order_id"]):
-                    db.table("orders").eq("id", result["order_id"]).update({"delivery_fee": 0.0}).execute()
+                    get_db().table("orders").eq("id", result["order_id"]).update({"delivery_fee": 0.0}).execute()
                     order["delivery_fee"] = 0.0
             except Exception as _fe:
                 logger.warning("create_order: monthly free delivery perk claim failed: %s", _fe)
@@ -1055,8 +1196,9 @@ def walk_order_to_status(
                 if c_prof:
                     caller_role = c_prof.get("role")
                     caller_campus = c_prof.get("campus_id")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("walk_order_to_status: could not resolve the role of %s — the rider/kitchen/admin checks are SKIPPED for this call: %s",
+                              changed_by, exc)
 
         if caller_role == "rider":
             effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id}).execute()
@@ -1174,6 +1316,59 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     return updated_order
 
 
+def _restore_order_consumables(order: dict) -> None:
+    """Give back what an order cancelled before preparation took from the customer.
+
+    Cancelling from 'received' means the kitchen never started, so the HP the order
+    redeemed and any reward it had claimed both go back:
+
+    * HP returns at the exact amount redeemed, with no multiplier — it is the return of
+      something spent, not a fresh earn (the same call the scheduled-cancel path used).
+    * The reward claim is released, which is what makes the reward claimable again. The
+      update is pinned to this order, so a retry or a race cannot free a reward that
+      belongs to another order.
+
+    Both are best-effort: the cancellation has already been committed and the customer
+    has been told, so a failure here is logged rather than allowed to undo the cancel.
+    """
+    order_id = order.get("id")
+    user_id = order.get("user_id")
+    if not order_id or not user_id:
+        return
+
+    hp_redeemed = int(order.get("hp_redeemed") or 0)
+    if hp_redeemed > 0:
+        try:
+            from app.services import hp_service
+            hp_service.award_active_hp(
+                user_id, hp_redeemed,
+                txn_type="refund", reference_id=order_id, reference_type="order",
+                apply_multiplier=False,  # returning HP that was spent, not a fresh earn
+            )
+        except Exception as exc:
+            logger.error("cancel: HP restore failed for order %s (%s HP, user %s): %s",
+                         order_id, hp_redeemed, user_id, exc)
+
+    # reward_redemptions has no UPDATE policy for the owner (only admins) — see the same
+    # note in routes/rewards.py — so this write has to go through the service role, pinned
+    # to the order that actually holds the claim. Both the claim link and its timestamp go
+    # back to empty: the database only ever sets them (hg_create_order_atomic claims the
+    # reward; nothing reverses it), so clearing them here is what makes the reward
+    # claimable again. Re-running is a no-op — the row no longer matches the filter.
+    try:
+        released = (
+            get_db().table("reward_redemptions")
+            .eq("attached_order_id", order_id)
+            .update({"attached_order_id": None, "used_at": None})
+        )
+        count = len(released) if isinstance(released, list) else (1 if released else 0)
+        if count:
+            logger.info("cancel: released %s reward claim(s) for order %s", count, order_id)
+    except Exception as exc:
+        logger.error("cancel: reward release failed for order %s — the reward stays used: %s",
+                     order_id, exc)
+
+
 def update_order_status(order_id: str, new_status: str, changed_by: str = None, notes: str = "") -> dict:
     """
     Transition order status. Validates the state machine. Awards HP on delivery.
@@ -1205,8 +1400,9 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 if c_prof:
                     caller_role = c_prof.get("role")
                     caller_campus = c_prof.get("campus_id")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("update_order_status: could not resolve the role of %s — the rider/kitchen/admin checks are SKIPPED for this call: %s",
+                              changed_by, exc)
 
         if caller_role == "rider":
             if _effective_rider_id(order) != changed_by:
@@ -1246,6 +1442,14 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
             raise OrderConflictError(MSG.ORDER_STATUS_CONFLICT)   # somebody else moved the order first
         raise OrderForbiddenError(MSG.ORDER_UPDATE_FAILED)
     _log_status_change(order_id, current_status, new_status, changed_by, notes, order.get("campus_id"))
+
+    # Cancelled before preparation: the customer gets back the HP and the reward this
+    # order consumed. Placed on the one compare-and-set transition every cancel path
+    # goes through (customer, admin, kitchen), so it fires exactly once — a retry hits
+    # the `new_status == current_status` no-op above and cannot credit twice. Cancels
+    # from later states keep their HP/reward: the kitchen has already spent real money.
+    if new_status == "cancelled" and current_status == "received":
+        _restore_order_consumables(order)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery
     if order.get("user_id"):
@@ -1646,17 +1850,11 @@ def resolve_ordering_window(db, campus_id):
     _today_iso = _now_wat_dt.date().isoformat()
     _weekday = _now_wat_dt.weekday()
 
-    candidates = (
-        db.table("ordering_windows")
-        .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-        .eq("date", _today_iso).eq("campus_id", campus_id).execute()
-    ) or []
-    if not candidates:
-        candidates = (
-            db.table("ordering_windows")
-            .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-            .eq("weekday", _weekday).eq("campus_id", campus_id).execute()
-        ) or []
+    # Precedence lives in app/utils/schedule.py: a dated ordering_windows row, then
+    # a per-date operating_hours override (closed, or one window at its times), then
+    # the recurring weekday rows, then the config fallback. An override applies to
+    # its own date only — the next day is back on the recurring schedule.
+    candidates, _source = effective_ordering_windows(db, campus_id, _today_iso, _weekday)
 
     if not candidates:
         from flask import current_app
@@ -1709,7 +1907,7 @@ def resolve_ordering_window(db, campus_id):
 
 
 def get_ordering_window_status(db, campus_id, for_date=None):
-    from datetime import time as _time, timedelta as _td, timezone as _tz
+    from datetime import timedelta as _td, timezone as _tz
     _now_utc = datetime.now(_tz.utc)
     _now_wat_dt = _now_utc + _td(hours=1)
     target_dt = for_date if for_date else _now_wat_dt.date()
@@ -1721,17 +1919,10 @@ def get_ordering_window_status(db, campus_id, for_date=None):
     except Exception:
         _weekday = _now_wat_dt.weekday()
 
-    candidates = (
-        db.table("ordering_windows")
-        .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-        .eq("date", _today_iso).eq("campus_id", campus_id).execute()
-    ) or []
-    if not candidates:
-        candidates = (
-            db.table("ordering_windows")
-            .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-            .eq("weekday", _weekday).eq("campus_id", campus_id).execute()
-        ) or []
+    # Same precedence as resolve_ordering_window, through the same helper — this is
+    # what makes find_next_available_ordering_slot and the 7-day calendar
+    # override-aware without their own copy of the rules.
+    candidates, _source = effective_ordering_windows(db, campus_id, _today_iso, _weekday)
 
     windows_out = []
     any_capacity = False
@@ -1767,6 +1958,8 @@ def get_ordering_window_status(db, campus_id, for_date=None):
             "is_closed": bool(row.get("is_closed")),
             "is_full": is_full,
             "remaining": remaining,
+            "opens_at": row.get("opens_at"),
+            "closes_at": row.get("closes_at"),
             "delivery_starts_at": (deliv or {}).get("opens_at"),
             "delivery_ends_at": (deliv or {}).get("closes_at"),
         })

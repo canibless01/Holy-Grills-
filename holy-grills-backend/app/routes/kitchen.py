@@ -594,8 +594,9 @@ def kitchen_metrics():
                 diff_minutes = (rd - r).total_seconds() / 60
                 if 0 < diff_minutes < 300:
                     prep_times.append(round(diff_minutes, 1))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("prep time: unparseable timestamps on order %s (%s)", 
+                             o.get("id"), exc)
 
     avg_prep_time = round(sum(prep_times) / len(prep_times), 1) if prep_times else None
 
@@ -700,7 +701,7 @@ def batch_advance(batch_id):
       404:
         description: No orders found in this batch
     """
-    from app.services.order_service import update_order_status, VALID_TRANSITIONS
+    from app.services.order_service import update_order_status
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err

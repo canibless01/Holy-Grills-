@@ -13,6 +13,9 @@ from app.utils.tz import today_wat, WAT_OFFSET, is_within_availability_window
 from app.utils.upload_urls import is_trusted_upload_url
 from datetime import datetime, timezone
 from app.messages import MSG
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _json_body() -> dict:
@@ -24,7 +27,7 @@ def _json_body() -> dict:
 def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data=None, after_data=None):
     """Write an admin audit log entry for menu item changes. Silently ignores errors."""
     try:
-        from app.db import get_db, get_user_client as _get_db
+        from app.db import get_user_client as _get_db
         db = _get_db()
         actor_role = getattr(g, "user_role", "admin")
         campus_id = getattr(g, "campus_id", None)
@@ -38,8 +41,11 @@ def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data
             "after_value": after_data,
             "campus_id": campus_id,
         }).execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        # The admin action itself already happened. Losing the audit row means the change
+        # cannot be attributed later, so this is an error, not a warning.
+        logger.error("admin audit write failed for %s:%s (%s): %s",
+                     entity_type, entity_id, action, exc)
 
 
 def _notify_sellout(item_id: str, item_name: str, campus_id=None):

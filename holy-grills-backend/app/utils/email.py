@@ -8,7 +8,6 @@ Auth: Authorization: Bearer <RESEND_API_KEY>
 
 import os
 import requests
-from flask import current_app
 from app.messages import MSG
 from app.utils.logger import get_logger
 

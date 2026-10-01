@@ -23,7 +23,6 @@ MONTHLY PENDING CAP:
   Cap reads from system_settings key 'monthly_pending_cap' (default 1000).
 """
 
-import math
 import uuid
 from datetime import datetime, timezone, date, timedelta
 from app.db import get_db, get_user_client
@@ -228,7 +227,6 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
     cycle_week = int(streak.get("cycle_week_number") or 1)
     consecutive_weeks = int(streak.get("consecutive_weeks") or 0)
     hp_awarded = 0
-    action = "checked_in"
 
     # Same week — just mark today if not already marked
     if stored_week_start and stored_week_start == current_week_start:
@@ -278,7 +276,6 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
     if not week_completed:
         try:
             from app.services.notification_service import send_notification
-            from app.messages import MSG
             send_notification(
                 user_id=user_id,
                 notif_type="streak_cycle_failed",
@@ -413,7 +410,6 @@ def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks:
             notes=f"Check-in streak week {cycle_week} completed — {actual_hp} HP pending",
         )
         from app.services.notification_service import send_notification
-        from app.messages import MSG
         send_notification(
             user_id=user_id,
             notif_type="checkin_streak_week",
@@ -481,7 +477,6 @@ def try_reclaim_checkin(user_id: str, reclaim_type: str = "order") -> dict:
             "last_updated": now.isoformat(),
         })
         from app.services.notification_service import send_notification
-        from app.messages import MSG
         send_notification(
             user_id=user_id,
             notif_type="checkin_reclaimed",
@@ -555,8 +550,9 @@ def _touch_last_activity(db, user_id: str, now: datetime) -> None:
     """Update profiles.last_activity_at for decay-onset tracking."""
     try:
         db.table("profiles").eq("id", user_id).update({"last_activity_at": now.isoformat()})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("streak: could not touch last_activity_at for %s — the activity is not recorded: %s",
+                        user_id, exc)
 
 
 # ── ORDER STREAK ───────────────────────────────────────────────────────────────
@@ -693,7 +689,6 @@ def _award_order_streak_hp(db, user_id: str, streak_weeks: int, current_week: st
             notes=f"Order streak milestone — {streak_weeks} consecutive week(s) → {hp} HP active",
         )
         from app.services.notification_service import send_notification
-        from app.messages import MSG
         _plural = "s" if streak_weeks != 1 else ""
         send_notification(
             user_id=user_id,

@@ -245,8 +245,9 @@ def process_campaigns(sender=None, max_seconds=None) -> dict:
             logger.error("newsletter campaign %s failed: %s", c.get("id"), e, exc_info=True)
             try:
                 db.table("newsletter_campaigns").eq("id", c["id"]).update({"last_error": str(e)[:300]})
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("newsletter: could not record last_error for campaign %s: %s",
+                                c.get("id"), exc)
             continue
         summary["campaigns"] += 1
         summary["sent"] += r["sent"]

@@ -1,14 +1,22 @@
 import random
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
+from app.services.feature_flags import is_feature_enabled
 from app.utils.logger import get_logger
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 logger = get_logger(__name__)
 
 exclusive_spin_bp = Blueprint("exclusive_spin", __name__)
+
+# Every source a spin credit may come from. A credit with any other source is ignored
+# on read, so a new way of granting spins must be added here or it is silently unusable.
+#   leaderboard_prize — top-N monthly finish (scheduled.py)
+#   tier_grant        — a tier's monthly exclusive_spins_monthly perk (grant_monthly_tier_perks)
+#   admin_grant       — POST /admin/exclusive-spin-grant (compensation, support, promos)
+SPIN_GRANT_SOURCES = ["leaderboard_prize", "tier_grant", "admin_grant"]
 
 
 def _available_spins(db, user_id: str) -> list:
@@ -25,7 +33,7 @@ def _available_spins(db, user_id: str) -> list:
         db.table("exclusive_spins")
         .select("id,spin_count,source,month,expires_at")
         .eq("user_id", user_id)
-        .in_("source", ["leaderboard_prize", "tier_grant"])
+        .in_("source", SPIN_GRANT_SOURCES)
         .gt("spin_count", 0)
         .gte("expires_at", now)
     )
@@ -155,7 +163,6 @@ def my_spins():
         description: Spin summary
     """
     user_id = g.user_id
-    from app.services.feature_flags import is_feature_enabled
     if not is_feature_enabled("exclusive_spin"):
         return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="Exclusive spin")}), 403
     db = get_user_client()
@@ -233,8 +240,9 @@ def do_spin():
             notif_type="exclusive_spin_won",
             template_data={"prize": prize},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # The spin credit is already spent and the prize recorded; only the message was lost.
+        logger.warning("do_spin: exclusive_spin_won notify failed for %s: %s", user_id, exc)
 
     return jsonify({
         "message": resolve_msg(MSG.SPIN_SUCCESS, prize=prize),

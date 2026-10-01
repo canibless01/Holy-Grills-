@@ -5,11 +5,13 @@ Payment-provider webhooks (Paystack + Flutterwave): signature check, atomic idem
 import hashlib
 import hmac
 import json
-import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app
 from app.db import get_db, SupabaseError
 from app.messages import MSG
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from app.services.order_service import confirm_order_payment
 from app.services.wallet_service import credit_wallet
 from app.services.notification_service import send_notification
@@ -597,7 +599,6 @@ def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -
             .eq("is_active", True)
             .execute()
         ) or []
-        from app.messages import MSG
         for admin in admins:
             send_notification(
                 user_id=admin["id"],
@@ -608,5 +609,8 @@ def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -
                     "error": error[:200],
                 },
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        # This is the failure-reporting path: if it fails silently, a broken webhook
+        # produces no alert at all and the first sign of trouble is a customer complaint.
+        logger.error("webhook failure alert could not be sent (%s, ref %s): %s",
+                     event_type, reference, exc)

@@ -7,9 +7,12 @@ GET    /admin/settings                   — list all system settings
 PATCH  /admin/settings/<key>             — update a system setting
 """
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.db import get_db, get_user_client
+from app.middleware.auth import require_role, resolve_scoped_campus_id
+from app.db import get_user_client
 from app.messages import MSG
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from datetime import datetime, timezone
 
 admin_gifts_bp = Blueprint("admin_gifts", __name__)
@@ -182,8 +185,11 @@ def update_setting(key):
             mult_val = float(str(value))
             if mult_val > 1.0:
                 _broadcast_multiplier_event(db, mult_val, campus_id=campus_id)
-        except Exception:
-            pass  # non-critical — setting is saved regardless
+        except Exception as exc:
+            # Not critical — the setting is saved regardless — but if this keeps failing
+            # nobody is ever told the multiplier went live, so leave a trail.
+            logger.warning("multiplier_live: broadcast failed (multiplier=%s, campus=%s): %s",
+                           value, campus_id, exc)
 
     return jsonify({"message": MSG.SETTING_UPDATED, "key": key, "value": str(value)}), 200
 
@@ -208,10 +214,12 @@ def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
                     body=MSG.MULTIPLIER_LIVE_BODY.format(multiplier=multiplier, currency="{currency}"),
                     channels=["push", "in_app"],
                 )
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as exc:
+                # The multiplier is already live; only this user's announcement was lost.
+                logger.warning("multiplier_live: notify failed for %s: %s", user["id"], exc)
+    except Exception as exc:
+        # The whole broadcast failed — e.g. the user lookup itself — so no one was told.
+        logger.error("multiplier_live: broadcast aborted (%s): %s", multiplier, exc)
 
 
 @admin_gifts_bp.route("/settings", methods=["POST"])

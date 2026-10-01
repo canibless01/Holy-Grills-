@@ -1,8 +1,6 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
-from app.services.hp_service import (
-    get_hp_balance, get_user_tier, earn_pending_hp, award_active_hp
-)
+from app.services.hp_service import (get_hp_balance, get_user_tier, award_active_hp)
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
@@ -470,7 +468,7 @@ def transfer_hp():
         }), 400
 
     transfer_note = notes or f"HP transfer from {sender_name}"
-    result = db.rpc("hg_transfer_hp_atomic", {
+    result = get_db().rpc("hg_transfer_hp_atomic", {
         "p_sender_id": g.user_id,
         "p_recipient_id": recipient_id,
         "p_amount": amount,
@@ -512,7 +510,7 @@ def transfer_hp():
 
 
 def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
-    from app.db import get_db, get_user_client
+    from app.db import get_user_client
     db = get_user_client()
     actor_role = getattr(g, "user_role", "admin")
     cid = campus_id or getattr(g, "campus_id", None)
@@ -527,5 +525,7 @@ def _log_admin_action(actor_id, table, target_id, action, after_data=None, campu
             "after_value": after_data,
             "campus_id": cid,
         }).execute()
-    except Exception:
-        pass  # Silent fail
+    except Exception as exc:
+        # Same as the menu audit helper: the admin action happened, the record of who
+        # did it did not. That is an error, not a warning.
+        logger.error("admin audit write failed for %s:%s (%s): %s", table, target_id, action, exc)

@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.db import get_user_client
 from app.middleware.auth import require_auth
 from app.messages import MSG
-from app.services.squad_service import resolve_display_name, resolve_display_names_batch
+from app.services.squad_service import resolve_display_names_batch
 from app.services.feature_flags import is_feature_enabled
 from app.utils.logger import get_logger
 

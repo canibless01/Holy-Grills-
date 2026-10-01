@@ -237,18 +237,34 @@ def get_order(order_id):
     except ValueError:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    db = get_user_client()
-    order = db.table("orders").select("*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-
     claim_token = request.args.get("claim_token")
+    _select = "*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)"
+
+    db = get_user_client()
+    order = None
+    if g.user_id:
+        # A logged-in user's own orders are visible to them through row-level security.
+        order = db.table("orders").select(_select).eq("id", order_id).single().execute()
+
+    if not order:
+        # Guest tracking: a guest order (user_id NULL) is invisible to the anon key and to other users, so
+        # the lookup uses the service client. Nothing is returned unless the claim_token matches below.
+        if not claim_token:
+            return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+        db = get_db()
+        order = db.table("orders").select(_select).eq("id", order_id).single().execute()
+        if not order:
+            return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+        if order.get("user_id"):
+            # Already linked to an account: the token is no longer a valid way in. The owner logs in.
+            return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
+
     if order.get("user_id"):
         if not g.user_id or order["user_id"] != g.user_id:
             return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
     else:
         # Guest order (user_id is None)
-        if not claim_token or not hmac.compare_digest(str(order.get("claim_token") or ""), claim_token):
+        if not claim_token or not hmac.compare_digest(str(order.get("claim_token") or ""), str(claim_token)):
             return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
     # Resolve the assigned rider from the persisted batch/profile relation.
@@ -590,27 +606,32 @@ def claim_guest_order(order_id):
     if not claim_token:
         return jsonify({"error": MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
 
-    db = get_user_client()
+    # A guest order has user_id NULL, so the student's own token cannot even SELECT it (RLS), and the
+    # orders trigger blocks a user changing user_id directly. The server therefore does the lookup and
+    # the claim with the service client. This is safe because: (1) @require_auth already verified the
+    # caller, (2) p_user_id is g.user_id from that verified token, never from the request body, and
+    # (3) claim_guest_order() re-checks the claim token inside the database.
+    admin_db = get_db()
 
-    # Pre-claim validations on Python side to enforce business policies perfectly
-    order = db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
+    order = admin_db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     if order.get("user_id"):
         return jsonify({"error": MSG.ORDER_ALREADY_CLAIMED}), 400
 
-    if not order.get("claim_token") or not hmac.compare_digest(str(order["claim_token"]), claim_token):
+    if not order.get("claim_token") or not hmac.compare_digest(str(order["claim_token"]), str(claim_token)):
         return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
     try:
-        result = db.rpc("claim_guest_order", {
+        result = admin_db.rpc("claim_guest_order", {
             "p_order_id": order_id,
             "p_user_id": g.user_id,
             "p_claim_token": claim_token,
         })
         if isinstance(result, dict) and result.get("success"):
-            claimed_order = db.table("orders").select("*").eq("id", order_id).single().execute()
+            # After the claim the student owns the order, so the normal user client can read it back.
+            claimed_order = get_user_client().table("orders").select("*").eq("id", order_id).single().execute()
             if claimed_order and claimed_order.get("status") == "delivered" and not claimed_order.get("hp_credited_at"):
                 # A guest who was delivered before claiming would otherwise never get
                 # the HP a logged-in customer earns automatically on delivery.
@@ -881,7 +902,17 @@ def cancel_scheduled_order(order_id):
         )
         wallet_refunded = wallet_amount_used
 
+    # The card half is only real money once the webhook confirms it — every order is
+    # created payment_status='pending' with card_amount_used already set — so refunding it
+    # here refunded money that was never collected, repeatably. Same bug the plain cancel
+    # path had. The wallet half above is always refunded: it is debited at creation.
     card_amount_used = float(order.get("card_amount_used") or 0)
+    if card_amount_used > 0 and str(order.get("payment_status") or "").lower() != "paid":
+        logger.warning(
+            "cancel_scheduled_order: order %s cancelled with payment_status=%r — the card "
+            "half (%s) was never collected and is not refunded",
+            order_id, order.get("payment_status"), card_amount_used)
+        card_amount_used = 0.0
     if card_amount_used > 0:
         from app.services.wallet_service import credit_wallet
         credit_wallet(
@@ -892,26 +923,23 @@ def cancel_scheduled_order(order_id):
         )
         wallet_refunded += card_amount_used
 
-    hp_redeemed = int(order.get("hp_redeemed") or 0)
-    if hp_redeemed > 0 and order.get("user_id"):
-        from app.services import hp_service
-        hp_service.award_active_hp(
-            order["user_id"], hp_redeemed,
-            txn_type="refund", reference_id=order_id, reference_type="order",
-            apply_multiplier=False,  # returning HP that was spent, not a fresh earn
-        )
+    # HP and a claimed reward are restored by update_order_status() on the
+    # received->cancelled transition, above in this same request: one implementation for
+    # every cancel path, fired exactly once. Doing it here too would credit HP twice.
 
     # Restore order lock if one was used
     try:
-        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
         if lock:
-            db.table("order_locks").eq("id", lock["id"]).update({
+            get_db().table("order_locks").eq("id", lock["id"]).update({
                 "status": "active",
                 "order_id": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-    except Exception:
-        pass
+            }).execute()
+    except Exception as exc:
+        # The lock stays consumed and the customer loses what they paid for it. This must
+        # be visible to whoever investigates, and is reversible by hand.
+        logger.error("cancel_scheduled_order: order lock not restored for order %s: %s", order_id, exc)
 
     return jsonify({
         "message": MSG.ORDER_CANCELLED_OK,
@@ -1148,11 +1176,35 @@ def cancel_order(order_id):
         return jsonify({"error": str(exc)}), 400
 
     # ── Refund: wallet→wallet, card→wallet ────────────────────────────────────
+    # ONLY money that actually left the account is refundable. A card order is created
+    # with payment_status='pending' and card_amount_used already set, so refunding
+    # before the webhook confirmed the charge credited the customer for a payment that
+    # never happened — repeatable, i.e. free money. The admin refund route
+    # (POST /<id>/refund) already refuses this case with REFUND_UNPAID_CANCELLED;
+    # this is the same guard on the customer path.
     wallet_refunded = 0.0
     wallet_amount = float(order.get("wallet_amount_used") or 0)
     card_amount = float(order.get("card_amount_used") or 0)
+    paid = str(order.get("payment_status") or "").lower() == "paid"
+
+    # CONFIRMED against the live database: hg_create_order_atomic debits the wallet half
+    # at creation, in the same transaction, through debit_wallet_atomic; the card half
+    # only arrives later, by webhook. So on a pending split order the wallet half is
+    # already gone and must come back — while the card half, never collected, must not.
+    # The refund is capped at wallet_amount_used, which is exactly the amount debited.
+    refund_wallet_when_unpaid = True
 
     refund_errors = []
+    if not paid:
+        # The card half was never collected. The wallet half was, at creation.
+        logger.warning(
+            "cancel_order: order %s cancelled with payment_status=%r — refunding the wallet "
+            "half (%s) only; the card half (%s) was never collected.",
+            order_id, order.get("payment_status"), wallet_amount, card_amount)
+        if not refund_wallet_when_unpaid:
+            wallet_amount = 0.0
+        card_amount = 0.0
+
     if wallet_amount > 0:
         try:
             from app.services.wallet_service import credit_wallet
@@ -1188,15 +1240,17 @@ def cancel_order(order_id):
 
     # Restore order lock if one was used
     try:
-        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
         if lock:
-            db.table("order_locks").eq("id", lock["id"]).update({
+            get_db().table("order_locks").eq("id", lock["id"]).update({
                 "status": "active",
                 "order_id": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-    except Exception:
-        pass
+            }).execute()
+    except Exception as exc:
+        # Same as cancel_scheduled_order: the customer paid for this lock and it stays
+        # consumed if the restore fails. Log it — it is fixable by hand.
+        logger.error("cancel_order: order lock not restored for order %s: %s", order_id, exc)
 
     from app.services.notification_service import send_notification
     try:
@@ -1214,13 +1268,27 @@ def cancel_order(order_id):
     except Exception:
         pass
 
-    return jsonify({
+    response = {
         "message": MSG.ORDER_CANCELLED_OK,
         "order_id": order_id,
         "status": "cancelled",
         "wallet_refunded": wallet_refunded,
         "refund_errors": refund_errors,
-    }), 200
+    }
+    if not paid:
+        # Say what actually happened: a split order's wallet half was debited at checkout
+        # and is being returned, while a card-only order had nothing collected at all.
+        # Without this the client cannot tell "refunded ₦0" from "the refund failed".
+        response["payment_status"] = order.get("payment_status")
+        response["refunded_reason"] = (
+            "the wallet half was debited at checkout and has been returned; "
+            "the card half was never collected"
+            if wallet_refunded > 0 else
+            "nothing was charged on this order"
+        )
+        if refund_errors:
+            response["refund_errors"] = refund_errors
+    return jsonify(response), 200
 
 
 @orders_bp.route("/<order_id>/reorder", methods=["POST"])
@@ -1301,14 +1369,21 @@ def reorder(order_id):
                             .single()
                             .execute()
                         )
-                    except Exception:
+                    except Exception as exc:
+                        # Falls back to the base menu price. If the override existed, the
+                        # customer is now charged a different amount than intended.
+                        logger.warning("reorder: availability/price_override read failed for item %s: %s",
+                                       item["menu_item_id"], exc)
                         availability = None
                 if availability:
                     is_available = is_available and bool(availability.get("is_available"))
                     if availability.get("price_override") is not None:
                         current_price = float(availability["price_override"])
-        except Exception:
-            pass
+        except Exception as exc:
+            # Not the override lookup itself (that one logs above) but the price read
+            # around it. Silent here means the item's price quietly changes.
+            logger.warning("reorder: pricing failed for item %s, using the snapshot price: %s",
+                           item.get("menu_item_id"), exc)
 
         enriched.append({
             "menu_item_id": item["menu_item_id"],
@@ -1476,8 +1551,11 @@ def add_squad_members(order_id):
             for p in (u_profiles if isinstance(u_profiles, list) else []):
                 if p.get("email"):
                     emails.append(p["email"].strip().lower())
-        except Exception:
-            pass
+        except Exception as exc:
+            # The invitee list loses these users: they are not emailed, and the caller
+            # is told the invite succeeded.
+            logger.warning("squad invite: profile lookup failed for %s, those users are not invited: %s",
+                           user_ids, exc)
     emails = list(dict.fromkeys(emails))
     if not emails:
         return jsonify({"error": "At least one email or user_id is required"}), 400
@@ -1539,8 +1617,10 @@ def add_squad_members(order_id):
                     "squad_id": squad_id_for_order, "email": email,
                     "user_id": profile["id"] if profile else None,
                 })
-            except Exception:
-                pass  # already on roster
+            except Exception as exc:
+                # Usually a duplicate (already on the roster), but a database failure
+                # looks identical from here and would leave the member off the roster.
+                logger.warning("squad roster: insert failed for %s on order %s: %s", email, order_id, exc)
 
         if not profile:
             # Send auto-invite for referral vector
@@ -1670,7 +1750,6 @@ def order_status_history(order_id):
     except (ValueError, AttributeError):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    from app.middleware.auth import require_role as _rr
     db = get_user_client()
     order = (
         db.table("orders")
