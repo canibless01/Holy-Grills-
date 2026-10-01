@@ -1310,6 +1310,56 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     return updated_order
 
 
+def _restore_order_consumables(order: dict) -> None:
+    """Give back what an order cancelled before preparation took from the customer.
+
+    Cancelling from 'received' means the kitchen never started, so the HP the order
+    redeemed and any reward it had claimed both go back:
+
+    * HP returns at the exact amount redeemed, with no multiplier — it is the return of
+      something spent, not a fresh earn (the same call the scheduled-cancel path used).
+    * The reward claim is released, which is what makes the reward claimable again. The
+      update is pinned to this order, so a retry or a race cannot free a reward that
+      belongs to another order.
+
+    Both are best-effort: the cancellation has already been committed and the customer
+    has been told, so a failure here is logged rather than allowed to undo the cancel.
+    """
+    order_id = order.get("id")
+    user_id = order.get("user_id")
+    if not order_id or not user_id:
+        return
+
+    hp_redeemed = int(order.get("hp_redeemed") or 0)
+    if hp_redeemed > 0:
+        try:
+            from app.services import hp_service
+            hp_service.award_active_hp(
+                user_id, hp_redeemed,
+                txn_type="refund", reference_id=order_id, reference_type="order",
+                apply_multiplier=False,  # returning HP that was spent, not a fresh earn
+            )
+        except Exception as exc:
+            logger.error("cancel: HP restore failed for order %s (%s HP, user %s): %s",
+                         order_id, hp_redeemed, user_id, exc)
+
+    # reward_redemptions has no UPDATE policy for the owner (only admins) — see the same
+    # note in routes/rewards.py — so this write has to go through the service role, pinned
+    # to the order that actually holds the claim.
+    try:
+        released = (
+            get_db().table("reward_redemptions")
+            .eq("attached_order_id", order_id)
+            .update({"attached_order_id": None})
+        )
+        count = len(released) if isinstance(released, list) else (1 if released else 0)
+        if count:
+            logger.info("cancel: released %s reward claim(s) for order %s", count, order_id)
+    except Exception as exc:
+        logger.error("cancel: reward release failed for order %s — the reward stays used: %s",
+                     order_id, exc)
+
+
 def update_order_status(order_id: str, new_status: str, changed_by: str = None, notes: str = "") -> dict:
     """
     Transition order status. Validates the state machine. Awards HP on delivery.
@@ -1382,6 +1432,14 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
             raise OrderConflictError(MSG.ORDER_STATUS_CONFLICT)   # somebody else moved the order first
         raise OrderForbiddenError(MSG.ORDER_UPDATE_FAILED)
     _log_status_change(order_id, current_status, new_status, changed_by, notes, order.get("campus_id"))
+
+    # Cancelled before preparation: the customer gets back the HP and the reward this
+    # order consumed. Placed on the one compare-and-set transition every cancel path
+    # goes through (customer, admin, kitchen), so it fires exactly once — a retry hits
+    # the `new_status == current_status` no-op above and cannot credit twice. Cancels
+    # from later states keep their HP/reward: the kitchen has already spent real money.
+    if new_status == "cancelled" and current_status == "received":
+        _restore_order_consumables(order)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery
     if order.get("user_id"):

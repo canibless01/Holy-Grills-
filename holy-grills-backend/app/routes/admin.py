@@ -2072,7 +2072,9 @@ def _hp_grant_denied(exc) -> bool:
     text = str(exc).lower()
     return any(m in text for m in (
         "not an admin", "must be an admin", "admin of p_campus", "admin of the campus",
-        "requires an admin", "only admin", "insufficient privilege", "permission denied",
+        "requires an admin", "only admin", "insufficient privilege",
+        "insufficient_privilege",                      # the live wording (SQLSTATE 42501)
+        "permission denied",
     ))
 
 

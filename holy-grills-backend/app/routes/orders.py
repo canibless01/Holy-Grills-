@@ -881,7 +881,17 @@ def cancel_scheduled_order(order_id):
         )
         wallet_refunded = wallet_amount_used
 
+    # The card half is only real money once the webhook confirms it — every order is
+    # created payment_status='pending' with card_amount_used already set — so refunding it
+    # here refunded money that was never collected, repeatably. Same bug the plain cancel
+    # path had. The wallet half above is always refunded: it is debited at creation.
     card_amount_used = float(order.get("card_amount_used") or 0)
+    if card_amount_used > 0 and str(order.get("payment_status") or "").lower() != "paid":
+        logger.warning(
+            "cancel_scheduled_order: order %s cancelled with payment_status=%r — the card "
+            "half (%s) was never collected and is not refunded",
+            order_id, order.get("payment_status"), card_amount_used)
+        card_amount_used = 0.0
     if card_amount_used > 0:
         from app.services.wallet_service import credit_wallet
         credit_wallet(
@@ -892,14 +902,9 @@ def cancel_scheduled_order(order_id):
         )
         wallet_refunded += card_amount_used
 
-    hp_redeemed = int(order.get("hp_redeemed") or 0)
-    if hp_redeemed > 0 and order.get("user_id"):
-        from app.services import hp_service
-        hp_service.award_active_hp(
-            order["user_id"], hp_redeemed,
-            txn_type="refund", reference_id=order_id, reference_type="order",
-            apply_multiplier=False,  # returning HP that was spent, not a fresh earn
-        )
+    # HP and a claimed reward are restored by update_order_status() on the
+    # received->cancelled transition, above in this same request: one implementation for
+    # every cancel path, fired exactly once. Doing it here too would credit HP twice.
 
     # Restore order lock if one was used
     try:
@@ -1161,18 +1166,19 @@ def cancel_order(order_id):
     card_amount = float(order.get("card_amount_used") or 0)
     paid = str(order.get("payment_status") or "").lower() == "paid"
 
-    # A split order debits the wallet half up front, so that half is real money even
-    # while the card half is still pending. Whether hg_create_order_atomic debits it at
-    # creation or at confirmation decides this flag — confirm before enabling, because
-    # getting it wrong recreates the same free-money bug for split orders.
-    refund_wallet_when_unpaid = False
+    # CONFIRMED against the live database: hg_create_order_atomic debits the wallet half
+    # at creation, in the same transaction, through debit_wallet_atomic; the card half
+    # only arrives later, by webhook. So on a pending split order the wallet half is
+    # already gone and must come back — while the card half, never collected, must not.
+    # The refund is capped at wallet_amount_used, which is exactly the amount debited.
+    refund_wallet_when_unpaid = True
 
     refund_errors = []
     if not paid:
+        # The card half was never collected. The wallet half was, at creation.
         logger.warning(
-            "cancel_order: order %s cancelled with payment_status=%r — no automatic refund "
-            "(wallet_amount_used=%s card_amount_used=%s); nothing was collected. Use the admin "
-            "refund route if money really moved.",
+            "cancel_order: order %s cancelled with payment_status=%r — refunding the wallet "
+            "half (%s) only; the card half (%s) was never collected.",
             order_id, order.get("payment_status"), wallet_amount, card_amount)
         if not refund_wallet_when_unpaid:
             wallet_amount = 0.0
@@ -1249,10 +1255,16 @@ def cancel_order(order_id):
         "refund_errors": refund_errors,
     }
     if not paid:
-        # Say it explicitly: nothing was collected, so nothing is refunded. Without
-        # this the client cannot tell "refunded ₦0" from "the refund failed".
+        # Say what actually happened: a split order's wallet half was debited at checkout
+        # and is being returned, while a card-only order had nothing collected at all.
+        # Without this the client cannot tell "refunded ₦0" from "the refund failed".
         response["payment_status"] = order.get("payment_status")
-        response["refunded_reason"] = "nothing was charged on this order"
+        response["refunded_reason"] = (
+            "the wallet half was debited at checkout and has been returned; "
+            "the card half was never collected"
+            if wallet_refunded > 0 else
+            "nothing was charged on this order"
+        )
         if refund_errors:
             response["refund_errors"] = refund_errors
     return jsonify(response), 200
