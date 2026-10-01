@@ -10,9 +10,11 @@ line shown. Items already fixed in this session are **not** repeated — see the
 section for that list, so nothing gets fixed twice.
 
 **Status of this document: current.** Every item carries its state — 🔴 CRITICAL, all
-four 🟠 HIGH, 🟡 M1/M2/M3/M4/M5 and the whole 🔵 LOW table are closed as of `e874c98`;
-`pyflakes` now reports **zero** warnings for `app/` and `scripts/live_test.py`. The ledger
-at the bottom is the single place that answers "what is left".
+four 🟠 HIGH, 🟡 M1/M2/M3/M4/M5 and the whole 🔵 LOW table are closed as of `0481333`
+(which also wires the operating-hour overrides into the ordering gate); `pyflakes`
+reports **zero** warnings for `app/` and `scripts/live_test.py`. The ledger answers
+"what is left", and the **Go-live status** section at the end is the summary to read
+before shipping.
 
 Severity here means: 🔴 ships broken / loses money or data · 🟠 hurts users or
 support · 🟡 debt that will bite · 🔵 cosmetics.
@@ -526,7 +528,7 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | O2 | ~~Does `hg_create_order_atomic` debit the wallet half at creation?~~ **Answered: yes — `debit_wallet_atomic`, same transaction.** `refund_wallet_when_unpaid` is now `True`, capped at `wallet_amount_used` | closed in `9001c19` |
 | O3 | ~~Does anything restore `hp_redeemed` / a claimed reward on cancel?~~ **Answered: nothing did.** Both are now restored on `received -> cancelled`, HP at the exact amount with no multiplier | closed in `9001c19` |
 | O4 | `docs/audit-report.md` + the truncated tail of the ecosystem map ("Admin grant routes missing …") | Not in this checkout; can't be actioned blind |
-| O5 | Three cosmetic `operating_hour_overrides` rows | Storefront-only; safe to delete in the admin UI |
+| O5 | ~~Three `operating_hour_overrides` rows~~ **Answered: intentional — per-date overrides of the recurring schedule.** Nothing is deleted; the feature is now wired into the ordering gate (`0481333`) | closed in `0481333` |
 | O6 | `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` | Referenced by docs, absent from the repo — send them or drop the references |
 
 ### Open — mine, no decision needed
@@ -558,6 +560,7 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | O7 (remainder) — 64 silent swallows in services/tasks/utils | 42 now log at a level matched to the failure; 22 left silent with a stated reason |
 | O10 — 56 unused imports and LOW L1–L9 | all removed/fixed; pyflakes reports zero warnings |
 | Reward release now clears `used_at` as well as `attached_order_id` | `_restore_order_consumables`; re-running matches no row |
+| Operating-hour overrides ignored by the ordering gate (storefront said "closed", checkout accepted orders) | one shared helper, `app/utils/schedule.py`, used by both readers; 20 precedence assertions + 11 storefront cases; 3 e2e steps |
 | O2 — the wallet half of a cancelled split order was never returned | `refund_wallet_when_unpaid = True`, capped at `wallet_amount_used`; card half still only when paid |
 | O3 — HP and a claimed reward stayed spent after a cancel | `_restore_order_consumables()` on `received -> cancelled` in `update_order_status` (one choke point, fires once); the duplicate HP restore in `cancel_scheduled_order` removed |
 | H4 — unpaid *scheduled* order refunded an uncollected card half | card half gated on `payment_status='paid'`; decision table over both cancel routes |
@@ -608,6 +611,30 @@ the failure mode this pass exists to remove.
 The pattern in both: the *edit* was mechanical, the *verification* is what caught it —
 `ast.parse` for syntax, an import-all plus boot for structure, `pyflakes` for names.
 
+### Session note — operating-hour overrides, and a comment that said "intended"
+
+The suite carried this line, written in an earlier pass:
+
+> `operating_hour_overrides` is the *storefront* schedule and has no effect on ordering
+
+That was true, and it was the whole problem: a campus could be told "closed today" on the
+storefront while checkout kept accepting orders, because only the storefront read the
+table. The comment is corrected, and both readers now go through one helper.
+
+Three things worth keeping from this one:
+
+1. The precedence is written down **once**, in `app/utils/schedule.py`, and the ordering
+   functions call it. `find_next_available_ordering_slot` and the 7-day calendar became
+   override-aware for free, because they are built on `get_ordering_window_status`, which
+   now resolves through the helper. A second copy of these rules would have drifted.
+2. A closed override returns **one closed row**, not an empty list — "no rows" already
+   means "fall through to the next rule" in this code, and conflating the two would have
+   reopened the day through the config fallback.
+3. The override's identity inheritance is deliberately narrow: id/capacity/delivery link
+   come from the weekday row only when exactly **one** such row exists. With two, there is
+   no single window for the capacity counter to belong to, so the override stands alone
+   with no cap rather than silently sharing one row's counter.
+
 ### Session note — silent-except pass
 
 Triage rule applied: log when the failure changes what the caller believes happened.
@@ -617,3 +644,66 @@ to remove. Caught because a `pyflakes` run had silently failed (`No module named
 pyflakes` piped into a `grep`, so the empty match read as "clean"). Reinstalled, then
 re-ran with a planted-error control to prove the check actually fires. Both notes are
 here because the earlier rounds' two `NameError`s were recorded the same way.
+
+---
+
+## Go-live status
+
+Read this before shipping. It is written to be honest about what has *not* been proven,
+because the expensive failures are the ones nobody checked.
+
+### Verified, with the evidence
+
+| Area | Evidence | Verified where |
+|------|----------|----------------|
+| Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
+| Routes the suite calls | `make selfcheck` — 74 declared routes all exist | this sandbox |
+| Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
+| HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
+| Override precedence | 20 assertions through the real `effective_ordering_windows` / `resolve_ordering_window` / `get_ordering_window_status`: dated row wins, closed closes, open replaces, inheritance rule, campus beats global, NULL times, unreadable table falls back | this sandbox |
+| Storefront `is_open` | 11 cases incl. the NULL-times change | this sandbox |
+| DB contract shape | `make contract` — reports every table/column/RPC the code uses exists, **but every check is marked unreachable** (no network) | partially |
+| The live database | **not verified here** — the sandbox cannot open a connection to Supabase; every request fails with `SSLError` | ❌ |
+
+### Not verified here — the commands to close them
+
+```bash
+make contract                  # real pass, not the "unreachable" shell
+make smoke  BASE_URL=http://localhost:5000
+make e2e    BASE_URL=http://localhost:5000 WRITE_EXISTING=1 \
+            LOGIN_EMAIL=claude.audit.test1@holygrills.test LOGIN_PASSWORD='ClaudeAudit!Test1'
+```
+
+The e2e run now covers the whole cancel/refund/override surface: the two refund
+regressions, both ticket/event flows, and the three override probes. **None of these
+steps has ever executed against the live database** — they were written and route-checked
+here, nothing more. Treat the first green run as the real sign-off.
+
+### Still open
+
+| Owner | Item | Why it matters |
+|-------|------|----------------|
+| you | **O1 — `SUPABASE_DB_URL`** | RLS policies, grants and per-role visibility have never been read. Every claim in this document is code-level. This is the largest remaining unknown by far |
+| you | **migration bodies** | the three live functions aren't mirrored in the repo; the file is a record, the database is the source of truth. The paste arrived truncated — re-send as an attachment or split across two messages |
+| you | **O4** | `docs/audit-report.md` + the ecosystem-map tail aren't in this checkout |
+| you | **O6** | `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` referenced but absent |
+| me | nothing | O7 and O10 are closed; the remaining work is the live run above |
+
+### Residual risks, stated plainly
+
+1. **The role lookup on the order-status path fails open.** If the profile read errors,
+   `caller_role` stays `None` and the rider/kitchen/admin scoping checks are skipped. It
+   now logs at `error`, but it still permits the transition. Deliberately unchanged so a
+   transient read failure cannot block a role from its own path — **this is a decision to
+   confirm, not an oversight**.
+2. **Cancel restore is Python-only.** The database has no path that returns HP or releases
+   a reward, so a cancel performed outside the API (a manual SQL edit, a future job) would
+   not restore them. Today the API is the only canceller, so this is consistent — it stops
+   being true the moment something else cancels orders.
+3. **`make contract` "passes" without proving anything when the network is down.** It
+   prints unreachable per item; read its output rather than its exit code.
+4. **Production switches:** `ALLOW_UNSIGNED_WEBHOOKS` and `PAYSTACK_SANDBOX_MOCK_NUBAN`
+   are refused at boot outside DEBUG/TESTING (verified by attempting the boot). Do not
+   weaken that guard to get a deploy out.
+5. **The audit is code-level.** A database-side review (O1) can still find something none
+   of this could see — policies that are missing, or broader than intended.
