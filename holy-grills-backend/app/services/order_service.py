@@ -1026,7 +1026,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                                 email, order_id, exc)
             snapshot.append({"email": email, "user_id": prof["id"] if prof else None})
         if snapshot:
-            db.table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot})
+            get_db().table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot}).execute()
 
     order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
     order_source = payload.get("order_source") or payload.get("source") or "website"
@@ -1034,7 +1034,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         order_source = "other"          # the orders.order_source CHECK only allows these six values
     if order_source and result.get("order_id"):
         try:
-            db.table("orders").eq("id", result["order_id"]).update({"order_source": order_source}).execute()
+            get_db().table("orders").eq("id", result["order_id"]).update({"order_source": order_source}).execute()
         except Exception as _ose:
             logger.warning("create_order: failed to set order_source: %s", _ose)
 
@@ -1072,7 +1072,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             try:
                 from app.services.tier_service import try_claim_monthly_free_delivery
                 if try_claim_monthly_free_delivery(user_id, order_id=result["order_id"]):
-                    db.table("orders").eq("id", result["order_id"]).update({"delivery_fee": 0.0}).execute()
+                    get_db().table("orders").eq("id", result["order_id"]).update({"delivery_fee": 0.0}).execute()
                     order["delivery_fee"] = 0.0
             except Exception as _fe:
                 logger.warning("create_order: monthly free delivery perk claim failed: %s", _fe)

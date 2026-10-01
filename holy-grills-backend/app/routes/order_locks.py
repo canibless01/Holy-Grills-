@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.db import get_user_client, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.settings import get_validated_setting, SettingError
 from datetime import datetime, timezone, date
@@ -111,7 +111,7 @@ def create_lock():
     insert_data["reward_type"] = reward_type
     insert_data["reschedule_count"] = 0
     try:
-        result = db.table("order_locks").insert(insert_data)
+        result = get_db().table("order_locks").insert(insert_data)
     except SupabaseError as exc:
         err_msg = str(exc.details.get("message", "")) if exc.details else str(exc)
         if "uq_order_locks_one_active_per_user" in err_msg or "unique constraint" in err_msg.lower():

@@ -908,13 +908,13 @@ def cancel_scheduled_order(order_id):
 
     # Restore order lock if one was used
     try:
-        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
         if lock:
-            db.table("order_locks").eq("id", lock["id"]).update({
+            get_db().table("order_locks").eq("id", lock["id"]).update({
                 "status": "active",
                 "order_id": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }).execute()
     except Exception as exc:
         # The lock stays consumed and the customer loses what they paid for it. This must
         # be visible to whoever investigates, and is reversible by hand.
@@ -1219,13 +1219,13 @@ def cancel_order(order_id):
 
     # Restore order lock if one was used
     try:
-        lock = db.table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
+        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
         if lock:
-            db.table("order_locks").eq("id", lock["id"]).update({
+            get_db().table("order_locks").eq("id", lock["id"]).update({
                 "status": "active",
                 "order_id": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }).execute()
     except Exception as exc:
         # Same as cancel_scheduled_order: the customer paid for this lock and it stays
         # consumed if the restore fails. Log it — it is fixable by hand.
