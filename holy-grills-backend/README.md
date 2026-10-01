@@ -192,7 +192,7 @@ chain works — endpoint, service, REST call, SQL, and response.
 | auth | register → duplicate register → login → wrong password 401 → `/me` → refresh → streak → profile patch → device token |
 | addresses | create → list → update → delete (each verified in `user_addresses`) |
 | cart & saved | add → read → update quantity → save for later → back to cart |
-| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger) |
+| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger). Ordering is gated by the **signed-in account's own campus** (`g.campus_id`), so after login the suite re-pins itself to that campus and re-fetches the delivery point before provisioning an ordering window |
 | economy | HP balance/transactions/tiers, wallet + ledger, rewards, referrals |
 | notifications | list, preferences round-trip, read-all |
 | admin | optional (`--admin-token`): settings, users, orders, audit log, dashboard, economics |
@@ -212,9 +212,10 @@ make audit ARGS="--search credit"                 # does something for this alre
 make audit ARGS="--out docs/audit-report.md"      # write a report
 ```
 
-Requires `SUPABASE_DB_URL` (Supabase → Project Settings → Database → Connection
-string) in `.env` for the deep pass — PostgREST cannot expose RLS policies,
-grants or function bodies. Full write-up: [`docs/DATABASE_AUDIT.md`](docs/DATABASE_AUDIT.md).
+Requires `SUPABASE_DB_URL` in `.env` for the deep pass — PostgREST cannot expose
+RLS policies, grants or function bodies. Use the **pooler** URI (port 6543): the
+direct host `db.<ref>.supabase.co` is IPv6-only and will not connect from Replit
+or most CI runners. Copy the format from [`.env.example`](.env.example). Full write-up: [`docs/DATABASE_AUDIT.md`](docs/DATABASE_AUDIT.md).
 
 ### 6. Start the app and confirm
 
@@ -250,6 +251,10 @@ returns HTTP 200, so callers must read the `status` field.
 | `error:404` + `PGRST205` on a table | Schema/migration not applied | Run the SQL in the Supabase SQL editor |
 | `error:403` / `RESOURCE_ACCESS_DENIED` | RLS policy or wrong key role | Check the table's policies; server calls use the service-role key |
 | Production boot: `SECRET_KEY is unset or still the public default` | Flask session secret missing | Set a long random `SECRET_KEY` (see line above) |
+| Suite skips the order steps: `ordering unavailable … "Orders can only be placed during operating hours"` | With `--login-email`, the suite's picked campus differed from the account's own campus, which is the one `POST /api/orders` uses; or the run happened outside 08:00–16:00 WAT with no window for that campus | Fixed in the suite: `auth.campus` re-pins to the account's campus. If it still skips, the message now names the campus it used — check `ordering_windows` for a closed/full row on it |
+| Suite leaves a window behind after a `--login-email` run | Older builds only deleted scaffolding for accounts they created | Fixed: `ctx.track_infra()` deletes it either way. Existing leftovers: `ordering_windows` rows with `opens_at 00:00`, `closes_at 23:59`, `capacity 50` |
+| Audit: "N tables answer the anon key" | Expected Supabase posture — PostgREST exposes the schema, RLS decides the rows | Only `exposed` (200 **with a row**) is a finding. See [`docs/DATABASE_AUDIT.md`](docs/DATABASE_AUDIT.md#reading-the-anon-result-important) |
+| Audit: "deep SQL checks skipped — SUPABASE_DB_URL is not set" | The REST API cannot read RLS policies, grants or function bodies | Add the **pooler** URI to `.env` (direct `db.<ref>.supabase.co` is IPv6-only) — see [`.env.example`](.env.example) |
 
 ---
 

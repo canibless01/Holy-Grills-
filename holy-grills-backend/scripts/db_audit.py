@@ -218,21 +218,40 @@ def code_references() -> tuple[set[str], set[str]]:
 
 def anon_reachability(url: str, anon_key: str, tables: list[str],
                       timeout: float, workers: int = 8) -> dict[str, str]:
-    """What the anon key gets per table: open / empty(allowed) / denied / missing."""
+    """What the anon key actually gets back per table.
+
+    The distinction that matters is rows, not status codes. PostgREST answers 200
+    with an empty array when a grant exists and RLS filters every row — which is
+    the normal Supabase posture and is NOT an exposure. Only a non-empty array
+    means an unauthenticated caller can read data.
+
+        exposed     200 with at least one row   → real leak
+        empty       200 with []                 → reachable, RLS filtered everything
+        denied      401/403                     → no grant
+        missing     404                         → not in the schema cache
+        unparseable 200 with a body that is not JSON — inspect by hand
+        unreachable network failure
+    """
     import concurrent.futures
 
     def probe(table: str) -> tuple[str, str]:
         try:
             resp = requests.get(
                 f"{url.rstrip('/')}/rest/v1/{table}",
-                params={"select": "*", "limit": "0"},
+                params={"select": "*", "limit": "1"},
                 headers={"apikey": anon_key, "Authorization": f"Bearer {anon_key}"},
                 timeout=timeout,
             )
         except requests.exceptions.RequestException:
             return table, "unreachable"
         if resp.status_code < 400:
-            return table, "allowed"
+            try:
+                body = resp.json()
+            except Exception:                          # noqa: BLE001 - any parse failure
+                return table, "unparseable"            # 200 but not JSON — check by hand
+            if isinstance(body, list) and body:
+                return table, "exposed"
+            return table, "empty"
         if resp.status_code in (401, 403):
             return table, "denied"
         if resp.status_code == 404:
@@ -677,13 +696,37 @@ def main(argv=None) -> int:
         for status in reach.values():
             counts[status] = counts.get(status, 0) + 1
         rep.text(" · ".join(f"{k}: {v}" for k, v in sorted(counts.items())))
-        reachable = sorted(t for t, s in reach.items() if s == "allowed")
+        exposed = sorted(t for t, st in reach.items() if st == "exposed")
+        empty = sorted(t for t, st in reach.items() if st == "empty")
+        denied = sorted(t for t, st in reach.items() if st == "denied")
         rep.data["anon_reachability"] = reach
-        if reachable:
-            rep.finding("medium", f"{len(reachable)} table(s) answer the anon key",
-                        ", ".join(reachable[:15]) + (" …" if len(reachable) > 15 else ""),
-                        "RLS is the only thing filtering rows — verify every policy")
-        rep.text("_Note: a 200 with an empty array means the grant exists; RLS still filters rows._")
+        rep.data["anon_exposed"] = exposed
+
+        if exposed:
+            rep.finding("high", f"the anon key can read rows from {len(exposed)} table(s)",
+                        ", ".join(exposed[:15]) + (" …" if len(exposed) > 15 else ""),
+                        "revoke the anon grant, or add an RLS policy that excludes anon")
+        if empty:
+            rep.text(f"{len(empty)} table(s) grant the anon role access and return 0 rows. "
+                     "RLS filters them — reachability is not exposure, and this is the normal "
+                     "Supabase posture (PostgREST exposes the schema; policies decide the rows).")
+            rep.text(f"  examples: {', '.join(empty[:10])}" + (" …" if len(empty) > 10 else ""))
+        if denied:
+            rep.text(f"{len(denied)} table(s) refuse the anon key outright.")
+        unparseable = sorted(t for t, st in reach.items() if st == "unparseable")
+        if unparseable:
+            rep.finding("low", f"{len(unparseable)} table(s) answered the anon key with a "
+                               "non-JSON body",
+                        ", ".join(unparseable[:10]) + (" …" if len(unparseable) > 10 else ""),
+                        "unexpected for PostgREST — open one of these responses and see what "
+                        "returned it")
+        if empty and not exposed:
+            rep.finding("low", "anon reachability is broad but empty",
+                        f"{len(empty)} of {len(reach)} table(s) answer the anon key with no rows",
+                        "not a leak by itself — the deep pass (SUPABASE_DB_URL) verifies row "
+                        "visibility per role; keep policies reviewed as they change")
+        rep.text("_A 200 with an empty array means the grant exists and RLS filtered every row; "
+                 "this probe requests one real row, so a leak shows up as `exposed`._")
 
     # ── SQL pass ─────────────────────────────────────────────────────────────
     if args.dump_defs:
@@ -709,9 +752,14 @@ def main(argv=None) -> int:
     if args.rest_only or not db_url:
         if not args.rest_only:
             rep.head("SQL pass — skipped")
-            rep.finding("medium", "SUPABASE_DB_URL is not set",
-                        "RLS policies, grants and RPC bodies cannot be read through PostgREST",
-                        "add the connection URI to .env and re-run — see docs/DATABASE_AUDIT.md")
+            rep.text("Without SUPABASE_DB_URL this run cannot read RLS policies, table/function "
+                     "grants, function bodies, or verify row visibility per role. Nothing below "
+                     "is a finding about the database — the checks simply did not run.")
+            rep.finding("low", "deep SQL checks skipped — SUPABASE_DB_URL is not set",
+                        "RLS policies, grants, RPC bodies and per-role row visibility were not read",
+                        "add the pooler connection URI to .env and re-run — see "
+                        "docs/DATABASE_AUDIT.md#connecting (use the pooler host, not db.<ref>"
+                        ".supabase.co, which is IPv6-only)")
     else:
         conn = connect(db_url)
         if conn is None:

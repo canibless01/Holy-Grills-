@@ -139,13 +139,53 @@ severity model (`high` / `medium` / `low`):
 | `SECURITY DEFINER` without pinned `search_path` | `pg_proc.proconfig` | classic privilege-escalation vector |
 | `SECURITY DEFINER` executable by `anon` | joined with `routine_privileges` | unauthenticated callers running as the definer |
 | Views without `security_invoker` | `pg_class.reloptions` | views bypass the underlying tables' RLS |
-| Reachability with the **anon** key | REST, every table | the empirical answer: what an unauthenticated caller can actually hit |
+| Reachability with the **anon** key | REST, every table | splits *reachable* from *readable* — see below |
 | Duplicate/near-duplicate tables and functions | name clustering | "parallel sessions built duplicates before" |
 
 The Supabase dashboard's own **Advisors → Security** page is the vendor view of
 the same ground; the script covers it so it can run in CI without dashboard
 access. Run both — the advisor also flags leaked-password protection and
 extension versions.
+
+### Reading the anon result (important)
+
+PostgREST exposes the whole `public` schema to the `anon` key; **the grant is not
+the finding — the rows are**. A `200 []` means RLS filtered every row, which is
+the normal Supabase posture and not a leak. The probe therefore requests one real
+row per table and classifies:
+
+| Result | Meaning | Severity |
+|--------|---------|----------|
+| `exposed` | 200 **with a row** — an unauthenticated caller can read data | **high** |
+| `empty` | 200 `[]` — grant exists, RLS filtered everything | informational |
+| `denied` | 401/403 — no grant at all | — |
+| `missing` | 404 — not in the schema cache | — |
+| `unparseable` | 200 with a non-JSON body — unexpected for PostgREST, look by hand | low |
+
+So "112 tables answer the anon key" with zero `exposed` is the expected shape of a
+healthy project, not 112 vulnerabilities. The number to watch is `exposed`, and it
+must be zero.
+
+### Connecting (SUPABASE_DB_URL)
+
+Without it, the audit can only do the REST pass: no policies, no grants, no
+function bodies, and **no row-visibility check per role** — the part that actually
+proves an RLS policy works. It reports that as `low` (a tooling gap), not as a
+database finding.
+
+Use the **connection pooler** URI (port 6543). The direct host
+`db.<ref>.supabase.co` is IPv6-only and will not connect from most CI runners or
+from Replit:
+
+```ini
+SUPABASE_DB_URL=postgresql://postgres.<ref>:<DB_PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres
+```
+
+`<DB_PASSWORD>` is the database password on that settings page, not the
+service-role key. With it set, `make audit` additionally impersonates each role
+inside a rolled-back transaction and reports exactly which tables that role can
+read — pass the accounts with `--impersonate`, or let it pick up `E2E_STUDENT_ID`,
+`E2E_ADMIN_ID` and `E2E_SUPERADMIN_ID` from `.env`.
 
 ---
 
@@ -155,13 +195,16 @@ extension versions.
 |---|----------|---------|-------|
 | F1 | high (functional) | Free-side credits are never consumed at checkout; `consume_free_side_selections()` is dead code and two comments claim otherwise | `app/routes/free_sides.py:192,270,298`; `app/services/order_service.py` (0 refs) |
 | F2 | medium | `reward_redemptions` is never marked used outside `rewards.py` — the closing step lives (or does not live) in an RPC | `app/routes/rewards.py` only |
-| F3 | low | Docs reference files that do not exist in this checkout: `CROSS_FILE_DEPENDENCIES.md`, `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` | repo root |
+| F3 | low | Docs reference files that do not exist in this checkout: `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` (the `CROSS_FILE_DEPENDENCIES.md` reference was dropped) | repo root |
+| F4 | low | The deep SQL pass had not run: `SUPABASE_DB_URL` unset, so RLS policies, grants and per-role row visibility are still unverified | audit run of 2026-10-01 |
 
 ---
 
 ## 4. Open items and answer path
 
-1. **`SUPABASE_DB_URL`** — needed for Q1–Q3, RLS, grants and advisor checks. Add it to `.env` and run `make audit`.
+1. **`SUPABASE_DB_URL`** — still open: RLS, grants and the per-role visibility check
+   have not run. Q1–Q3 are answered from the database itself. Add the pooler URI
+   to `.env` (see *Connecting* above) and run `make audit`.
 2. If you would rather not hand over a DB connection: run
    `make audit ARGS="--dump-defs hg_create_order,hg_mark_order_paid,register_for_event_paid,register_for_event_guest_paid"`
    and paste the output — same answers, no credentials.

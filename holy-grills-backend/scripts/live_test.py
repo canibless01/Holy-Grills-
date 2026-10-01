@@ -136,6 +136,7 @@ class Ctx:
         self.ids: dict[str, object] = {}
         self.tokens: dict[str, str] = {}
         self.created: list[tuple[str, str]] = []       # (table, id) — deleted in reverse
+        self.infra: list[tuple[str, str]] = []         # suite scaffolding — always deleted
         self.sweeps: list[tuple[str, str, str]] = []   # (table, column, value)
         self.user_id: str | None = None
         self.owns_user = True          # False when running against --login-email
@@ -148,6 +149,15 @@ class Ctx:
         """Register a row for deletion — only ever for a user this run created."""
         if row_id and self.owns_user:
             self.created.append((table, row_id))
+
+    def track_infra(self, table: str, row_id: str):
+        """Register scaffolding the suite created (e.g. a temporary ordering window).
+
+        Unlike track(), this is deleted even when the run signed in to a
+        pre-existing account: the row is the suite's, not the account's data.
+        """
+        if row_id:
+            self.infra.append((table, row_id))
 
     def sweep(self, table: str, column: str, value: str):
         if self.owns_user:
@@ -602,6 +612,45 @@ def s_login(ctx: Ctx):
                f"login returned a different user ({user_id} != {ctx.user_id})", r)
 
 
+@step("auth", "auth.campus", "campus-scoped steps use the signed-in account's own campus",
+      route="GET /api/delivery/hostels", needs=("auth.login", "public.hostels"))
+def s_sync_campus(ctx: Ctx):
+    """Ordering is gated by the SIGNED-IN account's campus (`g.campus_id`), not by the
+    campus the suite picked for public reads. With --login-email the two can differ,
+    and then the ordering-window step provisions a window for a campus the order never
+    consults — POST /api/orders still answers 409 "Orders can only be placed during
+    operating hours". Re-pin and re-fetch the delivery point for the account's campus.
+    """
+    prof = ctx.db.select_one("profiles", id=ctx.user_id)
+    account_campus = str((prof or {}).get("campus_id") or "")
+    picked = str(ctx.ids.get("campus_id") or "")
+
+    if not account_campus:
+        ctx.warnings.append(
+            "the signed-in account has no campus_id — ordering falls back to the "
+            "X-Campus-ID header and may refuse")
+        ctx.note("account has no campus_id; keeping the picked campus")
+        return
+
+    if account_campus == picked:
+        ctx.note(f"account campus matches the picked campus ({picked})")
+        return
+
+    ctx.ids["campus_id"] = account_campus
+    ctx.note(f"account campus is {account_campus}, public reads used {picked} — "
+             f"re-pinned to the account campus")
+
+    r = ctx.api.get("/api/delivery/hostels",
+                    headers={"X-Campus-ID": account_campus}).check(200)
+    hostels = as_list(r.data, "hostels")
+    if hostels:
+        ctx.ids["hostel_id"] = hostels[0]["id"]
+        ctx.note(f"delivery point re-picked for the account campus: {hostels[0].get('name')}")
+    else:
+        ctx.ids.pop("hostel_id", None)
+        ctx.warnings.append("no delivery point on the account campus — the order step will skip")
+
+
 @step("auth", "auth.login_wrong_password", "wrong password returns 401 (not 500)",
       route="POST /api/auth/login", needs=("auth.login",))
 def s_login_wrong(ctx: Ctx):
@@ -856,7 +905,7 @@ def s_ensure_window(ctx: Ctx):
 
     window_id = str((row or {}).get("id") or "")
     if window_id:
-        ctx.track("ordering_windows", window_id)     # deleted in cleanup
+        ctx.track_infra("ordering_windows", window_id)   # deleted in cleanup, always
     ctx.note(f"provisioned a temporary ordering window for {today} "
              f"(id {window_id or '?'}) — deleted in cleanup")
 
@@ -899,6 +948,9 @@ def s_fund(ctx: Ctx):
       writes=True, route="POST /api/orders",
       needs=("orders.window", "orders.fund_wallet", "public.hostels"))
 def s_place_order(ctx: Ctx):
+    if not ctx.ids.get("hostel_id"):
+        raise Skip("no delivery point for the signed-in account's campus — "
+                   "orders.place cannot build a delivery location")
     body = {
         "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
         "payment_method": "wallet",
@@ -906,9 +958,12 @@ def s_place_order(ctx: Ctx):
         "delivery_location_id": str(ctx.ids["hostel_id"]),
         "notes": "E2E automated order — safe to ignore",
     }
-    r = ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"])
+    # X-Campus-ID is the fallback resolve path (a profile campus wins over it), so
+    # an account without a campus still gets a well-scoped order instead of a 400.
+    r = ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"],
+                     headers={"X-Campus-ID": str(ctx.ids.get("campus_id") or "")})
     if r.status == 409:
-        raise Skip(f"ordering unavailable: {r.snippet(120)}")
+        raise Skip(f"ordering unavailable for campus {ctx.ids.get('campus_id')}: {r.snippet(120)}")
     r.check(201, allow=(200,))
     order_id = str(field(r.data or {}, "id") or ((r.data or {}).get("order") or {}).get("id") or "")
     if not order_id:
@@ -1152,11 +1207,27 @@ def colour(text: str, code: str, enabled: bool) -> str:
 
 
 def run_cleanup(ctx: Ctx, out) -> tuple[int, int]:
-    """Delete everything the run created. Returns (deleted, failed)."""
+    """Delete everything the run created. Returns (deleted, failed).
+
+    User data is only removed for an account the run created; scaffolding (a
+    temporary ordering window) is always removed, and always last, because the
+    orders created during the run reference it.
+    """
     deleted = failed = 0
     if not ctx.owns_user:
-        out.raw("  skipped — the run signed in to an existing account (--login-email)")
-        return 0, 0
+        out.raw("  user data kept — the run signed in to an existing account (--login-email)")
+        for table, row_id in reversed(ctx.infra):
+            try:
+                if ctx.db.delete(table, id=row_id):
+                    deleted += 1
+                else:
+                    failed += 1
+                    out.warn_line(f"could not delete scaffolding {table}.{row_id} — "
+                                  "remove it by hand once nothing references it")
+            except Exception as exc:                 # noqa: BLE001 - cleanup must not abort
+                failed += 1
+                out.warn_line(f"delete scaffolding {table}.{row_id} errored: {exc}")
+        return deleted, failed
 
     # children before parents: user-scoped sweeps (order_items, order_status_logs,
     # cart_items, …) must go before the parent rows they reference.
@@ -1186,6 +1257,18 @@ def run_cleanup(ctx: Ctx, out) -> tuple[int, int]:
         except Exception as exc:                     # noqa: BLE001
             failed += 1
             out.warn_line(f"auth user delete errored: {exc}")
+
+    for table, row_id in reversed(ctx.infra):
+        try:
+            if ctx.db.delete(table, id=row_id):
+                deleted += 1
+            else:
+                failed += 1
+                out.warn_line(f"could not delete scaffolding {table}.{row_id} — "
+                              "an order may still reference it")
+        except Exception as exc:                     # noqa: BLE001 - cleanup must not abort
+            failed += 1
+            out.warn_line(f"delete scaffolding {table}.{row_id} errored: {exc}")
     return deleted, failed
 
 
