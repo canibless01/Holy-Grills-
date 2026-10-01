@@ -237,18 +237,34 @@ def get_order(order_id):
     except ValueError:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    db = get_user_client()
-    order = db.table("orders").select("*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-
     claim_token = request.args.get("claim_token")
+    _select = "*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)"
+
+    db = get_user_client()
+    order = None
+    if g.user_id:
+        # A logged-in user's own orders are visible to them through row-level security.
+        order = db.table("orders").select(_select).eq("id", order_id).single().execute()
+
+    if not order:
+        # Guest tracking: a guest order (user_id NULL) is invisible to the anon key and to other users, so
+        # the lookup uses the service client. Nothing is returned unless the claim_token matches below.
+        if not claim_token:
+            return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+        db = get_db()
+        order = db.table("orders").select(_select).eq("id", order_id).single().execute()
+        if not order:
+            return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
+        if order.get("user_id"):
+            # Already linked to an account: the token is no longer a valid way in. The owner logs in.
+            return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
+
     if order.get("user_id"):
         if not g.user_id or order["user_id"] != g.user_id:
             return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
     else:
         # Guest order (user_id is None)
-        if not claim_token or not hmac.compare_digest(str(order.get("claim_token") or ""), claim_token):
+        if not claim_token or not hmac.compare_digest(str(order.get("claim_token") or ""), str(claim_token)):
             return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
     # Resolve the assigned rider from the persisted batch/profile relation.
@@ -590,27 +606,32 @@ def claim_guest_order(order_id):
     if not claim_token:
         return jsonify({"error": MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
 
-    db = get_user_client()
+    # A guest order has user_id NULL, so the student's own token cannot even SELECT it (RLS), and the
+    # orders trigger blocks a user changing user_id directly. The server therefore does the lookup and
+    # the claim with the service client. This is safe because: (1) @require_auth already verified the
+    # caller, (2) p_user_id is g.user_id from that verified token, never from the request body, and
+    # (3) claim_guest_order() re-checks the claim token inside the database.
+    admin_db = get_db()
 
-    # Pre-claim validations on Python side to enforce business policies perfectly
-    order = db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
+    order = admin_db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     if order.get("user_id"):
         return jsonify({"error": MSG.ORDER_ALREADY_CLAIMED}), 400
 
-    if not order.get("claim_token") or not hmac.compare_digest(str(order["claim_token"]), claim_token):
+    if not order.get("claim_token") or not hmac.compare_digest(str(order["claim_token"]), str(claim_token)):
         return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
     try:
-        result = db.rpc("claim_guest_order", {
+        result = admin_db.rpc("claim_guest_order", {
             "p_order_id": order_id,
             "p_user_id": g.user_id,
             "p_claim_token": claim_token,
         })
         if isinstance(result, dict) and result.get("success"):
-            claimed_order = db.table("orders").select("*").eq("id", order_id).single().execute()
+            # After the claim the student owns the order, so the normal user client can read it back.
+            claimed_order = get_user_client().table("orders").select("*").eq("id", order_id).single().execute()
             if claimed_order and claimed_order.get("status") == "delivered" and not claimed_order.get("hp_credited_at"):
                 # A guest who was delivered before claiming would otherwise never get
                 # the HP a logged-in customer earns automatically on delivery.
