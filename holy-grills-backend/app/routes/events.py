@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
-from app.db import get_db, get_user_client, SupabaseError
+from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
 from app.messages import MSG, resolve_msg
 from app.utils.validators import (
     validate_choice, validate_non_negative_number, validate_uuid,
@@ -263,8 +263,10 @@ def checkin(event_id):
                 from app.services.milestone_service import check_milestone_trigger
                 check_milestone_trigger(target_user_id, "first_event", 1)
                 check_milestone_trigger(target_user_id, "event_checkins", 1)
-            except Exception:
-                pass
+            except Exception as exc:
+                # The HP was credited; only the badge trigger was lost. Record who to re-run for.
+                logger.warning("checkin: milestone trigger failed for %s (event %s): %s",
+                               target_user_id, event_id, exc)
 
             msg_text = MSG.TICKET_LINKED_TO_ACCOUNT if was_guest_linked else MSG.EVENT_CHECKIN_SUCCESS
             return jsonify({
@@ -884,9 +886,19 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
             ticket_id=ticket_id, event_id=updated["event_id"],
             event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
         )
-    except Exception:
-        pass
+        email_sent = True
+    except Exception as exc:
+        # The customer has already paid. A silent failure here means no ticket and no way
+        # for anyone to notice — log it loudly and record it on the returned row. NOTE:
+        # this function is called by the payment webhook, not by a route, so it must keep
+        # returning the ticket dict (returning a (response, status) tuple here would be
+        # handed straight back to Paystack as the webhook body).
+        logger.error("confirm_event_ticket_payment: QR ticket email failed for ticket %s (%s): %s",
+                     ticket_id, locals().get("email"), exc)
+        email_sent = False
 
+    if isinstance(updated, dict):
+        updated["email_sent"] = email_sent
     return updated
 
 
@@ -1139,9 +1151,16 @@ def create_event():
     safe["campus_id"] = campus_id
     try:
         result = db.table("events").insert(safe).execute()
-    except Exception as _exc:
-        # New columns may not exist yet — strip them and retry
-        PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees", "hp_required", "total_value", "is_paid"}
+    except SupabaseError as exc:
+        # Retry WITHOUT the phase-2 columns only when the schema is the problem.
+        # This used to fire on any exception, so an RLS denial or a bad value made the
+        # second insert succeed with hp_per_attendee / is_paid / max_attendees silently
+        # dropped — an event created with the HP-per-attendee zeroed and no trace of why.
+        if not is_missing_column_error(exc):
+            raise
+        logger.warning("create_event: %s — retrying without the phase-2 columns", exc)
+        PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees",
+                       "hp_required", "total_value", "is_paid"}
         safe2 = {k: v for k, v in safe.items() if k not in PHASE2_COLS}
         result = db.table("events").insert(safe2).execute()
     return jsonify(result[0] if isinstance(result, list) else result), 201

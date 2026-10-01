@@ -240,8 +240,9 @@ def do_spin():
             notif_type="exclusive_spin_won",
             template_data={"prize": prize},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # The spin credit is already spent and the prize recorded; only the message was lost.
+        logger.warning("do_spin: exclusive_spin_won notify failed for %s: %s", user_id, exc)
 
     return jsonify({
         "message": resolve_msg(MSG.SPIN_SUCCESS, prize=prize),

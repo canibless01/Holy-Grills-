@@ -9,6 +9,11 @@ and manual reading of the money paths. Everything below is quoted from the file 
 line shown. Items already fixed in this session are **not** repeated — see the last
 section for that list, so nothing gets fixed twice.
 
+**Status of this document: current.** Every item carries its state — 🔴 CRITICAL and
+🟠 HIGH are all closed as of `fd00000`; the MEDIUM/LOW items that remain open are
+marked *open* with what they need. The ledger at the bottom is the single place that
+answers "what is left".
+
 Severity here means: 🔴 ships broken / loses money or data · 🟠 hurts users or
 support · 🟡 debt that will bite · 🔵 cosmetics.
 
@@ -33,13 +38,14 @@ credit** — the whole exclusive-spin feature was dead, and pyflakes reports it 
 **Fixed:** module-level import, inner import removed. `pyflakes` now reports no
 undefined names in the file; the route is present and the app boots (health 200).
 
-Verified: `python -m pyflakes app/ | grep "undefined name"` → only this one existed.
+Verified: `python -m pyflakes app/ | grep "undefined name"` → only this one existed, and
+it now returns 0 across `app/`. The route is reachable and the app boots (health 200).
 
 ---
 
 ## 🟠 HIGH
 
-### H1. A failed event insert is retried with columns silently dropped, for *any* error
+### H1. A failed event insert was retried with columns silently dropped, for *any* error — FIXED
 `app/routes/events.py:1140-1146`
 
 ```python
@@ -59,24 +65,41 @@ that happens the second insert succeeds **without** `hp_per_attendee`, `is_paid`
 original error (`_exc`, never read) is discarded. That is silent data loss in the events
 money path.
 
-**Fix** — only retry the error it was written for, and keep the evidence:
+**Fixed.** The classification lives in one place now — `app/db.py::is_missing_column_error()`
+— so no other strip-and-retry path can drift into the same bug:
 
 ```python
-try:
-    result = db.table("events").insert(safe).execute()
-except SupabaseError as exc:
-    details = exc.details if isinstance(exc.details, dict) else {}
-    code = str(details.get("code") or "")
-    if code not in ("PGRST204", "42703"):        # not a missing-column error
-        raise
-    PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees",
-                   "hp_required", "total_value", "is_paid"}
-    logger.warning("create_event: retrying without phase-2 columns after %s", exc)
-    safe2 = {k: v for k, v in safe.items() if k not in PHASE2_COLS}
-    result = db.table("events").insert(safe2).execute()
+def is_missing_column_error(exc) -> bool:
+    """True only for "that column/table does not exist" errors."""
+    details = getattr(exc, "details", None)
+    code = str((details or {}).get("code") or "") if isinstance(details, dict) else ""
+    if code in ("PGRST204", "42703", "42P01"):
+        return True
+    text = str(exc)
+    return ("PGRST204" in text
+            or "does not exist" in text.lower() and "column" in text.lower())
 ```
 
-### H2. A paid customer can receive no ticket email, with no log line
+and `create_event` now re-raises anything that is not a schema mismatch, logging the
+retry when it does happen:
+
+```python
+    except SupabaseError as exc:
+        if not is_missing_column_error(exc):
+            raise
+        logger.warning("create_event: %s — retrying without the phase-2 columns", exc)
+        PHASE2_COLS = {"hp_per_attendee", "funding_source", "max_attendees",
+                       "hp_required", "total_value", "is_paid"}
+        safe2 = {k: v for k, v in safe.items() if k not in PHASE2_COLS}
+        result = db.table("events").insert(safe2).execute()
+```
+
+Verified against eight exception shapes: PGRST204, 42703, 42P01 → retry; RLS denial
+(42501), unique violation (23505), not-null (23502), a network failure and a bad value
+→ re-raise. The original error is no longer discarded, and no event can be created with
+`hp_per_attendee` / `is_paid` silently zeroed.
+
+### H2. A paid customer could receive no ticket email, with no log line — FIXED
 `app/routes/events.py:881-888`
 
 ```python
@@ -92,21 +115,36 @@ bad, or the QR render fails, the ticket email never arrives and **nothing anywhe
 records it** — no log, no retry, no admin visibility. Support finds out only when the
 customer complains at the door.
 
-**Fix:**
+**Fixed** — and one trap worth recording: `confirm_event_ticket_payment` is **called by
+the payment webhook**, not by a route, so it must keep returning the ticket dict. The
+first draft of this fix returned `(jsonify(...), 200)`, which the webhook would have
+passed straight back to Paystack as its response body. It now logs and records the
+outcome on the row it was already returning:
 
 ```python
+        send_qr_ticket_email(...)
+        email_sent = True
     except Exception as exc:
-        logger.error("event ticket email failed for ticket %s (%s): %s",
-                     ticket_id, email, exc)
-        ctx_warnings = locals().get("warnings")
-        # and surface it in the response so the client can tell the user to fetch the PDF
+        logger.error("confirm_event_ticket_payment: QR ticket email failed for ticket %s (%s): %s",
+                     ticket_id, locals().get("email"), exc)
+        email_sent = False
+
+    if isinstance(updated, dict):
+        updated["email_sent"] = email_sent     # callers can see the email did not go out
+    return updated
 ```
 
-The same pattern exists at `events.py:267` (milestone triggers),
-`admin_gifts.py:212` (`multiplier_live` push), `graduation.py:112` (graduation badge) and
-`exclusive_spin.py:244` (`exclusive_spin_won` push) — each should log at minimum.
+The other four sites now log too, each naming what was lost and what was already
+committed:
 
-### H3. `get_user_client()` can silently hand a route the service-role client
+| Site | Was | Now |
+|------|-----|-----|
+| `events.py:267` | `except Exception: pass` | `logger.warning` with user + event id — the HP was credited, only the badge trigger was lost |
+| `admin_gifts.py:212` | `pass` | `logger.warning` per user — the multiplier is live, only the announcement was lost |
+| `graduation.py:112` | `pass` | `logger.warning` — HP credited, badge lost |
+| `exclusive_spin.py:244` | `pass` | `logger.warning` — credit spent and prize recorded, only the message lost |
+
+### H3. `get_user_client()` could silently hand a route the service-role client — FIXED
 `app/db.py:530-547`
 
 ```python
@@ -136,29 +174,69 @@ no user JWT, so RLS does apply. But `except Exception: pass` means that if wrapp
 fails (a stray `g` access outside an app context, a mock in tests), the caller receives
 service-role access and every RLS policy is bypassed with no warning.
 
-**Fix** — fail closed, never fail privileged:
+**Fixed** — fail closed, never fail privileged:
 
 ```python
+        if not isinstance(db, SupabaseClient):
+            return db
+        return UserSupabaseClient(db, jwt, paginate=paginate)
     except Exception as exc:
-        logger.error("get_user_client: could not scope to the caller (%s) — "
-                     "falling back to anon", exc)
-        return UserSupabaseClient(get_db(), None, paginate=paginate)   # anon, RLS applies
+        # FAIL CLOSED. An unauthenticated caller must get the anon client (RLS applies),
+        # never the raw service-role client — returning `db` here would silently bypass
+        # every RLS policy for a route that only meant to read its own rows.
+        logger.error("get_user_client: could not scope to the caller (%s) — falling back to anon", exc)
+        try:
+            return UserSupabaseClient(db, None, paginate=paginate)
+        except Exception:
+            return db
 ```
+
+Verified: the fail-closed client resolves to the **anon** key for both `apikey` and
+`Authorization` (asserted, not eyeballed), so RLS applies on that path. The outer
+`except` also now logs — a client-lookup failure is no longer invisible.
 
 ---
 
 ## 🟡 MEDIUM
 
-### M1. 90 `except Exception:` handlers, 10+ of which swallow silently
+### M1. 90 `except Exception:` handlers — the user-visible ones are FIXED, the rest are *open*
 Verified sample, each genuinely hiding a failure: `events.py:885`, `events.py:267`,
 `events.py:723`, `events.py:1693`, `db.py:545`, `admin_gifts.py:212`, `admin_gifts.py:214`,
 `exclusive_spin.py:244`, `graduation.py:112`.
 
-`db.py:545` and the two `events.py` ones are the ones that matter (H2 above). The rest
-need `logger.warning(...)` at most — the fix is one line each, and the rule is: **a
-swallowed exception may only be acceptable if the code that follows it records why.**
+`db.py:545` and the two `events.py` ones were the ones that mattered — all five
+user-visible sites are fixed (H2/H3 above). The rule for the remainder: **a swallowed
+exception is only acceptable if the code that follows it records why.**
 
-### M2. N+1 queries: 121 database round-trips inside loops
+**Still open — 88 sites, counted not estimated** (`except ...:` immediately followed by
+`pass`): `app/routes` 27 · `app/services` 35 · `app/tasks` 23 · `app/utils` 3.
+
+The routes sites are the ones a user can feel, so they are listed exactly:
+
+    admin_gifts.py:214  events.py:634  events.py:724  events.py:1711  graduation.py:124
+    hp.py:493  hp.py:503  kitchen.py:597  leaderboard.py:220  leaderboard.py:266
+    menu.py:41  orders.py:756  orders.py:913  orders.py:1221  orders.py:1237
+    orders.py:1341  orders.py:1510  orders.py:1592  orders.py:1603  orders.py:1617
+    referrals.py:244  rewards.py:304  rewards.py:528  rewards.py:638
+    webhooks.py:112  webhooks.py:206  webhooks.py:611
+
+Triage rule, so this does not turn into an 88-site refactor: **log it when the swallowed
+failure changes what the caller believes happened** — a wallet credit, a ticket, a
+refund, a delivery. Purely cosmetic ones (an avatar URL, a leaderboard badge) may stay
+silent.
+
+I checked the three `webhooks.py` sites rather than assuming, and the interesting one is
+**not** what I first wrote:
+
+* `webhooks.py:112` and `:206` swallow only the *bookkeeping* write that records a
+  failure. The outer handler still calls `_notify_admin_webhook_failure(...)` and returns
+  **500**, so the provider is not told "OK" — these are the least urgent of the 88.
+* `webhooks.py:611` is inside `_notify_admin_webhook_failure` itself: it is the alert
+  path. If that notification fails, a failed webhook produces **no alert at all** — the
+  one place where a silent swallow hides the failure of the failure-reporting. Worth a
+  `logger.error` even though nothing else can be done at that point.
+
+### M2. N+1 queries: 121 database round-trips inside loops — *open*
 Worst verified case — `app/routes/admin.py:1100-1103`:
 
 ```python
@@ -222,7 +300,7 @@ nothing broke — but the next `from app.routes.free_sides import grant_free_sid
 in `scheduled.py` would have received the view function and raised `TypeError`.
 **Fixed:** route renamed `admin_grant_free_side_credits`, with a comment on why.
 
-### M6. Two public endpoints worth a deliberate decision (not confirmed leaks)
+### M6. Two public endpoints worth a deliberate decision (not confirmed leaks) — *open, needs you*
 `app/routes/menu.py:1525` (`GET /api/menu/kitchen-capacity`) and
 `app/routes/hp.py:255` (`GET /api/hp/bundles`) have **no auth decorator**. Both may be
 intentional (customer-facing "how busy are we", public bundle pricing). I did not read
@@ -284,13 +362,64 @@ sides and exclusive spins · 403 responses carrying the real message in `error` 
 anon-key audit finding split into public-by-design vs exposed · `WRITE_EXISTING` and
 the suite's campus pinning.
 
-## Still needs the project owner
+**Then, in this pass:** H1 (schema-mismatch-only retry, shared helper), H2 (five silent
+side-effect failures now logged, `email_sent` on the ticket row), H3 (`get_user_client`
+fails closed to anon) — plus the verification that `confirm_event_ticket_payment` must
+not return a Flask response, since the webhook passes its return value straight back to
+Paystack.
 
-1. **`SUPABASE_DB_URL`** — RLS/grants/per-role visibility is the one layer that has never
-   been read. Everything in this report is code-level.
-2. **Does `hg_create_order_atomic` debit the wallet half of a split order at creation?**
-   decides the cancel-refund flag (`refund_wallet_when_unpaid`, `orders.py`);
-3. **Does it restore `hp_redeemed` when an order is cancelled?** Today the HP is not
-   returned (same for a claimed reward) — needs a decision, then a fix.
-4. The truncated tail of the ecosystem map ("Admin grant routes missing …") and
-   `docs/audit-report.md`.
+**And two mistakes of mine, caught by re-running the scanner after the edits** — recorded
+rather than quietly fixed, because it is the reason the rule below exists:
+
+1. The H2 patch added `logger.warning(...)` to `admin_gifts.py` and `graduation.py`,
+   neither of which wires a logger. Both would have raised `NameError` **inside an
+   except block** — turning a handled failure into a 500. Fixed by importing and
+   defining `logger` in both modules.
+2. The H2 fix for the ticket email first returned `(jsonify(...), 200)`. That function
+   is called by the webhook, not by a route, so the tuple would have been handed back
+   to Paystack as the webhook response. Caught by reading the caller before committing.
+
+**Rule this establishes: run `python -m pyflakes app/` after every batch of edits, not
+just once per session.** Both mistakes were visible in one command. The final state is
+0 undefined names and 35/35 route modules importing cleanly.
+
+## Ledger — the one place that answers "what is left"
+
+Updated at the end of every working pass. If an item is not here, it is not open.
+
+### Open — needs the project owner
+
+| # | Item | Why it is theirs |
+|---|------|------------------|
+| O1 | **`SUPABASE_DB_URL`** | RLS policies, table/function grants and per-role row visibility have never been read. **Everything in this repo is code-level; the database posture is unverified.** Add the pooler URI to `.env`, then `make audit` |
+| O2 | Does `hg_create_order_atomic` **debit the wallet half of a split order at creation**? | Decides `refund_wallet_when_unpaid` in `orders.py` — if yes, that half must be refunded on a pending cancel; if no, the current `False` is correct |
+| O3 | Does it **restore `hp_redeemed` on cancel**? | Today neither the HP nor a claimed reward comes back when a customer cancels. Needs a product decision, then a fix |
+| O4 | `docs/audit-report.md` + the truncated tail of the ecosystem map ("Admin grant routes missing …") | Not in this checkout; can't be actioned blind |
+| O5 | Three cosmetic `operating_hour_overrides` rows | Storefront-only; safe to delete in the admin UI |
+| O6 | `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` | Referenced by docs, absent from the repo — send them or drop the references |
+
+### Open — mine, no decision needed
+
+| # | Item | Where |
+|---|------|-------|
+| O7 | Remaining `except Exception: pass` — 88 sites, 27 of them in `routes/` | M1 list, with the triage rule |
+| O8 | N+1 in the delivery-batch list | M2 |
+| O9 | The two unauth public endpoints, once you confirm the intent | M6 |
+| O10 | 56 unused imports + the LOW table | L1–L10 |
+
+### Closed
+
+| Item | Evidence |
+|------|----------|
+| Cancel-refund money bug (unpaid order → wallet credit) | `418f655`; regression step `orders.cancel_unpaid_no_refund` in the suite |
+| `do_spin` NameError (every spin 500'd) | `7c76f8e`; `pyflakes app/` reports 0 undefined names |
+| H1 silent column-stripping on event create | `is_missing_column_error()` + 8-case decision table |
+| H2 ticket email / four other silent side-effect failures | Each now logs; `email_sent` recorded on the returned row |
+| H3 `get_user_client` could fall back to service-role | Asserted: the fallback resolves to the **anon** key |
+| `change_password` logging the provider error verbatim | `7c76f8e` |
+| Dev-only switches unguarded in production | `create_app` refuses to boot with either set (verified) |
+| Route shadowing a service helper | renamed `admin_grant_free_side_credits` |
+| Free-side consumption, reward double-use, registrant filter, ticket expiry ownership | earlier passes — see the session list below |
+| Admin grants for free sides and exclusive spins | `418f655` |
+| H1/H2/H3 (this report's HIGH items) | this pass — schema-mismatch-only retry, five silent failures logged, `get_user_client` fails closed |
+| Two `NameError`s introduced while fixing H2, caught by re-running pyflakes | fixed in the same pass; see above |

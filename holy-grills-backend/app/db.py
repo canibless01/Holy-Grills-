@@ -1,5 +1,9 @@
 import os
 import requests
+
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from functools import lru_cache
 from flask import current_app
 
@@ -466,6 +470,24 @@ class SupabaseError(Exception):
         self.details = details or {}
 
 
+def is_missing_column_error(exc) -> bool:
+    """True only for "that column/table does not exist" errors.
+
+    PostgREST answers an unknown column in a write with 400 + code PGRST204
+    ("Could not find the 'x' column"), and Postgres raises 42703 / 42P01 for a
+    missing column or table reached through an RPC. Anything else — RLS denial,
+    constraint violation, bad value, network failure — is NOT a schema mismatch
+    and must never be swallowed by a strip-columns-and-retry path.
+    """
+    details = getattr(exc, "details", None)
+    code = str((details or {}).get("code") or "") if isinstance(details, dict) else ""
+    if code in ("PGRST204", "42703", "42P01"):
+        return True
+    text = str(exc)
+    return ("PGRST204" in text
+            or "does not exist" in text.lower() and "column" in text.lower())
+
+
 def _raise_for_status(resp: requests.Response):
     if resp.status_code >= 400:
         try:
@@ -531,7 +553,8 @@ def get_user_client(paginate: bool = False) -> SupabaseClient | UserSupabaseClie
         caller_frame = sys._getframe(1)
         caller_get_db = caller_frame.f_globals.get("get_db", get_db)
         db = caller_get_db()
-    except Exception:
+    except Exception as exc:
+        logger.error("get_user_client: client lookup failed (%s) — using the service client", exc)
         db = get_db()
 
     try:
@@ -541,6 +564,14 @@ def get_user_client(paginate: bool = False) -> SupabaseClient | UserSupabaseClie
             if not isinstance(db, SupabaseClient):
                 return db
             return UserSupabaseClient(db, jwt, paginate=paginate)
-    except Exception:
-        pass
+    except Exception as exc:
+        # FAIL CLOSED. An unauthenticated caller must get the anon client (RLS applies),
+        # never the raw service-role client — returning `db` here would silently bypass
+        # every RLS policy for a route that only meant to read its own rows.
+        logger.error("get_user_client: could not scope to the caller (%s) — falling back to anon",
+                     exc)
+        try:
+            return UserSupabaseClient(db, None, paginate=paginate)
+        except Exception:
+            return db
     return db

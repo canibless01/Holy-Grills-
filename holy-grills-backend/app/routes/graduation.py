@@ -2,6 +2,9 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from app.services.hp_service import award_active_hp
 from app.utils.reference_data import resolve_level
 from datetime import datetime, timezone
@@ -100,7 +103,11 @@ def claim_graduation():
             apply_multiplier=False,
             campus_id=campus_id,
         )
-    except Exception as e:
+    except Exception as exc:
+        # Roll the claim flag back so the user can retry, and log why — a silent 500 here
+        # means the flag is the only trace of a failed HP award.
+        logger.error("graduation: HP claim failed for %s, claim flag rolled back: %s",
+                     g.user_id, exc)
         db.table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
         return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 500
 
@@ -108,8 +115,9 @@ def claim_graduation():
     try:
         from app.services.milestone_service import check_milestone_trigger
         check_milestone_trigger(g.user_id, "graduation", 1)
-    except Exception:
-        pass
+    except Exception as exc:
+        # The HP bonus is already credited; only the graduation badge is missing.
+        logger.warning("graduation: milestone trigger failed for %s: %s", g.user_id, exc)
 
     # Notify
     try:

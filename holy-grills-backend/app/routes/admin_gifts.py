@@ -10,6 +10,9 @@ from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from app.messages import MSG
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from datetime import datetime, timezone
 
 admin_gifts_bp = Blueprint("admin_gifts", __name__)
@@ -208,8 +211,9 @@ def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
                     body=MSG.MULTIPLIER_LIVE_BODY.format(multiplier=multiplier, currency="{currency}"),
                     channels=["push", "in_app"],
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The multiplier is already live; only this user's announcement was lost.
+                logger.warning("multiplier_live: notify failed for %s: %s", user["id"], exc)
     except Exception:
         pass
 
