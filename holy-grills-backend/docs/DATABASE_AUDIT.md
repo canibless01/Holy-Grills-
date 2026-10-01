@@ -93,10 +93,11 @@ card tickets as `status = pending_payment`, `payment_status = pending`, with a
   host email, adds a Payment column, and reports `excluded_unpaid` /
   `total_all_statuses` (`?include_unpaid=true`, or `include_unpaid` in the body,
   overrides).
-* `app/tasks/scheduled.py` — new `cancel_expired_event_tickets` job (every 5 min)
-  cancels expired `pending_payment` tickets, releases the tier seat, notifies the
-  buyer; wired into the beat schedule, `/api/admin/cron/cancel-expired-event-tickets`
-  and the cron-status table.
+* **No Python expiry job** — the database already runs one every 15 minutes that
+  cancels expired unpaid tickets and releases the tier seat. A second job in this
+  repo would race it, so none was added. `event_tickets.status` is plain text with
+  no restrictive CHECK constraint, `cancelled` is the word that job already writes,
+  and there is no `cancellation_reason` column.
 
 ### Q4 — does `PATCH /admin/users/<id>/role` accept kitchen and rider?
 

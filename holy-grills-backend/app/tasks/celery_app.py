@@ -55,10 +55,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.scheduled.monthly_birthday_report",
         "schedule": crontab(hour=7, minute=0, day_of_month=1),
     },
-    "cancel-expired-event-tickets": {
-        "task": "app.tasks.scheduled.cancel_expired_event_tickets",
-        "schedule": crontab(minute="*/5"),
-    },
     "process-scheduled-orders": {
         "task": "app.tasks.scheduled.process_scheduled_orders",
         "schedule": crontab(minute="*/5"),

@@ -63,15 +63,15 @@
 --     WHERE r.attached_order_id IS NOT NULL OR o.id IS NOT NULL
 --     ORDER BY r.id;
 --
--- 0e. allowed ticket statuses (needed by the expiry job in app/tasks/scheduled.py)
+-- 0e. ticket status values — RESOLVED, informational only.
 --
---     SELECT pg_get_constraintdef(oid)
---     FROM pg_constraint
---     WHERE conrelid = 'public.event_tickets'::regclass AND contype = 'c';
---
---     The job cancels rows with status = 'pending_payment' by setting
---     status = 'cancelled'. If the CHECK constraint uses a different word,
---     change EVENT_TICKET_CANCELLED_STATUS in app/tasks/scheduled.py to match.
+--     Confirmed by the project owner: event_tickets.status is plain text with no
+--     restrictive CHECK constraint, 'cancelled' is the word already in use, and
+--     there is no cancellation_reason column.
+--     Expired unpaid tickets are already cancelled by a DATABASE job that runs
+--     every 15 minutes and releases the tier seat — this repo therefore ships NO
+--     Python equivalent (a second job would race it). Only the registrant-email
+--     filter lives in Python.
 
 
 -- ───────────────────────────────────────────────────────────────────────────

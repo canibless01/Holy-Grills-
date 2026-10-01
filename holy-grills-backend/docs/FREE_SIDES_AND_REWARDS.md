@@ -74,18 +74,19 @@ cancelled expired rows, and `send-registrants-to-host` had no payment filter.
 
 | File | Change |
 |------|--------|
-| `app/routes/events.py` | New `_event_has_priced_tier()` and `_registrants_for_event()`. A priced event lists/emails only `payment_status in ('paid','not_required')`; the response carries `total_all_statuses`, `excluded_unpaid`, `include_unpaid`, `priced_event`; both the JSON/CSV registrant list and the host email gained a **Payment** column, and the email states how many unpaid rows were excluded. Override with `?include_unpaid=true` (list) or `include_unpaid: true` (email body). |
-| `app/tasks/scheduled.py` | New `cancel_expired_event_tickets` task: finds `status = 'pending_payment' AND payment_expires_at < now()`, flips it to `cancelled` **only if still pending** (conditional update — two workers cannot double-release a seat), decrements `event_ticket_tiers.sold_count`, notifies the buyer. Idempotent, cron-locked. |
-| `app/tasks/celery_app.py` | Beat entry, every 5 minutes. |
-| `app/routes/admin.py` | Manual trigger `POST /api/admin/cron/cancel-expired-event-tickets` (super_admin) and the cadence table used by `GET /api/admin/cron/status`. |
+| `app/routes/events.py` | New `_event_has_priced_tier()` and `_registrants_for_event()`. A priced event lists/emails only `payment_status in ('paid','not_required')`, and cancelled tickets are excluded even if once paid. Responses carry `total_all_statuses`, `excluded_unpaid`, `excluded_cancelled`, `include_unpaid`, `priced_event`; the JSON/CSV registrant list and the host email gained a **Payment** column, and the email states what was excluded. Override with `?include_unpaid=true` (list) or `include_unpaid: true` (email body). |
 
-**Two names I could not verify from here — check STEP 0e before running**
+**No Python expiry job — deliberately.** The database already runs one every
+15 minutes that cancels expired unpaid tickets and releases the tier seat. A
+second job in this repo (originally built at 5-minute cadence) would race it, so
+it was removed along with its Celery beat entry and its
+`/api/admin/cron/cancel-expired-event-tickets` trigger. The 15-minute gap before
+the database job runs is covered by the `payment_status` filter above.
 
-1. The cancelled value is `EVENT_TICKET_CANCELLED_STATUS = "cancelled"` in
-   `app/tasks/scheduled.py`. If the `event_tickets` CHECK constraint uses another
-   word (e.g. `expired`, `canceled`), change that one constant.
-2. The task writes `cancellation_reason`. If that column does not exist, drop it
-   from the update dict (one line) — it is informational only.
+**Resolved (was STEP 0e)** — `event_tickets.status` is plain text with no
+restrictive CHECK constraint, `cancelled` is the word the database job already
+uses, and there is no `cancellation_reason` column. Nothing left to pin down
+here; the migration's STEP 0e is now informational only.
 
 ---
 

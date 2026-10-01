@@ -1386,11 +1386,20 @@ def _event_has_priced_tier(db, event_id: str) -> bool:
 # A ticket is "counted" when the customer actually owes nothing more.
 TICKET_COUNTED_PAYMENT_STATUSES = ("paid", "not_required")
 TICKET_UNPAID_STATUSES = ("pending", "pending_payment")
+# Cancelled tickets never belong in a host list, even if they were once paid
+# (refunded). 'cancelled' is the word the database's own 15-minute expiry job
+# writes; 'canceled' is accepted as a spelling variant.
+TICKET_EXCLUDED_STATUSES = ("cancelled", "canceled")
 
 
 def _registrants_for_event(db, event_id: str, include_unpaid: bool = False) -> tuple[list, dict]:
-    """Tickets for an event, with the unpaid-card filter applied when the event
-    is priced. Returns (rows, counts) where counts explains what was excluded."""
+    """Tickets for an event, with the unpaid-card and cancelled filters applied.
+
+    Returns (rows, counts) where counts explains exactly what was left out.
+    Expired unpaid tickets are cancelled by a database job (every 15 minutes),
+    so the 15-minute window before that runs is covered by the payment_status
+    filter here.
+    """
     tickets = (
         db.table("event_tickets")
         .select("id,user_id,tier_id,status,payment_status,payment_expires_at,"
@@ -1402,17 +1411,23 @@ def _registrants_for_event(db, event_id: str, include_unpaid: bool = False) -> t
 
     total_all = len(tickets)
     priced = _event_has_priced_tier(db, event_id)
-    counted = tickets
-    excluded = 0
+
+    cancelled = [t for t in tickets
+                 if str(t.get("status") or "").lower() in TICKET_EXCLUDED_STATUSES]
+    live = [t for t in tickets if t not in cancelled]
+    unpaid = [t for t in live
+              if str(t.get("payment_status") or "").lower() not in TICKET_COUNTED_PAYMENT_STATUSES]
+
+    counted = list(live)
     if priced and not include_unpaid:
-        counted = [t for t in tickets
+        counted = [t for t in live
                    if str(t.get("payment_status") or "").lower() in TICKET_COUNTED_PAYMENT_STATUSES]
-        excluded = total_all - len(counted)
 
     return counted, {
         "total_all": total_all,
         "included": len(counted),
-        "excluded_unpaid": excluded,
+        "excluded_unpaid": len(unpaid),
+        "excluded_cancelled": len(cancelled),
         "priced_event": priced,
         "include_unpaid": bool(include_unpaid),
     }
@@ -1513,6 +1528,7 @@ def list_event_registrants(event_id):
         # cancel-expired-event-tickets job). ?include_unpaid=true shows them.
         "total_all_statuses": counts["total_all"],
         "excluded_unpaid": counts["excluded_unpaid"],
+        "excluded_cancelled": counts["excluded_cancelled"],
         "include_unpaid": counts["include_unpaid"],
         "priced_event": counts["priced_event"],
     }), 200
@@ -1618,6 +1634,9 @@ def send_registrants_to_host(event_id):
     if counts["excluded_unpaid"]:
         total_line += (f"<p>{counts['excluded_unpaid']} unpaid registration(s) excluded "
                        f"(checkout not completed); pass include_unpaid to list them.</p>")
+    if counts["excluded_cancelled"]:
+        total_line += (f"<p>{counts['excluded_cancelled']} cancelled ticket(s) excluded "
+                       f"(expired payment or refund).</p>")
     html = (
         f"<html><body style='font-family:sans-serif'>"
         f"<h2>Registrants for: {event.get('title', event_id)}</h2>"
@@ -1648,6 +1667,7 @@ def send_registrants_to_host(event_id):
         "count": len(tickets),
         "total_all_statuses": counts["total_all"],
         "excluded_unpaid": counts["excluded_unpaid"],
+        "excluded_cancelled": counts["excluded_cancelled"],
         "include_unpaid": counts["include_unpaid"],
     }), 200
 
