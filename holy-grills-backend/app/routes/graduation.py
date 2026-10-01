@@ -108,7 +108,7 @@ def claim_graduation():
         # means the flag is the only trace of a failed HP award.
         logger.error("graduation: HP claim failed for %s, claim flag rolled back: %s",
                      g.user_id, exc)
-        db.table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
+        get_db().table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
         return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 500
 
     # Fire graduation badge trigger
