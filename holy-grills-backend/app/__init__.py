@@ -66,6 +66,23 @@ def create_app(config_class=Config):
     # lets anyone forge one. Checked here, not as a raise inside ProductionConfig's class body, because every
     # config class in config_map is imported unconditionally on every boot, so a class-body check would fire even
     # in development.
+    # Two switches exist only for local development. In production they are a money
+    # hole: ALLOW_UNSIGNED_WEBHOOKS lets anyone POST a forged "payment succeeded"
+    # event, and PAYSTACK_SANDBOX_MOCK_NUBAN hands users a fake account number that
+    # is stored as if it were real. Refuse to boot with either enabled, same as
+    # the SECRET_KEY guard below.
+    _dev_only = {
+        "ALLOW_UNSIGNED_WEBHOOKS": "forged payment webhooks would be accepted",
+        "PAYSTACK_SANDBOX_MOCK_NUBAN": "users would be given a mock account number",
+    }
+    if not app.config.get("DEBUG") and not app.config.get("TESTING"):
+        for _flag, _why in _dev_only.items():
+            if str(app.config.get(_flag, "")).lower() == "true":
+                raise RuntimeError(
+                    f"{_flag} is a development-only switch and is enabled while not DEBUG/TESTING "
+                    f"-- {_why}. Turn it off before running this configuration."
+                )
+
     if not app.config.get("DEBUG") and not app.config.get("TESTING"):
         for _key in ("SECRET_KEY", "JWT_SECRET"):
             if not app.config.get(_key) or app.config.get(_key) == _INSECURE_DEFAULT_SECRET:

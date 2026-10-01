@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
+from app.services.feature_flags import is_feature_enabled
 from app.utils.logger import get_logger
 from datetime import datetime, timezone, timedelta
 
@@ -162,7 +163,6 @@ def my_spins():
         description: Spin summary
     """
     user_id = g.user_id
-    from app.services.feature_flags import is_feature_enabled
     if not is_feature_enabled("exclusive_spin"):
         return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="Exclusive spin")}), 403
     db = get_user_client()

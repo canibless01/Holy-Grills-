@@ -129,7 +129,11 @@ def create_free_side_item():
 
 @free_sides_bp.route("/admin/credits", methods=["POST"])
 @require_role("admin")
-def grant_free_side_credits():
+def admin_grant_free_side_credits():
+    # NOTE: the name matters. `grant_free_side_credits(write_db, user_id, count, ...)`
+    # further down this file is the service-role helper the jobs use; a route function
+    # with that name would shadow it for any `from app.routes.free_sides import ...`
+    # and break with a TypeError. Keep this one prefixed with `admin_`.
     """
     Grant free-side credits to one user (admin only).
     Body: { "user_id": "<uuid>", "credits": 1, "validity_days": 60, "reason": "..." }

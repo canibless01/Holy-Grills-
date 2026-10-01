@@ -707,7 +707,10 @@ def change_password():
     try:
         db.auth_update_user(g.jwt_token, {"password": new_password})
     except Exception as e:
-        logger.error("change_password: update failed for %s: %s", g.user_id, e)
+        # Never log `e` here: this call carries the new password, and a provider
+        # exception can echo the request body back into the log file.
+        logger.error("change_password: update failed for %s (%s, status %s)",
+                     g.user_id, type(e).__name__, getattr(e, "status_code", None))
         return jsonify({"error": MSG.AUTH_PASSWORD_UPDATE_FAILED}), 500
 
     devices_revoked, sessions_revoked = _revoke_all_sessions(g.user_id, g.jwt_token)
