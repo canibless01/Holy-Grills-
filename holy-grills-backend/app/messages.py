@@ -238,6 +238,10 @@ class MSG:
     REWARD_DEACTIVATED           = "Reward deactivated"
     REWARD_REDEMPTION_NOT_FOUND  = "Redemption not found"
     REWARD_REDEMPTION_INVALID_STATUS = "status must be 'fulfilled' or 'rejected'"
+    # The order RPC refuses the whole order when a reward cannot be spent; this is
+    # the customer-facing wording for that refusal.
+    REWARD_REDEMPTION_UNAVAILABLE = ("This reward isn't available — it's already used, "
+                                     "isn't fulfilled yet, or belongs to another account")
 
     # ── Analytics ─────────────────────────────────────────────────────────────
     ANALYTICS_UNKNOWN_EXPORT     = "Unknown export type '{export_type}'. Valid: orders, hp_transactions, wallet_transactions, users"

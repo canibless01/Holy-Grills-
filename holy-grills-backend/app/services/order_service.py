@@ -397,6 +397,26 @@ def _consume_free_sides(db, user_id: str, campus_id, order_id: str) -> dict:
     return {"consumed": len(inserted), "source": "python_fallback"}
 
 
+# The order RPC now claims p_redemption_id inside its own transaction and refuses
+# the whole order when the reward cannot be spent. Its message wording is the
+# database's; translate the known cases so the customer gets a stable 400.
+_RPC_ERROR_MAP = (
+    ("reward redemption is not available", MSG.REWARD_REDEMPTION_UNAVAILABLE),
+    ("redemption is not available", MSG.REWARD_REDEMPTION_UNAVAILABLE),
+    ("reward redemption is not yours", MSG.REWARD_REDEMPTION_UNAVAILABLE),
+)
+
+
+def _normalize_rpc_error(message: str) -> str:
+    """Map a raw RPC refusal to the customer-facing wording, else pass it through."""
+    text = str(message or "")
+    low = text.lower()
+    for marker, friendly in _RPC_ERROR_MAP:
+        if marker in low:
+            return friendly
+    return text
+
+
 def create_order(user_id: str | None, payload: dict) -> dict:
     """
     Create a new order. Supports authenticated and guest checkout.
@@ -937,7 +957,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         result = {}
 
     if result.get("error"):
-        raise ValueError(result["error"])
+        raise ValueError(_normalize_rpc_error(result["error"]))
 
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
 
@@ -956,17 +976,20 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                            order_id, exc)
 
     # ── Reward redemption: attach it to this order exactly once ─────────────
-    # Claimed above (pre-check) and attached here. If a concurrent request won
-    # the race, the reward is already spent elsewhere — log it loudly, because
-    # the customer received the discount on this order.
+    # The authoritative claim happens inside hg_create_order_atomic, so this call
+    # is a safety net: it returns claimed=true with already_attached=true when the
+    # order already carries the reward — that is success. Only a genuine refusal
+    # (the reward was spent elsewhere in the meantime) is logged, because by then
+    # the customer has already received the discount on this order.
     claim = None
     if order_id and redemption_id and not result.get("idempotent"):
         try:
-            claim = _claim_reward_redemption(get_db(), redemption_id, user_id, str(order_id))
-            if not (claim or {}).get("claimed"):
-                logger.error("create_order: reward redemption %s could not be claimed for order %s "
+            claim = _claim_reward_redemption(get_db(), redemption_id, user_id, str(order_id)) or {}
+            attached = bool(claim.get("claimed")) or bool(claim.get("already_attached"))
+            if not attached:
+                logger.error("create_order: reward redemption %s could not be attached to order %s "
                              "(%s) — the reward may have been used twice", redemption_id, order_id,
-                             (claim or {}).get("reason"))
+                             claim.get("reason"))
         except Exception as exc:                                    # noqa: BLE001
             logger.error("create_order: reward claim call failed for redemption %s / order %s: %s",
                          redemption_id, order_id, exc)

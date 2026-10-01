@@ -2049,6 +2049,23 @@ def _notify_grant(recipients, amount, reason, flask_app):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _hp_grant_denied(exc) -> bool:
+    """True when the database refused the segment query for want of admin rights.
+
+    hg_hp_grant_segment now requires the caller to be an admin of p_campus or a
+    super_admin. That refusal must read as 403, not as a generic failure.
+    """
+    details = getattr(exc, "details", None)
+    code = str((details or {}).get("code") or "") if isinstance(details, dict) else ""
+    if code == "42501" or getattr(exc, "status_code", None) == 403:
+        return True
+    text = str(exc).lower()
+    return any(m in text for m in (
+        "not an admin", "must be an admin", "admin of p_campus", "admin of the campus",
+        "requires an admin", "only admin", "insufficient privilege", "permission denied",
+    ))
+
+
 @admin_bp.route("/hp/bulk-grant", methods=["POST"])
 @require_role("admin")
 def bulk_grant_hp():
@@ -2118,6 +2135,10 @@ def bulk_grant_hp():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     db = get_user_client()
     campus_id = resolve_scoped_campus_id(requested_campus)
+    # A campus admin must never run an unscoped segment: hg_hp_grant_segment now
+    # rejects it on the database side, but a clean 400 beats an opaque RPC error.
+    if campus_id is None and getattr(g, "user_role", None) != "super_admin":
+        return jsonify({"error": MSG.ACCOUNT_NO_CAMPUS}), 400
     skipped = []
     try:
         if explicit:
@@ -2143,6 +2164,9 @@ def bulk_grant_hp():
                 "p_limit": _BULK_GRANT_MAX + 1,
             }) or []
     except (SupabaseError, requests.RequestException) as e:
+        if _hp_grant_denied(e):
+            logger.warning("bulk_grant_hp: segment query refused — %s", e)
+            return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
         return db_error_response(e, "bulk_grant_hp.segment")
     if len(profiles) > _BULK_GRANT_MAX:
         return jsonify({"error": MSG.BULK_GRANT_TOO_MANY.format(max=_BULK_GRANT_MAX)}), 400

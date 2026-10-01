@@ -33,6 +33,15 @@ never leaves the machine.
 **Correction:** the order RPC is **`hg_create_order_atomic`**, not `hg_create_order`
 (the probe list in `scripts/db_audit.py` has been corrected).
 
+### Applied on test 2 — database-side changes that affect this repo
+
+| Change | Repo-side effect |
+|--------|------------------|
+| `hg_create_order_atomic` claims `p_redemption_id` inside the order transaction and refuses the whole order with *"Reward redemption is not available (already used, not fulfilled, or not yours)"* | `order_service._normalize_rpc_error()` maps that text to `MSG.REWARD_REDEMPTION_UNAVAILABLE` → clean **400**. `_assert_redemption_claimable()` (pre-check) and the post-order claim call both stay; `already_attached = true` now counts as success |
+| `hg_consume_free_sides_atomic` live, with row locks on the selections and `campus_id` on the ₦0 order line | `_consume_free_sides()` calls it as-is (signature unchanged); the Python consumer stays only as a fallback |
+| `hg_hp_grant_segment` now requires the caller to be an admin of `p_campus` or a super_admin (service key still allowed) | `POST /admin/hp/bulk-grant` always passes `resolve_scoped_campus_id()` — the admin's own campus for staff, the requested campus or `None` (all campuses) for super_admin. A campus-less admin now gets a clean **400** (`MSG.ACCOUNT_NO_CAMPUS`) instead of an unscoped query, and a database refusal maps to **403**, not a generic 500 |
+| `hg_event_ticket_payment_expiry` runs every 15 min; sets `status = 'cancelled'`, `payment_status = 'expired'`, releases the seat | No Python job (dropped); `app/routes/events.py` excludes cancelled/expired tickets from registrant lists and host emails |
+
 ---
 
 ## 1. The four questions
@@ -93,11 +102,11 @@ card tickets as `status = pending_payment`, `payment_status = pending`, with a
   host email, adds a Payment column, and reports `excluded_unpaid` /
   `total_all_statuses` (`?include_unpaid=true`, or `include_unpaid` in the body,
   overrides).
-* **No Python expiry job** — the database already runs one every 15 minutes that
-  cancels expired unpaid tickets and releases the tier seat. A second job in this
-  repo would race it, so none was added. `event_tickets.status` is plain text with
-  no restrictive CHECK constraint, `cancelled` is the word that job already writes,
-  and there is no `cancellation_reason` column.
+* **No Python expiry job** — the database owns it: `hg_event_ticket_payment_expiry`
+  runs every 15 minutes, cancels expired unpaid tickets, sets
+  `payment_status = 'expired'` and releases the tier seat. A second job in this
+  repo would race it, so none exists. The registrant filter also drops `expired`
+  and `cancelled` rows outright.
 
 ### Q4 — does `PATCH /admin/users/<id>/role` accept kitchen and rider?
 

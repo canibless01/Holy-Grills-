@@ -1386,10 +1386,11 @@ def _event_has_priced_tier(db, event_id: str) -> bool:
 # A ticket is "counted" when the customer actually owes nothing more.
 TICKET_COUNTED_PAYMENT_STATUSES = ("paid", "not_required")
 TICKET_UNPAID_STATUSES = ("pending", "pending_payment")
-# Cancelled tickets never belong in a host list, even if they were once paid
-# (refunded). 'cancelled' is the word the database's own 15-minute expiry job
-# writes; 'canceled' is accepted as a spelling variant.
-TICKET_EXCLUDED_STATUSES = ("cancelled", "canceled")
+# Cancelled/expired tickets never belong in a host list, even if they were once
+# paid (refunded). Cancellation belongs to the database's hg_event_ticket_payment_expiry
+# job (every 15 minutes), which sets status 'cancelled' and payment_status 'expired'
+# and releases the tier seat. 'canceled' is accepted as a spelling variant.
+TICKET_EXCLUDED_STATUSES = ("cancelled", "canceled", "expired")
 
 
 def _registrants_for_event(db, event_id: str, include_unpaid: bool = False) -> tuple[list, dict]:
