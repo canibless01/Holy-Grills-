@@ -1689,6 +1689,7 @@ _CRON_INTERVAL_MINUTES = {
     "process-scheduled-orders":      (5, "every 5 minutes"),
     "check-post-delivery-nudges":    (30, "every 30 minutes"),
     "grant-monthly-tier-perks":      (44640, "1st of month @ 00:05 WAT"),
+    "send-newsletter-campaigns":     (5, "every 5 minutes"),
 }
 
 

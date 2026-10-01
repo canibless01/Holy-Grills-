@@ -659,7 +659,7 @@ because the expensive failures are the ones nobody checked.
 | Area | Evidence | Verified where |
 |------|----------|----------------|
 | Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
-| Routes the suite calls | `make selfcheck` — 81 declared routes all exist | this sandbox |
+| Routes the suite calls | `make selfcheck` — 90 declared routes all exist | this sandbox |
 | Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
@@ -677,8 +677,20 @@ make flow   BASE_URL=http://localhost:5000 WEBHOOK_SECRET=<paystack secret> \
             WRITE_EXISTING=1 LOGIN_EMAIL=claude.audit.test1@holygrills.test \
             LOGIN_PASSWORD='ClaudeAudit!Test1'     # money in + kitchen -> rider -> delivered
 make e2e    BASE_URL=http://localhost:5000 WRITE_EXISTING=1 \
-            LOGIN_EMAIL=claude.audit.test1@holygrills.test LOGIN_PASSWORD='ClaudeAudit!Test1'
+            LOGIN_EMAIL=claude.audit.test1@holygrills.test LOGIN_PASSWORD='ClaudeAudit!Test1' \
+            E2E_ARGS=--with-cron                   # optional: invoke all 17 scheduled jobs
 ```
+
+Notes for that run:
+
+* The authorization sweeps add ~480 requests (241 routes × customer + rider). Expect the
+  run to take noticeably longer; that is the price of covering the admin surface.
+* The four `concurrency.*` steps **skip without `BASE_URL`** and they need the guarded
+  test server, not just any server: two requests must be in flight at once.
+* `--with-cron` accepts the side effects of the scheduled jobs (HP, leaderboards,
+  notifications, email, scheduled orders). Without it, only the canary job runs.
+* `scheduled.trigger_contract` and `scheduled.jobs_run_safe` create a throwaway
+  super_admin account each and delete it; the audit rows they cause are deleted too.
 
 The e2e run now covers the whole cancel/refund/override surface (the two refund
 regressions, both ticket/event flows, the three override probes) plus the flow steps above.
@@ -711,13 +723,17 @@ against `card_amount_used` when it is greater than zero.
 
 Measured, not estimated — the app's live URL map against every path the suite calls:
 
+405 method × path pairs are registered (404 excluding `/static`); the figures below use
+the 404, the same base the coverage script counts.
+
 | | |
 |---|---|
-| app routes (method × path) | **405** |
-| routes the suite exercises | **66 (16%)** — 64 before the flow pass |
-| blueprints with **zero** coverage | admin (44), analytics (29), events (23), marketplace (21), riders (17 → pickup/deliver now exercised), kitchen (9 → batch advance now exercised), order_locks (6), squads (6), admin_feature_flags (10), admin_gifts (5), exclusive_spin (2), graduation (1), webhooks (2 → paystack now exercised) |
-| role/permission assertions before this pass | **1** (a wrong-password 401) |
-| webhook calls before this pass | **0** |
+| routes the suite exercises | **299 (74%)** — 66 before the flow pass, 68 before the authorization sweeps |
+| of those, routes **no test had ever touched** | **231** — all of them now get a real permission assertion |
+| blueprints still with **zero** exercised routes | squads (6), flasgger (5), push (2), exclusive_spin (2), users (1), measurement_units (1), graduation (1), uploads (1) |
+| role/permission assertions before this round | **1** (a wrong-password 401) → now 241 gated routes × 2 attacker roles |
+| webhook calls before the flow pass | **0** |
+| scheduled jobs invoked before this round | **0** |
 
 **What it does cover well:** the customer order loop — auth, cart, order creation,
 wallet/Hp reads, the cancel/refund regressions from this audit, the free-side and reward
@@ -732,14 +748,23 @@ findings lived in, which is why they have tests.
    Flutterwave and the virtual-account branch are still unexercised.*
 2. **Permissions.** Nothing asserted that a customer is refused an admin route. A route
    losing its decorator would have shipped silently (this is exactly the class the audit
-   found by reading code, not by testing).
-3. **Scheduled jobs** (`app/tasks/scheduled.py`, 23 jobs) — never invoked.
+   found by reading code, not by testing). *Closed by `authz.admin_routes_refuse_customer`
+   and `authz.admin_routes_refuse_rider`, which walk all 241 staff-gated route-pairs with a
+   customer token and a rider token and fail on any 2xx.*
+3. **Scheduled jobs** (`app/tasks/scheduled.py`: 18 task functions, 17 in the beat
+   schedule, 1 deliberately unscheduled) — never invoked. *Partly closed: the wiring of
+   every job is now asserted offline (`scheduled.jobs_wired`), and one job runs for real
+   against an isolated canary row (`scheduled.jobs_run_safe`). Invoking all 17 remains
+   opt-in (`--with-cron`) because they mutate shared data and message real users.*
 4. **The kitchen → rider → delivery lifecycle** — the suite stops at order creation, so
    `received → preparing → ready → assigned → delivered`, the HP award on delivery, and
    rider payouts are untested. *Closed by the flow pass below for the happy path; refunds,
    attempts and unclaimed orders on that path are still untested.*
 5. **Concurrency** — single-threaded, so a double-spend race (free sides, reward reuse,
-   order locks, capacity) cannot be observed.
+   order locks, capacity) cannot be observed. *Four races are now covered
+   (`concurrency.*`: idempotency replay, wallet overdraft, reward double-claim, free-side
+   double-spend), but they need real HTTP — they skip unless `BASE_URL` is set, because an
+   in-process Flask test client serialises requests and would prove nothing.*
 6. **Notifications and email** — fire-and-forget to OneSignal/Resend; the suite can only
    see that a call did not 500.
 7. **Database posture** (RLS, grants) — O1, invisible from the application side.
@@ -775,9 +800,53 @@ the webhook steps need `--webhook-secret` or `PAYSTACK_SECRET_KEY` in `.env`):
   rider earnings endpoint answers. Restores the customer's HP/tier fields and deletes the
   order's ledger rows.
 
-Still not covered after both passes: the 23 scheduled jobs, every concurrency race, the
-virtual-account / bank-transfer deposit branch, and the split-payment amount check named
-below.
+**Added in the tier pass** (authorization / concurrency / scheduled), all inside `make e2e`
+or on their own with `--only authz|concurrency|scheduled`:
+
+* `authz.admin_routes_refuse_customer` / `authz.admin_routes_refuse_rider` — every
+  staff-gated route (241 route-pairs, loaded from the live URL map, parameterised routes
+  included) must refuse a customer token and a rider token. They attack with a fresh UUID
+  so a route that turns out to be missing its gate cannot touch a row, and any
+  `/api/admin/...` path with no gate at all is a failure rather than a silent exclusion.
+  This is what moved coverage from 68 to 299 route-pairs.
+* `authz.cross_campus_kitchen_scope` — a kitchen session on campus B cannot advance campus
+  A's order, with or without `?campus_id=<A>`; the order's status must not move.
+* `authz.rider_cannot_touch_another_riders_order` — two riders, one `delivery_assignments`
+  row: the rider who is not assigned must be refused pickup, delivery and the order read.
+* `concurrency.replay_guard` — the same idempotency key fired three times at once creates
+  exactly one order.
+* `concurrency.wallet_no_overdraft` — the wallet is trimmed to exactly one order's worth,
+  two wallet orders race it, exactly one may win and the balance may never go negative.
+  The wallet is restored column-by-column afterwards, including on a real account.
+* `concurrency.reward_single_use` — one fulfilled redemption, two simultaneous checkouts:
+  at most one order, and the claim must be attached to the order that won.
+* `concurrency.free_side_single_use` — one credit, two simultaneous checkouts:
+  `credits_remaining` lands on 0 and never goes negative.
+* `scheduled.jobs_wired` — every beat entry resolves to a real task function, every
+  scheduled job logs its outcome under a name `/api/admin/cron/status` watches, and every
+  manual trigger is visible on that page. **This caught a real defect** (below).
+* `scheduled.trigger_contract` — an unknown job name is refused (404) and the returned
+  `available_jobs` matches the trigger map exactly.
+* `scheduled.jobs_run_safe` — `check-order-locks` runs for real against an overdue canary
+  lock (skipped if any other active lock exists, so it cannot expire a user's), proving the
+  lock expires, an audit row is written and the cron lock is released.
+* `scheduled.jobs_run_all` — every triggerable job invoked once, none may record a failure.
+  **Opt-in** (`--with-cron`): these jobs award HP, reset leaderboards, place scheduled
+  orders and send push/email to real users.
+
+### Defect found and fixed in this pass
+
+`send-newsletter-campaigns` runs on the beat schedule every five minutes, but its name was
+absent from `_CRON_INTERVAL_MINUTES` — the table `/api/admin/cron/status` reads. It also had
+no entry in the manual trigger map. The result: a job running 288 times a day whose
+successes and **failures were both invisible**, and which nobody could re-run by hand. Fixed
+by adding it to the interval table (`app/routes/admin.py`); adding it to the manual trigger
+map as well is a product decision left to you. `scheduled.jobs_wired` fails if this class of
+divergence ever appears again.
+
+Still not covered after all three passes: invoking the full job set by default, the
+virtual-account / bank-transfer deposit branch, the split-payment amount check named below,
+and functional depth on the swept routes (a refusal proves the gate, not the handler).
 
 ### Residual risks, stated plainly
 
@@ -792,8 +861,19 @@ below.
    being true the moment something else cancels orders.
 3. **`make contract` "passes" without proving anything when the network is down.** It
    prints unreachable per item; read its output rather than its exit code.
-4. **Production switches:** `ALLOW_UNSIGNED_WEBHOOKS` and `PAYSTACK_SANDBOX_MOCK_NUBAN`
+4. **The authorization sweeps prove refusal, not correctness.** A route that is correctly
+   gated can still be functionally broken, and a route that 404s on an unmatched id cannot
+   reveal a missing gate from the status code alone (hence the loader's separate failure on
+   any `/api/admin/...` path with no gate at all). The sweep answers "can this role reach
+   it", nothing more.
+5. **The concurrency steps only run against a real server** (`BASE_URL`), and they assert
+   atomicity of the paths they cover — not every race. Order locks and kitchen capacity
+   have no race step yet.
+6. **The scheduled-job sweep is opt-in by design.** `--with-cron` invokes jobs that message
+   real users; without it, 16 of the 17 jobs are only checked for wiring, not for runtime
+   health.
+7. **Production switches:** `ALLOW_UNSIGNED_WEBHOOKS` and `PAYSTACK_SANDBOX_MOCK_NUBAN`
    are refused at boot outside DEBUG/TESTING (verified by attempting the boot). Do not
    weaken that guard to get a deploy out.
-5. **The audit is code-level.** A database-side review (O1) can still find something none
+8. **The audit is code-level.** A database-side review (O1) can still find something none
    of this could see — policies that are missing, or broader than intended.

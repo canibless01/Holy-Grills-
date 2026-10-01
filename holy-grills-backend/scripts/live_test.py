@@ -189,12 +189,24 @@ class Api:
     """Same interface for in-process (Flask test client) and remote (--base-url)."""
 
     def __init__(self, app=None, base_url: str | None = None, timeout: float = 30.0):
+        self.app = app
         self.base_url = base_url.rstrip("/") if base_url else None
         self.timeout = timeout
         self.client = None
         self.default_headers: dict[str, str] = {}
         if self.base_url is None:
             self.client = app.test_client()
+
+    def clone(self) -> "Api":
+        """A second client for a concurrent call — one test_client per thread.
+
+        The concurrency steps need requests genuinely in flight at the same time; a
+        single client is not safe to share between threads, and an in-process
+        test_client serialises anyway, which is why those steps require --base-url.
+        """
+        other = Api(app=self.app, base_url=self.base_url, timeout=self.timeout)
+        other.default_headers = dict(self.default_headers)
+        return other
 
     def request(self, method: str, path: str, *, json_body=None, raw_body=None,
                 token=None, headers=None, params=None):
@@ -1183,8 +1195,13 @@ def _status(ctx: Ctx, campus: str, calendar: bool = False) -> dict:
     return r.data or {}
 
 
-def _try_order(ctx: Ctx, campus: str):
-    """Place one real order and return the response, whatever it is."""
+def _try_order(ctx: Ctx, campus: str, notes: str = "E2E override probe — safe to ignore",
+               **extra):
+    """Place one real order and return the response, whatever it is.
+
+    `extra` merges into the payload so a probe can set payment_method, wallet_amount,
+    idempotency_key or a redemption_id without duplicating the body here.
+    """
     if not ctx.ids.get("hostel_id"):
         raise Skip("no delivery point — cannot attempt an order")
     body = {
@@ -1192,8 +1209,9 @@ def _try_order(ctx: Ctx, campus: str):
         "payment_method": "card",
         "delivery_type": "on_campus",
         "delivery_location_id": str(ctx.ids["hostel_id"]),
-        "notes": "E2E override probe — safe to ignore",
+        "notes": notes,
     }
+    body.update(extra)
     return ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"],
                         headers={"X-Campus-ID": str(campus)})
 
@@ -1356,6 +1374,57 @@ def s_webhook_wallet_topup(ctx: Ctx):
                          + (f" ({len(changed)} column(s))" if changed else ""))
 
 
+def _pin_batch_key(ctx: Ctx, order_id: str) -> str:
+    """Give one order a kitchen batch key of its own and return it.
+
+    The kitchen endpoint groups by `orders.delivery_window_id` (batch_id in the URL is
+    that value), so a private key means an advance can only ever touch this order.
+
+    If the column carries a foreign key to delivery_windows (the schema is not readable
+    from here, and the sandbox cannot connect), the fallback uses the order's own window
+    only when no other live order shares it — the endpoint skips terminal orders, so the
+    advance still cannot move an order this run does not own.
+    """
+    batch_key = str(uuid.uuid4())
+    if ctx.db.update("orders", {"delivery_window_id": batch_key}, id=order_id):
+        return batch_key
+
+    current = ctx.db.select_one("orders", id=order_id) or {}
+    own = str(current.get("delivery_window_id") or "")
+    terminal = {"delivered", "cancelled", "refunded", "delivery_attempted", "unclaimed"}
+    peers = (ctx.db.select("orders", delivery_window_id=own) or []) if own else []
+    live_peers = [o for o in peers
+                  if str(o.get("id")) != order_id and o.get("status") not in terminal]
+    if not own or live_peers:
+        detail = "none" if not own else f"{len(live_peers)} live peer(s)"
+        raise Skip("the order could not be given a private batch key and its own window "
+                   f"is unusable ({detail}) — check whether orders.delivery_window_id "
+                   "has a foreign key to delivery_windows")
+    ctx.warnings.append("orders.delivery_window_id rejected a private batch key — used the "
+                        "order's own window, verified to hold no other live order")
+    return own
+
+
+def _place_pinned_order(ctx: Ctx, campus: str, notes: str, **extra):
+    """Place one real order through the API and pin it to a private batch key.
+
+    Returns (order_id, batch_key, response). Raises Skip when the order cannot be placed —
+    every caller here needs a real order but none of them is the step that should fail
+    because ordering is closed.
+    """
+    placed = _try_order(ctx, campus, notes=notes, **extra)
+    if placed.status not in (200, 201):
+        raise Skip(f"could not place an order to probe: {placed.status} {placed.snippet(100)}")
+    order_id = str(field(placed.data or {}, "id")
+                   or ((placed.data or {}).get("order") or {}).get("id") or "")
+    if not order_id:
+        raise Skip("the order was not persisted")
+    ctx.track("orders", order_id)
+    ctx.track_children("order_items", "order_id", order_id)
+    batch_key = _pin_batch_key(ctx, order_id)
+    return order_id, batch_key, placed
+
+
 @step("flow", "flow.place_order",
       "the flow places its own order (received, unpaid, in a batch of its own)",
       writes=True, route="POST /api/orders",
@@ -1369,38 +1438,8 @@ def s_flow_place_order(ctx: Ctx):
     fallback uses the order's own window only when no other live order shares it.
     """
     campus = str(ctx.ids["campus_id"])
-    placed = _try_order(ctx, campus)
-    if placed.status not in (200, 201):
-        raise Skip(f"could not place an order for the flow: {placed.status} {placed.snippet(100)}")
-    order_id = str(field(placed.data or {}, "id")
-                   or ((placed.data or {}).get("order") or {}).get("id") or "")
-    if not order_id:
-        raise Skip("the order was not persisted")
-    ctx.track("orders", order_id)
-    ctx.track_children("order_items", "order_id", order_id)
+    order_id, batch_key, _placed = _place_pinned_order(ctx, campus, "E2E flow order — safe to ignore")
     ctx.ids["flow_order_id"] = order_id
-
-    # The kitchen endpoint groups by `orders.delivery_window_id` (batch_id in the
-    # URL is that value). Give this order a batch key of its own so the advance
-    # touches this order and nothing else.
-    batch_key = str(uuid.uuid4())
-    if not ctx.db.update("orders", {"delivery_window_id": batch_key}, id=order_id):
-        # The column may carry a foreign key to delivery_windows (the schema is not
-        # readable from here). Fall back to the order's own window only if every
-        # other order in it is terminal — the endpoint skips those, so the advance
-        # still cannot move an order this run does not own.
-        current = ctx.db.select_one("orders", id=order_id) or {}
-        own = str(current.get("delivery_window_id") or "")
-        terminal = {"delivered", "cancelled", "refunded", "delivery_attempted", "unclaimed"}
-        live_peers = [o for o in (ctx.db.select("orders", delivery_window_id=own) or [])
-                      if str(o.get("id")) != order_id and o.get("status") not in terminal] if own else []
-        if not own or live_peers:
-            raise Skip("the order could not be given a private batch key and its own window "
-                       f"is unusable ({'none' if not own else f'{len(live_peers)} live peer(s)'}) — "
-                       "check whether orders.delivery_window_id has a foreign key to delivery_windows")
-        batch_key = own
-        ctx.warnings.append("orders.delivery_window_id rejected a private batch key — used the "
-                            "order's own window, verified to hold no other live order")
     ctx.ids["flow_batch_key"] = batch_key
 
     row = ctx.db.select_one("orders", id=order_id) or {}
@@ -1636,6 +1675,966 @@ def s_rider_delivers_order(ctx: Ctx):
                 ctx.warnings.append(f"could not fully restore the customer's HP fields: {still}")
             elif moved:
                 ctx.note(f"customer profile restored ({len(moved)} HP/tier field(s))")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Phase — scheduled jobs: every cron job is wired, and one of them really runs
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _scheduled_wiring() -> dict:
+    """Parse the three places a job name must agree, from the source in this checkout.
+
+    beat_schedule (what actually runs), with_cron_logging (the name a job records its
+    outcome under) and admin.py's _CRON_INTERVAL_MINUTES (the names
+    /api/admin/cron/status watches) + task_map (what a manual trigger can start).
+    A job whose logged name is not watched runs and fails invisibly — that is the
+    invariant this returns the data to check.
+    """
+    cel_lines = (BACKEND_ROOT / "app/tasks/celery_app.py").read_text().splitlines()
+    sch_lines = (BACKEND_ROOT / "app/tasks/scheduled.py").read_text().splitlines()
+    adm_lines = (BACKEND_ROOT / "app/routes/admin.py").read_text().splitlines()
+
+    # beat_schedule: `"key": {` followed by `"task": "app.tasks.scheduled.fn",`
+    beat = {}
+    for i, line in enumerate(cel_lines):
+        stripped = line.strip()
+        if not (stripped.startswith('"') and stripped.endswith('": {')):
+            continue
+        key = stripped[1:].split('"', 1)[0]
+        for nxt in cel_lines[i + 1: i + 3]:
+            if '"task": "app.tasks.scheduled.' in nxt:
+                beat[key] = nxt.split("app.tasks.scheduled.", 1)[1].split('"', 1)[0]
+                break
+
+    # each task: the function name from @celery_app.task(...) and the name it logs under
+    logged, functions = {}, set()
+    for i, line in enumerate(sch_lines):
+        if line.startswith("def ") and "(self)" in line:
+            functions.add(line[4:].split("(", 1)[0])
+        marker = '@celery_app.task(name="app.tasks.scheduled.'
+        if marker in line:
+            fn = line.split("app.tasks.scheduled.", 1)[1].split('"', 1)[0]
+            for nxt in sch_lines[i + 1: i + 4]:
+                if '@with_cron_logging("' in nxt:
+                    logged[fn] = nxt.split('@with_cron_logging("', 1)[1].split('"', 1)[0]
+                    break
+
+    def block(lines, opener, closer):
+        """Lines strictly between the opener (at any indent) and the next `closer` line."""
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith(opener):
+                for j in range(i + 1, len(lines)):
+                    if lines[j].strip() == closer:
+                        return lines[i + 1: j]
+                return lines[i + 1:]
+        return []
+
+    watched = {l.strip().split('"', 2)[1] for l in block(adm_lines, "_CRON_INTERVAL_MINUTES = {", "}")
+               if l.strip().startswith('"')}
+    triggered = {}
+    for line in block(adm_lines, "task_map = {", "}"):
+        if line.strip().startswith('"') and ":" in line:
+            triggered[line.split('"', 2)[1]] = line.split(":", 1)[1].strip().rstrip(",")
+
+    # The swagger enum is the only list inside run_cron_job; start at the `enum:` line so
+    # the `- in: path` / `- name:` parameter lines above it are not mistaken for jobs.
+    enum = set()
+    for i, line in enumerate(adm_lines):
+        if line.startswith("def run_cron_job") or (line.strip() == "enum:" and enum == set()):
+            pass
+    opened = False
+    for line in adm_lines:
+        if line.strip() == "enum:":
+            opened = True
+            continue
+        if opened:
+            if line.strip().startswith("- "):
+                enum.add(line.strip()[2:].strip())
+            elif line.strip() and not line.strip().startswith("-"):
+                break
+
+    return {"beat": beat, "logged": logged, "functions": functions,
+            "watched": watched, "triggered": triggered, "enum": enum}
+
+
+def _wait_for(check, timeout: float = 45.0, interval: float = 1.5) -> bool:
+    """Poll `check` until it returns truthy or the deadline passes."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check():
+            return True
+        time.sleep(interval)
+    return False
+
+
+@step("scheduled", "scheduled.jobs_wired",
+      "every scheduled job records its outcome where cron_status can see it")
+def s_jobs_wired(ctx: Ctx):
+    """The wiring check for all 17 jobs, offline, no job is invoked.
+
+    A scheduled job that logs under a name `/api/admin/cron/status` does not watch runs
+    every night and reports nothing — the failure mode this catches. It also checks that
+    every beat entry resolves to a function in app/tasks/scheduled.py and that the manual
+    trigger map only starts jobs the status page can see.
+    """
+    try:
+        wiring = _scheduled_wiring()
+    except FileNotFoundError as exc:
+        raise Skip(f"backend source not available to inspect ({exc})")
+    beat, logged, functions = wiring["beat"], wiring["logged"], wiring["functions"]
+    watched, triggered, enum = wiring["watched"], wiring["triggered"], wiring["enum"]
+
+    expect(bool(beat) and bool(logged) and bool(watched),
+           "could not parse the job tables — the checks below would be vacuous "
+           f"(beat={len(beat)}, logged={len(logged)}, watched={len(watched)})")
+
+    missing_fn = {k: fn for k, fn in beat.items() if fn not in functions}
+    expect(not missing_fn,
+           f"beat_schedule points at task functions that do not exist: {missing_fn}")
+
+    invisible = []
+    for beat_key, fn in beat.items():
+        name = logged.get(fn)
+        if name is None:
+            invisible.append(f"{beat_key} ({fn} has no with_cron_logging name)")
+        elif name not in watched:
+            invisible.append(f"{beat_key} logs '{name}', which /api/admin/cron/status does not watch")
+    expect(not invisible,
+           "scheduled job(s) whose failures would be invisible: " + "; ".join(sorted(invisible)))
+
+    unwatched_triggers = sorted(set(triggered) - watched)
+    expect(not unwatched_triggers,
+           f"the manual trigger map starts job(s) the status page cannot see: {unwatched_triggers}")
+
+    untriggerable = sorted(set(watched) - set(triggered))
+    if untriggerable:
+        ctx.note(f"watched but not manually triggerable: {', '.join(untriggerable)}")
+    drift = sorted(set(enum) ^ set(triggered))
+    if drift:
+        ctx.warnings.append(
+            "the /api/cron/<job_name> documentation enum and task_map disagree: "
+            f"{drift} — the docs or the map need updating")
+    ctx.note(f"{len(beat)} scheduled job(s) wired and visible; "
+             f"{len(triggered)} manually triggerable; {len(functions)} task functions")
+
+
+@step("scheduled", "scheduled.trigger_contract",
+      "POST /api/admin/cron/<job_name> refuses an unknown job and lists the real ones",
+      writes=True, route="POST /api/admin/cron/<job_name>", needs=("public.campuses",))
+def s_trigger_contract(ctx: Ctx):
+    """The trigger's own contract, checked with a super_admin session and a job name that
+    cannot exist — so nothing is ever started by this step."""
+    campus = str(ctx.ids["campus_id"])
+    admin_id, admin_token, why = _provision_role_user(ctx, "super_admin", campus)
+    if not admin_token:
+        _drop_role_user(ctx, admin_id)
+        raise Skip(f"could not provision a super_admin session: {why}")
+    try:
+        r = ctx.api.post("/api/admin/cron/e2e-no-such-job", token=admin_token)
+        expect(r.status == 404,
+               f"an unknown job name answered {r.status} (expected 404)", r)
+        available = set((r.data or {}).get("available_jobs") or [])
+        expect(bool(available),
+               f"the 404 does not list available_jobs — {r.snippet(160)}", r)
+        wiring = _scheduled_wiring()
+        expect(available == set(wiring["triggered"]),
+               f"available_jobs lists {sorted(available)} but task_map holds "
+               f"{sorted(wiring['triggered'])}")
+        ctx.note(f"unknown job refused; {len(available)} job(s) listed and matching the map")
+    finally:
+        _drop_role_user(ctx, admin_id)
+
+
+@step("scheduled", "scheduled.jobs_run_safe",
+      "check-order-locks really runs: an overdue lock is expired and the outcome is recorded",
+      writes=True, route="POST /api/admin/cron/<job_name>", needs=("public.campuses",))
+def s_jobs_run_safe(ctx: Ctx):
+    """Invoke one job for real, with a canary row it is guaranteed to touch.
+
+    `check-order-locks` is safe to run only when the canary is the *only* active lock on
+    the campus — otherwise the job would also expire real users' locks, so the step skips
+    instead of doing that. It then asserts three things: the lock expired, an audit row
+    carrying the outcome appeared (so `cron_status` can report it), and the same job can
+    run again immediately (the cron lock was released, not stuck).
+    """
+    campus = str(ctx.ids["campus_id"])
+    yesterday = (datetime.now(timezone.utc) + timedelta(hours=1) - timedelta(days=1)).date().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    admin_id, admin_token, why = _provision_role_user(ctx, "super_admin", campus)
+    if not admin_token:
+        _drop_role_user(ctx, admin_id)
+        raise Skip(f"could not provision a super_admin session: {why}")
+
+    started = datetime.now(timezone.utc).isoformat()
+    lock_id = None
+    try:
+        canary = ctx.db.insert("order_locks", {
+            "user_id": ctx.user_id, "campus_id": campus, "locked_date": yesterday,
+            "status": "active", "reward_type": "discount", "reschedule_count": 0,
+            "created_at": now, "updated_at": now,
+        })
+        lock_id = str((canary or {}).get("id") or "")
+        if not lock_id:
+            raise Skip("the canary order_locks row was not persisted")
+        ctx.track_infra("order_locks", lock_id)
+
+        others = [l for l in (ctx.db.select("order_locks", status="active", campus_id=campus) or [])
+                  if str(l.get("id")) != lock_id]
+        if others:
+            raise Skip(f"{len(others)} other active order lock(s) exist on this campus — "
+                       "running the job would expire real users' locks, so it is skipped")
+
+        first = ctx.api.post("/api/admin/cron/check-order-locks", token=admin_token)
+        first.check(202)
+        expired = _wait_for(lambda: str((ctx.db.select_one("order_locks", id=lock_id) or {})
+                                       .get("status") or "") == "expired")
+        expect(expired,
+               "check-order-locks ran but the overdue canary lock is still 'active'")
+
+        def audit_rows():
+            return [r for r in (ctx.db.select("admin_audit_logs", entity_type="cron_jobs") or [])
+                    if str(r.get("entity_id")) == "check-order-locks"
+                    and str(r.get("created_at") or "") >= started]
+        logged = _wait_for(lambda: bool(audit_rows()))
+        expect(logged, "the job expired the lock but wrote no audit row — "
+                       "/api/admin/cron/status cannot report it")
+        actions = sorted({str(r.get("action")) for r in audit_rows()})
+        expect(not any(a.endswith("_failed") for a in actions),
+               f"the job recorded a failure: {actions}")
+        ctx.note(f"check-order-locks: canary expired, audit rows {actions}")
+
+        # The cron lock must be released, or the next scheduled run is skipped silently.
+        second = ctx.api.post("/api/admin/cron/check-order-locks", token=admin_token)
+        second.check(202)
+        again = _wait_for(lambda: len([r for r in audit_rows()
+                                       if str(r.get("action")).endswith("_success")
+                                       or str(r.get("action")).endswith("_skipped")]) >= 2)
+        if not again:
+            ctx.warnings.append("the second trigger produced no new audit row — the cron "
+                                "lock may not have been released, or the job skipped silently")
+        else:
+            ctx.note("the job ran a second time immediately — the cron lock was released")
+
+        for row in audit_rows():
+            ctx.db.delete("admin_audit_logs", id=row["id"])
+    finally:
+        if lock_id:
+            ctx.db.delete("order_locks", id=lock_id)
+        _drop_role_user(ctx, admin_id)
+
+
+@step("scheduled", "scheduled.jobs_run_all",
+      "every job in the trigger map runs without failing (opt-in: --with-cron)",
+      writes=True, route="POST /api/admin/cron/<job_name>", needs=("public.campuses",))
+def s_jobs_run_all(ctx: Ctx):
+    """Run every triggerable job once and require that none ends in `failed`.
+
+    OFF BY DEFAULT, and that is deliberate: these jobs mutate shared state — they award
+    HP, reset leaderboards, send push notifications and email real users, place scheduled
+    orders. On your test project that is exactly what they are for, but it is not
+    something a smoke run should do behind your back. Pass `--with-cron` to accept the
+    side effects (recommended once, on the test project, before launch).
+    """
+    if "--with-cron" not in sys.argv:
+        raise Skip("run with --with-cron to invoke every scheduled job "
+                   "(they mutate shared data: HP, leaderboards, notifications, email)")
+    campus = str(ctx.ids["campus_id"])
+    admin_id, admin_token, why = _provision_role_user(ctx, "super_admin", campus)
+    if not admin_token:
+        _drop_role_user(ctx, admin_id)
+        raise Skip(f"could not provision a super_admin session: {why}")
+    started = datetime.now(timezone.utc).isoformat()
+    try:
+        names = sorted(_scheduled_wiring()["triggered"])
+        failed, silent = [], []
+        for name in names:
+            ctx.api.post(f"/api/admin/cron/{name}", token=admin_token).check(202)
+
+            def rows_for(job=name):
+                return [r for r in (ctx.db.select("admin_audit_logs", entity_type="cron_jobs") or [])
+                        if str(r.get("entity_id")) == job and str(r.get("created_at") or "") >= started]
+            wait_for_seconds = 120 if name in ("process-scheduled-orders", "send-newsletter-campaigns",
+                                               "scan-abandoned-carts", "send-scheduled-blasts") else 45
+            if not _wait_for(lambda: bool(rows_for()), timeout=wait_for_seconds):
+                silent.append(name)
+                continue
+            actions = {str(r.get("action")) for r in rows_for()}
+            if any(a.endswith("_failed") for a in actions):
+                detail = next((str(r.get("after_value")) for r in rows_for()
+                               if str(r.get("action")).endswith("_failed")), "")
+                failed.append(f"{name}: {detail[:160]}")
+            elif all(a.endswith("_skipped") for a in actions):
+                ctx.note(f"{name}: skipped (lock held or nothing to do)")
+
+        if silent:
+            ctx.warnings.append(
+                "job(s) produced no audit row within the wait — they may be slow, or the "
+                f"background thread died: {silent}")
+        expect(not failed, "scheduled job(s) failed: " + " | ".join(failed))
+        for row in (r for r in (ctx.db.select("admin_audit_logs", entity_type="cron_jobs") or [])
+                    if str(r.get("created_at") or "") >= started):
+            ctx.db.delete("admin_audit_logs", id=row["id"])
+        ctx.note(f"{len(names)} job(s) triggered; none recorded a failure")
+    finally:
+        _drop_role_user(ctx, admin_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Phase — concurrency: can two requests spend the same naira?
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# These steps fire N identical-in-spirit requests at the same instant and ask whether
+# the database's atomicity holds. They need a real server: an in-process Flask test
+# client serialises requests, so nothing can race and the steps would prove nothing.
+# They skip with that reason unless BASE_URL is set.
+#
+# Everything they create is cleaned up, and the one step that touches money leaves the
+# wallet exactly as it found it — including on a pre-existing account.
+
+def _need_real_server(ctx: Ctx, what: str):
+    if not ctx.api.base_url:
+        raise Skip(f"{what} needs two requests genuinely in flight — run with "
+                   "BASE_URL=<server> (an in-process test_client serialises, so a race "
+                   "cannot be observed)")
+
+
+def _in_parallel(count: int, api_factory, work, timeout: float = 90.0):
+    """Run work(i, api) in `count` threads released at the same instant.
+
+    Returns [("ok", value) | ("error", exception)] in index order. Each thread gets its
+    own Api from api_factory so no two threads share a client or a connection.
+    """
+    import threading
+    results: list = [None] * count
+    barrier = threading.Barrier(count)
+
+    def runner(i):
+        try:
+            api = api_factory()
+            barrier.wait(timeout=30)
+            results[i] = ("ok", work(i, api))
+        except Exception as exc:                                    # noqa: BLE001
+            results[i] = ("error", exc)
+
+    threads = [threading.Thread(target=runner, args=(i,), daemon=True) for i in range(count)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout)
+    for i, _t in enumerate(threads):
+        if results[i] is None:
+            results[i] = ("error", Failed(f"thread {i} did not answer within {timeout:.0f}s"))
+    return results
+
+
+def _race_orders(ctx: Ctx, marker: str, count: int, token: str, body_extra: dict):
+    """Fire `count` real POST /api/orders at once, each with its own idempotency key.
+
+    Distinct keys matter: they make these genuinely different checkouts competing for
+    the same scarce resource. (The idempotency replay guard has its own step.)
+    """
+    def work(i, api):
+        body = {
+            "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
+            "payment_method": "card",
+            "delivery_type": "on_campus",
+            "delivery_location_id": str(ctx.ids["hostel_id"]),
+            "notes": f"{marker} #{i}",
+            "idempotency_key": f"{marker}-{i}",
+        }
+        body.update(body_extra)
+        return api.post("/api/orders", json_body=body, token=token,
+                        headers={"X-Campus-ID": str(ctx.ids["campus_id"])})
+    return _in_parallel(count, ctx.api.clone, work)
+
+
+def _orders_with_marker(ctx: Ctx, marker: str) -> list[dict]:
+    return [o for o in (ctx.db.select("orders", user_id=ctx.user_id) or [])
+            if str(o.get("notes") or "").startswith(marker)]
+
+
+def _drop_orders(ctx: Ctx, orders: list[dict]):
+    for order in orders:
+        oid = str(order.get("id"))
+        ctx.db.delete("order_items", order_id=oid)
+        ctx.db.delete("order_status_logs", order_id=oid)
+        ctx.db.delete("orders", id=oid)
+
+
+def _wallet_snapshot(ctx: Ctx) -> dict:
+    """Every volatile column of the customer's wallet, so a restore can be exact."""
+    row = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    return {k: v for k, v in row.items() if k not in ("id", "user_id", "created_at")}
+
+
+def _wallet_restore(ctx: Ctx, before: dict, label: str):
+    """Put back every wallet column this run moved. Never raises; warns if it cannot."""
+    now = ctx.db.select_one("wallets", user_id=ctx.user_id)
+    if now is None:
+        return
+    moved = {k: v for k, v in before.items() if now.get(k) != v}
+    if moved:
+        ctx.db.update("wallets", moved, user_id=ctx.user_id)
+    after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    still = {k: (before[k], after.get(k)) for k in moved if after.get(k) != before[k]}
+    if still:
+        ctx.warnings.append(f"{label}: could not fully restore the wallet: {still}")
+    else:
+        ctx.note(f"{label}: wallet restored" + (f" ({len(moved)} column(s))" if moved else ""))
+
+
+def _surgery(ctx: Ctx, reference: str, delta: float, campus: str):
+    """Nudge the wallet balance by `delta` (signed) and return the new balance.
+
+    Used to make the balance exactly one order's worth before the race. The ledger row
+    carries `reference_id=reference` so cleanup can delete precisely this run's row.
+    """
+    if delta > 0:
+        ctx.db.rpc("credit_wallet_atomic", {
+            "p_user_id": ctx.user_id, "p_amount": round(delta, 2),
+            "p_reason": "E2E concurrency probe", "p_reference_type": "e2e",
+            "p_reference_id": reference, "p_provider": "e2e",
+            "p_provider_reference": reference, "p_metadata": {}, "p_campus_id": campus,
+        })
+    elif delta < 0:
+        ctx.db.rpc("debit_wallet_atomic", {
+            "p_user_id": ctx.user_id, "p_amount": round(-delta, 2),
+            "p_reason": "E2E concurrency probe", "p_reference_type": "e2e",
+            "p_reference_id": reference, "p_metadata": {}, "p_campus_id": campus,
+        })
+    return float((ctx.db.select_one("wallets", user_id=ctx.user_id) or {}).get("balance") or 0)
+
+
+def _undo_surgery(ctx: Ctx, reference: str):
+    for row in ctx.db.select("wallet_transactions", reference_id=reference):
+        ctx.db.delete("wallet_transactions", id=row["id"])
+
+
+@step("concurrency", "concurrency.replay_guard",
+      "the same idempotency key fired three times at once creates exactly one order",
+      writes=True, route="POST /api/orders", needs=("orders.place",))
+def s_replay_guard(ctx: Ctx):
+    _need_real_server(ctx, "the idempotency replay guard")
+    marker = f"E2E race replay {uuid.uuid4().hex[:10]}"
+    token = ctx.tokens["access"]
+    shared = f"{marker}-shared"                       # ONE key, three simultaneous calls
+
+    def work(i, api):
+        return api.post("/api/orders", json_body={
+            "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
+            "payment_method": "card",
+            "delivery_type": "on_campus",
+            "delivery_location_id": str(ctx.ids["hostel_id"]),
+            "notes": marker,
+            "idempotency_key": shared,
+        }, token=token, headers={"X-Campus-ID": str(ctx.ids["campus_id"])})
+
+    results = _in_parallel(3, ctx.api.clone, work)
+    orders = _orders_with_marker(ctx, marker)
+    try:
+        errors = [r[1] for r in results if r[0] == "error"]
+        expect(not errors, f"a concurrent request blew up instead of answering: {errors[:2]}")
+        statuses = [r[1].status for r in results if r[0] == "ok"]
+        expect(not [x for x in statuses if x >= 500],
+               f"a concurrent call answered 5xx: {statuses}")
+        expect(len(orders) == 1,
+               f"three simultaneous calls with one idempotency key created {len(orders)} "
+               f"orders (statuses {statuses}) — the replay guard did not hold")
+        ctx.note(f"3 simultaneous calls, statuses {statuses}, 1 order created")
+    finally:
+        _drop_orders(ctx, orders)
+
+
+@step("concurrency", "concurrency.wallet_no_overdraft",
+      "two wallet orders racing one balance: one succeeds, the balance never goes negative",
+      writes=True, route="POST /api/orders", needs=("orders.place", "orders.fund_wallet"))
+def s_wallet_no_overdraft(ctx: Ctx):
+    """The classic double-spend: both requests pass the balance check, both debit.
+
+    `_check_kitchen_capacity` and the wallet pre-check both run *before* the RPC that
+    actually moves money, so only the database can stop the second debit. The balance is
+    made exactly one order's worth first — if it already covers two, nothing is proven.
+    """
+    _need_real_server(ctx, "the wallet double-spend race")
+    order = ctx.db.select_one("orders", id=ctx.ids.get("order_id")) or {}
+    total = float(order.get("total_amount") or 0)
+    if total <= 0:
+        raise Skip(f"cannot size the race: the placed order has total_amount={order.get('total_amount')}")
+
+    reference = f"E2E-RACE-{uuid.uuid4().hex[:12]}"
+    marker = f"E2E race wallet {uuid.uuid4().hex[:10]}"
+    before = _wallet_snapshot(ctx)
+    balance = float(before.get("balance") or 0)
+    try:
+        if balance < total:
+            balance = _surgery(ctx, reference, total - balance, str(ctx.ids["campus_id"]))
+            ctx.note(f"topped the wallet up by ₦{total - float(before.get('balance') or 0):.2f} "
+                     f"to make it exactly one order's worth (₦{total:.2f})")
+        elif balance >= 2 * total:
+            balance = _surgery(ctx, reference, total - balance, str(ctx.ids["campus_id"]))
+            ctx.note(f"trimmed the wallet to ₦{total:.2f} through debit_wallet_atomic so the "
+                     f"balance covers exactly one order")
+        expect(abs(balance - total) < 0.01,
+               f"could not make the wallet exactly ₦{total:.2f} (it is ₦{balance:.2f}) — "
+               "this run cannot prove anything, so it will not claim to")
+
+        results = _race_orders(ctx, marker, 2, ctx.tokens["access"], {"payment_method": "wallet"})
+        orders = _orders_with_marker(ctx, marker)
+        statuses = [r[1].status for r in results if r[0] == "ok"]
+        errors = [r[1] for r in results if r[0] == "error"]
+        expect(not errors, f"a concurrent request blew up: {errors[:2]}")
+        expect(not [x for x in statuses if x >= 500], f"a concurrent call answered 5xx: {statuses}")
+        wins = [x for x in statuses if 200 <= x < 300]
+        expect(len(wins) == 1,
+               f"{len(wins)} of two simultaneous wallet orders succeeded on a balance that "
+               f"covers one — the wallet debit is not atomic (statuses {statuses})")
+        expect(len(orders) == 1,
+               f"{len(orders)} orders were created for one order's worth of balance (statuses {statuses})")
+
+        after = float((ctx.db.select_one("wallets", user_id=ctx.user_id) or {}).get("balance") or 0)
+        expect(after >= -0.001, f"the wallet balance went negative: ₦{after:.2f}")
+        expect(abs(after - (total - total)) < 0.01,
+               f"after exactly one debit the balance should be ₦0.00, it is ₦{after:.2f}")
+        ctx.note(f"one order won, the other was refused ({statuses}); balance ₦{after:.2f}")
+    finally:
+        _drop_orders(ctx, _orders_with_marker(ctx, marker))
+        _undo_surgery(ctx, reference)
+        _wallet_restore(ctx, before, "wallet race")
+
+
+@step("concurrency", "concurrency.reward_single_use",
+      "one reward claimed by two simultaneous checkouts buys exactly one order",
+      writes=True, route="POST /api/orders", needs=("orders.place",))
+def s_reward_single_use(ctx: Ctx):
+    """A reward is spendable once. Two carts holding the same redemption, checked out at
+    the same time, must not both get it — `hg_claim_reward_redemption_for_order` does the
+    conditional update, and this is the only way to find out whether it holds."""
+    _need_real_server(ctx, "the reward double-claim race")
+
+    reward = (ctx.db.select("rewards", is_active="true", limit=1) or [])
+    if not reward:
+        raise Skip("no active rewards row to base a redemption on")
+    redemption = None
+    try:
+        redemption = ctx.db.insert("reward_redemptions", {
+            "user_id": ctx.user_id, "reward_id": reward[0]["id"], "status": "fulfilled",
+            "delivery_mode": "next_order",
+        })
+    except Failed as exc:
+        raise Skip(f"could not provision a fulfilled redemption row ({exc}) — the schema "
+                   "may need more columns; the race cannot be set up from here")
+    redemption_id = str((redemption or {}).get("id") or "")
+    if not redemption_id:
+        raise Skip("the redemption row was not persisted")
+    ctx.track_infra("reward_redemptions", redemption_id)
+
+    marker = f"E2E race reward {uuid.uuid4().hex[:10]}"
+    try:
+        results = _race_orders(ctx, marker, 2, ctx.tokens["access"],
+                               {"redemption_id": redemption_id})
+        orders = _orders_with_marker(ctx, marker)
+        statuses = [r[1].status for r in results if r[0] == "ok"]
+        expect(not [x for x in statuses if x >= 500], f"a concurrent call answered 5xx: {statuses}")
+        wins = [x for x in statuses if 200 <= x < 300]
+
+        row = ctx.db.select_one("reward_redemptions", id=redemption_id) or {}
+        attached = str(row.get("attached_order_id") or "")
+        expect(len(orders) <= 1,
+               f"two simultaneous checkouts on one reward created {len(orders)} orders "
+               f"(statuses {statuses})")
+        expect(bool(attached),
+               "neither checkout claimed the reward (attached_order_id is still empty) — "
+               "the reward was silently ignored")
+        expect(orders and attached == str(orders[0]["id"]),
+               f"the reward is attached to {attached}, which is not the order this run "
+               f"created ({[o.get('id') for o in orders]})")
+        expect(len(wins) <= 1,
+               f"both checkouts succeeded on a single reward (statuses {statuses})")
+        ctx.note(f"one reward, two simultaneous checkouts: statuses {statuses}, "
+                 f"claimed by {attached[:8]}")
+    finally:
+        _drop_orders(ctx, _orders_with_marker(ctx, marker))
+        ctx.db.delete("reward_redemptions", id=redemption_id)
+
+
+@step("concurrency", "concurrency.free_side_single_use",
+      "one free-side credit spent by two simultaneous checkouts is decremented once",
+      writes=True, route="POST /api/orders", needs=("orders.place",))
+def s_free_side_single_use(ctx: Ctx):
+    """Same shape for free sides: the credit decrement is a compare-and-set, so two carts
+    racing one credit must consume it once and never leave credits_remaining negative."""
+    _need_real_server(ctx, "the free-side double-spend race")
+    campus = ctx.ids.get("campus_id")
+    items = [i for i in (ctx.db.select("free_side_items", is_active="true") or [])
+             if i.get("campus_id") in (campus, None)]
+    if not items:
+        raise Skip("no active free_side_items row for this campus")
+    try:
+        credit = ctx.db.insert("free_side_credits", {
+            "user_id": ctx.user_id, "campus_id": campus, "credits_remaining": 1,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        })
+    except Failed as exc:
+        raise Skip(f"could not create a free_side_credits row ({exc})")
+    credit_id = str((credit or {}).get("id") or "")
+    if not credit_id:
+        raise Skip("the credit row was not persisted")
+    ctx.track_infra("free_side_credits", credit_id)
+
+    selection = ctx.api.post("/api/free-sides/select", json_body={"free_side_item_id": items[0]["id"]},
+                             token=ctx.tokens["access"])
+    if selection.status == 403:
+        raise Skip(f"free_side_credits feature is off — {selection.snippet(120)}")
+    if selection.status not in (200, 201):
+        raise Skip(f"could not select a free side: {selection.status} {selection.snippet(120)}")
+    sel_id = str(field(selection.data or {}, "id")
+                 or ((selection.data or {}).get("selection") or {}).get("id") or "")
+    if not sel_id:
+        rows = ctx.db.select("cart_free_side_selections", user_id=ctx.user_id)
+        sel_id = str(rows[0]["id"]) if rows else ""
+    if sel_id:
+        ctx.track_infra("cart_free_side_selections", sel_id)
+
+    marker = f"E2E race free-side {uuid.uuid4().hex[:10]}"
+    try:
+        results = _race_orders(ctx, marker, 2, ctx.tokens["access"], {})
+        orders = _orders_with_marker(ctx, marker)
+        statuses = [r[1].status for r in results if r[0] == "ok"]
+        expect(not [x for x in statuses if x >= 500], f"a concurrent call answered 5xx: {statuses}")
+
+        row = ctx.db.select_one("free_side_credits", id=credit_id) or {}
+        remaining = int(row.get("credits_remaining") or 0)
+        expect(remaining >= 0,
+               f"credits_remaining went negative ({remaining}) — the decrement is not guarded")
+        expect(remaining == 0,
+               f"the credit was not consumed (credits_remaining={remaining})")
+        left = ctx.db.select("cart_free_side_selections", id=sel_id) if sel_id else []
+        expect(len(orders) <= 1,
+               f"one free-side credit produced {len(orders)} orders (statuses {statuses})")
+        ctx.note(f"one credit, two simultaneous checkouts: statuses {statuses}, "
+                 f"credits_remaining={remaining}, selection "
+                 f"{'consumed' if not left else 'still present'}")
+    finally:
+        _drop_orders(ctx, _orders_with_marker(ctx, marker))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Phase — authorization: who must NOT be able to reach what
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The security phase asks whether a route *lost* its gate. This phase asks the harder
+# question: does the gate that is there actually separate the roles — a customer from the
+# admin surface, one campus's staff from another's data, one rider from another's orders.
+#
+# Every probe below attacks with a value that cannot match real data (a fresh UUID, a
+# probe string), so a route that turns out to be missing its gate still cannot touch a
+# row: it 404s on the id. That is what makes it safe to sweep the whole surface.
+
+_ADMIN_SURFACE_FALLBACK = (
+    # Used only when the suite cannot build the app in-process (--base-url on a machine
+    # without the backend source): the admin.py surface plus the busiest staff routes.
+    "GET /api/admin/orders", "GET /api/admin/users", "GET /api/admin/settings",
+    "POST /api/admin/cron/<job_name>",
+    "GET /api/admin/users/<user_id>", "GET /api/admin/users/<user_id>/orders",
+    "PATCH /api/admin/users/<user_id>/role", "GET /api/admin/users/<user_id>/hp",
+    "GET /api/admin/users/<user_id>/wallet", "POST /api/admin/users/<user_id>/deactivate",
+    "POST /api/admin/users/<user_id>/activate",
+    "PATCH /api/admin/delivery-windows/<window_id>",
+    "POST /api/admin/delivery-windows/<window_id>/close",
+    "POST /api/admin/delivery-windows/<window_id>/reopen",
+    "PATCH /api/admin/ordering-windows/<window_id>",
+    "GET /api/admin/delivery-batches/<batch_id>", "PATCH /api/admin/delivery-batches/<batch_id>",
+    "DELETE /api/admin/delivery-batches/<batch_id>",
+    "GET /api/admin/delivery-batches/<batch_id>/orders",
+    "PATCH /api/admin/promo-codes/<promo_id>", "GET /api/admin/promo-codes/<promo_id>/uses",
+    "POST /api/admin/abandoned-carts/<cart_id>/nudge",
+    "PATCH /api/admin/exclusive-spin-pool/<prize_id>",
+    "DELETE /api/admin/exclusive-spin-pool/<prize_id>",
+    "GET /api/admin/campuses/<campus_id>/location",
+    "PATCH /api/admin/campuses/<campus_id>/location",
+    "PATCH /api/admin/feature-flags/<flag_name>", "GET /api/admin/categories",
+    "PATCH /api/admin/items/<item_id>", "PATCH /api/admin/redemptions/<redemption_id>",
+    "PATCH /api/admin/batches/<batch_id>/pay", "GET /api/admin/payments/<rider_id>",
+)
+
+
+def _attacker_customer(ctx: Ctx):
+    """A customer session for the sweeps: the signed-in one, or a throwaway.
+
+    Returns (token, user_id_to_drop, label). The signed-in session is the realistic
+    attacker, but a sweep must also be runnable on its own (`--only authz`) before any
+    account exists, so it falls back to provisioning one — and drops it afterwards.
+    """
+    token = ctx.tokens.get("access")
+    if token:
+        return token, None, "signed-in customer"
+    user_id, token, why = _provision_role_user(ctx, "customer", str(ctx.ids.get("campus_id") or ""))
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"no customer session and none could be provisioned: {why}")
+    return token, user_id, "throwaway customer"
+
+
+def _admin_surface() -> tuple[list[tuple[str, str]], str]:
+    """Every route whose gate allows admin/super_admin. Returns ([(method, rule)], source).
+
+    Loaded from the live URL map so a route added tomorrow is swept without editing this
+    file. The gate is read off the view function's closure — the same tuple
+    `require_role` closes over — so it reflects the code as loaded, not a copy.
+    """
+    try:
+        sys.path.insert(0, str(BACKEND_ROOT))
+        os.environ.setdefault("FLASK_ENV", "development")
+        from app import create_app
+        from app.config import config_map
+        app = create_app(config_map["development"])
+    except Exception as exc:                                        # noqa: BLE001
+        print(f"    (live route map unavailable: {exc} — using the curated list)",
+              file=sys.stderr)
+        out = []
+        for entry in _ADMIN_SURFACE_FALLBACK:
+            method, _, rule = entry.partition(" ")
+            out.append((method, rule))
+        return out, "curated fallback"
+
+    def roles_of(view):
+        """The role tuple require_role closed over, if this view is role-gated."""
+        fn = view
+        for _ in range(4):                     # @wraps chains: walk __wrapped__ too
+            for cell in (getattr(fn, "__closure__", None) or ()):
+                try:
+                    value = cell.cell_contents
+                except ValueError:
+                    continue
+                if (isinstance(value, tuple) and value
+                        and all(isinstance(v, str) for v in value)
+                        and {"admin", "super_admin", "kitchen", "rider"} & set(value)):
+                    return value
+            fn = getattr(fn, "__wrapped__", None)
+            if fn is None:
+                break
+        return None
+
+    routes, ungated = [], []
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint == "static":
+            continue
+        path = str(rule.rule)
+        roles = roles_of(app.view_functions[rule.endpoint])
+        # Staff gates only. `("admin",)` expands to admin+super_admin at request time,
+        # and `("super_admin",)` alone is the most sensitive kind (cron triggers, flag
+        # writes) — a customer or rider must be refused by both.
+        if not roles or not ({"admin", "super_admin"} & set(roles)):
+            # A path that *looks* administrative but carries no staff gate would be
+            # silently absent from the sweep below — so it is a finding, not a skip.
+            if "/admin/" in path:
+                ungated.append(path)
+            continue
+        for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
+            routes.append((method, path))
+    if ungated:
+        raise Failed("administrative-looking path(s) with no staff role gate at all: "
+                     + ", ".join(sorted(set(ungated)))
+                     + " — add @require_role or move them out of /admin/")
+    routes.sort()
+    return routes, "live URL map"
+
+
+def _probe_path(rule: str, placeholder: str) -> str:
+    """Fill every URL parameter. Defaults to a UUID nothing can match."""
+    def fill(match):
+        name = match.group(1)
+        if "id" in name.lower():
+            return placeholder
+        return "e2e-authz-probe"
+    return re.sub(r"<[^>]*?([A-Za-z_][A-Za-z0-9_]*)>", fill, rule)
+
+
+def _sweep_admin_surface(ctx: Ctx, token: str, label: str) -> tuple[int, int]:
+    """Probe every admin-gated route with `token`. Returns (probed, complaints)."""
+    routes, source = _admin_surface()
+    placeholder = str(uuid.uuid4())
+    leaked, crashed = [], []
+    for method, rule in routes:
+        path = _probe_path(rule, placeholder)
+        if ctx.api.base_url:
+            resp = ctx.api.request(method, path, token=token, params={"campus_id": placeholder})
+        else:
+            resp = ctx.api.request(method, path, token=token)
+        if 200 <= resp.status < 300:
+            leaked.append(f"{method} {path} -> {resp.status}")
+        elif resp.status >= 500:
+            crashed.append(f"{method} {path} -> {resp.status} {resp.snippet(80)}")
+
+    ctx.note(f"{label}: probed {len(routes)} admin-gated route(s) from the {source}")
+    if crashed:
+        # A 5xx after the gate was supposed to refuse means the handler ran (or the
+        # check itself fell over). Not a clean leak, but not something to ignore.
+        ctx.warnings.append(
+            f"{label}: {len(crashed)} admin route(s) answered 5xx instead of refusing — "
+            + "; ".join(crashed[:4]) + (" …" if len(crashed) > 4 else ""))
+    if leaked:
+        raise Failed(
+            f"{label}: {len(leaked)} admin route(s) answered a NON-admin session with 2xx: "
+            + "; ".join(leaked[:6]) + (" …" if len(leaked) > 6 else ""))
+    return len(routes), len(crashed)
+
+
+@step("authz", "authz.admin_routes_refuse_customer",
+      "every admin-gated route refuses a customer token (200 must be impossible)",
+      writes=True, route="")
+def s_admin_routes_refuse_customer(ctx: Ctx):
+    """Walk the whole admin-gated surface with a customer token.
+
+    This is the broad version of `security.permissions_matrix`: that one covers the
+    parameterless admin GETs, this one covers every method on every staff-gated rule,
+    parameterised routes included. A route that loses its `@require_role` answers 2xx here
+    and fails the run — which is the whole point, because a missing decorator is invisible
+    in review and silent in production.
+    """
+    token, throwaway, label = _attacker_customer(ctx)
+    try:
+        probed, crashed = _sweep_admin_surface(ctx, token, label)
+        expect(probed > 20, f"the sweep only found {probed} admin routes — the loader is broken")
+        ctx.note(f"{label} refused by all {probed} admin-gated route(s)"
+                 + (f" ({crashed} answered 5xx, see warnings)" if crashed else ""))
+    finally:
+        _drop_role_user(ctx, throwaway)
+
+
+@step("authz", "authz.admin_routes_refuse_rider",
+      "a rider session cannot reach the admin surface",
+      writes=True, route="", needs=("auth.login",))
+def s_admin_routes_refuse_rider(ctx: Ctx):
+    """Same sweep, attacker is a rider.
+
+    Staff roles are not interchangeable: a rider who can read /api/admin/* sees every
+    campus's orders and margins. `require_role("admin")` must not let a rider through,
+    and a rider-specific route must not leak into the admin surface.
+    """
+    rider_id, rider_token, why = _provision_role_user(ctx, "rider", str(ctx.ids["campus_id"]))
+    if not rider_id or not rider_token:
+        _drop_role_user(ctx, rider_id)
+        raise Skip(f"could not provision a rider session: {why}")
+    try:
+        probed, crashed = _sweep_admin_surface(ctx, rider_token, "rider token")
+        ctx.note(f"rider token refused by all {probed} admin-gated route(s)"
+                 + (f" ({crashed} answered 5xx, see warnings)" if crashed else ""))
+    finally:
+        _drop_role_user(ctx, rider_id)
+
+
+@step("authz", "authz.cross_campus_kitchen_scope",
+      "one campus's kitchen cannot advance another campus's order, and no query param widens it",
+      writes=True, route="POST /api/kitchen/batch/<batch_id>/advance",
+      needs=("auth.login", "orders.window", "public.menu", "public.hostels", "public.campuses"))
+def s_cross_campus_kitchen_scope(ctx: Ctx):
+    """Campus scoping, tested with a real session on the wrong campus.
+
+    A kitchen account belongs to campus A and carries its campus in `profiles.campus_id`;
+    `_resolve_kitchen_campus_id` reads that for staff. An order in campus B — with a batch
+    key of its own, so a bug here cannot advance anybody else's order either — must be
+    invisible to A's kitchen, and `?campus_id=<B>` must NOT widen the scope (only a
+    super_admin may choose a campus, and even then only one).
+    """
+    own_campus = str(ctx.ids["campus_id"])
+    campuses = ctx.db.select("campuses", is_active="true") or []
+    other = next((str(c["id"]) for c in campuses if str(c.get("id")) != own_campus), "")
+    if not other:
+        raise Skip("no second active campus exists to test cross-campus isolation against")
+
+    order_id, batch_key, _placed = _place_pinned_order(
+        ctx, own_campus, "E2E cross-campus probe — safe to ignore")
+    before = str((ctx.db.select_one("orders", id=order_id) or {}).get("status") or "")
+
+    kitchen_id, kitchen_token, why = _provision_role_user(ctx, "kitchen", other)
+    if not kitchen_token:
+        _drop_role_user(ctx, kitchen_id)
+        raise Skip(f"could not provision a kitchen session on the other campus: {why}")
+    try:
+        # 1. Without any parameter: the endpoint must scope to the kitchen's own campus.
+        r = ctx.api.post(f"/api/kitchen/batch/{batch_key}/advance",
+                         json_body={"notes": "E2E cross-campus probe"},
+                         token=kitchen_token)
+        advanced = [a.get("order_id") for a in ((r.data or {}).get("advanced") or [])]
+        expect(order_id not in advanced,
+               f"a kitchen session on campus {other} advanced an order on campus {own_campus}",
+               r)
+
+        # 2. With ?campus_id=<the victim's campus>: a staff token must not be able to
+        #    choose a campus at all — that parameter is a super_admin affordance.
+        r2 = ctx.api.post(f"/api/kitchen/batch/{batch_key}/advance",
+                          json_body={"notes": "E2E cross-campus probe"},
+                          token=kitchen_token, params={"campus_id": own_campus})
+        advanced2 = [a.get("order_id") for a in ((r2.data or {}).get("advanced") or [])]
+        expect(order_id not in advanced2,
+               f"?campus_id={own_campus} let the other campus's kitchen advance the order", r2)
+
+        after = str((ctx.db.select_one("orders", id=order_id) or {}).get("status") or "")
+        expect(after == before,
+               f"the cross-campus attempts changed the order status: {before} -> {after}")
+        ctx.note(f"kitchen on campus {other} could not touch campus {own_campus}'s order "
+                 f"(status stayed '{after}')")
+    finally:
+        _drop_role_user(ctx, kitchen_id)
+
+
+@step("authz", "authz.rider_cannot_touch_another_riders_order",
+      "a rider cannot pick up or read an order assigned to a different rider",
+      writes=True, route="POST /api/riders/orders/<order_id>/pickup",
+      needs=("auth.login", "orders.window", "public.menu", "public.hostels"))
+def s_rider_isolation(ctx: Ctx):
+    """Two riders, one order. The one who is NOT assigned must be refused.
+
+    `delivery_assignments` is the authority for who may act on an order
+    (`_effective_rider_id`). The order is placed by the customer, assigned to rider A, and
+    attacked by rider B: pickup, deliver, and the order-scoped read. B must get 403/404
+    for all three — a 200 means any rider can complete any delivery, which is both a data
+    leak and a payout problem.
+    """
+    campus = str(ctx.ids["campus_id"])
+    order_id, _batch_key, _placed = _place_pinned_order(
+        ctx, campus, "E2E rider-isolation probe — safe to ignore")
+
+    rider_a_id, _a_token, _why_a = _provision_role_user(ctx, "rider", campus)
+    rider_b_id, b_token, why_b = _provision_role_user(ctx, "rider", campus)
+    assignment_id = None
+    try:
+        if not rider_a_id or not rider_b_id or not b_token:
+            raise Skip(f"could not provision both rider sessions ({why_b})")
+        assignment = ctx.db.insert("delivery_assignments", {
+            "order_id": order_id, "rider_id": rider_a_id, "status": "assigned",
+            "note": "E2E rider-isolation probe — safe to ignore",
+        })
+        assignment_id = assignment.get("id")
+        ctx.track_infra("delivery_assignments", assignment_id)
+        if not assignment_id:
+            raise Skip(f"could not assign the order to rider A: {assignment}")
+
+        for method, path in (("POST", f"/api/riders/orders/{order_id}/pickup"),
+                             ("POST", f"/api/riders/orders/{order_id}/deliver"),
+                             ("GET", f"/api/riders/call/{order_id}")):
+            r = ctx.api.request(method, path, token=b_token)
+            if 200 <= r.status < 300:
+                raise Failed(
+                    f"rider B reached {method} {path} with status {r.status} on an order "
+                    f"assigned to rider A — delivery_assignments is not isolating riders", r)
+            expect(r.status in (400, 403, 404, 409),
+                   f"{method} {path} answered {r.status} for the wrong rider "
+                   f"(expected a refusal) — {r.snippet(100)}", r)
+
+        # The wrong rider's history must not mention the order either.
+        history = ctx.api.get("/api/riders/history", token=b_token)
+        if history.status == 200 and history.text:
+            expect(order_id not in history.text,
+                   f"rider B's history lists an order assigned to rider A ({order_id})")
+        ctx.note(f"rider B was refused pickup/deliver/read on rider A's order {order_id}"
+                 f" (rider history {'checked' if history.status == 200 else 'unavailable'})")
+    finally:
+        if assignment_id:
+            ctx.db.delete("delivery_assignments", id=assignment_id)
+        _drop_role_user(ctx, rider_a_id)
+        _drop_role_user(ctx, rider_b_id)
 
 
 # Every parameterless admin GET route in the app. A customer token must never get a
@@ -2469,6 +3468,8 @@ def main(argv=None) -> int:
                              "Makefile shorthand: WRITE_EXISTING=1")
     parser.add_argument("--fund-wallet", type=float, default=3000.0,
                         help="₦ credited to the test wallet before ordering (0 disables)")
+    parser.add_argument("--with-cron", action="store_true",
+                        help="run every scheduled job in the suite (mutates shared data)")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--env-file", default=str(BACKEND_ROOT / ".env"))
     args = parser.parse_args(argv)
