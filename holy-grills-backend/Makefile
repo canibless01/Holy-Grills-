@@ -25,6 +25,9 @@ else
   BIN := $(VENV)/bin
 endif
 RUN := $(BIN)/python
+# Replit exports PIP_USER=true; pip then refuses to install into a venv
+# ("Can not perform a '--user' install"). Scope the override to our commands.
+PIP := PIP_USER=false $(BIN)/pip
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv install env check contract selfcheck smoke e2e verify plans server worker clean reset
@@ -35,6 +38,7 @@ help:  ## Show this help
 	@echo "  make setup      Create .venv, install dependencies, create .env if missing"
 	@echo "  make check      Supabase connection preflight (keys, ref, signatures, tables)"
 	@echo "  make contract   Verify every table/column/RPC the code uses exists in the DB"
+	@echo "  make audit      RLS/grants/RPC audit (+ duplicate table & function search)"
 	@echo "  make selfcheck  Offline: confirm the E2E suite's routes exist in the app"
 	@echo "  make smoke      Read-only end-to-end run (no writes at all)"
 	@echo "  make e2e        Full end-to-end run (test user created, then deleted)"
@@ -62,8 +66,8 @@ env:  ## Create .env from the template if it does not exist
 	fi
 
 install: venv  ## Install Python dependencies
-	@$(BIN)/pip install -q --upgrade pip
-	@$(BIN)/pip install -q -r requirements.txt
+	@$(PIP) install -q --upgrade pip
+	@$(PIP) install -q -r requirements.txt
 	@echo "deps:  installed"
 
 check:  ## Supabase connection preflight
@@ -71,6 +75,9 @@ check:  ## Supabase connection preflight
 
 contract:  ## Code ↔ database contract check
 	@$(RUN) scripts/contract_check.py
+
+audit:  ## Database audit: duplicates, RLS/grants, RPC behaviour (needs SUPABASE_DB_URL for the deep pass)
+	@$(RUN) scripts/db_audit.py $(ARGS)
 
 selfcheck:  ## Offline route check (no network)
 	@$(RUN) scripts/live_test.py --self-check
@@ -82,6 +89,8 @@ e2e:  ## Full end-to-end run with automatic cleanup
 	@$(RUN) scripts/live_test.py $(if $(BASE_URL),--base-url $(BASE_URL),) \
 		$(if $(ADMIN_TOKEN),--admin-token $(ADMIN_TOKEN),) \
 		$(if $(LOGIN_EMAIL),--login-email $(LOGIN_EMAIL) --login-password $(LOGIN_PASSWORD),) \
+		$(if $(CAMPUS_ID),--campus-id $(CAMPUS_ID),) \
+		$(if $(ADMIN_EMAIL),--admin-email $(ADMIN_EMAIL) --admin-password $(ADMIN_PASSWORD),) \
 		$(E2E_ARGS)
 
 verify: check contract e2e  ## Run every verification in order

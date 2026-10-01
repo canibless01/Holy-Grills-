@@ -204,7 +204,19 @@ and switches writes off unless you add `--write-existing`. Exit code is `0`
 when every executed step passed (`SKIP` is not a failure), `1` on any failure —
 so it can gate a deploy.
 
-### 5. Start the app and confirm
+### 5. Audit the database (RLS, grants, RPC behaviour, duplicates)
+
+```bash
+make audit                                        # inventory + deep pass (needs SUPABASE_DB_URL)
+make audit ARGS="--search credit"                 # does something for this already exist?
+make audit ARGS="--out docs/audit-report.md"      # write a report
+```
+
+Requires `SUPABASE_DB_URL` (Supabase → Project Settings → Database → Connection
+string) in `.env` for the deep pass — PostgREST cannot expose RLS policies,
+grants or function bodies. Full write-up: [`docs/DATABASE_AUDIT.md`](docs/DATABASE_AUDIT.md).
+
+### 6. Start the app and confirm
 
 ```bash
 python run.py
@@ -344,7 +356,9 @@ holy-grills-backend/
 │   ├── check_supabase.py    # Connection preflight (config + live probes)
 │   ├── contract_check.py    # Code ↔ database contract check (tables/columns/RPCs)
 │   └── live_test.py         # Playwright-style live end-to-end suite
-├── Makefile                 # make setup / check / contract / smoke / e2e / serve
+├── Makefile                 # make setup / check / contract / audit / smoke / e2e / server
+├── docs/
+│   └── DATABASE_AUDIT.md    # RLS/grants/RPC audit + the four open questions
 ├── .env.example             # Environment variable template
 ├── requirements.txt         # Python dependencies
 ├── Procfile                 # Gunicorn start command for deployment

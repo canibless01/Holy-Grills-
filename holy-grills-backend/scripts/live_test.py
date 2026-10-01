@@ -67,7 +67,7 @@ import sys
 import time
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -85,6 +85,12 @@ except ImportError:  # pragma: no cover
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 INSECURE_SECRETS = {"change-me-in-production", "change-me-to-a-long-random-string", ""}
 TEST_EMAIL_DOMAIN = "e2e.holygrills.test"
+# Used only when GET /api/campuses returns nothing usable and --campus-id was not
+# given. Every candidate is verified against the campuses table before use.
+FALLBACK_CAMPUS_IDS = (
+    "70000001-cafe-cafe-cafe-000000000001",
+    "70000002-cafe-cafe-cafe-000000000002",
+)
 DEFAULT_PASSWORD = "E2e-Passw0rd!2026"
 
 
@@ -253,6 +259,16 @@ class DB:
         rows = self.select(table, **filters)
         return rows[0] if rows else None
 
+    def insert(self, table: str, row: dict) -> dict:
+        """Insert one row and return it. Only used for fixtures this suite
+        creates and deletes itself (currently: a temporary ordering window)."""
+        resp = self.session.post(f"{self.url}/rest/v1/{table}", json=row,
+                                 headers=self._headers(), timeout=self.timeout)
+        if resp.status_code >= 400:
+            raise Failed(f"DB insert into {table} failed: HTTP {resp.status_code} {resp.text[:200]}")
+        payload = resp.json() if resp.content else []
+        return payload[0] if isinstance(payload, list) and payload else (payload or {})
+
     def rpc(self, name: str, params: dict):
         resp = self.session.post(f"{self.url}/rest/v1/rpc/{name}", json=params,
                                  headers=self._headers(), timeout=self.timeout)
@@ -371,11 +387,32 @@ def s_db(ctx: Ctx):
 
 @step("public", "public.campuses", "GET /api/campuses", route="GET /api/campuses")
 def s_campuses(ctx: Ctx):
+    """Pick a campus that really exists — the id is reused for registration,
+    ordering-window provisioning and campus-scoped reads, so a bad id cascades."""
     r = ctx.api.get("/api/campuses").check(200).expect_json()
-    campuses = [c for c in as_list(r.data, "campuses") if c.get("is_active", True)]
-    expect(bool(campuses), f"no active campus returned — {r.snippet()}", r)
-    ctx.ids["campus_id"] = campuses[0]["id"]
-    ctx.note(f"{len(campuses)} active campus(es); using {campuses[0].get('name')}")
+    active = [c for c in as_list(r.data, "campuses") if c.get("is_active", True) and c.get("id")]
+    expect(bool(active), f"no active campus returned — {r.snippet()}", r)
+
+    ordered, seen = [], set()
+    for candidate in ([ctx.opts.campus_id] if ctx.opts.campus_id else []) \
+            + [c["id"] for c in active] + list(FALLBACK_CAMPUS_IDS):
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+
+    chosen, source = None, ""
+    for candidate in ordered:
+        if ctx.db.select_one("campuses", id=candidate) is not None:
+            chosen, source = candidate, ("--campus-id" if candidate == ctx.opts.campus_id else
+                                         "campuses table" if candidate not in FALLBACK_CAMPUS_IDS
+                                         else "fallback list")
+            break
+    expect(bool(chosen),
+           "none of the candidate campus ids exist in the campuses table: " + ", ".join(ordered), r)
+    ctx.ids["campus_id"] = chosen
+    name = next((c.get("name") for c in active if c["id"] == chosen), "?")
+    ctx.note(f"campus {chosen} ({name}) verified via {source}; "
+             f"{len(active)} active campus(es) listed")
 
 
 @step("public", "public.categories", "GET /api/menu/categories", route="GET /api/menu/categories",
@@ -438,14 +475,12 @@ def s_windows(ctx: Ctx):
 @step("public", "public.window_status", "GET /api/orders/delivery-windows/status",
       route="GET /api/orders/delivery-windows/status")
 def s_window_status(ctx: Ctx):
+    """Public view, no campus selected — informational only.
+
+    Ordering is decided per campus, so this is the guest's-eye view; the
+    authoritative check runs in orders.window once the user is signed in."""
     r = ctx.api.get("/api/orders/delivery-windows/status").check(200).expect_json()
-    flag = find_bool(r.data, {"is_open", "open", "ordering_open", "accepting_orders",
-                              "is_ordering_open", "window_open"})
-    if flag is None:
-        payload = json.dumps(r.data).lower()
-        flag = "closed" not in payload and "unavailable" not in payload
-    ctx.ids["ordering_open"] = bool(flag)
-    ctx.note(f"ordering appears {'OPEN' if flag else 'CLOSED'}")
+    ctx.note(f"guest status: is_open={r.data.get('is_open')}")
 
 
 @step("public", "public.zones", "GET /api/orders/delivery-zones", route="GET /api/orders/delivery-zones")
@@ -746,15 +781,89 @@ def s_saved_move(ctx: Ctx):
 @step("cart", "saved.delete", "DELETE /api/saved/<id>", writes=True,
       route="DELETE /api/saved/<item_id>", needs=("saved.from_cart",))
 def s_saved_delete(ctx: Ctx):
-    ctx.api.delete(f"/api/saved/{ctx.ids['saved_id']}", token=ctx.tokens["access"]) \
-        .check(200, allow=(202, 204))
-    expect(ctx.db.select_one("saved_for_later", id=ctx.ids["saved_id"]) is None,
+    """Save a fresh item explicitly (POST /api/saved) and delete that one.
+
+    It must NOT reuse the row from saved.from_cart: move-to-cart already deletes
+    it, so deleting it again is a legitimate 404 — that was a test bug, not an
+    API bug."""
+    created = ctx.api.post("/api/saved",
+                           json_body={"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1},
+                           token=ctx.tokens["access"])
+    created.check(200, allow=(201,))
+    saved_id = str(field(created.data or {}, "id")
+                   or ((created.data or {}).get("saved") or {}).get("id") or "")
+    if not saved_id:
+        rows = ctx.db.select("saved_for_later", user_id=ctx.user_id)
+        expect(bool(rows), f"saved row was not created — {created.snippet()}", created)
+        saved_id = rows[0]["id"]
+    ctx.track("saved_for_later", saved_id)
+
+    ctx.api.delete(f"/api/saved/{saved_id}", token=ctx.tokens["access"]).check(200, allow=(202, 204))
+    expect(ctx.db.select_one("saved_for_later", id=saved_id) is None,
            "saved_for_later row still exists after DELETE")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Phase 6 — orders (money path)
 # ─────────────────────────────────────────────────────────────────────────────
+
+@step("orders", "orders.window", "ordering window is open for the test campus "
+      "(provisioned and cleaned up automatically if needed)",
+      writes=True, route="GET /api/orders/delivery-windows/status", needs=("auth.login",))
+def s_ensure_window(ctx: Ctx):
+    """`is_open` is per-campus and comes from the ordering_windows table:
+    a row for today (or this weekday) that is not closed and has capacity left.
+    If the campus has none, create one for today and delete it in cleanup —
+    the suite must never depend on rows someone inserted by hand.
+
+    Note: operating_hour_overrides is the *storefront* schedule and has no
+    effect on ordering; ordering_windows (or the 08:00-16:00 config fallback)
+    is what resolve_ordering_window enforces."""
+    campus = ctx.ids["campus_id"]
+    status_path = "/api/orders/delivery-windows/status"
+
+    def is_open():
+        r = ctx.api.get(status_path, token=ctx.tokens["access"],
+                        params={"campus_id": campus}).check(200).expect_json()
+        flag = find_bool(r.data, {"is_open", "open", "ordering_open", "accepting_orders",
+                                  "is_ordering_open", "window_open"})
+        return bool(flag), r
+
+    flag, r = is_open()
+    if flag:
+        ctx.ids["ordering_open"] = True
+        ctx.note("ordering already open for this campus")
+        return
+
+    today = (datetime.now(timezone.utc) + timedelta(hours=1)).date().isoformat()  # WAT
+    existing = ctx.db.select("ordering_windows", date=today, campus_id=campus)
+    if existing:
+        # A row exists but the window is closed/full — do not touch other people's data.
+        raise Skip(f"ordering_windows has a row for {today}/{campus} but it is closed or full "
+                   f"({json.dumps(existing[0])[:160]}) — fix it in the admin UI")
+
+    try:
+        row = ctx.db.insert("ordering_windows", {
+            "date": today,
+            "campus_id": campus,
+            "opens_at": "00:00",
+            "closes_at": "23:59",
+            "capacity": 50,
+            "is_closed": False,
+        })
+    except Failed as exc:
+        raise Skip(f"could not provision an ordering window ({exc})")
+
+    window_id = str((row or {}).get("id") or "")
+    if window_id:
+        ctx.track("ordering_windows", window_id)     # deleted in cleanup
+    ctx.note(f"provisioned a temporary ordering window for {today} "
+             f"(id {window_id or '?'}) — deleted in cleanup")
+
+    flag, r = is_open()
+    expect(flag, f"ordering still closed after provisioning — {r.snippet()}", r)
+    ctx.ids["ordering_open"] = True
+
 
 @step("orders", "orders.fund_wallet", "credit the test wallet via credit_wallet_atomic (Paystack RPC path)",
       writes=True, needs=("auth.login",))
@@ -787,10 +896,9 @@ def s_fund(ctx: Ctx):
 
 
 @step("orders", "orders.place", "POST /api/orders places a wallet-paid order",
-      writes=True, route="POST /api/orders", needs=("orders.fund_wallet", "public.hostels"))
+      writes=True, route="POST /api/orders",
+      needs=("orders.window", "orders.fund_wallet", "public.hostels"))
 def s_place_order(ctx: Ctx):
-    if not ctx.ids.get("ordering_open", True):
-        raise Skip("ordering window is closed right now")
     body = {
         "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
         "payment_method": "wallet",
@@ -993,12 +1101,30 @@ ADMIN_ROUTES = [
 ]
 
 
+@step("admin", "admin.login", "sign in as an admin (E2E_ADMIN_EMAIL/PASSWORD or --admin-token)",
+      route="POST /api/auth/login", needs=("preflight.health",))
+def s_admin_login(ctx: Ctx):
+    if ctx.opts.admin_token:
+        ctx.tokens["admin"] = ctx.opts.admin_token
+        ctx.note("using --admin-token")
+        return
+    email, password = ctx.opts.admin_email, ctx.opts.admin_password
+    if not (email and password):
+        raise Skip("set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD in .env "
+                   "(or pass --admin-token) to run the admin phase")
+    r = ctx.api.post("/api/auth/login", json_body={"email": email, "password": password})
+    r.check(200)
+    token = field(r.data or {}, "access_token") or ((r.data or {}).get("session") or {}).get("access_token")
+    expect(bool(token), f"admin login returned no access_token — {r.snippet()}", r)
+    role = (((r.data or {}).get("user") or {}).get("user_metadata") or {}).get("role")
+    ctx.tokens["admin"] = token
+    ctx.note(f"signed in as {email}" + (f" (role claim: {role})" if role else ""))
+
+
 def _admin_step(sid: str, route: str, path: str):
-    @step("admin", sid, route, route=route, needs=("preflight.health",))
+    @step("admin", sid, route, route=route, needs=("admin.login",))
     def runner(ctx: Ctx, _path=path):
-        if not ctx.opts.admin_token:
-            raise Skip("no --admin-token supplied")
-        ctx.api.get(_path, token=ctx.opts.admin_token).check(200)
+        ctx.api.get(_path, token=ctx.tokens.get("admin")).check(200)
     return runner
 
 
@@ -1105,6 +1231,13 @@ def main(argv=None) -> int:
                         help="verify every referenced route exists in the app (no network)")
     parser.add_argument("--verbose", action="store_true", help="print response snippets and notes")
     parser.add_argument("--admin-token", default="", help="enables the admin phase")
+    parser.add_argument("--campus-id", default="",
+                        help="campus UUID to register the test user with "
+                             "(default: E2E_CAMPUS_ID, then the campuses list)")
+    parser.add_argument("--admin-email", default="",
+                        help="admin login for the admin phase (default: E2E_ADMIN_EMAIL)")
+    parser.add_argument("--admin-password", default="",
+                        help="admin password (default: E2E_ADMIN_PASSWORD)")
     parser.add_argument("--login-email", default="",
                         help="sign in as an existing account instead of registering a test user")
     parser.add_argument("--login-password", default="", help="password for --login-email")
@@ -1116,6 +1249,16 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--env-file", default=str(BACKEND_ROOT / ".env"))
     args = parser.parse_args(argv)
+
+    # .env first: the E2E_* defaults below are read from it (a fresh clone has
+    # no .env — `make env` creates one from the template).
+    env_file = Path(args.env_file)
+    if load_dotenv is not None and env_file.exists():
+        load_dotenv(env_file, override=False)
+
+    args.campus_id = args.campus_id or os.environ.get("E2E_CAMPUS_ID", "")
+    args.admin_email = args.admin_email or os.environ.get("E2E_ADMIN_EMAIL", "")
+    args.admin_password = args.admin_password or os.environ.get("E2E_ADMIN_PASSWORD", "")
 
     # ── plan / self-check (offline) ──────────────────────────────────────────
     if args.list:
@@ -1136,15 +1279,11 @@ def main(argv=None) -> int:
     if args.self_check:
         return self_check()
 
-    env_file = Path(args.env_file)
-    if load_dotenv is not None and env_file.exists():
-        load_dotenv(env_file, override=False)
-
     url = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
     key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
     if not url or not key:
-        print("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing — run scripts/check_supabase.py first.",
-              file=sys.stderr)
+        print("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing — run `make env` then "
+              "scripts/check_supabase.py.", file=sys.stderr)
         return 2
 
     secret = (os.environ.get("SECRET_KEY") or os.environ.get("SESSION_SECRET") or "").strip()
