@@ -251,7 +251,7 @@ def redeem_reward(reward_id):
     hp_cost = reward.get("hp_cost", 0)
 
     try:
-        rpc_res = db.rpc("hg_redeem_reward", {
+        rpc_res = get_db().rpc("hg_redeem_reward", {
             "p_user_id": g.user_id,
             "p_reward_id": reward_id,
         })

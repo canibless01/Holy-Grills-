@@ -705,10 +705,9 @@ def process_flash_redeem(reward_id: str, user_id: str) -> dict:
     """Flash redemption: per-sale % discount, first N users only, time-windowed.
     Delegates the whole check+redeem to an atomic Supabase RPC so concurrent
     requests can't oversell the slot limit or bypass the discount config."""
-    db = get_user_client()
     from app.messages import MSG, resolve_msg
 
-    res = db.rpc("hg_redeem_flash_reward_atomic", {
+    res = get_db().rpc("hg_redeem_flash_reward_atomic", {
         "p_user_id": user_id,
         "p_reward_id": reward_id,
     })
