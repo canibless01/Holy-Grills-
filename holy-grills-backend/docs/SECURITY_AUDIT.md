@@ -660,7 +660,7 @@ because the expensive failures are the ones nobody checked.
 |------|----------|----------------|
 | Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 70/70 route-bearing modules import (all of `app/`, `__init__.py` excluded); app boots with 405 routes | this sandbox |
 | Routes the suite calls | `make selfcheck` — 154 declared routes all exist | this sandbox |
-| Order follow-up steps | `flow.order_followups` + `flow.squad_members` executed against a canned API/DB harness: they call the intended routes, refuse wrongly-shaped responses, delete the rows they cause and restore the account's HP counters | this sandbox |
+| The 17 steps added in the order / fixture / provider passes | executed against a canned API/DB harness (in-memory tables): each calls its intended routes, refuses wrongly-shaped responses, deletes every fixture row it created and restores the counters it moved. Two real bugs were found this way (a leaked `events` row and a leaked `marketplace_listings` row on the failure path) | this sandbox |
 | Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
@@ -681,6 +681,10 @@ make flow   BASE_URL=http://localhost:5000 WEBHOOK_SECRET=<paystack secret> \
 make e2e    BASE_URL=http://localhost:5000 WRITE_EXISTING=1 \
             LOGIN_EMAIL=claude.audit.test1@holygrills.test LOGIN_PASSWORD='ClaudeAudit!Test1' \
             E2E_ARGS=--with-cron                   # optional: invoke all 17 scheduled jobs
+make e2e    BASE_URL=http://localhost:5000 E2E_ARGS="--only provider --provider-writes"
+                                                   # SANDBOX KEYS ONLY: opens real Paystack
+                                                   # test objects (a card initialization and
+                                                   # a dedicated virtual account)
 ```
 
 Notes for that run:
@@ -697,6 +701,14 @@ Notes for that run:
   working campus read and a finished `auth.login`; squads additionally needs the
   `squad_orders` feature flag on, and the spin and graduation happy paths skip when the
   feature is off or no eligible academic level exists.
+* The catalogue-fixture steps (`surface.event_lifecycle`, `surface.marketplace_lifecycle`,
+  `surface.hp_flash_redeem`) create a real event / listing / flash sale with the service role
+  and delete it again — on a live catalogue they exist for seconds and carry an
+  "E2E probe — safe to delete" title. A database that refuses the fixture prints a Skip with
+  the reason; it is not a failure.
+* The `provider.*` steps are safe by default: they only walk the validation, idempotent and
+  forged-reference branches. `--provider-writes` (sandbox/test keys only) adds the two calls
+  that open a Paystack object. Never pass it against live keys.
 * The order follow-ups run with `--only flow.order_followups` (or as part of `make flow`);
   `--only` pulls the whole chain they depend on, so that one command places, pays, advances
   and delivers an order before it tests what the customer does with it.
@@ -737,13 +749,14 @@ that full base, so they can be read directly against `make selfcheck` ("405 app 
 
 | | |
 |---|---|
-| routes the suite **reaches** | **392 (96.8%)** — 66 before the flow pass, 68 before the authorization sweeps, 385 before the order follow-ups |
-| of those, routes **no test had ever touched before this round** | **325** — 241 with a permission assertion, 32 by the read sweep, 52 functionally (the 8 order follow-ups among them) |
-| routes that stay uncovered, and why | **13** — see the list below |
+| routes the suite **reaches** | **402 (99.3%)** — 66 before the flow pass, 68 before the authorization sweeps, 385 before the follow-up / fixture / provider passes |
+| of those, how they are covered | **140 asserted by a step**, **231 by the staff-permission sweep only** (a refusal proves the gate, not the handler), **31 by the read sweep only** (a clean answer proves no crash) |
+| routes that stay uncovered, and why | **3** — see the list below |
 | blueprints with **zero** exercised routes | **none** — all 43 are exercised (was 35 of 43) |
 | coverage is *reachable*, not guaranteed per run | steps skip by design when a feature is off, a secret is absent or a fixture does not exist — a run's real number is in its own summary |
 | role/permission assertions before this round | **1** (a wrong-password 401) → now 241 gated routes × 2 attacker roles |
 | routes the surface pass added | **19** (the eight blueprints that had none) |
+| routes the order / fixture / provider passes added | **17** — the 8 order follow-ups, 7 behind catalogue fixtures, 2 provider boundaries (1 more opt-in) |
 | webhook calls before the flow pass | **0** |
 | scheduled jobs invoked before this round | **0** |
 
@@ -937,43 +950,74 @@ path a multi-route step calls: 109 declared routes, all present in the app.
   member from a delivered order is refused (400) and resending to a registered member is
   refused (400). The member rows are deleted afterwards.
 
-### The 13 routes still not exercised, and why
+**Added in the fixture pass** — the seven routes that needed a catalogue row, each step
+inserting its own fixture with the service key and deleting it again (`track_infra` deletes
+it even if the run dies midway). A fixture the schema refuses, or a feature flag that is
+off, is a **Skip with the reason**, never a failure:
+
+* `surface.catering_request` — the public catering/partnership form: no token, a throwaway
+  address, asserts the stored row (`status=new`, the caller's campus) and that omitting the
+  required fields is a 400. The admin notifications the submit causes are deleted with it.
+* `surface.marketplace_request` — a vendor proposal on a throwaway customer: an invalid
+  vendor email is refused, a valid one is stored and attributed to its author. Row and
+  notifications deleted.
+* `surface.event_lifecycle` — publishes an event, then `register` (asserts the
+  `event_tickets` row belongs to that event and that customer), then `checkin` (asserts the
+  `event_checkins` row and the HP it credits), then a **second check-in must be 400** — a
+  ticket is not reusable. Event, tickets, check-ins and the HP are removed.
+* `surface.marketplace_lifecycle` — lists a ₦100 manual listing, credits the throwaway
+  customer's wallet with the harness RPC and buys with `payment_method=wallet`, asserting
+  the purchase points at that listing; then `report` (201 + row) and a **second report must
+  be 409**, with the refused duplicate adding no row.
+* `surface.hp_flash_redeem` — inserts a reward and a one-slot flash window, gives the
+  throwaway account a balance, and redeems: the `reward_redemptions` row belongs to the
+  caller, an `hp_transactions` row with `reference_type=flash_reward_redemption` exists, the
+  balance falls by exactly the ledger amount, and a second redemption of the one-slot sale
+  is refused (400).
+
+**Added in the provider pass** — the three routes that talk to Paystack. By default they
+walk only the paths that cannot open a provider object; `--provider-writes` adds the calls
+that do, for a sandbox server with test keys:
+
+* `provider.wallet_card` — a malformed amount is refused before any provider call and moves
+  no money, and the wallet must not be credited by an initialization. With
+  `--provider-writes`: the real initialization, asserting `authorization_url`, `access_code`
+  and a reference, and still no credit.
+* `provider.wallet_bank` — with a `virtual_accounts` fixture already present (the returning
+  customer's path) the route must hand it back with `created: false` and never call
+  Paystack. With `--provider-writes` the fixture is removed first so the create path runs
+  (sandbox mock NUBAN, or a real dedicated account on live keys).
+* `provider.hp_bundle_reference` — a Paystack reference that was never issued must be
+  refused **and must credit no HP**: no `hp_bundle_purchases` row, no balance movement. This
+  is the statement that HP is only minted against money the provider confirms. A bundle
+  below the minimum is refused with 400.
+
+### The 3 routes still not exercised, and why
 
 **Need an inbox (2).** `POST /api/auth/reset-password/confirm` and `POST /api/auth/verify-email`
 require the token/OTP that is only ever delivered by email. They can be covered honestly by
 using Supabase's admin `generate_link` with the service key to obtain the token instead of
-sending mail — not done here because it needs a decision about generating recovery links in
-a live project.
-
-**Start a real provider transaction (3).** `POST /api/wallet/fund/card`,
-`POST /api/wallet/fund/bank` and `POST /api/hp/bundles/purchase` call Paystack to create a
-transaction. The suite deliberately does not start provider-side objects; the webhook steps
-already cover what happens when the provider answers. Run them once by hand with test keys
-if you want them exercised.
-
-**Need catalogue fixtures that may not exist (7).** `POST /api/events/<id>/register`,
-`POST /api/events/<id>/checkin`, `POST /api/events/catering-requests`,
-`POST /api/marketplace/<id>/purchase`, `POST /api/marketplace/purchases/<id>/report`,
-`POST /api/marketplace/requests` and `POST /api/hp/flash-redeem/<id>` all need an active
-event, listing or flash sale in the database. Each step would skip on a catalogue that has
-none — worth adding if any of those features are live at launch.
+sending mail — **not done here because it needs a decision about generating recovery links in
+a live project.** Say the word and it is a small step; until then these two stay open.
 
 **A framework route (1).** `GET /static/<filename>` is Flask's own asset handler, not an
 API route: any name we probe answers 404 (there is nothing to serve), so asserting it would
 add a number without adding a fact. The read sweep skips the `static` endpoint for the same
 reason.
 
-**What the order pass reaches only through a guard.** Two of the four squad-member routes
-are pinned as refusals rather than happy paths — removing a member and resending an invite
-both need a **non-delivered, squad-flagged order**, and the flow's order is delivered by
-design. `POST /api/orders/<id>/claim` is likewise exercised only on the "already belongs to
-a customer" branch; the happy path needs a guest order carrying a claim token.
+**What the passes reach only through a guard.** Two of the four squad-member routes are
+pinned as refusals rather than happy paths — removing a member and resending an invite both
+need a **non-delivered, squad-flagged order**, and the flow's order is delivered by design.
+`POST /api/orders/<id>/claim` is exercised on the "already belongs to a customer" branch; the
+happy path needs a guest order carrying a claim token. Inside the provider routes, a plain
+run covers the validation / idempotent / forged-reference branches; the two branches that
+open a Paystack object need `--provider-writes`, and a *successful* HP bundle purchase needs
+a real transaction behind the reference.
 
-Still not covered after all passes: invoking the full job set by default, the
-virtual-account / bank-transfer deposit branch, the split-payment amount check named below,
-the guest-order and squad-order happy paths above, and functional depth on the 241
-permission-swept routes (a refusal proves the gate, not the handler) and the read-swept GETs
-(a clean answer proves no crash, not correctness).
+Still not covered after all passes: invoking the full job set by default, a successful HP
+bundle purchase, the guest-order and squad-order happy paths above, and functional depth on
+the 231 permission-swept routes (a refusal proves the gate, not the handler) and the 31
+read-swept GETs (a clean answer proves no crash, not correctness).
 
 ### Residual risks, stated plainly
 

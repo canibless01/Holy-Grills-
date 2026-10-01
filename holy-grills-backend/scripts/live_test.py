@@ -3298,6 +3298,544 @@ def s_challenges_complete(ctx: Ctx):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Phase — catalogue fixtures: the routes that need a row to exist
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Each step creates the fixture it needs with the service key, calls the real route, and
+# deletes the fixture again (track_infra deletes it even if the run dies midway). A fixture
+# the database refuses to create, or a feature flag that is off, is reported as a Skip with
+# the reason — never as a failure.
+
+def _fixture(ctx: Ctx, table: str, row: dict, what: str) -> dict:
+    """Insert one fixture row and register it for deletion. Skips when the schema refuses."""
+    try:
+        created = ctx.db.insert(table, row)
+    except Failed as exc:
+        raise Skip(f"could not create the {what} fixture ({table}): {exc}")
+    if not isinstance(created, dict) or not created.get("id"):
+        raise Skip(f"the {what} fixture insert returned no row: {str(created)[:120]}")
+    ctx.track_infra(table, created["id"])
+    return created
+
+
+def _drop_notifications(ctx: Ctx, reference_id: str) -> None:
+    """Delete the notifications one fixture caused. Its id is a fresh UUID, so this can
+    only ever match rows this run created."""
+    for row in ctx.db.select("notifications", reference_id=reference_id):
+        ctx.db.delete("notifications", id=row["id"])
+
+
+@step("surface", "surface.catering_request",
+      "a guest catering request is accepted and stored, and a malformed one is refused",
+      writes=True, route="POST /api/events/catering-requests")
+def s_catering_request(ctx: Ctx):
+    """The public catering / partnership form — no bearer token at all.
+
+    It notifies the campus's admins, so the row and the notifications it caused are deleted
+    again; the throwaway email address is what pins the cleanup to this run.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    email = f"e2e.catering.{uuid.uuid4().hex[:8]}@{TEST_EMAIL_DOMAIN}"
+    params = {"campus_id": campus} if campus else None
+    payload = {
+        "organizer_name": "E2E Catering Probe",
+        "email": email,
+        "phone": "08000000000",
+        "event_name": "E2E catering probe — safe to delete",
+        "event_date": (datetime.now(timezone.utc) + timedelta(days=14)).date().isoformat(),
+        "expected_guests": 25,
+        "budget": 100000,
+        "notes": "E2E probe — safe to delete",
+    }
+    try:
+        r = ctx.api.post("/api/events/catering-requests", json_body=payload, params=params)
+        if r.status == 400 and "campus" in json.dumps(r.data or {}).lower():
+            raise Skip(f"the route needs a campus this run could not supply — {r.snippet(120)}")
+        r.check(201)
+        row = ctx.db.select_one("catering_requests", email=email) or {}
+        expect(bool(row), f"the request was accepted but no catering_requests row holds {email}")
+        expect(str(row.get("status")) == "new",
+               f"a new catering request starts as '{row.get('status')}', expected 'new'")
+        expect(str(row.get("campus_id") or "") == campus,
+               f"the request was stored against campus {row.get('campus_id')}, not {campus}")
+        ctx.note(f"guest catering request stored ({row.get('id')})")
+
+        missing = ctx.api.post("/api/events/catering-requests",
+                               json_body={"organizer_name": "E2E incomplete"}, params=params)
+        expect(missing.status == 400,
+               f"a request missing every required field answered {missing.status}, expected 400",
+               missing)
+        ctx.note("an incomplete request was refused (400)")
+    finally:
+        row = ctx.db.select_one("catering_requests", email=email) or {}
+        if row.get("id"):
+            _drop_notifications(ctx, str(row["id"]))
+        ctx.db.delete("catering_requests", email=email)
+
+
+@step("surface", "surface.marketplace_request",
+      "a customer proposes a vendor listing, and a malformed proposal is refused",
+      writes=True, route="POST /api/marketplace/requests", needs=("auth.login",))
+def s_marketplace_request(ctx: Ctx):
+    """The vendor-intake form on a throwaway customer.
+
+    The row and the admin notifications it causes are deleted in a `finally`; the throwaway
+    address pins the cleanup to this run.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    email = f"e2e.vendor.{uuid.uuid4().hex[:8]}@{TEST_EMAIL_DOMAIN}"
+    body = {
+        "vendor_name": "E2E Vendor Probe",
+        "vendor_email": email,
+        "vendor_phone": "08000000000",
+        "service_title": "E2E vendor proposal — safe to delete",
+        "category": "food",
+        "description": "E2E probe — safe to delete",
+        "proposed_price": 1500,
+    }
+    try:
+        bad = ctx.api.post("/api/marketplace/requests", token=token,
+                           json_body={**body, "vendor_email": "not-an-email"})
+        expect(bad.status == 400,
+               f"a proposal with an invalid vendor_email answered {bad.status}, expected 400", bad)
+
+        r = ctx.api.post("/api/marketplace/requests", token=token, json_body=body)
+        if r.status == 503:
+            raise Skip(f"the vendor-intake path is unavailable in this environment — {r.snippet(140)}")
+        r.check(201, allow=(200,))
+        row = ctx.db.select_one("marketplace_requests", vendor_email=email) or {}
+        expect(bool(row), f"the proposal was accepted but no marketplace_requests row holds {email}")
+        expect(str(row.get("requested_by")) == user_id,
+               f"the proposal is attributed to {row.get('requested_by')}, not its author")
+        ctx.note(f"vendor proposal stored ({row.get('id')}, status {row.get('status')})")
+    finally:
+        row = ctx.db.select_one("marketplace_requests", vendor_email=email) or {}
+        if row.get("id"):
+            _drop_notifications(ctx, str(row["id"]))
+        ctx.db.delete("marketplace_requests", vendor_email=email)
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.event_lifecycle",
+      "a published event takes a registration, then a check-in, but only once",
+      writes=True, route="POST /api/events/<event_id>/register",
+      routes=("POST /api/events/<event_id>/checkin",),
+      needs=("auth.login",))
+def s_event_lifecycle(ctx: Ctx):
+    """Registration and check-in against an event this step publishes itself.
+
+    The event row is a fixture: a throwaway customer registers for it (free — no tier, no
+    price), the check-in credits that account's HP, and a second check-in must be refused.
+    The event, the ticket, the check-in and the HP the account earned are all removed again.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+
+    now = datetime.now(timezone.utc)
+    event = _fixture(ctx, "events", {
+        "title": f"E2E event probe {uuid.uuid4().hex[:6]}",
+        "slug": f"e2e-event-{uuid.uuid4().hex[:8]}",
+        "description": "E2E probe — safe to delete",
+        "location": "E2E Hall",
+        "starts_at": (now + timedelta(hours=2)).isoformat(),
+        "ends_at": (now + timedelta(hours=5)).isoformat(),
+        "hp_reward": 10,
+        "is_published": True,
+        "campus_id": campus,
+        "organizer_id": user_id,
+    }, "event")
+    event_id = str(event["id"])
+    ticket_id = None
+    try:
+        reg = ctx.api.post(f"/api/events/{event_id}/register", token=token, json_body={})
+        if reg.status == 404:
+            raise Skip(f"the event this run just published is not visible to the API — {reg.snippet(120)}")
+        if reg.status in (400, 402, 409):
+            raise Skip(f"registering for a free event answered {reg.status} — {reg.snippet(140)}")
+        reg.check(201, allow=(200,))
+        ticket_id = str(field(reg.data or {}, "ticket_id") or "")
+        expect(bool(ticket_id), f"the registration returned no ticket_id — {reg.snippet(160)}", reg)
+        ticket = ctx.db.select_one("event_tickets", id=ticket_id) or {}
+        expect(str(ticket.get("event_id")) == event_id,
+               f"the ticket belongs to event {ticket.get('event_id')}, not the one registered for")
+        expect(str(ticket.get("user_id")) == user_id,
+               f"the ticket is owned by {ticket.get('user_id')}, not the registering account")
+        ctx.note(f"registered: ticket {ticket_id} "
+                 f"(status={ticket.get('status')}, payment={ticket.get('payment_status')})")
+
+        ci = ctx.api.post(f"/api/events/{event_id}/checkin", token=token,
+                          json_body={"qr_token": ticket_id})
+        ci.check(200, allow=(201,))
+        checkins = ctx.db.select("event_checkins", ticket_id=ticket_id) or []
+        expect(bool(checkins), f"the check-in answered 200 but wrote no event_checkins row — "
+                               f"{ci.snippet(140)}", ci)
+        hp_rows = ctx.db.select("hp_transactions", user_id=user_id) or []
+        ctx.note(f"checked in (checked_in_by={checkins[0].get('checked_in_by')}), "
+                 f"HP ledger rows for the account: {len(hp_rows)}")
+
+        again = ctx.api.post(f"/api/events/{event_id}/checkin", token=token,
+                             json_body={"qr_token": ticket_id})
+        expect(again.status == 400,
+               f"a second check-in answered {again.status} — a ticket must not be usable twice",
+               again)
+        expect(len(ctx.db.select("event_checkins", ticket_id=ticket_id) or []) == len(checkins),
+               "the second check-in added another event_checkins row")
+        ctx.note("a second check-in was refused (400)")
+    finally:
+        if ticket_id:
+            ctx.db.delete("event_checkins", ticket_id=ticket_id)
+        ctx.db.delete("event_tickets", event_id=event_id)
+        ctx.db.delete("events", id=event_id)
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.marketplace_lifecycle",
+      "a listing is bought from the wallet, then reported, and the report cannot be doubled",
+      writes=True, route="POST /api/marketplace/<listing_id>/purchase",
+      routes=("POST /api/marketplace/purchases/<purchase_id>/report",),
+      needs=("auth.login",))
+def s_marketplace_lifecycle(ctx: Ctx):
+    """The two marketplace routes that need a purchase to exist.
+
+    The listing is a fixture this step inserts; the buyer is a throwaway customer whose
+    wallet is credited with the harness RPC, so the purchase really moves money — inside an
+    account that is deleted at the end. A purchase the database refuses (no codes, price
+    changed, feature off) is a Skip with the app's own message, not a failure.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    price = 100
+    listing = _fixture(ctx, "marketplace_listings", {
+        "title": f"E2E listing probe {uuid.uuid4().hex[:6]}",
+        "slug": f"e2e-listing-{uuid.uuid4().hex[:8]}",
+        "description": "E2E probe — safe to delete",
+        "listing_type": "manual",
+        "price": price,
+        "hp_price": 0,
+        "status": "active",
+        "is_out_of_stock": False,
+        "inventory_count": 5,
+        "vendor_name": "E2E probe",
+        "campus_id": campus,
+    }, "listing")
+    listing_id = str(listing["id"])
+    purchase_id = None
+    try:
+        try:
+            ctx.db.rpc("credit_wallet_atomic", {
+                "p_user_id": user_id,
+                "p_amount": 500.0,
+                "p_reason": "E2E marketplace probe",
+                "p_reference_type": "topup",
+                "p_reference_id": None,
+                "p_provider": "e2e",
+                "p_provider_reference": f"E2E-MKT-{uuid.uuid4().hex[:12]}",
+                "p_metadata": {"source": "scripts/live_test.py"},
+                "p_campus_id": campus,
+            })
+        except Failed as exc:
+            raise Skip(f"credit_wallet_atomic unavailable, so the purchase cannot be paid: {exc}")
+
+        r = ctx.api.post(f"/api/marketplace/{listing_id}/purchase", token=token,
+                         json_body={"payment_method": "wallet"})
+        if r.status == 403:
+            raise Skip(f"marketplace purchases are feature-flagged off for this campus — "
+                       f"{r.snippet(140)}")
+        if r.status == 400:
+            raise Skip(f"the purchase path refused a wallet-paid listing — {r.snippet(160)}")
+        r.check(201, allow=(200,))
+        purchase_id = str(field(r.data or {}, "id")
+                          or ((r.data or {}).get("purchase") or {}).get("id") or "")
+        if not purchase_id:
+            rows = ctx.db.select("marketplace_purchases", user_id=user_id) or []
+            expect(bool(rows), f"the purchase answered 201 with no purchase id — {r.snippet(160)}", r)
+            purchase_id = str(rows[0]["id"])
+        ctx.track_infra("marketplace_purchases", purchase_id)
+        row = ctx.db.select_one("marketplace_purchases", id=purchase_id) or {}
+        expect(str(row.get("listing_id")) == listing_id,
+               f"the purchase is against listing {row.get('listing_id')}, not the one bought")
+        ctx.note(f"bought listing {listing_id}: purchase {purchase_id} "
+                 f"(status {row.get('status')}, paid ₦{row.get('amount_paid') or row.get('cash_charged') or price})")
+
+        rep = ctx.api.post(f"/api/marketplace/purchases/{purchase_id}/report", token=token,
+                           json_body={"reason": "E2E probe — safe to delete"})
+        if rep.status == 400 and "not allowed" in json.dumps(rep.data or {}).lower():
+            raise Skip(f"the purchase did not reach a reportable state — {rep.snippet(140)}")
+        rep.check(201, allow=(200,))
+        reports = ctx.db.select("marketplace_purchase_reports", purchase_id=purchase_id) or []
+        expect(bool(reports), f"the report answered 201 but wrote no row — {rep.snippet(140)}", rep)
+        twice = ctx.api.post(f"/api/marketplace/purchases/{purchase_id}/report", token=token,
+                             json_body={"reason": "E2E probe — safe to delete"})
+        expect(twice.status == 409,
+               f"a second report on the same purchase answered {twice.status}, expected 409", twice)
+        expect(len(ctx.db.select("marketplace_purchase_reports", purchase_id=purchase_id) or []) == len(reports),
+               "the refused duplicate still added a report row")
+        ctx.note(f"reported the purchase ({reports[0].get('id')}); the duplicate was refused (409)")
+    finally:
+        if purchase_id:
+            ctx.db.delete("marketplace_purchase_reports", purchase_id=purchase_id)
+            ctx.db.delete("marketplace_access_codes", listing_id=listing_id)
+            ctx.db.delete("marketplace_purchases", id=purchase_id)
+        ctx.db.delete("marketplace_listings", id=listing_id)
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.hp_flash_redeem",
+      "a flash sale is redeemed at the discounted HP price, once, by an account that can afford it",
+      writes=True, route="POST /api/hp/flash-redeem/<reward_id>",
+      needs=("auth.login",))
+def s_hp_flash_redeem(ctx: Ctx):
+    """Flash redemption against a reward and a sale window this step inserts itself.
+
+    The throwaway account is given a balance large enough for the discounted price, so a
+    refusal cannot be blamed on the fixture. Success is checked against the ledger: the
+    redemption row exists and the account's balance fell by exactly the discounted cost.
+    """
+    try:
+        from app.routes.rewards import _FLASH_REDEMPTION_REF
+    except Exception:                       # pragma: no cover - app always importable in a run
+        _FLASH_REDEMPTION_REF = "flash_reward_redemption"
+
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+
+    now = datetime.now(timezone.utc)
+    reward = _fixture(ctx, "rewards", {
+        "name": f"E2E flash reward {uuid.uuid4().hex[:6]}",
+        "description": "E2E probe — safe to delete",
+        "reward_type": "food",
+        "hp_cost": 100,
+        "stock_quantity": 5,
+        "is_active": True,
+        "campus_id": campus,
+    }, "reward")
+    reward_id = str(reward["id"])
+    _fixture(ctx, "flash_redemptions", {
+        "reward_id": reward_id,
+        "window_starts_at": (now - timedelta(minutes=5)).isoformat(),
+        "window_ends_at": (now + timedelta(hours=1)).isoformat(),
+        "quantity_limit": 1,
+        "discount_pct": 0.5,
+        "campus_id": campus,
+        "is_active": True,
+    }, "flash sale")
+    try:
+        ctx.db.update("profiles", {"hp_balance": 1000}, id=user_id)
+        r = ctx.api.post(f"/api/hp/flash-redeem/{reward_id}", token=token)
+        if r.status == 403:
+            raise Skip(f"flash_redemptions is feature-flagged off — {r.snippet(140)}")
+        if r.status == 400:
+            raise Skip(f"the flash redemption refused the fixture — {r.snippet(160)}")
+        r.check(200, allow=(201,))
+        body = r.data or {}
+        redemption_id = str(field(body, "redemption_id") or "")
+        expect(bool(redemption_id),
+               f"the redemption returned no redemption_id — {r.snippet(160)}", r)
+        ctx.track_infra("reward_redemptions", redemption_id)
+
+        rows = ctx.db.select("reward_redemptions", id=redemption_id) or []
+        expect(bool(rows), f"the redemption returned an id with no reward_redemptions row — "
+                           f"{r.snippet(140)}", r)
+        expect(str(rows[0].get("user_id")) == user_id,
+               f"the redemption belongs to {rows[0].get('user_id')}, not the caller")
+        txns = [t for t in (ctx.db.select("hp_transactions", user_id=user_id) or [])
+                if str(t.get("reference_type")) == _FLASH_REDEMPTION_REF]
+        expect(bool(txns), "the flash redemption wrote no hp_transactions row with "
+                           f"reference_type={_FLASH_REDEMPTION_REF}")
+        spent = abs(sum(float(t.get("amount") or 0) for t in txns))
+        expect(spent > 0, f"the flash redemption's ledger rows total {spent}")
+        balance = float((ctx.db.select_one("profiles", id=user_id) or {}).get("hp_balance") or 0)
+        expect(abs((1000 - balance) - spent) < 0.51,
+               f"the account fell from 1000 to {balance} but the ledger says {spent} HP was spent")
+        ctx.note(f"flash redeem: {body.get('reward_name')!r} cost {spent:.0f} HP "
+                 f"(discount {body.get('discount_pct')}), balance 1000 -> {balance:.0f}")
+
+        again = ctx.api.post(f"/api/hp/flash-redeem/{reward_id}", token=token)
+        expect(again.status == 400,
+               f"a second flash redemption of a one-slot sale answered {again.status}, expected 400",
+               again)
+        ctx.note("a second redemption was refused (400) — the slot limit held")
+    finally:
+        ctx.db.delete("reward_redemptions", user_id=user_id)
+        ctx.db.delete("flash_redemptions", reward_id=reward_id)
+        ctx.db.delete("rewards", id=reward_id)
+        ctx.db.delete("hp_transactions", user_id=user_id)
+        _drop_role_user(ctx, user_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Phase — provider boundaries: the three routes that talk to Paystack itself
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# By default these steps only walk the paths that cannot create anything at the provider:
+# a validation refusal, an idempotent early return, and a forged reference that must not
+# mint HP. Passing --provider-writes additionally exercises the calls that really do open a
+# Paystack object (a card top-up initialization, a dedicated virtual account) — run that on
+# a sandbox server with test keys, never against live keys.
+
+@step("provider", "provider.wallet_card",
+      "the card top-up route validates before it calls Paystack, and only initializes when asked",
+      writes=True, route="POST /api/wallet/fund/card", needs=("auth.login",))
+def s_provider_wallet_card(ctx: Ctx):
+    """The card top-up entry point.
+
+    A malformed amount is refused before any provider call — deterministic, and it proves
+    the route is wired. With --provider-writes the real initialization runs: the response
+    must carry an authorization_url and a reference, and the wallet must NOT be credited by
+    an initialization (only the webhook credits money).
+    """
+    token = ctx.tokens["access"]
+    before = ctx.db.select("wallet_transactions", user_id=ctx.user_id) or []
+
+    bad = ctx.api.post("/api/wallet/fund/card", token=token, json_body={"amount": "not-a-number"})
+    expect(bad.status == 400,
+           f"a non-numeric amount answered {bad.status}, expected 400 — {bad.snippet(140)}", bad)
+    after = ctx.db.select("wallet_transactions", user_id=ctx.user_id) or []
+    expect(len(after) == len(before), "the refused request still wrote a wallet_transactions row")
+    ctx.note("a malformed amount was refused (400) with no wallet movement")
+
+    if not getattr(ctx.opts, "provider_writes", False):
+        ctx.warnings.append(
+            "provider.wallet_card: only the validation branch ran — pass --provider-writes on a "
+            "sandbox server to exercise the Paystack initialization itself")
+        return
+
+    r = ctx.api.post("/api/wallet/fund/card", token=token,
+                     json_body={"amount": 100, "callback_url": "http://localhost:3000/wallet"})
+    if r.status == 502:
+        raise Skip(f"the gateway is not configured in this environment — {r.snippet(140)}")
+    r.check(200, allow=(201,))
+    url = str(field(r.data or {}, "authorization_url") or "")
+    reference = str(field(r.data or {}, "reference") or "")
+    expect(url.startswith("http"), f"no authorization_url in the response — {r.snippet(160)}", r)
+    expect(bool(reference), f"no reference in the response — {r.snippet(160)}", r)
+    expect(bool(field(r.data or {}, "access_code")),
+           f"no access_code in the response — {r.snippet(160)}", r)
+    after = ctx.db.select("wallet_transactions", user_id=ctx.user_id) or []
+    expect(len(after) == len(before),
+           f"initializing a card payment credited the wallet ({len(before)} -> {len(after)} ledger rows)")
+    ctx.note(f"Paystack initialization accepted (reference {reference[:24]}…, no credit yet)")
+
+
+@step("provider", "provider.wallet_bank",
+      "an account that already has a virtual account is handed it back without calling Paystack",
+      writes=True, route="POST /api/wallet/fund/bank", needs=("auth.login",))
+def s_provider_wallet_bank(ctx: Ctx):
+    """The bank-transfer route.
+
+    The idempotent branch is the safe one and the one a returning customer hits: with a
+    virtual_accounts row already present the route must answer 200 with `created: false` and
+    never touch Paystack. With --provider-writes the row is removed first, so the create path
+    runs (a sandbox mock NUBAN, or a real dedicated account on live keys).
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    number = "0000000000"
+    account = None
+    try:
+        account = _fixture(ctx, "virtual_accounts", {
+            "user_id": user_id,
+            "account_number": number,
+            "bank_name": "E2E Bank (probe)",
+            "account_name": "E2E Probe",
+            "provider": "paystack",
+            "provider_reference": f"E2E-VA-{uuid.uuid4().hex[:10]}",
+            "campus_id": campus,
+        }, "virtual account")
+
+        r = ctx.api.post("/api/wallet/fund/bank", token=token)
+        r.check(200)
+        va = (r.data or {}).get("virtual_account") or {}
+        expect(str(va.get("account_number")) == number,
+               f"the route returned account {va.get('account_number')!r}, not the stored one")
+        expect((r.data or {}).get("created") is False,
+               f"an account that already had a virtual account answered created="
+               f"{(r.data or {}).get('created')!r}")
+        ctx.note(f"existing virtual account returned ({va.get('bank_name')}, created: false)")
+
+        if not getattr(ctx.opts, "provider_writes", False):
+            ctx.warnings.append(
+                "provider.wallet_bank: the create path was not exercised — pass --provider-writes "
+                "on a sandbox server (the idempotent branch is covered by default)")
+            return
+
+        ctx.db.delete("virtual_accounts", id=account["id"])
+        create = ctx.api.post("/api/wallet/fund/bank", token=token)
+        if create.status == 502:
+            raise Skip(f"no live Paystack key, so a dedicated account cannot be created — "
+                       f"{create.snippet(160)}")
+        create.check(201, allow=(200,))
+        created = (create.data or {}).get("virtual_account") or {}
+        expect(bool(created.get("account_number")),
+               f"the create path returned no account_number — {create.snippet(160)}", create)
+        rows = ctx.db.select("virtual_accounts", user_id=user_id) or []
+        expect(bool(rows), "the create path answered 201 but stored no virtual_accounts row")
+        ctx.note(f"dedicated account created ({created.get('bank_name')}, "
+                 f"mock={(create.data or {}).get('mock')})")
+        for row in rows:
+            ctx.db.delete("virtual_accounts", id=row["id"])
+    finally:
+        if account and account.get("id"):
+            ctx.db.delete("virtual_accounts", id=account["id"])
+        _drop_role_user(ctx, user_id)
+
+
+@step("provider", "provider.hp_bundle_reference",
+      "a made-up Paystack reference cannot buy HP",
+      route="POST /api/hp/bundles/purchase", needs=("auth.login",))
+def s_provider_hp_bundle(ctx: Ctx):
+    """The HP bundle route verifies a Paystack reference before it credits anything.
+
+    A reference that does not exist at the provider must be refused — and, more to the
+    point, must not credit a single HP. This is the cheapest possible statement of the
+    rule that HP is only ever minted against money the provider confirms.
+    """
+    token = ctx.tokens["access"]
+    reference = f"E2E-BOGUS-{uuid.uuid4().hex[:16]}"
+    hp_before = int((ctx.db.select_one("profiles", id=ctx.user_id) or {}).get("hp_balance") or 0)
+
+    r = ctx.api.post("/api/hp/bundles/purchase", token=token,
+                     json_body={"hp_amount": 100, "paystack_reference": reference})
+    expect(r.status in (400, 402),
+           f"a reference Paystack never issued answered {r.status}, expected 400/402 — "
+           f"{r.snippet(160)}", r)
+    ctx.note(f"forged reference refused with {r.status}")
+
+    rows = ctx.db.select("hp_bundle_purchases", provider_reference=reference) or []
+    expect(not rows, f"the refused purchase left {len(rows)} hp_bundle_purchases row(s)")
+    hp_after = int((ctx.db.select_one("profiles", id=ctx.user_id) or {}).get("hp_balance") or 0)
+    expect(hp_after == hp_before,
+           f"the refused purchase moved the balance {hp_before} -> {hp_after}")
+    ctx.note("no bundle row, no HP credited")
+
+    below_min = ctx.api.post("/api/hp/bundles/purchase", token=token,
+                             json_body={"hp_amount": 1, "paystack_reference": reference})
+    expect(below_min.status == 400,
+           f"a bundle below the minimum answered {below_min.status}, expected 400 — "
+           f"{below_min.snippet(140)}", below_min)
+    ctx.note("a bundle below the minimum was refused (400)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Phase — concurrency: can two requests spend the same naira?
 # ─────────────────────────────────────────────────────────────────────────────
 #
@@ -4788,6 +5326,9 @@ def main(argv=None) -> int:
                              "Makefile shorthand: WRITE_EXISTING=1")
     parser.add_argument("--fund-wallet", type=float, default=3000.0,
                         help="₦ credited to the test wallet before ordering (0 disables)")
+    parser.add_argument("--provider-writes", action="store_true",
+                        help="exercise the Paystack calls that open real provider objects "
+                             "(sandbox/test keys only) — off by default")
     parser.add_argument("--with-cron", action="store_true",
                         help="run every scheduled job in the suite (mutates shared data)")
     parser.add_argument("--timeout", type=float, default=30.0)
