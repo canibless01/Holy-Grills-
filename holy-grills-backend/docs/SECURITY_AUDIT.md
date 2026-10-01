@@ -9,9 +9,9 @@ and manual reading of the money paths. Everything below is quoted from the file 
 line shown. Items already fixed in this session are **not** repeated — see the last
 section for that list, so nothing gets fixed twice.
 
-**Status of this document: current.** Every item carries its state — 🔴 CRITICAL and
-🟠 HIGH (now four, with H4 found on the live-DB answers) are all closed as of `9001c19`;
-the MEDIUM/LOW items that remain open are marked *open* with what they need. The ledger
+**Status of this document: current.** Every item carries its state — 🔴 CRITICAL, all
+four 🟠 HIGH, 🟡 M1/M2/M3/M4/M5 and the whole 🔵 LOW table are closed as of `e874c98`;
+`pyflakes` now reports **zero** warnings for `app/` and `scripts/live_test.py`. The ledger
 at the bottom is the single place that answers "what is left".
 
 Severity here means: 🔴 ships broken / loses money or data · 🟠 hurts users or
@@ -260,6 +260,11 @@ Verified sample, each genuinely hiding a failure: `events.py:885`, `events.py:26
 user-visible sites are fixed (H2/H3 above). The rule for the remainder: **a swallowed
 exception is only acceptable if the code that follows it records why.**
 
+**All 88 sites are now triaged.** Routes first, then services/tasks/utils — see
+below for the second half. Correcting a number I gave earlier: the remainder outside
+`routes/` was **64**, not 59 (routes 18 · services 38 · tasks 23 · utils 3 = 83 counted
+after the routes fixes, with one site re-classified by the body-aware scan).
+
 **Routes: triaged and mostly closed this pass.** I re-counted with a body-aware scan
 rather than the earlier two-line pattern, because the first count under-reported blocks
 whose body is a bare comment. Current measurement, excluding already-fixed sites:
@@ -299,6 +304,36 @@ these calls a helper that logs its own failure before returning:
 Adding a log line at the route would produce the same event twice, so these stay as they
 are. The triage rule: **log it when the swallowed failure changes what the caller
 believes happened.**
+
+**services / tasks / utils — 64 sites, triaged in `e874c98`.** 42 now log; 22 were left
+silent deliberately, each for a stated reason. The ones worth naming:
+
+| Site | What the silence hid | New level |
+|------|---------------------|-----------|
+| `order_service.py:1194`, `:1397` | caller-role lookup fails → `caller_role` stays `None` → **the rider/kitchen/admin scoping checks are skipped**. Fail-open, so it logs at `error`. Behaviour deliberately unchanged: denying on a transient read error would block roles from their own paths. | `error` |
+| `wallet_service.py:69` | top-up HP bonus never awarded, silently | `error` |
+| `hp_service.py:686` | `recalculate_tier` computes a tier the profile never gets | `error` |
+| `order_service.py:753` | hostel `delivery_fee` unreadable → order charges ₦0 delivery | `warning` |
+| `order_service.py:876/881` | tier and `next_order_hp_multiplier` lost at checkout | `warning` |
+| `order_service.py:1010/1021` | squad member rows not written; the customer is told the squad is set up | `warning` |
+| `order_service.py:1061` | delivery window unreadable → the customer is shown the 18:00-19:00 default | `warning` |
+| `gift_service.py:71` | unreadable launch-window end date *grants the gift anyway* | `warning` |
+| `notification_service.py:464` | unparseable `level_department` → a blast can reach the wrong audience | `warning` |
+| `streak_service.py:558`, `wallet_service.py:76` | streak activity / reclaim silently unsaved | `warning` |
+| `squad_service.py:198` | a member's HP share not recorded | `warning` |
+| `tier_service.py:96` | perk resolution falls back to the default perk | `warning` |
+| `newsletter_service.py:248`, `notification_service.py:826` | `last_error` not recorded; email provider defaulted | `warning` |
+| 18 × `db.rpc("release_cron_lock")` in `scheduled.py` | the lock is not released, so **the job may skip its next run** — the same class as the webhook alert path | `warning` |
+| `scheduled.py:1359` | unreadable `reminder_sent_at` → a duplicate reminder can go out | `warning` |
+
+Left silent, with reasons: six settings/format fall-backs that have a sane default and no
+behavioural surprise (`gift_service._get_setting`, `hp_service._setting_raw`,
+`_ambient_campus_id`, notification throttle settings, tier value coercion,
+`admin_helpers.as_time`, `utils.settings.get_validated_setting`, `retry.with_retry`);
+`_log_notification` (its docstring says *Never raises* — throttle bookkeeping only); the
+backward-compatibility transaction fetches in `credit_wallet`/`debit_wallet`, whose
+fallback returns the caller an equivalent shape; and five `send_notification` call sites
+whose service logs internally (same reasoning as the route sites above).
 
 I checked the three `webhooks.py` sites rather than assuming, and the interesting one is
 **not** what I first wrote:
@@ -412,18 +447,21 @@ anonymous caller.
 
 ## 🔵 LOW
 
-| # | Location | Finding | Fix |
-|---|----------|---------|-----|
-| L1 | `app/db.py:432` | `f-string is missing placeholders` | drop the `f` prefix |
-| L2 | `app/routes/events.py:511,730` | `import uuid` re-imported inside functions, shadowing the module import | delete the local imports |
-| L3 | `app/routes/events.py:1142` | `_exc` bound and never read (see H1) | use it in the log |
-| L4 | `app/routes/graduation.py:103` | `except Exception as e:` — `e` unused | log it or use `except Exception:` |
-| L5 | `app/routes/hp.py:515` | `from app.db import get_db, get_user_client` — `get_db` unused | import only what is used |
-| L6 | `app/services/hp_service.py:350,376` | `update_monthly_tracker` imported twice; the first is unused | keep line 376 |
-| L7 | `app/services/order_service.py:782` | `squad_delivery_discount` assigned, never read | delete the assignment (the discount **is** applied on the next line — this is dead code, not a lost discount) |
-| L8 | `app/services/streak_service.py:231` | `action` assigned, never used | remove |
-| L9 | `app/tasks/scheduled.py:261` | `is_feature_enabled` re-imported, shadowing line 184 | delete the inner import |
-| L10 | 56 files | unused imports (`pyflakes`: 56) | `python -m pyflakes app/ \| grep "imported but unused"` |
+All ten are closed in `e874c98`; `pyflakes` reports **zero** warnings for `app/` and
+`scripts/live_test.py`.
+
+| # | Location | Finding | How it was closed |
+|---|----------|---------|-------------------|
+| L1 | `app/db.py:435` | `f-string is missing placeholders` | `f` prefix dropped |
+| L2 | `app/routes/events.py` | local `import uuid` shadowing the module import | both bindings were unused and are gone |
+| L3 | `app/routes/events.py` | `_exc` bound and never read | closed with H1 — the retry path reads it |
+| L4 | `app/routes/graduation.py` | `except Exception as e:` with `e` unused | closed earlier: it logs `exc` |
+| L5 | `app/routes/hp.py:515` | `get_db` imported, unused | import trimmed |
+| L6 | `app/services/hp_service.py` | `update_monthly_tracker` imported twice | the first import now takes only `check_monthly_cap` |
+| L7 | `app/services/order_service.py` | `squad_delivery_discount` assigned, never read | **two** dead bindings removed (the second surfaced once the first was gone); the discount itself is applied through `squad_delivery_discount_dec`, untouched |
+| L8 | `app/services/streak_service.py` | `action` assigned, never used | removed |
+| L9 | `app/tasks/scheduled.py` | `is_feature_enabled` re-imported, shadowing the first | inner import removed; the earlier one serves the call |
+| L10 | 30 files | 56 unused imports | all removed — re-export guard applied, proven by 63/63 modules importing and the app booting with 405 routes |
 
 ---
 
@@ -495,8 +533,8 @@ Updated at the end of every working pass. If an item is not here, it is not open
 
 | # | Item | Where |
 |---|------|-------|
-| O7 | Remaining `except Exception: pass` — **routes triaged (13 fixed, 14 covered one layer down, 4 acceptable); services/tasks/utils not yet triaged** | M1 list, with the triage rule |
-| O10 | 56 unused imports + the LOW table | L1–L10 |
+| ~~O7~~ | closed in `e874c98` — 83 sites triaged in total: 29 routes, 42 services/tasks/utils logged, the rest documented with reasons | M1 section |
+| ~~O10~~ | closed in `e874c98` — 56 unused imports removed, L1–L9 fixed; `pyflakes` clean | 🔵 LOW table |
 
 ### Closed
 
@@ -517,6 +555,9 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | O8 — N+1 in the delivery-batch list (51 REST calls per 50-batch page) | one query per page; old vs new diffed on four cases |
 | O9 — the two unauthenticated endpoints | kept public **by decision**; both still reachable anonymously (503 from the unreachable upstream, not 401) |
 | O7 — 13 of the 18 remaining silent route-swallows | each now logs; the other 14 verified covered inside `notification_service` / `utils/email` / `milestone_service` |
+| O7 (remainder) — 64 silent swallows in services/tasks/utils | 42 now log at a level matched to the failure; 22 left silent with a stated reason |
+| O10 — 56 unused imports and LOW L1–L9 | all removed/fixed; pyflakes reports zero warnings |
+| Reward release now clears `used_at` as well as `attached_order_id` | `_restore_order_consumables`; re-running matches no row |
 | O2 — the wallet half of a cancelled split order was never returned | `refund_wallet_when_unpaid = True`, capped at `wallet_amount_used`; card half still only when paid |
 | O3 — HP and a claimed reward stayed spent after a cancel | `_restore_order_consumables()` on `received -> cancelled` in `update_order_status` (one choke point, fires once); the duplicate HP restore in `cancel_scheduled_order` removed |
 | H4 — unpaid *scheduled* order refunded an uncollected card half | card half gated on `payment_status='paid'`; decision table over both cancel routes |
@@ -547,6 +588,25 @@ Supabase call fails with `SSLError` before it leaves the box. `make contract` re
 `make smoke` / `make e2e` stop at `preflight.health: Supabase not connected`. The refund
 table and the restore-path fakes above run entirely offline, which is why they are the
 evidence used — the two new suite steps are yours to run where the database is reachable.
+
+### Session note — the O7/O10 pass, and two mistakes worth keeping
+
+Both mistakes are recorded for the same reason the earlier two were: they are precisely
+the failure mode this pass exists to remove.
+
+1. **The site patch used the wrong indentation.** It gave the `except` line the indent of
+   the `pass` line it replaced — one level too deep — and broke the syntax of eleven files
+   at once. Caught by parsing every file with `ast` immediately after applying. Fixed by
+   restoring the pre-patch backup and correcting the rule: the `except` keeps its own
+   indent, its body gets the deeper one.
+2. **The import remover edited files while iterating over line numbers it had already
+   invalidated.** A removed line shifts every later one, so the second import flagged in a
+   file would have pointed at the wrong line. Caught because the affected edits were
+   reported as "not an import", not because the tool complained. Rewritten to edit each
+   file once, bottom-up.
+
+The pattern in both: the *edit* was mechanical, the *verification* is what caught it —
+`ast.parse` for syntax, an import-all plus boot for structure, `pyflakes` for names.
 
 ### Session note — silent-except pass
 
