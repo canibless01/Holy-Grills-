@@ -10,9 +10,9 @@ line shown. Items already fixed in this session are **not** repeated — see the
 section for that list, so nothing gets fixed twice.
 
 **Status of this document: current.** Every item carries its state — 🔴 CRITICAL and
-🟠 HIGH are all closed as of `fd00000`; the MEDIUM/LOW items that remain open are
-marked *open* with what they need. The ledger at the bottom is the single place that
-answers "what is left".
+🟠 HIGH (now four, with H4 found on the live-DB answers) are all closed as of `9001c19`;
+the MEDIUM/LOW items that remain open are marked *open* with what they need. The ledger
+at the bottom is the single place that answers "what is left".
 
 Severity here means: 🔴 ships broken / loses money or data · 🟠 hurts users or
 support · 🟡 debt that will bite · 🔵 cosmetics.
@@ -194,6 +194,58 @@ service-role access and every RLS policy is bypassed with no warning.
 Verified: the fail-closed client resolves to the **anon** key for both `apikey` and
 `Authorization` (asserted, not eyeballed), so RLS applies on that path. The outer
 `except` also now logs — a client-lookup failure is no longer invisible.
+
+### H4. Cancelling an unpaid *scheduled* order refunded a card payment that was never collected — FIXED
+`app/routes/orders.py:884` (before the fix; the block lives in `cancel_scheduled_order`)
+
+```python
+    card_amount_used = float(order.get("card_amount_used") or 0)
+    if card_amount_used > 0:
+        from app.services.wallet_service import credit_wallet
+        credit_wallet(
+            user_id=g.user_id, amount=card_amount_used,
+            payment_reference=f"scheduled-cancel-card-{order_id[:8].upper()}",
+            reference_id=order_id, reference_type="refund",
+            notes=f"Card-portion refund for cancelled scheduled order #{order_id[:8].upper()}",
+        )
+        wallet_refunded += card_amount_used
+```
+
+Every order is written with `payment_status='pending'` and `card_amount_used` already set
+(`app/services/order_service.py:917`); the card half only becomes real money when the
+webhook confirms it. This block refunded the card half **unconditionally**, so cancelling
+an unpaid scheduled order credited the wallet for money that was never collected —
+repeatable, and the same defect that was fixed on the plain cancel path. The regression
+test written for that fix (`orders.cancel_unpaid_no_refund`) drives
+`POST /api/orders/<id>/cancel` only, so this sibling was never exercised.
+
+**Fixed** — the card half is refunded only once the payment is actually paid; the wallet
+half above it is still always refunded, because it *is* debited at creation:
+
+```python
+    # The card half is only real money once the webhook confirms it — every order is
+    # created payment_status='pending' with card_amount_used already set — so refunding it
+    # here refunded money that was never collected, repeatably. Same bug the plain cancel
+    # path had. The wallet half above is always refunded: it is debited at creation.
+    card_amount_used = float(order.get("card_amount_used") or 0)
+    if card_amount_used > 0 and str(order.get("payment_status") or "").lower() != "paid":
+        logger.warning(
+            "cancel_scheduled_order: order %s cancelled with payment_status=%r — the card "
+            "half (%s) was never collected and is not refunded",
+            order_id, order.get("payment_status"), card_amount_used)
+        card_amount_used = 0.0
+```
+
+Verified with a decision table over both cancel routes (card-only / split / wallet-only,
+each paid and unpaid): no unpaid scenario can refund more than the wallet half, and every
+paid scenario still refunds both halves.
+
+The suite now covers the whole class rather than the single route that was fixed first —
+`orders.cancel_unpaid_scheduled_no_refund` (this route) and
+`orders.cancel_split_refunds_wallet_half` (a positive test for O2: the wallet half must
+come back, exactly, and nothing more). Both declared routes resolve against the app
+(`make selfcheck`: 71 steps). **They have not been executed** — see the network note at the
+end of this section.
 
 ---
 
@@ -433,8 +485,8 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | # | Item | Why it is theirs |
 |---|------|------------------|
 | O1 | **`SUPABASE_DB_URL`** | RLS policies, table/function grants and per-role row visibility have never been read. **Everything in this repo is code-level; the database posture is unverified.** Add the pooler URI to `.env`, then `make audit` |
-| O2 | Does `hg_create_order_atomic` **debit the wallet half of a split order at creation**? | Decides `refund_wallet_when_unpaid` in `orders.py` — if yes, that half must be refunded on a pending cancel; if no, the current `False` is correct |
-| O3 | Does it **restore `hp_redeemed` on cancel**? | Today neither the HP nor a claimed reward comes back when a customer cancels. Needs a product decision, then a fix |
+| O2 | ~~Does `hg_create_order_atomic` debit the wallet half at creation?~~ **Answered: yes — `debit_wallet_atomic`, same transaction.** `refund_wallet_when_unpaid` is now `True`, capped at `wallet_amount_used` | closed in `9001c19` |
+| O3 | ~~Does anything restore `hp_redeemed` / a claimed reward on cancel?~~ **Answered: nothing did.** Both are now restored on `received -> cancelled`, HP at the exact amount with no multiplier | closed in `9001c19` |
 | O4 | `docs/audit-report.md` + the truncated tail of the ecosystem map ("Admin grant routes missing …") | Not in this checkout; can't be actioned blind |
 | O5 | Three cosmetic `operating_hour_overrides` rows | Storefront-only; safe to delete in the admin UI |
 | O6 | `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` | Referenced by docs, absent from the repo — send them or drop the references |
@@ -465,6 +517,36 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | O8 — N+1 in the delivery-batch list (51 REST calls per 50-batch page) | one query per page; old vs new diffed on four cases |
 | O9 — the two unauthenticated endpoints | kept public **by decision**; both still reachable anonymously (503 from the unreachable upstream, not 401) |
 | O7 — 13 of the 18 remaining silent route-swallows | each now logs; the other 14 verified covered inside `notification_service` / `utils/email` / `milestone_service` |
+| O2 — the wallet half of a cancelled split order was never returned | `refund_wallet_when_unpaid = True`, capped at `wallet_amount_used`; card half still only when paid |
+| O3 — HP and a claimed reward stayed spent after a cancel | `_restore_order_consumables()` on `received -> cancelled` in `update_order_status` (one choke point, fires once); the duplicate HP restore in `cancel_scheduled_order` removed |
+| H4 — unpaid *scheduled* order refunded an uncollected card half | card half gated on `payment_status='paid'`; decision table over both cancel routes |
+| `_hp_grant_denied` missed the real refusal wording | the live message is `insufficient_privilege` (underscore); the text branch now matches it, not only the 42501 code |
+
+### Session note — money paths, closed on your live-DB answers
+
+Three things came out of applying the answers rather than assuming them:
+
+1. The refund flag was a one-line change, but the *reason* it was off is worth keeping:
+   it was disabled pending exactly this answer. The comment now records the answer.
+2. Looking for the sibling of the already-fixed money bug paid off — the scheduled
+   cancel route refunded both halves unconditionally (H4). It had been missed because
+   the regression test for the first bug covers only the non-scheduled route; a
+   regression test protects the route it names, not the class of bug it names.
+3. The HP restore existed in **one** of the two cancel paths already (the scheduled one,
+   with `apply_multiplier=False`) — so the rule you asked for was already the house
+   style. Putting it in `update_order_status`, the single compare-and-set choke point,
+   both covers every cancel path and removes the risk of the two paths drifting.
+
+Reward release goes through the service role deliberately: `reward_redemptions` has no
+UPDATE policy for owners (`routes/rewards.py:899` says so), so a user-scoped write would
+have silently changed nothing.
+
+**What could not be run here:** the sandbox has no route to the internet, so every
+Supabase call fails with `SSLError` before it leaves the box. `make contract` reports
+"every table, column and RPC the code uses exists" but every check is marked *unreachable*;
+`make smoke` / `make e2e` stop at `preflight.health: Supabase not connected`. The refund
+table and the restore-path fakes above run entirely offline, which is why they are the
+evidence used — the two new suite steps are yours to run where the database is reachable.
 
 ### Session note — silent-except pass
 

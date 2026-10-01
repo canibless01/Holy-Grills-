@@ -1119,6 +1119,131 @@ def s_cancel_unpaid_no_refund(ctx: Ctx):
     ctx.note(f"unpaid card order cancelled: refunded ₦0, balance unchanged (₦{balance_after})")
 
 
+@step("orders", "orders.cancel_unpaid_scheduled_no_refund",
+      "cancelling an UNPAID *scheduled* card order refunds nothing (H4 regression)",
+      writes=True, route="DELETE /api/orders/<order_id>/scheduled",
+      needs=("orders.place", "orders.fund_wallet"))
+def s_cancel_unpaid_scheduled_no_refund(ctx: Ctx):
+    """H4: the scheduled cancel route refunded BOTH halves unconditionally, while every
+    order is created payment_status='pending' with card_amount_used already set. The
+    existing regression test drives the non-scheduled route only, which is exactly how
+    this sibling stayed broken. Same assertion, other route.
+    """
+    if not ctx.ids.get("hostel_id"):
+        raise Skip("no delivery point — cannot build a scheduled card order")
+
+    wallet_before = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_before = float(wallet_before.get("balance") or 0)
+
+    scheduled_for = datetime.now(timezone.utc) + timedelta(days=2)
+    body = {
+        "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
+        "payment_method": "card",
+        "delivery_type": "on_campus",
+        "delivery_location_id": str(ctx.ids["hostel_id"]),
+        "is_scheduled": True,
+        "scheduled_for": scheduled_for.strftime("%Y-%m-%dT08:00:00"),
+        "notes": "E2E unpaid scheduled-cancel probe — safe to ignore",
+    }
+    r = ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"],
+                     headers={"X-Campus-ID": str(ctx.ids.get("campus_id") or "")})
+    if r.status in (400, 409, 503):
+        raise Skip(f"scheduled ordering unavailable: {r.snippet(120)}")
+    r.check(201, allow=(200,))
+    order_id = str(field(r.data or {}, "id")
+                   or ((r.data or {}).get("order") or {}).get("id") or "")
+    if not order_id:
+        raise Skip("scheduled order was not persisted")
+    ctx.track("orders", order_id)
+    ctx.track_children("order_items", "order_id", order_id)
+
+    order = ctx.db.select_one("orders", id=order_id) or {}
+    if not order.get("is_scheduled"):
+        raise Skip("the order was not created as scheduled")
+    expect(str(order.get("payment_status") or "").lower() != "paid",
+           f"scheduled probe order came back paid ({order.get('payment_status')}) — it is "
+           "not testing the unpaid path", r)
+    card_part = float(order.get("card_amount_used") or 0)
+    expect(card_part > 0, "the scheduled card order has no card_amount_used to refund")
+
+    cancel = ctx.api.delete(f"/api/orders/{order_id}/scheduled",
+                            json_body={"reason": "E2E probe"}, token=ctx.tokens["access"])
+    cancel.check(200, allow=(204,))
+    refunded = float((cancel.data or {}).get("wallet_refunded") or 0)
+    expect(refunded == 0,
+           f"the scheduled cancel refunded ₦{refunded} on an unpaid order (payment_status="
+           f"{order.get('payment_status')}, card_amount_used={card_part}) — the card half "
+           "was never collected")
+    wallet_after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_after = float(wallet_after.get("balance") or 0)
+    expect(abs(balance_after - balance_before) < 0.01,
+           f"wallet moved on an unpaid scheduled cancel: ₦{balance_before} → ₦{balance_after}")
+    ctx.note(f"unpaid scheduled order cancelled: refunded ₦0, balance unchanged (₦{balance_after})")
+
+
+@step("orders", "orders.cancel_split_refunds_wallet_half",
+      "a cancelled pending SPLIT order returns the wallet half it debited, and only that",
+      writes=True, route="POST /api/orders/<order_id>/cancel",
+      needs=("orders.place", "orders.fund_wallet"))
+def s_cancel_split_refunds_wallet_half(ctx: Ctx):
+    """The wallet half of a split order IS debited at creation (debit_wallet_atomic, in
+    the order transaction); the card half is not collected until the webhook. Cancelling
+    while still pending must therefore return exactly the wallet half — not zero (the
+    customer would lose money) and not the card half too (free money).
+    """
+    if not ctx.ids.get("hostel_id"):
+        raise Skip("no delivery point — cannot build a split order")
+    wallet = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_before = float(wallet.get("balance") or 0)
+    if balance_before < 1:
+        raise Skip("wallet is empty — a split order cannot be funded")
+
+    wallet_part = float(min(50.0, balance_before))
+    body = {
+        "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
+        "payment_method": "split",
+        "wallet_amount": wallet_part,
+        "delivery_type": "on_campus",
+        "delivery_location_id": str(ctx.ids["hostel_id"]),
+        "notes": "E2E split-cancel probe — safe to ignore",
+    }
+    r = ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"],
+                     headers={"X-Campus-ID": str(ctx.ids.get("campus_id") or "")})
+    if r.status in (400, 409, 503):
+        raise Skip(f"ordering unavailable: {r.snippet(120)}")
+    r.check(201, allow=(200,))
+    order_id = str(field(r.data or {}, "id")
+                   or ((r.data or {}).get("order") or {}).get("id") or "")
+    if not order_id:
+        raise Skip("split order was not persisted")
+    ctx.track("orders", order_id)
+    ctx.track_children("order_items", "order_id", order_id)
+
+    order = ctx.db.select_one("orders", id=order_id) or {}
+    debited = float(order.get("wallet_amount_used") or 0)
+    if not debited:
+        raise Skip("the order did not use the wallet — not a split order")
+    if float(order.get("card_amount_used") or 0) <= 0:
+        raise Skip("the whole order fitted in the wallet — not a split order")
+    if str(order.get("payment_status") or "").lower() == "paid":
+        raise Skip("the card half was already collected — the pending path is not under test")
+
+    cancel = ctx.api.post(f"/api/orders/{order_id}/cancel", json_body={"reason": "E2E probe"},
+                          token=ctx.tokens["access"])
+    cancel.check(200)
+    refunded = float((cancel.data or {}).get("wallet_refunded") or 0)
+    expect(abs(refunded - debited) < 0.01,
+           f"split cancel refunded ₦{refunded} but ₦{debited} had been debited from the "
+           "wallet — the customer either lost their half or was credited the uncollected "
+           "card half")
+    wallet_after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_after = float(wallet_after.get("balance") or 0)
+    expect(abs(balance_after - balance_before) < 0.01,
+           f"wallet did not return to its starting balance: ₦{balance_before} → ₦{balance_after}")
+    ctx.note(f"split order cancelled: refunded ₦{refunded} = the wallet half; "
+             f"balance back to ₦{balance_after}")
+
+
 @step("orders", "orders.free_side_consumed",
       "the order consumed the credit, removed the selection and added a ₦0 line",
       route="GET /api/orders/<order_id>", needs=("orders.place", "orders.free_side_provision"))
