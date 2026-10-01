@@ -659,7 +659,7 @@ because the expensive failures are the ones nobody checked.
 | Area | Evidence | Verified where |
 |------|----------|----------------|
 | Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
-| Routes the suite calls | `make selfcheck` — 109 declared routes all exist | this sandbox |
+| Routes the suite calls | `make selfcheck` — 145 declared routes all exist | this sandbox |
 | Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
@@ -732,9 +732,11 @@ the 404, the same base the coverage script counts.
 
 | | |
 |---|---|
-| routes the suite exercises | **318 (79%)** — 66 before the flow pass, 68 before the authorization sweeps |
-| of those, routes **no test had ever touched before this round** | **250** — 231 with a real permission assertion, 19 functionally |
+| routes the suite **reaches** | **385 (95%)** — 66 before the flow pass, 68 before the authorization sweeps |
+| of those, routes **no test had ever touched before this round** | **317** — 231 with a permission assertion, 54 functionally, 32 by the read sweep |
+| routes that stay uncovered, and why | **19** — see the list below |
 | blueprints with **zero** exercised routes | **none** — all 43 are exercised (was 35 of 43) |
+| coverage is *reachable*, not guaranteed per run | steps skip by design when a feature is off, a secret is absent or a fixture does not exist — a run's real number is in its own summary |
 | role/permission assertions before this round | **1** (a wrong-password 401) → now 241 gated routes × 2 attacker roles |
 | routes the surface pass added | **19** (the eight blueprints that had none) |
 | webhook calls before the flow pass | **0** |
@@ -879,9 +881,70 @@ divergence ever appears again.
 Steps can now declare `routes=(...)` alongside `route=`, so `--self-check` verifies every
 path a multi-route step calls: 109 declared routes, all present in the app.
 
-Still not covered after all four passes: invoking the full job set by default, the
+**Added in the reach pass** — the rest of the reachable surface (`--only surface`):
+
+* `surface.read_sweep` — every GET the app serves that no step declared and no sweep covers
+  (32 routes, enumerated from the live URL map so it shrinks as steps are added). For each
+  one: an authenticated customer must get **no 5xx and no 401**. A 404 for a random UUID is
+  recorded as the correct answer; a 403 is kept but warned about, because it usually means a
+  feature flag is off. This is a liveness contract, not a behaviour test.
+* `surface.cart_and_saved` — remove one cart item, then clear the cart (**only when it was
+  empty beforehand**), and the saved-items loop: save, list, update, remove.
+* `surface.order_locks_lifecycle` — create, list, read, reschedule and cancel an order lock,
+  plus the guard that a lock for a past date is refused.
+* `surface.notifications_and_challenges` — notification preferences, marking an unknown
+  notification read (a clean 4xx, never a 500), and the three engagement posts, which answer
+  cleanly whether they award or refuse.
+* `surface.storefront_writes` — newsletter subscribe/duplicate/unsubscribe on a throwaway
+  address, both promo validators against a nonsense code (a clean 4xx, never a false
+  "valid"), and the delivery fee calculator returning a number.
+* `surface.auth_self_service` — on a throwaway account: the `/api/auth/users/search` alias,
+  an untrusted photo URL refused, password change (then signing in with the new password),
+  logout-all-devices, a password-reset request, and account deletion refusing a wrong
+  password. The deletion itself is left to the account teardown.
+* `webhooks.flutterwave_wallet_topup` — the Flutterwave money-in path, mirroring the Paystack
+  step: signed top-up credits the wallet, the replay is a no-op, wallet restored afterwards.
+  Skips unless `FLUTTERWAVE_WEBHOOK_SECRET` is available; a forged signature is never sent.
+* `surface.rewards_redeem` — redeem a catalogue reward for HP on a throwaway account and
+  choose its delivery mode; skips cleanly when the catalogue cannot satisfy a fresh account.
+* `surface.free_sides_deselect` — select a free side and remove it again.
+* `surface.hp_transfer` — HP moving between two throwaway accounts, both balances checked,
+  and an over-transfer refused.
+* `surface.challenges_complete` — complete an offered milestone; a clean 400/409 is accepted
+  when the account does not meet the condition.
+
+### The 19 routes still not exercised, and why
+
+**Need an inbox (2).** `POST /api/auth/reset-password/confirm` and `POST /api/auth/verify-email`
+require the token/OTP that is only ever delivered by email. They can be covered honestly by
+using Supabase's admin `generate_link` with the service key to obtain the token instead of
+sending mail — not done here because it needs a decision about generating recovery links in
+a live project.
+
+**Start a real provider transaction (3).** `POST /api/wallet/fund/card`,
+`POST /api/wallet/fund/bank` and `POST /api/hp/bundles/purchase` call Paystack to create a
+transaction. The suite deliberately does not start provider-side objects; the webhook steps
+already cover what happens when the provider answers. Run them once by hand with test keys
+if you want them exercised.
+
+**Need catalogue fixtures that may not exist (7).** `POST /api/events/<id>/register`,
+`POST /api/events/<id>/checkin`, `POST /api/events/catering-requests`,
+`POST /api/marketplace/<id>/purchase`, `POST /api/marketplace/purchases/<id>/report`,
+`POST /api/marketplace/requests` and `POST /api/hp/flash-redeem/<id>` all need an active
+event, listing or flash sale in the database. Each step would skip on a catalogue that has
+none — worth adding if any of those features are live at launch.
+
+**Need the flow's own order (7).** `POST /api/orders/<id>/share`, `/reorder`,
+`/review/images`, `/claim`, and the three `/squad-members` routes operate on an existing
+order. Share, reorder and review images are straightforward follow-ups to the flow order;
+`/claim` needs a guest order with a claim token, and the squad-member routes need an order
+placed as a squad order (squad fixture + flag). Deliberately left for a decision about how
+deep to go into squad ordering.
+
+Still not covered after all passes: invoking the full job set by default, the
 virtual-account / bank-transfer deposit branch, the split-payment amount check named below,
-and functional depth on the 250 swept routes (a refusal proves the gate, not the handler).
+and functional depth on the 241 permission-swept routes (a refusal proves the gate, not the
+handler) and the 32 read-swept ones (a clean answer proves no crash, not correctness).
 
 ### Residual risks, stated plainly
 

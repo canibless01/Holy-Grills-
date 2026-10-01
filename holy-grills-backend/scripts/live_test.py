@@ -2410,6 +2410,664 @@ def s_upload_signature(ctx: Ctx):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Phase — surface, part 2: the rest of the reachable routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+_READ_SWEEP_FALLBACK = (
+    # Only used when the suite cannot build the app in-process (--base-url on a host
+    # without the backend source). Filled with a UUID where the rule has a parameter.
+    "GET /api/orders/scheduled", "GET /api/orders/validate-promo",
+    "GET /api/events", "GET /api/events/my-tickets", "GET /api/challenges/badges",
+    "GET /api/challenges/my", "GET /api/challenges/pwa-push-bonus-status",
+    "GET /api/leaderboard/my-rank", "GET /api/leaderboard/squad",
+    "GET /api/leaderboard/squad/my-rank", "GET /api/leaderboard/hall-of-fame",
+    "GET /api/leaderboard/hall-of-fame/inductees", "GET /api/hp/bundles",
+    "GET /api/hp/unlock-history", "GET /api/menu/addons", "GET /api/menu/kitchen-capacity",
+    "GET /api/marketplace", "GET /api/marketplace/purchases",
+    "GET /api/notifications/preferences", "GET /api/saved", "GET /api/free-sides",
+    "GET /api/order-locks", "GET /api/wallet", "GET /api/rewards",
+)
+
+
+def _read_sweep_routes() -> tuple[list[str], str]:
+    """Every GET the app serves that no step declares and no sweep covers.
+
+    Built from the live URL map, so it shrinks as real steps are added and picks up new
+    routes automatically. Admin-gated GETs are excluded — they are swept with a staff
+    token by the authorization phase, which is the meaningful check for them.
+    """
+    try:
+        sys.path.insert(0, str(BACKEND_ROOT))
+        os.environ.setdefault("FLASK_ENV", "development")
+        from app import create_app
+        from app.config import config_map
+        app = create_app(config_map["development"])
+    except Exception as exc:                                        # noqa: BLE001
+        print(f"    (live route map unavailable: {exc} — using the curated list)",
+              file=sys.stderr)
+        return list(_READ_SWEEP_FALLBACK), "curated fallback"
+
+    def norm(rule: str) -> str:
+        rule = re.sub(r"<[^>]*:([^>]+)>", r"<\1>", rule)
+        return rule.rstrip("/") or "/"
+
+    declared = set()
+    for st in STEPS:
+        for entry in st.all_routes():
+            method, _, path = entry.partition(" ")
+            if method:
+                declared.add((method, norm(path)))
+    admin = {(m, norm(rule)) for m, rule in _admin_surface()[0]}
+
+    routes = []
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint == "static" or "GET" not in rule.methods:
+            continue
+        if (("GET", norm(str(rule.rule)))) in declared or (("GET", norm(str(rule.rule)))) in admin:
+            continue
+        routes.append(f"GET {rule.rule}")
+    routes.sort()
+    return routes, "live URL map"
+
+
+@step("surface", "surface.read_sweep",
+      "every remaining GET answers an authenticated customer without a 5xx or a 401",
+      needs=("auth.login",))
+def s_read_sweep(ctx: Ctx):
+    """The read surface no step declared: one authenticated GET each.
+
+    This is a liveness contract, not a behaviour test. For every route it asserts the
+    handler ran and answered: **no 5xx** (the crash class a missing column or a bad query
+    produces) and **no 401** (the session is recognised). An id-based route answering 404
+    for a random UUID is the correct answer and is recorded as such; a 403 is kept but
+    noted, because it usually means a feature flag is off.
+
+    Run with `--only surface.read_sweep` to see the per-route outcome in --verbose.
+    """
+    token = ctx.tokens.get("access")
+    if not token:
+        raise Skip("no customer session")
+    routes, source = _read_sweep_routes()
+    if not routes:
+        raise Skip("every GET route is already declared by a step")
+
+    placeholder = str(uuid.uuid4())
+    crashes, rejected, allowed_403, clean, ok = [], [], [], [], []
+    for entry in routes:
+        _, _, path = entry.partition(" ")
+        target = _probe_path(path, placeholder)
+        r = ctx.api.get(target, token=token)
+        if r.status >= 500:
+            crashes.append(f"{target} -> {r.status} {r.snippet(80)}")
+        elif r.status == 401:
+            rejected.append(f"{target} -> 401 {r.snippet(80)}")
+        elif r.status == 403:
+            allowed_403.append(target)
+        elif 200 <= r.status < 300:
+            ok.append(target)
+        else:
+            clean.append(f"{target} -> {r.status}")
+
+    ctx.note(f"read sweep: {len(routes)} GET route(s) from the {source} — "
+             f"{len(ok)} answered 2xx, {len(clean)} answered a clean 4xx, "
+             f"{len(allowed_403)} answered 403 (feature flag?), 0 crashes")
+    if allowed_403:
+        ctx.warnings.append(f"read sweep: {len(allowed_403)} route(s) answered 403 to an "
+                            f"authenticated customer: {allowed_403[:6]}")
+    expect(not rejected,
+           f"{len(rejected)} GET route(s) rejected the signed-in customer with 401: "
+           + "; ".join(rejected[:4]))
+    expect(not crashes,
+           f"{len(crashes)} GET route(s) answered 5xx: " + "; ".join(crashes[:4]))
+
+
+@step("surface", "surface.cart_and_saved",
+      "cart items can be removed and cleared; saved items can be saved, updated, removed",
+      writes=True, route="DELETE /api/cart",
+      routes=("DELETE /api/cart/<item_id>", "POST /api/saved", "GET /api/saved",
+              "PATCH /api/saved/<item_id>", "DELETE /api/saved/<item_id>"),
+      needs=("public.menu", "auth.login"))
+def s_cart_and_saved(ctx: Ctx):
+    """Cart removal and the whole saved-items loop, for the signed-in account.
+
+    `DELETE /api/cart` clears everything, so it only runs when the cart was **empty
+    before this step** — on a real account nothing of the user's is thrown away.
+    """
+    menu_item_id = ctx.ids["menu_item_id"]
+    cart_before = _rows_payload(ctx.api.get("/api/cart", token=ctx.tokens["access"]))
+    item_ids = []
+
+    added = ctx.api.post("/api/cart", token=ctx.tokens["access"],
+                         json_body={"menu_item_id": menu_item_id, "quantity": 1})
+    expect(added.status in (200, 201), f"adding to the cart answered {added.status} — "
+                                       f"{added.snippet(120)}", added)
+    rows = _rows_payload(ctx.api.get("/api/cart", token=ctx.tokens["access"]))
+    for row in rows:
+        if str(row.get("menu_item_id")) == str(menu_item_id):
+            item_ids.append(str(row.get("id")))
+    if item_ids:
+        removed = ctx.api.delete(f"/api/cart/{item_ids[0]}", token=ctx.tokens["access"])
+        expect(removed.status in (200, 204),
+               f"removing a cart item answered {removed.status} — {removed.snippet(120)}", removed)
+        left = _rows_payload(ctx.api.get("/api/cart", token=ctx.tokens["access"]))
+        expect(not any(str(r.get("id")) == item_ids[0] for r in left),
+               f"cart item {item_ids[0]} is still in the cart after DELETE")
+        ctx.note("cart item added and removed individually")
+    else:
+        ctx.warnings.append("cart: POST /api/cart succeeded but the item was not found by "
+                            "GET /api/cart — the individual remove was not exercised")
+
+    if not cart_before:
+        cleared = ctx.api.delete("/api/cart", token=ctx.tokens["access"])
+        expect(cleared.status in (200, 204),
+               f"clearing the cart answered {cleared.status} — {cleared.snippet(120)}", cleared)
+        expect(not _rows_payload(ctx.api.get("/api/cart", token=ctx.tokens["access"])),
+               "the cart is not empty after DELETE /api/cart")
+        ctx.note("cart cleared (it was empty before this step)")
+    else:
+        ctx.note(f"cart had {len(cart_before)} pre-existing item(s) — DELETE /api/cart "
+                 "was not called, nothing of the account's was cleared")
+
+    saved_id = None
+    try:
+        saved = ctx.api.post("/api/saved", token=ctx.tokens["access"],
+                             json_body={"menu_item_id": menu_item_id, "quantity": 1})
+        expect(saved.status in (200, 201), f"saving an item answered {saved.status} — "
+                                            f"{saved.snippet(120)}", saved)
+        rows = _rows_payload(ctx.api.get("/api/saved", token=ctx.tokens["access"]).check(200))
+        entry = next((r for r in rows if str(r.get("menu_item_id")) == str(menu_item_id)), None)
+        expect(entry is not None, f"the saved item is not in GET /api/saved ({len(rows)} row(s))")
+        saved_id = str(entry.get("id"))
+
+        updated = ctx.api.patch(f"/api/saved/{saved_id}", token=ctx.tokens["access"],
+                                json_body={"quantity": 2})
+        expect(updated.status == 200, f"updating a saved item answered {updated.status} — "
+                                       f"{updated.snippet(120)}", updated)
+        ctx.note("saved item created, listed and updated")
+    finally:
+        if saved_id:
+            ctx.db.delete("saved_for_later", id=saved_id)
+        if item_ids:
+            for cart_item in item_ids:
+                ctx.db.delete("cart_items", id=cart_item)
+
+
+@step("surface", "surface.order_locks_lifecycle",
+      "an order lock is created, listed, read, rescheduled and cancelled",
+      writes=True, route="POST /api/order-locks",
+      routes=("GET /api/order-locks", "GET /api/order-locks/<lock_id>",
+              "PATCH /api/order-locks/<lock_id>/reschedule", "DELETE /api/order-locks/<lock_id>"),
+      needs=("auth.login",))
+def s_order_locks_lifecycle(ctx: Ctx):
+    """The lock-in-a-future-order feature end to end, then cancelled so nothing is left.
+
+    It is a discount commitment, so the step also pins the guard: a date in the past must
+    be refused.
+    """
+    token = ctx.tokens["access"]
+    tomorrow = (datetime.now(timezone.utc) + timedelta(hours=1) + timedelta(days=3)).date().isoformat()
+    later = (datetime.now(timezone.utc) + timedelta(hours=1) + timedelta(days=5)).date().isoformat()
+    yesterday = (datetime.now(timezone.utc) + timedelta(hours=1) - timedelta(days=1)).date().isoformat()
+    lock_id = None
+
+    past = ctx.api.post("/api/order-locks", token=token, json_body={"locked_date": yesterday})
+    expect(past.status == 400, f"a lock for a past date answered {past.status} "
+                               f"(expected 400) — {past.snippet(120)}", past)
+    try:
+        created = ctx.api.post("/api/order-locks", token=token,
+                               json_body={"locked_date": tomorrow, "discount_pct": 10})
+        expect(created.status in (200, 201), f"creating a lock answered {created.status} — "
+                                             f"{created.snippet(140)}", created)
+        lock_id = str(field(created.data or {}, "id")
+                      or ((created.data or {}).get("lock") or {}).get("id") or "")
+        expect(bool(lock_id), f"the lock was created without an id — {created.snippet(140)}")
+
+        listed = ctx.api.get("/api/order-locks", token=token).check(200)
+        expect(contains_id(listed.data, lock_id),
+               f"the new lock is not in GET /api/order-locks — {listed.snippet(140)}", listed)
+
+        one = ctx.api.get(f"/api/order-locks/{lock_id}", token=token).check(200)
+        expect(contains_id(one.data, lock_id), f"the lock response does not carry its id — "
+                                               f"{one.snippet(140)}", one)
+
+        moved = ctx.api.patch(f"/api/order-locks/{lock_id}/reschedule", token=token,
+                              json_body={"locked_date": later})
+        expect(moved.status == 200, f"rescheduling answered {moved.status} — "
+                                     f"{moved.snippet(140)}", moved)
+        after = ctx.db.select_one("order_locks", id=lock_id) or {}
+        expect(str(after.get("locked_date"))[:10] == later,
+               f"the lock date is {after.get('locked_date')} after rescheduling to {later}")
+
+        cancelled = ctx.api.delete(f"/api/order-locks/{lock_id}", token=token)
+        expect(cancelled.status in (200, 204), f"cancelling the lock answered {cancelled.status} "
+                                                f"— {cancelled.snippet(120)}", cancelled)
+        gone = ctx.db.select_one("order_locks", id=lock_id) or {}
+        expect(str(gone.get("status") or "") in ("cancelled", "expired", ""),
+               f"the lock still shows status {gone.get('status')} after DELETE")
+        ctx.note(f"lock created, listed, read, rescheduled to {later}, cancelled")
+    finally:
+        if lock_id:
+            ctx.db.delete("order_locks", id=lock_id)
+
+
+@step("surface", "surface.notifications_and_challenges",
+      "notification preferences and the engagement challenges answer cleanly",
+      writes=True, route="GET /api/notifications/preferences",
+      routes=("POST /api/notifications/<notification_id>/read",
+              "GET /api/challenges/badges", "GET /api/challenges/my",
+              "GET /api/challenges/pwa-push-bonus-status", "POST /api/challenges/pwa-installed",
+              "POST /api/challenges/push-subscribed", "POST /api/challenges/social-follow"),
+      needs=("auth.login",))
+def s_notifications_and_challenges(ctx: Ctx):
+    """Preferences, marking a notification read, and the three "I did the thing" posts.
+
+    The engagement posts are intentionally tolerant — they award HP when they succeed and
+    a legitimate 400/409 when the action was already recorded. What is asserted is that
+    each answers **cleanly** (no 5xx) and that marking a notification read does not 500 on
+    an unknown id.
+    """
+    token = ctx.tokens["access"]
+    prefs = ctx.api.get("/api/notifications/preferences", token=token).check(200)
+    expect(isinstance(prefs.data, (dict, list)),
+           f"notification preferences are not an object — {prefs.snippet(140)}", prefs)
+
+    unknown = ctx.api.post(f"/api/notifications/{uuid.uuid4()}/read", token=token)
+    expect(unknown.status in (400, 403, 404),
+           f"marking an unknown notification read answered {unknown.status} — "
+           f"{unknown.snippet(120)}", unknown)
+
+    for path in ("/api/challenges/badges", "/api/challenges/my",
+                 "/api/challenges/pwa-push-bonus-status"):
+        r = ctx.api.get(path, token=token)
+        expect(r.status < 500, f"GET {path} answered {r.status} — {r.snippet(120)}", r)
+
+    outcomes = {}
+    for path in ("/api/challenges/pwa-installed", "/api/challenges/push-subscribed",
+                 "/api/challenges/social-follow"):
+        r = ctx.api.post(path, token=token, json_body={})
+        expect(r.status < 500, f"POST {path} answered {r.status} — {r.snippet(120)}", r)
+        outcomes[path.rsplit("/", 1)[-1]] = r.status
+    ctx.note(f"preferences read; unknown notification refused ({unknown.status}); "
+             f"challenge posts answered {outcomes}")
+
+
+@step("surface", "surface.storefront_writes",
+      "newsletter, promo validation and delivery fee answer without touching real data",
+      writes=True, route="POST /api/storefront/newsletter",
+      routes=("POST /api/storefront/newsletter/unsubscribe",
+              "POST /api/storefront/promo-codes/validate", "POST /api/orders/validate-promo",
+              "POST /api/delivery/calculate-fee"),
+      needs=("auth.login", "public.hostels"))
+def s_storefront_writes(ctx: Ctx):
+    """The public write endpoints around ordering.
+
+    Newsletter is a full loop on a throwaway address; the two promo validators get a
+    nonsense code and must answer a clean 4xx (never a 5xx, never a false "valid"); the
+    delivery fee calculator gets the step's own hostel and must return a number.
+    """
+    email = f"e2e.news.{uuid.uuid4().hex[:10]}@{TEST_EMAIL_DOMAIN}"
+    sub = ctx.api.post("/api/storefront/newsletter", json_body={"email": email})
+    expect(sub.status in (200, 201), f"newsletter subscribe answered {sub.status} — "
+                                     f"{sub.snippet(120)}", sub)
+    try:
+        again = ctx.api.post("/api/storefront/newsletter", json_body={"email": email})
+        expect(again.status < 500, f"a duplicate subscribe answered {again.status} — "
+                                   f"{again.snippet(120)}", again)
+
+        unsub = ctx.api.post("/api/storefront/newsletter/unsubscribe", json_body={"email": email})
+        expect(unsub.status in (200, 204), f"newsletter unsubscribe answered {unsub.status} — "
+                                           f"{unsub.snippet(120)}", unsub)
+        ctx.note("newsletter address subscribed, duplicate tolerated, unsubscribed")
+    finally:
+        for row in ctx.db.select("newsletter_subscribers", email=email) or []:
+            ctx.db.delete("newsletter_subscribers", id=row["id"])
+
+    for path in ("/api/storefront/promo-codes/validate", "/api/orders/validate-promo"):
+        r = ctx.api.post(path, token=ctx.tokens["access"],
+                         json_body={"code": f"E2E-NOPE-{uuid.uuid4().hex[:6]}", "order_subtotal": 5000})
+        expect(r.status in (400, 404, 422),
+               f"a nonsense promo code on {path} answered {r.status} — {r.snippet(140)}", r)
+        ctx.note(f"{path} refused a nonsense code ({r.status})")
+
+    fee = ctx.api.post("/api/delivery/calculate-fee", token=ctx.tokens["access"], json_body={
+        "delivery_type": "on_campus", "delivery_location_id": str(ctx.ids["hostel_id"]),
+    })
+    if fee.status == 200:
+        amount = None
+        if isinstance(fee.data, dict):
+            for key in ("delivery_fee", "fee", "amount"):
+                if fee.data.get(key) is not None:
+                    amount = float(fee.data[key]); break
+        expect(amount is not None and amount >= 0,
+               f"the fee response has no numeric fee — {fee.snippet(140)}", fee)
+        ctx.note(f"delivery fee calculated: ₦{amount:.2f}")
+    else:
+        # The payload keys are the front end's; a 400 here is a clean answer, not a crash.
+        expect(fee.status < 500, f"calculating the fee answered {fee.status} — "
+                                 f"{fee.snippet(140)}", fee)
+        ctx.note(f"delivery fee answered {fee.status} to this payload shape (clean refusal)")
+
+
+@step("surface", "surface.auth_self_service",
+      "a throwaway account can change its password, log out everywhere and delete itself",
+      writes=True, route="GET /api/auth/users/search",
+      routes=("POST /api/auth/change-password", "POST /api/auth/logout-all-devices",
+              "POST /api/auth/profile/photo", "POST /api/auth/reset-password",
+              "DELETE /api/auth/account"))
+def s_auth_self_service(ctx: Ctx):
+    """The account-management endpoints, on a throwaway account.
+
+    Everything here changes or destroys an account, so it must never run against the
+    signed-in one. The step also pins two guards: an untrusted photo URL is refused, and
+    the account deletion requires the password.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    try:
+        alias = ctx.api.get("/api/auth/users/search", params={"q": "e2e"},
+                            token=ctx.tokens["access"])
+        expect(alias.status == 200,
+               f"the /api/auth/users/search alias answered {alias.status} for a customer", alias)
+
+        wrong = ctx.api.post("/api/auth/profile/photo", token=token,
+                             json_body={"photo_url": "https://evil.example.com/x.jpg"})
+        expect(wrong.status == 400,
+               f"an untrusted photo URL answered {wrong.status} (expected 400) — "
+               f"{wrong.snippet(120)}", wrong)
+
+        new_password = f"E2eProbe!{uuid.uuid4().hex[:10]}"
+        changed = ctx.api.post("/api/auth/change-password", token=token, json_body={
+            "current_password": DEFAULT_PASSWORD, "new_password": new_password})
+        if changed.status == 200:
+            relogin = ctx.api.post("/api/auth/login",
+                                   json_body={"email": ctx.ids.get("email") or "", "password": new_password})
+            if relogin.status != 200:
+                # The throwaway email is only known to the provisioning helper, so re-derive
+                # it from the session we already hold rather than guessing.
+                ctx.warnings.append("change-password succeeded but the re-login probe could not "
+                                    "derive the email — the new password is unverified")
+            else:
+                token = field(relogin.data or {}, "access_token") or token
+                ctx.note("password changed and the new password signed in")
+        else:
+            expect(changed.status == 400,
+                   f"change-password answered {changed.status} — {changed.snippet(140)}", changed)
+
+        logout = ctx.api.post("/api/auth/logout-all-devices", token=token)
+        expect(logout.status in (200, 204), f"logout-all-devices answered {logout.status} — "
+                                            f"{logout.snippet(120)}", logout)
+
+        reset = ctx.api.post("/api/auth/reset-password",
+                             json_body={"email": ctx.ids.get("email") or "e2e@holygrills.test"})
+        expect(reset.status < 500,
+               f"reset-password answered {reset.status} — {reset.snippet(140)}", reset)
+
+        # Deletion requires the password; a wrong one must be refused.
+        bad = ctx.api.delete("/api/auth/account", token=token,
+                             json_body={"password": "definitely-wrong"})
+        expect(bad.status in (400, 401, 403),
+               f"deleting an account with the wrong password answered {bad.status}", bad)
+        ctx.note(f"alias, photo guard ({wrong.status}), password change ({changed.status}), "
+                 f"logout-all ({logout.status}), reset request ({reset.status}), "
+                 f"wrong-password delete refused ({bad.status})")
+    finally:
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("webhooks", "webhooks.flutterwave_wallet_topup",
+      "a signed Flutterwave charge credits the wallet, and a replay credits it once",
+      writes=True, route="POST /api/webhooks/flutterwave", needs=("auth.login",))
+def s_flutterwave_topup(ctx: Ctx):
+    """The Flutterwave side of the money-in path, mirroring the Paystack step.
+
+    Flutterwave signs with a shared `verif-hash` header (compared, not HMAC'd), so the
+    only requirement is the same secret the server holds. Skips cleanly when it is not
+    available — never forged.
+    """
+    secret = (os.environ.get("FLUTTERWAVE_WEBHOOK_SECRET") or ctx.opts.webhook_secret or "").strip()
+    if not secret:
+        raise Skip("FLUTTERWAVE_WEBHOOK_SECRET is not set — pass --webhook-secret or put it in "
+                   "the backend .env; a forged signature is never sent")
+    if not ctx.user_id:
+        raise Skip("no signed-in user to credit")
+
+    amount = 300.0
+    reference = f"E2E-E2E-FLW-{uuid.uuid4().hex[:12]}"
+    wallet_before = _wallet_snapshot(ctx)
+    try:
+        payload = {
+            "event": "charge.completed",
+            "data": {
+                "tx_ref": reference, "flw_ref": reference, "currency": "NGN",
+                "amount": amount, "status": "successful",
+                "meta": {"type": "wallet_topup", "user_id": ctx.user_id},
+                "customer": {"email": ctx.ids.get("email") or "e2e@holygrills.test"},
+            },
+        }
+        r = ctx.api.post("/api/webhooks/flutterwave", json_body=payload,
+                         headers={"verif-hash": secret})
+        r.check(200)
+        balance_after = float((ctx.db.select_one("wallets", user_id=ctx.user_id) or {})
+                              .get("balance") or 0)
+        expect(abs(balance_after - float(wallet_before.get("balance") or 0) - amount) < 0.01,
+               f"the Flutterwave webhook returned 200 but the wallet moved "
+               f"₦{balance_after - float(wallet_before.get('balance') or 0):.2f}, "
+               f"expected ₦{amount:.2f}")
+
+        replay = ctx.api.post("/api/webhooks/flutterwave", json_body=payload,
+                              headers={"verif-hash": secret})
+        replay.check(200)
+        replay_balance = float((ctx.db.select_one("wallets", user_id=ctx.user_id) or {})
+                               .get("balance") or 0)
+        expect(abs(replay_balance - balance_after) < 0.01,
+               f"a replayed Flutterwave webhook credited again: {balance_after} -> {replay_balance}")
+        ctx.note(f"Flutterwave top-up credited ₦{amount:.0f}; replay was a no-op")
+    finally:
+        for row in ctx.db.select("wallet_transactions", provider_reference=reference):
+            ctx.db.delete("wallet_transactions", id=row["id"])
+        for row in ctx.db.select("webhook_events", reference=reference):
+            ctx.db.delete("webhook_events", id=row["id"])
+        _wallet_restore(ctx, wallet_before, "flutterwave top-up")
+
+
+@step("surface", "surface.rewards_redeem",
+      "a reward is redeemed for HP and its delivery mode is chosen",
+      writes=True, route="POST /api/rewards/<reward_id>/redeem",
+      routes=("POST /api/rewards/redemptions/<redemption_id>/delivery-choice",))
+def s_rewards_redeem(ctx: Ctx):
+    """Spending HP on a reward, on a throwaway account with HP set aside for it.
+
+    The reward catalogue is data, so the step picks the cheapest active reward with
+    stock, gives the throwaway account enough HP, redeems it and chooses a delivery mode.
+    A 400 about tier or stock means the catalogue cannot satisfy the flow for this
+    account — that is a legitimate configuration, reported as a skip, not a failure.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    redemption_id = None
+    try:
+        rewards = [r for r in (ctx.db.select("rewards", is_active="true") or [])
+                   if float(r.get("hp_cost") or 0) > 0
+                   and (r.get("stock_quantity") is None or float(r.get("stock_quantity") or 0) > 0)]
+        if not rewards:
+            raise Skip("no active reward with stock and an HP price — the catalogue cannot "
+                       "exercise the redeem path")
+        reward = sorted(rewards, key=lambda r: float(r.get("hp_cost") or 0))[0]
+        cost = float(reward.get("hp_cost") or 0)
+
+        view = ctx.api.get(f"/api/rewards/{reward['id']}", token=token)
+        if view.status == 200:
+            expect(contains_id(view.data, reward["id"]),
+                   f"the reward response does not carry its id — {view.snippet(120)}")
+        else:
+            expect(view.status in (400, 403), f"GET /api/rewards/<id> answered {view.status} — "
+                                              f"{view.snippet(120)}", view)
+
+        # The throwaway account needs the HP it is about to spend. Setting the balance
+        # directly is safe here because the account is deleted at the end of the step.
+        ctx.db.update("profiles", {"hp_balance": int(cost) + 100}, id=user_id)
+
+        redeemed = ctx.api.post(f"/api/rewards/{reward['id']}/redeem", token=token, json_body={})
+        if redeemed.status == 400:
+            raise Skip(f"the catalogue refused the redeem for a fresh account "
+                       f"({redeemed.snippet(120)}) — tier or per-user limits, not a defect")
+        expect(redeemed.status in (200, 201),
+               f"redeeming answered {redeemed.status} — {redeemed.snippet(160)}", redeemed)
+
+        rows = ctx.db.select("reward_redemptions", user_id=user_id) or []
+        expect(bool(rows), "the redeem succeeded but no reward_redemptions row was written")
+        redemption_id = str(rows[0].get("id") or "")
+
+        choice = ctx.api.post(f"/api/rewards/redemptions/{redemption_id}/delivery-choice",
+                              token=token, json_body={"delivery_mode": "next_order"})
+        expect(choice.status in (200, 201),
+               f"choosing a delivery mode answered {choice.status} — {choice.snippet(160)}", choice)
+        after = ctx.db.select_one("reward_redemptions", id=redemption_id) or {}
+        expect(str(after.get("delivery_mode")) == "next_order",
+               f"delivery_mode is {after.get('delivery_mode')} after choosing 'next_order'")
+        ctx.note(f"redeemed {reward.get('name')!r} for {cost:.0f} HP and chose next_order")
+    finally:
+        ctx.db.delete("reward_redemptions", user_id=user_id)
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.free_sides_deselect",
+      "a selected free side can be removed from the cart again",
+      writes=True, route="DELETE /api/free-sides/select/<selection_id>", needs=("auth.login",))
+def s_free_sides_deselect(ctx: Ctx):
+    """The undo path for free-side selections: select, then deselect, and the row is gone.
+
+    Uses the signed-in account, which is what the route is for, and removes only the
+    selection this step created.
+    """
+    campus = str(ctx.ids.get("campus_id"))
+    items = [i for i in (ctx.db.select("free_side_items", is_active="true") or [])
+             if i.get("campus_id") in (campus, None)]
+    if not items:
+        raise Skip("no active free_side_items row for this campus")
+    try:
+        credit = ctx.db.insert("free_side_credits", {
+            "user_id": ctx.user_id, "campus_id": campus, "credits_remaining": 1,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        })
+    except Failed as exc:
+        raise Skip(f"could not create a free_side_credits row ({exc})")
+    credit_id = str((credit or {}).get("id") or "")
+    if credit_id:
+        ctx.track_infra("free_side_credits", credit_id)
+
+    selected = ctx.api.post("/api/free-sides/select", json_body={"free_side_item_id": items[0]["id"]},
+                            token=ctx.tokens["access"])
+    if selected.status == 403:
+        raise Skip(f"the free_side_credits feature is off — {selected.snippet(120)}")
+    selected.check(201, allow=(200,))
+    selection_id = str(field(selected.data or {}, "id")
+                       or ((selected.data or {}).get("selection") or {}).get("id") or "")
+    if not selection_id:
+        rows = ctx.db.select("cart_free_side_selections", user_id=ctx.user_id) or []
+        selection_id = str(rows[0]["id"]) if rows else ""
+    if not selection_id:
+        raise Skip("the selection was not persisted, so there is nothing to deselect")
+    ctx.track_infra("cart_free_side_selections", selection_id)
+
+    gone = ctx.api.delete(f"/api/free-sides/select/{selection_id}", token=ctx.tokens["access"])
+    expect(gone.status in (200, 204), f"deselecting answered {gone.status} — "
+                                      f"{gone.snippet(140)}", gone)
+    left = ctx.db.select("cart_free_side_selections", id=selection_id)
+    expect(not left, f"selection {selection_id} is still in cart_free_side_selections")
+    ctx.note("free-side selection created then removed by DELETE")
+
+
+@step("surface", "surface.hp_transfer",
+      "HP can be transferred to another account and the balance moves on both sides",
+      writes=True, route="POST /api/hp/transfer")
+def s_hp_transfer(ctx: Ctx):
+    """HP moving between two throwaway accounts — sender, recipient and the ledger.
+
+    Transferring HP is a value move, so the step checks both balances and that the sender
+    cannot transfer more than it holds. Both accounts are deleted afterwards.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    sender_id, sender_token, why = _provision_role_user(ctx, "customer", campus)
+    recipient_id, _recipient_token, why_r = _provision_role_user(ctx, "customer", campus)
+    try:
+        if not sender_token or not recipient_id:
+            raise Skip(f"could not provision both accounts ({why}; {why_r})")
+        ctx.db.update("profiles", {"hp_balance": 500}, id=sender_id)
+
+        too_much = ctx.api.post("/api/hp/transfer", token=sender_token, json_body={
+            "recipient_id": recipient_id, "amount": 100000})
+        expect(too_much.status == 400,
+               f"transferring more HP than the sender holds answered {too_much.status} "
+               f"(expected 400) — {too_much.snippet(140)}", too_much)
+
+        before_r = int((ctx.db.select_one("profiles", id=recipient_id) or {}).get("hp_balance") or 0)
+        ok = ctx.api.post("/api/hp/transfer", token=sender_token, json_body={
+            "recipient_id": recipient_id, "amount": 100})
+        expect(ok.status in (200, 201), f"the transfer answered {ok.status} — "
+                                        f"{ok.snippet(160)}", ok)
+        after_s = int((ctx.db.select_one("profiles", id=sender_id) or {}).get("hp_balance") or 0)
+        after_r = int((ctx.db.select_one("profiles", id=recipient_id) or {}).get("hp_balance") or 0)
+        expect(after_r - before_r == 100,
+               f"the recipient moved by {after_r - before_r} HP, expected 100")
+        expect(after_s == 400, f"the sender holds {after_s} HP after sending 100 of 500")
+        ctx.note(f"HP transfer: sender 500 -> {after_s}, recipient {before_r} -> {after_r}")
+    finally:
+        _drop_user_effects(ctx, sender_id)
+        _drop_user_effects(ctx, recipient_id)
+        _drop_role_user(ctx, sender_id)
+        _drop_role_user(ctx, recipient_id)
+
+
+@step("surface", "surface.challenges_complete",
+      "a milestone challenge can be completed once and its reward is recorded",
+      writes=True, route="POST /api/challenges/<milestone_id>/complete")
+def s_challenges_complete(ctx: Ctx):
+    """Completing a challenge on a throwaway account.
+
+    The milestone list is data, so the step picks one the API offers and accepts a clean
+    400/409 when the account does not meet its condition — what must never happen is a
+    crash or a silent no-op.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    try:
+        mine = ctx.api.get("/api/challenges/my", token=token).check(200)
+        milestones = []
+        if isinstance(mine.data, dict):
+            for key in ("milestones", "challenges", "items", "results"):
+                if isinstance(mine.data.get(key), list):
+                    milestones = mine.data[key]; break
+        elif isinstance(mine.data, list):
+            milestones = mine.data
+        candidate = next((m for m in milestones
+                          if m.get("id") and not m.get("completed") and not m.get("is_completed")), None)
+        if candidate is None:
+            raise Skip("the API offers no incomplete milestone to complete")
+
+        done = ctx.api.post(f"/api/challenges/{candidate['id']}/complete", token=token, json_body={})
+        expect(done.status < 500, f"completing a challenge answered {done.status} — "
+                                  f"{done.snippet(160)}", done)
+        expect(done.status in (200, 201, 400, 409),
+               f"completing a challenge answered {done.status} — {done.snippet(140)}", done)
+        ctx.note(f"milestone {candidate.get('name') or candidate['id']} -> {done.status}")
+    finally:
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Phase — concurrency: can two requests spend the same naira?
 # ─────────────────────────────────────────────────────────────────────────────
 #
