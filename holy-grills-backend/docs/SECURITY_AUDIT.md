@@ -691,6 +691,10 @@ Notes for that run:
   notifications, email, scheduled orders). Without it, only the canary job runs.
 * `scheduled.trigger_contract` and `scheduled.jobs_run_safe` create a throwaway
   super_admin account each and delete it; the audit rows they cause are deleted too.
+* The eight `surface.*` steps run on their own with `E2E_ARGS="--only surface"`. They
+  need a working campus read and a finished `auth.login`; squads additionally needs the
+  `squad_orders` feature flag on, and the spin and graduation happy paths skip when the
+  feature is off or no eligible academic level exists.
 
 The e2e run now covers the whole cancel/refund/override surface (the two refund
 regressions, both ticket/event flows, the three override probes) plus the flow steps above.
