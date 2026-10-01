@@ -1243,10 +1243,11 @@ def _sign_paystack(secret: str, raw: str) -> str:
 
 
 def _provision_role_user(ctx: Ctx, role: str, campus: str):
-    """Create a throwaway account with a staff role. Returns (user_id, token, error).
+    """Create a throwaway account with the requested valid profiles.role.
 
     require_role resolves the role from profiles.role, so setting it in the database
-    grants the role to the *existing* session — no re-login needed.
+    grants the role to the *existing* session — no re-login needed. Customer-facing
+    test users use the database role ``student``; ``customer`` is not a user_role value.
     """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     email = f"e2e.{role}.{stamp}.{uuid.uuid4().hex[:6]}@{TEST_EMAIL_DOMAIN}"
@@ -1265,7 +1266,10 @@ def _provision_role_user(ctx: Ctx, role: str, campus: str):
     token = (r.data or {}).get("access_token")
     if not token:
         ctx.db.confirm_email(user_id)
-    if not ctx.db.update("profiles", {"role": role, "campus_id": str(campus)}, id=user_id):
+    # Registration already creates customer-facing users with profiles.role=student
+    # and the requested campus. Only staff roles need an explicit service-role flip.
+    if role != "student" and not ctx.db.update(
+            "profiles", {"role": role, "campus_id": str(campus)}, id=user_id):
         return user_id, None, f"could not set role={role} in profiles"
 
     if not token:
@@ -2388,7 +2392,7 @@ def s_push_roundtrip(ctx: Ctx):
     actually be the bug (the same endpoint could then be re-subscribed as a new row).
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -2434,8 +2438,8 @@ def s_squads_lifecycle(ctx: Ctx):
     configuration and the step skips with that reason rather than failing.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    organizer_id, organizer_token, why = _provision_role_user(ctx, "customer", campus)
-    member_id, _member_token, why_member = _provision_role_user(ctx, "customer", campus)
+    organizer_id, organizer_token, why = _provision_role_user(ctx, "student", campus)
+    member_id, _member_token, why_member = _provision_role_user(ctx, "student", campus)
     squad_id = None
     try:
         if not organizer_token or not member_id or not _member_token:
@@ -2510,7 +2514,7 @@ def s_exclusive_spin(ctx: Ctx):
     account is never spun against, because the outcome cannot be undone exactly.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -2563,7 +2567,7 @@ def s_graduation_claim(ctx: Ctx):
     refused. Everything belongs to the throwaway account.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -2992,7 +2996,7 @@ def s_auth_self_service(ctx: Ctx):
     the account deletion requires the password.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3117,7 +3121,7 @@ def s_rewards_redeem(ctx: Ctx):
     account — that is a legitimate configuration, reported as a skip, not a failure.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3226,8 +3230,8 @@ def s_hp_transfer(ctx: Ctx):
     cannot transfer more than it holds. Both accounts are deleted afterwards.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    sender_id, sender_token, why = _provision_role_user(ctx, "customer", campus)
-    recipient_id, _recipient_token, why_r = _provision_role_user(ctx, "customer", campus)
+    sender_id, sender_token, why = _provision_role_user(ctx, "student", campus)
+    recipient_id, _recipient_token, why_r = _provision_role_user(ctx, "student", campus)
     try:
         if not sender_token or not recipient_id:
             raise Skip(f"could not provision both accounts ({why}; {why_r})")
@@ -3268,7 +3272,7 @@ def s_challenges_complete(ctx: Ctx):
     crash or a silent no-op.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3383,7 +3387,7 @@ def s_marketplace_request(ctx: Ctx):
     address pins the cleanup to this run.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3424,7 +3428,8 @@ def s_marketplace_request(ctx: Ctx):
 @step("surface", "surface.event_lifecycle",
       "a published event takes a registration, then a check-in, but only once",
       writes=True, route="POST /api/events/<event_id>/register",
-      routes=("POST /api/events/<event_id>/checkin",),
+      routes=("POST /api/events/<event_id>/checkin",
+              "GET /api/events/<event_id>/tickets/<ticket_id>/pdf"),
       needs=("auth.login",))
 def s_event_lifecycle(ctx: Ctx):
     """Registration and check-in against an event this step publishes itself.
@@ -3434,7 +3439,7 @@ def s_event_lifecycle(ctx: Ctx):
     The event, the ticket, the check-in and the HP the account earned are all removed again.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3470,6 +3475,12 @@ def s_event_lifecycle(ctx: Ctx):
                f"the ticket is owned by {ticket.get('user_id')}, not the registering account")
         ctx.note(f"registered: ticket {ticket_id} "
                  f"(status={ticket.get('status')}, payment={ticket.get('payment_status')})")
+
+        pdf = ctx.api.get(f"/api/events/{event_id}/tickets/{ticket_id}/pdf", token=token)
+        pdf.check(200)
+        expect(pdf.text.startswith("%PDF-"),
+               f"ticket PDF response did not begin with a PDF signature — {pdf.snippet(120)}", pdf)
+        ctx.note("ticket PDF generated with a valid %PDF header")
 
         ci = ctx.api.post(f"/api/events/{event_id}/checkin", token=token,
                           json_body={"qr_token": ticket_id})
@@ -3512,7 +3523,7 @@ def s_marketplace_lifecycle(ctx: Ctx):
     changed, feature off) is a Skip with the app's own message, not a failure.
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3610,7 +3621,7 @@ def s_hp_flash_redeem(ctx: Ctx):
         _FLASH_REDEMPTION_REF = "flash_reward_redemption"
 
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -3745,7 +3756,7 @@ def s_provider_wallet_bank(ctx: Ctx):
     runs (a sandbox mock NUBAN, or a real dedicated account on live keys).
     """
     campus = str(ctx.ids.get("campus_id") or "")
-    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    user_id, token, why = _provision_role_user(ctx, "student", campus)
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"could not provision a throwaway customer: {why}")
@@ -4224,7 +4235,7 @@ def _attacker_customer(ctx: Ctx):
     token = ctx.tokens.get("access")
     if token:
         return token, None, "signed-in customer"
-    user_id, token, why = _provision_role_user(ctx, "customer", str(ctx.ids.get("campus_id") or ""))
+    user_id, token, why = _provision_role_user(ctx, "student", str(ctx.ids.get("campus_id") or ""))
     if not token:
         _drop_role_user(ctx, user_id)
         raise Skip(f"no customer session and none could be provisioned: {why}")
@@ -5118,24 +5129,38 @@ ADMIN_ROUTES = [
 ]
 
 
-@step("admin", "admin.login", "sign in as an admin (E2E_ADMIN_EMAIL/PASSWORD or --admin-token)",
+@step("admin", "admin.login", "sign in as an admin (E2E_ADMIN_EMAIL/PASSWORD or E2E_ADMIN_TOKEN)",
       route="POST /api/auth/login", needs=("preflight.health",))
 def s_admin_login(ctx: Ctx):
-    if ctx.opts.admin_token:
-        ctx.tokens["admin"] = ctx.opts.admin_token
-        ctx.note("using --admin-token")
-        return
     email, password = ctx.opts.admin_email, ctx.opts.admin_password
-    if not (email and password):
-        raise Skip("set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD in .env "
-                   "(or pass --admin-token) to run the admin phase")
-    r = ctx.api.post("/api/auth/login", json_body={"email": email, "password": password})
-    r.check(200)
-    token = field(r.data or {}, "access_token") or ((r.data or {}).get("session") or {}).get("access_token")
-    expect(bool(token), f"admin login returned no access_token — {r.snippet()}", r)
-    role = (((r.data or {}).get("user") or {}).get("user_metadata") or {}).get("role")
+    if ctx.opts.admin_token:
+        token = ctx.opts.admin_token
+        source = "admin access token"
+    else:
+        if not (email and password):
+            raise Skip("set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD, or E2E_ADMIN_TOKEN, in .env "
+                       "(or pass --admin-token) to run the admin phase")
+        r = ctx.api.post("/api/auth/login", json_body={"email": email, "password": password})
+        r.check(200)
+        token = field(r.data or {}, "access_token") or ((r.data or {}).get("session") or {}).get("access_token")
+        expect(bool(token), f"admin login returned no access_token — {r.snippet()}", r)
+        source = f"signed in as {email}"
+
+    # require_role checks profiles.role/is_active/campus_id, not user_metadata.role.
+    # Verify the same profile facts once here so one bad token doesn't produce a
+    # cascade of opaque 403s across every admin route.
+    who = ctx.api.get("/api/auth/me", token=token)
+    who.check(200)
+    user = who.data or {}
+    profile = user.get("profile") or {}
+    role = profile.get("role") or user.get("role")
+    expect(role in ("admin", "super_admin"),
+           f"admin credential resolves to profiles.role={role!r}; expected admin or super_admin", who)
+    if role == "admin":
+        expect(bool(profile.get("campus_id")),
+               "campus admin profile has no campus_id; require_role will return 403", who)
     ctx.tokens["admin"] = token
-    ctx.note(f"signed in as {email}" + (f" (role claim: {role})" if role else ""))
+    ctx.note(f"{source}; verified profiles.role={role}")
 
 
 def _admin_step(sid: str, route: str, path: str):
@@ -5342,6 +5367,7 @@ def main(argv=None) -> int:
         load_dotenv(env_file, override=False)
 
     args.campus_id = args.campus_id or os.environ.get("E2E_CAMPUS_ID", "")
+    args.admin_token = args.admin_token or os.environ.get("E2E_ADMIN_TOKEN", "")
     args.admin_email = args.admin_email or os.environ.get("E2E_ADMIN_EMAIL", "")
     args.admin_password = args.admin_password or os.environ.get("E2E_ADMIN_PASSWORD", "")
 
