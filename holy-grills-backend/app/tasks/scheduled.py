@@ -2096,3 +2096,124 @@ def send_newsletter_campaigns(self):
             db.rpc("release_cron_lock", {"p_job_name": "send_newsletter_campaigns"})
         except Exception:
             pass
+
+
+# Ticket statuses written by the register_for_event* RPCs and by this job.
+# The expiry job sets a ticket to 'cancelled' and releases its tier seat.
+# Verified against the DB (migration 2026-10-01, STEP 0e): statuses are
+# pending_payment | confirmed | cancelled. Change this if the CHECK constraint
+# uses different words.
+EVENT_TICKET_PENDING_STATUS = "pending_payment"
+EVENT_TICKET_CANCELLED_STATUS = "cancelled"
+
+
+@celery_app.task(name="app.tasks.scheduled.cancel_expired_event_tickets", bind=True, max_retries=3)
+@with_cron_logging("cancel-expired-event-tickets")
+def cancel_expired_event_tickets(self):
+    """
+    Runs: Every 5 minutes.
+
+    Cancels card tickets whose checkout was abandoned: the register_for_event*
+    RPCs create them as status = pending_payment with payment_status = pending
+    and a 30-minute payment_expires_at, and nothing else ever cleaned them up —
+    so they held tier seats and appeared in admin/host registrant lists.
+
+    Sets status = cancelled, releases one seat on the tier (sold_count - 1),
+    notifies the buyer, and logs each cancellation. Idempotent: a ticket is only
+    ever moved out of pending_payment once.
+    """
+    db = get_db()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "cancel_expired_event_tickets"})
+    except Exception as e:
+        logger.error("cancel_expired_event_tickets: lock RPC failed, skipping run: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
+
+    cancelled = 0
+    seats_released = 0
+    errors = 0
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            expired = (
+                db.table("event_tickets")
+                .select("id,event_id,tier_id,user_id,guest_email,payment_expires_at")
+                .eq("status", EVENT_TICKET_PENDING_STATUS)
+                .lt("payment_expires_at", now_iso)
+                .limit(500)
+                .execute()
+            ) or []
+        except Exception as e:
+            logger.error("cancel_expired_event_tickets: lookup failed (is payment_expires_at present?): %s", e)
+            return {"error": str(e)}
+
+        for ticket in expired:
+            ticket_id = ticket["id"]
+            try:
+                # conditional update: only cancels it if still pending, so two
+                # workers can never cancel (and refund a seat) twice
+                updated = (
+                    db.table("event_tickets")
+                    .eq("id", ticket_id)
+                    .eq("status", EVENT_TICKET_PENDING_STATUS)
+                    .update({"status": EVENT_TICKET_CANCELLED_STATUS,
+                             "cancellation_reason": "Payment window expired"})
+                )
+                if not updated:
+                    continue
+                cancelled += 1
+
+                if ticket.get("tier_id"):
+                    try:
+                        tier = (
+                            db.table("event_ticket_tiers")
+                            .select("id,sold_count")
+                            .eq("id", ticket["tier_id"])
+                            .single()
+                            .execute()
+                        ) or {}
+                        sold = int(tier.get("sold_count") or 0)
+                        if sold > 0:
+                            db.table("event_ticket_tiers").eq("id", tier["id"]).update(
+                                {"sold_count": sold - 1}
+                            )
+                            seats_released += 1
+                    except Exception as tier_exc:                      # noqa: BLE001
+                        logger.warning("cancel_expired_event_tickets: seat release failed for %s: %s",
+                                       ticket_id, tier_exc)
+
+                if ticket.get("user_id"):
+                    try:
+                        from app.services.notification_service import send_notification
+                        send_notification(
+                            user_id=ticket["user_id"],
+                            notif_type="event_ticket_expired",
+                            template_data={
+                                "event_id": ticket.get("event_id"),
+                                "ticket_id": ticket_id,
+                                "message": "Your ticket was released because payment was not "
+                                           "completed in time. You can register again if seats "
+                                           "are still available.",
+                            },
+                            title="Ticket payment expired",
+                            reference_id=ticket_id,
+                            reference_type="event_ticket",
+                        )
+                    except Exception as notif_exc:                     # noqa: BLE001
+                        logger.warning("cancel_expired_event_tickets: notify failed for %s: %s",
+                                       ticket_id, notif_exc)
+            except Exception as exc:                                   # noqa: BLE001
+                errors += 1
+                logger.warning("cancel_expired_event_tickets: failed for ticket %s: %s", ticket_id, exc)
+
+        result = {"cancelled": cancelled, "seats_released": seats_released, "errors": errors}
+        if cancelled:
+            logger.info("cancel_expired_event_tickets: %s", result)
+        return result
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "cancel_expired_event_tickets"})
+        except Exception:
+            pass

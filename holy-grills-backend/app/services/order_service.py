@@ -319,6 +319,84 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
     return round(price_delta_total, 2), resolved_selections
 
 
+def _assert_redemption_claimable(db, redemption_id: str, user_id: str) -> None:
+    """Reject an already-spent reward *before* anything is charged.
+
+    The database is the authority (hg_claim_reward_redemption_for_order), but
+    failing here gives the customer a clear 400 instead of an error after the
+    money moved. A reward is spendable exactly once: status 'fulfilled' and not
+    yet attached to an order.
+    """
+    try:
+        rows = (
+            db.table("reward_redemptions")
+            .select("id,user_id,status,attached_order_id")
+            .eq("id", redemption_id)
+            .execute()
+        ) or []
+    except SupabaseError as exc:
+        # e.g. attached_order_id does not exist yet (migration not applied) —
+        # let the RPC be the judge rather than blocking a legitimate order.
+        logger.warning("create_order: reward pre-check unavailable (%s) — deferring to the RPC", exc)
+        return
+
+    if not rows:
+        raise ValueError("Reward redemption not found for this account.")
+    row = rows[0]
+    if str(row.get("user_id")) != str(user_id):
+        raise ValueError("Reward redemption not found for this account.")
+    if row.get("attached_order_id"):
+        raise ValueError("This reward has already been used on an order.")
+    if str(row.get("status") or "").lower() != "fulfilled":
+        raise ValueError("This reward must be marked fulfilled before it can be used.")
+
+
+def _claim_reward_redemption(db, redemption_id: str, user_id: str, order_id: str) -> dict:
+    """Attach one redemption to one order — first writer wins, later calls no-op.
+
+    Uses the conditional UPDATE in hg_claim_reward_redemption_for_order, so two
+    concurrent checkouts holding the same redemption cannot both spend it.
+    """
+    res = db.rpc("hg_claim_reward_redemption_for_order", {
+        "p_redemption_id": redemption_id,
+        "p_user_id": user_id,
+        "p_order_id": order_id,
+    })
+    return res if isinstance(res, dict) else {"claimed": False, "reason": "unexpected_rpc_result"}
+
+
+def _consume_free_sides(db, user_id: str, campus_id, order_id: str) -> dict:
+    """Spend this user's free-side selections on `order_id`.
+
+    Primary path: hg_consume_free_sides_atomic does the credit decrement, the ₦0
+    order line and the selection deletion in one transaction. If that migration
+    is not applied yet, fall back to the Python consumer, which uses the same
+    compare-and-set decrement, so a retry cannot double-spend either way.
+    """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("free_side_credits"):
+        return {"consumed": 0, "skipped": "feature_disabled"}
+
+    try:
+        res = db.rpc("hg_consume_free_sides_atomic", {
+            "p_user_id": user_id,
+            "p_order_id": order_id,
+            "p_campus_id": campus_id,
+        })
+        if isinstance(res, dict):
+            return res
+    except SupabaseError as exc:
+        code = str((getattr(exc, "details", None) or {}).get("code") or "")
+        if code not in ("PGRST202", "42883") and exc.status_code != 404:
+            raise
+        logger.warning("create_order: hg_consume_free_sides_atomic missing (%s) — "
+                       "using the Python consumer", exc)
+
+    from app.routes.free_sides import consume_free_side_selections
+    inserted = consume_free_side_selections(db, user_id, campus_id, order_id) or []
+    return {"consumed": len(inserted), "source": "python_fallback"}
+
+
 def create_order(user_id: str | None, payload: dict) -> dict:
     """
     Create a new order. Supports authenticated and guest checkout.
@@ -802,6 +880,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
+    # A reward may ride exactly one order. Check before anything is charged; the
+    # authoritative claim happens after the order exists (see below).
+    redemption_id = payload.get("redemption_id")
+    if redemption_id:
+        _assert_redemption_claimable(get_db(), redemption_id, user_id)
+
     rpc_payload = {
         "p_user_id": user_id,
         "p_campus_id": campus_id,
@@ -818,7 +902,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "p_wallet_amount_used": wallet_amount_used,
         "p_card_amount_used": card_amount_used,
         "p_hp_redeemed": int(payload.get("hp_redeemed") or 0),
-        "p_redemption_id": payload.get("redemption_id"),
+        "p_redemption_id": redemption_id,
         "p_delivery_type": delivery_type,
         "p_delivery_location_id": delivery_location_id,
         "p_delivery_location_lat": delivery_location_lat,
@@ -858,6 +942,35 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
 
     order_id = result.get("order_id")
+
+    # ── Free sides: spend the credits and add the ₦0 lines ──────────────────
+    # The one place a free-side credit is actually consumed. Runs after the order
+    # exists (it needs order_id) and must never fail the order: the customer has
+    # paid for the real items, and an unconsumed selection simply stays for the
+    # next checkout.
+    if order_id and not result.get("idempotent"):
+        try:
+            _consume_free_sides(get_db(), user_id, campus_id, str(order_id))
+        except Exception as exc:                                    # noqa: BLE001
+            logger.warning("create_order: free-side consumption failed for order %s: %s",
+                           order_id, exc)
+
+    # ── Reward redemption: attach it to this order exactly once ─────────────
+    # Claimed above (pre-check) and attached here. If a concurrent request won
+    # the race, the reward is already spent elsewhere — log it loudly, because
+    # the customer received the discount on this order.
+    claim = None
+    if order_id and redemption_id and not result.get("idempotent"):
+        try:
+            claim = _claim_reward_redemption(get_db(), redemption_id, user_id, str(order_id))
+            if not (claim or {}).get("claimed"):
+                logger.error("create_order: reward redemption %s could not be claimed for order %s "
+                             "(%s) — the reward may have been used twice", redemption_id, order_id,
+                             (claim or {}).get("reason"))
+        except Exception as exc:                                    # noqa: BLE001
+            logger.error("create_order: reward claim call failed for redemption %s / order %s: %s",
+                         redemption_id, order_id, exc)
+
     if squad_id and order_id and not result.get("idempotent"):
         excluded_ids = set(payload.get("excluded_member_ids") or [])
         extra_members = [e.strip().lower() for e in (payload.get("extra_members") or []) if e and e.strip()]

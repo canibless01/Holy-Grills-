@@ -73,17 +73,16 @@ RPC_CALL_RE = re.compile(r"""\.rpc\(\s*["']([a-z0-9_]+)["']""")
 PROBES = {
     "Q1_free_sides_in_create_order": {
         "question": "Does hg_create_order consume free_side_selections / free-side credits?",
-        "functions": ["hg_create_order"],
-        "look_for": ["free_side", "free_side_selections", "free_side_credits",
-                     "cart_free_side_selections", "consumed", "used"],
+        "functions": ["hg_create_order_atomic"],
+        "look_for": ["free_side", "cart_free_side_selections", "free_side_credits"],
         "absence_means": "the RPC never reads free-side tables, so a selected free side "
                          "is recorded but never spent nor added to the order",
     },
     "Q2_reward_redemption_marked_used": {
         "question": "Does the order RPC mark a reward redemption as used after delivery?",
-        "functions": ["hg_create_order", "hg_mark_order_paid", "hg_redeem_reward",
+        "functions": ["hg_create_order_atomic", "hg_mark_order_paid", "hg_redeem_reward",
                       "hg_credit_delivery_hp_atomic"],
-        "look_for": ["reward_redemptions", "redemption", "status", "used", "delivered"],
+        "look_for": ["reward_redemptions", "attached_order_id", "used_at"],
         "absence_means": "nothing in the order path updates reward_redemptions, so the "
                          "reward is never consumed (the Python side has no such update either)",
     },
@@ -453,6 +452,78 @@ def sql_probes(conn, rep: Report) -> None:
     rep.data["probes"] = answers
 
 
+def sql_impersonate(conn, rep: Report, subjects: list[tuple[str, str]], sample: int = 3) -> None:
+    """What each role actually sees, by impersonating it inside a transaction.
+
+    This is the empirical RLS test: set the Postgres role and the JWT claims
+    PostgREST would set, then read a few rows. An empty result where a policy
+    should allow reads is a bug; rows visible to `anon` are a leak.
+
+    Runs in a transaction that is always rolled back, and only ever does SELECTs.
+    """
+    rep.head("RLS impersonation")
+    relations = [r[0] for r in query(conn, """
+        SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v') ORDER BY c.relname
+    """)]
+
+    subjects = [("anon", None)] + subjects
+    for label, user_id in subjects:
+        role = "anon" if label == "anon" else "authenticated"
+        claims = json.dumps({"role": role, "sub": user_id} if user_id else {"role": "anon"})
+        visible, denied, errored = [], [], []
+        try:
+            with conn.cursor() as cur:
+                cur.execute("BEGIN")
+                cur.execute(f"SET LOCAL ROLE {role}")
+                cur.execute("SELECT set_config('request.jwt.claims', %s, true)", (claims,))
+                for table in relations:
+                    try:
+                        cur.execute(f'SELECT count(*) FROM public."{table}"')
+                        count = cur.fetchone()[0]
+                        (visible if count else denied).append((table, count))
+                    except Exception:                          # noqa: BLE001
+                        errored.append(table)
+                        cur.execute("ROLLBACK; BEGIN; SET LOCAL ROLE " + role)
+                        cur.execute("SELECT set_config('request.jwt.claims', %s, true)", (claims,))
+                cur.execute("ROLLBACK")
+        except Exception as exc:                               # noqa: BLE001
+            rep.finding("medium", f"could not impersonate {label}",
+                        str(exc)[:160],
+                        "the role may not exist, or the connection user cannot SET ROLE to it")
+            continue
+
+        rep.text(f"**{label}**" + (f" ({user_id})" if user_id else " (no JWT)"))
+        rep.text(f"- rows visible: {len(visible)} table(s) → "
+                 + (", ".join(f"{t}({c})" for t, c in visible[:12]) or "_none_")
+                 + (" …" if len(visible) > 12 else ""))
+        rep.text(f"- empty but readable (RLS filtered): {len(denied)}")
+        if errored:
+            rep.text(f"- permission denied: {len(errored)} → " + ", ".join(errored[:12])
+                     + (" …" if len(errored) > 12 else ""))
+        rep.data.setdefault("impersonation", {})[label] = {
+            "user_id": user_id,
+            "visible": [{"table": t, "rows": c} for t, c in visible],
+            "empty": [t for t, _ in denied],
+            "denied": errored,
+        }
+
+        if label == "anon":
+            sensitive = {"profiles", "orders", "wallets", "wallet_transactions",
+                         "hp_transactions", "event_tickets", "device_tokens",
+                         "user_addresses", "notification_preferences"}
+            leaks = [(t, c) for t, c in visible if t in sensitive]
+            if leaks:
+                rep.finding("high", "anon can read rows from customer tables",
+                            ", ".join(f"{t}({c} rows)" for t, c in leaks),
+                            "revoke the anon grant or tighten the RLS policy")
+        if label != "anon" and not visible:
+            rep.finding("medium", f"authenticated user {label} sees no rows anywhere",
+                        "either every policy is missing or the grant is absent",
+                        "a normal user must at least see their own profiles row")
+        rep.text()
+
+
 def sql_duplicates(conn, rep: Report) -> None:
     """Duplicate / near-duplicate relations and functions (parallel sessions)."""
     rep.head("Duplicate search")
@@ -504,6 +575,11 @@ def main(argv=None) -> int:
                         help="skip the SQL pass even if SUPABASE_DB_URL is set")
     parser.add_argument("--search", default="",
                         help="look for an existing table/function matching this text")
+    parser.add_argument("--impersonate", action="append", default=[],
+                        metavar="LABEL:UUID",
+                        help="also run the RLS check as `authenticated` with this JWT sub "
+                             "(repeatable, e.g. --impersonate student:3d022e3c-…). "
+                             "Defaults to E2E_STUDENT_ID / E2E_ADMIN_ID when set.")
     parser.add_argument("--dump-defs", default="",
                         help="print pg_get_functiondef for these functions (comma-separated)")
     parser.add_argument("--out", default="", help="also write the markdown report here")
@@ -520,6 +596,20 @@ def main(argv=None) -> int:
     service_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
     anon_key = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()
     db_url = (os.environ.get("SUPABASE_DB_URL") or "").strip()
+
+    # RLS impersonation subjects: --impersonate wins, then the .env ids
+    subjects: list[tuple[str, str]] = []
+    for item in args.impersonate:
+        label, _, uid = item.partition(":")
+        if label and uid:
+            subjects.append((label.strip(), uid.strip()))
+    if not subjects:
+        for label, env_name in (("student", "E2E_STUDENT_ID"),
+                                ("admin", "E2E_ADMIN_ID"),
+                                ("superadmin", "E2E_SUPERADMIN_ID")):
+            uid = (os.environ.get(env_name) or "").strip()
+            if uid:
+                subjects.append((label, uid))
 
     if not url or not service_key:
         print("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing — run scripts/check_supabase.py first.",
@@ -632,6 +722,12 @@ def main(argv=None) -> int:
             sql_policies(conn, rep)
             sql_grants(conn, rep)
             sql_functions(conn, rep)
+            if subjects:
+                sql_impersonate(conn, rep, subjects)
+            else:
+                rep.head("RLS impersonation — skipped")
+                rep.text("_no subjects given; pass --impersonate student:<uuid> or set "
+                         "E2E_STUDENT_ID / E2E_ADMIN_ID / E2E_SUPERADMIN_ID in .env_")
             sql_duplicates(conn, rep)
         finally:
             conn.close()

@@ -19,23 +19,30 @@ policies, grants or function bodies, so the four RPC questions and the whole
 RLS/grants audit need that connection. Put it in `.env`; it is never printed and
 never leaves the machine.
 
-**Report status**
+**Report status** (updated after the live check of 2026-10-01)
 
 | Area | Status |
 |------|--------|
-| Schema inventory (tables/RPCs), duplicate search | pending first run |
-| RPC behaviour (Q1–Q3) | pending `SUPABASE_DB_URL` |
-| Q4 roles | answered from code, DB-side check scripted |
-| RLS, grants, security-advisor equivalents | pending `SUPABASE_DB_URL` |
+| Q1 free sides | **answered — never consumed anywhere**; fix shipped |
+| Q2 reward redemption | **answered — reuse is possible**; fix shipped |
+| Q3 event ticket payment_status | **answered — `pending_payment` / `pending`, 30-min expiry, no cleanup**; fix shipped |
+| Q4 roles | answered from code (kitchen + rider accepted) |
+| RLS, grants, advisor equivalents | tool ready; run `make audit` with `SUPABASE_DB_URL` |
+| Duplicate search | tool ready (`make audit ARGS="--search …"`) |
+
+**Correction:** the order RPC is **`hg_create_order_atomic`**, not `hg_create_order`
+(the probe list in `scripts/db_audit.py` has been corrected).
 
 ---
 
 ## 1. The four questions
 
-### Q1 — does `hg_create_order` consume free-side selections/credits?
+### Q1 — does the order RPC consume free-side selections/credits?
 
-**Python side: confirmed NO — the consumer is dead code.** Not inferred; quoted
-from the source:
+**DB side: confirmed NO** (checked live) — no function in the database references
+`free_side_*`, `cart_free_side_selections` or `free_side_credits`.
+
+**Python side: also NO — the consumer is dead code.** Quoted from the source:
 
 * `app/routes/free_sides.py:298` defines `consume_free_side_selections(write_db, user_id, campus_id, order_id)`.
 * Its docstring: *"…not yet wired into order_service.create_order() as of this pass; see CROSS_FILE_DEPENDENCIES.md."*
@@ -46,13 +53,12 @@ from the source:
 Net effect: `POST /free-sides/select` writes a `cart_free_side_selections` row and
 nothing ever spends the `free_side_credits` row or adds a ₦0 `order_items` line.
 
-**DB side: to confirm** — the only way the credit could still be spent is if the
-RPC reads those tables itself. Probe `Q1_free_sides_in_create_order` reads
-`pg_get_functiondef('hg_create_order')` and reports whether `free_side`,
-`cart_free_side_selections` or `free_side_credits` appear.
-
-> **Do not wire the Python consumer before this probe runs.** If the RPC already
-> decrements credits, adding the Python call double-spends them.
+**Fix shipped** — `_consume_free_sides` in `app/services/order_service.py` runs
+immediately after `hg_create_order_atomic` returns and calls the new atomic RPC
+`hg_consume_free_sides_atomic` (`migrations/2026-10-01_free_sides_reward_consumption.sql`),
+which does the credit decrement, the ₦0 order line and the selection deletion in
+one transaction. The old Python consumer stays as a fallback when the RPC is not
+installed. See [FREE_SIDES_AND_REWARDS.md](FREE_SIDES_AND_REWARDS.md).
 
 ### Q2 — does the order RPC mark a reward redemption as used after delivery?
 
@@ -60,10 +66,15 @@ RPC reads those tables itself. Probe `Q1_free_sides_in_create_order` reads
 `app/routes/rewards.py` (create, fulfil, reject, delivery-choice) — nothing in the
 order flow, delivery flow or the delivery-HP service updates it.
 
-**DB side: to confirm** — probe `Q2_reward_redemption_marked_used` reads
-`hg_create_order`, `hg_mark_order_paid`, `hg_redeem_reward` and
-`hg_credit_delivery_hp_atomic` and reports which of them mention
-`reward_redemptions` / a `used` status.
+**DB side: confirmed by the live check** — `hg_create_order_atomic` stores
+`redemption_id` on the order, but nothing sets `reward_redemptions.attached_order_id`
+and there is no used/consumed status (only `pending` / `fulfilled`). A fulfilled
+reward could therefore ride unlimited orders.
+
+**Fix shipped** — `hg_claim_reward_redemption_for_order` (conditional UPDATE,
+first writer wins) plus a pre-check in `order_service.create_order` that returns a
+clear 400 for an already-used reward, and a post-create claim whose failure is
+logged as an error rather than swallowed.
 
 ### Q3 — what `payment_status` do `register_for_event*` give an unpaid card ticket?
 
@@ -72,12 +83,20 @@ order flow, delivery flow or the delivery-HP service updates it.
 `"not_required"` fallback at `:606`/`:700`. There is no Python assignment of
 `pending` anywhere — so this is entirely an RPC/column-default question.
 
-**DB side: to confirm** — probe `Q3_event_ticket_payment_status` extracts the
-assignment from both `register_for_event_paid` and `register_for_event_guest_paid`,
-and (because a column default would be invisible in the body) also reports the
-`event_tickets.payment_status` default. This matters for gap 2 of the ecosystem
-map: `send-registrants-to-host` has no payment filter, so the value written here
-determines whether unpaid card tickets get emailed to a host.
+**DB side: confirmed by the live check** — both `register_for_event*` RPCs create
+card tickets as `status = pending_payment`, `payment_status = pending`, with a
+30-minute `payment_expires_at`, and nothing ever cancelled expired ones.
+
+**Fix shipped**
+* `app/routes/events.py` — `_registrants_for_event()` filters a priced event to
+  `payment_status in ('paid','not_required')` for both the registrant list and the
+  host email, adds a Payment column, and reports `excluded_unpaid` /
+  `total_all_statuses` (`?include_unpaid=true`, or `include_unpaid` in the body,
+  overrides).
+* `app/tasks/scheduled.py` — new `cancel_expired_event_tickets` job (every 5 min)
+  cancels expired `pending_payment` tickets, releases the tier seat, notifies the
+  buyer; wired into the beat schedule, `/api/admin/cron/cancel-expired-event-tickets`
+  and the cron-status table.
 
 ### Q4 — does `PATCH /admin/users/<id>/role` accept kitchen and rider?
 

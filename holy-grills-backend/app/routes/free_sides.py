@@ -188,8 +188,9 @@ def delete_free_side_item(item_id):
 
 # ---------------------------------------------------------------------------
 # Cart-stage selection — replaces the old post-order /redeem flow. A user picks
-# free sides while building their cart; credits are actually consumed once at
-# checkout by consume_free_side_selections() (called from order_service.create_order()).
+# free sides while building their cart; credits are consumed once at checkout,
+# when order_service.create_order() calls hg_consume_free_sides_atomic (with
+# consume_free_side_selections() below as the fallback if that RPC is absent).
 # ---------------------------------------------------------------------------
 
 @free_sides_bp.route("/select", methods=["POST"])
@@ -267,7 +268,8 @@ def deselect_free_side(selection_id):
 
 # ---------------------------------------------------------------------------
 # Shared consumption path — the ONE place a free-side credit is actually spent.
-# Called by order_service.create_order() at checkout (wiring lives in that file,
+# Called by order_service._consume_free_sides() at checkout — the fallback path
+# used when hg_consume_free_sides_atomic is not installed (wiring lives there,
 # not here — order_service.py is outside this pass).
 # ---------------------------------------------------------------------------
 
@@ -299,8 +301,9 @@ def consume_free_side_selections(write_db, user_id: str, campus_id, order_id: st
     """Mirrors the existing OCC credit-decrement pattern already proven in this
     domain (spin credits, the old redeem_free_side). Returns inserted order_items rows.
     Checks the free_side_credits feature flag itself (rather than relying on the caller
-    to check it) since this is the one place a credit is actually spent — not yet wired
-    into order_service.create_order() as of this pass; see CROSS_FILE_DEPENDENCIES.md."""
+    to check it) since this is the one place a credit is actually spent. Prefer the
+    atomic path: order_service.create_order() calls hg_consume_free_sides_atomic and
+    only falls back to this function when that RPC is not installed."""
     from app.services.feature_flags import is_feature_enabled
     if not is_feature_enabled("free_side_credits"):
         return []

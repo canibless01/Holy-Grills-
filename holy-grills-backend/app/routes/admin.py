@@ -1677,6 +1677,7 @@ _CRON_INTERVAL_MINUTES = {
     "send-scheduled-notifications":  (15, "every 15 minutes"),
     "send-scheduled-blasts":         (15, "every 15 minutes"),
     "process-scheduled-orders":      (5, "every 5 minutes"),
+    "cancel-expired-event-tickets":  (5, "every 5 minutes"),
     "check-post-delivery-nudges":    (30, "every 30 minutes"),
     "grant-monthly-tier-perks":      (44640, "1st of month @ 00:05 WAT"),
 }
@@ -1878,6 +1879,7 @@ def run_cron_job(job_name):
           - process-scheduled-orders
           - check-post-delivery-nudges
           - grant-monthly-tier-perks
+          - cancel-expired-event-tickets
     responses:
       202:
         description: Job started in the background
@@ -1903,7 +1905,11 @@ def run_cron_job(job_name):
         send_scheduled_blasts,
         process_scheduled_orders,
     )
-    from app.tasks.scheduled import check_post_delivery_nudges, grant_monthly_tier_perks
+    from app.tasks.scheduled import (
+        check_post_delivery_nudges,
+        grant_monthly_tier_perks,
+        cancel_expired_event_tickets,
+    )
 
     task_map = {
         "birthday-hp":                   birthday_hp_awards,
@@ -1923,6 +1929,7 @@ def run_cron_job(job_name):
         "process-scheduled-orders":      process_scheduled_orders,
         "check-post-delivery-nudges":    check_post_delivery_nudges,
         "grant-monthly-tier-perks":      grant_monthly_tier_perks,
+        "cancel-expired-event-tickets":  cancel_expired_event_tickets,
     }
 
     task_fn = task_map.get(job_name)
