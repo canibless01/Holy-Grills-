@@ -154,8 +154,10 @@ def reset_weekly_leaderboard(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "reset_weekly_leaderboard"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.reset_monthly_leaderboard", bind=True, max_retries=3)
@@ -258,7 +260,6 @@ def reset_monthly_leaderboard(self):
                     logger.error("reset_monthly_leaderboard: snapshot insert failed for campus %s: %s", campus_id, e)
 
                 from app.services.notification_service import send_notification
-                from app.services.feature_flags import is_feature_enabled
                 for entry in entries[:10]:
                     uid = entry.get("user_id")
                     rank = entry.get("rank", "?")
@@ -470,8 +471,10 @@ def reset_monthly_leaderboard(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3)
@@ -543,8 +546,10 @@ def recalculate_120day_hp(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "recalculate_120day_hp"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3)
@@ -677,8 +682,10 @@ def tier_grace_period_check(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "tier_grace_period_check"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.birthday_hp_awards", bind=True, max_retries=3)
@@ -818,8 +825,10 @@ def birthday_hp_awards(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "birthday_hp_awards"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.monthly_birthday_report", bind=True, max_retries=2)
@@ -939,8 +948,10 @@ def monthly_birthday_report(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "monthly_birthday_report"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.process_scheduled_orders", bind=True, max_retries=3)
@@ -1052,8 +1063,10 @@ def process_scheduled_orders(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "process_scheduled_orders"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.win_back_notifications", bind=True, max_retries=3)
@@ -1174,8 +1187,10 @@ def win_back_notifications(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "win_back_notifications"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.hp_decay_check", bind=True, max_retries=3)
@@ -1284,8 +1299,10 @@ def hp_decay_check(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "hp_decay_check"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.check_order_locks", bind=True, max_retries=3)
@@ -1356,8 +1373,9 @@ def check_order_locks(self):
                         last_r_dt = datetime.fromisoformat(str(last_reminder).replace("Z", "+00:00"))
                         if (now - last_r_dt.replace(tzinfo=timezone.utc)).days < 1:
                             continue
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("check_order_locks: reminder_sent_at %r unreadable — a duplicate reminder may go out: %s",
+                                        last_reminder, exc)
 
                 reward_type = lock.get("reward_type", "discount")
                 try:
@@ -1404,8 +1422,10 @@ def check_order_locks(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "check_order_locks"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.reset_monthly_hp_tracker", bind=True, max_retries=2)
@@ -1446,8 +1466,10 @@ def reset_monthly_hp_tracker(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_hp_tracker"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.membership_anniversary_awards", bind=True, max_retries=3)
@@ -1569,8 +1591,10 @@ def membership_anniversary_awards(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "membership_anniversary_awards"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_blasts", bind=True, max_retries=3)
@@ -1617,8 +1641,10 @@ def send_scheduled_blasts(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_notifications", bind=True, max_retries=3)
@@ -1789,8 +1815,10 @@ def send_scheduled_notifications(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_notifications"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 def _sync_abandoned_carts_from_cart_items(db):
@@ -1902,8 +1930,10 @@ def scan_abandoned_carts(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "scan_abandoned_carts"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.check_post_delivery_nudges", bind=True, max_retries=3)
@@ -2005,8 +2035,10 @@ def check_post_delivery_nudges(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "check_post_delivery_nudges"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.grant_monthly_tier_perks", bind=True, max_retries=2)
@@ -2066,8 +2098,10 @@ def grant_monthly_tier_perks(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "grant_monthly_tier_perks"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_newsletter_campaigns", bind=True, max_retries=3)
@@ -2094,5 +2128,7 @@ def send_newsletter_campaigns(self):
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_newsletter_campaigns"})
-        except Exception:
-            pass
+        except Exception as exc:
+            # The job stays locked, so its next scheduled run may skip itself.
+            logger.warning("cron: could not release the job lock after this "
+                           "run (%s) — the job may be skipped next time", exc)

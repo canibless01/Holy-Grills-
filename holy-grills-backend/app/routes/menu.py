@@ -27,7 +27,7 @@ def _json_body() -> dict:
 def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data=None, after_data=None):
     """Write an admin audit log entry for menu item changes. Silently ignores errors."""
     try:
-        from app.db import get_db, get_user_client as _get_db
+        from app.db import get_user_client as _get_db
         db = _get_db()
         actor_role = getattr(g, "user_role", "admin")
         campus_id = getattr(g, "campus_id", None)

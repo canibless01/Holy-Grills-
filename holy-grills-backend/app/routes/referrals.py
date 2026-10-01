@@ -2,13 +2,11 @@
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
-from app.services.hp_service import award_active_hp
 from app.db import get_db, get_user_client
 from app.services.notification_service import send_notification
 from app.services.feature_flags import is_feature_enabled
 from app.messages import MSG
 from app.utils.logger import get_logger
-from datetime import datetime, timezone
 
 logger = get_logger(__name__)
 

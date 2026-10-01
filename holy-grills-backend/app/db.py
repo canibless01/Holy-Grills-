@@ -5,7 +5,6 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 from functools import lru_cache
-from flask import current_app
 
 
 class SupabaseClient:
@@ -433,7 +432,7 @@ class TableQuery:
     def upsert(self, data: dict | list, on_conflict: str = "id") -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
         headers = self._headers()
-        headers["Prefer"] = f"resolution=merge-duplicates,return=representation"
+        headers["Prefer"] = "resolution=merge-duplicates,return=representation"
         resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict}, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()

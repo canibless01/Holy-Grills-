@@ -4,7 +4,6 @@ Payment service — Paystack: card payment init/verify, dedicated virtual accoun
 
 import hashlib
 import hmac
-import json
 import requests as http_requests
 from flask import current_app
 from app.utils.retry import with_retry

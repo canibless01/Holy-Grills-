@@ -17,7 +17,7 @@ POST   /challenges/admin/<id>/grant — grant milestone to specific user
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role, optional_auth
-from app.db import get_db, get_user_client
+from app.db import get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 from app.utils.campus_scope import as_campus_id, public_campus

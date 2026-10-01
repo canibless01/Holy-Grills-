@@ -1,9 +1,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
-from app.services.hp_service import (
-    get_hp_balance, get_user_tier, earn_pending_hp, award_active_hp
-)
-from app.db import get_db, get_user_client
+from app.services.hp_service import (get_hp_balance, get_user_tier, award_active_hp)
+from app.db import get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 
@@ -512,7 +510,7 @@ def transfer_hp():
 
 
 def _log_admin_action(actor_id, table, target_id, action, after_data=None, campus_id=None):
-    from app.db import get_db, get_user_client
+    from app.db import get_user_client
     db = get_user_client()
     actor_role = getattr(g, "user_role", "admin")
     cid = campus_id or getattr(g, "campus_id", None)

@@ -4,12 +4,11 @@ import math
 from decimal import Decimal, ROUND_FLOOR
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id, optional_auth
-from app.services.hp_service import spend_hp, get_hp_balance, get_user_tier
+from app.services.hp_service import get_hp_balance
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
-import uuid
 from datetime import datetime, timezone
 
 logger = get_logger(__name__)

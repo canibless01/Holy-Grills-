@@ -8,7 +8,7 @@ CUSTOMIZATION MODEL DOCUMENTATION:
 
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth
-from app.db import get_db, get_user_client
+from app.db import get_user_client
 from app.messages import MSG
 from datetime import datetime, timezone
 

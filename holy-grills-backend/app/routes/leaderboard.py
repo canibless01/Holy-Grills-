@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
-from datetime import date, timedelta, datetime, timezone
+from datetime import timedelta, datetime, timezone
 from app.utils.tz import today_wat
 from app.utils.logger import get_logger
 

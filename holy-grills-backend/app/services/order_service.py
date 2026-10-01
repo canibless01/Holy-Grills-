@@ -19,7 +19,6 @@ from app.utils.tz import today_wat
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services import hp_service
-from app.services.wallet_service import debit_wallet
 from app.services.notification_service import send_notification
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -437,8 +436,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         try:
             from app.routes.events import _get_campus_id
             campus_id = _get_campus_id()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("create_order: campus resolution from the request context failed: %s", exc)
     if not campus_id:
         raise ValueError("campus_id could not be resolved for this order")
 
@@ -648,7 +647,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     # ── Squad Order discount ──────────────────────────────────────────────────
     config = current_app.config
     squad_discount = 0.0
-    squad_delivery_discount = 0.0
     squad_item_count = sum(oi["quantity"] for oi in order_items if not oi.get("is_addon"))
     is_squad_order = False
     squad_id = None
@@ -715,8 +713,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     delivery_type = addr["delivery_type"]
         except ValueError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("create_order: saved-address lookup failed — using the payload's delivery fields: %s",
+                          exc)
 
     from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
@@ -750,8 +749,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             )
             if hostel:
                 delivery_fee = float(hostel.get("delivery_fee") or 0)
-        except Exception:
-            pass  # Table may not exist yet — fee stays 0
+        except Exception as exc:
+            logger.warning("create_order: hostel delivery_fee unreadable — the order charges ₦0 delivery: %s",
+                            exc)
     elif delivery_type == "off_campus" and delivery_location_id:
         try:
             gate = (
@@ -779,7 +779,6 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if is_squad_order and config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True):
         pct = Decimal(str(config.get("SQUAD_DELIVERY_DISCOUNT_PCT", 100)))
         squad_delivery_discount_dec = (delivery_fee_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
-        squad_delivery_discount = float(squad_delivery_discount_dec)
         delivery_fee_dec = max(Decimal("0.0"), delivery_fee_dec - squad_delivery_discount_dec)
         delivery_fee = float(delivery_fee_dec)
 
@@ -873,13 +872,15 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         try:
             tier_info = hp_service.get_user_tier(user_id)
             tier_slug = (tier_info.get("tier") or {}).get("slug", "ember")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("create_order: tier lookup failed for %s — the HP preview uses the default tier: %s",
+                            user_id, exc)
         try:
             prof = db.table("profiles").select("next_order_hp_multiplier").eq("id", user_id).single().execute()
             next_order_hp_mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("create_order: next_order_hp_multiplier unreadable for %s — the bonus may be lost: %s",
+                            user_id, exc)
 
     hp_preview_total = hp_service.calculate_delivery_hp(
         subtotal, tier_slug, order_items, user_id=user_id, campus_id=campus_id
@@ -1007,8 +1008,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     "order_id": order_id, "email": r["email"], "user_id": r.get("user_id"),
                     "is_registered": bool(r.get("user_id")), "campus_id": campus_id_for_squad,
                 })
-            except Exception:
-                pass  # duplicate (order_id, email) — ignore
+            except Exception as exc:
+                logger.warning("create_order: squad member row not written for %s on order %s: %s",
+                                r.get("email"), order_id, exc)
             snapshot.append({"email": r["email"], "user_id": r.get("user_id")})
         for email in extra_members:
             prof = db.table("profiles").select("id").eq("email", email).single().execute()
@@ -1018,8 +1020,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     "user_id": prof["id"] if prof else None,
                     "is_registered": bool(prof), "campus_id": campus_id_for_squad,
                 })
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("create_order: squad member row not written for %s on order %s: %s",
+                                email, order_id, exc)
             snapshot.append({"email": email, "user_id": prof["id"] if prof else None})
         if snapshot:
             db.table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot})
@@ -1058,8 +1061,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 if dw:
                     delivery_start = dw.get("opens_at")
                     delivery_end = dw.get("closes_at")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("create_order: delivery window %s unreadable — the customer sees the 18:00-19:00 default: %s",
+                                linked_delivery_window_id, exc)
         order["delivery_window_start"] = delivery_start or "18:00"
         order["delivery_window_end"] = delivery_end or "19:00"
 
@@ -1191,8 +1195,9 @@ def walk_order_to_status(
                 if c_prof:
                     caller_role = c_prof.get("role")
                     caller_campus = c_prof.get("campus_id")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("walk_order_to_status: could not resolve the role of %s — the rider/kitchen/admin checks are SKIPPED for this call: %s",
+                              changed_by, exc)
 
         if caller_role == "rider":
             effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id}).execute()
@@ -1345,12 +1350,15 @@ def _restore_order_consumables(order: dict) -> None:
 
     # reward_redemptions has no UPDATE policy for the owner (only admins) — see the same
     # note in routes/rewards.py — so this write has to go through the service role, pinned
-    # to the order that actually holds the claim.
+    # to the order that actually holds the claim. Both the claim link and its timestamp go
+    # back to empty: the database only ever sets them (hg_create_order_atomic claims the
+    # reward; nothing reverses it), so clearing them here is what makes the reward
+    # claimable again. Re-running is a no-op — the row no longer matches the filter.
     try:
         released = (
             get_db().table("reward_redemptions")
             .eq("attached_order_id", order_id)
-            .update({"attached_order_id": None})
+            .update({"attached_order_id": None, "used_at": None})
         )
         count = len(released) if isinstance(released, list) else (1 if released else 0)
         if count:
@@ -1391,8 +1399,9 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 if c_prof:
                     caller_role = c_prof.get("role")
                     caller_campus = c_prof.get("campus_id")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("update_order_status: could not resolve the role of %s — the rider/kitchen/admin checks are SKIPPED for this call: %s",
+                              changed_by, exc)
 
         if caller_role == "rider":
             if _effective_rider_id(order) != changed_by:
@@ -1903,7 +1912,7 @@ def resolve_ordering_window(db, campus_id):
 
 
 def get_ordering_window_status(db, campus_id, for_date=None):
-    from datetime import time as _time, timedelta as _td, timezone as _tz
+    from datetime import timedelta as _td, timezone as _tz
     _now_utc = datetime.now(_tz.utc)
     _now_wat_dt = _now_utc + _td(hours=1)
     target_dt = for_date if for_date else _now_wat_dt.date()

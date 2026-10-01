@@ -1,6 +1,6 @@
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.db import get_db, get_user_client
+from app.db import get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.admin_helpers import as_uuid
 from app.utils.logger import get_logger

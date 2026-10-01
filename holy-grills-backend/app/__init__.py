@@ -1,5 +1,4 @@
 import uuid
-import logging
 
 import requests
 from flask import Flask, request

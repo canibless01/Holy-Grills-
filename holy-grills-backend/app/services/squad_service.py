@@ -195,7 +195,8 @@ def distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str, campus_
             if m.get("user_id") in registered_ids or m in unregistered:
                 try:
                     db.table("squad_members").eq("id", m["id"]).update({"hp_share": share})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("distribute_squad_hp: could not record the HP share for member %s: %s",
+                                    m.get("id"), exc)
     except Exception as e:
         logger.error("distribute_squad_hp failed for order %s: %s", order_id, e)

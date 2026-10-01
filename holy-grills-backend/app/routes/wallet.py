@@ -4,8 +4,8 @@ Wallet routes — balance, card top-up (Paystack), dedicated virtual account, tr
 
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.services.wallet_service import get_wallet, get_wallet_transactions
-from app.services.payment_service import initialize_payment, verify_payment
+from app.services.wallet_service import get_wallet
+from app.services.payment_service import initialize_payment
 from app.db import get_db, get_user_client
 from app.messages import MSG
 import uuid
@@ -222,7 +222,6 @@ def request_virtual_account():
         admin_db = get_db()
         admin_db.table("virtual_accounts").insert(va_payload).execute()
     except Exception as ins_err:
-        from app.db import SupabaseError
         from flask import current_app
         err_str = str(ins_err)
         if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():

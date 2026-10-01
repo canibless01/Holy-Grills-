@@ -7,8 +7,8 @@ GET    /admin/settings                   — list all system settings
 PATCH  /admin/settings/<key>             — update a system setting
 """
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.db import get_db, get_user_client
+from app.middleware.auth import require_role, resolve_scoped_campus_id
+from app.db import get_user_client
 from app.messages import MSG
 from app.utils.logger import get_logger
 

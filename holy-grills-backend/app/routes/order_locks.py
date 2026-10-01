@@ -1,9 +1,9 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.db import get_db, get_user_client, SupabaseError
+from app.db import get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.settings import get_validated_setting, SettingError
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, date
 from app.utils.tz import today_wat
 
 order_locks_bp = Blueprint("order_locks", __name__)

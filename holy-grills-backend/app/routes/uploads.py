@@ -5,7 +5,6 @@ Admin-only direct-upload helpers.
 """
 
 import hashlib
-import hmac
 import time
 
 from flask import Blueprint, current_app, jsonify, request, g

@@ -1729,7 +1729,6 @@ def order_status_history(order_id):
     except (ValueError, AttributeError):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    from app.middleware.auth import require_role as _rr
     db = get_user_client()
     order = (
         db.table("orders")

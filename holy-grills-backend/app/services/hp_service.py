@@ -5,7 +5,7 @@ HP Service — central authority for all Holy Points operations. See module docs
 import json
 import math
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from app.db import get_db, get_user_client, SupabaseError
 from flask import current_app
 from app.utils.logger import get_logger
@@ -186,8 +186,8 @@ def _get_food_earn_rate() -> float:
             "key", "hp_per_naira_food").is_("campus_id", "null").single().execute()
         if row and row.get("value") is not None:
             return float(row["value"])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("hp: hp_per_naira_food unreadable — using the built-in earn rate: %s", exc)
     return current_app.config["HP_PER_NAIRA_FOOD"]
 
 
@@ -206,8 +206,9 @@ def _get_unlock_rate() -> float:
             "key", "hp_unlock_rate_pct").is_("campus_id", "null").single().execute()
         if row and row.get("value") is not None:
             return float(row["value"])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("hp: hp_unlock_rate_pct unreadable — using the built-in unlock rate: %s",
+                        exc)
     return current_app.config.get("HP_UNLOCK_RATE_PCT", 0.30)
 
 
@@ -347,7 +348,7 @@ def earn_pending_hp(user_id: str, amount: int, source_type: str, reference_id: s
     status = "active" if is_instant_active else "pending"
 
     if status == "pending":
-        from app.services.streak_service import check_monthly_cap, update_monthly_tracker
+        from app.services.streak_service import check_monthly_cap
         cap_check = check_monthly_cap(user_id, amount)
         if not cap_check["allowed"] or cap_check.get("capped_amount", amount) <= 0:
             # [gift/hp cross-file finding] every OTHER return path here includes added_to_pending
@@ -678,13 +679,15 @@ def recalculate_tier(user_id: str, campus_id: str = None) -> dict:
             "event": event,
             "hp_at_event": hp_earned_120day,
         }).execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("recalculate_tier: could not record the tier history row for %s: %s",
+                        user_id, exc)
 
     try:
         db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]}).execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error("recalculate_tier: could not persist the new tier on the profile for %s — the user keeps the old tier: %s",
+                      user_id, exc)
 
     return {"tier": new_tier, "changed": True, "previous_tier_id": current_tier_id, "event": event}
 

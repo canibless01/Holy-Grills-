@@ -5,6 +5,10 @@ from datetime import datetime, timezone
 from flask import current_app
 from app.db import get_db, get_user_client
 
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # Finalized Holy Grills Loyalty & Rewards System spec (scope item 6c), values taken as-is from the
 # scope map's own spec table. Multipliers were already correct; birthday_hp was 0 for every tier, so
@@ -93,8 +97,9 @@ def resolve_perk(user_id: str, perk_key: str):
             t_row = db.table("hp_tiers").select("slug").eq("id", prof["current_tier_id"]).single().execute()
             if t_row and t_row.get("slug"):
                 slug = str(t_row["slug"]).lower()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("resolve_perk: could not resolve the tier for %s — falling back to the default perk: %s",
+                        user_id, exc)
 
     sys_key = f"tier_perk_{slug}_{perk_key}"
     try:

@@ -461,8 +461,9 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
                 .eq("academic_level", _lvl.strip())
                 .eq("department", _dept.strip())
             )
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.warning("segment: unparseable level_department %r — the segment may reach the wrong audience: %s",
+                            segment.get("level_department"), exc)
 
     # Tier filter: resolve slug to tier ID first
     if segment.get("tier") and segment["tier"] != "all":
@@ -823,8 +824,9 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
             provider = val.get("provider") if isinstance(val, dict) else val
             if provider in ("resend", "onesignal"):
                 return provider
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("email: provider setting unreadable — falling back to the default provider: %s",
+                        exc)
     return "resend"
 
 

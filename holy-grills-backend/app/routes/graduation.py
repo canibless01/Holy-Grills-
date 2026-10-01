@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, jsonify, g, current_app
 from app.middleware.auth import require_auth
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg

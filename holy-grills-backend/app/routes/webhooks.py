@@ -5,7 +5,6 @@ Payment-provider webhooks (Paystack + Flutterwave): signature check, atomic idem
 import hashlib
 import hmac
 import json
-import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, current_app
 from app.db import get_db, SupabaseError
@@ -600,7 +599,6 @@ def _notify_admin_webhook_failure(event_type: str, reference: str, error: str) -
             .eq("is_active", True)
             .execute()
         ) or []
-        from app.messages import MSG
         for admin in admins:
             send_notification(
                 user_id=admin["id"],

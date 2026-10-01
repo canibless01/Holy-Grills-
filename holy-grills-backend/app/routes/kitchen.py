@@ -701,7 +701,7 @@ def batch_advance(batch_id):
       404:
         description: No orders found in this batch
     """
-    from app.services.order_service import update_order_status, VALID_TRANSITIONS
+    from app.services.order_service import update_order_status
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err

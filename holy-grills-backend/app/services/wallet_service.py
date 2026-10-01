@@ -3,9 +3,12 @@ Wallet Service — manages the closed-loop ₦ wallet.
 No withdrawals. Fund via Paystack bank transfer or card.
 """
 
-from datetime import datetime, timezone
-from app.db import get_db, get_user_client, SupabaseError
+from app.db import get_db, get_user_client
 from app.services.hp_service import award_active_hp
+
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from flask import current_app
 
 
@@ -66,15 +69,16 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
                 reference_type="wallet_topup",
                 notes=f"HP bonus for wallet top-up of ₦{amount:.0f}",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("credit_wallet: the top-up HP bonus could not be awarded for %s (₦%s top-up): %s",
+                          user_id, amount, exc)
 
     if amount >= config.get("STREAK_RECLAIM_MIN_TOPUP", 1000) and reference_type in ("topup", "bank_transfer"):
         try:
             from app.services.streak_service import try_reclaim_checkin
             try_reclaim_checkin(user_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("credit_wallet: streak reclaim check failed for %s: %s", user_id, exc)
 
     return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else amount}
 

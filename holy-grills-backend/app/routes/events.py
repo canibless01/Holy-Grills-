@@ -3,14 +3,13 @@ from app.middleware.auth import require_auth, require_role, optional_auth, asser
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
-from app.messages import MSG, resolve_msg
+from app.messages import MSG
 from app.utils.validators import (
     validate_choice, validate_non_negative_number, validate_uuid,
     validate_datetime_order, sanitize_string,
 )
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
-import uuid
 
 logger = get_logger(__name__)
 
@@ -510,7 +509,6 @@ def register_for_event(event_id):
       404:
         description: Event not found
     """
-    import uuid
     db = get_user_client()
     data = request.get_json(force=True, silent=True) or {}
 
@@ -1130,7 +1128,7 @@ def create_event():
     data["is_published"] = True
     data["organizer_id"] = g.user_id
     if not data.get("ends_at"):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
         starts = datetime.fromisoformat(data["starts_at"].replace("Z", "+00:00"))
         data["ends_at"] = (starts + timedelta(hours=3)).isoformat()
     EVENT_COLUMNS = {
