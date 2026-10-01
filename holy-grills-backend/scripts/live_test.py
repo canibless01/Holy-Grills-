@@ -111,21 +111,27 @@ class Failed(Exception):
 
 
 class Step:
-    def __init__(self, phase, sid, title, fn, writes, route, needs):
+    def __init__(self, phase, sid, title, fn, writes, route, needs, routes=()):
         self.phase, self.id, self.title, self.fn = phase, sid, title, fn
         self.writes, self.route, self.needs = writes, route, needs
+        # A step that walks several routes (a lifecycle, a docs bundle) declares the
+        # rest here so --self-check verifies every path it calls, not just the first.
+        self.routes = tuple(routes)
         self.result = None          # passed | failed | skipped | blocked
         self.detail = ""
         self.ms = 0.0
+
+    def all_routes(self) -> tuple[str, ...]:
+        return ((self.route,) if self.route else ()) + self.routes
 
 
 STEPS: list[Step] = []
 
 
 def step(phase: str, sid: str, title: str, *, writes: bool = False, route: str = "",
-         needs: tuple[str, ...] = ()):
+         routes: tuple[str, ...] = (), needs: tuple[str, ...] = ()):
     def decorator(fn):
-        STEPS.append(Step(phase, sid, title, fn, writes, route, needs))
+        STEPS.append(Step(phase, sid, title, fn, writes, route, needs, routes))
         return fn
     return decorator
 
@@ -1980,6 +1986,430 @@ def s_jobs_run_all(ctx: Ctx):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Phase — surface: the blueprints nothing else touches
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _rows_payload(resp) -> list:
+    """A list out of either a bare JSON array or the common `{key: [...]}` envelope."""
+    if isinstance(resp.data, list):
+        return resp.data
+    if isinstance(resp.data, dict):
+        for key in ("results", "units", "spins", "orders", "squads", "items"):
+            value = resp.data.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _drop_user_effects(ctx: Ctx, user_id: str):
+    """Delete every row a throwaway account's probe could have created for it.
+
+    The account is deleted anyway; this is about rows that would survive it — HP ledger
+    entries, spin credits, prize fulfilments, push subscriptions, squads, rosters.
+    """
+    for table, column in (("hp_transactions", "user_id"),
+                          ("exclusive_spins", "user_id"),
+                          ("exclusive_spin_fulfillments", "user_id"),
+                          ("push_subscriptions", "user_id"),
+                          ("reward_redemptions", "user_id")):
+        try:
+            rows = ctx.db.select(table, **{column: user_id}) or []
+        except Failed as exc:
+            # A table that does not exist in this project cannot hold rows to clean up.
+            ctx.warnings.append(f"cleanup: could not read {table} ({exc})")
+            continue
+        for row in rows:
+            ctx.db.delete(table, id=row["id"])
+    try:
+        squads = ctx.db.select("squads", creator_id=user_id) or []
+    except Failed as exc:
+        ctx.warnings.append(f"cleanup: could not read squads ({exc})")
+        return
+    for squad in squads:
+        ctx.db.delete("squad_roster", squad_id=squad["id"])
+        ctx.db.delete("squads", id=squad["id"])
+
+
+@step("surface", "surface.docs_endpoints",
+      "the API docs (flasgger) serve HTML, a real spec, and their static assets",
+      route="GET /api/docs/",
+      routes=("GET /api/docs/apispec.json",
+              "GET /api/docs/static/<filename>",
+              "GET /apidocs/index.html",
+              "GET /oauth2-redirect.html",))
+
+def s_docs_endpoints(ctx: Ctx):
+    """Five doc routes, no auth, no writes.
+
+    `/api/docs/apispec.json` is the machine-readable contract the front end and any
+    integration reads; if it stops returning a parseable spec with the app's real paths
+    in it, that breaks silently. The static asset is fetched by path so a moved or
+    unshipped asset is caught rather than assumed.
+    """
+    docs = ctx.api.get("/api/docs/")
+    if docs.status == 404:
+        raise Skip("the API docs are not served in this configuration")
+    docs.check(200)
+    expect("swagger" in docs.text.lower() or "<html" in docs.text.lower(),
+           f"/api/docs/ returned 200 but not a docs page — {docs.snippet(120)}")
+
+    spec = ctx.api.get("/api/docs/apispec.json").check(200)
+    expect(isinstance(spec.data, dict) and spec.data.get("paths"),
+           f"the spec is not a Swagger document — {spec.snippet(160)}")
+    paths = spec.data.get("paths") or {}
+    base = str(spec.data.get("basePath") or "")
+    # Paths are relative to basePath (/api by default), so the app's own order route is
+    # "/orders" here — asserting on a full "/api/orders" would test the wrong thing.
+    expect(any(p == "/orders" or p.startswith("/orders/") for p in paths),
+           f"the spec lists {len(paths)} path(s) but none is the order route "
+           f"(basePath {base!r})")
+    expect(any(p == "/webhooks/paystack" for p in paths),
+           "the spec does not document the Paystack webhook")
+    expect(bool((spec.data.get("info") or {}).get("title")),
+           "the spec has no info.title")
+    ctx.note(f"spec: {len(paths)} path(s) under basePath {base!r}, "
+             f"title {(spec.data.get('info') or {}).get('title')!r}")
+
+    css = ctx.api.get("/api/docs/static/swagger-ui.css")
+    expect(css.status == 200 and len(css.text) > 100,
+           f"the swagger static asset did not load ({css.status}, {len(css.text)} bytes)")
+
+    for path in ("/apidocs/index.html", "/oauth2-redirect.html"):
+        r = ctx.api.get(path)
+        if r.status in (301, 302, 308):
+            # flasgger publishes /apidocs/index.html as a redirect to /api/docs/; the
+            # redirect target is the documented page, so that is the healthy answer.
+            expect("/api/docs/" in r.text or "/apidocs/" in r.text,
+                   f"{path} redirected ({r.status}) somewhere unexpected — {r.snippet(120)}", r)
+            ctx.note(f"{path} -> {r.status} redirect")
+        else:
+            expect(r.status == 200,
+                   f"{path} answered {r.status} — the docs page links it", r)
+    ctx.note("docs page, spec, static asset and both redirect pages all answered 200")
+
+
+@step("surface", "surface.measurement_units",
+      "GET /api/measurement-units is authenticated and returns the unit list",
+      route="GET /api/measurement-units", needs=("auth.login",))
+def s_measurement_units(ctx: Ctx):
+    """The route is small; the interesting part is that it is not public.
+
+    It sits under the stock blueprint and reads a table through the user client, so an
+    anonymous caller must be refused — a missing `@require_auth` here would expose
+    inventory units to anyone.
+    """
+    anon = ctx.api.get("/api/measurement-units")
+    expect(anon.status in (401, 403),
+           f"an unauthenticated caller reached the measurement units ({anon.status})", anon)
+
+    r = ctx.api.get("/api/measurement-units", token=ctx.tokens["access"]).check(200)
+    rows = _rows_payload(r)
+    for row in rows[:10]:
+        expect(bool(row.get("id")) and bool(row.get("name")),
+               f"a measurement_units row is missing id/name — {json.dumps(row)[:120]}")
+    ctx.note(f"measurement units: {len(rows)} row(s), anonymous caller refused ({anon.status})")
+
+
+@step("surface", "surface.users_search",
+      "GET /api/users/search stays inside the caller's campus",
+      route="GET /api/users/search", needs=("auth.login",))
+def s_users_search(ctx: Ctx):
+    """Search is service-role underneath (profiles RLS hides other people), so the
+    campus filter in the handler IS the security boundary. This checks it holds: every
+    result must belong to the signed-in account's campus."""
+    empty = ctx.api.get("/api/users/search", params={"q": ""}, token=ctx.tokens["access"]).check(200)
+    expect(_rows_payload(empty) == [],
+           f"an empty query returned rows — {empty.snippet(120)}")
+
+    campus = str(ctx.ids.get("campus_id") or "")
+    r = ctx.api.get("/api/users/search", params={"q": "e2e"}, token=ctx.tokens["access"]).check(200)
+    results = _rows_payload(r)
+    expect(isinstance(results, list), f"search did not return a list — {r.snippet(120)}")
+
+    foreign = []
+    for hit in results[:20]:
+        uid = str(hit.get("id") or hit.get("user_id") or "")
+        if not uid:
+            continue
+        profile = ctx.db.select_one("profiles", id=uid) or {}
+        if str(profile.get("campus_id") or "") != campus:
+            foreign.append(f"{uid} is on campus {profile.get('campus_id')}")
+    expect(not foreign,
+           f"search returned user(s) outside campus {campus}: {foreign[:3]}")
+
+    nobody = ctx.api.get("/api/users/search", params={"q": f"zz-no-such-{uuid.uuid4().hex[:8]}"},
+                         token=ctx.tokens["access"]).check(200)
+    expect(_rows_payload(nobody) == [],
+           f"a nonsense query returned rows — {nobody.snippet(120)}")
+    ctx.note(f"search: {len(results)} result(s) all on campus {campus}; empty and nonsense "
+             "queries return []")
+
+
+@step("surface", "surface.push_roundtrip",
+      "a push subscription can be registered and deactivated",
+      writes=True, needs=("public.campuses",), route="POST /api/push/subscribe",
+      routes=("DELETE /api/push/subscribe",))
+
+def s_push_roundtrip(ctx: Ctx):
+    """Both push routes, on a throwaway account, with an endpoint that cannot exist.
+
+    The unsubscribe is a soft delete (`is_active=false`), so the step checks the row is
+    still there but inactive — that is the documented behaviour, and a hard delete would
+    actually be the bug (the same endpoint could then be re-subscribed as a new row).
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    endpoint = f"https://e2e-{uuid.uuid4().hex[:10]}.invalid/push"
+    try:
+        sub = ctx.api.post("/api/push/subscribe", token=token, json_body={
+            "subscription": {"endpoint": endpoint,
+                             "keys": {"p256dh": "BOrE2EProbeKeysNotReal", "auth": "e2e"}},
+            "device_label": "E2E probe",
+        })
+        expect(sub.status in (200, 201),
+               f"subscribing answered {sub.status} — {sub.snippet(160)}", sub)
+
+        rows = ctx.db.select("push_subscriptions", user_id=user_id) or []
+        expect(any(endpoint == ((r.get("subscription") or {}).get("endpoint")) for r in rows),
+               f"the subscribe call succeeded but no push_subscriptions row holds {endpoint}")
+
+        off = ctx.api.delete("/api/push/subscribe", token=token, json_body={"endpoint": endpoint})
+        expect(off.status == 200, f"unsubscribe answered {off.status} — {off.snippet(160)}", off)
+        after = [r for r in (ctx.db.select("push_subscriptions", user_id=user_id) or [])
+                 if endpoint == ((r.get("subscription") or {}).get("endpoint"))]
+        expect(after and after[0].get("is_active") is False,
+               f"unsubscribe did not deactivate the row (rows found: {len(after)})")
+        ctx.note("subscribed then deactivated (row kept soft-deleted, as designed)")
+    finally:
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.squads_lifecycle",
+      "a squad is created, listed, read, joined, left, and its orders read",
+      writes=True, route="POST /api/squads", needs=("auth.login",),
+      routes=("GET /api/squads",
+              "GET /api/squads/<squad_id>",
+              "POST /api/squads/<squad_id>/members",
+              "DELETE /api/squads/<squad_id>/members/<member_id>",
+              "GET /api/squads/<squad_id>/orders",))
+
+def s_squads_lifecycle(ctx: Ctx):
+    """All six squad routes with a throwaway organizer and a throwaway member.
+
+    Squad orders are feature-flagged (`squad_orders`), so a 403 is a legitimate
+    configuration and the step skips with that reason rather than failing.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    organizer_id, organizer_token, why = _provision_role_user(ctx, "customer", campus)
+    member_id, _member_token, why_member = _provision_role_user(ctx, "customer", campus)
+    squad_id = None
+    try:
+        if not organizer_token or not member_id or not _member_token:
+            raise Skip(f"could not provision two throwaway customers ({why}; {why_member})")
+        member_email = f"e2e.squad.{uuid.uuid4().hex[:8]}@{TEST_EMAIL_DOMAIN}"
+        name = f"E2E Squad {uuid.uuid4().hex[:6]}"
+
+        created = ctx.api.post("/api/squads", token=organizer_token,
+                               json_body={"name": name, "emails": [member_email]})
+        if created.status == 403:
+            raise Skip(f"squad_orders is disabled for this campus — {created.snippet(120)}")
+        expect(created.status == 201, f"creating a squad answered {created.status} — "
+                                      f"{created.snippet(160)}", created)
+        squad_id = str((created.data or {}).get("id") or "")
+        expect(bool(squad_id), f"the squad was created without an id — {created.snippet(120)}")
+        ctx.track_infra("squads", squad_id)
+
+        listed = ctx.api.get("/api/squads", token=organizer_token).check(200)
+        ids = [str(x.get("id")) for x in _rows_payload(listed)]
+        expect(squad_id in ids, f"the new squad is not in GET /api/squads ({ids[:5]})")
+
+        one = ctx.api.get(f"/api/squads/{squad_id}", token=organizer_token).check(200)
+        expect(contains_id(one.data, squad_id), f"the squad response does not carry its id — "
+                                                f"{one.snippet(120)}", one)
+
+        joined = ctx.api.post(f"/api/squads/{squad_id}/members", token=organizer_token,
+                              json_body={"email": member_email})
+        expect(joined.status in (200, 201),
+               f"adding the member answered {joined.status} — {joined.snippet(160)}", joined)
+
+        squad_view = ctx.api.get(f"/api/squads/{squad_id}", token=organizer_token).check(200)
+        rows = squad_view.data.get("roster") if isinstance(squad_view.data, dict) else None
+        rows = rows if isinstance(rows, list) else _rows_payload(squad_view)
+        entry = next((r for r in rows if str(r.get("email", "")).lower() == member_email), None)
+        expect(entry is not None,
+               f"the added member is not in the squad roster — {squad_view.snippet(160)}")
+
+        left = ctx.api.delete(f"/api/squads/{squad_id}/members/{entry.get('id')}",
+                              token=organizer_token)
+        expect(left.status in (200, 204),
+               f"removing the member answered {left.status} — {left.snippet(160)}", left)
+        removed = [r for r in (ctx.db.select("squad_roster", squad_id=squad_id) or [])
+                   if str(r.get("id")) == str(entry.get("id"))]
+        expect(removed and removed[0].get("is_active") is False,
+               "the roster row was not deactivated by the remove call")
+
+        orders = ctx.api.get(f"/api/squads/{squad_id}/orders", token=organizer_token).check(200)
+        expect(contains_id(orders.data, squad_id) or _rows_payload(orders) == [],
+               f"the squad orders response is neither a list nor scoped to the squad — "
+               f"{orders.snippet(140)}", orders)
+        ctx.note("squad created, listed, read, member added and removed (soft), orders read")
+    finally:
+        if squad_id:
+            ctx.db.delete("squad_roster", squad_id=squad_id)
+            ctx.db.delete("squads", id=squad_id)
+        _drop_user_effects(ctx, organizer_id)
+        _drop_user_effects(ctx, member_id)
+        _drop_role_user(ctx, organizer_id)
+        _drop_role_user(ctx, member_id)
+
+
+@step("surface", "surface.exclusive_spin",
+      "a granted spin is consumed exactly once and a second spin is refused",
+      writes=True, needs=("public.campuses",), route="POST /api/exclusive-spin/spin",
+      routes=("GET /api/exclusive-spin",))
+
+def s_exclusive_spin(ctx: Ctx):
+    """Both spin routes, on a throwaway account with a credit this step grants it.
+
+    The prize is random: HP, a free-delivery cap, or a physical-prize fulfilment row.
+    All three land on the throwaway account, whose rows are deleted at the end — a real
+    account is never spun against, because the outcome cannot be undone exactly.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    try:
+        summary = ctx.api.get("/api/exclusive-spin", token=token)
+        if summary.status == 403:
+            raise Skip(f"the exclusive_spin feature is disabled — {summary.snippet(120)}")
+        summary.check(200)
+        expect(isinstance(summary.data, dict) and "total_spins" in summary.data,
+               f"the spin summary has no total_spins — {summary.snippet(140)}")
+
+        credit = ctx.db.insert("exclusive_spins", {
+            "user_id": user_id, "spin_count": 1, "source": "e2e_probe",
+            "month": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+            "campus_id": campus or None,
+        })
+        credit_id = str((credit or {}).get("id") or "")
+        if not credit_id:
+            raise Skip("the spin credit row was not persisted")
+
+        spun = ctx.api.post("/api/exclusive-spin/spin", token=token)
+        spun.check(200)
+        prize = (spun.data or {}).get("prize") or (spun.data or {}).get("prize_name")
+        expect(bool(prize), f"the spin returned no prize — {spun.snippet(140)}", spun)
+
+        row = ctx.db.select_one("exclusive_spins", id=credit_id) or {}
+        expect(int(row.get("spin_count") or 0) == 0,
+               f"the spin was awarded but the credit still shows {row.get('spin_count')}")
+
+        again = ctx.api.post("/api/exclusive-spin/spin", token=token)
+        expect(again.status == 400,
+               f"a second spin with no credits answered {again.status} "
+               f"(expected 400) — {again.snippet(120)}", again)
+        ctx.note(f"spin consumed once (prize {prize!r}); second spin refused with 400")
+    finally:
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.graduation_claim",
+      "a graduating student claims once, and the claim cannot be repeated",
+      writes=True, needs=("public.campuses",), route="POST /api/graduation/claim")
+def s_graduation_claim(ctx: Ctx):
+    """Both branches of the graduation claim, on a throwaway account.
+
+    First as an ordinary account (not eligible — the guard), then, only if an academic
+    level at or above the `graduation_min_level` setting exists, with that level set on
+    the throwaway profile: the claim awards HP, flags the profile, and a second claim is
+    refused. Everything belongs to the throwaway account.
+    """
+    campus = str(ctx.ids.get("campus_id") or "")
+    user_id, token, why = _provision_role_user(ctx, "customer", campus)
+    if not token:
+        _drop_role_user(ctx, user_id)
+        raise Skip(f"could not provision a throwaway customer: {why}")
+    try:
+        ineligible = ctx.api.post("/api/graduation/claim", token=token)
+        expect(ineligible.status == 400,
+               f"an account below the graduation level got {ineligible.status} "
+               f"(expected 400) — {ineligible.snippet(140)}", ineligible)
+
+        try:
+            setting = ctx.db.select("system_settings", key="graduation_min_level") or []
+            min_rank = int((setting[0].get("value") if setting else None) or 400)
+        except Exception:                                            # noqa: BLE001
+            min_rank = 400
+        levels = [l for l in (ctx.db.select("academic_levels") or [])
+                  if l.get("rank") is not None and int(l["rank"]) >= min_rank
+                  and l.get("campus_id") in (campus, None)]
+        if not levels:
+            raise Skip(f"no academic_levels row has rank >= {min_rank}, so the eligible "
+                       "branch cannot be reached")
+        eligible = levels[0]
+        ctx.db.update("profiles", {"academic_level": eligible.get("value"),
+                                   "graduation_claimed": False}, id=user_id)
+
+        claimed = ctx.api.post("/api/graduation/claim", token=token)
+        claimed.check(200)
+        expect(int((claimed.data or {}).get("hp_awarded") or 0) > 0,
+               f"the claim returned no hp_awarded — {claimed.snippet(140)}", claimed)
+
+        profile = ctx.db.select_one("profiles", id=user_id) or {}
+        expect(profile.get("graduation_claimed") is True,
+               "the claim succeeded but profiles.graduation_claimed is not set")
+        rows = ctx.db.select("hp_transactions", user_id=user_id) or []
+        expect(any(str(t.get("reference_type")) == "graduation" for t in rows),
+               f"no graduation row in hp_transactions after a successful claim ({len(rows)} row(s))")
+
+        repeat = ctx.api.post("/api/graduation/claim", token=token)
+        expect(repeat.status == 400,
+               f"a second claim answered {repeat.status} (expected 400 — one-time only) — "
+               f"{repeat.snippet(120)}", repeat)
+        ctx.note(f"eligible claim awarded {claimed.data.get('hp_awarded')} HP at level "
+                 f"{eligible.get('value')}; repeat refused with 400")
+    finally:
+        _drop_user_effects(ctx, user_id)
+        _drop_role_user(ctx, user_id)
+
+
+@step("surface", "surface.upload_signature",
+      "the upload signature is issued and a non-admin cannot choose the folder",
+      route="POST /api/upload/signature", needs=("auth.login",))
+def s_upload_signature(ctx: Ctx):
+    """The signature route, checked for its authorisation rule rather than its crypto.
+
+    Non-admins get `profile_photos/<their own id>` no matter what they ask for; this
+    sends `folder: "general"` and requires it to be ignored. A 503 means Cloudinary is
+    not configured in this environment, which is a legitimate configuration.
+    """
+    anon = ctx.api.post("/api/upload/signature", json_body={})
+    expect(anon.status in (401, 403, 503),
+           f"an unauthenticated caller got {anon.status} from the signature route", anon)
+
+    r = ctx.api.post("/api/upload/signature", token=ctx.tokens["access"],
+                     json_body={"folder": "general"})
+    if r.status == 503:
+        raise Skip(f"Cloudinary is not configured — {r.snippet(120)}")
+    r.check(200)
+    folder = str((r.data or {}).get("folder") or "")
+    expect(folder == f"profile_photos/{ctx.user_id}",
+           f"a non-admin asked for folder 'general' and got {folder!r} — the folder is "
+           f"not pinned to the caller", r)
+    expect(bool((r.data or {}).get("signature")) and bool((r.data or {}).get("timestamp")),
+           f"the signature response is missing signature/timestamp — {r.snippet(140)}")
+    ctx.note(f"signature issued for the caller's own folder ({folder}) despite a folder request")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Phase — concurrency: can two requests spend the same naira?
 # ─────────────────────────────────────────────────────────────────────────────
 #
@@ -3701,12 +4131,11 @@ def self_check() -> int:
     problems = []
     checked = 0
     for s in STEPS:
-        if not s.route:
-            continue
-        method, _, path = s.route.partition(" ")
-        checked += 1
-        if (method, normalise(path)) not in known:
-            problems.append(f"{s.id}: {s.route} is not a registered route")
+        for declared in s.all_routes():
+            method, _, path = declared.partition(" ")
+            checked += 1
+            if (method, normalise(path)) not in known:
+                problems.append(f"{s.id}: {declared} is not a registered route")
 
     print(f"Self-check: {checked} declared routes compared against {len(known)} app routes")
     if problems:

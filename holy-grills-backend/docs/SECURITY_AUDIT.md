@@ -659,7 +659,7 @@ because the expensive failures are the ones nobody checked.
 | Area | Evidence | Verified where |
 |------|----------|----------------|
 | Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
-| Routes the suite calls | `make selfcheck` — 90 declared routes all exist | this sandbox |
+| Routes the suite calls | `make selfcheck` — 109 declared routes all exist | this sandbox |
 | Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
@@ -728,10 +728,11 @@ the 404, the same base the coverage script counts.
 
 | | |
 |---|---|
-| routes the suite exercises | **299 (74%)** — 66 before the flow pass, 68 before the authorization sweeps |
-| of those, routes **no test had ever touched** | **231** — all of them now get a real permission assertion |
-| blueprints still with **zero** exercised routes | squads (6), flasgger (5), push (2), exclusive_spin (2), users (1), measurement_units (1), graduation (1), uploads (1) |
+| routes the suite exercises | **318 (79%)** — 66 before the flow pass, 68 before the authorization sweeps |
+| of those, routes **no test had ever touched before this round** | **250** — 231 with a real permission assertion, 19 functionally |
+| blueprints with **zero** exercised routes | **none** — all 43 are exercised (was 35 of 43) |
 | role/permission assertions before this round | **1** (a wrong-password 401) → now 241 gated routes × 2 attacker roles |
+| routes the surface pass added | **19** (the eight blueprints that had none) |
 | webhook calls before the flow pass | **0** |
 | scheduled jobs invoked before this round | **0** |
 
@@ -844,9 +845,39 @@ by adding it to the interval table (`app/routes/admin.py`); adding it to the man
 map as well is a product decision left to you. `scheduled.jobs_wired` fails if this class of
 divergence ever appears again.
 
-Still not covered after all three passes: invoking the full job set by default, the
+**Added in the surface pass** — the last eight blueprints with no coverage at all
+(`--only surface`):
+
+* `surface.docs_endpoints` — flasgger's five routes: the HTML page, the machine-readable
+  spec (asserted to contain the app's own order route and the Paystack webhook, and to
+  carry a title), a static asset, and both redirect pages.
+* `surface.measurement_units` — anonymous callers refused; the authenticated call returns
+  rows that have an id and a name.
+* `surface.users_search` — `/api/users/search` is service-role underneath, so its campus
+  filter is the security boundary: every returned user is checked against the caller's
+  campus in the database, and empty/nonsense queries must return nothing.
+* `surface.push_roundtrip` — subscribe then unsubscribe on a throwaway account, asserting
+  the row is **soft-deleted** (`is_active=false`) rather than removed.
+* `surface.squads_lifecycle` — all six routes: create, list, read, add member, remove
+  member (soft), read squad orders. Skips cleanly when `squad_orders` is off.
+* `surface.exclusive_spin` — a credit granted to a throwaway account is consumed exactly
+  once (the row's counter must reach 0) and a second spin is refused with 400. The prize is
+  random; HP, free-delivery and physical-prize outcomes all land on the throwaway account,
+  which is deleted afterwards, so a real account is never spun against.
+* `surface.graduation_claim` — the ineligible branch (400), then, only if a level at or
+  above `graduation_min_level` exists, the eligible branch on a throwaway profile: HP
+  awarded, `graduation_claimed` set, an `hp_transactions` row with `reference_type=graduation`,
+  and a repeat claim refused with 400.
+* `surface.upload_signature` — a non-admin asking for `folder: "general"` must be given
+  `profile_photos/<their own id>`; anonymous callers are refused; 503 (Cloudinary not
+  configured) is treated as a legitimate configuration.
+
+Steps can now declare `routes=(...)` alongside `route=`, so `--self-check` verifies every
+path a multi-route step calls: 109 declared routes, all present in the app.
+
+Still not covered after all four passes: invoking the full job set by default, the
 virtual-account / bank-transfer deposit branch, the split-payment amount check named below,
-and functional depth on the swept routes (a refusal proves the gate, not the handler).
+and functional depth on the 250 swept routes (a refusal proves the gate, not the handler).
 
 ### Residual risks, stated plainly
 
@@ -872,8 +903,12 @@ and functional depth on the swept routes (a refusal proves the gate, not the han
 6. **The scheduled-job sweep is opt-in by design.** `--with-cron` invokes jobs that message
    real users; without it, 16 of the 17 jobs are only checked for wiring, not for runtime
    health.
-7. **Production switches:** `ALLOW_UNSIGNED_WEBHOOKS` and `PAYSTACK_SANDBOX_MOCK_NUBAN`
+7. **The surface steps check one path each, on throwaway accounts.** Squads skip when the
+   feature flag is off, spins are random (a HP prize is asserted only as "a prize"), and
+   the graduation happy path needs an eligible academic level to exist. They cover the
+   route's main branch, not every branch in it.
+8. **Production switches:** `ALLOW_UNSIGNED_WEBHOOKS` and `PAYSTACK_SANDBOX_MOCK_NUBAN`
    are refused at boot outside DEBUG/TESTING (verified by attempting the boot). Do not
    weaken that guard to get a deploy out.
-8. **The audit is code-level.** A database-side review (O1) can still find something none
+9. **The audit is code-level.** A database-side review (O1) can still find something none
    of this could see — policies that are missing, or broader than intended.
