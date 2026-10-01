@@ -185,8 +185,11 @@ def update_setting(key):
             mult_val = float(str(value))
             if mult_val > 1.0:
                 _broadcast_multiplier_event(db, mult_val, campus_id=campus_id)
-        except Exception:
-            pass  # non-critical — setting is saved regardless
+        except Exception as exc:
+            # Not critical — the setting is saved regardless — but if this keeps failing
+            # nobody is ever told the multiplier went live, so leave a trail.
+            logger.warning("multiplier_live: broadcast failed (multiplier=%s, campus=%s): %s",
+                           value, campus_id, exc)
 
     return jsonify({"message": MSG.SETTING_UPDATED, "key": key, "value": str(value)}), 200
 
@@ -214,8 +217,9 @@ def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
             except Exception as exc:
                 # The multiplier is already live; only this user's announcement was lost.
                 logger.warning("multiplier_live: notify failed for %s: %s", user["id"], exc)
-    except Exception:
-        pass
+    except Exception as exc:
+        # The whole broadcast failed — e.g. the user lookup itself — so no one was told.
+        logger.error("multiplier_live: broadcast aborted (%s): %s", multiplier, exc)
 
 
 @admin_gifts_bp.route("/settings", methods=["POST"])

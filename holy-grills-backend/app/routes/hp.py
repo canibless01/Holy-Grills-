@@ -527,5 +527,7 @@ def _log_admin_action(actor_id, table, target_id, action, after_data=None, campu
             "after_value": after_data,
             "campus_id": cid,
         }).execute()
-    except Exception:
-        pass  # Silent fail
+    except Exception as exc:
+        # Same as the menu audit helper: the admin action happened, the record of who
+        # did it did not. That is an error, not a warning.
+        logger.error("admin audit write failed for %s:%s (%s): %s", table, target_id, action, exc)

@@ -1708,8 +1708,10 @@ def get_tier_comparison(event_id):
         rpc_tiers = db.rpc("get_event_tier_comparison", {"p_event_id": event_id})
         if isinstance(rpc_tiers, list):
             return jsonify({"tiers": rpc_tiers}), 200
-    except Exception:
-        pass
+    except Exception as exc:
+        # Falls through to the slower per-tier path below; guests still get an answer,
+        # but a persistent failure here is worth seeing.
+        logger.warning("tier comparison: RPC failed for event %s, falling back: %s", event_id, exc)
 
     try:
         tiers = (

@@ -208,22 +208,45 @@ Verified sample, each genuinely hiding a failure: `events.py:885`, `events.py:26
 user-visible sites are fixed (H2/H3 above). The rule for the remainder: **a swallowed
 exception is only acceptable if the code that follows it records why.**
 
-**Still open — 88 sites, counted not estimated** (`except ...:` immediately followed by
-`pass`): `app/routes` 27 · `app/services` 35 · `app/tasks` 23 · `app/utils` 3.
+**Routes: triaged and mostly closed this pass.** I re-counted with a body-aware scan
+rather than the earlier two-line pattern, because the first count under-reported blocks
+whose body is a bare comment. Current measurement, excluding already-fixed sites:
+`app/routes` 18 · `app/services` 38 · `app/tasks` 23 · `app/utils` 3.
 
-The routes sites are the ones a user can feel, so they are listed exactly:
+All 18 remaining route sites were classified, not waved at:
 
-    admin_gifts.py:214  events.py:634  events.py:724  events.py:1711  graduation.py:124
-    hp.py:493  hp.py:503  kitchen.py:597  leaderboard.py:220  leaderboard.py:266
-    menu.py:41  orders.py:756  orders.py:913  orders.py:1221  orders.py:1237
-    orders.py:1341  orders.py:1510  orders.py:1592  orders.py:1603  orders.py:1617
-    referrals.py:244  rewards.py:304  rewards.py:528  rewards.py:638
-    webhooks.py:112  webhooks.py:206  webhooks.py:611
+**Fixed this pass — 13 sites, each logging at the level the failure deserves:**
 
-Triage rule, so this does not turn into an 88-site refactor: **log it when the swallowed
-failure changes what the caller believes happened** — a wallet credit, a ticket, a
-refund, a delivery. Purely cosmetic ones (an avatar URL, a leaderboard badge) may stay
-silent.
+| Site | What was swallowed | New level |
+|------|-------------------|-----------|
+| `menu.py:41` | `admin_audit_logs` insert — the admin action happened, its record did not | `error` |
+| `hp.py:530` | same audit-trail insert in `hp.py` | `error` |
+| `orders.py` `cancel_scheduled_order` | order lock not restored (customer paid for it) | `error` |
+| `orders.py` `cancel_order` | same lock restore on the other cancel path | `error` |
+| `orders.py` `reorder` (inner) | `menu_item_availability` read → silent fall-back to base price | `warning` |
+| `orders.py` `reorder` (outer) | pricing for the item → silent snapshot-price fall-back | `warning` |
+| `orders.py` squad invite | profile lookup failed → those users silently uninvited | `warning` |
+| `orders.py` squad roster | insert failed → every failure read as "already on roster" | `warning` |
+| `events.py:1711` | `get_event_tier_comparison` RPC → silent fallback for guests | `warning` |
+| `kitchen.py:597` | unparseable timestamps → sample dropped, kitchen metric skewed | `debug` |
+| `webhooks.py:611` | the webhook-failure alert itself | `error` |
+| `admin_gifts.py:188` | multiplier broadcast failed → nobody told it went live | `warning` |
+| `admin_gifts.py:217` | same broadcast, whole-run failure | `error` |
+
+**14 sites are already covered one layer down — verified, not assumed.** Every one of
+these calls a helper that logs its own failure before returning:
+
+* `send_notification` — `notification_service.py:335` (profile lookup), `:406` (row
+  save), `:853/857` (OneSignal email), `:883/884` (email dispatch), `:920/922` (push).
+  Sites: `events`-side none, `graduation.py:131`, `hp.py:493`, `orders.py:756/1241/1608/
+  1619/1633`, `referrals.py:244`, `rewards.py:304/528/638`.
+* `send_qr_ticket_email` / `send_email` — `utils/email.py:346`, `:391/392`, `:435`.
+  Sites: `events.py:634`, `events.py:724`.
+* `check_milestone_trigger` — `milestone_service.py:320-321`. Site: `hp.py:503`.
+
+Adding a log line at the route would produce the same event twice, so these stay as they
+are. The triage rule: **log it when the swallowed failure changes what the caller
+believes happened.**
 
 I checked the three `webhooks.py` sites rather than assuming, and the interesting one is
 **not** what I first wrote:
@@ -233,10 +256,11 @@ I checked the three `webhooks.py` sites rather than assuming, and the interestin
   **500**, so the provider is not told "OK" — these are the least urgent of the 88.
 * `webhooks.py:611` is inside `_notify_admin_webhook_failure` itself: it is the alert
   path. If that notification fails, a failed webhook produces **no alert at all** — the
-  one place where a silent swallow hides the failure of the failure-reporting. Worth a
-  `logger.error` even though nothing else can be done at that point.
+  one place where a silent swallow hides the failure of the failure-reporting. **Fixed**
+  this pass with a `logger.error`; `:112`/`:206` stay as they are, because the handler
+  around them still returns 500 and the 500 is the signal.
 
-### M2. N+1 queries: 121 database round-trips inside loops — *open*
+### M2. N+1 queries: 121 database round-trips inside loops — worst case FIXED, rest *open*
 Worst verified case — `app/routes/admin.py:1100-1103`:
 
 ```python
@@ -248,17 +272,24 @@ Worst verified case — `app/routes/admin.py:1100-1103`:
 One extra HTTP round-trip **per batch** on every page of the batch list (limit up to
 hundreds). At 100 batches that is 101 REST calls to render one screen.
 
-**Fix** — one query for the page, group in Python:
+**Fixed** — one query for the page, grouped in Python:
 
 ```python
-        ids = [b["id"] for b in batches]
-        rows = db.table("orders").select("batch_id").in_("batch_id", ids).execute() or []
-        counts = {}
-        for r in rows:
-            counts[r["batch_id"]] = counts.get(r["batch_id"], 0) + 1
+        batch_ids = [b["id"] for b in batches if b.get("id")]
+        counts: dict = {}
+        if batch_ids:
+            rows = (db.table("orders").select("batch_id")
+                    .in_("batch_id", batch_ids).limit(10000).execute()) or []
+            for r in rows:
+                bid = r.get("batch_id")
+                counts[bid] = counts.get(bid, 0) + 1
         for b in batches:
-            b["order_count"] = counts.get(b["id"], 0)
+            b["order_count"] = counts.get(b.get("id"), 0)
 ```
+
+A 50-batch page goes from 51 REST calls to 2. `.limit(10000)` bounds the read; the
+response shape is unchanged, and a batch with no orders still reports `order_count: 0`
+(diffed against the old implementation on four cases, including zero-order batches).
 
 (`analytics.py:532` looks like the same shape but is actually chunked `in_()` batching —
 that one is correct.)
@@ -300,20 +331,30 @@ nothing broke — but the next `from app.routes.free_sides import grant_free_sid
 in `scheduled.py` would have received the view function and raised `TypeError`.
 **Fixed:** route renamed `admin_grant_free_side_credits`, with a comment on why.
 
-### M6. Two public endpoints worth a deliberate decision (not confirmed leaks) — *open, needs you*
-`app/routes/menu.py:1525` (`GET /api/menu/kitchen-capacity`) and
-`app/routes/hp.py:255` (`GET /api/hp/bundles`) have **no auth decorator**. Both may be
-intentional (customer-facing "how busy are we", public bundle pricing). I did not read
-their response bodies, so I am not calling them leaks — but they are the first two to
-check with:
+### M6. Two endpoints answer without authentication — *resolved: kept public, by design*
+`app/routes/menu.py` (`GET /api/menu/kitchen-capacity`) and `app/routes/hp.py`
+(`GET /api/hp/bundles`).
+
+**Decision (yours):** both stay public. `kitchen-capacity` is the pre-login "how busy are
+we" signal and is documented `security: []` in its own docstring; `/api/hp/bundles` is
+the price list a guest must see *before* buying, and the purchase itself
+(`POST /api/hp/bundles/purchase`, `hp.py:287`) keeps `@require_auth`. Withdrawing the
+recommendation below rather than leaving it as a standing finding.
+
+Guests must reach their path and each role its own; nothing was gated in this pass. Only
+two auth decorators were added in the whole audit — both `@require_role("admin")`, both
+on the **new** admin grant routes from `418f655`; no pre-existing route gained a gate.
+
+For the record, the original question, answered from the running app rather than by
+reading back the intent:
 
 ```bash
-curl -s 'https://<host>/api/menu/kitchen-capacity?campus_id=<id>' | head -c 400
-curl -s 'https://<host>/api/hp/bundles' | head -c 400
+curl -s /api/menu/kitchen-capacity   # 503 from the upstream TLS failure, NOT 401/403 — no auth gate
+curl -s /api/hp/bundles              # 200, returns the bundle price list
 ```
 
-If either returns internal counters (order volumes, costs, margins) rather than a
-customer-facing summary, add `@optional_auth` and trim the payload.
+Verified this pass against a locally booted app: neither endpoint returns 401/403 to an
+anonymous caller.
 
 ---
 
@@ -402,9 +443,7 @@ Updated at the end of every working pass. If an item is not here, it is not open
 
 | # | Item | Where |
 |---|------|-------|
-| O7 | Remaining `except Exception: pass` — 88 sites, 27 of them in `routes/` | M1 list, with the triage rule |
-| O8 | N+1 in the delivery-batch list | M2 |
-| O9 | The two unauth public endpoints, once you confirm the intent | M6 |
+| O7 | Remaining `except Exception: pass` — **routes triaged (13 fixed, 14 covered one layer down, 4 acceptable); services/tasks/utils not yet triaged** | M1 list, with the triage rule |
 | O10 | 56 unused imports + the LOW table | L1–L10 |
 
 ### Closed
@@ -423,3 +462,16 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | Admin grants for free sides and exclusive spins | `418f655` |
 | H1/H2/H3 (this report's HIGH items) | this pass — schema-mismatch-only retry, five silent failures logged, `get_user_client` fails closed |
 | Two `NameError`s introduced while fixing H2, caught by re-running pyflakes | fixed in the same pass; see above |
+| O8 — N+1 in the delivery-batch list (51 REST calls per 50-batch page) | one query per page; old vs new diffed on four cases |
+| O9 — the two unauthenticated endpoints | kept public **by decision**; both still reachable anonymously (503 from the unreachable upstream, not 401) |
+| O7 — 13 of the 18 remaining silent route-swallows | each now logs; the other 14 verified covered inside `notification_service` / `utils/email` / `milestone_service` |
+
+### Session note — silent-except pass
+
+Triage rule applied: log when the failure changes what the caller believes happened.
+First draft of the `reorder` log line referenced `item_id_ref`, which does not exist —
+a `NameError` inside an `except` block, i.e. exactly the class of bug this pass is meant
+to remove. Caught because a `pyflakes` run had silently failed (`No module named
+pyflakes` piped into a `grep`, so the empty match read as "clean"). Reinstalled, then
+re-ran with a planted-error control to prove the check actually fires. Both notes are
+here because the earlier rounds' two `NameError`s were recorded the same way.

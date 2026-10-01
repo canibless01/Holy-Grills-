@@ -1098,9 +1098,19 @@ def list_batches():
         if status:
             q = q.eq("status", status)
         batches = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+        # One query for the whole page instead of one per batch (this was N+1: a page of
+        # 50 batches cost 51 REST round-trips). Same response shape — `order_count` is
+        # still set on every batch, and a batch with no orders still reports 0.
+        batch_ids = [b["id"] for b in batches if b.get("id")]
+        counts: dict = {}
+        if batch_ids:
+            rows = (db.table("orders").select("batch_id")
+                    .in_("batch_id", batch_ids).limit(10000).execute()) or []
+            for r in rows:
+                bid = r.get("batch_id")
+                counts[bid] = counts.get(bid, 0) + 1
         for b in batches:
-            counted = db.table("orders").select("id", count="exact").eq("batch_id", b["id"]).limit(1).execute()
-            b["order_count"] = (counted or {}).get("count") or 0
+            b["order_count"] = counts.get(b.get("id"), 0)
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_batches")
     return jsonify({"batches": batches, "count": len(batches), "limit": limit, "offset": offset}), 200

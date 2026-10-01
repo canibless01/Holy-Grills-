@@ -910,8 +910,10 @@ def cancel_scheduled_order(order_id):
                 "order_id": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
-    except Exception:
-        pass
+    except Exception as exc:
+        # The lock stays consumed and the customer loses what they paid for it. This must
+        # be visible to whoever investigates, and is reversible by hand.
+        logger.error("cancel_scheduled_order: order lock not restored for order %s: %s", order_id, exc)
 
     return jsonify({
         "message": MSG.ORDER_CANCELLED_OK,
@@ -1218,8 +1220,10 @@ def cancel_order(order_id):
                 "order_id": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
-    except Exception:
-        pass
+    except Exception as exc:
+        # Same as cancel_scheduled_order: the customer paid for this lock and it stays
+        # consumed if the restore fails. Log it — it is fixable by hand.
+        logger.error("cancel_order: order lock not restored for order %s: %s", order_id, exc)
 
     from app.services.notification_service import send_notification
     try:
@@ -1332,14 +1336,21 @@ def reorder(order_id):
                             .single()
                             .execute()
                         )
-                    except Exception:
+                    except Exception as exc:
+                        # Falls back to the base menu price. If the override existed, the
+                        # customer is now charged a different amount than intended.
+                        logger.warning("reorder: availability/price_override read failed for item %s: %s",
+                                       item["menu_item_id"], exc)
                         availability = None
                 if availability:
                     is_available = is_available and bool(availability.get("is_available"))
                     if availability.get("price_override") is not None:
                         current_price = float(availability["price_override"])
-        except Exception:
-            pass
+        except Exception as exc:
+            # Not the override lookup itself (that one logs above) but the price read
+            # around it. Silent here means the item's price quietly changes.
+            logger.warning("reorder: pricing failed for item %s, using the snapshot price: %s",
+                           item.get("menu_item_id"), exc)
 
         enriched.append({
             "menu_item_id": item["menu_item_id"],
@@ -1507,8 +1518,11 @@ def add_squad_members(order_id):
             for p in (u_profiles if isinstance(u_profiles, list) else []):
                 if p.get("email"):
                     emails.append(p["email"].strip().lower())
-        except Exception:
-            pass
+        except Exception as exc:
+            # The invitee list loses these users: they are not emailed, and the caller
+            # is told the invite succeeded.
+            logger.warning("squad invite: profile lookup failed for %s, those users are not invited: %s",
+                           user_ids, exc)
     emails = list(dict.fromkeys(emails))
     if not emails:
         return jsonify({"error": "At least one email or user_id is required"}), 400
@@ -1570,8 +1584,10 @@ def add_squad_members(order_id):
                     "squad_id": squad_id_for_order, "email": email,
                     "user_id": profile["id"] if profile else None,
                 })
-            except Exception:
-                pass  # already on roster
+            except Exception as exc:
+                # Usually a duplicate (already on the roster), but a database failure
+                # looks identical from here and would leave the member off the roster.
+                logger.warning("squad roster: insert failed for %s on order %s: %s", email, order_id, exc)
 
         if not profile:
             # Send auto-invite for referral vector
