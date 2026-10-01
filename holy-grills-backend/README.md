@@ -193,7 +193,7 @@ chain works — endpoint, service, REST call, SQL, and response.
 | auth | register → duplicate register → login → wrong password 401 → `/me` → refresh → streak → profile patch → device token |
 | addresses | create → list → update → delete (each verified in `user_addresses`) |
 | cart & saved | add → read → update quantity → save for later → back to cart |
-| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger). Ordering is gated by the **signed-in account's own campus** (`g.campus_id`), so after login the suite re-pins itself to that campus and re-fetches the delivery point before provisioning an ordering window. It also provisions a free-side credit and selection and then asserts the order consumed it, removed the selection and carried a ₦0 line |
+| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger). Ordering is gated by the **signed-in account's own campus** (`g.campus_id`), so after login the suite re-pins itself to that campus and re-fetches the delivery point before provisioning an ordering window. It also provisions a free-side credit and selection and then asserts the order consumed it, removed the selection and carried a ₦0 line, and cancels an UNPAID card order to prove nothing is refunded for money that was never collected |
 | economy | HP balance/transactions/tiers, wallet + ledger, rewards, referrals |
 | notifications | list, preferences round-trip, read-all |
 | admin | optional (`--admin-token`): settings, users, orders, audit log, dashboard, economics |

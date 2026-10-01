@@ -202,7 +202,11 @@ def create_app(config_class=Config):
     def forbidden(e):
         rid = getattr(request, "request_id", "-")
         _logger.warning("[%s] 403 Forbidden: %s %s", rid, request.method, request.path)
-        return {"error": "Forbidden", "message": str(e), "request_id": rid}, 403
+        # `error` is what every route puts its message in, so the caller reads the
+        # actual reason (e.g. "You don't have permission to access this resource")
+        # instead of a generic "Forbidden". `message` keeps `str(e)` for older clients.
+        description = getattr(e, "description", None) or MSG.RESOURCE_ACCESS_DENIED
+        return {"error": description, "message": str(e), "request_id": rid}, 403
 
     @app.errorhandler(404)
     def not_found(e):

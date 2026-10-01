@@ -10,6 +10,13 @@ logger = get_logger(__name__)
 
 exclusive_spin_bp = Blueprint("exclusive_spin", __name__)
 
+# Every source a spin credit may come from. A credit with any other source is ignored
+# on read, so a new way of granting spins must be added here or it is silently unusable.
+#   leaderboard_prize — top-N monthly finish (scheduled.py)
+#   tier_grant        — a tier's monthly exclusive_spins_monthly perk (grant_monthly_tier_perks)
+#   admin_grant       — POST /admin/exclusive-spin-grant (compensation, support, promos)
+SPIN_GRANT_SOURCES = ["leaderboard_prize", "tier_grant", "admin_grant"]
+
 
 def _available_spins(db, user_id: str) -> list:
     """Return only non-expired spin credits from a recognized grant source.
@@ -25,7 +32,7 @@ def _available_spins(db, user_id: str) -> list:
         db.table("exclusive_spins")
         .select("id,spin_count,source,month,expires_at")
         .eq("user_id", user_id)
-        .in_("source", ["leaderboard_prize", "tier_grant"])
+        .in_("source", SPIN_GRANT_SOURCES)
         .gt("spin_count", 0)
         .gte("expires_at", now)
     )

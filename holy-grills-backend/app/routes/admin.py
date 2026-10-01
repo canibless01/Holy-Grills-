@@ -2391,6 +2391,108 @@ def create_spin_pool_prize():
     return jsonify(row), 201
 
 
+@admin_bp.route("/exclusive-spin-grant", methods=["POST"])
+@require_role("admin")
+def grant_exclusive_spins():
+    """
+    Grant exclusive-spin credits to one user (admin only).
+    Body: { "user_id": "<uuid>", "spins": 1, "validity_days": 60, "reason": "..." }
+    ---
+    tags: [Admin]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [user_id]
+          properties:
+            user_id: {type: string, format: uuid}
+            spins: {type: integer, default: 1, description: 1-10}
+            validity_days: {type: integer}
+            reason: {type: string}
+    responses:
+      201:
+        description: Spins granted
+      400:
+        description: Invalid user or spin count
+      404:
+        description: User not found in your campus
+    """
+    from app.middleware.auth import fetch_or_403
+    from app.services.notification_service import send_notification
+
+    db = get_user_client()
+    data = get_json_object()
+    if data is None:
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+
+    user_id = as_uuid(data.get("user_id"))
+    if not user_id:
+        return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="user_id")}), 400
+    try:
+        spins = int(data.get("spins", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "spins must be a whole number"}), 400
+    if not 1 <= spins <= 10:
+        return jsonify({"error": "spins must be between 1 and 10"}), 400
+
+    target, err = fetch_or_403(db, "profiles", user_id, select="id,campus_id",
+                               not_found_msg=MSG.RESOURCE_NOT_FOUND)
+    if err:
+        return err
+
+    validity_days = data.get("validity_days")
+    if validity_days is None:
+        try:
+            row = db.table("system_settings").select("value").eq("key", "exclusive_spin_validity_days").is_("campus_id", "null").single().execute()
+            validity_days = int((row or {}).get("value") or 60)
+        except Exception:                                    # noqa: BLE001 - a setting, not a guard
+            validity_days = 60
+    try:
+        validity_days = int(validity_days)
+    except (TypeError, ValueError):
+        return jsonify({"error": "validity_days must be a whole number"}), 400
+    if not 1 <= validity_days <= 365:
+        return jsonify({"error": "validity_days must be between 1 and 365"}), 400
+
+    reason = as_text(data.get("reason"), 200) or "Admin grant"
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    # source='admin_grant' is accepted on read (see SPIN_GRANT_SOURCES in
+    # app/routes/exclusive_spin.py) — without that entry this row would be invisible.
+    result = db.table("exclusive_spins").insert({
+        "user_id": user_id,
+        "spin_count": spins,
+        "source": "admin_grant",
+        "month": month,
+        "expires_at": expires_at,
+        "campus_id": target.get("campus_id") or getattr(g, "campus_id", None),
+    }).execute()
+    row = result[0] if isinstance(result, list) else result
+
+    _audit(g.user_id, "exclusive_spins", (row or {}).get("id"), "grant",
+           after_data={"user_id": user_id, "spins": spins, "expires_at": expires_at, "reason": reason},
+           target_campus_id=target.get("campus_id"))
+    try:
+        send_notification(
+            user_id=user_id,
+            notif_type="exclusive_spin_granted",
+            template_data={"spins": spins, "expires_at": expires_at[:10]},
+            campus_id=target.get("campus_id") or getattr(g, "campus_id", None),
+        )
+    except Exception as exc:                                 # noqa: BLE001 - the grant already happened
+        logger.warning("grant_exclusive_spins: notify failed for %s: %s", user_id, exc)
+
+    return jsonify({
+        "message": "Exclusive spins granted",
+        "spin_id": (row or {}).get("id"),
+        "user_id": user_id,
+        "spins": spins,
+        "expires_at": expires_at,
+    }), 201
+
+
 @admin_bp.route("/exclusive-spin-pool/<prize_id>", methods=["PATCH"])
 @require_role("admin")
 def update_spin_pool_prize(prize_id):

@@ -1057,6 +1057,68 @@ def s_place_order(ctx: Ctx):
              f"items={len(items)} total=₦{order.get('total_amount')}")
 
 
+@step("orders", "orders.cancel_unpaid_no_refund",
+      "cancelling an UNPAID card order refunds nothing (money bug regression)",
+      writes=True, route="POST /api/orders/<order_id>/cancel",
+      needs=("orders.place", "orders.fund_wallet"))
+def s_cancel_unpaid_no_refund(ctx: Ctx):
+    """A card order is created with payment_status='pending' and card_amount_used
+    already set. Cancelling it used to credit the wallet for the full amount —
+    money that was never collected, repeatable in a loop. Nothing may be refunded
+    while payment_status is not 'paid'.
+    """
+    if not ctx.ids.get("hostel_id"):
+        raise Skip("no delivery point — cannot build a card order")
+
+    wallet_before = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_before = float(wallet_before.get("balance") or 0)
+
+    body = {
+        "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
+        "payment_method": "card",
+        "delivery_type": "on_campus",
+        "delivery_location_id": str(ctx.ids["hostel_id"]),
+        "notes": "E2E unpaid-card cancel probe — safe to ignore",
+    }
+    r = ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"],
+                     headers={"X-Campus-ID": str(ctx.ids.get("campus_id") or "")})
+    if r.status == 409:
+        raise Skip(f"ordering unavailable: {r.snippet(120)}")
+    r.check(201, allow=(200,))
+    order_id = str(field(r.data or {}, "id")
+                   or ((r.data or {}).get("order") or {}).get("id") or "")
+    if not order_id:
+        rows = ctx.db.select("orders", user_id=ctx.user_id)
+        if not rows:
+            raise Skip("card order was not persisted")
+        order_id = str(sorted(rows, key=lambda o: o.get("created_at") or "")[-1]["id"])
+    ctx.track("orders", order_id)
+    ctx.track_children("order_items", "order_id", order_id)
+
+    order = ctx.db.select_one("orders", id=order_id) or {}
+    expect(str(order.get("payment_status") or "").lower() != "paid",
+           f"the probe order came back paid ({order.get('payment_status')}) — it is not testing "
+           "the unpaid path", r)
+    expect(float(order.get("card_amount_used") or 0) > 0,
+           "the card order has no card_amount_used — nothing would have been refunded")
+
+    cancel = ctx.api.post(f"/api/orders/{order_id}/cancel", json_body={"reason": "E2E probe"},
+                          token=ctx.tokens["access"])
+    cancel.check(200)
+    refunded = float((cancel.data or {}).get("wallet_refunded") or 0)
+    expect(refunded == 0,
+           f"cancel refunded ₦{refunded} on an unpaid card order (payment_status="
+           f"{order.get('payment_status')}, card_amount_used={order.get('card_amount_used')}) — "
+           "that is money created from nothing")
+
+    wallet_after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_after = float(wallet_after.get("balance") or 0)
+    expect(abs(balance_after - balance_before) < 0.01,
+           f"wallet balance moved on an unpaid cancel: ₦{balance_before} → ₦{balance_after}")
+
+    ctx.note(f"unpaid card order cancelled: refunded ₦0, balance unchanged (₦{balance_after})")
+
+
 @step("orders", "orders.free_side_consumed",
       "the order consumed the credit, removed the selection and added a ₦0 line",
       route="GET /api/orders/<order_id>", needs=("orders.place", "orders.free_side_provision"))

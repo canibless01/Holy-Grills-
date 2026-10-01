@@ -1148,11 +1148,34 @@ def cancel_order(order_id):
         return jsonify({"error": str(exc)}), 400
 
     # ── Refund: wallet→wallet, card→wallet ────────────────────────────────────
+    # ONLY money that actually left the account is refundable. A card order is created
+    # with payment_status='pending' and card_amount_used already set, so refunding
+    # before the webhook confirmed the charge credited the customer for a payment that
+    # never happened — repeatable, i.e. free money. The admin refund route
+    # (POST /<id>/refund) already refuses this case with REFUND_UNPAID_CANCELLED;
+    # this is the same guard on the customer path.
     wallet_refunded = 0.0
     wallet_amount = float(order.get("wallet_amount_used") or 0)
     card_amount = float(order.get("card_amount_used") or 0)
+    paid = str(order.get("payment_status") or "").lower() == "paid"
+
+    # A split order debits the wallet half up front, so that half is real money even
+    # while the card half is still pending. Whether hg_create_order_atomic debits it at
+    # creation or at confirmation decides this flag — confirm before enabling, because
+    # getting it wrong recreates the same free-money bug for split orders.
+    refund_wallet_when_unpaid = False
 
     refund_errors = []
+    if not paid:
+        logger.warning(
+            "cancel_order: order %s cancelled with payment_status=%r — no automatic refund "
+            "(wallet_amount_used=%s card_amount_used=%s); nothing was collected. Use the admin "
+            "refund route if money really moved.",
+            order_id, order.get("payment_status"), wallet_amount, card_amount)
+        if not refund_wallet_when_unpaid:
+            wallet_amount = 0.0
+        card_amount = 0.0
+
     if wallet_amount > 0:
         try:
             from app.services.wallet_service import credit_wallet
@@ -1214,13 +1237,21 @@ def cancel_order(order_id):
     except Exception:
         pass
 
-    return jsonify({
+    response = {
         "message": MSG.ORDER_CANCELLED_OK,
         "order_id": order_id,
         "status": "cancelled",
         "wallet_refunded": wallet_refunded,
         "refund_errors": refund_errors,
-    }), 200
+    }
+    if not paid:
+        # Say it explicitly: nothing was collected, so nothing is refunded. Without
+        # this the client cannot tell "refunded ₦0" from "the refund failed".
+        response["payment_status"] = order.get("payment_status")
+        response["refunded_reason"] = "nothing was charged on this order"
+        if refund_errors:
+            response["refund_errors"] = refund_errors
+    return jsonify(response), 200
 
 
 @orders_bp.route("/<order_id>/reorder", methods=["POST"])

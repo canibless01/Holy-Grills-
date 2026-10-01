@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
+from app.utils.admin_helpers import as_uuid
 from app.utils.logger import get_logger
 from datetime import datetime, timezone, timedelta
 
@@ -124,6 +125,104 @@ def create_free_side_item():
         "is_active": bool(data.get("is_active", True)), "campus_id": getattr(g, "campus_id", None),
     })
     return jsonify(result[0] if isinstance(result, list) else result), 201
+
+
+@free_sides_bp.route("/admin/credits", methods=["POST"])
+@require_role("admin")
+def grant_free_side_credits():
+    """
+    Grant free-side credits to one user (admin only).
+    Body: { "user_id": "<uuid>", "credits": 1, "validity_days": 60, "reason": "..." }
+    ---
+    tags: [Admin, FreeSides]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [user_id]
+          properties:
+            user_id: {type: string, format: uuid}
+            credits: {type: integer, default: 1, description: 1-20}
+            validity_days: {type: integer, description: "default: the free_side_credits_validity_days setting"}
+            reason: {type: string}
+    responses:
+      201:
+        description: Credits granted
+      400:
+        description: Invalid user or credit count
+      404:
+        description: User not found in your campus
+    """
+    from app.middleware.auth import fetch_or_403
+    from app.services.notification_service import send_notification
+
+    db = get_user_client()
+    data = request.get_json(force=True, silent=True) or {}
+
+    user_id = as_uuid(data.get("user_id"))
+    if not user_id:
+        return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="user_id")}), 400
+    try:
+        credits = int(data.get("credits", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "credits must be a whole number"}), 400
+    if not 1 <= credits <= 20:
+        return jsonify({"error": "credits must be between 1 and 20"}), 400
+
+    # Campus scope: fetch_or_403 404s an id outside the admin's campus.
+    target, err = fetch_or_403(db, "profiles", user_id, select="id,campus_id", not_found_msg=MSG.RESOURCE_NOT_FOUND)
+    if err:
+        return err
+
+    validity_days = data.get("validity_days")
+    if validity_days is None:
+        try:
+            row = db.table("system_settings").select("value").eq("key", "free_side_credits_validity_days").is_("campus_id", "null").single().execute()
+            validity_days = int((row or {}).get("value") or 60)
+        except Exception:                                    # noqa: BLE001 - a setting, not a guard
+            validity_days = 60
+    try:
+        validity_days = int(validity_days)
+    except (TypeError, ValueError):
+        return jsonify({"error": "validity_days must be a whole number"}), 400
+    if not 1 <= validity_days <= 365:
+        return jsonify({"error": "validity_days must be between 1 and 365"}), 400
+
+    reason = (data.get("reason") or "").strip()[:200] or "Admin grant"
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
+
+    result = db.table("free_side_credits").insert({
+        "user_id": user_id,
+        "credits_remaining": credits,
+        "source": "admin_grant",
+        "expires_at": expires_at,
+        "campus_id": target.get("campus_id") or getattr(g, "campus_id", None),
+    })
+    row = result[0] if isinstance(result, list) else result
+
+    # Audit + notify: a grant that leaves no trace is indistinguishable from a bug.
+    from app.routes.admin import _audit
+    _audit(g.user_id, "free_side_credits", (row or {}).get("id"), "grant",
+           after_data={"user_id": user_id, "credits": credits, "expires_at": expires_at, "reason": reason},
+           target_campus_id=target.get("campus_id"))
+    try:
+        send_notification(
+            user_id=user_id,
+            notif_type="free_side_credits_granted",
+            template_data={"credits": credits, "expires_at": expires_at[:10]},
+            campus_id=target.get("campus_id") or getattr(g, "campus_id", None),
+        )
+    except Exception as exc:                                 # noqa: BLE001 - the grant already happened
+        logger.warning("grant_free_side_credits: notify failed for %s: %s", user_id, exc)
+
+    return jsonify({
+        "message": "Free-side credits granted",
+        "credit_id": (row or {}).get("id"),
+        "user_id": user_id,
+        "credits": credits,
+        "expires_at": expires_at,
+    }), 201
 
 
 @free_sides_bp.route("/admin/items/<item_id>", methods=["PATCH"])
