@@ -18,6 +18,7 @@ from app.routes.events import _get_campus_id
 from app.services import newsletter_service
 from app.utils.logger import get_logger
 from app.utils.tz import today_wat
+from app.utils.schedule import override_window, resolve_date_override
 from app.utils.validators import validate_email
 
 logger = get_logger(__name__)                                                    # D17-B09: module had no logging at all
@@ -447,10 +448,10 @@ def _is_currently_open(schedule, override, now=None) -> bool:
     if override:
         if override.get("is_closed"):
             return False
-        open_val = override.get("open_time") or override.get("opens_at")
-        close_val = override.get("close_time") or override.get("closes_at")
-        if open_val and close_val:
-            return _parse_time(open_val) <= now.time() <= _parse_time(close_val)
+        # override_window() is the shared reading of an open override: NULL times
+        # mean the whole day (00:00-23:59), not "fall back to the weekly schedule".
+        open_val, close_val = override_window(override)
+        return _parse_time(open_val) <= now.time() <= _parse_time(close_val)
 
     for row in schedule:
         if row.get("weekday") == today_weekday:
@@ -480,9 +481,10 @@ def get_hours():
     hours = _scoped(hours, campus_id, key_fn=lambda r: r.get("weekday"))
 
     today_iso = today_wat().isoformat()
-    override_rows = db.table("operating_hour_overrides").select("*").eq("date", today_iso).execute() or []
-    override_rows = _scoped(override_rows, campus_id, key_fn=lambda r: r.get("date"))
-    override = override_rows[0] if override_rows else None
+    # Same helper the ordering gate uses (app/utils/schedule.py), so a holiday means
+    # the same thing on this endpoint and at checkout. Before a campus is chosen this
+    # returns the global row, exactly as the scoped read above does.
+    override = resolve_date_override(db, campus_id, today_iso)
 
     return jsonify({
         "schedule": hours,

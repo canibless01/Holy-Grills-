@@ -882,9 +882,11 @@ def s_ensure_window(ctx: Ctx):
     If the campus has none, create one for today and delete it in cleanup —
     the suite must never depend on rows someone inserted by hand.
 
-    Note: operating_hour_overrides is the *storefront* schedule and has no
-    effect on ordering; ordering_windows (or the 08:00-16:00 config fallback)
-    is what resolve_ordering_window enforces."""
+    Note: since the override wiring, an operating_hour_overrides row for today
+    DOES affect ordering — it outranks the recurring weekday rows (see
+    app/utils/schedule.py). This step only guarantees that *some* window is
+    open, so the override probes below can pick their own date and clean up
+    after themselves."""
     campus = ctx.ids["campus_id"]
     status_path = "/api/orders/delivery-windows/status"
 
@@ -1117,6 +1119,208 @@ def s_cancel_unpaid_no_refund(ctx: Ctx):
            f"wallet balance moved on an unpaid cancel: ₦{balance_before} → ₦{balance_after}")
 
     ctx.note(f"unpaid card order cancelled: refunded ₦0, balance unchanged (₦{balance_after})")
+
+
+def _override_probe_ready(ctx: Ctx, campus: str) -> str:
+    """The date a per-date override can be tested on, or raise Skip with why not.
+
+    A dated ordering_windows row outranks an override (precedence rule 1), and an
+    override someone already added is theirs, so either one means this probe cannot
+    isolate the override. Returns today's WAT date.
+    """
+    today = (datetime.now(timezone.utc) + timedelta(hours=1)).date().isoformat()
+    dated = ctx.db.select("ordering_windows", date=today, campus_id=campus)
+    if dated:
+        raise Skip(f"campus has a dated ordering_windows row for {today} — it outranks an "
+                   "override, so the override cannot be isolated")
+    existing = ctx.db.select("operating_hour_overrides", date=today, campus_id=campus)
+    if existing:
+        raise Skip(f"an override already exists for {today} (reason={existing[0].get('reason')!r}) "
+                   "— this probe never touches a row it did not create")
+    return today
+
+
+def _add_override(ctx: Ctx, campus: str, date_iso: str, **fields) -> dict:
+    """Insert one override row for this run, registered for cleanup."""
+    row = {"date": date_iso, "campus_id": campus, "is_closed": False,
+           "reason": "E2E override probe — safe to ignore", **fields}
+    created = ctx.db.insert("operating_hour_overrides", row)
+    ctx.track_infra("operating_hour_overrides", created.get("id"))
+    expect(bool(created.get("id")), f"override insert returned no id: {created}")
+    return created
+
+
+def _drop_override(ctx: Ctx, created: dict):
+    """Delete the row this run created — never a row that was already there."""
+    if created.get("id"):
+        ctx.db.delete("operating_hour_overrides", id=created["id"])
+
+
+def _status(ctx: Ctx, campus: str, calendar: bool = False) -> dict:
+    params = {"campus_id": campus}
+    if calendar:
+        params["calendar"] = "true"
+    r = ctx.api.get("/api/orders/delivery-windows/status", token=ctx.tokens["access"],
+                    params=params).check(200)
+    return r.data or {}
+
+
+def _try_order(ctx: Ctx, campus: str):
+    """Place one real order and return the response, whatever it is."""
+    if not ctx.ids.get("hostel_id"):
+        raise Skip("no delivery point — cannot attempt an order")
+    body = {
+        "items": [{"menu_item_id": ctx.ids["menu_item_id"], "quantity": 1}],
+        "payment_method": "card",
+        "delivery_type": "on_campus",
+        "delivery_location_id": str(ctx.ids["hostel_id"]),
+        "notes": "E2E override probe — safe to ignore",
+    }
+    return ctx.api.post("/api/orders", json_body=body, token=ctx.tokens["access"],
+                        headers={"X-Campus-ID": str(campus)})
+
+
+@step("orders", "orders.override_closed_blocks",
+      "a closed operating_hour_override refuses ordering, and removing it restores the schedule",
+      writes=True, route="POST /api/orders", needs=("orders.place", "auth.login"))
+def s_override_closed_blocks(ctx: Ctx):
+    """Precedence rule 2: an override with is_closed=true closes the day even when the
+    weekday's ordering_windows rows are open. Deleting it must put the recurring
+    schedule back — an override is a dated exception, not a switch.
+    """
+    campus = str(ctx.ids["campus_id"])
+    today = _override_probe_ready(ctx, campus)
+    before = _status(ctx, campus)
+
+    created = _add_override(ctx, campus, today, is_closed=True)
+    try:
+        closed = _status(ctx, campus)
+        expect(closed.get("is_open") is False,
+               f"the status endpoint still reports is_open={closed.get('is_open')} with a closed "
+               f"override in place (windows={closed.get('windows')})")
+
+        attempt = _try_order(ctx, campus)
+        if attempt.status == 201:
+            ctx.track("orders", str(field(attempt.data or {}, "id")
+                                    or ((attempt.data or {}).get("order") or {}).get("id") or ""))
+            raise Failed("an order was accepted while a closed override was in place")
+        expect(attempt.status == 409,
+               f"expected 409 from a closed override, got {attempt.status}: {attempt.snippet(120)}")
+        msg = str((attempt.data or {}).get("error") or "")
+        if "capacity" in msg.lower():
+            raise Skip(f"the window was at capacity, not closed ({msg}) — the override is not the "
+                       "cause here")
+        expect("operating hours" in msg.lower(),
+               f"the refusal did not come from the ordering gate: {msg!r}")
+        ctx.note(f"closed override refused the order with {attempt.status}: {msg}")
+    finally:
+        _drop_override(ctx, created)
+
+    after = _status(ctx, campus)
+    expect(after.get("is_open") == before.get("is_open"),
+           f"the recurring schedule did not come back after removing the override: "
+           f"is_open {before.get('is_open')} -> {after.get('is_open')}")
+    expect(len(after.get("windows") or []) == len(before.get("windows") or []),
+           "the window list changed after removing the override")
+    ctx.note("override removed: the recurring schedule applies again "
+             f"(is_open={after.get('is_open')})")
+
+
+@step("orders", "orders.override_opens_outside_hours",
+      "an override outside the recurring hours opens ordering, and the gate reports its window",
+      writes=True, route="POST /api/orders", needs=("orders.place", "auth.login"))
+def s_override_opens_outside_hours(ctx: Ctx):
+    """Precedence rule 2, the other half: an open override replaces the day's recurring
+    windows. 00:00-23:59 is deliberately outside any normal window — NULL times mean the
+    same thing — so a successful order here can only be the override's doing.
+    """
+    campus = str(ctx.ids["campus_id"])
+    today = _override_probe_ready(ctx, campus)
+    before = _status(ctx, campus)
+
+    created = _add_override(ctx, campus, today, is_closed=False,
+                            opens_at="00:00", closes_at="23:59")
+    try:
+        opened = _status(ctx, campus)
+        windows = opened.get("windows") or []
+        expect(opened.get("is_open") is True,
+               f"the override did not open the day: is_open={opened.get('is_open')}, "
+               f"windows={windows}")
+        expect(len(windows) == 1,
+               f"an open override must replace the day's windows with exactly one, got {len(windows)}")
+        w = windows[0]
+        expect((w.get("opens_at"), w.get("closes_at")) == ("00:00", "23:59"),
+               f"the effective window is not the override's: {w}")
+
+        # inherited identity: the day's single recurring row, when there is exactly one
+        weekly = ctx.db.select("ordering_windows", weekday=(datetime.now(timezone.utc)
+                                                           + timedelta(hours=1)).weekday(),
+                               campus_id=campus)
+        if len(weekly) == 1:
+            expect(str(w.get("id")) == str(weekly[0]["id"]),
+                   f"the override did not inherit the weekday row's id: {w.get('id')} vs "
+                   f"{weekly[0]['id']}")
+
+        attempt = _try_order(ctx, campus)
+        if attempt.status in (200, 201):
+            ctx.track("orders", str(field(attempt.data or {}, "id")
+                                    or ((attempt.data or {}).get("order") or {}).get("id") or ""))
+            ctx.note(f"ordering succeeded outside the recurring hours ({attempt.status}) — "
+                     f"was is_open={before.get('is_open')} before the override")
+        else:
+            msg = str((attempt.data or {}).get("error") or "")
+            expect(attempt.status != 409,
+                   f"the override opened the window but the order was still refused: {msg}")
+            raise Skip(f"the order failed for an unrelated reason: {attempt.status} {msg}")
+    finally:
+        _drop_override(ctx, created)
+
+    restored = _status(ctx, campus)
+    expect(restored.get("is_open") == before.get("is_open"),
+           "removing the override did not restore the previous schedule")
+    ctx.note("override removed: the recurring schedule applies again")
+
+
+@step("orders", "orders.override_is_its_own_date",
+      "an override for one date leaves every other date untouched",
+      writes=True, route="GET /api/orders/delivery-windows/status",
+      needs=("auth.login",))
+def s_override_is_its_own_date(ctx: Ctx):
+    """The "and then it expires by itself" half of the feature: the row is keyed by
+    date, so tomorrow's closure cannot close today. Checked on the 7-day calendar,
+    which is built from the same override-aware status call.
+    """
+    campus = str(ctx.ids["campus_id"])
+    today = _override_probe_ready(ctx, campus)
+    tomorrow = (datetime.fromisoformat(today) + timedelta(days=1)).isoformat()
+
+    if ctx.db.select("operating_hour_overrides", date=tomorrow, campus_id=campus):
+        raise Skip(f"an override already exists for {tomorrow} — this probe never touches a row "
+                   "it did not create")
+
+    before = _status(ctx, campus, calendar=True)
+    created = _add_override(ctx, campus, tomorrow, is_closed=True)
+    try:
+        after = _status(ctx, campus, calendar=True)
+        cal_before = {c["date"]: c["is_open"] for c in (before.get("calendar") or [])}
+        cal_after = {c["date"]: c["is_open"] for c in (after.get("calendar") or [])}
+
+        expect(cal_before.get(today) == cal_after.get(today),
+               f"today's status changed because of TOMORROW's override: "
+               f"{cal_before.get(today)} -> {cal_after.get(today)}")
+        if tomorrow in cal_after:
+            expect(cal_after[tomorrow] is False,
+                   f"tomorrow is not reported closed despite a closed override: {cal_after[tomorrow]}")
+            ctx.note(f"override applies to {tomorrow} only; today ({today}) unchanged")
+        else:
+            ctx.note(f"override applies to its own date only; {tomorrow} is outside the "
+                     "calendar horizon")
+    finally:
+        _drop_override(ctx, created)
+
+    final = _status(ctx, campus, calendar=True)
+    cal_final = {c["date"]: c["is_open"] for c in (final.get("calendar") or [])}
+    expect(cal_final == cal_before, "the calendar did not return to its pre-test state")
 
 
 @step("orders", "orders.cancel_unpaid_scheduled_no_refund",

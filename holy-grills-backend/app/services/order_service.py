@@ -16,6 +16,7 @@ class OrderingWindowUnavailable(ValueError):
         self.next_available_date = next_available_date
 from decimal import Decimal
 from app.utils.tz import today_wat
+from app.utils.schedule import effective_ordering_windows
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services import hp_service
@@ -1849,17 +1850,11 @@ def resolve_ordering_window(db, campus_id):
     _today_iso = _now_wat_dt.date().isoformat()
     _weekday = _now_wat_dt.weekday()
 
-    candidates = (
-        db.table("ordering_windows")
-        .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-        .eq("date", _today_iso).eq("campus_id", campus_id).execute()
-    ) or []
-    if not candidates:
-        candidates = (
-            db.table("ordering_windows")
-            .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-            .eq("weekday", _weekday).eq("campus_id", campus_id).execute()
-        ) or []
+    # Precedence lives in app/utils/schedule.py: a dated ordering_windows row, then
+    # a per-date operating_hours override (closed, or one window at its times), then
+    # the recurring weekday rows, then the config fallback. An override applies to
+    # its own date only — the next day is back on the recurring schedule.
+    candidates, _source = effective_ordering_windows(db, campus_id, _today_iso, _weekday)
 
     if not candidates:
         from flask import current_app
@@ -1924,17 +1919,10 @@ def get_ordering_window_status(db, campus_id, for_date=None):
     except Exception:
         _weekday = _now_wat_dt.weekday()
 
-    candidates = (
-        db.table("ordering_windows")
-        .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-        .eq("date", _today_iso).eq("campus_id", campus_id).execute()
-    ) or []
-    if not candidates:
-        candidates = (
-            db.table("ordering_windows")
-            .select("id,opens_at,closes_at,is_closed,capacity,linked_delivery_window_id")
-            .eq("weekday", _weekday).eq("campus_id", campus_id).execute()
-        ) or []
+    # Same precedence as resolve_ordering_window, through the same helper — this is
+    # what makes find_next_available_ordering_slot and the 7-day calendar
+    # override-aware without their own copy of the rules.
+    candidates, _source = effective_ordering_windows(db, campus_id, _today_iso, _weekday)
 
     windows_out = []
     any_capacity = False
@@ -1970,6 +1958,8 @@ def get_ordering_window_status(db, campus_id, for_date=None):
             "is_closed": bool(row.get("is_closed")),
             "is_full": is_full,
             "remaining": remaining,
+            "opens_at": row.get("opens_at"),
+            "closes_at": row.get("closes_at"),
             "delivery_starts_at": (deliv or {}).get("opens_at"),
             "delivery_ends_at": (deliv or {}).get("closes_at"),
         })
