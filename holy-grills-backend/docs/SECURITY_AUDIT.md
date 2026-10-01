@@ -685,13 +685,17 @@ regressions, both ticket/event flows, the three override probes) plus the flow s
 **None of these steps has ever executed against the live database** — they were written and
 route-checked here, nothing more. Treat the first green run as the real sign-off.
 
-One thing to check on that first run: the order-payment webhook compares the charged amount
-to `orders.total_amount` (`app/routes/webhooks.py:391`). For a pure card order those are the
-same number, so the flow step passes. For a **split** order Paystack charges only
-`card_amount_used`, which is smaller — if the front end initialises Paystack for
-`card_amount_used`, that webhook would be rejected and the card half of a split order would
-never confirm. Not proven (the front end is not in this repo); worth one manual split-order
-test before launch.
+One thing to check on that first run: **the order-payment webhooks compare the charged amount
+to `orders.total_amount`, not to the card half.** Both providers do it the same way —
+`app/routes/webhooks.py:256` (Flutterwave) and `:385` (Paystack) — while the *event ticket*
+branches two functions over compare to `card_amount_used` (`:411`). For a pure card order
+`total_amount == card_amount_used`, which is why `flow.webhook_pays_order` passes. For a
+**split** order the customer's card is charged only `card_amount_used`, so if the front end
+initialises the charge for that amount (the consistent reading of the ticket branches), the
+webhook is rejected with "Amount mismatch" and the card half of a split order never confirms.
+Not proven from here (the front end is not in this repo, and the sandbox cannot read the
+data): worth **one manual split order** before launch. If it reproduces, the fix is to compare
+against `card_amount_used` when it is greater than zero.
 
 ### Still open
 
