@@ -178,6 +178,7 @@ column and `.rpc(...)` call, then probes the live project read-only:
 python scripts/live_test.py                # full run: writes + automatic cleanup
 python scripts/live_test.py --read-only    # GET-only smoke test
 python scripts/live_test.py --login-email you@example.com --login-password '…'
+python scripts/live_test.py --login-email you@example.com --login-password '…' --write-existing
 python scripts/live_test.py --keep-data --verbose   # debug a failure
 ```
 
@@ -192,15 +193,19 @@ chain works — endpoint, service, REST call, SQL, and response.
 | auth | register → duplicate register → login → wrong password 401 → `/me` → refresh → streak → profile patch → device token |
 | addresses | create → list → update → delete (each verified in `user_addresses`) |
 | cart & saved | add → read → update quantity → save for later → back to cart |
-| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger). Ordering is gated by the **signed-in account's own campus** (`g.campus_id`), so after login the suite re-pins itself to that campus and re-fetches the delivery point before provisioning an ordering window |
+| orders | wallet top-up via `credit_wallet_atomic` → place → read → history → list → active → cancel (+ refund ledger). Ordering is gated by the **signed-in account's own campus** (`g.campus_id`), so after login the suite re-pins itself to that campus and re-fetches the delivery point before provisioning an ordering window. It also provisions a free-side credit and selection and then asserts the order consumed it, removed the selection and carried a ₦0 line |
 | economy | HP balance/transactions/tiers, wallet + ledger, rewards, referrals |
 | notifications | list, preferences round-trip, read-all |
 | admin | optional (`--admin-token`): settings, users, orders, audit log, dashboard, economics |
 
 A throwaway account (`e2e.<timestamp>.<rand>@e2e.holygrills.test`) is created
 for the run and hard-deleted afterwards, together with every row the run
-touched. `--read-only` never writes; `--login-email` reuses an existing account
-and switches writes off unless you add `--write-existing`. Exit code is `0`
+touched. `--read-only` never writes. `--login-email` reuses an existing account and turns
+writing off — with it, the cart, address, order and economy write steps skip and
+everything downstream of them cascades to "depends on … → skipped". Add
+`--write-existing` (or `make e2e … WRITE_EXISTING=1`) to run them: the suite then
+deletes the rows *it* created — tracked ids, order children, and its temporary
+ordering window — while the account and everything already on it is never touched. Exit code is `0`
 when every executed step passed (`SKIP` is not a failure), `1` on any failure —
 so it can gate a deploy.
 

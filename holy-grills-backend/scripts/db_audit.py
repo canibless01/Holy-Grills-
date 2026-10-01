@@ -38,7 +38,8 @@ Usage
 Exit codes
 ----------
     0  audit completed, no high-severity findings
-    1  high-severity findings (missing RLS, anon-executable SECURITY DEFINER, …)
+    1  high-severity findings (missing RLS, anon-executable SECURITY DEFINER,
+       anon-readable rows outside PUBLIC_BY_DESIGN, …)
     2  configuration problem (no keys, or SUPABASE_DB_URL unset for the deep pass)
 """
 
@@ -214,6 +215,53 @@ def code_references() -> tuple[set[str], set[str]]:
         tables.update(TABLE_CALL_RE.findall(text))
         rpcs.update(RPC_CALL_RE.findall(text))
     return tables, rpcs
+
+
+# Tables the public storefront is expected to expose to an unauthenticated caller.
+#
+# These are catalogue/reference content, not customer data: campuses, menus,
+# delivery points, published events, banners. A row here is NOT a leak, so the
+# audit reports it as informational instead of high.
+#
+# EVERY ENTRY NEEDS A REASON. If a table in this set stops being public, delete
+# the entry — it will flip straight back to a high finding. Anything readable by
+# anon that is NOT in this set is reported as high, always.
+#
+# Confirm each one is deliberate. A table can land here because an RLS policy
+# allows anon SELECT, or because the grant was never revoked; only the deep pass
+# (SUPABASE_DB_URL) can tell you which. Extend with --anon-public a,b,c.
+PUBLIC_BY_DESIGN = {
+    # reference data
+    "academic_levels": "level list shown during signup",
+    "campuses": "campus picker",
+    "departments": "department picker",
+    "hostels": "delivery points",
+    "gates": "delivery gates",
+    "delivery_windows": "published delivery slots",
+    "delivery_zones": "delivery coverage",
+    # menu
+    "menu_categories": "menu browsing",
+    "menu_items": "menu browsing",
+    "menu_addons": "menu add-on options",
+    "menu_addon_groups": "menu add-on groups",
+    "menu_item_variation_groups": "menu variation groups",
+    "menu_item_variation_options": "menu variation options",
+    "menu_item_availability": "today's availability",
+    # storefront
+    "banners": "storefront banners",
+    "storefront_sections": "storefront layout",
+    "operating_hours": "opening hours",
+    "operating_hour_overrides": "holiday openings",
+    # events
+    "events": "public event listing",
+    "event_ticket_tiers": "public ticket tiers",
+    # loyalty
+    "hp_tiers": "tier names and thresholds",
+    "challenges": "public challenge list",
+    "hall_of_fame_inductees": "published hall of fame",
+    "leaderboard_snapshots": "published leaderboard",
+    "feature_flags": "client-side feature switches",
+}
 
 
 def anon_reachability(url: str, anon_key: str, tables: list[str],
@@ -594,6 +642,9 @@ def main(argv=None) -> int:
                         help="skip the SQL pass even if SUPABASE_DB_URL is set")
     parser.add_argument("--search", default="",
                         help="look for an existing table/function matching this text")
+    parser.add_argument("--anon-public", default="",
+                        help="comma-separated tables to treat as public by design for this run "
+                             "(added to the script's built-in list)")
     parser.add_argument("--impersonate", action="append", default=[],
                         metavar="LABEL:UUID",
                         help="also run the RLS check as `authenticated` with this JWT sub "
@@ -615,6 +666,10 @@ def main(argv=None) -> int:
     service_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
     anon_key = (os.environ.get("SUPABASE_ANON_KEY") or "").strip()
     db_url = (os.environ.get("SUPABASE_DB_URL") or "").strip()
+
+    public_ok = dict(PUBLIC_BY_DESIGN)
+    for name in [n.strip() for n in args.anon_public.split(",") if n.strip()]:
+        public_ok[name] = "listed with --anon-public for this run"
 
     # RLS impersonation subjects: --impersonate wins, then the .env ids
     subjects: list[tuple[str, str]] = []
@@ -697,15 +752,26 @@ def main(argv=None) -> int:
             counts[status] = counts.get(status, 0) + 1
         rep.text(" · ".join(f"{k}: {v}" for k, v in sorted(counts.items())))
         exposed = sorted(t for t, st in reach.items() if st == "exposed")
+        public = sorted(t for t in exposed if t in public_ok)
+        unexpected = sorted(t for t in exposed if t not in public_ok)
         empty = sorted(t for t, st in reach.items() if st == "empty")
         denied = sorted(t for t, st in reach.items() if st == "denied")
         rep.data["anon_reachability"] = reach
         rep.data["anon_exposed"] = exposed
 
-        if exposed:
-            rep.finding("high", f"the anon key can read rows from {len(exposed)} table(s)",
-                        ", ".join(exposed[:15]) + (" …" if len(exposed) > 15 else ""),
-                        "revoke the anon grant, or add an RLS policy that excludes anon")
+        if unexpected:
+            rep.finding("high", f"the anon key can read rows from {len(unexpected)} table(s) "
+                                "that are not public by design",
+                        ", ".join(unexpected[:15]) + (" …" if len(unexpected) > 15 else ""),
+                        "revoke the anon grant, or add an RLS policy that excludes anon — if the "
+                        "table IS meant to be public, add it to PUBLIC_BY_DESIGN in this script "
+                        "(or --anon-public) with a reason")
+        if public:
+            rep.text(f"{len(public)} table(s) are readable by anon and listed as public by design "
+                     f"({len(public)} of them returned rows). Expected for the storefront — "
+                     "confirm each still needs anon access:")
+            for t in public:
+                rep.text(f"  · {t} — {public_ok[t]}")
         if empty:
             rep.text(f"{len(empty)} table(s) grant the anon role access and return 0 rows. "
                      "RLS filters them — reachability is not exposure, and this is the normal "

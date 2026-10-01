@@ -163,8 +163,22 @@ row per table and classifies:
 | `unparseable` | 200 with a non-JSON body — unexpected for PostgREST, look by hand | low |
 
 So "112 tables answer the anon key" with zero `exposed` is the expected shape of a
-healthy project, not 112 vulnerabilities. The number to watch is `exposed`, and it
-must be zero.
+healthy project, not 112 vulnerabilities.
+
+`exposed` is then split again, because some tables *should* be world-readable:
+
+| Split | Meaning | Severity |
+|-------|---------|----------|
+| listed in `PUBLIC_BY_DESIGN` | catalogue content the storefront serves — campuses, menus, delivery points, published events, banners | informational, listed with its reason |
+| everything else | customer data, ops data, anything not meant to be public | **high** |
+
+The allowlist lives at the top of `scripts/db_audit.py`; every entry carries the
+reason it is public, and `--anon-public a,b,c` extends it for one run. Keep it
+small: `promo_codes`, `system_settings` and `kitchen_settings` are deliberately
+NOT on it — they mix public and operational content, so expose them only after a
+decision. Confirm each entry is deliberate: a table can be anon-readable because
+a policy allows it or because the grant was never revoked, and only the deep pass
+can tell you which.
 
 ### Connecting (SUPABASE_DB_URL)
 

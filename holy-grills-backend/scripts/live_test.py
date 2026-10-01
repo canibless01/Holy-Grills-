@@ -136,7 +136,11 @@ class Ctx:
         self.ids: dict[str, object] = {}
         self.tokens: dict[str, str] = {}
         self.created: list[tuple[str, str]] = []       # (table, id) — deleted in reverse
+        self.children: list[tuple[str, str, str]] = [] # (table, column, value) — rows this run
+                                                       # created under a parent row it also created
         self.infra: list[tuple[str, str]] = []         # suite scaffolding — always deleted
+        self.cleanup_created = False                   # True with --write-existing: delete what
+                                                       # THIS RUN created, never what it found
         self.sweeps: list[tuple[str, str, str]] = []   # (table, column, value)
         self.user_id: str | None = None
         self.owns_user = True          # False when running against --login-email
@@ -146,9 +150,21 @@ class Ctx:
 
     # ── bookkeeping ──────────────────────────────────────────────────────────
     def track(self, table: str, row_id: str):
-        """Register a row for deletion — only ever for a user this run created."""
-        if row_id and self.owns_user:
+        """Register a row for deletion — only ever a row this run created.
+
+        With a freshly created test user that is every tracked row. With
+        --login-email nothing is tracked unless --write-existing was given, in
+        which case only the rows this run made are deleted; the account and
+        everything already in it is left alone.
+        """
+        if row_id and (self.owns_user or self.cleanup_created):
             self.created.append((table, row_id))
+
+    def track_children(self, table: str, column: str, value: str):
+        """Rows this run created *under* a parent it also created (order_items under
+        an order). Registered by predicate, deleted before the parent."""
+        if value and (self.owns_user or self.cleanup_created):
+            self.children.append((table, column, value))
 
     def track_infra(self, table: str, row_id: str):
         """Register scaffolding the suite created (e.g. a temporary ordering window).
@@ -593,6 +609,7 @@ def s_login(ctx: Ctx):
     if ctx.opts.login_email:
         # logging into a pre-existing account: never clean its data up
         ctx.owns_user = False
+        ctx.cleanup_created = bool(ctx.opts.write_existing)
         ctx.ids["email"] = ctx.opts.login_email
         ctx.ids["password"] = ctx.opts.login_password
     r = ctx.api.post("/api/auth/login",
@@ -914,6 +931,57 @@ def s_ensure_window(ctx: Ctx):
     ctx.ids["ordering_open"] = True
 
 
+@step("orders", "orders.free_side_provision",
+      "give the test account one free-side credit and select a free side",
+      writes=True, route="POST /api/free-sides/select",
+      needs=("auth.login", "orders.window"))
+def s_free_side_provision(ctx: Ctx):
+    """Set up the only path that spends a free-side credit, so orders.place can
+    prove the consumption actually happens (the bug: nothing consumed them).
+
+    Skips cleanly when the feature is off or the project has no active free-side
+    items — both are legitimate configurations, not failures.
+    """
+    campus = ctx.ids.get("campus_id")
+
+    items = [i for i in (ctx.db.select("free_side_items", is_active="true") or [])
+             if i.get("campus_id") in (campus, None)]
+    if not items:
+        raise Skip("no active free_side_items row for this campus — nothing to select")
+
+    # one credit, expiring tomorrow; deleted in cleanup whatever happens
+    try:
+        credit = ctx.db.insert("free_side_credits", {
+            "user_id": ctx.user_id,
+            "campus_id": campus,
+            "credits_remaining": 1,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        })
+    except Failed as exc:
+        raise Skip(f"could not create a free_side_credits row: {exc}")
+
+    credit_id = str((credit or {}).get("id") or "")
+    if credit_id:
+        ctx.track("free_side_credits", credit_id)
+
+    r = ctx.api.post("/api/free-sides/select", json_body={"free_side_item_id": items[0]["id"]},
+                     token=ctx.tokens["access"])
+    if r.status == 403:
+        raise Skip(f"free_side_credits feature is off — {r.snippet(120)}")
+    r.check(201, allow=(200,))
+    sel_id = str(field(r.data or {}, "id") or ((r.data or {}).get("selection") or {}).get("id") or "")
+    if not sel_id:
+        rows = ctx.db.select("cart_free_side_selections", user_id=ctx.user_id)
+        expect(bool(rows), f"selection was not persisted — {r.snippet()}", r)
+        sel_id = str(rows[0]["id"])
+    # predicate delete tolerates the row already being gone (that is the point of the test)
+    ctx.track_children("cart_free_side_selections", "id", sel_id)
+    ctx.ids["free_side_credit_id"] = credit_id
+    ctx.ids["free_side_selection_id"] = sel_id
+    ctx.ids["free_side_expect_consumption"] = True
+    ctx.note(f"provisioned 1 credit ({credit_id}) and selected '{items[0].get('name')}' ({sel_id})")
+
+
 @step("orders", "orders.fund_wallet", "credit the test wallet via credit_wallet_atomic (Paystack RPC path)",
       writes=True, needs=("auth.login",))
 def s_fund(ctx: Ctx):
@@ -981,10 +1049,41 @@ def s_place_order(ctx: Ctx):
     expect(bool(items), "no order_items rows were written for the order")
     expect(any(str(i.get("menu_item_id")) == str(ctx.ids["menu_item_id"]) for i in items),
            "order_items does not reference the ordered menu item")
-    ctx.sweep("order_items", "order_id", order_id)
-    ctx.sweep("order_status_logs", "order_id", order_id)
+    # Predicate-deleted children of an order THIS RUN created — safe to remove even
+    # when the run signed in to a pre-existing account with --write-existing.
+    ctx.track_children("order_items", "order_id", order_id)
+    ctx.track_children("order_status_logs", "order_id", order_id)
     ctx.note(f"order {order.get('order_number') or order_id} status={order.get('status')} "
              f"items={len(items)} total=₦{order.get('total_amount')}")
+
+
+@step("orders", "orders.free_side_consumed",
+      "the order consumed the credit, removed the selection and added a ₦0 line",
+      route="GET /api/orders/<order_id>", needs=("orders.place", "orders.free_side_provision"))
+def s_free_side_consumed(ctx: Ctx):
+    """The assertion the ecosystem was missing: after checkout, the credit is spent,
+    the selection is gone, and the order carries the free item at price 0."""
+    if not ctx.ids.get("free_side_expect_consumption"):
+        raise Skip("no free-side credit was provisioned")
+    order_id = ctx.ids.get("order_id")
+    if not order_id:
+        raise Skip("no order was placed")
+
+    credit_id, sel_id = ctx.ids["free_side_credit_id"], ctx.ids["free_side_selection_id"]
+
+    credit = ctx.db.select_one("free_side_credits", id=credit_id)
+    expect(credit is not None, f"free_side_credits.{credit_id} vanished")
+    expect(int(credit.get("credits_remaining") or 0) == 0,
+           f"credit was NOT consumed — credits_remaining={credit.get('credits_remaining')} "
+           f"for order {order_id} (hg_consume_free_sides_atomic / _consume_free_sides)")
+
+    left = ctx.db.select("cart_free_side_selections", id=sel_id)
+    expect(not left, f"selection {sel_id} still in cart_free_side_selections after checkout")
+
+    items = ctx.db.select("order_items", order_id=order_id)
+    free = [i for i in items if float(i.get("price_snapshot") or 0) == 0]
+    expect(bool(free), "order_items has no ₦0 line for the free side")
+    ctx.note(f"credit consumed, selection removed, ₦0 line: {free[0].get('name_snapshot')}")
 
 
 @step("orders", "orders.get", "GET /api/orders/<id>", route="GET /api/orders/<order_id>",
@@ -1215,7 +1314,29 @@ def run_cleanup(ctx: Ctx, out) -> tuple[int, int]:
     """
     deleted = failed = 0
     if not ctx.owns_user:
-        out.raw("  user data kept — the run signed in to an existing account (--login-email)")
+        if ctx.cleanup_created:
+            out.raw("  account kept — deleting only the rows this run created (--write-existing)")
+        else:
+            out.raw("  account kept — the run signed in to an existing account (--login-email)")
+        # rows created under a parent this run created (order_items under an order)
+        for table, column, value in ctx.children:
+            try:
+                ctx.db.delete(table, **{column: value})
+                deleted += 1
+            except Exception as exc:                 # noqa: BLE001 - cleanup must not abort
+                failed += 1
+                out.warn_line(f"delete {table}.{column}={value} errored: {exc}")
+        # then the tracked rows, then scaffolding (orders reference the window)
+        for table, row_id in reversed(ctx.created):
+            try:
+                if ctx.db.delete(table, id=row_id):
+                    deleted += 1
+                else:
+                    failed += 1
+                    out.warn_line(f"could not delete {table}.{row_id} — remove it by hand")
+            except Exception as exc:                 # noqa: BLE001 - cleanup must not abort
+                failed += 1
+                out.warn_line(f"delete {table}.{row_id} errored: {exc}")
         for table, row_id in reversed(ctx.infra):
             try:
                 if ctx.db.delete(table, id=row_id):
@@ -1228,6 +1349,15 @@ def run_cleanup(ctx: Ctx, out) -> tuple[int, int]:
                 failed += 1
                 out.warn_line(f"delete scaffolding {table}.{row_id} errored: {exc}")
         return deleted, failed
+
+    # rows created under a parent this run created, before the parents themselves
+    for table, column, value in ctx.children:
+        try:
+            ctx.db.delete(table, **{column: value})
+            deleted += 1
+        except Exception as exc:                     # noqa: BLE001 - cleanup must not abort
+            failed += 1
+            out.warn_line(f"delete {table}.{column}={value} errored: {exc}")
 
     # children before parents: user-scoped sweeps (order_items, order_status_logs,
     # cart_items, …) must go before the parent rows they reference.
@@ -1325,8 +1455,9 @@ def main(argv=None) -> int:
                         help="sign in as an existing account instead of registering a test user")
     parser.add_argument("--login-password", default="", help="password for --login-email")
     parser.add_argument("--write-existing", action="store_true",
-                        help="allow write steps when using --login-email (off by default: you would "
-                             "be modifying a real account)")
+                        help="with --login-email: allow write steps, then delete only the rows this "
+                             "run created — the account and everything already on it is left alone. "
+                             "Makefile shorthand: WRITE_EXISTING=1")
     parser.add_argument("--fund-wallet", type=float, default=3000.0,
                         help="₦ credited to the test wallet before ordering (0 disables)")
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -1435,7 +1566,10 @@ def main(argv=None) -> int:
             continue
 
         if s.writes and not ctx.owns_user and not args.write_existing:
-            s.result, s.detail = "skipped", "existing account (--login-email) — add --write-existing"
+            s.result, s.detail = "skipped", (
+                "existing account (--login-email) — writes are off. Add --write-existing "
+                "(make e2e … WRITE_EXISTING=1): rows this run creates are then deleted at "
+                "the end, and nothing already on the account is touched")
             out.line(s.result, s.title, s.detail)
             results[s.id] = {"result": s.result, "detail": s.detail}
             continue

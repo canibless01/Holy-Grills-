@@ -42,6 +42,7 @@ help:  ## Show this help
 	@echo "  make selfcheck  Offline: confirm the E2E suite's routes exist in the app"
 	@echo "  make smoke      Read-only end-to-end run (no writes at all)"
 	@echo "  make e2e        Full end-to-end run (test user created, then deleted)"
+	@echo "                  reusing an existing account? add WRITE_EXISTING=1"
 	@echo "  make verify     check + contract + e2e"
 	@echo "  make plans      List every E2E step without running it"
 	@echo "  make server     Start the API on port $(PORT)"
@@ -90,6 +91,7 @@ e2e:  ## Full end-to-end run with automatic cleanup
 		$(if $(ADMIN_TOKEN),--admin-token $(ADMIN_TOKEN),) \
 		$(if $(LOGIN_EMAIL),--login-email $(LOGIN_EMAIL) --login-password $(LOGIN_PASSWORD),) \
 		$(if $(CAMPUS_ID),--campus-id $(CAMPUS_ID),) \
+		$(if $(WRITE_EXISTING),--write-existing,) \
 		$(if $(ADMIN_EMAIL),--admin-email $(ADMIN_EMAIL) --admin-password $(ADMIN_PASSWORD),) \
 		$(E2E_ARGS)
 
