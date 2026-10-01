@@ -561,6 +561,8 @@ Updated at the end of every working pass. If an item is not here, it is not open
 | O10 — 56 unused imports and LOW L1–L9 | all removed/fixed; pyflakes reports zero warnings |
 | Reward release now clears `used_at` as well as `attached_order_id` | `_restore_order_consumables`; re-running matches no row |
 | Operating-hour overrides ignored by the ordering gate (storefront said "closed", checkout accepted orders) | one shared helper, `app/utils/schedule.py`, used by both readers; 20 precedence assertions + 11 storefront cases; 3 e2e steps |
+| No permission sweep — a route losing its decorator would ship quietly | `security.permissions_matrix`: 29 admin routes × customer token |
+| Forged webhooks untested | `security.webhook_forgery_rejected`: both providers, no side effects asserted |
 | O2 — the wallet half of a cancelled split order was never returned | `refund_wallet_when_unpaid = True`, capped at `wallet_amount_used`; card half still only when paid |
 | O3 — HP and a claimed reward stayed spent after a cancel | `_restore_order_consumables()` on `received -> cancelled` in `update_order_status` (one choke point, fires once); the duplicate HP restore in `cancel_scheduled_order` removed |
 | H4 — unpaid *scheduled* order refunded an uncollected card half | card half gated on `payment_status='paid'`; decision table over both cancel routes |
@@ -657,7 +659,8 @@ because the expensive failures are the ones nobody checked.
 | Area | Evidence | Verified where |
 |------|----------|----------------|
 | Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
-| Routes the suite calls | `make selfcheck` — 74 declared routes all exist | this sandbox |
+| Routes the suite calls | `make selfcheck` — 76 declared routes all exist | this sandbox |
+| Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
 | Override precedence | 20 assertions through the real `effective_ordering_windows` / `resolve_ordering_window` / `get_ordering_window_status`: dated row wins, closed closes, open replaces, inheritance rule, campus beats global, NULL times, unreadable table falls back | this sandbox |
@@ -688,6 +691,57 @@ here, nothing more. Treat the first green run as the real sign-off.
 | you | **O4** | `docs/audit-report.md` + the ecosystem-map tail aren't in this checkout |
 | you | **O6** | `migrations/schema.sql`, `scripts/seed.py`, `scripts/seed.sql` referenced but absent |
 | me | nothing | O7 and O10 are closed; the remaining work is the live run above |
+
+### What the test suite does and does not cover
+
+Measured, not estimated — the app's live URL map against every path the suite calls:
+
+| | |
+|---|---|
+| app routes (method × path) | **405** |
+| routes the suite exercises | **~66 (16%)** |
+| blueprints with **zero** coverage | admin (44), analytics (29), events (23), marketplace (21), riders (17), kitchen (9), order_locks (6), squads (6), admin_feature_flags (10), admin_gifts (5), exclusive_spin (2), graduation (1), webhooks (2) |
+| role/permission assertions before this pass | **1** (a wrong-password 401) |
+| webhook calls before this pass | **0** |
+
+**What it does cover well:** the customer order loop — auth, cart, order creation,
+wallet/Hp reads, the cancel/refund regressions from this audit, the free-side and reward
+consumption fixes, and now the override precedence. Those are the paths the audit's own
+findings lived in, which is why they have tests.
+
+**What it structurally cannot catch:**
+
+1. **Payments arriving by webhook.** Nothing called `/api/webhooks/*`, so signature
+   handling, idempotency and the confirm-payment path were unverified end to end — the
+   path money actually enters through.
+2. **Permissions.** Nothing asserted that a customer is refused an admin route. A route
+   losing its decorator would have shipped silently (this is exactly the class the audit
+   found by reading code, not by testing).
+3. **Scheduled jobs** (`app/tasks/scheduled.py`, 23 jobs) — never invoked.
+4. **The kitchen → rider → delivery lifecycle** — the suite stops at order creation, so
+   `received → preparing → ready → assigned → delivered`, the HP award on delivery, and
+   rider payouts are untested.
+5. **Concurrency** — single-threaded, so a double-spend race (free sides, reward reuse,
+   order locks, capacity) cannot be observed.
+6. **Notifications and email** — fire-and-forget to OneSignal/Resend; the suite can only
+   see that a call did not 500.
+7. **Database posture** (RLS, grants) — O1, invisible from the application side.
+8. **Production configuration** — the suite runs against the dev config.
+
+**Added in this pass** (the two highest-risk gaps that need no new fixtures):
+
+* `security.permissions_matrix` — walks **29 parameterless admin GET routes** with a
+  customer token and requires 401/403 from every one, checks 3 customer-only routes refuse
+  an anonymous caller, and asserts the 5 public-by-design routes **still** serve guests
+  (the standing rule: no fix may block a guest from their path).
+* `security.webhook_forgery_rejected` — posts a forged Paystack and a forged Flutterwave
+  webhook with a unique throwaway reference and requires 401/403, then asserts no
+  `webhook_events` row was created and no wallet balance moved. If a forged signature is
+  ever *accepted*, the step fails loudly and deletes the row it caused.
+
+Still not covered after this pass, and worth naming: the webhook **happy path** (a valid
+signature crediting a wallet — needs a real signed payload or the provider's secret),
+the kitchen/rider lifecycle, the 23 scheduled jobs, and every concurrency race.
 
 ### Residual risks, stated plainly
 

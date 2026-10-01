@@ -1180,6 +1180,163 @@ def _try_order(ctx: Ctx, campus: str):
                         headers={"X-Campus-ID": str(campus)})
 
 
+# Every parameterless admin GET route in the app. A customer token must never get a
+# 200 from any of them; the list is the surface a role check protects, so a route
+# losing its decorator is caught here rather than in review.
+_ADMIN_GET_ROUTES = (
+    "/api/admin/abandoned-carts",
+    "/api/admin/academic-calendar",
+    "/api/admin/academic-levels",
+    "/api/admin/audit-log",
+    "/api/admin/campuses",
+    "/api/admin/cron/status",
+    "/api/admin/delivery-batches",
+    "/api/admin/delivery-windows",
+    "/api/admin/departments",
+    "/api/admin/economics/overview",
+    "/api/admin/economics/redemption-analytics",
+    "/api/admin/economics/tier-breakdown",
+    "/api/admin/exclusive-spin-pool",
+    "/api/admin/exclusive-spin-prizes",
+    "/api/admin/feature-flags",
+    "/api/admin/first-order-gifts",
+    "/api/admin/hall-of-fame-rewards",
+    "/api/admin/hp/report",
+    "/api/admin/leaderboard-prizes",
+    "/api/admin/ordering-windows",
+    "/api/admin/orders",
+    "/api/admin/promo-codes",
+    "/api/admin/reviews",
+    "/api/admin/settings",
+    "/api/admin/stock-items",
+    "/api/admin/webhook-events",
+    "/api/admin/users",
+    "/api/analytics/dashboard",
+    "/api/analytics/revenue",
+)
+
+# Routes a guest must still reach. The standing rule is that no fix may block a guest
+# from their path, so the same sweep that checks the gates also checks the openings.
+_GUEST_ROUTES = (
+    "/api/menu/categories",
+    "/api/menu/items",
+    "/api/hp/bundles",
+    "/api/menu/kitchen-capacity",
+    "/api/campuses",
+)
+
+# Customer-only routes: no token at all must not be served.
+_CUSTOMER_ONLY = ("/api/orders", "/api/wallet", "/api/hp/balance")
+
+
+@step("security", "security.permissions_matrix",
+      "a customer token is refused by every admin route, and guests still reach theirs",
+      route="GET /api/admin/audit-log", needs=("auth.login",))
+def s_permissions_matrix(ctx: Ctx):
+    """The audit found routes whose gate was the only thing protecting them. Nothing
+    swept the whole surface before, so a decorator lost in a refactor would ship
+    quietly. This walks every parameterless admin GET with a customer token and
+    requires a refusal, then checks the guest-facing routes are still open.
+    """
+    token = ctx.tokens.get("access")
+    if not token:
+        raise Skip("no customer session — cannot probe the admin surface")
+
+    leaked, refused, missing = [], 0, []
+    for path in _ADMIN_GET_ROUTES:
+        r = ctx.api.get(path, token=token)
+        if r.status in (401, 403):
+            refused += 1
+        elif r.status == 404:
+            missing.append(path)                 # route renamed/removed: fix the list
+        elif r.status == 200:
+            leaked.append(path)
+        else:
+            leaked.append(f"{path} (HTTP {r.status})")
+
+    expect(not leaked,
+           "these admin routes served a customer token: " + ", ".join(leaked) +
+           " — a missing role check is a data leak, not a 500")
+    if missing:
+        ctx.warnings.append(f"admin sweep: {len(missing)} route(s) returned 404 (update the list): "
+                            + ", ".join(missing))
+    ctx.note(f"permissions: {refused}/{len(_ADMIN_GET_ROUTES)} admin GET routes refused the "
+             "customer token")
+
+    # The other half of the rule: a customer-only route must not answer a stranger.
+    for path in _CUSTOMER_ONLY:
+        r = ctx.api.get(path)
+        expect(r.status in (401, 403),
+               f"{path} answered HTTP {r.status} with no token at all — expected 401/403")
+
+    blocked = []
+    for path in _GUEST_ROUTES:
+        r = ctx.api.get(path)
+        if r.status in (401, 403):
+            blocked.append(f"{path} (HTTP {r.status})")
+    expect(not blocked,
+           "these public routes now refuse anonymous callers, which blocks guests from a path "
+           "they are entitled to: " + ", ".join(blocked))
+    ctx.note(f"guests still reach {len(_GUEST_ROUTES)} public route(s); "
+             f"{len(_CUSTOMER_ONLY)} customer-only route(s) refused an anonymous caller")
+
+
+def _forged_webhook(ctx: Ctx, provider: str, header: str, payload: dict) -> "Resp":
+    """Send a webhook with a signature that cannot be right."""
+    r = ctx.api.post(f"/api/webhooks/{provider}", json_body=payload,
+                     headers={header: "e2e-forged-signature"})
+    return r
+
+
+@step("security", "security.webhook_forgery_rejected",
+      "forged webhook signatures are refused and leave no row behind",
+      writes=True, route="POST /api/webhooks/paystack", needs=("auth.login",))
+def s_webhook_forgery_rejected(ctx: Ctx):
+    """Money enters through these endpoints, so the signature check is the only thing
+    between the internet and a wallet credit. The reference is unique to this run, so
+    nothing real can be touched even if the check is missing; if the request IS
+    accepted, the row it creates is deleted and the run fails loudly.
+    """
+    marker = f"E2E-FORGED-{uuid.uuid4().hex[:12]}"
+    wallet_before = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_before = float(wallet_before.get("balance") or 0)
+
+    probes = (
+        ("paystack", "x-paystack-signature",
+         {"event": "charge.success", "data": {"reference": marker, "amount": 100000 * 100,
+                                              "status": "success", "currency": "NGN"}}),
+        ("flutterwave", "verif-hash",
+         {"event": "charge.completed", "data": {"tx_ref": marker, "status": "successful",
+                                                "amount": 100000, "currency": "NGN"}}),
+    )
+
+    for provider, header, payload in probes:
+        r = _forged_webhook(ctx, provider, header, payload)
+        # Whatever happened, this run must not leave the row behind.
+        leftovers = ctx.db.select("webhook_events", reference=marker)
+        for row in leftovers:
+            ctx.db.delete("webhook_events", id=row["id"])
+
+        if r.status == 200:
+            raise Failed(
+                f"{provider}: a FORGED signature was accepted (HTTP 200). Either the webhook "
+                f"secret is unset and ALLOW_UNSIGNED_WEBHOOKS is on, or the comparison is "
+                f"broken — anyone on the internet could post a payment and be credited. "
+                f"{'A webhook_events row was created and has been deleted.' if leftovers else ''}")
+        expect(r.status in (401, 403),
+               f"{provider}: forged signature returned HTTP {r.status}, expected 401/403 "
+               f"({r.snippet(120)})")
+        expect(not leftovers,
+               f"{provider}: the forged request was refused but wrote "
+               f"{len(leftovers)} webhook_events row(s) anyway")
+        ctx.note(f"{provider}: forged signature refused with {r.status}, no row written")
+
+    wallet_after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_after = float(wallet_after.get("balance") or 0)
+    expect(abs(balance_after - balance_before) < 0.01,
+           f"the wallet moved during a forgery probe: ₦{balance_before} → ₦{balance_after}")
+
+
 @step("orders", "orders.override_closed_blocks",
       "a closed operating_hour_override refuses ordering, and removing it restores the schedule",
       writes=True, route="POST /api/orders", needs=("orders.place", "auth.login"))
