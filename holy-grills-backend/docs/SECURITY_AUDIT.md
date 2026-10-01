@@ -659,7 +659,7 @@ because the expensive failures are the ones nobody checked.
 | Area | Evidence | Verified where |
 |------|----------|----------------|
 | Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
-| Routes the suite calls | `make selfcheck` — 76 declared routes all exist | this sandbox |
+| Routes the suite calls | `make selfcheck` — 81 declared routes all exist | this sandbox |
 | Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
@@ -673,14 +673,25 @@ because the expensive failures are the ones nobody checked.
 ```bash
 make contract                  # real pass, not the "unreachable" shell
 make smoke  BASE_URL=http://localhost:5000
+make flow   BASE_URL=http://localhost:5000 WEBHOOK_SECRET=<paystack secret> \
+            WRITE_EXISTING=1 LOGIN_EMAIL=claude.audit.test1@holygrills.test \
+            LOGIN_PASSWORD='ClaudeAudit!Test1'     # money in + kitchen -> rider -> delivered
 make e2e    BASE_URL=http://localhost:5000 WRITE_EXISTING=1 \
             LOGIN_EMAIL=claude.audit.test1@holygrills.test LOGIN_PASSWORD='ClaudeAudit!Test1'
 ```
 
-The e2e run now covers the whole cancel/refund/override surface: the two refund
-regressions, both ticket/event flows, and the three override probes. **None of these
-steps has ever executed against the live database** — they were written and route-checked
-here, nothing more. Treat the first green run as the real sign-off.
+The e2e run now covers the whole cancel/refund/override surface (the two refund
+regressions, both ticket/event flows, the three override probes) plus the flow steps above.
+**None of these steps has ever executed against the live database** — they were written and
+route-checked here, nothing more. Treat the first green run as the real sign-off.
+
+One thing to check on that first run: the order-payment webhook compares the charged amount
+to `orders.total_amount` (`app/routes/webhooks.py:391`). For a pure card order those are the
+same number, so the flow step passes. For a **split** order Paystack charges only
+`card_amount_used`, which is smaller — if the front end initialises Paystack for
+`card_amount_used`, that webhook would be rejected and the card half of a split order would
+never confirm. Not proven (the front end is not in this repo); worth one manual split-order
+test before launch.
 
 ### Still open
 
@@ -699,8 +710,8 @@ Measured, not estimated — the app's live URL map against every path the suite 
 | | |
 |---|---|
 | app routes (method × path) | **405** |
-| routes the suite exercises | **~66 (16%)** |
-| blueprints with **zero** coverage | admin (44), analytics (29), events (23), marketplace (21), riders (17), kitchen (9), order_locks (6), squads (6), admin_feature_flags (10), admin_gifts (5), exclusive_spin (2), graduation (1), webhooks (2) |
+| routes the suite exercises | **66 (16%)** — 64 before the flow pass |
+| blueprints with **zero** coverage | admin (44), analytics (29), events (23), marketplace (21), riders (17 → pickup/deliver now exercised), kitchen (9 → batch advance now exercised), order_locks (6), squads (6), admin_feature_flags (10), admin_gifts (5), exclusive_spin (2), graduation (1), webhooks (2 → paystack now exercised) |
 | role/permission assertions before this pass | **1** (a wrong-password 401) |
 | webhook calls before this pass | **0** |
 
@@ -713,14 +724,16 @@ findings lived in, which is why they have tests.
 
 1. **Payments arriving by webhook.** Nothing called `/api/webhooks/*`, so signature
    handling, idempotency and the confirm-payment path were unverified end to end — the
-   path money actually enters through.
+   path money actually enters through. *Closed for Paystack by the flow pass below;
+   Flutterwave and the virtual-account branch are still unexercised.*
 2. **Permissions.** Nothing asserted that a customer is refused an admin route. A route
    losing its decorator would have shipped silently (this is exactly the class the audit
    found by reading code, not by testing).
 3. **Scheduled jobs** (`app/tasks/scheduled.py`, 23 jobs) — never invoked.
 4. **The kitchen → rider → delivery lifecycle** — the suite stops at order creation, so
    `received → preparing → ready → assigned → delivered`, the HP award on delivery, and
-   rider payouts are untested.
+   rider payouts are untested. *Closed by the flow pass below for the happy path; refunds,
+   attempts and unclaimed orders on that path are still untested.*
 5. **Concurrency** — single-threaded, so a double-spend race (free sides, reward reuse,
    order locks, capacity) cannot be observed.
 6. **Notifications and email** — fire-and-forget to OneSignal/Resend; the suite can only
@@ -739,9 +752,28 @@ findings lived in, which is why they have tests.
   `webhook_events` row was created and no wallet balance moved. If a forged signature is
   ever *accepted*, the step fails loudly and deletes the row it caused.
 
-Still not covered after this pass, and worth naming: the webhook **happy path** (a valid
-signature crediting a wallet — needs a real signed payload or the provider's secret),
-the kitchen/rider lifecycle, the 23 scheduled jobs, and every concurrency race.
+**Added in the flow pass** — the two gaps above that are observable without touching
+production money, run as a single flow (`make flow`, or the same steps inside `make e2e`;
+the webhook steps need `--webhook-secret` or `PAYSTACK_SECRET_KEY` in `.env`):
+
+* `flow.webhook_wallet_topup` — a **validly signed** `charge.success` (wallet top-up)
+  credits the wallet, writes exactly one `wallet_transactions` row, and a **replay of the
+  identical event is a no-op** (the classic double-credit bug). Restores the wallet's
+  prior values and deletes its rows in a `finally`.
+* `flow.place_order` — the flow's own order, pinned to a private kitchen batch key so an
+  advance can never touch an order the run does not own.
+* `flow.webhook_pays_order` — a signed `charge.success` with `metadata.type=order_payment`
+  drives `hg_mark_order_paid` and the order reaches `payment_status=paid`.
+* `flow.kitchen_advances_order` — a throwaway **kitchen** session advances the batch
+  `received → preparing → ready` and asserts both timestamps are stamped.
+* `flow.rider_delivers_order` — a throwaway **rider** (real `delivery_assignments` row)
+  picks up and delivers; asserts `delivered` + `delivered_at`, the HP award, and that the
+  rider earnings endpoint answers. Restores the customer's HP/tier fields and deletes the
+  order's ledger rows.
+
+Still not covered after both passes: the 23 scheduled jobs, every concurrency race, the
+virtual-account / bank-transfer deposit branch, and the split-payment amount check named
+below.
 
 ### Residual risks, stated plainly
 

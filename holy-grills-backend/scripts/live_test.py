@@ -60,6 +60,8 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -194,8 +196,10 @@ class Api:
         if self.base_url is None:
             self.client = app.test_client()
 
-    def request(self, method: str, path: str, *, json_body=None, token=None,
-                headers=None, params=None):
+    def request(self, method: str, path: str, *, json_body=None, raw_body=None,
+                token=None, headers=None, params=None):
+        """raw_body sends the bytes as-is. Webhook signatures are computed over the
+        exact body the server receives, so re-serialising a dict would invalidate it."""
         hdrs = dict(self.default_headers)
         if token:
             hdrs["Authorization"] = f"Bearer {token}"
@@ -205,7 +209,9 @@ class Api:
         if self.client is not None:
             query = "&".join(f"{k}={v}" for k, v in (params or {}).items())
             url = f"{path}?{query}" if query else path
-            raw = self.client.open(url, method=method, json=json_body, headers=hdrs)
+            raw = self.client.open(url, method=method,
+                                   json=json_body if raw_body is None else None,
+                                   data=raw_body, headers=hdrs)
             body = raw.get_data(as_text=True)
             try:
                 data = raw.get_json() if body else None
@@ -214,7 +220,8 @@ class Api:
             return Resp(raw.status_code, data, body)
 
         url = f"{self.base_url}{path}"
-        raw = requests.request(method, url, json=json_body, headers=hdrs,
+        raw = requests.request(method, url, json=json_body if raw_body is None else None,
+                               data=raw_body, headers=hdrs,
                                params=params, timeout=self.timeout)
         try:
             data = raw.json() if raw.content else None
@@ -294,6 +301,17 @@ class DB:
             raise Failed(f"DB insert into {table} failed: HTTP {resp.status_code} {resp.text[:200]}")
         payload = resp.json() if resp.content else []
         return payload[0] if isinstance(payload, list) and payload else (payload or {})
+
+    def update(self, table: str, values: dict, **filters) -> list:
+        """Patch rows by filter. Used to give a throwaway account a staff role —
+        require_role reads profiles.role, so the role is data, not a token claim."""
+        params = {c: f"eq.{v}" for c, v in filters.items()}
+        resp = self.session.patch(f"{self.url}/rest/v1/{table}", params=params,
+                                  json=values, headers=self._headers(), timeout=self.timeout)
+        if resp.status_code >= 400:
+            return []
+        payload = resp.json() if resp.content else []
+        return payload if isinstance(payload, list) else [payload]
 
     def rpc(self, name: str, params: dict):
         resp = self.session.post(f"{self.url}/rest/v1/rpc/{name}", json=params,
@@ -1180,6 +1198,446 @@ def _try_order(ctx: Ctx, campus: str):
                         headers={"X-Campus-ID": str(campus)})
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Phase — full flow: money in through the webhook, then kitchen -> rider
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _paystack_secret(ctx: Ctx):
+    """The secret the running server verifies signatures with, or (None, why not)."""
+    if ctx.opts.webhook_secret:
+        return ctx.opts.webhook_secret, "--webhook-secret"
+    for name in ("PAYSTACK_WEBHOOK_SECRET", "PAYSTACK_SECRET_KEY"):
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value, name
+    return None, ("no webhook secret found — pass --webhook-secret or put "
+                  "PAYSTACK_SECRET_KEY in the backend .env")
+
+
+def _sign_paystack(secret: str, raw: str) -> str:
+    return hmac.new(secret.encode(), raw.encode(), hashlib.sha512).hexdigest()
+
+
+def _provision_role_user(ctx: Ctx, role: str, campus: str):
+    """Create a throwaway account with a staff role. Returns (user_id, token, error).
+
+    require_role resolves the role from profiles.role, so setting it in the database
+    grants the role to the *existing* session — no re-login needed.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    email = f"e2e.{role}.{stamp}.{uuid.uuid4().hex[:6]}@{TEST_EMAIL_DOMAIN}"
+    r = ctx.api.post("/api/auth/register", json_body={
+        "email": email, "password": DEFAULT_PASSWORD, "full_name": f"E2E {role.title()}",
+        "nickname": f"e2e{role[:3]}", "campus_id": str(campus),
+    })
+    if r.status not in (200, 201):
+        return None, None, f"register failed: {r.status} {r.snippet(100)}"
+    user_id = str(field(r.data or {}, "user_id")
+                  or ((r.data or {}).get("user") or {}).get("id") or "")
+    if not user_id:
+        return None, None, "register returned no user id"
+    ctx.track("profiles", user_id)
+
+    token = (r.data or {}).get("access_token")
+    if not token:
+        ctx.db.confirm_email(user_id)
+    if not ctx.db.update("profiles", {"role": role, "campus_id": str(campus)}, id=user_id):
+        return user_id, None, f"could not set role={role} in profiles"
+
+    if not token:
+        lr = ctx.api.post("/api/auth/login", json_body={"email": email, "password": DEFAULT_PASSWORD})
+        if lr.status != 200:
+            return user_id, None, f"login failed: {lr.status} {lr.snippet(100)}"
+        token = field(lr.data or {}, "access_token")
+    return user_id, token, None
+
+
+def _drop_role_user(ctx: Ctx, user_id: str):
+    """Remove a throwaway staff account completely: profile row and auth record."""
+    if not user_id:
+        return
+    ctx.db.delete("profiles", id=user_id)
+    ctx.db.delete_auth_user(user_id)
+
+
+@step("flow", "flow.webhook_wallet_topup",
+      "a signed Paystack charge.success credits the wallet, and a replay credits it once",
+      writes=True, route="POST /api/webhooks/paystack", needs=("auth.login",))
+def s_webhook_wallet_topup(ctx: Ctx):
+    """The money-in path, end to end: signature verified, wallet credited by the RPC the
+    webhook calls, ledger row written, and the second delivery of the same event refused
+    by the idempotency claim. This is the one flow where a bug costs real money, and it
+    had no coverage at all.
+    """
+    secret, source = _paystack_secret(ctx)
+    if not secret:
+        raise Skip(source)
+    if not ctx.user_id:
+        raise Skip("no signed-in user to credit")
+
+    amount = 500.0                                  # below the top-up HP and streak thresholds
+    reference = f"E2E-E2E-TOPUP-{uuid.uuid4().hex[:14]}"
+    wallet_before = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+    balance_before = float(wallet_before.get("balance") or 0)
+
+    payload = {
+        "event": "charge.success",
+        "data": {
+            "reference": reference,
+            "amount": int(amount * 100),            # kobo
+            "currency": "NGN",
+            "status": "success",
+            "channel": "card",
+            "metadata": {"type": "wallet_topup", "user_id": ctx.user_id},
+            "authorization": {"channel": "card"},
+            "customer": {"email": ctx.ids.get("email") or "e2e@holygrills.test"},
+        },
+    }
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+
+    try:
+        r = ctx.api.post("/api/webhooks/paystack", raw_body=raw,
+                         headers={"x-paystack-signature": _sign_paystack(secret, raw),
+                                  "Content-Type": "application/json"})
+        r.check(200)
+        ctx.note(f"paystack charge.success accepted (signed with {source})")
+
+        wallet_after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+        balance_after = float(wallet_after.get("balance") or 0)
+        expect(abs((balance_after - balance_before) - amount) < 0.01,
+               f"the webhook returned 200 but the wallet moved "
+               f"₦{balance_after - balance_before:.2f}, expected ₦{amount:.2f}")
+
+        ledger = ctx.db.select("wallet_transactions", provider_reference=reference)
+        expect(len(ledger) == 1,
+               f"expected exactly one wallet_transactions row for {reference}, "
+               f"found {len(ledger)}")
+        expect(abs(float(ledger[0].get("amount") or 0) - amount) < 0.01,
+               f"ledger row has amount {ledger[0].get('amount')}, expected {amount}")
+        ctx.note(f"wallet credited ₦{amount:.0f}; ledger row {ledger[0].get('id')}")
+
+        # The same event again: Paystack retries, and a double credit is the classic
+        # webhook bug. The atomic claim must make the second delivery a no-op.
+        replay = ctx.api.post("/api/webhooks/paystack", raw_body=raw,
+                              headers={"x-paystack-signature": _sign_paystack(secret, raw),
+                                       "Content-Type": "application/json"})
+        replay.check(200)
+        balance_replay = float((ctx.db.select_one("wallets", user_id=ctx.user_id) or {})
+                               .get("balance") or 0)
+        expect(abs(balance_replay - balance_after) < 0.01,
+               f"a replayed webhook credited the wallet twice: ₦{balance_after} → ₦{balance_replay}")
+        ledger_after = ctx.db.select("wallet_transactions", provider_reference=reference)
+        expect(len(ledger_after) == 1,
+               f"a replayed webhook wrote {len(ledger_after)} ledger rows, expected 1")
+        ctx.note("replay refused by the idempotency claim — balance unchanged")
+    finally:
+        # Whatever happened, leave the account exactly as it was found: drop the
+        # rows this call caused, then put back every wallet column the credit
+        # moved (the RPC may touch more than `balance` — total_credited,
+        # updated_at — so diff instead of assuming).
+        ctx.db.delete("wallet_transactions", provider_reference=reference)
+        for row in ctx.db.select("webhook_events", reference=reference):
+            ctx.db.delete("webhook_events", id=row["id"])
+        now = ctx.db.select_one("wallets", user_id=ctx.user_id)
+        if now is not None and wallet_before:
+            changed = {k: v for k, v in wallet_before.items()
+                       if k not in ("id", "user_id", "created_at") and now.get(k) != v}
+            if changed:
+                ctx.db.update("wallets", changed, user_id=ctx.user_id)
+            after = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+            still = {k: (wallet_before[k], after.get(k)) for k in changed
+                     if after.get(k) != wallet_before[k]}
+            if still:
+                # Never silent: a dirty wallet on a real account is a finding.
+                ctx.warnings.append(
+                    f"could not fully restore wallet for {ctx.user_id}: {still}")
+            else:
+                ctx.note("wallet restored to its pre-webhook values"
+                         + (f" ({len(changed)} column(s))" if changed else ""))
+
+
+@step("flow", "flow.place_order",
+      "the flow places its own order (received, unpaid, in a batch of its own)",
+      writes=True, route="POST /api/orders",
+      needs=("orders.window", "orders.fund_wallet", "public.hostels"))
+def s_flow_place_order(ctx: Ctx):
+    """The order the rest of the flow carries. It is placed through the real API so the
+    state machine has a genuine `received` order, then pinned to a batch key of its own
+    so the kitchen advance can never touch anybody else's order.
+
+    A private key is attempted first; if `delivery_window_id` carries a foreign key the
+    fallback uses the order's own window only when no other live order shares it.
+    """
+    campus = str(ctx.ids["campus_id"])
+    placed = _try_order(ctx, campus)
+    if placed.status not in (200, 201):
+        raise Skip(f"could not place an order for the flow: {placed.status} {placed.snippet(100)}")
+    order_id = str(field(placed.data or {}, "id")
+                   or ((placed.data or {}).get("order") or {}).get("id") or "")
+    if not order_id:
+        raise Skip("the order was not persisted")
+    ctx.track("orders", order_id)
+    ctx.track_children("order_items", "order_id", order_id)
+    ctx.ids["flow_order_id"] = order_id
+
+    # The kitchen endpoint groups by `orders.delivery_window_id` (batch_id in the
+    # URL is that value). Give this order a batch key of its own so the advance
+    # touches this order and nothing else.
+    batch_key = str(uuid.uuid4())
+    if not ctx.db.update("orders", {"delivery_window_id": batch_key}, id=order_id):
+        # The column may carry a foreign key to delivery_windows (the schema is not
+        # readable from here). Fall back to the order's own window only if every
+        # other order in it is terminal — the endpoint skips those, so the advance
+        # still cannot move an order this run does not own.
+        current = ctx.db.select_one("orders", id=order_id) or {}
+        own = str(current.get("delivery_window_id") or "")
+        terminal = {"delivered", "cancelled", "refunded", "delivery_attempted", "unclaimed"}
+        live_peers = [o for o in (ctx.db.select("orders", delivery_window_id=own) or [])
+                      if str(o.get("id")) != order_id and o.get("status") not in terminal] if own else []
+        if not own or live_peers:
+            raise Skip("the order could not be given a private batch key and its own window "
+                       f"is unusable ({'none' if not own else f'{len(live_peers)} live peer(s)'}) — "
+                       "check whether orders.delivery_window_id has a foreign key to delivery_windows")
+        batch_key = own
+        ctx.warnings.append("orders.delivery_window_id rejected a private batch key — used the "
+                            "order's own window, verified to hold no other live order")
+    ctx.ids["flow_batch_key"] = batch_key
+
+    row = ctx.db.select_one("orders", id=order_id) or {}
+    ctx.note(f"flow order {order_id}: status={row.get('status')} "
+             f"payment_status={row.get('payment_status')} total=₦{float(row.get('total_amount') or 0):.2f} "
+             f"(batch key {batch_key[:8]})")
+
+
+@step("flow", "flow.webhook_pays_order",
+      "a signed Paystack charge.success pays the flow order",
+      writes=True, route="POST /api/webhooks/paystack", needs=("flow.place_order",))
+def s_webhook_pays_order(ctx: Ctx):
+    """Order payment through the webhook, the branch that confirms a card payment.
+
+    Paystack charges `card_amount_used`, which for a pure card order is the order total;
+    the handler compares the webhook amount to `total_amount` and confirms through
+    `hg_mark_order_paid`. This pins that path — an order that never reaches `paid` never
+    reaches the kitchen in the real world.
+    """
+    secret, source = _paystack_secret(ctx)
+    if not secret:
+        raise Skip(source)
+    order_id = ctx.ids.get("flow_order_id")
+    if not order_id:
+        raise Skip("no flow order to pay")
+
+    order = ctx.db.select_one("orders", id=order_id) or {}
+    total = float(order.get("total_amount") or 0)
+    card = float(order.get("card_amount_used") or 0)
+    if total <= 0:
+        raise Skip(f"the flow order has no total to pay (total_amount={order.get('total_amount')})")
+    if str(order.get("payment_status")) == "paid":
+        ctx.note("the flow order was already paid before the webhook "
+                 "(card orders are not debited from the wallet) — sending the webhook anyway "
+                 "to pin the duplicate-payment branch")
+
+    reference = f"E2E-E2E-ORDER-{uuid.uuid4().hex[:14]}"
+    raw = json.dumps({
+        "event": "charge.success",
+        "data": {
+            "reference": reference,
+            "amount": int(round(total * 100)),          # Paystack sends kobo
+            "currency": "NGN",
+            "status": "success",
+            "channel": "card",
+            "metadata": {"type": "order_payment", "order_id": order_id, "user_id": ctx.user_id},
+            "authorization": {"channel": "card"},
+            "customer": {"email": ctx.ids.get("email") or "e2e@holygrills.test"},
+        },
+    }, separators=(",", ":"), ensure_ascii=False)
+
+    try:
+        r = ctx.api.post("/api/webhooks/paystack", raw_body=raw,
+                         headers={"x-paystack-signature": _sign_paystack(secret, raw),
+                                  "Content-Type": "application/json"})
+        r.check(200)
+        ctx.note(f"order payment webhook accepted (signed with {source})")
+
+        row = ctx.db.select_one("orders", id=order_id) or {}
+        expect(str(row.get("payment_status")) == "paid",
+               f"the webhook returned 200 but the order is still "
+               f"payment_status='{row.get('payment_status')}' (charged ₦{total:.2f}, "
+               f"card_amount_used ₦{card:.2f})")
+        ctx.note("order payment confirmed: payment_status=paid"
+                 + (f", paid_at={row.get('paid_at')}" if row.get("paid_at") else ""))
+    finally:
+        # The order row is deleted in cleanup; the webhook claim must go now.
+        for event in ctx.db.select("webhook_events", reference=reference):
+            ctx.db.delete("webhook_events", id=event["id"])
+
+
+@step("flow", "flow.kitchen_advances_order",
+      "the kitchen endpoint walks an order received -> preparing -> ready",
+      writes=True, route="POST /api/kitchen/batch/<batch_id>/advance",
+      needs=("flow.place_order", "auth.login"))
+def s_kitchen_advances_order(ctx: Ctx):
+    """The kitchen half of the order lifecycle, which no test touched: the flow's order is
+    pinned to a batch, the kitchen advances the batch, and the state machine moves it one
+    step at a time with its timestamp. Uses a throwaway kitchen account so the check is
+    made with a real kitchen session (and its campus scoping), falling back to the admin
+    token when one cannot be provisioned.
+    """
+    campus = str(ctx.ids["campus_id"])
+    order_id = ctx.ids.get("flow_order_id")
+    batch_key = ctx.ids.get("flow_batch_key")
+    if not order_id or not batch_key:
+        raise Skip("no flow order to advance")
+
+    kitchen_id, kitchen_token, why = _provision_role_user(ctx, "kitchen", campus)
+    token, as_role = kitchen_token, "kitchen session"
+    if not token:
+        token = ctx.tokens.get("admin")
+        as_role = "admin session"
+        ctx.warnings.append(f"kitchen step fell back to the admin token: {why}")
+    if not token:
+        _drop_role_user(ctx, kitchen_id)
+        raise Skip(f"no kitchen or admin session available ({why})")
+
+    try:
+        params = {"campus_id": campus} if as_role == "admin session" else {}
+        for expected in ("preparing", "ready"):
+            r = ctx.api.post(f"/api/kitchen/batch/{batch_key}/advance",
+                             json_body={"notes": "E2E kitchen flow"},
+                             token=token, params=params)
+            r.check(200)
+            advanced = (r.data or {}).get("advanced") or []
+            moved = [a for a in advanced if str(a.get("order_id")) == order_id]
+            expect(bool(moved),
+                   f"the advance skipped our order (skipped={(r.data or {}).get('skipped')})",
+                   r)
+            row = ctx.db.select_one("orders", id=order_id) or {}
+            expect(str(row.get("status")) == expected,
+                   f"after advancing, the order is '{row.get('status')}', expected '{expected}'")
+            ctx.note(f"kitchen advance ({as_role}): {moved[0].get('from')} -> {moved[0].get('to')}")
+
+        row = ctx.db.select_one("orders", id=order_id) or {}
+        expect(bool(row.get("preparing_at")), "preparing_at is not stamped")
+        expect(bool(row.get("ready_at")), "ready_at is not stamped")
+        ctx.ids["flow_order_id"] = order_id
+    finally:
+        _drop_role_user(ctx, kitchen_id)
+
+
+@step("flow", "flow.rider_delivers_order",
+      "an assigned rider picks the order up and delivers it, awarding the customer's HP",
+      writes=True, route="POST /api/riders/orders/<order_id>/deliver",
+      needs=("flow.kitchen_advances_order",))
+def s_rider_delivers_order(ctx: Ctx):
+    """The delivery half: assignment, pickup, delivery, and what delivery is supposed to
+    leave behind (status + delivered_at, the customer's HP, the rider's earnings view).
+    A rider who cannot see an order assigned to them is reported as a warning rather than
+    a hard failure, because the visibility rule lives in RLS — see O1.
+    """
+    campus = str(ctx.ids["campus_id"])
+    order_id = ctx.ids.get("flow_order_id")
+    if not order_id:
+        raise Skip("no order was advanced by the kitchen step")
+
+    rider_id, rider_token, why = _provision_role_user(ctx, "rider", campus)
+    assignment_id = None
+    # Delivery rewards write to the customer's profile (hp_balance, the 120-day
+    # earn counter, tier, the next-order multiplier). Capture them so a run against
+    # a real account can be undone exactly.
+    profile_before = ctx.db.select_one("profiles", id=ctx.user_id) or {}
+    profile_hp_before = {k: v for k, v in profile_before.items()
+                         if "hp" in k.lower() or "tier" in k.lower()}
+    try:
+        if not rider_id:
+            raise Skip(f"could not provision a rider account ({why})")
+
+        # hg_effective_rider: an explicit assignment wins; that is what authorises the rider.
+        assignment = ctx.db.insert("delivery_assignments", {
+            "order_id": order_id, "rider_id": rider_id, "status": "assigned",
+            "note": "E2E flow probe — safe to ignore",
+        })
+        assignment_id = assignment.get("id")
+        ctx.track_infra("delivery_assignments", assignment_id)
+        expect(bool(assignment_id), f"could not assign the rider: {assignment}")
+
+        if not rider_token:
+            token, as_role = ctx.tokens.get("admin"), "admin session"
+            ctx.warnings.append(f"rider step fell back to the admin token: {why}")
+        else:
+            token, as_role = rider_token, "rider session"
+        if not token:
+            raise Skip("no rider or admin session available")
+
+        params = {"campus_id": campus} if as_role == "admin session" else {}
+        pickup = ctx.api.post(f"/api/riders/orders/{order_id}/pickup", token=token, params=params)
+        if pickup.status == 404 and as_role == "rider session":
+            ctx.warnings.append(
+                "the rider cannot see an order that delivery_assignments assigns to them "
+                "(404 on pickup) — either the RLS policy keys off something else or the "
+                "policy is missing; reported, not failed, because the policy lives in the "
+                "database (see O1)")
+            token, as_role = ctx.tokens.get("admin"), "admin session"
+            params = {"campus_id": campus}
+            if not token:
+                raise Skip("the rider could not see the order and there is no admin token")
+            pickup = ctx.api.post(f"/api/riders/orders/{order_id}/pickup", token=token, params=params)
+        pickup.check(200, allow=(201,))
+        ctx.note(f"pickup ({as_role}) -> {ctx.db.select_one('orders', id=order_id).get('status')}")
+
+        delivered = ctx.api.post(f"/api/riders/orders/{order_id}/deliver", token=token, params=params)
+        delivered.check(200, allow=(201,))
+
+        row = ctx.db.select_one("orders", id=order_id) or {}
+        expect(str(row.get("status")) == "delivered",
+               f"after deliver the order is '{row.get('status')}', expected 'delivered'")
+        expect(bool(row.get("delivered_at")), "delivered_at is not stamped")
+
+        # Delivery rewards: the state machine credits HP through
+        # hg_credit_delivery_hp_atomic and stamps hp_earned / hp_credited_at on the
+        # order. Zero HP is legitimate (rate 0 or a tiny order), so an absent row is
+        # a warning with the reason, not a failure.
+        hp_rows_after = ctx.db.select("hp_transactions", reference_id=order_id) or []
+        hp_earned = float(row.get("hp_earned") or 0)
+        if hp_rows_after or hp_earned > 0:
+            awarded = sum(float(t.get("amount") or 0) for t in hp_rows_after)
+            expect(bool(row.get("hp_credited_at")),
+                   "the order shows HP earned but hp_credited_at was never stamped")
+            ctx.note(f"delivery awarded HP: order.hp_earned={hp_earned:.0f}, "
+                     f"{len(hp_rows_after)} ledger row(s) totalling {awarded:.0f}")
+        else:
+            ctx.warnings.append(
+                "delivery produced no HP for the order (no hp_transactions row and "
+                "order.hp_earned is 0/absent) — check the earn rate for this tier/campus "
+                "before assuming it is a bug")
+
+        earnings = ctx.api.get("/api/riders/earnings", token=token, params=params)
+        if earnings.status == 200:
+            ctx.note("rider earnings endpoint answered after the delivery")
+        ctx.note(f"delivery completed via {as_role}")
+    finally:
+        _drop_role_user(ctx, rider_id)
+        # Ledger rows caused by the flow's own order are removed by order id, so
+        # this cleans up even when the run signed in to a pre-existing account
+        # (where ctx.sweep is a no-op by design). Nothing else can match.
+        for table in ("hp_transactions", "wallet_transactions"):
+            for row in ctx.db.select(table, reference_id=order_id):
+                ctx.db.delete(table, id=row["id"])
+        # The HP the delivery credited lives on the profile too — put it back, or a
+        # full run silently inflates a real account's balance.
+        if profile_hp_before:
+            after = ctx.db.select_one("profiles", id=ctx.user_id) or {}
+            moved = {k: v for k, v in profile_hp_before.items() if after.get(k) != v}
+            if moved:
+                ctx.db.update("profiles", moved, id=ctx.user_id)
+            restored = ctx.db.select_one("profiles", id=ctx.user_id) or {}
+            still = {k: (profile_hp_before[k], restored.get(k))
+                     for k in moved if restored.get(k) != profile_hp_before[k]}
+            if still:
+                ctx.warnings.append(f"could not fully restore the customer's HP fields: {still}")
+            elif moved:
+                ctx.note(f"customer profile restored ({len(moved)} HP/tier field(s))")
+
+
 # Every parameterless admin GET route in the app. A customer token must never get a
 # 200 from any of them; the list is the surface a role check protects, so a route
 # losing its decorator is caught here rather than in review.
@@ -1992,6 +2450,9 @@ def main(argv=None) -> int:
                         help="verify every referenced route exists in the app (no network)")
     parser.add_argument("--verbose", action="store_true", help="print response snippets and notes")
     parser.add_argument("--admin-token", default="", help="enables the admin phase")
+    parser.add_argument("--webhook-secret", default="",
+                        help="Paystack secret key used to sign the webhook flow step "
+                             "(falls back to PAYSTACK_WEBHOOK_SECRET / PAYSTACK_SECRET_KEY)")
     parser.add_argument("--campus-id", default="",
                         help="campus UUID to register the test user with "
                              "(default: E2E_CAMPUS_ID, then the campuses list)")
@@ -2082,8 +2543,21 @@ def main(argv=None) -> int:
             out.warn_line("--keep-data: created rows will NOT be deleted")
 
     # ── selection ────────────────────────────────────────────────────────────
-    selected = [s for s in STEPS
-                if (not args.only or s.phase.startswith(args.only) or s.id.startswith(args.only))]
+    named = [s for s in STEPS
+             if (not args.only or s.phase.startswith(args.only) or s.id.startswith(args.only))]
+    if args.only and named:
+        # Pull in the dependencies the named steps declare, in plan order, so
+        # `--only flow` also provisions the session/order fixtures it stands on
+        # (and still prints them, so the run reads as one flow, not a fragment).
+        needed = {sid for s in named for sid in s.needs}
+        named_ids = {s.id for s in named}
+        while needed - named_ids:
+            grabbed = [s for s in STEPS if s.id in needed and s.id not in named_ids]
+            named_ids |= {s.id for s in grabbed}
+            needed |= {sid for s in grabbed for sid in s.needs}
+        selected = [s for s in STEPS if s.id in named_ids]
+    else:
+        selected = named
 
     started = time.time()
     results: dict[str, dict] = {}
