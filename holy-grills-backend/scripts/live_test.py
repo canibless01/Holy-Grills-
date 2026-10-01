@@ -1684,6 +1684,236 @@ def s_rider_delivers_order(ctx: Ctx):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Phase — order follow-ups: what the customer does with a delivered order
+# ─────────────────────────────────────────────────────────────────────────────
+
+@step("flow", "flow.order_followups",
+      "the delivered flow order is reordered, shared, reviewed with images, and refused a guest claim",
+      writes=True, route="POST /api/orders/<order_id>/reorder",
+      routes=("POST /api/orders/<order_id>/share",
+              "POST /api/orders/<order_id>/review",
+              "POST /api/orders/<order_id>/review/images",
+              "POST /api/orders/<order_id>/claim"),
+      needs=("flow.rider_delivers_order", "auth.login"))
+def s_order_followups(ctx: Ctx):
+    """The customer half of a delivered order: the reorder helper, the share prompt (once
+    per day, across all orders), the review with its images, and the guest-claim route
+    answering for an order that already belongs to a signed-in customer.
+
+    Everything it writes is tied to the flow's own order, and the ledger, monthly-cap and
+    profile fields the share/review rewards touch are put back exactly — including on a
+    run that signed in to a pre-existing account (`--write-existing`).
+    """
+    order_id = ctx.ids.get("flow_order_id")
+    if not order_id:
+        raise Skip("no flow order to follow up on")
+    order = ctx.db.select_one("orders", id=order_id) or {}
+    if str(order.get("status")) != "delivered":
+        raise Skip(f"the flow order is '{order.get('status')}', not delivered — the review "
+                   "route only accepts a delivered order")
+
+    token = ctx.tokens["access"]
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    review_id = None
+    profile_before = {k: v for k, v in (ctx.db.select_one("profiles", id=ctx.user_id) or {}).items()
+                      if "hp" in k.lower() or "tier" in k.lower()}
+    tracker_before = ctx.db.select_one("monthly_hp_tracker", user_id=ctx.user_id, month=month)
+    try:
+        # 1. reorder — a read-only helper: the order's items at today's price and availability
+        r = ctx.api.post(f"/api/orders/{order_id}/reorder", token=token)
+        r.check(200)
+        items = (r.data or {}).get("items") or []
+        stored = ctx.db.select("order_items", order_id=order_id) or []
+        expect(bool(items),
+               f"reorder returned no items for an order that has {len(stored)} order_items row(s)",
+               r)
+        expect(all(i.get("menu_item_id") and i.get("quantity") is not None for i in items),
+               f"a reorder item is missing menu_item_id/quantity — {r.snippet(200)}", r)
+        ctx.note(f"reorder returned {len(items)} item(s) with current prices")
+
+        # 2. images before any review exists — the route must refuse
+        early = ctx.api.post(
+            f"/api/orders/{order_id}/review/images",
+            json_body={"image_urls": ["https://res.cloudinary.com/e2e/image/upload/v1/x.jpg"]},
+            token=token)
+        early.check(400)
+        ctx.note("review/images refused before a review exists (400)")
+
+        # 3. claim — this order belongs to a signed-in customer, so it is not claimable
+        claim = ctx.api.post(f"/api/orders/{order_id}/claim",
+                             json_body={"claim_token": "e2e-not-a-real-claim-token"}, token=token)
+        claim.check(400)
+        expect("claim" in json.dumps(claim.data).lower(),
+               f"the claim route refused with something other than a claim error — {claim.snippet(160)}",
+               claim)
+        ctx.note("guest claim refused for a customer order (400)")
+
+        # 4. the review itself
+        review = ctx.api.post(f"/api/orders/{order_id}/review",
+                              json_body={"rating": 4, "kitchen_rating": 5, "rider_rating": 4,
+                                         "comment": "E2E flow review — safe to delete"},
+                              token=token)
+        review.check(201, allow=(200,))
+        body = review.data or {}
+        row = body.get("review") or {}
+        review_id = row.get("id") or (ctx.db.select_one("order_reviews", order_id=order_id) or {}).get("id")
+        expect(bool(review_id),
+               f"the review was accepted but there is no order_reviews row — {review.snippet(200)}",
+               review)
+        hp_awarded = float(body.get("hp_awarded") or 0)
+        ledger = ctx.db.select("hp_transactions", reference_id=review_id) or []
+        if hp_awarded > 0 and not ledger:
+            ctx.warnings.append(
+                "the review reported HP but wrote no ledger row — expected when the account "
+                "has already reached its monthly pending-HP cap, a defect otherwise")
+        ctx.note(f"review {review_id} accepted (rating {row.get('rating')}), "
+                 f"hp_awarded={hp_awarded:.0f}")
+
+        again = ctx.api.post(f"/api/orders/{order_id}/review", json_body={"rating": 1}, token=token)
+        again.check(400)
+        ctx.note("a second review was refused (400)")
+
+        # 5. images on the review that now exists
+        bad = ctx.api.post(f"/api/orders/{order_id}/review/images",
+                           json_body={"image_urls": ["https://evil.example.com/shot.jpg"]},
+                           token=token)
+        bad.check(400)
+        ctx.note("an untrusted image host was refused (400)")
+
+        sig = ctx.api.post("/api/uploads/signature", json_body={"folder": "review_images"}, token=token)
+        cloud = (sig.data or {}).get("cloud_name") if sig.status == 200 else None
+        if cloud:
+            url = (f"https://res.cloudinary.com/{cloud}/image/upload/v1700000000/"
+                   f"profile_photos/{ctx.user_id}/e2e_flow.jpg")
+            ok = ctx.api.post(f"/api/orders/{order_id}/review/images",
+                              json_body={"image_urls": [url]}, token=token)
+            ok.check(200)
+            stored_review = ctx.db.select_one("order_reviews", id=review_id) or {}
+            expect(list(stored_review.get("image_urls") or []) == [url],
+                   f"the route returned 200 but image_urls is "
+                   f"{stored_review.get('image_urls')!r}", ok)
+            ctx.note("a trusted Cloudinary URL was accepted and stored on the review")
+        else:
+            ctx.warnings.append(
+                f"upload signature unavailable ({sig.status}) so the accepted-image path was not "
+                "exercised — the rejection path and the pre-review guard were")
+
+        # 6. share — once, then again the same day (the prompt is per user per day)
+        share = ctx.api.post(f"/api/orders/{order_id}/share",
+                             json_body={"platform": "e2e"}, token=token)
+        share.check(200)
+        first_hp = float((share.data or {}).get("hp_awarded") or 0)
+        rows = ctx.db.select("order_share_events", order_id=order_id) or []
+        replay = ctx.api.post(f"/api/orders/{order_id}/share",
+                              json_body={"platform": "e2e"}, token=token)
+        replay.check(200)
+        repeat_hp = float((replay.data or {}).get("hp_awarded") or 0)
+        rows_after = ctx.db.select("order_share_events", order_id=order_id) or []
+        expect(repeat_hp == 0,
+               f"sharing twice in one day awarded HP twice ({first_hp:.0f} then {repeat_hp:.0f})")
+        expect(len(rows_after) == len(rows),
+               f"the second share call added a row ({len(rows)} -> {len(rows_after)})")
+        if rows_after:
+            ctx.note(f"share recorded ({first_hp:.0f} HP pending); the replay awarded 0")
+        else:
+            ctx.note("this account had already shared an order today, so both calls took the "
+                     "per-day dedupe branch (nothing was written)")
+    finally:
+        # Ledger rows first, then the rows that reference them; only this order/review can match.
+        for reference in (review_id, order_id):
+            if reference:
+                for entry in ctx.db.select("hp_transactions", reference_id=reference):
+                    ctx.db.delete("hp_transactions", id=entry["id"])
+        ctx.db.delete("order_reviews", order_id=order_id)
+        ctx.db.delete("order_share_events", order_id=order_id)
+
+        after = ctx.db.select_one("profiles", id=ctx.user_id) or {}
+        moved = {k: v for k, v in profile_before.items() if after.get(k) != v}
+        if moved:
+            ctx.db.update("profiles", moved, id=ctx.user_id)
+        restored = ctx.db.select_one("profiles", id=ctx.user_id) or {}
+        still = {k: (profile_before[k], restored.get(k))
+                 for k in moved if restored.get(k) != profile_before[k]}
+        if still:
+            ctx.warnings.append(f"could not restore the profile HP fields: {still}")
+        elif moved:
+            ctx.note(f"profile restored ({len(moved)} HP field(s))")
+
+        tracker_after = ctx.db.select_one("monthly_hp_tracker", user_id=ctx.user_id, month=month)
+        if tracker_before:
+            if tracker_after and tracker_after.get("total_earned") != tracker_before.get("total_earned"):
+                ctx.db.update("monthly_hp_tracker",
+                              {"total_earned": tracker_before.get("total_earned")},
+                              id=tracker_before["id"])
+        elif tracker_after:
+            ctx.db.delete("monthly_hp_tracker", id=tracker_after["id"])
+
+
+@step("flow", "flow.squad_members",
+      "the flow order carries squad members: added, listed, and the post-delivery guards",
+      writes=True, route="POST /api/orders/<order_id>/squad-members",
+      routes=("GET /api/orders/<order_id>/squad-members",
+              "DELETE /api/orders/<order_id>/squad-members/<member_id>",
+              "POST /api/orders/<order_id>/squad-members/<member_id>/resend"),
+      needs=("flow.order_followups",))
+def s_squad_members(ctx: Ctx):
+    """The four order-scoped squad routes.
+
+    The account is added to its own delivered order with the HP split switched off, so the
+    member row is created (the registered-member branch — no invite email is sent) and the
+    delivery HP is not redistributed. On a delivered order the remove and resend routes
+    answer with their guard, which is the only shape those two can take from the flow.
+    """
+    order_id = ctx.ids.get("flow_order_id")
+    if not order_id:
+        raise Skip("no flow order to attach squad members to")
+    order = ctx.db.select_one("orders", id=order_id) or {}
+    if str(order.get("status")) != "delivered":
+        raise Skip(f"the flow order is '{order.get('status')}', not delivered")
+
+    token = ctx.tokens["access"]
+    email = str(ctx.ids.get("email") or "")
+    if not email:
+        raise Skip("the run does not know the account's email address")
+    member_id = None
+    try:
+        add = ctx.api.post(f"/api/orders/{order_id}/squad-members",
+                           json_body={"emails": [email], "split_hp": False}, token=token)
+        add.check(200)
+        ctx.note(f"squad member add -> {json.dumps((add.data or {}).get('results'))[:160]}")
+
+        listed = ctx.api.get(f"/api/orders/{order_id}/squad-members", token=token)
+        listed.check(200)
+        rows = listed.data if isinstance(listed.data, list) else (listed.data or {}).get("members")
+        if not isinstance(rows, list):
+            rows = ctx.db.select("squad_members", order_id=order_id) or []
+        ours = [m for m in rows if str(m.get("email") or "").lower() == email.lower()]
+        expect(bool(ours), f"the added member is not listed back — {listed.snippet(200)}", listed)
+        member_id = ours[0].get("id")
+        ctx.note(f"squad member listed back ({len(rows)} row(s), "
+                 f"is_registered={ours[0].get('is_registered')})")
+
+        if member_id:
+            rm = ctx.api.delete(f"/api/orders/{order_id}/squad-members/{member_id}", token=token)
+            rm.check(400, allow=(200,))
+            if rm.status == 400:
+                expect("deliver" in json.dumps(rm.data).lower(),
+                       f"the 400 is not the delivered-order guard — {rm.snippet(160)}", rm)
+                ctx.note("remove refused on a delivered order (400)")
+
+            resend = ctx.api.post(f"/api/orders/{order_id}/squad-members/{member_id}/resend",
+                                  token=token)
+            resend.check(400, allow=(200,))
+            if resend.status == 400:
+                ctx.note("resend refused for a registered member (400, nothing to email)")
+    finally:
+        # The step asked for no HP split, and the member rows live only on this order.
+        ctx.db.delete("squad_members", order_id=order_id)
+        for entry in ctx.db.select("hp_transactions", reference_id=order_id):
+            ctx.db.delete("hp_transactions", id=entry["id"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Phase — scheduled jobs: every cron job is wired, and one of them really runs
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -4228,8 +4458,10 @@ def s_order_cancel(ctx: Ctx):
 @step("orders", "orders.review", "POST /api/orders/<id>/review", route="POST /api/orders/<order_id>/review",
       needs=("orders.place",))
 def s_order_review(ctx: Ctx):
-    raise Skip("reviewing requires a DELIVERED order; the suite does not advance "
-               "orders through the kitchen (would disturb live operations)")
+    # Covered by flow.order_followups, which owns a delivered order of its own. The orders
+    # phase deliberately stops at `received`/`cancelled` and never disturbs the kitchen.
+    raise Skip("reviewing requires a DELIVERED order; flow.order_followups exercises this "
+               "route against the flow's own delivered order (run `--only flow.order_followups`)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -658,8 +658,9 @@ because the expensive failures are the ones nobody checked.
 
 | Area | Evidence | Verified where |
 |------|----------|----------------|
-| Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 64/64 modules import; app boots with 405 routes | this sandbox |
-| Routes the suite calls | `make selfcheck` — 145 declared routes all exist | this sandbox |
+| Names, imports, structure | `pyflakes` **0 warnings** for `app/` + `scripts/live_test.py` (control-gated with a planted undefined name); 70/70 route-bearing modules import (all of `app/`, `__init__.py` excluded); app boots with 405 routes | this sandbox |
+| Routes the suite calls | `make selfcheck` — 154 declared routes all exist | this sandbox |
+| Order follow-up steps | `flow.order_followups` + `flow.squad_members` executed against a canned API/DB harness: they call the intended routes, refuse wrongly-shaped responses, delete the rows they cause and restore the account's HP counters | this sandbox |
 | Permission gates | 29 admin routes enumerated from the live URL map and swept by `security.permissions_matrix` | the suite, at run time |
 | Cancel refunds | decision table, 6 scenarios × both cancel routes: no unpaid case can refund more than the wallet half, paid cases refund both halves | this sandbox |
 | HP + reward restore on cancel | fake-run of `_restore_order_consumables`: exact HP, `apply_multiplier=False`, release pinned to the order, clears `attached_order_id` **and** `used_at`, failures logged not raised, guest orders skipped | this sandbox |
@@ -676,6 +677,7 @@ make smoke  BASE_URL=http://localhost:5000
 make flow   BASE_URL=http://localhost:5000 WEBHOOK_SECRET=<paystack secret> \
             WRITE_EXISTING=1 LOGIN_EMAIL=claude.audit.test1@holygrills.test \
             LOGIN_PASSWORD='ClaudeAudit!Test1'     # money in + kitchen -> rider -> delivered
+                                                   # then reorder / share / review / squad
 make e2e    BASE_URL=http://localhost:5000 WRITE_EXISTING=1 \
             LOGIN_EMAIL=claude.audit.test1@holygrills.test LOGIN_PASSWORD='ClaudeAudit!Test1' \
             E2E_ARGS=--with-cron                   # optional: invoke all 17 scheduled jobs
@@ -691,10 +693,13 @@ Notes for that run:
   notifications, email, scheduled orders). Without it, only the canary job runs.
 * `scheduled.trigger_contract` and `scheduled.jobs_run_safe` create a throwaway
   super_admin account each and delete it; the audit rows they cause are deleted too.
-* The eight `surface.*` steps run on their own with `E2E_ARGS="--only surface"`. They
-  need a working campus read and a finished `auth.login`; squads additionally needs the
+* The `surface.*` steps run on their own with `E2E_ARGS="--only surface"`. They need a
+  working campus read and a finished `auth.login`; squads additionally needs the
   `squad_orders` feature flag on, and the spin and graduation happy paths skip when the
   feature is off or no eligible academic level exists.
+* The order follow-ups run with `--only flow.order_followups` (or as part of `make flow`);
+  `--only` pulls the whole chain they depend on, so that one command places, pays, advances
+  and delivers an order before it tests what the customer does with it.
 
 The e2e run now covers the whole cancel/refund/override surface (the two refund
 regressions, both ticket/event flows, the three override probes) plus the flow steps above.
@@ -727,14 +732,14 @@ against `card_amount_used` when it is greater than zero.
 
 Measured, not estimated — the app's live URL map against every path the suite calls:
 
-405 method × path pairs are registered (404 excluding `/static`); the figures below use
-the 404, the same base the coverage script counts.
+405 method × path pairs are registered, `/static/<filename>` included; the figures below use
+that full base, so they can be read directly against `make selfcheck` ("405 app routes").
 
 | | |
 |---|---|
-| routes the suite **reaches** | **385 (95%)** — 66 before the flow pass, 68 before the authorization sweeps |
-| of those, routes **no test had ever touched before this round** | **317** — 231 with a permission assertion, 54 functionally, 32 by the read sweep |
-| routes that stay uncovered, and why | **19** — see the list below |
+| routes the suite **reaches** | **392 (96.8%)** — 66 before the flow pass, 68 before the authorization sweeps, 385 before the order follow-ups |
+| of those, routes **no test had ever touched before this round** | **325** — 241 with a permission assertion, 32 by the read sweep, 52 functionally (the 8 order follow-ups among them) |
+| routes that stay uncovered, and why | **13** — see the list below |
 | blueprints with **zero** exercised routes | **none** — all 43 are exercised (was 35 of 43) |
 | coverage is *reachable*, not guaranteed per run | steps skip by design when a feature is off, a secret is absent or a fixture does not exist — a run's real number is in its own summary |
 | role/permission assertions before this round | **1** (a wrong-password 401) → now 241 gated routes × 2 attacker roles |
@@ -884,7 +889,8 @@ path a multi-route step calls: 109 declared routes, all present in the app.
 **Added in the reach pass** — the rest of the reachable surface (`--only surface`):
 
 * `surface.read_sweep` — every GET the app serves that no step declared and no sweep covers
-  (32 routes, enumerated from the live URL map so it shrinks as steps are added). For each
+  (32 routes then, 31 now that the squad GET is declared by a step; enumerated from the live
+  URL map so it shrinks as steps are added). For each
   one: an authenticated customer must get **no 5xx and no 401**. A 404 for a random UUID is
   recorded as the correct answer; a 403 is kept but warned about, because it usually means a
   feature flag is off. This is a liveness contract, not a behaviour test.
@@ -913,7 +919,25 @@ path a multi-route step calls: 109 declared routes, all present in the app.
 * `surface.challenges_complete` — complete an offered milestone; a clean 400/409 is accepted
   when the account does not meet the condition.
 
-### The 19 routes still not exercised, and why
+**Added in the order follow-up pass** — what a customer does with a *delivered* order
+(`make flow`, or `--only flow.order_followups`, which closes over the whole flow chain):
+
+* `flow.order_followups` — the flow's own delivered order is reordered (the helper returns
+  the items at today's price), shared once and shared again the same day (the second call
+  must award **0 HP** and add no row — the prompt is per user per day), reviewed (delivered
+  only, a second review refused), and given images: the untrusted host is refused, a trusted
+  Cloudinary URL — built from the upload signature the app itself returns — is accepted and
+  stored on the review, and an image posted before any review exists is refused. The guest
+  `/claim` route answers 400 for an order that already belongs to a signed-in customer.
+  Ledger rows, the review, the share row, the monthly-cap counter and the profile's HP
+  fields are all restored in a `finally`, so it is safe against a real account.
+* `flow.squad_members` — the account is added to its own order as a squad member (registered
+  branch: no invite email, `split_hp=false` so the delivered HP is not redistributed), read
+  back from the list route, and then the two post-delivery guards are pinned: removing a
+  member from a delivered order is refused (400) and resending to a registered member is
+  refused (400). The member rows are deleted afterwards.
+
+### The 13 routes still not exercised, and why
 
 **Need an inbox (2).** `POST /api/auth/reset-password/confirm` and `POST /api/auth/verify-email`
 require the token/OTP that is only ever delivered by email. They can be covered honestly by
@@ -934,17 +958,22 @@ if you want them exercised.
 event, listing or flash sale in the database. Each step would skip on a catalogue that has
 none — worth adding if any of those features are live at launch.
 
-**Need the flow's own order (7).** `POST /api/orders/<id>/share`, `/reorder`,
-`/review/images`, `/claim`, and the three `/squad-members` routes operate on an existing
-order. Share, reorder and review images are straightforward follow-ups to the flow order;
-`/claim` needs a guest order with a claim token, and the squad-member routes need an order
-placed as a squad order (squad fixture + flag). Deliberately left for a decision about how
-deep to go into squad ordering.
+**A framework route (1).** `GET /static/<filename>` is Flask's own asset handler, not an
+API route: any name we probe answers 404 (there is nothing to serve), so asserting it would
+add a number without adding a fact. The read sweep skips the `static` endpoint for the same
+reason.
+
+**What the order pass reaches only through a guard.** Two of the four squad-member routes
+are pinned as refusals rather than happy paths — removing a member and resending an invite
+both need a **non-delivered, squad-flagged order**, and the flow's order is delivered by
+design. `POST /api/orders/<id>/claim` is likewise exercised only on the "already belongs to
+a customer" branch; the happy path needs a guest order carrying a claim token.
 
 Still not covered after all passes: invoking the full job set by default, the
 virtual-account / bank-transfer deposit branch, the split-payment amount check named below,
-and functional depth on the 241 permission-swept routes (a refusal proves the gate, not the
-handler) and the 32 read-swept ones (a clean answer proves no crash, not correctness).
+the guest-order and squad-order happy paths above, and functional depth on the 241
+permission-swept routes (a refusal proves the gate, not the handler) and the read-swept GETs
+(a clean answer proves no crash, not correctness).
 
 ### Residual risks, stated plainly
 
