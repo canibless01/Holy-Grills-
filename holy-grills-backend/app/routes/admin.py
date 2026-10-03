@@ -2294,7 +2294,9 @@ def hp_pending_squad():
     from app.middleware.auth import resolve_scoped_campus_id
     from app.services.squad_service import get_pending_squad_hp_report as fallback_report
 
-    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    # Campus scoping is enforced inside the RPC via auth.uid() -> profiles role/campus_id.
+    # We still resolve for fallback path and for validation of super_admin ?campus_id= override.
+    scoped_campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     # p_stale_days is the only argument on test-2, defaults to 14
     stale_days_raw = request.args.get("stale_days", "14")
     try:
@@ -2304,51 +2306,26 @@ def hp_pending_squad():
     except ValueError:
         return jsonify({"error": "stale_days must be an integer between 0 and 365"}), 400
 
-    db = get_user_client()  # authenticated RPC per spec
+    db = get_user_client()  # authenticated RPC per spec — required so auth.uid() resolves
     try:
-        # Exact test-2 signature: get_pending_squad_hp_report(p_stale_days integer DEFAULT 14) RETURNS jsonb
-        # Call with named arg p_stale_days; no args also works due to DEFAULT, but we pass explicitly.
+        # Exact test-2 signature: public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14) RETURNS jsonb
+        # SECURITY DEFINER, EXECUTE granted to authenticated/service_role.
+        # Scoping (confirmed on test-2): looks up caller's role and campus_id from profiles using auth.uid().
+        # If caller isn't admin/super_admin → insufficient_privilege. super_admin sees all campuses.
+        # admin sees only rows where pending_squad_hp.campus_id = own campus. Only status='pending' included.
+        # Because it returns JSONB and already scopes, route must return it unchanged — no Flask campus filtering.
         try:
             rpc_result = db.rpc("get_pending_squad_hp_report", {"p_stale_days": stale_days})
             if rpc_result is not None:
-                # RPC returns jsonb — could be dict with pending/count/stuck_count or list
-                if isinstance(rpc_result, dict):
-                    # Enforce campus scoping in Flask if RPC does not (grants are authenticated/service_role, no admin check in DB)
-                    if campus_id and "pending" in rpc_result and isinstance(rpc_result["pending"], list):
-                        filtered = [r for r in rpc_result["pending"] if not r.get("campus_id") or r.get("campus_id") == campus_id]
-                        # Recompute counts for filtered view
-                        stuck = sum(1 for r in filtered if r.get("is_stuck"))
-                        rpc_result = {
-                            **rpc_result,
-                            "pending": filtered,
-                            "count": len(filtered),
-                            "stuck_count": rpc_result.get("stuck_count") if "stuck_count" in rpc_result and not campus_id else stuck,
-                            "campus_id": campus_id,
-                            "p_stale_days": stale_days,
-                        }
-                    else:
-                        # Ensure p_stale_days echoed for observability
-                        rpc_result = {**rpc_result, "p_stale_days": rpc_result.get("p_stale_days", stale_days)}
-                    return jsonify(rpc_result), 200
-                if isinstance(rpc_result, list):
-                    # Wrap list, then apply campus filter if needed
-                    pending_list = rpc_result
-                    if campus_id:
-                        pending_list = [r for r in pending_list if not r.get("campus_id") or r.get("campus_id") == campus_id]
-                    return jsonify({
-                        "pending": pending_list,
-                        "count": len(pending_list),
-                        "stuck_count": sum(1 for r in pending_list if r.get("is_stuck")),
-                        "campus_id": campus_id,
-                        "p_stale_days": stale_days,
-                    }), 200
+                # Return JSONB as-is per requirement — do NOT mutate structure for campus filtering.
+                return jsonify(rpc_result), 200
         except Exception as rpc_exc:
-            # Log but fall back to service-client implementation
             import logging
             logging.getLogger(__name__).warning("hp_pending_squad: RPC get_pending_squad_hp_report failed, falling back: %s", rpc_exc)
 
-        # Fallback service-client report (same shape, campus filtered)
-        report = fallback_report(campus_id=campus_id, p_stale_days=stale_days)
+        # Fallback service-client report (used when RPC unavailable offline) — mimics same scoping logic
+        report = fallback_report(campus_id=scoped_campus_id, p_stale_days=stale_days)
+        # Fallback already includes p_stale_days, but ensure
         report["p_stale_days"] = stale_days
         return jsonify(report), 200
     except Exception as e:
