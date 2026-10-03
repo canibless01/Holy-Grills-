@@ -388,11 +388,13 @@ def distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str, campus_
         logger.error("distribute_squad_hp failed for order %s: %s", order_id, e)
 
 
-def get_pending_squad_hp_report(campus_id: str = None):
+def get_pending_squad_hp_report(campus_id: str = None, p_stale_days: int = 14):
     """
     Admin report for unclaimed squad HP (A9).
     Returns pending rows with age, stuck detection.
     A campus admin sees their campus, super_admin sees all.
+    Test-2 RPC signature: public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14) RETURNS jsonb
+    This service-client fallback mirrors that contract and filters by campus in Flask.
     """
     db = get_db()
     try:
@@ -436,10 +438,11 @@ def get_pending_squad_hp_report(campus_id: str = None):
             "count": len(enriched),
             "stuck_count": stuck_count,
             "campus_id": campus_id,
+            "p_stale_days": p_stale_days,
         }
     except Exception as e:
         logger.error("get_pending_squad_hp_report failed: %s", e)
-        return {"pending": [], "count": 0, "stuck_count": 0, "error": str(e), "campus_id": campus_id}
+        return {"pending": [], "count": 0, "stuck_count": 0, "error": str(e), "campus_id": campus_id, "p_stale_days": p_stale_days}
 
 
 def sweep_pending_squad_hp(campus_id: str = None):

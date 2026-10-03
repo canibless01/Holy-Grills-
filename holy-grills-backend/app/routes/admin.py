@@ -2274,32 +2274,82 @@ def hp_report():
 def hp_pending_squad():
     """
     Admin: unclaimed squad HP report (A9). Campus admin sees own campus, super_admin sees all.
-    Uses authenticated RPC if available, falls back to service-client report.
+    Uses authenticated RPC `public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14)` — test-2 contract.
     ---
     tags: [Admin]
+    parameters:
+      - in: query
+        name: campus_id
+        type: string
+        description: Optional campus filter (super_admin only)
+      - in: query
+        name: stale_days
+        type: integer
+        default: 14
+        description: Age threshold for report (p_stale_days)
     responses:
       200:
         description: Pending squad HP report
     """
     from app.middleware.auth import resolve_scoped_campus_id
-    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
-    db = get_user_client()
-    try:
-        # Try authenticated RPC first (if deployed) — get_pending_squad_hp_report
-        try:
-            rpc_result = db.rpc("get_pending_squad_hp_report", {"p_campus_id": campus_id})
-            if rpc_result:
-                # If RPC returns data, use it directly
-                if isinstance(rpc_result, dict) and "pending" in rpc_result:
-                    return jsonify(rpc_result), 200
-                # If RPC returns list, wrap
-                if isinstance(rpc_result, list):
-                    return jsonify({"pending": rpc_result, "count": len(rpc_result), "campus_id": campus_id}), 200
-        except Exception:
-            pass  # fallback to service-client implementation
+    from app.services.squad_service import get_pending_squad_hp_report as fallback_report
 
-        from app.services.squad_service import get_pending_squad_hp_report
-        report = get_pending_squad_hp_report(campus_id=campus_id)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    # p_stale_days is the only argument on test-2, defaults to 14
+    stale_days_raw = request.args.get("stale_days", "14")
+    try:
+        stale_days = int(stale_days_raw)
+        if stale_days < 0 or stale_days > 365:
+            raise ValueError()
+    except ValueError:
+        return jsonify({"error": "stale_days must be an integer between 0 and 365"}), 400
+
+    db = get_user_client()  # authenticated RPC per spec
+    try:
+        # Exact test-2 signature: get_pending_squad_hp_report(p_stale_days integer DEFAULT 14) RETURNS jsonb
+        # Call with named arg p_stale_days; no args also works due to DEFAULT, but we pass explicitly.
+        try:
+            rpc_result = db.rpc("get_pending_squad_hp_report", {"p_stale_days": stale_days})
+            if rpc_result is not None:
+                # RPC returns jsonb — could be dict with pending/count/stuck_count or list
+                if isinstance(rpc_result, dict):
+                    # Enforce campus scoping in Flask if RPC does not (grants are authenticated/service_role, no admin check in DB)
+                    if campus_id and "pending" in rpc_result and isinstance(rpc_result["pending"], list):
+                        filtered = [r for r in rpc_result["pending"] if not r.get("campus_id") or r.get("campus_id") == campus_id]
+                        # Recompute counts for filtered view
+                        stuck = sum(1 for r in filtered if r.get("is_stuck"))
+                        rpc_result = {
+                            **rpc_result,
+                            "pending": filtered,
+                            "count": len(filtered),
+                            "stuck_count": rpc_result.get("stuck_count") if "stuck_count" in rpc_result and not campus_id else stuck,
+                            "campus_id": campus_id,
+                            "p_stale_days": stale_days,
+                        }
+                    else:
+                        # Ensure p_stale_days echoed for observability
+                        rpc_result = {**rpc_result, "p_stale_days": rpc_result.get("p_stale_days", stale_days)}
+                    return jsonify(rpc_result), 200
+                if isinstance(rpc_result, list):
+                    # Wrap list, then apply campus filter if needed
+                    pending_list = rpc_result
+                    if campus_id:
+                        pending_list = [r for r in pending_list if not r.get("campus_id") or r.get("campus_id") == campus_id]
+                    return jsonify({
+                        "pending": pending_list,
+                        "count": len(pending_list),
+                        "stuck_count": sum(1 for r in pending_list if r.get("is_stuck")),
+                        "campus_id": campus_id,
+                        "p_stale_days": stale_days,
+                    }), 200
+        except Exception as rpc_exc:
+            # Log but fall back to service-client implementation
+            import logging
+            logging.getLogger(__name__).warning("hp_pending_squad: RPC get_pending_squad_hp_report failed, falling back: %s", rpc_exc)
+
+        # Fallback service-client report (same shape, campus filtered)
+        report = fallback_report(campus_id=campus_id, p_stale_days=stale_days)
+        report["p_stale_days"] = stale_days
         return jsonify(report), 200
     except Exception as e:
         return db_error_response(e, "hp_pending_squad")
