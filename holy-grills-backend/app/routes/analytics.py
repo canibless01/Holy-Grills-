@@ -763,10 +763,13 @@ def hp_analytics():
     hp_txns = q.execute() or []
 
     # hp_transactions.amount is always positive (CHECK amount > 0); the direction lives in `type`.
-    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn")
-    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend")
+    # B-9: exclude hp_transfer_received from earned and hp_transfer_sent from spent, report transfers separately
+    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn" and t.get("source") != "hp_transfer_received")
+    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
     expired = sum(t["amount"] for t in hp_txns if t.get("type") == "expire")
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
+    transfer_received = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_received")
+    transfer_sent = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_sent")
 
     # All 4 Tiers check
     tiers = db.table("hp_tiers").select("id,name,slug,min_points").order("sort_order").execute() or []
@@ -798,6 +801,8 @@ def hp_analytics():
         "hp_spent": spent,
         "hp_expired": expired,
         "hp_pending": pending,
+        "hp_transfer_received": transfer_received,
+        "hp_transfer_sent": transfer_sent,
         "hp_in_circulation": earned - spent - expired,
         "redemption_rate": round(spent / earned * 100, 1) if earned > 0 else 0,
         "tier_distribution": tier_distribution,

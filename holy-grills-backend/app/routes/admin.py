@@ -2269,6 +2269,42 @@ def hp_report():
     }), 200
 
 
+@admin_bp.route("/hp/pending-squad", methods=["GET"])
+@require_role("admin")
+def hp_pending_squad():
+    """
+    Admin: unclaimed squad HP report (A9). Campus admin sees own campus, super_admin sees all.
+    Uses authenticated RPC if available, falls back to service-client report.
+    ---
+    tags: [Admin]
+    responses:
+      200:
+        description: Pending squad HP report
+    """
+    from app.middleware.auth import resolve_scoped_campus_id
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    db = get_user_client()
+    try:
+        # Try authenticated RPC first (if deployed) — get_pending_squad_hp_report
+        try:
+            rpc_result = db.rpc("get_pending_squad_hp_report", {"p_campus_id": campus_id})
+            if rpc_result:
+                # If RPC returns data, use it directly
+                if isinstance(rpc_result, dict) and "pending" in rpc_result:
+                    return jsonify(rpc_result), 200
+                # If RPC returns list, wrap
+                if isinstance(rpc_result, list):
+                    return jsonify({"pending": rpc_result, "count": len(rpc_result), "campus_id": campus_id}), 200
+        except Exception:
+            pass  # fallback to service-client implementation
+
+        from app.services.squad_service import get_pending_squad_hp_report
+        report = get_pending_squad_hp_report(campus_id=campus_id)
+        return jsonify(report), 200
+    except Exception as e:
+        return db_error_response(e, "hp_pending_squad")
+
+
 @admin_bp.route("/campuses", methods=["GET"])
 @require_role("admin")
 def list_campuses():
