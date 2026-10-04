@@ -854,7 +854,7 @@ class MSG:
     # ── Phase 1b Centralized Error Messages ───────────────────────────────────
     PHONE_FORMAT_INVALID           = "Invalid phone number format. Use international format e.g. +2348012345678."
     DOB_FORMAT_INVALID             = "Invalid date of birth. Use YYYY-MM-DD format."
-    REGISTER_EMAIL_AMBIGUOUS       = "If this email can be registered, you'll receive a confirmation shortly. If you already have an account, try logging in or resetting your password."
+    REGISTER_EMAIL_AMBIGUOUS       = "Almost there. If this email can be registered, check your inbox for a confirmation. Already have an account? Log in or reset your password."
     REGISTER_FAILED_RETRY          = "Registration failed. Please try again."
     NO_VALID_FIELDS_TO_UPDATE      = "No valid fields to update"
     MILESTONE_NOT_FOUND            = "Milestone not found or inactive"

@@ -12,7 +12,7 @@ from app.middleware.rate_limit import rate_limit
 from app.services import auth_service, streak_service
 from app.utils.retry import with_retry
 from app.db import get_db, get_user_client, SupabaseError
-from app.messages import MSG, resolve_msg
+from app.messages import MSG
 from app.utils.logger import get_logger
 from app.utils.upload_urls import is_trusted_upload_url
 from app.utils.validators import validate_uuid
@@ -201,17 +201,21 @@ def register():
             referred_by_code=data.get("referred_by_code"), department=data.get("department"),
             academic_level=data.get("academic_level"), campus_id=campus_id, nickname=data.get("nickname"),
         )
-        result["message"] = resolve_msg(MSG.REGISTER_SUCCESS)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        err_msg = str(e)
+        # Anti-enumeration: existing email returns same 200 shape as a new sign-up
+        if err_msg == MSG.REGISTER_EMAIL_AMBIGUOUS:
+            return jsonify({"status": "check_email", "message": MSG.REGISTER_EMAIL_AMBIGUOUS}), 200
+        return jsonify({"error": err_msg}), 400
     except Exception as e:
         logger.exception("register: unexpected failure: %s", e)
         return jsonify({"error": MSG.AUTH_REGISTRATION_FAILED}), 500
 
     user_id = ((result.get("user") or {}).get("id")) or result.get("id")
     if user_id:
-        _notify_security(user_id, "welcome_email")     # template exists, was never dispatched
-    return jsonify(result), 201
+        _notify_security(user_id, "welcome_email")
+    # Always return the same ambiguous shape so the response does not reveal whether the email exists
+    return jsonify({"status": "check_email", "message": MSG.REGISTER_EMAIL_AMBIGUOUS}), 200
 
 
 @auth_bp.route("/login", methods=["POST"])
