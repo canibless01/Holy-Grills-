@@ -221,6 +221,20 @@ END $$;
 --    low_code_inventory_threshold, notification_daily_cap,
 --    paystack_preferred_bank, wallet_ref_prefix
 --
+--  If these rows were first created by an earlier revision of this file, that
+--  revision wrote is_public = TRUE on every row (the flag only exists here), and
+--  this file skips keys that already have a row — so re-running it will NOT
+--  private-ise them. Apply the four flags once, by hand:
+--
+--    UPDATE public.system_settings
+--       SET is_public = FALSE, updated_at = now()
+--     WHERE campus_id IS NULL
+--       AND key IN ('low_code_inventory_threshold', 'notification_daily_cap',
+--                   'paystack_preferred_bank', 'wallet_ref_prefix');
+--
+--  Same story for the three keys this revision stopped seeding: the DELETE near
+--  the end of this file is the fix (an INSERT-if-absent never removes).
+--
 --  A per-campus override, for when a campus runs a different number
 --  (only this campus's admin or a super admin may write it — same rule as the
 --  admin screen; the backend reads campus row → global row → env):
