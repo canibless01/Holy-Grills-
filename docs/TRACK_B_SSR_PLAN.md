@@ -285,3 +285,97 @@ Two options, neither of which is free:
   a Node process — the static pre-render was chosen specifically to avoid one.
 
 Say which and I will scope it; nothing is implemented for either today.
+
+
+---
+
+# Post-B6 round — campus picker pre-rendered (§6 item 1), plus an encoder repair
+
+## §6 item 1 is implemented for `/menu`, `/events`, `/marketplace`
+
+The decision was "pre-render a campus picker page: real copy + campus list in the
+HTML for crawlers; the app still shows its gate to visitors". What shipped:
+
+| Piece | File | What it does |
+|---|---|---|
+| Picker view | `src/components/CampusPickerLanding.tsx` (new) | eyebrow, `<h1>`, intro, campus list, "What's waiting" bullets. Reads `useCampus()` and falls back to `APP_CONFIG.university` (`FUTA`), so it renders **identically** at build time and on the first client paint |
+| Copy + wiring | `src/components/CampusScope.tsx` | `LANDING_BY_PATH` holds the copy for `/menu`, `/events`, `/marketplace`, `/leaderboard`; the landing renders whenever there is no campus *and* the campus list has not resolved |
+| Head data | `src/seo/routeMeta.ts` | `/menu`, `/events`, `/marketplace` added to `ROUTE_META` / `PRERENDER_ROUTES`; the set went from 4 to **7** routes |
+| Runtime head | `src/pages/Events.tsx`, `src/pages/Marketplace.tsx` | `<SEO>` added (they had none) so the client-rendered head matches the pre-rendered head |
+
+### The ordering question the build had to answer
+
+`CampusScope` returns `<Outlet />` (the real page) when the campus list resolves
+*empty* — the deliberate single-campus pass-through. If that branch also fired at
+build time, the pre-render would have written the real page shell and the whole
+change would have been for nothing. It does not: `campusContext` starts with
+`campusesLoading = true` and effects never run during a render, so the build-time
+state is "still loading" → the picker branch wins. Confirmed in the emitted HTML,
+not just in the source:
+
+```
+/menu        h1 "Today's menu at FUTA"        + campus row + 3 bullets
+/events      h1 "Campus events at FUTA"       + campus row + 3 bullets
+/marketplace h1 "The campus marketplace"      + campus row + 3 bullets
+```
+
+The same state (`campusesLoading = true`) is the client's first render, so
+hydration sees identical markup; the campus list then resolves, the gate opens
+**on top of** the picker (unchanged behaviour), and a campus-less visitor still
+falls through to the real page exactly as before.
+
+`/leaderboard` gets the picker at runtime but is **not** pre-rendered — it is not
+in `sitemap.xml`, so there was nothing to fix there.
+
+Pre-rendered byte sizes after this round: `/` 29 051 · `/menu` 15 664 ·
+`/events` 15 371 · `/marketplace` 15 423 · `/faq` 48 832 · `/our-story` 30 657 ·
+`/terms` 33 363, plus app-shell and 404.
+
+## React 18.3.1 bug found and repaired: NUL bytes in streamed HTML
+
+While checking the new `/menu` output I found **two `0x00` bytes** where the
+homepage strapline's ❤️‍🔥 should be (`Made With More Than Flame\0\0🔥`). It is
+not our code — it is React 18.3.1's stream encoder:
+
+```js
+// react-dom/cjs/react-dom-server.node.development.js, writeStringChunk()
+const { read, written } = textEncoder.encodeInto(stringChunk, target);
+writtenBytes += written;
+if (read < stringChunk.length) {
+  writeToDestination(destination, currentView);   // ← the WHOLE 2 KB view
+  currentView = new Uint8Array(VIEW_SIZE);
+  ...
+}
+```
+
+When a multi-byte character does not fit in what is left of the 2 048-byte view,
+`encodeInto` stops before it — and React writes the entire view anyway instead of
+`subarray(0, writtenBytes)`, so the unused tail goes out as zero padding (the
+character itself lands in the next view). It reproduces in isolation: a 500-block
+stress render loses 4 of 500 emoji to NUL bytes. Which routes are hit depends on
+where the boundaries fall, so this was **latent for the original four pre-renders
+too** — `/` and `/faq` happened to be unaffected.
+
+Fix, in `src/entry-server.tsx`: the sink buffers chunks and trims trailing NUL
+bytes (verified against the stress render that the padding is always a *suffix*,
+never interior), then asserts the finished document contains no `U+0000` at all,
+so a future regression fails the build instead of shipping. `scripts/smoke.mjs`
+now asserts "no NUL bytes" on every pre-rendered route, and asserts the picker
+copy is really in the three campus-gated responses.
+
+`/menu` went 15 666 → 15 664 bytes (exactly the two trimmed bytes) and the emoji
+is intact in both the file and the served response.
+
+## Verification for this round
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` / `npm run lint` | ✅ clean |
+| `npm run build` | ✅ route families in sync (33), **7** pre-renders + app-shell + 404 |
+| `npm run smoke -- http://localhost:4173` | ✅ PASS, including the new NUL and picker assertions |
+| NUL scan | ✅ 10/10 emitted HTML files contain no `0x00` |
+| Picker copy in the served HTML | ✅ `/menu`, `/events`, `/marketplace` — h1, campus name and all three bullets |
+
+Still open in §6: item 1 for live data (prices/availability in the HTML, which
+needs a Node SSR runtime) and item 3. The browser-only B7 checks (hydration
+console pass, Lighthouse) are unchanged.

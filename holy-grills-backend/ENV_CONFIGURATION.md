@@ -23,9 +23,15 @@ Every environment variable the app reads, what it controls, its default, and
 | `APP_NAME` | Platform name used in emails and push notifications | `Holy Grills` |
 | `APP_TAGLINE` | Sign-off line on all emails | `Holy Grills FUTA` |
 | `FLASK_DEBUG` | Enable debug mode (`true`/`false`) | `false` |
-| `FRONTEND_URL` | Allowed CORS origin for the mobile/web frontend | `http://localhost:3000` |
-| `CORS_ORIGINS` | Comma-separated list of allowed origins | `*` |
+| `FRONTEND_URL` | Frontend URL — password-reset links, and added to `Config.CORS_ORIGINS` | `http://localhost:3000` |
+| `CORS_ORIGINS` | Comma-separated allowed origins (`*` is ignored — unset = empty list) | *(unset)* |
 | `SWAGGER_CONTACT_EMAIL` | Contact email shown in API docs | `dev@example.com` |
+
+> **CORS is wide open until deployment.** `app/__init__.py` registers
+> `CORS(app, origins="*")`, so every origin is accepted today and the two variables
+> above are collected but **not enforced**. The previously hardcoded origin list
+> (which still named the retired `base44.app` host) has been removed. Before going to
+> production, set them and pass `origins=Config.CORS_ORIGINS` to `CORS(...)`.
 
 ### 1.2 Supabase (Database + Auth)
 
@@ -327,8 +333,8 @@ APP_NAME              # Your platform name
 APP_TAGLINE           # Sign-off line in emails
 EMAIL_FROM            # Sender email
 EMAIL_FROM_NAME       # Sender display name
-FRONTEND_URL          # Your mobile/web frontend URL
-CORS_ORIGINS          # Comma-separated allowed origins
+FRONTEND_URL          # Your mobile/web frontend URL (also added to CORS_ORIGINS)
+CORS_ORIGINS          # Comma-separated allowed origins (not enforced while CORS uses "*")
 HP_CURRENCY_NAME      # Your loyalty currency name
 ```
 
@@ -372,4 +378,5 @@ The `{platform}` and `{currency}` placeholders in notification strings are resol
 - [ ] `REDIS_URL` (and optionally `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`)
 - [ ] `APP_NAME`, `APP_TAGLINE` — your brand name
 - [ ] `EMAIL_FROM`, `EMAIL_FROM_NAME` — your verified sender address
-- [ ] `FRONTEND_URL`, `CORS_ORIGINS` — your production frontend URL
+- [ ] `FRONTEND_URL`, `CORS_ORIGINS` — your production frontend URL, **and** switch
+      `CORS(app, origins="*")` in `app/__init__.py` over to `Config.CORS_ORIGINS`

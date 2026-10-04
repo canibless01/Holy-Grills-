@@ -3,11 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, RefreshCw } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import EventsSkeleton from '@/components/skeletons/EventsSkeleton';
+import SEO from '@/components/SEO';
+import { metaForPath } from '@/seo/routeMeta';
 import EventCard from '@/components/events/EventCard';
 import MyEvents from '@/components/events/MyEvents';
 import CateringRequestModal from '@/components/events/CateringRequestModal';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
+
+/** Head data for /events — the same object the pre-render writes. */
+const META = metaForPath('/events');
 
 const CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -57,6 +62,8 @@ export default function Events() {
 
   return (
     <div className="space-y-5 animate-fade-in max-w-2xl mx-auto">
+      <SEO title={META.title} description={META.description} path={META.path} />
+
       <div className="flex items-center justify-between">
         <div>
           <span className="hg-eyebrow">Events</span>

@@ -41,6 +41,17 @@ const rootMarkup = (html) => {
   return m ? m[1] : null;
 };
 
+// Campus-scoped routes are advertised in the sitemap, so the pre-render must
+// carry the picker copy for crawlers (Track B, section 6 item 1). These are the
+// entity-free fragments of the picker's <h1> for each route, plus the eyebrow
+// every picker page shares. A route that falls back to the app shell (or to the
+// campus-less pass-through) instead of the picker fails here.
+const PICKER_H1 = {
+  '/menu': 'menu at FUTA',
+  '/events': 'Campus events at FUTA',
+  '/marketplace': 'campus marketplace',
+};
+
 console.log(`\n[smoke] ${baseUrl}  (${routeFamilies().length} route families, ${PRERENDER_ROUTES.length} pre-rendered)\n`);
 
 // ── 1. Pre-rendered routes carry real content and their own head ──────────────
@@ -60,6 +71,16 @@ for (const route of PRERENDER_ROUTES) {
   check(!!title && !/FUTA's Only Flame Grill/.test(title), `${route} has a route-specific <title>`, title);
   check(canonical === `https://holygrill.app${route === '/' ? '/' : route}`, `${route} canonical`, canonical);
   check(ogImage.startsWith('https://'), `${route} og:image is absolute`, ogImage);
+  // React 18.3's stream encoder pads a full buffer with NUL bytes when a chunk
+  // boundary lands mid-character (see src/entry-server.tsx). Any NUL in the
+  // response means that repair stopped working and text is being lost.
+  check(!body.includes('\u0000'), `${route} has no NUL bytes`);
+  if (PICKER_H1[route]) {
+    check(
+      body.includes('Choose your campus') && body.includes(PICKER_H1[route]),
+      `${route} pre-renders the campus picker`,
+    );
+  }
   check(!!ld, `${route} has JSON-LD`);
   if (ld) {
     let parsed = null;

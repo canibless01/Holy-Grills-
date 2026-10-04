@@ -65,6 +65,25 @@ export const ROUTE_META: Record<string, RouteMeta> = {
       "Holy Grills is FUTA's student focused flame grill in Akure. Real open flame, campus delivery, Holy Points and a community that shows up together.",
     path: '/our-story',
   },
+  '/menu': {
+    // verbatim from src/pages/Menu.tsx
+    title: "Today's Menu",
+    description:
+      'Browse the full Holy Grills menu, flame grilled chicken, wings, kebabs and crispy sides, delivered hot across FUTA.',
+    path: '/menu',
+  },
+  '/events': {
+    title: 'Campus Events',
+    description:
+      'Events around campus: ticket tiers with live availability, QR check-in on the day and Holy Points for attending.',
+    path: '/events',
+  },
+  '/marketplace': {
+    title: 'Campus Marketplace',
+    description:
+      'The Holy Grills campus marketplace: vouchers, tickets, goodies and services listed by students and campus businesses.',
+    path: '/marketplace',
+  },
   '/terms': {
     title: 'Terms & Privacy',
     description:
@@ -108,4 +127,12 @@ export function headFor(path: string): { title: string; description: string; pat
 }
 
 /** The pre-rendered routes, in sitemap order. */
-export const PRERENDER_ROUTES = ['/', '/faq', '/our-story', '/terms'];
+export const PRERENDER_ROUTES = [
+  '/',
+  '/menu',
+  '/events',
+  '/marketplace',
+  '/faq',
+  '/our-story',
+  '/terms',
+];

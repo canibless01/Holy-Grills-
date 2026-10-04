@@ -120,3 +120,11 @@ project does not enable `noUnusedParameters`.
 | F5 | **8 frontend calls with no Flask route** (§3 of the verification report). | Same list as the Phase 3 contract gaps: implement the backend route or remove the frontend call. |
 | F6 | **`GET /challenges/:id` in `liveApi`** — no caller anywhere in the frontend. | Delete as dead code (I did not, because it is a public API method) or keep as a documented gap. |
 | F7 | **SSR** — you asked whether we already have server-side rendering. | We do **not**: the app is still a client-rendered SPA (empty `<div id="root">` + a JS bundle per route). Pre-rendering is a separate project — see `docs/SSR_EXPLAINER.md` for what it would take and the two viable routes. |
+
+Third pass (post-B6 decisions):
+
+| # | Was | Now |
+|---|---|---|
+| F8 | `Config.CORS_ORIGINS` was composed from env **plus a hardcoded origin list** that still named the retired `base44.app` host. It was dead config either way: `app/__init__.py` registers `CORS(app, origins="*")` | hardcoded list removed — origins are env-only now (`CORS_ORIGINS` / `ALLOWED_ORIGINS` / `FRONTEND_URL`), with a comment saying the list is not enforced until the app stops passing `origins="*"`. `holy-grills-backend/ENV_CONFIGURATION.md` and `README.md` updated to match: CORS stays `*` until deployment, then set the two variables **and** switch `CORS(...)` to the configured list |
+| F9 | React 18.3.1's stream encoder writes a full 2 KB view (zero padding included) whenever a multi-byte character does not fit the remaining space, so `/menu`'s pre-render contained two NUL bytes in place of ❤️‍🔥 | repaired in `src/entry-server.tsx` (trailing-NUL trim + a build-time assertion), guarded by a per-route "no NUL bytes" smoke check |
+| F10 | §6 item 1: `/menu`, `/events`, `/marketplace` were in `sitemap.xml` but pre-rendered nothing indexable | the campus picker (real `<h1>`, intro, campus list, bullets) is now pre-rendered for those three routes; `PRERENDER_ROUTES` is 7. See `docs/TRACK_B_SSR_PLAN.md`, post-B6 round |

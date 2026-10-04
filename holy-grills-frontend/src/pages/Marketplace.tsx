@@ -5,7 +5,11 @@ import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import MarketplaceSkeleton from '@/components/skeletons/MarketplaceSkeleton';
+import SEO from '@/components/SEO';
+import { metaForPath } from '@/seo/routeMeta';
 import MarketplaceCard from '@/components/marketplace/MarketplaceCard';
+/** Head data for /marketplace — the same object the pre-render writes. */
+const META = metaForPath('/marketplace');
 import SellItemModal from '@/components/marketplace/SellItemModal';
 import MarketplacePurchasesPanel from '@/components/marketplace/MarketplacePurchasesPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -71,6 +75,8 @@ export default function Marketplace() {
 
   return (
     <div className="space-y-5 animate-fade-in max-w-2xl mx-auto">
+      <SEO title={META.title} description={META.description} path={META.path} />
+
       <div className="flex items-center justify-between">
         <div>
           <span className="hg-eyebrow">Campus finds</span>

@@ -96,8 +96,8 @@ Copy `.env.example` to `.env` and fill in every **REQUIRED** value before starti
 | `APP_TAGLINE` | `Holy Grills FUTA` | Tagline used in email footers |
 | `FLASK_ENV` | `development` | `development` or `production` |
 | `FLASK_DEBUG` | `false` | Enable Flask debug mode |
-| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL for CORS and password-reset links |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed CORS origins |
+| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL: password-reset links, and added to `Config.CORS_ORIGINS` |
+| `CORS_ORIGINS` | *(unset)* | Comma-separated allowed CORS origins. **Not enforced yet** — `app/__init__.py` registers `CORS(app, origins="*")`; set this and switch that call before deploying |
 | `JWT_ACCESS_TOKEN_EXPIRES` | `3600` | Access token TTL in seconds (1 hour) |
 | `JWT_REFRESH_TOKEN_EXPIRES` | `2592000` | Refresh token TTL in seconds (30 days) |
 | `JWT_REFRESH_WINDOW_MINUTES` | `5` | Silent-rotation window — token is refreshed when fewer than this many minutes remain before expiry |
