@@ -64,6 +64,35 @@ row exists, so it never overwrites a value an admin has edited) and column-aware
   tier-driven values, kitchen_settings keys) so nobody seeds a value an edit
   cannot move.
 
+## The database validator — `hg_validate_system_setting`
+
+Applied on test 2 alongside the seed: a `BEFORE INSERT OR UPDATE` trigger on
+`system_settings` that range-checks numeric settings. An out-of-range or
+non-numeric value is refused with a sentence written for the person editing it,
+e.g. `flash_discount_pct must be between 0 and 1 (got 5)`.
+
+**Fractions vs percentages** — the one place the key names lie:
+
+| Kind | Keys | Range |
+|---|---|---|
+| Fraction | `flash_discount_pct` (0.5 = half price), `hp_unlock_rate_pct` (0.3 = 30% unlocked immediately) | **0–1** |
+| Percent | `squad_delivery_discount_pct`, `squad_order_discount_pct`, `squad_hp_bonus_pct`, `order_lock_default_discount_pct`, `order_lock_max_discount_pct` | **0–100** |
+
+Where the code is stricter than the trigger, the row's hint says so (the
+order-lock route honours only 1–50 for its default discount). The admin screen
+labels every one of these with its unit — on the row and in the editor
+(`AdminSystemSettings.tsx` → `UNITS`).
+
+**How the refusal reaches the admin.** Postgres reports a `RAISE` as code
+`P0001`, which the app-wide error handler can only turn into a generic 400/500 —
+that is why a bad value used to surface as "Something went wrong".
+`_validator_refusal` (`app/routes/admin_gifts.py`) recognises the validator's
+refusal on both settings write routes (`PATCH /admin/settings/<key>`,
+`POST /admin/settings`) and returns its sentence as the response's `error`, which
+the screen already toasts verbatim. Everything else — RLS denial, schema drift,
+the network — still goes to the global handler, so this is not a path for
+arbitrary database text. Covered by `tests/test_setting_validator_surfacing.py`.
+
 ## Permissions (this is why the migration stopped before)
 
 `require_settings_write_permission` (admin_gifts.py) — unchanged, and the rule to
