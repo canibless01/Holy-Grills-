@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Send, CalendarHeart } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';

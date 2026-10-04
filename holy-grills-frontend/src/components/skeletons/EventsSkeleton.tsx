@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the Events layout: header + tab toggle + filter pills + event cards. */

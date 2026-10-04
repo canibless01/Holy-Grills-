@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Timer } from 'lucide-react';
 
 // Live elapsed timer for a kitchen order ticket. Ticks every second from

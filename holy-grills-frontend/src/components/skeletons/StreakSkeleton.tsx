@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the Streak layout: title + hero card + week calendar + milestone cards. */

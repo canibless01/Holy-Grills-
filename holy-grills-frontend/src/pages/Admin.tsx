@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ShieldAlert, Flame, LogOut } from 'lucide-react';
+import { ShieldAlert, LogOut } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import BrandLogo from '@/components/BrandLogo';
 import AdminLayout from '@/components/admin/AdminLayout';

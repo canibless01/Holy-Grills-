@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, Flame, ExternalLink, LogOut, UtensilsCrossed, Bike, Search, X } from 'lucide-react';
+import { Menu, ExternalLink, LogOut, UtensilsCrossed, Bike, Search, X } from 'lucide-react';
 import AdminGlobalSearch from '@/components/admin/AdminGlobalSearch';
 import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 import InlineNotificationBell from '@/components/InlineNotificationBell';

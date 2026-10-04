@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the Rewards layout: HP bar + tier card + tab switcher + reward cards. */

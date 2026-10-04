@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';

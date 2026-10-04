@@ -1,4 +1,3 @@
-import React from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Flame, Wallet, Gift, CalendarCheck, Users, Store, Ticket, UserCog, BellRing,

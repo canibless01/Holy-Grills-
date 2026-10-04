@@ -1,4 +1,3 @@
-import React from 'react';
 import { Lock, ShieldAlert } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 

@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Generic detail-page loading state: back link + hero + body card + CTA. */

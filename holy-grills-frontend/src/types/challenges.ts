@@ -5,7 +5,7 @@
  * is registered and the frontend calls it — the code is authoritative here.
  * `GET /api/challenges/<id>` does not exist server-side (Phase 0 audit §5 M11).
  */
-import type { IsoDateTime, MutationResult, Uuid } from './common';
+import type { MutationResult, Uuid } from './common';
 
 /** A challenge/milestone row. */
 export interface Challenge {

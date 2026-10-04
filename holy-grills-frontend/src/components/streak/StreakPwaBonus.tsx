@@ -1,16 +1,6 @@
-import React from 'react';
 import { Smartphone, Bell, Gift, Check, Loader2 } from 'lucide-react';
 import { getSetting } from '@/lib/featureConfig';
 
-// Convert base64url VAPID key to Uint8Array for PushManager.subscribe
-const urlBase64ToUint8Array = (base64) => {
-  const padding = '='.repeat((4 - base64.length % 4) % 4);
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(b64);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
-};
 
 export default function StreakPwaBonus({ pwaStatus, onEnablePush, pushLoading }) {
   if (!pwaStatus) return null;

@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the HP education page: header + HP card + earn grid + tier list. */

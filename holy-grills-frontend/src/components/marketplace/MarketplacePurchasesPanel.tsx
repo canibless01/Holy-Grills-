@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Send, Loader2, Flag } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';

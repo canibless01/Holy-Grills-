@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Minus, Plus, Trash2, Flame, AlertTriangle, ChevronRight, Tag, Check, Users, Gift, Heart, X, Wallet as WalletIcon, Loader2 } from 'lucide-react';
+import { Minus, Plus, Trash2, Flame, AlertTriangle, ChevronRight, Heart, Wallet as WalletIcon } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira } from '@/lib/hgUtils';
-import { squadOrderMinItems, squadOrderMaxItems, squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct, squadOrdersEnabled } from '@/lib/appConfig';
+import { squadOrderDiscountEnabled, squadOrderDiscountPct } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
 import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import MascotStandee from '@/components/mascot/MascotStandee';
-import ModalBackdrop from '@/components/ModalBackdrop';
-import CreateSquadModal from '@/components/squads/CreateSquadModal';
 import Skeleton from '@/components/Skeleton';
 
 function CartSkeleton() {
@@ -34,51 +32,24 @@ function CartSkeleton() {
 
 export default function Cart() {
   const navigate = useNavigate();
-  const { cart, wallet, refreshCart, updateCartItem, removeFromCart, clearCart, addToCart, savedItems, toggleSavedItem, moveSavedToCart, removeSavedItem: removeSaved, refreshSavedItems, isAuthenticated: isAuthed, user, getSetting } = useHolyGrill();
+  const { cart, wallet, refreshCart, updateCartItem, removeFromCart, clearCart, savedItems, moveSavedToCart, removeSavedItem: removeSaved, refreshSavedItems, isAuthenticated: isAuthed } = useHolyGrill();
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('cart');
-  const [promoCode, setPromoCode] = useState('');
   const [promoResult, setPromoResult] = useState(null);
-  const [promoError, setPromoError] = useState(null);
-  const [validatingPromo, setValidatingPromo] = useState(false);
-  const [showSquad, setShowSquad] = useState(false);
   const [squadEnabled, setSquadEnabled] = useState(false);
   const [selectedSquadId, setSelectedSquadId] = useState(null);
-  const [squadsList, setSquadsList] = useState([]);
-  const [squadsLoading, setSquadsLoading] = useState(false);
-  const [showCreateSquad, setShowCreateSquad] = useState(false);
-  const [showFreeSide, setShowFreeSide] = useState(false);
-  const [freeSideCredits, setFreeSideCredits] = useState({ count: 0, expires_at: null });
 
   useEffect(() => {
     refreshCart().then(() => setLoading(false));
-    if (isAuthed) mockApi.rewards.getFreeSideCredits().then(setFreeSideCredits).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Squad selection reads from the Manage Your Squad ecosystem (liveApi.squads)
-  // — the SAME source the Squads page and checkout use, so data flows one way.
-  const loadSquads = useCallback(async () => {
-    setSquadsLoading(true);
-    try { setSquadsList(await mockApi.squads.list()); } catch { setSquadsList([]); }
-    setSquadsLoading(false);
-  }, []);
-  useEffect(() => { loadSquads(); }, [loadSquads]);
 
   const subtotal = cart?.subtotal || 0;
   const promoDiscount = promoResult?.calculated_discount || 0;
-  const squadMinItems = squadOrderMinItems();
-  const squadMaxItems = squadOrderMaxItems();
   const squadSubEnabled = squadOrderDiscountEnabled();
   const squadSubPct = squadSubEnabled ? squadOrderDiscountPct() : 0;
-  const squadDelEnabled = squadDeliveryDiscountEnabled();
-  const squadDeliveryPct = squadDelEnabled ? squadDeliveryDiscountPct() : 0;
   const squadItemCount = (cart?.items || []).reduce((s, ci) => s + (ci.quantity || 1), 0);
   const squadDiscount = squadEnabled && squadSubPct > 0 ? subtotal * (squadSubPct / 100) : 0;
-  const squadChipLabel = squadSubPct > 0 ? `${squadSubPct}% off` : squadDeliveryPct >= 100 ? 'Free delivery' : 'Split HP';
-  const squadFeatureOn = squadOrdersEnabled();
-  const squadEligible = squadItemCount >= squadMinItems && squadItemCount <= squadMaxItems;
-  const squadItemsToGo = Math.max(0, squadMinItems - squadItemCount);
   const total = Math.max(0, subtotal - promoDiscount - squadDiscount);
 
   const handleQty = async (itemId, currentQty, delta) => {
@@ -112,46 +83,6 @@ export default function Cart() {
   };
 
   const handleRemoveSaved = (saved) => { removeSaved(saved.id); };
-
-  // POST /orders/validate-promo (the confirmed-live route — the deprecated
-  // duplicate is NOT used) returns distinguishable error strings. Map the
-  // exact backend strings to friendlier copy; anything else shows verbatim.
-  const friendlyPromoError = (msg = '') => {
-    if (msg.includes('Promo code has expired')) return 'This promo code has expired.';
-    if (msg.includes('not yet active')) return "This code isn't active yet. Check its start date.";
-    if (msg.includes('reached its usage limit')) return 'This code has been fully claimed.';
-    if (msg.includes('maximum number of times')) return "You've hit the per-user limit for this code.";
-    if (msg.includes('Minimum order value')) return msg; // already carries the amount
-    if (msg.includes('not valid')) return "That code isn't valid for your order.";
-    return msg;
-  };
-
-  const handleValidatePromo = async () => {
-    if (!promoCode) return;
-    setValidatingPromo(true);
-    setPromoError(null);
-    try {
-      const result = await mockApi.orders.validatePromo({ code: promoCode, order_subtotal: subtotal });
-      setPromoResult(result);
-    } catch (e) { setPromoError(friendlyPromoError(e.message)); setPromoResult(null); }
-    setValidatingPromo(false);
-  };
-
-  const handleSquadClick = () => {
-    if (!squadFeatureOn) { toast({ title: 'Squad Orders are turned off', description: 'Check back soon.' }); return; }
-    if (squadItemCount < squadMinItems) { toast({ title: 'Your order is not valid for Squad Order', description: `Add ${squadItemsToGo} more item${squadItemsToGo !== 1 ? 's' : ''} to reach the ${squadMinItems}-item squad minimum.` }); return; }
-    if (squadItemCount > squadMaxItems) { toast({ title: `Squad orders are capped at ${squadMaxItems} items`, description: `Remove ${squadItemCount - squadMaxItems} item${squadItemCount - squadMaxItems !== 1 ? 's' : ''} to keep your squad order within the ${squadMaxItems}-item limit.` }); return; }
-    setShowSquad(true);
-  };
-
-  const handleConfirmSquad = (id) => {
-    if (!id) return;
-    setSelectedSquadId(id);
-    setSquadEnabled(true);
-    setShowSquad(false);
-    const sq = squadsList.find((s) => s.id === id);
-    toast({ title: 'Squad Order enabled', description: `Tagged to "${sq?.name || 'your squad'}". HP splits across the crew.` });
-  };
 
   const checkoutState = { promoResult, squadEnabled, squadId: squadEnabled ? selectedSquadId : null, total, subtotal };
 

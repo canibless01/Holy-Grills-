@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Save, Zap, Clock, Coins, Gift, Check } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';

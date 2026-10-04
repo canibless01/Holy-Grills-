@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Flame, Lock, Gift, Target, X, Check, History, GraduationCap, Sparkles, Crown, Zap, Clock, ChevronRight, Award, Download } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { getTierProgress, getTierProgressGradient, getTierOverallProgress } from '@/lib/hgUtils';
 import TierIcon from '@/components/TierIcon';
-import { getFreeSideOptions, getStreakRewardHp } from '@/lib/featureConfig';
-import { graduationHp, lowCodeInventoryThreshold, freeSideCreditsValidityDays, exclusiveSpinValidityDays } from '@/lib/appConfig';
+import { getStreakRewardHp } from '@/lib/featureConfig';
+import { graduationHp, lowCodeInventoryThreshold, freeSideCreditsValidityDays } from '@/lib/appConfig';
 import { expiryLabel } from '@/lib/rewardUtils';
 import { toast } from '@/components/ui/use-toast';
 import RewardsSkeleton from '@/components/skeletons/RewardsSkeleton';

@@ -1,7 +1,4 @@
-import React from 'react';
 import { Check, X, RotateCcw } from 'lucide-react';
-
-const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function StreakWeekCalendar({ week, completedThisWeek, cycleDays, missedThisWeek, allowedMisses }) {
   const pct = Math.min(100, (completedThisWeek / cycleDays) * 100);

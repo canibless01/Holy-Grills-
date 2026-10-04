@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { liveApi } from './liveApi';
 import { useHolyGrill } from './HolyGrillContext';
 import CampusGate from '@/components/CampusGate';

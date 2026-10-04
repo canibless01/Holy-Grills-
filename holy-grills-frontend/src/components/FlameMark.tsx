@@ -1,4 +1,3 @@
-import React from 'react';
 import { cn } from '@/lib/utils';
 
 // Brand flame mark — the HolyGrill mascot flame asset. Used everywhere a

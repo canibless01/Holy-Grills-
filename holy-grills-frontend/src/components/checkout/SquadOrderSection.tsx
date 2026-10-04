@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Users, ChevronDown, X, Plus, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 

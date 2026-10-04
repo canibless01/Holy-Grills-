@@ -1,4 +1,3 @@
-import React from 'react';
 import { useTierIcons } from '@/lib/tierIcons';
 import { TIER_MARK_ICONS } from '@/components/TierMarkIcons';
 

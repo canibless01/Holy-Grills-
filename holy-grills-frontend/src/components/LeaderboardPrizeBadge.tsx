@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { rankMedal } from '@/lib/rewardUtils';
 
 // Medal icon for a leaderboard rank, with a tap-to-open tooltip showing the

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Utensils, ChevronRight, X, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { getStorefrontSections } from '@/lib/storefrontMockData';

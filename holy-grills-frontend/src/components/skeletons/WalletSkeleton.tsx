@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the Wallet layout: title + two balance cards + virtual account + transactions. */

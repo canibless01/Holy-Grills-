@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { Bike, Power, ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { useSound } from '@/lib/SoundProvider';

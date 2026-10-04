@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Flame, Wallet as WalletIcon, TrendingUp, Lock, ChevronRight, ShoppingBag, Calendar, Trophy, Users, Clock, Timer } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -14,7 +14,7 @@ import TierIcon from '@/components/TierIcon';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { user, hpBalance, wallet, streak, refreshStreak } = useHolyGrill();
+  const { hpBalance, wallet, streak, refreshStreak } = useHolyGrill();
   const [recentOrders, setRecentOrders] = useState([]);
   const [orderLocks, setOrderLocks] = useState([]);
   const [rank, setRank] = useState(null);

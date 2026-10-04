@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Webhook, RefreshCw, Check, X, AlertTriangle, Clock } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';

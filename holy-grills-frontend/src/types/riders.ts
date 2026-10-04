@@ -1,7 +1,7 @@
 /**
  * Rider contract — /api/riders/* (riders.py).
  */
-import type { IsoDateTime, MutationResult, Naira, Uuid } from './common';
+import type { MutationResult, Naira, Uuid } from './common';
 import type { Order } from './orders';
 
 /** GET /api/riders/my-batch. */

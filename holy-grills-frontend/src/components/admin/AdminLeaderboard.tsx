@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Trophy, Gift, Check, Clock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import LoadingSpinner from '@/components/LoadingSpinner';

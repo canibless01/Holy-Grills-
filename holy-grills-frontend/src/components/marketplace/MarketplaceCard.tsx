@@ -1,4 +1,3 @@
-import React from 'react';
 import { Flame, Package } from 'lucide-react';
 import { formatNaira } from '@/lib/hgUtils';
 import { lowCodeInventoryThreshold } from '@/lib/appConfig';

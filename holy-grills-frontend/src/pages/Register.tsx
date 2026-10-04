@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { liveApi } from '@/lib/liveApi';
@@ -12,7 +12,6 @@ const ROLE_HOME = { admin: '/admin', super_admin: '/admin', kitchen: '/kitchen',
 const STUDENT_HOME = '/';
 
 export default function Register() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { register } = useHolyGrill();
   const [form, setForm] = useState({

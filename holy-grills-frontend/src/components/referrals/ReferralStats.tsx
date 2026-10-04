@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Users, Flame, UserCheck } from 'lucide-react';
 import type { ReferralStats as ReferralStatsData } from '@/types/referrals';

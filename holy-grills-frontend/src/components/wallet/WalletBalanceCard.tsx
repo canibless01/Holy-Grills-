@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowDownLeft } from 'lucide-react';
 import CountUp from '@/components/CountUp';
 import { formatNaira } from '@/lib/hgUtils';

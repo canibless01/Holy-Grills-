@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatNaira } from '@/lib/hgUtils';
-import { squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct, squadOrderMinItems, squadOrderMaxItems, squadOrdersEnabled } from '@/lib/appConfig';
+import { squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
 import FreeSideCreditModal from '@/components/FreeSideCreditModal';
 import SquadOrderButton from '@/components/checkout/SquadOrderButton';
 import OffCampusMap from '@/components/OffCampusMap';
-import FlameMark from '@/components/FlameMark';
 import DeliveryZonesInfo from '@/components/DeliveryZonesInfo';
 import { useSound } from '@/lib/SoundProvider';
 import Skeleton from '@/components/Skeleton';
@@ -29,7 +28,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
   const passed = location.state || {};
-  const { cart, wallet, refreshUser, addToCart, isAuthenticated, user, getSetting } = useHolyGrill();
+  const { cart, wallet, refreshUser, isAuthenticated } = useHolyGrill();
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
@@ -110,7 +109,6 @@ export default function Checkout() {
   const squadDeliveryPct = squadDelEnabled ? squadDeliveryDiscountPct() : 0;
   const squadDiscount = squadSubPct > 0 ? subtotal * (squadSubPct / 100) : 0;
   const squadItemCount = (cart?.items || []).reduce((s, ci) => s + (ci.quantity || 1), 0);
-  const squadEligible = squadOrdersEnabled() && squadItemCount >= squadOrderMinItems() && squadItemCount <= squadOrderMaxItems();
   const selectedGlobalAddons = globalAddons.filter((a) => selectedGlobalAddonIds.includes(a.id));
   const globalAddonsTotal = selectedGlobalAddons.reduce((s, a) => s + (Number(a.price) || 0), 0);
   const effectiveDeliveryFee = Math.round(deliveryFee * (1 - squadDeliveryPct / 100));

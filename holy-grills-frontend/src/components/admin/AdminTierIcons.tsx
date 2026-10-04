@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Save, Award } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Card, Pill, Toggle } from './AdminShared';

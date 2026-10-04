@@ -1,4 +1,3 @@
-import React from 'react';
 import { Package, Clock, Zap, Lock, ShieldCheck } from 'lucide-react';
 
 // Read-only visual snapshot of kitchen limits. Kitchen staff can VIEW these

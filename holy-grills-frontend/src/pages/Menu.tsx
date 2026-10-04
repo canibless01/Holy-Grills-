@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Clock, AlertTriangle, Gift, Users, ChevronRight } from 'lucide-react';
+import { Search, X, Gift, Users, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { mockApi } from '@/lib/mockApi';
@@ -37,8 +37,6 @@ export default function Menu() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [items, setItems] = useState([]);
-  const [kitchenCapacity, setKitchenCapacity] = useState(null);
-  const [windowStatus, setWindowStatus] = useState(null);
   const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState(null);
   const [searchInput, setSearchInput] = useState('');
@@ -55,8 +53,6 @@ export default function Menu() {
   // Load static metadata on mount
   useEffect(() => {
     mockApi.menu.getCategories().then(setCategories).catch(() => {});
-    mockApi.orders.getDeliveryWindowStatus().then(setWindowStatus).catch(() => {});
-    mockApi.menu.getKitchenCapacity().then(setKitchenCapacity).catch(() => {});
     if (isAuthed) {
       mockApi.rewards.getFreeSideCredits().then((res) => {
         const count = res?.count ?? res?.credits ?? (Array.isArray(res) ? res.length : 0);
@@ -104,9 +100,6 @@ export default function Menu() {
       toast({ title: 'Could not add item', description: e.message || 'Please try again.', variant: 'destructive' });
     }
   };
-
-  const open = windowStatus?.is_open;
-  const atCapacity = kitchenCapacity?.is_at_capacity ?? kitchenCapacity?.at_capacity ?? false;
 
   return (
     <div className="space-y-3 animate-fade-in">

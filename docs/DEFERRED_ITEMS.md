@@ -42,3 +42,19 @@ in Phase 6, not silent escapes:
 - `components/SquadMembersPanel.tsx` — `initialMembers?: any[]`
 - `pages/Checkout.tsx` — fee-calc `body` and submit `payload` (`Record<string, any>`)
 - `pages/Rewards.tsx` — `ChallengesEnvelope` rows (`badges/challenges_*: any[]`)
+
+## E. Phase 6a — dead code found but deliberately NOT deleted
+
+Everything below was verified unreferenced by `tsc --noUnusedLocals --noUnusedParameters`, but is
+left in place because removing it is a product decision or needs a cross-page contract check.
+
+| # | Where | Finding | Why it was left |
+|---|---|---|---|
+| E1 | `components/storefront/EarlySupporters.tsx`, `components/storefront/HowItsMade.tsx`, `components/MenuListCard.tsx`, `components/Sparkline.tsx` | No static import anywhere in `src/`. | The storefront renders sections from a dynamic `section_type` registry (`how_its_made` is a real admin section id — `AdminStorefront.tsx:57`), so "no static import" is not proof of deadness. Confirm against the section renderer before deleting. |
+| E2 | `components/marketplace/MarketplacePurchasesPanel.tsx:47` | `const tone = STATUS_TONE[p.status]` is computed but never applied to the row — status colors are lost. | Looked like a real (pre-existing) bug rather than dead code. Kept the line so the intent stays visible; fix belongs to Phase 6b (it is a UI change). |
+| E3 | `pages/Cart.tsx` | Inert promo/squad remnant: `promoResult` and `squadEnabled` can no longer be set (their setters died with the removed handlers), so `promoDiscount`/`squadDiscount` are always 0 and `total === subtotal`. `checkoutState` still forwards `promoResult`/`squadEnabled`/`squadId` to Checkout. | Promo handling now lives in Checkout (`Checkout.tsx:187`, `:235`, `:565`), so this is leftover wiring — but it is also the Cart→Checkout navigation contract. Delete it together with a Checkout-side check, not piecemeal. |
+| E4 | `pages/Home.tsx:41`, `components/ui/use-toast.tsx:40`, `lib/liveApi.ts:955-956` | Write-only `loading` state (setter used, value never read); `_clearFromRemoveQueue` (canonical shadcn toast internals, underscore-prefixed on purpose); `eventId` params kept in the ticket-tier signatures with an explicit comment that the URL omits them. | Intentional/idiomatic or signature-level, not dead code. |
+
+Unused *parameters* reported by the probe (`ShareSheet` platform builders, `TestimonialSlider`,
+`toast.tsx`, `AdminLeaderboard.fulfillReward`) were left alone: they are function signatures, and the
+project does not enable `noUnusedParameters`.

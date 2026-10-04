@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 
 // Accessible toggle switch. `disabled` locks it while a save is in flight.

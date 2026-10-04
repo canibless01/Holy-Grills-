@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { DeliveryWindow, DeliveryWindowsStatus } from '@/types/orders';
 

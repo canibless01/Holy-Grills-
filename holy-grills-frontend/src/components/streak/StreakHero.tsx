@@ -1,4 +1,3 @@
-import React from 'react';
 import { Flame } from 'lucide-react';
 import CountUp from '@/components/CountUp';
 import { getStreakRewardHp } from '@/lib/featureConfig';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, MapPin, X, Trash2, Edit2, Check } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { findNearestGate } from '@/lib/deliveryUtils';

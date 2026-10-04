@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Flame, ArrowDownLeft, ArrowUpRight, Unlock, Clock } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
-import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { formatDate, formatDateTime } from '@/lib/hgUtils';
+import { formatDateTime } from '@/lib/hgUtils';
 import HpHistorySkeleton from '@/components/skeletons/HpHistorySkeleton';
 import MascotStandee from '@/components/mascot/MascotStandee';
 
@@ -17,13 +16,6 @@ const TYPE_LABELS = {
   grant: 'Granted',
   decay: 'Decayed',
 };
-const TYPE_ICONS = { earn: ArrowDownLeft, spend: ArrowUpRight, unlock: Unlock, expire: Clock };
-
-// Lightweight icon helper.
-const Icon = ({ type }) => {
-  const C = TYPE_ICONS[type] || (type === 'spend' || type === 'transfer' ? ArrowUpRight : ArrowDownLeft);
-  return <C className="w-4 h-4" />;
-};
 
 /**
  * HpHistoryLedger — the confirmed HP history ledger. Every HP transaction
@@ -33,7 +25,6 @@ const Icon = ({ type }) => {
  * (spent/decayed).
  */
 export default function HpHistoryLedger() {
-  const { refreshHp } = useHolyGrill();
   const [txns, setTxns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');

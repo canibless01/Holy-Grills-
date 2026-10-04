@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Flame, Gift, TrendingUp, Calendar, Star, Lock, ChevronRight, HelpCircle, Send } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { isFeatureEnabled } from '@/lib/featureConfig';
-import { hpUnlockRatePct, hpPerNairaFood } from '@/lib/appConfig';
 import { getTierProgress } from '@/lib/hgUtils';
 import HpDisplay from '@/components/HpDisplay';
 import HpHistoryLedger from '@/components/HpHistoryLedger';
@@ -24,11 +23,6 @@ export default function HpEducation() {
   const [showTransfer, setShowTransfer] = useState(false);
   const [backendTiers, setBackendTiers] = useState(null);
   const hpTransferEnabled = isFeatureEnabled('hp_transfer', true);
-  const unlockPct = Math.round(hpUnlockRatePct() * 100);
-  // Unlock = food_spend × HP_PER_NAIRA_FOOD × unlock_rate_pct.
-  // Per ₦1,000: 1000 × 0.1 × 0.30 = 30 HP (not 300 — the earn rate is the multiplier).
-  const hpPerThousand = Math.round(1000 * hpPerNairaFood() * hpUnlockRatePct());
-
   useEffect(() => {
     liveApi.hp.getTiers().then(setBackendTiers).catch(() => setBackendTiers(null));
   }, []);

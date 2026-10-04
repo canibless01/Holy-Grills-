@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Package, RotateCcw, Ban, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, timeAgo } from '@/lib/hgUtils';

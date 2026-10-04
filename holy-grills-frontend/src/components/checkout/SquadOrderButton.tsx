@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Users, ChevronDown } from 'lucide-react';
 import { squadOrderMinItems, squadOrderMaxItems, squadOrdersEnabled } from '@/lib/appConfig';
 import SquadOrderSection from '@/components/checkout/SquadOrderSection';

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, ChevronRight, Flame, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { X, ChevronRight, Sparkles } from 'lucide-react';
 import { ADMIN_GROUPS as GROUPS } from '@/lib/adminSections';
 import BrandLogo from '@/components/BrandLogo';
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { MapPin, ChevronDown, Check } from 'lucide-react';
 import { useCampus } from '@/lib/campusContext';
 import { useHolyGrill } from '@/lib/HolyGrillContext';

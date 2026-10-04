@@ -1,5 +1,4 @@
-import React from 'react';
-import { Flame, Send, Lock } from 'lucide-react';
+import { Send, Lock } from 'lucide-react';
 import CountUp from '@/components/CountUp';
 
 export default function WalletHpCard({ hpBalance, onSend, transferEnabled, deliveredCount }) {

@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Boxes, Plus, Minus, AlertTriangle, History, PackagePlus, PackageMinus, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Boxes, Plus, Minus, AlertTriangle, History, PackagePlus, PackageMinus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
-import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import {
-  Card, Skeleton, EmptyState, SectionTitle, StatTile, Modal, Field, TextInput, Pill, body,
+  Card,
+  Skeleton,
+  EmptyState,
+  SectionTitle,
+  StatTile,
+  Modal,
+  Field,
+  TextInput,
+  Pill,
 } from './ui/AdminKit';
 
 const USAGE_TYPES = [

@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { UserCheck, Clock, User } from 'lucide-react';
 import { timeAgo } from '@/lib/hgUtils';

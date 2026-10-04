@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Check, Users, Trophy, MapPin, Ban, RotateCcw } from 'lucide-react';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import KitchenTimer from '@/components/kitchen/KitchenTimer';

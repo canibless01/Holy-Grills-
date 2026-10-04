@@ -1,9 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import {
-  DollarSign, ShoppingBag, Users, Flame, Download, Calendar, RefreshCw,
-  TrendingUp, Gift, Store, ShoppingCart, AlertCircle, Building2, Plus,
+  DollarSign,
+  ShoppingBag,
+  Users,
+  Flame,
+  Download,
+  Calendar,
+  TrendingUp,
+  Gift,
+  Store,
+  ShoppingCart,
+  Building2,
+  Plus,
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';

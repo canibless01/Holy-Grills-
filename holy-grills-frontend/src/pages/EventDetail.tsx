@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ChevronLeft, Calendar, MapPin, Flame, Users, Ticket, Check, QrCode, Camera, Wallet, CreditCard, Info, Loader2, Download, ChevronRight } from 'lucide-react';
+import { ChevronLeft, Calendar, MapPin, Flame, Users, Ticket, Check, QrCode, Camera, Info, Loader2, Download, ChevronRight } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatDateTime, formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import EventDetailSkeleton from '@/components/skeletons/EventDetailSkeleton';
 import EventCheckInScanner from '@/components/EventCheckInScanner';
-import ModalPortal from '@/components/ModalPortal';
 import RegisterModal from '@/components/events/RegisterModal';
 
 export default function EventDetail() {
@@ -17,7 +16,7 @@ export default function EventDetail() {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tiers, setTiers] = useState([]);
-  const [selectedTier, setSelectedTier] = useState(null);
+  const [selectedTier] = useState(null);
   const [showRegister, setShowRegister] = useState(false);
   const [ticket, setTicket] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -91,7 +90,6 @@ export default function EventDetail() {
   const hpReward = event?.hp_per_attendee ?? event?.hp_reward ?? 0;
   const isFree = !event?.is_paid || price === 0;
   const effPrice = selectedTier ? (selectedTier.price_naira ?? 0) : price;
-  const effHp = selectedTier ? (selectedTier.price_hp ?? 0) : (event?.hp_required ?? 0);
 
   const handleScannedToken = async (qrToken) => {
     setShowScanner(false);

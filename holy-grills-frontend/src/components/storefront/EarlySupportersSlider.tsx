@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
 import { getEarlySupporters } from '@/lib/storefrontMockData';
 

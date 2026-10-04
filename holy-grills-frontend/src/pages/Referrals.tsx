@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -8,7 +7,7 @@ import { referralHp } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
 import ReferralCodeCard from '@/components/referrals/ReferralCodeCard';
 import ReferralStats from '@/components/referrals/ReferralStats';
-import ReferralMilestones, { MILESTONES } from '@/components/referrals/ReferralMilestones';
+import ReferralMilestones from '@/components/referrals/ReferralMilestones';
 import ReferredFriends from '@/components/referrals/ReferredFriends';
 import ShareSheet from '@/components/ShareSheet';
 import ReferralsSkeleton from '@/components/skeletons/ReferralsSkeleton';

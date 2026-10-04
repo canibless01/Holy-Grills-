@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Save, Plus, Trash2, Image as ImageIcon, GripVertical, X } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Save, Plus, Trash2, Image as ImageIcon, X } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
@@ -17,8 +17,6 @@ import { toast } from '@/components/ui/use-toast';
 //   'home'   → homepage mid-page banners
 //   'menu'   → menu page banners
 //   'checkout' → checkout banners
-const PLACEMENTS = ['hero', 'home', 'menu', 'checkout'];
-
 export default function AdminBanners({ placement = 'home' }) {
   const [banners, setBanners] = useState([]);
   const [busy, setBusy] = useState(null);

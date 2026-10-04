@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
@@ -112,9 +112,6 @@ const FLASH_BADGE = {
   live: { icon: Flame, label: '🔥 Live', tone: 'flame' },
   ended: { icon: Clock, label: '⏰ Ended', tone: 'cocoa' },
 };
-
-// Convert a datetime-local value to ISO for the API.
-const toISO = (val) => (val ? new Date(val).toISOString() : null);
 
 export default function AdminRewards() {
   const [tab, setTab] = useState('rewards');

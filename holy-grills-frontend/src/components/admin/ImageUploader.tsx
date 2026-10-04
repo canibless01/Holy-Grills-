@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { UploadCloud, X, Loader2, ImageOff } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
 

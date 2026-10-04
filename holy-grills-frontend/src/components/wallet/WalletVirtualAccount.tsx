@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Building2, Copy, Check } from 'lucide-react';
 import { walletTopupMin, walletTopupHp } from '@/lib/appConfig';
 

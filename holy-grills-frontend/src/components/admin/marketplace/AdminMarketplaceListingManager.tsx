@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Upload, Loader2, Package, MapPin } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
-import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { useCampus } from '@/lib/campusContext';
 import type { ListingAvailabilityPayload } from '@/types/marketplace';

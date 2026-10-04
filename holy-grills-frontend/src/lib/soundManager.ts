@@ -18,7 +18,7 @@
  * Sound names are validated against SOUND_NAMES — see BUILDER_RULES.md.
  * ============================================================================
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 const STORAGE_KEY = 'hg_sound_enabled';
 let audioCtx = null;

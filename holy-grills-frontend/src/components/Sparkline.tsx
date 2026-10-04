@@ -1,4 +1,3 @@
-import React from 'react';
 import { ResponsiveContainer, Area, AreaChart, Dot } from 'recharts';
 
 /**

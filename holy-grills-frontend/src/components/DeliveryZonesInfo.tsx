@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { MapPin, ChevronDown, Clock } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { formatNaira } from '@/lib/hgUtils';

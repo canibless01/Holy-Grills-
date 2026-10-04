@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BellOff, CheckCheck, Settings, ArrowLeft } from 'lucide-react';
+import { CheckCheck, Settings, ArrowLeft } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import NotificationItem from '@/components/notifications/NotificationItem';
 import NotificationsSkeleton from '@/components/skeletons/NotificationsSkeleton';

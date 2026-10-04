@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Home, Menu, LayoutDashboard, ClipboardList, Award } from 'lucide-react';

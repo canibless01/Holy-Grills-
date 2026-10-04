@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * TierMarkIcons — four inline SVG tier marks (ember / flame / blaze / holy).

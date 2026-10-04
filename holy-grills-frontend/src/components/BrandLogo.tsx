@@ -1,4 +1,3 @@
-import React from 'react';
 import { MASCOTS } from '@/lib/mascots';
 
 /**

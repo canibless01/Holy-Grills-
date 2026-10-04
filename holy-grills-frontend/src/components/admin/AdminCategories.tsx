@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Modal, Field, TextInput, Toggle, Pill } from './AdminShared';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { UtensilsCrossed, RefreshCw, Search, Calendar, Users, Phone, Mail, DollarSign, StickyNote, X } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDate } from '@/lib/hgUtils';

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Users, UserPlus, UserMinus, Mail, Loader2, Check, X } from 'lucide-react';
+import { ChevronLeft, Users, UserPlus, UserMinus, Mail, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDate, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';

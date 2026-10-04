@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Search, X, ArrowRight, LayoutGrid } from 'lucide-react';
 import { matchSections } from '@/lib/adminSections';
 

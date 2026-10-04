@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the Marketplace layout: header + search + filter pills + 2-col card grid. */

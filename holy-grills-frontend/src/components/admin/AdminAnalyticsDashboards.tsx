@@ -4,8 +4,21 @@ import {
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import {
-  Clock, Layers, MapPin, Users, GraduationCap, Activity, CreditCard, TrendingUp,
-  Flame, DollarSign, Package, AlertCircle, CalendarDays, Radio, Share2, Repeat,
+  Clock,
+  Layers,
+  MapPin,
+  Users,
+  GraduationCap,
+  Activity,
+  CreditCard,
+  TrendingUp,
+  Flame,
+  DollarSign,
+  AlertCircle,
+  CalendarDays,
+  Radio,
+  Share2,
+  Repeat,
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
@@ -14,9 +27,6 @@ import { Card, Skeleton, EmptyState, SectionTitle, StatTile, body } from './ui/A
 const COLORS = ['#E70E0E', '#F2B84B', '#6A1F00', '#FF9500', '#A8301A', '#C47B3A'];
 const TIER_COLORS = { ember: '#A8301A', flame: '#E70E0E', blaze: '#F2B84B', holy: '#FFD700' };
 const TIER_LABELS = { ember: 'Ember', flame: 'Flame', blaze: 'Blaze', holy: 'Holy' };
-
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 
 // Shared chart tooltip style
 const tooltipStyle = { borderRadius: 12, fontSize: 12, border: '1px solid hsl(36 35% 82%)' };

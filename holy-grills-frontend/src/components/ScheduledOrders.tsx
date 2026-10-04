@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Clock, Calendar, X } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { formatDateTime, formatNaira } from '@/lib/hgUtils';

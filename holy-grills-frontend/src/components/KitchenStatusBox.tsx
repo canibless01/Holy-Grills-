@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { ICONS, ICON_SIZES } from '@/config/icons';
 import { liveApi } from '@/lib/liveApi';
 import { computeNextOpening } from '@/lib/kitchenSchedule';

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Star, Search, RefreshCw, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
-import { formatNaira, formatDateTime } from '@/lib/hgUtils';
+import { formatDateTime } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Share2, Award } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { isFeatureEnabled } from '@/lib/featureConfig';

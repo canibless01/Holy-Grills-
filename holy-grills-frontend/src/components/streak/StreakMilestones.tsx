@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Target, Award, Flame, Check, Download, Bell } from 'lucide-react';
 import { isStandalone, hasInstallPrompt, triggerInstall } from '@/lib/installPromptStore';
 import { toast } from '@/components/ui/use-toast';

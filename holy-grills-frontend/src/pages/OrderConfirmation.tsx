@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Flame, Package, MapPin, CreditCard, Users, Share2, ChevronRight, Clock } from 'lucide-react';
+import { Check, Flame, Package, MapPin, CreditCard, Users, Share2, Clock } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { playSound } from '@/lib/soundManager';

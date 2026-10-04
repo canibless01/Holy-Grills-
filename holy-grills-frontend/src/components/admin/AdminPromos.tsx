@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Pencil, BarChart3, Power, Tag, AlertCircle, Infinity as InfinityIcon } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Pencil, CalendarDays, Globe } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatDate } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
-import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, body } from './ui/AdminKit';
+import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill } from './ui/AdminKit';
 
 const PERIOD_TYPES = [
   { value: 'semester', label: 'Semester' },

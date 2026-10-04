@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageCircle, X } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { liveApi } from '@/lib/liveApi';

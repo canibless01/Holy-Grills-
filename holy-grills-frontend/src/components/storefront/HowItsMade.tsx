@@ -1,4 +1,3 @@
-import React from 'react';
 import { Leaf, Flame, Clock, Truck } from 'lucide-react';
 import FlameMark from '@/components/FlameMark';
 

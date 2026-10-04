@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChefHat, ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
+import { ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import BrandLogo from '@/components/BrandLogo';
 import { clearTokens } from '@/lib/apiClient';

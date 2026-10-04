@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Flame, ChevronLeft, Plus, Minus, Check, AlertCircle, ShoppingCart, Heart, Star } from 'lucide-react';

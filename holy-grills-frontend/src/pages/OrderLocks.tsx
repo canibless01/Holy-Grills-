@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Lock, Clock, Flame, X, Check, Calendar, RefreshCw, Gift } from 'lucide-react';
+import { Lock, Clock, Flame, X, Calendar, RefreshCw, Gift } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { orderLockMaxReschedules } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
@@ -117,7 +117,6 @@ export default function OrderLocks() {
     );
   }
 
-  const today = new Date().toISOString().split('T')[0];
   const dateOptions = (days) => Array.from({ length: days }).map((_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i + 1); return d.toISOString().split('T')[0];
   });

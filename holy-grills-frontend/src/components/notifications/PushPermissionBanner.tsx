@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, BellRing, BellOff, Loader2 } from 'lucide-react';
-import { subscribeToWebPush, isWebPushSupported } from '@/lib/webPush';
+import { subscribeToWebPush } from '@/lib/webPush';
 
 // Browser push-permission status banner. The preference toggles (push_enabled)
 // are the backend-backed part of this screen; this banner reflects the

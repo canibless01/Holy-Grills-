@@ -10,7 +10,6 @@
  */
 import { useEffect, useState } from 'react';
 import { Download, X, Share2, Plus, Flame } from 'lucide-react';
-import APP_CONFIG from '@/config/app.config';
 
 const DISMISS_KEY = 'hg_install_dismissed';
 

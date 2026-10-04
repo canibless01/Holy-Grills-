@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Check, Share2, Sparkles } from 'lucide-react';
 import { referralHp } from '@/lib/appConfig';

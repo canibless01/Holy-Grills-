@@ -1,4 +1,3 @@
-import React from 'react';
 import { Flame, MapPin } from 'lucide-react';
 import { useCampus } from '@/lib/campusContext';
 

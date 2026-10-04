@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, X, AlertCircle, Keyboard } from 'lucide-react';
 import ModalPortal from '@/components/ModalPortal';
 

@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import FlameMark from '@/components/FlameMark';
 import MascotStandee from '@/components/mascot/MascotStandee';

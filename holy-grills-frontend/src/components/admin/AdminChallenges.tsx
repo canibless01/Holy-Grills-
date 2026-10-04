@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Pencil, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
-import { Field, TextInput, Card, Pill, Toggle, Modal, SectionHeader } from './AdminShared';
+import { Field, TextInput, Card, Pill, Toggle, Modal } from './AdminShared';
 
 // Trigger types map 1:1 to the backend's milestone verification logic.
 const TRIGGER_TYPES = [

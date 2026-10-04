@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Flame, Wallet, Store, Package, Check } from 'lucide-react';
+import { ChevronLeft, Flame, Wallet, Store, Package } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatNaira } from '@/lib/hgUtils';

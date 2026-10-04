@@ -8,7 +8,6 @@
  */
 import type { IsoDate, IsoDateTime, MutationResult, Naira, Uuid } from './common';
 import type { HpTransaction } from './hp';
-import type { Order } from './orders';
 import type { WalletTransaction } from './wallet';
 import type { UserRole } from './auth';
 

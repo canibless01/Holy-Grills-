@@ -1,4 +1,3 @@
-import React from 'react';
 import Skeleton from '@/components/Skeleton';
 
 /** Previews the Dashboard layout: greeting + streak card + stat tiles + orders + quick actions. */

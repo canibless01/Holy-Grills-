@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronRight, TrendingUp, Gift, Mail, Check, Trophy, Zap, Loader2, Flame } from 'lucide-react';
@@ -35,7 +35,7 @@ const HOLY_POINTS_FEATURES = [
 
 export default function Home() {
   const navigate = useNavigate();
-  const { user, hpBalance, addToCart, isAuthenticated, streak } = useHolyGrill();
+  const { hpBalance, addToCart, isAuthenticated, streak } = useHolyGrill();
   const [kitchenStatus, setKitchenStatus] = useState(null);
   const [featuredItems, setFeaturedItems] = useState([]);
   const [loading, setLoading] = useState(true);

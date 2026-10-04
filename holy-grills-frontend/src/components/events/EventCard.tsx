@@ -1,4 +1,3 @@
-import React from 'react';
 import { Calendar, MapPin, Flame, Star } from 'lucide-react';
 import { formatDateTime, formatNaira } from '@/lib/hgUtils';
 

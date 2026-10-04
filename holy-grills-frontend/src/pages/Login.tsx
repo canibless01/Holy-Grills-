@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Check, Eye, EyeOff } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Flame } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 
 // Domain 1 — unified auth shell. Every auth surface (Login, Register,
