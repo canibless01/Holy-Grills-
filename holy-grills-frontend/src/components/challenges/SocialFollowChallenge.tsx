@@ -22,7 +22,7 @@ export default function SocialFollowChallenge({ challenge, onClaimed }) {
     try {
       const res = await liveApi.challenges.socialFollow({ social_link: link || undefined });
       const hp = res?.hp_awarded ?? challenge?.hp_awarded ?? 0;
-      toast({ title: msg('FE_SOCIAL_FOLLOW_CHALLENGE_FOLLOW_CLAIMED', '🎉 Follow claimed!'), description: `+${hp} HP added.` });
+      toast({ title: msg('FE_SOCIAL_FOLLOW_CHALLENGE_FOLLOW_CLAIMED', '🎉 Follow claimed!'), description: msg('FE_SOCIAL_FOLLOW_CHALLENGE_HP_HP_ADDED', '+{hp} HP added.', { hp: hp }) });
       onClaimed?.(challenge);
     } catch (e) {
       toast({ title: msg('FE_SOCIAL_FOLLOW_CHALLENGE_COULD_NOT_CLAIM', 'Could not claim'), description: e.message, variant: 'destructive' });

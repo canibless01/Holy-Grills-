@@ -99,7 +99,7 @@ export default function AdminExclusiveSpin() {
       } else {
         await mockApi.admin.createExclusiveSpinTemplateItem(body);
       }
-      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_PRIZE_SAVED', '✅ Prize saved'), description: `"${item.name}" updated in the exclusive spin template.` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_PRIZE_SAVED', '✅ Prize saved'), description: msg('FE_ADMIN_EXCLUSIVE_SPIN_NAME_UPDATED_IN_THE_EXCLUSIVE_SPIN', '"{name}" updated in the exclusive spin template.', { name: item.name }) });
       setEditItem(null); setAdding(false);
       await load();
     } catch (e) {
@@ -125,7 +125,7 @@ export default function AdminExclusiveSpin() {
     setSavingCost(true);
     try {
       await mockApi.admin.updateExclusiveSpinExtraCost({ value: Number(extraCost) });
-      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_EXTRA_SPIN_COST_UPDATED', '✅ Extra spin cost updated'), description: `Extra spins now cost ${extraCost} HP.` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_EXTRA_SPIN_COST_UPDATED', '✅ Extra spin cost updated'), description: msg('FE_ADMIN_EXCLUSIVE_SPIN_EXTRA_SPINS_NOW_COST_EXTRA_COST_HP', 'Extra spins now cost {extra_cost} HP.', { extra_cost: extraCost }) });
     } catch (e) {
       toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
@@ -136,7 +136,7 @@ export default function AdminExclusiveSpin() {
     setSavingValidity(true);
     try {
       await mockApi.admin.updateExclusiveSpinValidityDays({ value: Number(validityDays) });
-      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_VALIDITY_UPDATED', '✅ Validity updated'), description: `Exclusive spin rewards now expire after ${validityDays} days.` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_VALIDITY_UPDATED', '✅ Validity updated'), description: msg('FE_ADMIN_EXCLUSIVE_SPIN_EXCLUSIVE_SPIN_REWARDS_NOW_EXPIRE_AFTER', 'Exclusive spin rewards now expire after {validity_days} days.', { validity_days: validityDays }) });
     } catch (e) {
       toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }

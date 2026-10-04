@@ -220,6 +220,71 @@ def _fetch_user_name(user_id: str) -> str:
         return ""
 
 
+
+# Where a notification opens, by type, when the caller did not say. Most
+# callers pass template_data and nothing else, so without this every in-app row
+# and every push was a dead end. A caller's explicit action_url always wins.
+#
+# Order matters: the first prefix that matches wins, so `squad_order_ready`
+# (an order) is listed before `squad_` (the squad page), and `order_streak` /
+# `order_lock*` before `order_`.
+_ACTION_URL_PREFIXES = (
+    ("rider_", "/rider"),
+    ("kitchen_", "/kitchen"),
+    ("squad_order", "/orders/{order_id}"),
+    ("guest_order", "/orders/{order_id}"),
+    ("scheduled_order", "/orders/{order_id}"),
+    ("order_streak", "/streak"),
+    ("order_lock", "/order-locks"),
+    ("order_", "/orders/{order_id}"),
+    ("review_", "/orders/{order_id}"),
+    ("share_", "/orders/{order_id}"),
+    ("abandoned_cart", "/cart"),
+    ("wallet_", "/wallet"),
+    ("hp_transfer", "/rewards"),
+    ("hp_gift", "/rewards"),
+    ("hp_", "/rewards"),
+    ("referral_", "/referrals"),
+    ("reward_", "/rewards"),
+    ("flash_sale_", "/rewards"),
+    ("exclusive_spin", "/rewards"),
+    ("prize_fulfilment", "/rewards"),
+    ("tier_", "/rewards"),
+    ("birthday_", "/rewards"),
+    ("winback_", "/rewards"),
+    ("login_streak", "/streak"),
+    ("checkin_", "/streak"),
+    ("event_", "/events"),
+    ("catering_", "/events"),
+    ("vendor_", "/marketplace"),
+    ("marketplace_", "/marketplace"),
+    ("squad_", "/squads"),
+    ("leaderboard", "/leaderboard"),
+    ("hall_of_fame", "/hall-of-fame"),
+    ("account_", "/profile"),
+    ("welcome", "/profile"),
+    ("email_verification", "/profile"),
+    ("password_", "/profile"),
+)
+
+
+def default_action_url(notif_type: str, data: dict = None) -> str:
+    """Path a notification should open, or None when the type has no page.
+
+    A placeholder that the caller did not supply degrades to the section root
+    (`/orders/{order_id}` -> `/orders`) rather than to a dead end.
+    """
+    data = data or {}
+    for prefix, template in _ACTION_URL_PREFIXES:
+        if not notif_type.startswith(prefix):
+            continue
+        try:
+            return template.format(**data)
+        except (KeyError, IndexError):
+            return template.split("{", 1)[0].rstrip("/") or "/"
+    return None
+
+
 def send_notification(
     user_id: str,
     notif_type: str,
@@ -291,6 +356,10 @@ def send_notification(
         # Apply template channel override only when caller didn't specify channels
         if channels is None and channels_override is not None:
             channels = channels_override
+
+    # Where a tap should land: callers may state it, the type otherwise decides.
+    if not action_url:
+        action_url = default_action_url(notif_type, template_data or {})
 
     # Guard: if neither mode supplied title/body, skip to avoid blank notifications
     if not title or not body:

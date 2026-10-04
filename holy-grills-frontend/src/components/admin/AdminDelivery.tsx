@@ -310,7 +310,7 @@ function CreateBatchModal({ windows, onClose, onSaved }) {
     setSubmitting(true);
     try {
       await mockApi.admin.createDeliveryBatch({ window_id: windowId, rider_id: riderId, zone, order_ids: [...selected] });
-      toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CREATED', '✅ Batch created'), description: `${selected.size} order(s) assigned.` });
+      toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CREATED', '✅ Batch created'), description: msg('FE_ADMIN_DELIVERY_COUNT_ORDER_S_ASSIGNED', '{count} order(s) assigned.', { count: selected.size }) });
       onSaved(); onClose();
     } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSubmitting(false);

@@ -1715,6 +1715,62 @@ class MSG:
 
     MESSAGES_PREFIX_INVALID               = "prefix must be an uppercase key prefix (A-Z, 0-9, underscore)"
 
+    # ------------------------------------------------------------------
+    # Frontend copy — interpolated messages.
+    #
+    # {placeholders} are filled by the client from the variables it passes
+    # (msg(key, fallback, vars)) — and by the backend when an API response
+    # uses the same string. Same generated-and-checked cycle as the bulk
+    # block above: messages-codemod.mjs writes, messages-check.mjs guards.
+    # ------------------------------------------------------------------
+    FE_ADMIN_CATERING_STATUS_STATUS                                  = "Status: {status}"
+    FE_ADMIN_CHALLENGES_TITLE_IS_NOW_LIVE                            = "\"{title}\" is now live."
+    FE_ADMIN_CHALLENGES_TITLE_MANUALLY_GRANTED                       = "\"{title}\" manually granted."
+    FE_ADMIN_CHALLENGES_TITLE_REMOVED                                = "\"{title}\" removed."
+    FE_ADMIN_CHALLENGES_TITLE_SAVED                                  = "\"{title}\" saved."
+    FE_ADMIN_DELIVERY_COUNT_ORDER_S_ASSIGNED                         = "{count} order(s) assigned."
+    FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED                             = "\"{title}\" has been saved."
+    FE_ADMIN_EVENTS_TITLE_IS_NOW_LIVE                                = "\"{title}\" is now live."
+    FE_ADMIN_EXCLUSIVE_SPIN_EXCLUSIVE_SPIN_REWARDS_NOW_EXPIRE_AFTER  = "Exclusive spin rewards now expire after {validity_days} days."
+    FE_ADMIN_EXCLUSIVE_SPIN_EXTRA_SPINS_NOW_COST_EXTRA_COST_HP       = "Extra spins now cost {extra_cost} HP."
+    FE_ADMIN_EXCLUSIVE_SPIN_NAME_UPDATED_IN_THE_EXCLUSIVE_SPIN       = "\"{name}\" updated in the exclusive spin template."
+    FE_ADMIN_FREE_CREDITS_FREE_SIDE_CREDITS_NOW_EXPIRE_AFTER         = "Free side credits now expire after {validity_days} days."
+    FE_ADMIN_MARKETPLACE_LISTING_MANAGER_UPLOADED_UPLOADED_COUNT     = "Uploaded {uploaded}{count}"
+    FE_ADMIN_MENU_HP_MULTIPLIER_SET_TO_MULTIPLIER_FOR                = "✅ HP multiplier set to {multiplier}× for {count} items"
+    FE_ADMIN_MENU_NAME_IS_NOW_LIVE                                   = "\"{name}\" is now live."
+    FE_ADMIN_MENU_NAME_SAVED                                         = "\"{name}\" saved."
+    FE_ADMIN_MENU_OK_ITEM_S_ARCHIVED                                 = "✅ {ok} item(s) archived"
+    FE_ADMIN_NOTIFICATIONS_WILL_SEND_ON_DATE                         = "Will send on {date}"
+    FE_ADMIN_OPERATING_HOURS_DAY_KEY_HOURS_SAVED                     = "✅ {day_key} hours saved"
+    FE_ADMIN_ORDERS_ORDER_MOVED_TO_G_VIA_THE_SHORTEST_VALID          = "Order moved to {g} via the shortest valid path."
+    FE_ADMIN_RIDERS_COUNT_PAID_SKIPPED_SKIPPED_NOT_FOUND             = "{count} paid · {skipped} skipped · {not_found} not found"
+    FE_ADMIN_STOREFRONT_SEEDED_OK_SAMPLE_SECTION_S                   = "Seeded {ok} sample section(s)"
+    FE_ADMIN_STORE_NAME_IS_NOW_TRACKED                               = "{name} is now tracked"
+    FE_ADMIN_STORE_QUANTITY_PURCHASE_UNIT_NAME_ADDED_TO              = "{quantity} {purchase_unit_name} added to {name}"
+    FE_ADMIN_SYSTEM_SETTINGS_KEY_SAVED                               = "{key} saved."
+    FE_ADMIN_TIER_ICONS_NAME_ICON_SAVED                              = "✅ {name} icon saved"
+    FE_ADMIN_USERS_COUNT_USERS_GRANTED_AMOUNT_HP_EACH                = "{count} users granted {amount} HP each."
+    FE_ADMIN_USERS_NAME_IS_NOW_VALUE                                 = "{name} is now {value}."
+    FE_EMAIL_DELIVERY_SETTINGS_KEY_PROVIDER                          = "{key} → {provider}"
+    FE_HOME_NAME_IS_READY_TO_CHECKOUT                                = "{name} is ready to checkout."
+    FE_HP_TRANSFER_MODAL_AMOUNT_HP_SENT                              = "🔥 {amount} HP sent!"
+    FE_HP_TRANSFER_MODAL_MINIMUM_TRANSFER_IS_MIN_AMOUNT_HP           = "Minimum transfer is {min_amount} HP."
+    FE_HP_TRANSFER_MODAL_SENT_TO_NAME                                = "Sent to {name}."
+    FE_INSTALL_PUSH_BONUSES_HP_HP_ADDED_TO_YOUR_WALLET               = "+{hp} HP added to your wallet."
+    FE_ITEM_DETAIL_QUANTITY_NAME_IS_IN_YOUR_CART                     = "{quantity}× {name} is in your cart."
+    FE_MENU_NAME_IS_READY_TO_CHECKOUT                                = "{name} is ready to checkout."
+    FE_ORDER_LOCKS_LOCKED_FOR_DATE                                   = "Locked for {date}."
+    FE_ORDER_LOCKS_LOCK_MOVED_TO_DATE                                = "Lock moved to {date}."
+    FE_REWARDS_GRADUATION_HP_HP_AWARDED_AT_LEVEL                     = "{graduation_hp} HP awarded at level {academic_level}."
+    FE_REWARDS_NAME_IS_ON_ITS_WAY                                    = "{name} is on its way."
+    FE_REWARDS_NAME_UNLOCKED_AT_FLASH_PRICE                          = "{name} unlocked at flash price."
+    FE_SOCIAL_FOLLOW_CHALLENGE_HP_HP_ADDED                           = "+{hp} HP added."
+    FE_SQUAD_ORDER_BUTTON_SQUAD_ORDERS_ARE_CAPPED_AT_MAX_ITEMS       = "Squad orders are capped at {max} items"
+    FE_STREAK_HP_HP_ADDED                                            = "+{hp} HP added."
+    FE_USE_KITCHEN_DATA_MARKED_STATUS                                = "Marked {status}"
+
+    FE_CAMPUS_PICKER_REMEMBERED             = "Pick once — we remember it on this device. The picker also opens on top of this page."
+
 # Short alias
 M = MSG
 

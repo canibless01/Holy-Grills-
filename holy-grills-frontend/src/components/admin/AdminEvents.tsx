@@ -26,8 +26,8 @@ export default function AdminEvents() {
     const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_per_attendee), max_attendees: Number(modal.item.max_attendees), ticket_price_wallet: Number(modal.item.ticket_price_wallet), ticket_price_hp: Number(modal.item.ticket_price_hp), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
     try {
       let savedEvent = null;
-      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: `"${body.title}" is now live.` }); }
-      else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: `"${body.title}" has been saved.` }); }
+      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_ADMIN_EVENTS_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) }); }
+      else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
       // image_url is not an accepted column on create/update event — push it
       // through the dedicated POST /events/<id>/image route or the upload is
       // silently dropped by the backend.

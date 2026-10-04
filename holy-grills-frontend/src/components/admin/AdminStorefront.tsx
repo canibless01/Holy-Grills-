@@ -224,7 +224,7 @@ export default function AdminStorefront() {
         await mockApi.admin.createStorefrontSection(body); ok++;
       } catch (e) { /* skip duplicates / failures */ }
     }
-    toast({ title: `Seeded ${ok} sample section(s)`, description: msg('FE_ADMIN_STOREFRONT_EDIT_THEM_BELOW_TO_SEE_HOW_EACH_TYPE', 'Edit them below to see how each type renders.') });
+    toast({ title: msg('FE_ADMIN_STOREFRONT_SEEDED_OK_SAMPLE_SECTION_S', 'Seeded {ok} sample section(s)', { ok: ok }), description: msg('FE_ADMIN_STOREFRONT_EDIT_THEM_BELOW_TO_SEE_HOW_EACH_TYPE', 'Edit them below to see how each type renders.') });
     setSeeding(false); await load();
   };
 

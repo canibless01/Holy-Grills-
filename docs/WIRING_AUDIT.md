@@ -277,6 +277,59 @@ CMS link rule from S8 (`openCmsDestination`).
 | Image uploads | Verified Cloudinary-only: `ImageUploader` posts to `POST /api/upload/signature` (auth’d; folder-scoped) and uploads to `api.cloudinary.com`. Base44 remains only for **static artwork** (`VITE_ASSET_CDN_URL`, per your decision) — no upload path touches it. |
 | Message catalog | `GET /api/messages` serves the `MSG` registry (1,413 keys; `?prefix=FE_` returns the 443 frontend keys — 30 KB instead of 95 KB, which is what the client asks for); `src/lib/messages.ts` exposes `msg(key, fallback, vars)` + `useMessages()`, and `npm run messages:check` (inside `npm run build`) fails on a call site whose key is missing from the registry |
 
+## 3.9 Campus scope, notification destinations, and the settings bridge (2026-10-04)
+
+**Guest campus choice — it persists, and it is not an escalation.** The choice is
+written to `localStorage` (`hg_campus_id`) by `selectCampus` and sent as
+`X-Campus-ID`; it survives reloads and tabs. `CampusGate`'s prompt effect could
+overwrite the *blocking* gate that `CampusScope` raises in the same commit (child
+effects run first, so the parent read a stale `gateOpen`) — a guest who clicked
+into /menu got a dismissible prompt, dismissed it, and browsed global data with a
+"choose your campus" page that had no tappable rows. Fixed: a synchronous
+`gateOpenRef` in `CampusProvider`, plus `releaseCampus()` so leaving a
+campus-scoped page downgrades the gate to dismissible instead of trapping a
+browser. The picker page's campus rows are the chooser now (buttons calling
+`selectCampus`), not decoration.
+
+Why a client-chosen campus is safe: the backend validates the id (`_get_campus_id`
+rejects a well-formed id that is not a real, active campus) and the value is a
+**filter for public data** — any campus's menu/prices/events are public, and a
+guest may pick any campus. It is never an authorization boundary:
+`resolve_write_campus()` + `assert_owns_campus()` pin writes to the caller's own
+campus (403 otherwise) for every non-super-admin, and
+`resolve_scoped_campus_id()` **ignores** a requested campus for everyone except
+super_admin in the 16 admin route files that use it — so a hand-edited
+`hg_admin_campus_id` cannot read another campus's operational data.
+`public_campus()` (which honours the request for signed-in users too) is used only
+by public reference-data routes (calendar, levels, departments, challenges).
+Orders are scoped by `user_id = g.user_id`, not by campus.
+
+**Notifications now open their page.** `send_notification` resolves a default
+`action_url` per type when the caller does not pass one
+(`default_action_url()` in `notification_service.py`; prefix table — order types
+→ `/orders/{order_id}` with a `/orders` fallback when the id is absent, wallet →
+`/wallet`, HP/rewards → `/rewards`, rider → `/rider`, kitchen → `/kitchen`,
+squads → `/squads`, events → `/events`, abandoned cart → `/cart`, …). That single
+change feeds **in-app rows and push payloads** alike (`_dispatch_push_async`
+already used `action_url` as the push `url`). The panel bell
+(`InlineNotificationBell`, used by the admin, kitchen and rider headers) now
+navigates to that path and shows an "Open ›" hint; the student Notifications page
+already did.
+
+**The panel bell was clipped on phones** because the 320px dropdown was an
+absolutely-positioned child of the header (any `overflow-hidden` or transformed
+ancestor clips it). It is portalled to `<body>` and positioned from the bell's
+rect: a full-width sheet with 8px gutters under `sm`, the dropdown above it, and
+it closes on outside click, Escape and navigation.
+
+**Settings bridge.** `setting_or_config()` / `setting_bool()` (app/utils/settings.py)
+read per-campus → global settings → env, so the values the frontend has always
+read from the settings table now actually drive the backend (squad discounts,
+`squad_order_min_items`, `order_lock_max_reschedules`, `wallet_min_card_topup`),
+and the `order_lock_default_discount_pct` vs `order_lock_default_discount` key
+split is gone. Details, permissions and the remaining env-only list:
+`docs/SETTINGS.md`.
+
 ## 4. What this audit does **not** cover
 
 * No live backend calls: the app needs Supabase credentials, and the sandbox has

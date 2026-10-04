@@ -118,7 +118,7 @@ export default function ItemDetail() {
       });
       play('cart_add');
       await addToCart({ menu_item_id: item.id, quantity, notes, selected_variations, selected_addons });
-      toast({ title: msg('FE_ITEM_DETAIL_ADDED_TO_YOUR_CART', '🔥 Added to your cart'), description: `${quantity}× ${item.name} is in your cart.` });
+      toast({ title: msg('FE_ITEM_DETAIL_ADDED_TO_YOUR_CART', '🔥 Added to your cart'), description: msg('FE_ITEM_DETAIL_QUANTITY_NAME_IS_IN_YOUR_CART', '{quantity}× {name} is in your cart.', { quantity: quantity, name: item.name }) });
     } catch (e) {
       toast({ title: msg('FE_ITEM_DETAIL_COULD_NOT_ADD_TO_CART', 'Could not add to cart'), description: e.message || 'Please try again.', variant: 'destructive' });
     }

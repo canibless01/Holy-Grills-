@@ -55,7 +55,7 @@ export default function AdminTierIcons() {
       if (row.id) await liveApi.admin.updateStorefrontSection(row.id, body);
       else await liveApi.admin.createStorefrontSection({ ...body, key: `tier_icon_${slot.slug}` });
       clearTierIconsCache();
-      toast({ title: `✅ ${slot.name} icon saved`, description: msg('FE_ADMIN_TIER_ICONS_LIVE_EVERYWHERE_A_TIER_IS_SHOWN', 'Live everywhere a tier is shown.') });
+      toast({ title: msg('FE_ADMIN_TIER_ICONS_NAME_ICON_SAVED', '✅ {name} icon saved', { name: slot.name }), description: msg('FE_ADMIN_TIER_ICONS_LIVE_EVERYWHERE_A_TIER_IS_SHOWN', 'Live everywhere a tier is shown.') });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_TIER_ICONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);

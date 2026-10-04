@@ -60,14 +60,17 @@ const LANDING_BY_PATH: Record<string, CampusPickerCopy> = {
 };
 
 export default function CampusScope() {
-  const { campusId, campuses, campusesLoading, requireCampus } = useCampus();
+  const { campusId, campuses, campusesLoading, requireCampus, releaseCampus } = useCampus();
   const { pathname } = useLocation();
   const base = '/' + (pathname.split('/')[1] || '');
   const landing = LANDING_BY_PATH[base];
 
   useEffect(() => {
     requireCampus(ACTION_BY_PATH[base] || 'continue');
-  }, [base, requireCampus]);
+    // Leaving this page: keep the picker up, but stop insisting — browse pages
+    // let the guest dismiss it.
+    return () => releaseCampus();
+  }, [base, requireCampus, releaseCampus]);
 
   if (campusId) return <Outlet />;
 

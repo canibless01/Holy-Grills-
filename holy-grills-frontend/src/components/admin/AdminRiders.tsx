@@ -61,7 +61,7 @@ export default function AdminRiders() {
       const res = await mockApi.admin.markBatchesPaid([batchId]);
       const skipped = res?.skipped?.length || 0;
       const notFound = res?.not_found?.length || 0;
-      if (skipped || notFound) toast({ title: msg('FE_ADMIN_RIDERS_MARKED_PAID', 'Marked paid'), description: `${(res?.updated || []).length} paid · ${skipped} skipped · ${notFound} not found`, variant: 'default' });
+      if (skipped || notFound) toast({ title: msg('FE_ADMIN_RIDERS_MARKED_PAID', 'Marked paid'), description: msg('FE_ADMIN_RIDERS_COUNT_PAID_SKIPPED_SKIPPED_NOT_FOUND', '{count} paid · {skipped} skipped · {not_found} not found', { count: (res?.updated || []).length, skipped: skipped, not_found: notFound }), variant: 'default' });
       else toast({ title: msg('FE_ADMIN_RIDERS_MARKED_PAID_2', '✅ Marked paid') });
       await reloadRider(riderId);
     } catch (e) { toast({ title: msg('FE_ADMIN_RIDERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }

@@ -93,7 +93,7 @@ export default function Menu() {
       if (!hasRequired) {
         play('cart_add');
         await addToCart({ menu_item_id: item.id, quantity: 1 });
-        toast({ title: msg('FE_MENU_ADDED_TO_YOUR_CART', 'Added to your cart'), description: `${item.name} is ready to checkout.` });
+        toast({ title: msg('FE_MENU_ADDED_TO_YOUR_CART', 'Added to your cart'), description: msg('FE_MENU_NAME_IS_READY_TO_CHECKOUT', '{name} is ready to checkout.', { name: item.name }) });
       } else {
         navigate(`/menu/${item.id}`);
       }

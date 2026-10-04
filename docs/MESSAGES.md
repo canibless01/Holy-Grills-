@@ -1,8 +1,9 @@
 # Message catalog — one place for every user-facing string
 
-**Status:** mechanism shipped and the bulk of the copy migrated — **477 call
-sites / 443 registry keys** across 98 files. 70 interpolated strings
-(`${…}`) remain, listed at the end.
+**Status:** mechanism shipped and the copy migrated — **523 call sites / 489
+registry keys**. 45 interpolated messages were converted by the codemod's
+template pass; 13 that carry their own wording inside the hole remain, listed at
+the end.
 **Owner files:** `holy-grills-backend/app/messages.py` (copy) ·
 `holy-grills-backend/app/routes/messages.py` (serving) ·
 `holy-grills-frontend/src/lib/messages.ts` (client) ·
@@ -20,8 +21,8 @@ backend copy for its own messages as well.
 ## Contract
 
 ```
-GET /api/messages              → 200 {"messages": {…1,413 keys…}, "count": 1413}
-GET /api/messages?prefix=FE_   → 200 {"messages": {…443 keys…},  "count": 443}
+GET /api/messages              → 200 {"messages": {…1,459 keys…}, "count": 1459}
+GET /api/messages?prefix=FE_   → 200 {"messages": {…489 keys…},  "count": 489}
 ```
 
 * Public, no auth (it is copy, not data), `Cache-Control: public, max-age=300`.
@@ -118,22 +119,19 @@ from one such run.
 |---|---|---|---|
 | First, by hand | 26 | 26 | checkout validation + free-side, cart, login, register, reset-password |
 | Bulk, by codemod | 451 | 417 | every plain-literal toast/setError/throw across 93 files — admin screens first, then pages, hooks and components |
-| **Total** | **477** | **443** | 98 files converted; lint, typecheck and `messages:check` enforce it on every build |
+| Interpolated, `--templates` | 45 | 45 | `a ${b} c` → `msg(key, 'a {b} c', { b })`, with names chosen from the expression (`e.message`→`{error}`, `toLocaleString()`→`{date}`, `rows.length`→`{count}`) |
+| **Total** | **523** | **489** | lint, typecheck and `messages:check` enforce it on every build |
 
-## Remaining work — 70 interpolated strings in 34 files
+## Remaining work — 13 messages that need a human
 
-These need a human: an interpolated message must be split into registry text plus
-**named** placeholders (`You sent {amount} HP`), which is a wording decision, not
-a mechanical one.
-
-| Shape | Count |
-|---|---|
-| `toast({ title/description: \`… ${x} …\` })` | 69 |
-| `setError(\`… ${x} …\`)` | 1 |
-| `throw new Error(\`… ${x} …\`)` | 0 |
-
-Recount any time with:
+These interpolate **their own wording** inside a hole, e.g.
+`` `${!on ? '✅ Activated' : '⏸ Deactivated'}` `` — that is two messages wearing
+one template, so it needs two registry keys (or a `{count}`-style rewrite), which
+is a wording decision. The codemod refuses them on purpose and prints them:
 
 ```bash
-cd holy-grills-frontend && node scripts/messages-codemod.mjs --dry
+cd holy-grills-frontend && node scripts/messages-codemod.mjs --dry --templates
 ```
+
+Two of them are student-facing (`SquadOrderButton.tsx` — "Add {n} more
+item(s)…"); the rest are admin toasts.

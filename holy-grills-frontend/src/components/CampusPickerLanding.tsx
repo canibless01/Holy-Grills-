@@ -18,6 +18,7 @@
 import { Flame, MapPin } from 'lucide-react';
 import APP_CONFIG from '@/config/app.config';
 import { useCampus } from '@/lib/campusContext';
+import { msg } from '@/lib/messages';
 
 export interface CampusPickerCopy {
   /** <h1> — descriptive, since this is what a crawler indexes for the route. */
@@ -27,10 +28,14 @@ export interface CampusPickerCopy {
 }
 
 export default function CampusPickerLanding({ title, intro, bullets }: CampusPickerCopy) {
-  const { campuses } = useCampus();
-  // Real names once the public campus list resolves; the configured university
-  // before that (and in the pre-rendered HTML, which runs no API calls).
-  const names = campuses.length ? campuses.map((c) => c.name) : [APP_CONFIG.university];
+  const { campuses, selectCampus } = useCampus();
+  // Real campuses once the public list resolves; the configured university
+  // before that (and in the pre-rendered HTML, which runs no API calls). The
+  // markup is identical in both states — only the disabled attribute and the
+  // click handler differ — so hydration stays clean.
+  const rows = campuses.length
+    ? campuses.map((c) => ({ id: c.id, name: c.name }))
+    : [{ id: null, name: APP_CONFIG.university }];
 
   return (
     <div className="space-y-5 animate-fade-in max-w-2xl mx-auto py-2">
@@ -41,12 +46,21 @@ export default function CampusPickerLanding({ title, intro, bullets }: CampusPic
       </div>
 
       <ul className="space-y-2">
-        {names.map((name) => (
-          <li key={name} className="flex items-center gap-3 p-3 rounded-2xl border border-border bg-card">
-            <span className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-              <MapPin className="w-4 h-4 text-primary" />
-            </span>
-            <span className="font-bold text-sm text-foreground">{name}</span>
+        {rows.map(({ id, name }) => (
+          <li key={name}>
+            {/* The rows are the chooser, not decoration: a guest who dismisses
+                the modal can still pick here, and this is what a crawler reads. */}
+            <button
+              type="button"
+              disabled={!id}
+              onClick={id ? () => selectCampus(id) : undefined}
+              className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card text-left transition enabled:hover:border-primary/60 enabled:hover:bg-primary/10 enabled:active:scale-[0.99] disabled:opacity-70"
+            >
+              <span className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <MapPin className="w-4 h-4 text-primary" />
+              </span>
+              <span className="font-bold text-sm text-foreground flex-1">{name}</span>
+            </button>
           </li>
         ))}
       </ul>
@@ -66,7 +80,7 @@ export default function CampusPickerLanding({ title, intro, bullets }: CampusPic
       </div>
 
       <p className="text-[11px] text-muted-foreground text-center">
-        Pick once and it sticks for the session — the campus picker opens on top of this page.
+        {msg('FE_CAMPUS_PICKER_REMEMBERED', 'Pick once — we remember it on this device. The picker also opens on top of this page.')}
       </p>
     </div>
   );

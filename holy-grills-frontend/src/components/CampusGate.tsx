@@ -19,7 +19,9 @@ export default function CampusGate() {
             <Flame className="w-6 h-6 text-white" />
           </div>
           <h2 className="font-heading font-bold text-lg text-foreground">Choose your campus</h2>
-          <p className="text-xs text-muted-foreground mt-1">Pick your campus to {gateAction}. You only do this once this session.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Pick your campus to {gateAction}. We remember it on this device — you can change it from your profile.
+          </p>
         </div>
         <div className="space-y-2 max-h-72 overflow-y-auto">
           {campuses.map((c) => (

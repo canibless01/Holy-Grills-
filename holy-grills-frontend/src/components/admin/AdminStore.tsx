@@ -210,7 +210,7 @@ function PurchaseModal({ item, unitName, onClose, onDone }) {
         cost: cost ? parseFloat(cost) : 0,
         notes: notes.trim() || undefined,
       });
-      toast({ title: msg('FE_ADMIN_STORE_PURCHASE_LOGGED', '✓ Purchase logged'), description: `${quantity} ${purchaseUnitName} added to ${item.name}` });
+      toast({ title: msg('FE_ADMIN_STORE_PURCHASE_LOGGED', '✓ Purchase logged'), description: msg('FE_ADMIN_STORE_QUANTITY_PURCHASE_UNIT_NAME_ADDED_TO', '{quantity} {purchase_unit_name} added to {name}', { quantity: quantity, purchase_unit_name: purchaseUnitName, name: item.name }) });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to log purchase'); }
     setSaving(false);
@@ -327,7 +327,7 @@ function AddItemModal({ onClose, onDone }: {
         conversion_factor: conversionFactor ? parseFloat(conversionFactor) : undefined,
         low_stock_threshold: threshold ? parseFloat(threshold) : undefined,
       });
-      toast({ title: msg('FE_ADMIN_STORE_ITEM_ADDED', '✓ Item added'), description: `${name.trim()} is now tracked` });
+      toast({ title: msg('FE_ADMIN_STORE_ITEM_ADDED', '✓ Item added'), description: msg('FE_ADMIN_STORE_NAME_IS_NOW_TRACKED', '{name} is now tracked', { name: name.trim() }) });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to add item'); }
     setSaving(false);

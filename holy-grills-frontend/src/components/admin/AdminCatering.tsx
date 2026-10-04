@@ -94,7 +94,7 @@ export default function AdminCatering() {
         assigned_to: detail._assigned_to || undefined,
       };
       await liveApi.admin.updateCateringRequest(detail.id, body);
-      toast({ title: msg('FE_ADMIN_CATERING_CATERING_REQUEST_UPDATED', '✅ Catering request updated'), description: `Status: ${detail._status}` });
+      toast({ title: msg('FE_ADMIN_CATERING_CATERING_REQUEST_UPDATED', '✅ Catering request updated'), description: msg('FE_ADMIN_CATERING_STATUS_STATUS', 'Status: {status}', { status: detail._status }) });
       setDetail(null);
       await load();
     } catch (e) {

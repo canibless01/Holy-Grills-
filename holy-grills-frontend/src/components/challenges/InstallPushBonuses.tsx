@@ -34,7 +34,7 @@ export default function InstallPushBonuses() {
       .then(async (res) => {
         if (res?.hp_awarded && !res?.already_completed) {
           await refreshHp();
-          toast({ title: msg('FE_INSTALL_PUSH_BONUSES_PWA_INSTALL_BONUS', '🎉 PWA install bonus!'), description: `+${res.hp_awarded} HP added to your wallet.` });
+          toast({ title: msg('FE_INSTALL_PUSH_BONUSES_PWA_INSTALL_BONUS', '🎉 PWA install bonus!'), description: msg('FE_INSTALL_PUSH_BONUSES_HP_HP_ADDED_TO_YOUR_WALLET', '+{hp} HP added to your wallet.', { hp: res.hp_awarded }) });
         }
         const updated = await apiClient.get('/challenges/pwa-push-bonus-status').catch(() => null);
         if (updated) setPwaStatus(updated);

@@ -59,7 +59,7 @@ export default function OrderLocks() {
     try {
       const body = { locked_date: form.locked_date, reward_type: form.reward_kind === 'hp' ? 'hp' : 'discount' };
       await liveApi.orderLocks.create(body);
-      toast({ title: msg('FE_ORDER_LOCKS_LOCK_CREATED', '🔒 Lock created'), description: `Locked for ${new Date(form.locked_date).toLocaleDateString()}.` });
+      toast({ title: msg('FE_ORDER_LOCKS_LOCK_CREATED', '🔒 Lock created'), description: msg('FE_ORDER_LOCKS_LOCKED_FOR_DATE', 'Locked for {date}.', { date: new Date(form.locked_date).toLocaleDateString() }) });
       setShowCreate(false);
       setForm({ ...form, locked_date: '' });
       load();
@@ -84,7 +84,7 @@ export default function OrderLocks() {
     setRescheduling(true);
     try {
       await liveApi.orderLocks.reschedule(rescheduleLock.id, { locked_date: rescheduleDate });
-      toast({ title: msg('FE_ORDER_LOCKS_RESCHEDULED', '🔒 Rescheduled'), description: `Lock moved to ${new Date(rescheduleDate).toLocaleDateString()}.` });
+      toast({ title: msg('FE_ORDER_LOCKS_RESCHEDULED', '🔒 Rescheduled'), description: msg('FE_ORDER_LOCKS_LOCK_MOVED_TO_DATE', 'Lock moved to {date}.', { date: new Date(rescheduleDate).toLocaleDateString() }) });
       setRescheduleLock(null);
       load();
     } catch (e) { toast({ title: msg('FE_ORDER_LOCKS_RESCHEDULE_FAILED', 'Reschedule failed'), description: e.message, variant: 'destructive' }); }

@@ -42,8 +42,8 @@ export default function AdminMenu() {
   const save = async () => {
     const body = { ...modal.item, price: Number(modal.item.price), hp_multiplier: Number(modal.item.hp_multiplier) || 1, is_featured: !!modal.item.is_featured, is_available: modal.item.is_available !== false, is_secret: !!modal.item.is_secret };
     try {
-      if (modal.isNew) { await mockApi.admin.createMenuItem(body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_CREATED', '✅ Menu item created'), description: `"${body.name}" is now live.` }); }
-      else { await mockApi.admin.updateMenuItem(modal.item.id, body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_UPDATED', '✅ Menu item updated'), description: `"${body.name}" saved.` }); }
+      if (modal.isNew) { await mockApi.admin.createMenuItem(body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_CREATED', '✅ Menu item created'), description: msg('FE_ADMIN_MENU_NAME_IS_NOW_LIVE', '"{name}" is now live.', { name: body.name }) }); }
+      else { await mockApi.admin.updateMenuItem(modal.item.id, body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_UPDATED', '✅ Menu item updated'), description: msg('FE_ADMIN_MENU_NAME_SAVED', '"{name}" saved.', { name: body.name }) }); }
       setModal(null); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
   };
@@ -79,7 +79,7 @@ export default function AdminMenu() {
     setBulkBusy(true);
     try {
       await mockApi.admin.bulkUpdateMenuItemHpMultiplier([...selected], multiplier);
-      toast({ title: `✅ HP multiplier set to ${multiplier}× for ${selected.size} items` });
+      toast({ title: msg('FE_ADMIN_MENU_HP_MULTIPLIER_SET_TO_MULTIPLIER_FOR', '✅ HP multiplier set to {multiplier}× for {count} items', { multiplier: multiplier, count: selected.size }) });
       setSelected(new Set()); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_MENU_BULK_UPDATE_FAILED', 'Bulk update failed'), description: e.message, variant: 'destructive' }); }
     setBulkBusy(false);
@@ -92,7 +92,7 @@ export default function AdminMenu() {
     try {
       const results = await Promise.allSettled([...selected].map((id) => mockApi.admin.deleteMenuItem(id)));
       const ok = results.filter((r) => r.status === 'fulfilled').length;
-      toast({ title: `✅ ${ok} item(s) archived`, description: results.length - ok ? `${results.length - ok} failed` : 'All done.' });
+      toast({ title: msg('FE_ADMIN_MENU_OK_ITEM_S_ARCHIVED', '✅ {ok} item(s) archived', { ok: ok }), description: results.length - ok ? `${results.length - ok} failed` : 'All done.' });
       setSelected(new Set()); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_MENU_BULK_DELETE_FAILED', 'Bulk delete failed'), description: e.message, variant: 'destructive' }); }
     setBulkBusy(false);

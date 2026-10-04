@@ -37,7 +37,7 @@ export default function EmailDeliverySettings({ settings, onSaved, canEdit = tru
         if (e.status && e.status !== 404) throw e;
         await liveApi.admin.createSystemSetting({ key, value: { provider }, description: `Default email provider for this category` });
       }
-      toast({ title: msg('FE_EMAIL_DELIVERY_SETTINGS_EMAIL_DELIVERY_UPDATED', 'Email delivery updated'), description: `${key} → ${provider}` });
+      toast({ title: msg('FE_EMAIL_DELIVERY_SETTINGS_EMAIL_DELIVERY_UPDATED', 'Email delivery updated'), description: msg('FE_EMAIL_DELIVERY_SETTINGS_KEY_PROVIDER', '{key} → {provider}', { key: key, provider: provider }) });
       onSaved?.();
     } catch (e) {
       toast({ title: msg('FE_EMAIL_DELIVERY_SETTINGS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });

@@ -93,7 +93,7 @@ export default function AdminFreeCredits() {
     setSavingValidity(true);
     try {
       await mockApi.admin.updateFreeSideValidityDays({ value: Number(validityDays) });
-      toast({ title: msg('FE_ADMIN_FREE_CREDITS_VALIDITY_UPDATED', '✅ Validity updated'), description: `Free side credits now expire after ${validityDays} days.` });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_VALIDITY_UPDATED', '✅ Validity updated'), description: msg('FE_ADMIN_FREE_CREDITS_FREE_SIDE_CREDITS_NOW_EXPIRE_AFTER', 'Free side credits now expire after {validity_days} days.', { validity_days: validityDays }) });
     } catch (e) {
       toast({ title: msg('FE_ADMIN_FREE_CREDITS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }

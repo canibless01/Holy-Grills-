@@ -82,7 +82,7 @@ export default function AdminOperatingHours() {
         close_time: row?.is_closed ? null : (row?.close_time || '21:00'),
         is_closed: !!row?.is_closed,
       });
-      toast({ title: `✅ ${dayKey} hours saved` });
+      toast({ title: msg('FE_ADMIN_OPERATING_HOURS_DAY_KEY_HOURS_SAVED', '✅ {day_key} hours saved', { day_key: dayKey }) });
       await load();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_OPERATING_HOURS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' });

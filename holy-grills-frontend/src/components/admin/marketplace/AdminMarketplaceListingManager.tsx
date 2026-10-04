@@ -57,7 +57,7 @@ export default function AdminMarketplaceListingManager({ listing, onClose, reloa
     const codes = codesText.split('\n').map((s) => s.trim()).filter(Boolean);
     try {
       const res = await liveApi.admin.uploadListingCodes(listing.id, { codes });
-      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_CODES_UPLOADED', 'Codes uploaded'), description: `Uploaded ${res?.uploaded || 0}${res?.skipped_duplicates?.length ? ` · skipped ${res.skipped_duplicates.length} duplicates` : ''}` });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_CODES_UPLOADED', 'Codes uploaded'), description: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_UPLOADED_UPLOADED_COUNT', 'Uploaded {uploaded}{count}', { uploaded: res?.uploaded || 0, count: res?.skipped_duplicates?.length ? ` · skipped ${res.skipped_duplicates.length} duplicates` : '' }) });
       setCodesText('');
       await reload();
       await loadDetail();

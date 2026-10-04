@@ -66,7 +66,7 @@ export default function AdminSystemSettings() {
     setBusy(key);
     try {
       await liveApi.admin.updateSystemSetting(key, { value });
-      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_UPDATED', 'Setting updated'), description: `${key} saved.` });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_UPDATED', 'Setting updated'), description: msg('FE_ADMIN_SYSTEM_SETTINGS_KEY_SAVED', '{key} saved.', { key: key }) });
       setEditKey(null);
       await load();
     } catch (e) {

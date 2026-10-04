@@ -84,7 +84,7 @@ export default function AdminOrders() {
     setBusy(walkOrder.id);
     try {
       await mockApi.orders.walk(walkOrder.id, { target_status: walkOrder.target_status, notes: walkOrder.reason || '' });
-      toast({ title: msg('FE_ADMIN_ORDERS_ORDER_ADVANCED', '✅ Order advanced'), description: `Order moved to ${walkOrder.target_status.replace(/_/g, ' ')} via the shortest valid path.` });
+      toast({ title: msg('FE_ADMIN_ORDERS_ORDER_ADVANCED', '✅ Order advanced'), description: msg('FE_ADMIN_ORDERS_ORDER_MOVED_TO_G_VIA_THE_SHORTEST_VALID', 'Order moved to {g} via the shortest valid path.', { g: walkOrder.target_status.replace(/_/g, ' ') }) });
       const wid = walkOrder.id;
       setWalkOrder(null);
       await load();

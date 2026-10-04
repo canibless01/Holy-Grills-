@@ -111,7 +111,7 @@ export default function AdminUsers() {
     setUpdating(u.id);
     try {
       await liveApi.admin.updateRole(u.id, { role });
-      toast({ title: msg('FE_ADMIN_USERS_ROLE_UPDATED', 'Role updated'), description: `${u.full_name} is now ${role.replace('_', ' ')}.` });
+      toast({ title: msg('FE_ADMIN_USERS_ROLE_UPDATED', 'Role updated'), description: msg('FE_ADMIN_USERS_NAME_IS_NOW_VALUE', '{name} is now {value}.', { name: u.full_name, value: role.replace('_', ' ') }) });
       load();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_USERS_ROLE_CHANGE_FAILED', 'Role change failed'), description: e.message, variant: 'destructive' });
@@ -605,7 +605,7 @@ function BulkGrantModal({ userIds, users, onClose, onDone }) {
     try {
       const res = await liveApi.admin.bulkGrantHp({ user_ids: userIds, amount: Number(amount), reason });
       setResult(res);
-      toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_SENT', 'Bulk grant sent'), description: `${res?.awarded_count ?? userIds.length} users granted ${amount} HP each.` });
+      toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_SENT', 'Bulk grant sent'), description: msg('FE_ADMIN_USERS_COUNT_USERS_GRANTED_AMOUNT_HP_EACH', '{count} users granted {amount} HP each.', { count: res?.awarded_count ?? userIds.length, amount: amount }) });
       setTimeout(onDone, 1200);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_FAILED', 'Bulk grant failed'), description: e.message, variant: 'destructive' });

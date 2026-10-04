@@ -100,7 +100,7 @@ export default function Streak() {
         toast({ title: msg('FE_STREAK_ALREADY_COMPLETED', 'Already completed'), description: msg('FE_STREAK_YOU_CLAIMED_THIS_MILESTONE_ALREADY', 'You claimed this milestone already.') });
       } else if (res?.hp_awarded) {
         triggerMascotCelebration('thumbsup');
-        toast({ title: msg('FE_STREAK_MILESTONE_COMPLETE', '🎉 Milestone complete!'), description: `+${res.hp_awarded} HP added.` });
+        toast({ title: msg('FE_STREAK_MILESTONE_COMPLETE', '🎉 Milestone complete!'), description: msg('FE_STREAK_HP_HP_ADDED', '+{hp} HP added.', { hp: res.hp_awarded }) });
       } else {
         toast({ title: msg('FE_STREAK_NOT_YET', 'Not yet!'), description: msg('FE_STREAK_KEEP_GOING_YOU_HAVEN_T_MET_THE_TARGET', 'Keep going — you haven\'t met the target yet.') });
       }

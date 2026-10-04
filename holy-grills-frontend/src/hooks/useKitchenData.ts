@@ -124,7 +124,7 @@ export function useKitchenData() {
     setActionLoading(orderId);
     try {
       await liveApi.orders.updateStatus(orderId, { status });
-      toast({ title: `Marked ${ORDER_STATUS_LABELS[status]}` });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_MARKED_STATUS', 'Marked {status}', { status: ORDER_STATUS_LABELS[status] }) });
       await refreshQueue();
     } catch (e) {
       toast({ title: msg('FE_USE_KITCHEN_DATA_FAILED_TO_UPDATE_ORDER_STATUS', 'Failed to update order status'), description: e.message, variant: 'destructive' });

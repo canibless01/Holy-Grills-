@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { liveApi } from './liveApi';
 import { localStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
@@ -37,9 +37,26 @@ export const CampusProvider = ({ children }) => {
   const [adminCampusId, setAdminCampusId] = useState(() => (isHydratingPrerender() ? null : getStoredAdminCampusId()));
   const [gateOpen, setGateOpen] = useState(false);
   const [gateAction, setGateAction] = useState('continue');
-  // 'prompt' — dismissible (homepage only). 'blocking' — campus-scoped routes.
+  // 'prompt' — dismissible (browse pages). 'blocking' — campus-scoped routes.
   const [gateMode, setGateMode] = useState('prompt');
   const [gateDismissed, setGateDismissed] = useState(false);
+  // Effects of a child (CampusScope) run BEFORE the provider's own effects in
+  // the same commit, so a state read here would still be the pre-update value.
+  // requireCampus() therefore raises this flag synchronously: the prompt effect
+  // below can no longer downgrade a blocking gate into a dismissible one on the
+  // very navigation that asked for it (that race let guests slip into
+  // global-scope browsing with the picker dismissed).
+  const gateOpenRef = useRef(false);
+  const openGate = useCallback((action: string, mode: string) => {
+    gateOpenRef.current = true;
+    setGateAction(action);
+    setGateMode(mode);
+    setGateOpen(true);
+  }, []);
+  const closeGate = useCallback(() => {
+    gateOpenRef.current = false;
+    setGateOpen(false);
+  }, []);
   const location = useLocation();
 
   // Authenticated users are scoped by their own campus_id (set at registration,
@@ -86,12 +103,11 @@ export const CampusProvider = ({ children }) => {
     // campus-agnostic, so a guest shouldn't be forced to pick a campus to reach
     // the tracking box. Campus-scoped pages still open the blocking gate.
     if (isLoading || campusesLoading) return;
-    if (!user && !guestCampusId && campuses.length > 0 && !gateOpen && !gateDismissed && !location.pathname.startsWith('/track-orders')) {
-      setGateAction('continue');
-      setGateMode('prompt');
-      setGateOpen(true);
+    if (gateOpenRef.current) return;
+    if (!user && !guestCampusId && campuses.length > 0 && !gateDismissed && !location.pathname.startsWith('/track-orders')) {
+      openGate('continue', 'prompt');
     }
-  }, [isLoading, campusesLoading, user, guestCampusId, campuses, gateOpen, gateDismissed, location.pathname]);
+  }, [isLoading, campusesLoading, user, guestCampusId, campuses, gateDismissed, location.pathname, openGate]);
 
   // The dismissible homepage prompt can follow a guest onto the tracking page
   // (the effect above only runs on mount). Close it whenever the guest reaches
@@ -106,8 +122,8 @@ export const CampusProvider = ({ children }) => {
   const selectCampus = useCallback((id) => {
     if (id) localStore.setItem(CAMPUS_KEY, id); else localStore.removeItem(CAMPUS_KEY);
     setGuestCampusId(id);
-    setGateOpen(false);
-  }, []);
+    closeGate();
+  }, [closeGate]);
 
   // Super-admin campus switch — persists across admin sessions and is sent
   // as X-Campus-ID by apiClient for all authenticated admin requests.
@@ -131,23 +147,28 @@ export const CampusProvider = ({ children }) => {
     // Logged-in users (a real `user` object) are scoped server-side by their own
     // campus_id — never gate them. Guests who already chose a campus pass through.
     if (user || user?.campus_id || guestCampusId) return true;
-    setGateAction(action);
-    setGateMode('blocking');
-    setGateOpen(true);
+    openGate(action, 'blocking');
     return false;
-  }, [isLoading, user, guestCampusId]);
+  }, [isLoading, user, guestCampusId, openGate]);
+
+  // Called when a campus-scoped page unmounts: the guest still has to choose
+  // eventually, but a browse page (home, track-orders, legal) may dismiss the
+  // picker instead of being trapped behind it.
+  const releaseCampus = useCallback(() => {
+    setGateMode((mode) => (mode === 'blocking' ? 'prompt' : mode));
+  }, []);
 
   // Homepage dismissal — closes the prompt without a selection; the next
   // campus-scoped page re-opens it in blocking mode.
   const dismissGate = useCallback(() => {
     setGateDismissed(true);
-    setGateOpen(false);
-  }, []);
+    closeGate();
+  }, [closeGate]);
 
   return (
     <CampusContext.Provider value={{
       campusId, campus, campuses, campusesLoading,
-      gateOpen, gateAction, gateMode, selectCampus, requireCampus, setGateOpen,
+      gateOpen, gateAction, gateMode, selectCampus, requireCampus, releaseCampus, setGateOpen,
       dismissGate,
       adminCampusId, adminCampus, selectAdminCampus, clearAdminCampus,
     }}>

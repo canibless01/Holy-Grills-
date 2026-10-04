@@ -130,7 +130,7 @@ export default function Rewards() {
     try {
       await liveApi.hp.flashRedeem(reward.id);
       await refreshHp();
-      toast({ title: msg('FE_REWARDS_FLASH_REWARD_REDEEMED', '⚡ Flash reward redeemed!'), description: `${reward.name} unlocked at flash price.` });
+      toast({ title: msg('FE_REWARDS_FLASH_REWARD_REDEEMED', '⚡ Flash reward redeemed!'), description: msg('FE_REWARDS_NAME_UNLOCKED_AT_FLASH_PRICE', '{name} unlocked at flash price.', { name: reward.name }) });
       const r = await liveApi.rewards.list();
       setRewards(r);
     } catch (e) {
@@ -144,7 +144,7 @@ export default function Rewards() {
     try {
       const res = await liveApi.graduation.claim({});
       await refreshHp();
-      toast({ title: msg('FE_REWARDS_GRADUATION_HP_CLAIMED', '🎓 Graduation HP claimed!'), description: `${res?.hp_awarded ?? graduationHp()} HP awarded at level ${res?.academic_level ?? ''}.`.trim() });
+      toast({ title: msg('FE_REWARDS_GRADUATION_HP_CLAIMED', '🎓 Graduation HP claimed!'), description: msg('FE_REWARDS_GRADUATION_HP_HP_AWARDED_AT_LEVEL', '{graduation_hp} HP awarded at level {academic_level}.', { graduation_hp: res?.hp_awarded ?? graduationHp(), academic_level: res?.academic_level ?? '' }).trim() });
       setGradClaimed(true);
     } catch (e) {
       toast({ title: msg('FE_REWARDS_CLAIM_FAILED', 'Claim failed'), description: e.message, variant: 'destructive' });
@@ -179,7 +179,7 @@ export default function Rewards() {
     try {
       await liveApi.rewards.redeem(selectedReward.id);
       await refreshHp();
-      toast({ title: msg('FE_REWARDS_REWARD_REDEEMED', '🎉 Reward redeemed!'), description: `${selectedReward.name} is on its way.` });
+      toast({ title: msg('FE_REWARDS_REWARD_REDEEMED', '🎉 Reward redeemed!'), description: msg('FE_REWARDS_NAME_IS_ON_ITS_WAY', '{name} is on its way.', { name: selectedReward.name }) });
       setSelectedReward(null);
     } catch (e) {
       toast({ title: msg('FE_REWARDS_REDEMPTION_FAILED', 'Redemption failed'), description: e.message, variant: 'destructive' });

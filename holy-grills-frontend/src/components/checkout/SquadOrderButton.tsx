@@ -28,7 +28,7 @@ export default function SquadOrderButton({ itemCount, value, onChange }) {
       if (toGo > 0) {
         toast({ title: msg('FE_SQUAD_ORDER_BUTTON_YOUR_ORDER_IS_NOT_VALID_FOR_SQUAD_ORDER', 'Your order is not valid for Squad Order'), description: `Add ${toGo} more item${toGo !== 1 ? 's' : ''} to reach the ${min}-item squad minimum.` });
       } else {
-        toast({ title: `Squad orders are capped at ${max} items`, description: `Remove ${over} item${over !== 1 ? 's' : ''} to keep your squad order within the ${max}-item limit.` });
+        toast({ title: msg('FE_SQUAD_ORDER_BUTTON_SQUAD_ORDERS_ARE_CAPPED_AT_MAX_ITEMS', 'Squad orders are capped at {max} items', { max: max }), description: `Remove ${over} item${over !== 1 ? 's' : ''} to keep your squad order within the ${max}-item limit.` });
       }
       return;
     }

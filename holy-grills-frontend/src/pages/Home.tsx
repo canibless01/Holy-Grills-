@@ -97,7 +97,7 @@ export default function Home() {
     const hasRequired = (detail.variation_groups || []).some((vg) => vg.is_required) || (addons.addon_groups || []).some((ag) => ag.is_required);
     if (!hasRequired) {
       await addToCart({ menu_item_id: item.id, quantity: 1 });
-      toast({ title: msg('FE_HOME_ADDED_TO_YOUR_CART', 'Added to your cart'), description: `${item.name} is ready to checkout.`, sound: 'cart_add' });
+      toast({ title: msg('FE_HOME_ADDED_TO_YOUR_CART', 'Added to your cart'), description: msg('FE_HOME_NAME_IS_READY_TO_CHECKOUT', '{name} is ready to checkout.', { name: item.name }), sound: 'cart_add' });
     } else {
       navigate(`/menu/${item.id}`);
     }

@@ -61,7 +61,7 @@ export default function AdminChallenges() {
     setBusy(id);
     try {
       await mockApi.admin.deleteChallenge(id);
-      toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_DELETED', 'Milestone deleted'), description: `"${title}" removed.` });
+      toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_DELETED', 'Milestone deleted'), description: msg('FE_ADMIN_CHALLENGES_TITLE_REMOVED', '"{title}" removed.', { title: title }) });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
@@ -73,7 +73,7 @@ export default function AdminChallenges() {
     setBusy(id);
     try {
       await mockApi.admin.grantChallenge(id, { user_id: uid.trim() });
-      toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_GRANTED', '✅ Milestone granted'), description: `"${title}" manually granted.` });
+      toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_GRANTED', '✅ Milestone granted'), description: msg('FE_ADMIN_CHALLENGES_TITLE_MANUALLY_GRANTED', '"{title}" manually granted.', { title: title }) });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
@@ -141,8 +141,8 @@ function ChallengeModal({ item, onClose, onSaved }) {
       is_active: form.is_active ?? false,
     };
     try {
-      if (item) { await mockApi.admin.updateChallenge(item.id, body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_UPDATED', '✅ Milestone updated'), description: `"${body.title}" saved.` }); }
-      else { await mockApi.admin.createChallenge(body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_CREATED', '✅ Milestone created'), description: `"${body.title}" is now live.` }); }
+      if (item) { await mockApi.admin.updateChallenge(item.id, body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_UPDATED', '✅ Milestone updated'), description: msg('FE_ADMIN_CHALLENGES_TITLE_SAVED', '"{title}" saved.', { title: body.title }) }); }
+      else { await mockApi.admin.createChallenge(body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_CREATED', '✅ Milestone created'), description: msg('FE_ADMIN_CHALLENGES_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) }); }
       onClose(); onSaved();
     } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSubmitting(false);

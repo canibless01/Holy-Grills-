@@ -85,7 +85,7 @@ export default function AdminNotifications() {
     try {
       const res = await mockApi.admin.sendNotificationBlast(buildPayload());
       if (isScheduled) {
-        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SCHEDULED', '📅 Campaign scheduled'), description: `Will send on ${new Date(sendAt).toLocaleString()}` });
+        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SCHEDULED', '📅 Campaign scheduled'), description: msg('FE_ADMIN_NOTIFICATIONS_WILL_SEND_ON_DATE', 'Will send on {date}', { date: new Date(sendAt).toLocaleString() }) });
       } else {
         const sentTo = res?.sent_to ?? res?.recipients ?? res?.recipient_count;
         toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SENT', '🔔 Campaign sent'), description: sentTo != null ? `Delivered to ${sentTo} recipients` : 'Blast sent successfully' });
