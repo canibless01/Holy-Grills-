@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
+import { openCmsDestination } from '@/lib/safeNavigation';
 
 /**
  * PromoFlyerPopup — a flyer popup shown once per login session on the homepage.
@@ -55,8 +56,8 @@ export default function PromoFlyerPopup() {
     const dest = section?.cta_url || section?.content?.destination;
     dismiss();
     if (!dest) return;
-    if (/^https?:\/\//.test(dest)) window.open(dest, '_blank', 'noopener,noreferrer');
-    else navigate(dest);
+    // S8 — the rule this popup used to carry inline now lives in one helper.
+    openCmsDestination(dest, navigate);
   };
 
   return (

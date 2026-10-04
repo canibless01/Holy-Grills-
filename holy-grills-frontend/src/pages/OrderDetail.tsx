@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, MapPin, Clock, CreditCard, Flame, Star, RefreshCw, Share2, X, Check, Package, Bike, Phone, User, Gift, Mail } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { liveApi } from '@/lib/liveApi';
+import { safeCallHref } from '@/lib/safeNavigation';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer } from '@/lib/hgUtils';
@@ -160,11 +161,13 @@ export default function OrderDetail() {
   // Call rider — fetch a secure tel: link from GET /orders/<id>/call-rider
   // instead of trusting an embedded field on the order object.
   const handleCallRider = async () => {
+    // S7 — the backend supplies the number, and only tel:/https: links are
+    // followed. Anything else is reported as unavailable rather than navigated to.
     if (callLink) { window.location.href = callLink; return; }
     setCallingRider(true);
     try {
       const res = await liveApi.orders.callRider(id);
-      const link = res?.rider?.call_link || res?.call_link || res?.call_url || '';
+      const link = safeCallHref(res?.rider?.call_link || res?.call_link || res?.call_url);
       if (link) { setCallLink(link); window.location.href = link; }
       else toast({ title: 'Call unavailable', description: 'No rider call link right now.', variant: 'destructive' });
     } catch (e) { toast({ title: 'Call failed', description: e.message, variant: 'destructive' }); }

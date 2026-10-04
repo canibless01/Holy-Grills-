@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronLeft, Wallet, CreditCard, Flame, Check, Loader2, Tag, Info } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
+import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
@@ -69,7 +70,13 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
       const res = await liveApi.events.register(event.id, body);
 
       // Card payments are webhook-driven — redirect to Paystack and poll after.
+      // The URL is checked before the browser follows it: only https on a
+      // Paystack host (S1). A refused link throws into the catch below rather
+      // than sending the user somewhere unexpected.
       if (res?.authorization_url) {
+        if (!isAllowedPaymentUrl(res.authorization_url)) {
+          throw new Error('The payment link did not look safe, so nothing was charged. Please try again.');
+        }
         window.location.href = res.authorization_url;
         return;
       }

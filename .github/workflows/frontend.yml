@@ -47,6 +47,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Navigation policy tests (Phase 7)
+        run: npm run test:safe-navigation
+
       - name: Build (client + SSR + pre-render)
         run: npm run build
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
+import { safeCallHref } from '@/lib/safeNavigation';
 import { isAuthenticated, clearTokens } from '@/lib/apiClient';
 import { useSound } from '@/lib/SoundProvider';
 import { toast } from '@/components/ui/use-toast';
@@ -132,7 +133,10 @@ export function useRiderData() {
     setCalling(orderId);
     try {
       const link = await liveApi.riders.getCallLink(orderId);
-      window.location.href = (link && (link.call_link || link.call_url)) || '';
+      // S7 — only tel:/https: from the backend is followed.
+      const href = safeCallHref(link && (link.call_link || link.call_url));
+      if (!href) throw new Error('No phone number available');
+      window.location.href = href;
     } catch (e) {
       toast({ title: 'Call failed', description: e?.message || 'No phone number available', variant: 'destructive' });
     }

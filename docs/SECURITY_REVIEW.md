@@ -17,22 +17,20 @@ file and line it came from.
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
-| S1 | Medium | Payment redirect targets (`authorization_url`) are assigned to `window.location.href` with no scheme/host validation — 3 sites | proposed |
-| S2 | Medium | Password-reset token stays in the URL after use (history, referrer, shoulder-surfing) | proposed |
+| S1 | Medium | Payment redirect targets (`authorization_url`) were assigned to `window.location.href` unvalidated — 3 sites | **applied** |
+| S2 | Medium | Password-reset token stays in the URL after use (history, referrer, shoulder-surfing) | **applied** (+ confirmation screen) |
 | S3 | Medium | Access/refresh tokens live in `localStorage`/`sessionStorage` — XSS-reachable by design | accepted (frozen), mitigate via S4 |
 | S4 | Medium | No CSP and no security headers anywhere (`vercel.json` had no `headers` key) | **applied** — report-only, see below |
 | S5 | Low–Med | `npm audit`: 16 findings, now **11** after S6; the rest are build-chain or the react-router moderates | reduced |
 | S6 | Low | 15 declared runtime dependencies were never imported | **applied** — removed, build unchanged |
-| S7 | Low | Server-provided `call_link` assigned to `window.location.href` without validating the `tel:` scheme — 2 sites | proposed |
-| S8 | Low | CMS link fields are handled inconsistently: one site guards external URLs, two `navigate()` any string | proposed |
+| S7 | Low | Server-provided `call_link` was assigned to `window.location.href` unvalidated — 2 sites | **applied** |
+| S8 | Low | CMS link fields were handled inconsistently | **applied** (one shared rule) |
 | S9 | Low | Google Fonts loaded from a third-party origin on every page (privacy/supply chain) | proposed (later) |
 | S10 | Info | Guest `claim_token` and a `hg_admin_*` selector in storage; sidebar cookie has no flags; one GPS `console.log` | documented |
 
-> **Applied so far (2026-10-04):** S4 (CSP report-only + enforcing headers,
-> through the `vercel.json` generator and asserted in the smoke suite) and S6
-> (15 unused runtime dependencies removed; 16 → 11 audit findings; shipped bundle
-> byte-identical). S1, S2, S7 and S8 are still proposals and are explained in
-> detail below.
+> **Applied (2026-10-04):** S1, S2, S4, S6, S7, S8. Still open: S9 (self-hosted
+> fonts, deliberately deferred) and the react-router decision (see the last
+> section). Everything below is the finding as written plus what shipped.
 
 **Verified clean** (evidence in the last section): no `eval`/`innerHTML`/
 `javascript:` sinks in app code, **no secrets in the shipped bundles**, no token
@@ -42,7 +40,7 @@ role-guarded backend route, and the backend enforces roles on admin routes.
 
 ---
 
-## S1 — Payment redirects are not validated (medium)
+## S1 — Payment redirects are not validated (medium) — **applied**
 
 ```
 src/components/events/RegisterModal.tsx:73       window.location.href = res.authorization_url;
@@ -53,13 +51,16 @@ src/components/wallet/WalletFundModal.tsx:58     window.location.href = result.a
 Each value comes from the backend's Paystack handoff. `window.location.href`
 accepts `javascript:` URIs and executes them, and `//host/` is protocol-relative,
 so a malformed or attacker-influenced response is a script-execution primitive in
-the payment flow — the worst place to have one. The backend is trusted here, which
-is why this is medium and not high, but the client should not be the place where
-that trust is unbounded.
+the payment flow.
 
-**Proposed fix:** one helper that only allows `https:` and (for this flow) hosts
-under an allow-list (`checkout.paystack.com`, plus the configured API origin), and
-falls back to an error toast. Apply at the three sites.
+Applied: `src/lib/safeNavigation.ts` exports `isAllowedPaymentUrl()` — https on
+`paystack.com` or a subdomain (`checkout.paystack.com` is where Paystack's
+initialize call points, and it is the only provider this app uses). All three
+sites check before assigning. A refusal is loud, never silent: the two modals
+throw into their existing error toast, and `WalletFundModal` — whose `handleFund`
+is a bare `onClick` and whose catch rethrows — shows its own destructive toast
+instead of failing invisibly. Payments fail *closed*: a URL that does not match is
+not followed.
 
 ## S2 — Reset token persists in the URL (medium)
 
@@ -73,9 +74,24 @@ lands in browser history, in any "copy link" the user performs, and in the
 `Referer` of any cross-origin request the page makes (modern browsers trim the
 path by default, but that is a browser default, not a guarantee).
 
-**Proposed fix:** after reading it, `history.replaceState(null, '', '/reset-password')`
-so the token exists only in memory; keep sending it in the POST body (already the
-case — it is never sent in a URL).
+**Applied fix:** the token is captured once into state, then
+`history.replaceState(null, '', window.location.pathname)` drops it from the
+address bar. It is still sent to the backend in the POST body — never in a URL.
+Two details worth knowing:
+
+- The token is captured in a **state initialiser** (`useState(() => searchParams.get('token'))`).
+  Reading it straight from `searchParams` would break the moment the URL is
+  scrubbed: the parameter would disappear and the page would flip to its
+  "invalid link" state mid-flow.
+- **A refresh before submitting now needs a new email link**, because the token
+  only exists in that page's memory. Submitting works exactly as before.
+
+**Success screen.** The flow used to bounce straight to `/login` on success. It now
+shows a confirmation — "Password changed … every other session on your account has
+been signed out" (which the backend really does: `_revoke_supabase_sessions` in
+`app/routes/auth.py`) — with a "Continue to login" link. Auto-login was
+deliberately *not* added: it would mean silently authenticating with the new
+password on a screen reached from an emailed link.
 
 ## S3 — Tokens in web storage (medium, accepted)
 
@@ -178,8 +194,13 @@ src/hooks/useRiderData.ts:135   window.location.href = (link && (link.call_link 
 The comment at `OrderDetail.tsx:160` says the link is fetched from
 `GET /orders/<id>/call-rider` rather than trusted from the order object — good
 instinct, but the fetched value is still assigned unchecked. A `javascript:`
-value here would run in the origin. Same proposed fix as S1: allow `tel:` and
-`https:` only.
+value here would run in the origin. Applied: both sites run the value through `safeCallHref()`
+(`tel:` payload reduced to digits and a leading `+`; `https://` allowed for
+click-to-chat; anything else returns null → the existing "no number available"
+message). The scheme test is done on the raw string, **not** after resolving
+against the current origin — a relative-resolution first draft turned junk like
+`"not a url"` into a valid same-origin https URL and would have navigated away
+instead of reporting no number. The test suite below covers that case.
 
 ## S8 — CMS link fields handled inconsistently (low)
 
@@ -190,9 +211,23 @@ src/components/storefront/StorefrontSlider.tsx:98 navigate(dest);               
 ```
 
 react-router normalises absolute URLs to a path rather than leaving the origin,
-so this is not an open redirect to another site; the risk is a hostile/broken
-CMS value producing odd navigation. The popup's pattern is the right one — make
-it the shared helper so all three behave the same.
+so this was not an open redirect to another site; the risk was a hostile/broken
+CMS value producing odd navigation.
+
+Applied: `openCmsDestination(dest, navigate)` in `src/lib/safeNavigation.ts` is now
+the single rule — absolute `http(s)` opens in a new tab with `noopener,noreferrer`,
+anything else goes through `navigate()`. `HeroCarousel`, `StorefrontSlider` and
+`PromoFlyerPopup` all call it, so a CMS link behaves the same wherever it appears.
+
+## Covered by `npm run test:safe-navigation`
+
+`scripts/test-safe-navigation.mjs` transpiles the real module with esbuild and
+asserts the policy: payment URLs are refused for `http:`, `javascript:`, other
+hosts and look-alikes such as `evil-paystack.com`; call links are refused for
+`javascript:`, `http:`, too-short `tel:` values and plain junk, and normalised for
+`tel:+234 801 234 5678`; CMS links open externally with `noopener,noreferrer` and
+internally through the router. It runs in CI between lint and build (that is how
+the relative-resolution bug above was caught).
 
 ## S9 — Third-party font CSS (low, deferred)
 
@@ -242,3 +277,46 @@ noted here and left for a later round.
 7. **react-router 7** — planned upgrade on its own branch, not folded into this work.
 
 Nothing in this document has been applied yet; each item is a proposal.
+
+---
+
+## react-router 7 — cost and benefit (decision: skipped for now)
+
+We are on `react-router-dom@6.30.4`; the latest 6.x is `6.30.6`, and all 6.x
+versions carry the three moderate advisories. The fix line is **7.18+**.
+
+**What the advisories actually need**
+
+1. *Open redirect via backslash in `<Link>`/`useNavigate>`* — an attacker-controlled
+   target string. Every navigation target in this app is a literal (`/admin`,
+   `/kitchen`, …) or an id interpolated into a fixed path; the one place a payload
+   could influence a destination is notifications, and that already requires
+   `target.startsWith('/')`.
+2. *Constructor injection via `deserializeErrors()` in SSR hydration* — a
+   Remix/data-router code path. This app has no data router: the pre-render is a
+   plain `StaticRouter` tree, and the browser entry is `BrowserRouter`.
+
+So neither is reachable today. `npm audit` will keep listing them, which is the
+real cost of staying — noise, not exposure.
+
+**What the upgrade costs**
+
+- `react-router-dom/server` no longer exists as such; `StaticRouter` moves to the
+  `react-router` package, so `src/entry-server.tsx` changes.
+- v7 requires React 18+ (we are on 18.3.1, fine) but renames/moves several APIs;
+  `json`/`defer` and the `future` flags of 6.x are gone, so every `useNavigate`,
+  `Link`, `useSearchParams` and route definition needs a type-level pass.
+- `scripts/routes.mjs` parses `<Route path="...">` out of `App.tsx` for the
+  `vercel.json` route families — it must still find 39 routes after the migration,
+  which is a good automatic check on the upgrade.
+- Verification cost is one full cycle: typecheck, lint, build (7 pre-renders),
+  smoke, plus the browser hydration check that is already outstanding.
+
+**Options if it is revisited:** (a) upgrade on its own branch with nothing else in
+flight — the honest way; (b) stay on 6.x and keep the advisories documented as
+not-applicable — what we are doing now; (c) upgrade only if a React 19 migration is
+planned, since the two would otherwise be done twice.
+
+**Recommendation:** leave it. There is no exposure to remove today, and the upgrade
+is a behaviour-adjacent change that deserves its own round with the browser
+hydration check available.

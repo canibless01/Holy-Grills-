@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { liveApi } from '@/lib/liveApi';
+import { openCmsDestination } from '@/lib/safeNavigation';
 
 interface HeroSlide {
   image: string;
@@ -117,7 +118,8 @@ export default function HeroCarousel({ onCta }) {
   const go = () => {
     const dest = s.cta_url || '/menu';
     if (onCta && dest === '/menu') onCta();
-    else navigate(dest);
+    // S8 — external links open in a new tab, internal ones route.
+    else openCmsDestination(dest, navigate);
   };
 
   return (

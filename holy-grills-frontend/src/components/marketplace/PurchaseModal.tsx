@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Flame, Wallet, CreditCard, Split, Check, Loader2, Package } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
+import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
@@ -57,7 +58,11 @@ export default function PurchaseModal({ listing, onClose, onSuccess }) {
       if (method === 'split') body.wallet_amount = walletAmount;
       const res = await liveApi.marketplace.purchase(listing.id, body);
 
+      // S1 — only https on a Paystack host is followed.
       if (res?.authorization_url) {
+        if (!isAllowedPaymentUrl(res.authorization_url)) {
+          throw new Error('The payment link did not look safe, so nothing was charged. Please try again.');
+        }
         window.location.href = res.authorization_url;
         return;
       }

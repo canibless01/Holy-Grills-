@@ -3,7 +3,9 @@ import { CreditCard, Building2, X, Copy, Check, Flame, Loader2 } from 'lucide-re
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import { walletMinCardTopup, walletTopupMin, walletTopupHp } from '@/lib/appConfig';
+import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import ModalPortal from '@/components/ModalPortal';
+import { toast } from '@/components/ui/use-toast';
 
 const PRESETS = [1000, 3000, 5000, 10000];
 
@@ -54,7 +56,17 @@ export default function WalletFundModal({ open, onClose, wallet, onSuccess }) {
     try {
       if (method === 'card') {
         const result = await liveApi.wallet.fundCard({ amount: amt, callback_url: `${window.location.origin}/wallet` });
+        // S1 — only https on a Paystack host is followed.
         if (result.authorization_url) {
+          if (!isAllowedPaymentUrl(result.authorization_url)) {
+            setProcessing(false);
+            toast({
+              title: 'Payment not started',
+              description: 'The payment link did not look safe, so nothing was charged. Please try again.',
+              variant: 'destructive',
+            });
+            return;
+          }
           window.location.href = result.authorization_url;
           return;
         }

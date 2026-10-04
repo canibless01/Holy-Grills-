@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Lock, Loader2, AlertTriangle, Eye, EyeOff, Check } from "lucide-react";
 import { liveApi } from "@/lib/liveApi";
@@ -6,7 +6,20 @@ import AuthLayout from "@/components/AuthLayout";
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
-  const resetToken = searchParams.get("token");
+  // Captured once, into state: the address bar is scrubbed below (S2), and
+  // re-reading the parameter afterwards must not flip the form into its
+  // "invalid link" state mid-session.
+  const [resetToken] = useState(() => searchParams.get("token"));
+  const [done, setDone] = useState(false);
+
+  // S2 — drop the token from the URL as soon as it is in memory: it no longer
+  // sits in browser history, in a copied/shared link, or in the Referer of any
+  // request this page makes. The token itself is unaffected — it is sent to the
+  // backend in the POST body when the form is submitted.
+  useEffect(() => {
+    if (!resetToken) return;
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [resetToken]);
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,13 +53,35 @@ export default function ResetPassword() {
       // could never validate the custom-backend token. If this endpoint 404s,
       // the error surfaces here so the backend route can be corrected.
       await liveApi.auth.confirmReset({ access_token: resetToken, new_password: newPassword });
-      window.location.href = "/login";
+      // Confirmation rather than a silent bounce to /login, so the user knows the
+      // password actually changed (and that every other session was signed out).
+      setDone(true);
     } catch (err) {
       setError(err.message || "Failed to reset password");
     } finally {
       setLoading(false);
     }
   };
+
+  if (done) {
+    return (
+      <AuthLayout
+        icon={Check}
+        title="Password changed"
+        subtitle="Your new password is in place"
+        footer={
+          <Link to="/login" className="text-primary font-medium hover:underline">
+            Continue to login
+          </Link>
+        }
+      >
+        <p className="text-sm text-foreground text-center leading-relaxed">
+          You can now sign in with your new password. For safety, every other
+          session on your account has been signed out.
+        </p>
+      </AuthLayout>
+    );
+  }
 
   if (!resetToken) {
     return (

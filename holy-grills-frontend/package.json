@@ -16,7 +16,8 @@
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:safe-navigation": "node scripts/test-safe-navigation.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.3",

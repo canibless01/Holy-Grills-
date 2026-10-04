@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useNavigate } from 'react-router-dom';
+import { openCmsDestination } from '@/lib/safeNavigation';
 
 // Each homepage slider gets its own visual identity so the page doesn't feel
 // like the same card repeated four times. Images are power-clipped via
@@ -95,7 +96,8 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
     if (loggedInOnly && !isAuthenticated) {
       navigate(`/login?returnTo=${encodeURIComponent(dest)}`);
     } else {
-      navigate(dest);
+      // S8 — external links open in a new tab, internal ones route.
+      openCmsDestination(dest, navigate);
     }
   };
 
