@@ -123,6 +123,12 @@ project does not enable `noUnusedParameters`.
 
 Third pass (post-B6 decisions):
 
+> **Phase 7 security review is in `docs/SECURITY_REVIEW.md`** (authorised this
+> session): 10 findings, none applied yet — payment-redirect validation, the
+> reset-token URL, CSP/security headers, 13 unused runtime dependencies, and the
+> react-router 7 upgrade decision. Every finding carries file:line evidence and a
+> proposed patch.
+
 | # | Was | Now |
 |---|---|---|
 | F8 | `Config.CORS_ORIGINS` was composed from env **plus a hardcoded origin list** that still named the retired `base44.app` host. It was dead config either way: `app/__init__.py` registers `CORS(app, origins="*")` | hardcoded list removed — origins are env-only now (`CORS_ORIGINS` / `ALLOWED_ORIGINS` / `FRONTEND_URL`), with a comment saying the list is not enforced until the app stops passing `origins="*"`. `holy-grills-backend/ENV_CONFIGURATION.md` and `README.md` updated to match: CORS stays `*` until deployment, then set the two variables **and** switch `CORS(...)` to the configured list |
