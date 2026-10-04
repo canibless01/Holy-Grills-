@@ -53,6 +53,9 @@ jobs:
       - name: Render-safety helper tests (admin data shapes)
         run: npm run test:value-text
 
+      - name: Settings-merge tests (admin vs user value precedence)
+        run: npm run test:settings-merge
+
       - name: Build (client + SSR + pre-render)
         run: npm run build
 

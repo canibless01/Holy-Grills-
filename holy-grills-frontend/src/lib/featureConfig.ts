@@ -8,6 +8,16 @@
 // keeps working with sensible built-in defaults.
 
 import { liveApi } from './liveApi';
+import { localStore } from './storage';
+import { mergeAdminSettings } from './settingsMerge';
+
+export { mergeAdminSettings };
+
+// Kept in sync with campusContext.tsx. Imported from there instead of
+// importing getStoredCampusId(), because campusContext -> HolyGrillContext ->
+// featureConfig is a cycle: the binding can be undefined at the moment this
+// module evaluates. storage.ts imports nothing that leads back here.
+const CAMPUS_STORAGE_KEY = 'hg_campus_id';
 
 let settingsMap = {};
 let flagsMap = {};
@@ -107,9 +117,7 @@ export async function loadSystemSettings() {
   } catch (e) { /* public endpoint unavailable — try admin below */ }
   try {
     const adminSettings = await liveApi.admin.getSystemSettings();
-    (adminSettings || []).forEach((s) => {
-      if (s && s.key) settingsMap[s.key] = s.value;
-    });
+    mergeAdminSettings(settingsMap, adminSettings, localStore.getItem(CAMPUS_STORAGE_KEY) || null);
   } catch (e) { /* admin endpoint not accessible — keep public/defaults */ }
   return settingsMap;
 }

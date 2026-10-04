@@ -33,9 +33,6 @@ import { normalizeWhatsAppNumber } from '@/lib/valueText';
  * (app/routes/storefront.py → get_public_config).
  */
 
-// Shared with the admin Support panel, which previews the same link.
-export { normalizeWhatsAppNumber } from '@/lib/valueText';
-
 export default function WhatsAppFloatingButton() {
   const { getStringSetting, getBoolSetting } = useHolyGrill();
   const [activeOrder, setActiveOrder] = useState(null);

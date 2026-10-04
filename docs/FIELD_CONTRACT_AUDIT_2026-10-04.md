@@ -150,63 +150,129 @@ backend environment and restart the service. Until then, paste image URLs.
 
 ---
 
-## 4. Item 8 — WhatsApp is already implemented, and it is double-wired
+## 4. Item 8 — WhatsApp was never missing; the settings *merge* was wrong
 
-There is no missing WhatsApp backend. Two mechanisms already exist for the same toggle:
+You were right: the backend already had it, end to end. The chain is
 
-| Mechanism | Where | Read by |
-|---|---|---|
-| `system_settings.whatsapp_support_number` / `whatsapp_support_enabled` | `BACKEND_SOURCE_OF_TRUTH.md` §14, consumer `app/routes/storefront.py` | public storefront config |
-| `feature_flags.whatsapp_support_enabled` | `BACKEND_SOURCE_OF_TRUTH.md` §12, editor `AdminFeatureFlags.tsx` | `featureConfig.ts` |
+```
+system_settings row (is_public = TRUE)
+  → GET /api/storefront/config/public        [storefront.py get_public_config]
+  → featureConfig.loadSystemSettings()       [settingsMap]
+  → getStringSetting('whatsapp_support_number')
+  → WhatsAppFloatingButton → https://wa.me/<number>
+```
 
-`docs/SETTINGS.md` already states the intended rule: **`system_settings` is authoritative**
-(per-campus → global → env, env being the fallback and never the only copy). The
-`feature_flags` row is a second, independent switch — `AdminFeatureFlags.tsx` even ships an
-on-screen note that DB flags and the app's built-in client toggles are separate mechanisms.
+with `WHATSAPP_SUPPORT_NUMBER` / `WHATSAPP_SUPPORT_MESSAGE` as the server-env fallback when
+the table has no row (D17-B22). `AdminSystemSettings.tsx` already carried
+`whatsapp_support_number` and `whatsapp_support_enabled` in its `KNOWN_SETTINGS` map.
 
-That duplication is the most likely reason a number other than the one in your settings
-table opens in the app. **Recommended direction: keep `system_settings`, retire the
-`feature_flags` copy** — but I have not made that change yet, because it changes behaviour
-on the live site and needs your call (see §6).
+**The actual defect was in `featureConfig.loadSystemSettings()`.** It ran two passes, and
+the second one clobbered the first:
+
+```js
+// pass 1 — public config: campus-scoped, is_public-filtered, campus row beats global row
+settingsMap = { ...publicConfig };
+// pass 2 — admin list, which overwrote it wholesale
+(adminSettings || []).forEach((s) => { if (s && s.key) settingsMap[s.key] = s.value; });
+```
+
+`GET /admin/settings` is `SELECT * FROM system_settings ORDER BY key` — **every row, every
+campus, `is_public = false` included, with no campus scoping at all**. So pass 2 had three
+independent ways to hand an admin a value no user can ever receive:
+
+1. **A private row overwrote the public one.** The public endpoint filters on
+   `is_public = TRUE`; the admin list does not. Save a number, see it in the table, and the
+   button still used the other one.
+2. **Campus precedence was decided by row order.** With a global row *and* per-campus rows
+   for the same key, the winner was whichever row the database happened to return last —
+   not the campus-scoped row the backend itself would pick.
+3. **A `null` value wiped a good value.** Pass 1 deliberately skips nulls; pass 2 did not.
+
+That is precisely "the app opens a different number than any value in the settings table".
+And it was never WhatsApp-specific — **it poisoned every one of the ~40+ settings keys.**
+
+**Fix:** `src/lib/settingsMerge.ts` — a new import-free `mergeAdminSettings()` that applies
+the backend's own precedence rules (drop other campuses' rows; with no campus selected keep
+global rows only; campus row beats global row; nulls never overwrite) and **never replaces a
+key the public config already resolved**. 14 unit tests in
+`scripts/test-settings-merge.mjs`; wired into `npm run build` and the `frontend.yml` CI
+workflow.
+
+### Duplicates removed
+
+You flagged this specifically, and you were right — I had built a second admin surface for
+something that already existed:
+
+- **Deleted** `src/components/admin/SupportChannelSettings.tsx` (and its two references in
+  `AdminSystemSettings.tsx`). `AdminSystemSettings` already edits every one of those keys,
+  with purpose text, boolean toggles and the `is_public` handling.
+- **Deleted** `migrations/2026-10-04_seed_whatsapp_support_settings.sql` — it seeded rows
+  the existing seed already covers.
+- **Removed** the now-dead `normalizeWhatsAppNumber` re-export from
+  `WhatsAppFloatingButton.tsx`.
+
+The one genuine gap in the existing panel was `whatsapp_support_message`, which had no entry
+in `KNOWN_SETTINGS`. **Added** — three lines in the panel that already existed, not a new
+one.
+
+### Still open, and it needs your call
+
+`whatsapp_support_enabled` exists in **two** mechanisms: `system_settings` (read by the
+floating button) and `feature_flags` (edited in `AdminFeatureFlags.tsx`, read by
+`isFeatureEnabled`). `docs/SETTINGS.md` makes `system_settings` authoritative. I have not
+retired the `feature_flags` copy because it changes live behaviour — say the word and I will.
 
 ---
 
-## 5. Answer to "frontend files with no backend route — are any of them mocks?"
+## 5. Answer to "API client methods with no backend route — what does that imply?"
 
-Checked directly, and **no**: there is no mock or shadow-Supabase layer in the frontend API
-client.
+**It implies nothing, because there are none.** I re-ran the check properly this time.
 
-- `src/lib/mockApi.ts` is four lines: `export { liveApi as mockApi } from './liveApi'`.
-  The in-memory simulation is already retired; the name is now just an alias. Nothing was
-  deleted because nothing duplicative remains.
-- `src/lib/storefrontMockData.ts` is 18 lines and calls `liveApi` — backend-only, no fallback.
-- Neither file touches Supabase. Every admin panel goes through `apiClient` → your Flask API.
+The earlier "426 of 426 missing" figure was a bug in my own script: it compared frontend
+paths like `/storefront/sections` (no prefix) against Flask rules that carry the blueprint's
+`url_prefix` (`/api/storefront`). It reported every call as missing. Resolving the prefixes
+from `app/__init__.py` gives:
+
+| | |
+|---|---|
+| Distinct Flask `(method, rule)` pairs | **479** |
+| `apiClient` calls in `liveApi.ts` | **426** |
+| **Unmatched calls** | **0** |
+
+The matcher is not trivially permissive — it rejects `/api/definitely/not/a/route`,
+`/api/nope`, `/api/storefront/sections/1/extra` and `DELETE /api/menu/items/1`, while
+accepting the real rules.
+
+So what about the mocks?
+
+- `src/lib/mockApi.ts` is four lines: `export { liveApi as mockApi } from './liveApi'`. The
+  in-memory simulation is already retired; the name is now just an alias.
+- `src/lib/storefrontMockData.ts` is 18 lines and calls `liveApi`.
+- **Neither touches Supabase.** There is no shadow copy writing to your database behind the
+  API's back — I checked both files line by line, and there is no second Supabase client.
 
 Of the ~90 methods on `liveApi`, exactly two do not call `apiClient`, and neither is a mock:
 
-- `getCheckinHistory()` — returns `[]` (feature not built server-side yet).
+- `getCheckinHistory()` — returns `[]` (no server-side feature yet).
 - `downloadTicketPdf()` — uses `getToken()` + `localStorage` directly, because it streams a
-  binary response that the JSON client cannot parse. Legitimate.
+  binary response the JSON client cannot parse. Legitimate.
 
-So the "no matching backend route" entries are **frontend calls ahead of the backend**, not
-duplicate implementations. They fail loudly against the API rather than quietly writing to
-the wrong place.
+**Conclusion: nothing to delete.** Every panel goes `admin → apiClient → your Flask API →
+Supabase`. There is no parallel path to interfere with the intended one.
 
 ---
 
-## 6. Corrections to the previous round
+## 6. Corrections to earlier rounds
 
-Two things I reported earlier were wrong and are withdrawn:
+Three things I reported previously were wrong and are withdrawn:
 
 1. **"POST /api/banners cannot set `mobile_image_url`"** — false. The route uses
-   `_banner_fields()`, which accepts it on both create and edit. My earlier figure came from
-   scanning the docstring, not the code.
-2. **"Add a `SupportChannelSettings` panel / seed migration for WhatsApp"** — withdrawn as a
-   proposal. The backend already has it. The new panel and
-   `migrations/2026-10-04_seed_whatsapp_support_settings.sql` are **not yet deleted** — they
-   are the wrong shape for the fix and I want your confirmation before removing them, since
-   §4 has two defensible resolutions (retire the `feature_flags` copy, or retire the
-   `system_settings` copy).
+   `_banner_fields()`, which accepts it on create and edit. My figure came from scanning the
+   docstring, not the code.
+2. **"Add a `SupportChannelSettings` panel and seed migration for WhatsApp"** — withdrawn.
+   The backend already had it; the panel duplicated `AdminSystemSettings`. Both deleted (§4).
+3. **"426 frontend API calls have no backend route"** — false, and it was a bug in my own
+   script (§5). The correct number is zero.
 
 ---
 
@@ -219,6 +285,12 @@ Two things I reported earlier were wrong and are withdrawn:
 | `holy-grills-backend/tests/test_storefront_section_fields.py` | **new** — 8 tests pinning the create/update contract |
 | `holy-grills-frontend/src/components/admin/AdminStorefront.tsx` | `placementOf()` reads placement from `content`; corrected the stale "backend accepts the full section row" comment |
 | `holy-grills-frontend/src/components/admin/ImageUploader.tsx` | calls `GET /upload/status` on mount; opens the URL field and names the missing env vars when uploads are off |
+| `holy-grills-frontend/src/lib/settingsMerge.ts` | **new** — `mergeAdminSettings()`, the fix for the WhatsApp/settings precedence bug |
+| `holy-grills-frontend/scripts/test-settings-merge.mjs` | **new** — 14 tests, wired into `npm run build` + CI |
+| `holy-grills-frontend/src/lib/featureConfig.ts` | `loadSystemSettings()` now merges admin rows through `mergeAdminSettings()` instead of clobbering |
+| `holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx` | added the missing `whatsapp_support_message` key; dropped the duplicate `SupportChannelSettings` panel |
+| **deleted** `src/components/admin/SupportChannelSettings.tsx` | duplicated `AdminSystemSettings` |
+| **deleted** `migrations/2026-10-04_seed_whatsapp_support_settings.sql` | seeded rows that already exist |
 
 ## 8. Verification
 
@@ -230,6 +302,9 @@ Two things I reported earlier were wrong and are withdrawn:
 npx tsc --noEmit                                 # clean
 npx eslint src --quiet                           # clean
 npm run messages:check                           # every call site resolves
+npm run test:value-text                          # render-safety guards
+npm run test:settings-merge                      # 14 passed — admin vs user value precedence
+npm run build:client                             # builds
 ```
 
 Not verifiable from here: live Cloudinary credentials, whether a `whatsapp_support_number`

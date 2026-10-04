@@ -5,7 +5,6 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } from './ui/AdminKit';
 import EmailDeliverySettings from './EmailDeliverySettings';
-import SupportChannelSettings from './SupportChannelSettings';
 import { useCampus } from '@/lib/campusContext';
 import { msg } from '@/lib/messages';
 
@@ -44,6 +43,7 @@ const KNOWN_SETTINGS = {
   graduation_min_level: { default: 400, purpose: 'Minimum academic level for graduation eligibility' },
   whatsapp_support_number: { default: '2348000000000', purpose: 'Support contact number' },
   whatsapp_support_enabled: { default: true, purpose: 'Toggle support button in app' },
+  whatsapp_support_message: { default: 'Hello, I need help with my order', purpose: 'Prefilled text in the support chat' },
 };
 
 // Parse an edit-string back into the jsonb value shape: arrays for known
@@ -160,7 +160,6 @@ export default function AdminSystemSettings() {
         </button>
       </div>
 
-      {settings != null && <SupportChannelSettings settings={settings} onChanged={load} />}
 
       {settings != null && <EmailDeliverySettings settings={settings} onSaved={load} />}
 
