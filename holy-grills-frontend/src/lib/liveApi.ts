@@ -814,6 +814,17 @@ const admin = {
     return [...backendJobs, ...missing];
   },
 
+  // --- Campus delivery area ---
+  // The delivery radius is two values, not one, and neither had a UI:
+  //   • the campus CENTRE POINT (campuses.lat / .lon) — PATCH /admin/campuses/:id/location,
+  //     the single origin that `is_within_delivery_area` measures the radius from;
+  //   • the RADIUS itself (kitchen_settings.max_delivery_radius_km) — PATCH /kitchen/settings,
+  //     campus-scoped server-side by _resolve_kitchen_campus_id().
+  async getCampusLocation(campusId) { return apiClient.get(`/admin/campuses/${campusId}/location`); },
+  // body: { coordinates: "7.3021, 5.1391" } | { lat, lon } | { lat: null, lon: null } to clear.
+  // Coordinates outside Nigeria are refused unless force: true.
+  async setCampusLocation(campusId, body) { return apiClient.patch(`/admin/campuses/${campusId}/location`, body); },
+
   // --- System Settings (verified: /admin/settings, /admin/settings/:key) ---
   async getSystemSettings() { return unwrap(await apiClient.get('/admin/settings'), 'settings'); },
   async createSystemSetting(body) { return apiClient.post('/admin/settings', body); },

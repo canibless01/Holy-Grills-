@@ -262,6 +262,85 @@ Supabase`. There is no parallel path to interfere with the intended one.
 
 ---
 
+## 5b. Storefront image upload — already there, but wired to a field that never existed
+
+You asked whether I added the upload UI or dropped it. **Neither — it was already there**,
+in both places: the create modal (`AdminStorefront.tsx` "Image (required)") and the section
+editor. Hero banners are covered too (`AdminBanners.tsx`: main image, mobile image, carousel
+images).
+
+But it was **broken in a way that made it look absent**. `storefront_sections` has no
+top-level `image_url` — it lives in `content`. The editor read and wrote the flat names:
+
+```js
+<ImageUploader value={s.image_url || ''} onChange={(url) => upd(s.id, { image_url: url })} />
+```
+
+`GET /storefront/sections` returns raw rows, so `s.image_url` was **always `undefined`**.
+The save worked (it folded into `content.image_url`), but the field rendered permanently
+blank — upload an image, hit Save, and the uploader snapped back to empty. Same for
+`subtitle`, `cta_text` and `cta_url`. That is the "there's no image upload / image URL is
+required" report.
+
+**Fix:** `sectionField(s, name)` reads `content[name]` → legacy alias → flat name;
+`sectionPatch(s, name, value)` writes both so the value sticks on screen. `save()` sends
+what the fields show.
+
+| Field | Admin displayed | Backend stored | Verdict |
+|---|---|---|---|
+| `subtitle` | `s.subtitle` (**always blank**) | `content.subtitle` | fixed → `sectionField(s,'subtitle')` |
+| `image_url` | `s.image_url` (**always blank**) | `content.image_url` | fixed → `sectionField(s,'image_url')` |
+| `cta_text` / `cta_url` | `s.cta_*` (**always blank**) | `content.cta_*` | fixed |
+| `title` | `s.title` | `title` (real column) | was already OK |
+| testimonial / share fields | `s.content.*` | `content.*` | was already OK |
+
+## 5c. System settings — campus admins could not save anything
+
+Correct, and the UI did not reflect it. The backend rule
+(`require_settings_write_permission` in `admin_gifts.py`) is:
+
+- **global row** (`campus_id` NULL) → **super_admin only**
+- **campus row** → super_admin, *or* that campus's own admin
+
+`AdminSystemSettings` sent `PATCH /admin/settings/:key { value }` with **no `campus_id`**,
+which meant:
+
+- a **campus admin got a hard 403 on every save** — the panel was read-only for them;
+- a **super admin** editing a campus-scoped row silently wrote the **global** row instead,
+  or got 404 when no global row existed. So per-campus settings were uneditable by anyone.
+
+Two more defects from the same root: `key={s.key}` collided when a key existed globally *and*
+per campus, and `editKey === s.key` opened the editor on **every** campus copy at once.
+
+**Fix:** rows are identified by `key:campus_id` (`rowId`); `save()`/`toggleBool()` take the
+row and send its `campus_id`; global rows render a "Super admin only" badge instead of a Save
+button that would answer 403.
+
+## 5d. Delivery radius — it exists in the backend, but it had no screen
+
+**Nowhere.** You were not missing it; there was no UI for it anywhere.
+
+"Delivery range for my campus" is **two** values in **two** tables:
+
+| Value | Stored in | Endpoint |
+|---|---|---|
+| Centre point (origin the radius is measured from) | `campuses.lat` / `campuses.lon` | `GET`/`PATCH /admin/campuses/<id>/location` |
+| Radius in km | `kitchen_settings.max_delivery_radius_km` (per campus) | `GET`/`PATCH /kitchen/settings` |
+
+Both had endpoints and no screen. `PATCH .../location` even accepts
+`{ coordinates: "7.3021, 5.1391" }` pasted straight from Google Maps, and refuses points
+outside Nigeria unless `force: true` — none of which was reachable.
+
+**Added:** a **Delivery area** tab in **Admin → Delivery** (`AdminDeliveryArea.tsx`) with a
+campus selector (super admin), a paste-from-Maps coordinate field, a radius field, an
+"Open in Maps" link, and an explicit "save anyway" override for the outside-Nigeria
+rejection. New `liveApi` methods `getCampusLocation` / `setCampusLocation`. 31 message keys
+registered via `npm run messages:fix`.
+
+Both values are what `GET /storefront/config/public` returns as `campus_lat`, `campus_lon`
+and `max_delivery_radius_km`, and what `is_within_delivery_area` enforces at checkout — so
+this is admin → API → user, wired end to end.
+
 ## 6. Corrections to earlier rounds
 
 Three things I reported previously were wrong and are withdrawn:
@@ -291,6 +370,12 @@ Three things I reported previously were wrong and are withdrawn:
 | `holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx` | added the missing `whatsapp_support_message` key; dropped the duplicate `SupportChannelSettings` panel |
 | **deleted** `src/components/admin/SupportChannelSettings.tsx` | duplicated `AdminSystemSettings` |
 | **deleted** `migrations/2026-10-04_seed_whatsapp_support_settings.sql` | seeded rows that already exist |
+| `holy-grills-frontend/src/components/admin/AdminStorefront.tsx` | `sectionField()` / `sectionPatch()` — the section editor now reads and writes `content`, where the image actually lives |
+| `holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx` | sends the row's `campus_id` on PATCH so campus admins can save campus rows; `rowId()` keys; global rows gated to super admin |
+| `holy-grills-frontend/src/components/admin/AdminDeliveryArea.tsx` | **new** — the missing delivery-radius screen (centre point + radius) |
+| `holy-grills-frontend/src/components/admin/AdminDelivery.tsx` | new "Delivery area" tab |
+| `holy-grills-frontend/src/lib/liveApi.ts` | `getCampusLocation()` / `setCampusLocation()` |
+| `holy-grills-backend/app/messages.py` | 31 new `FE_ADMIN_DELIVERY_AREA_*` keys |
 
 ## 8. Verification
 

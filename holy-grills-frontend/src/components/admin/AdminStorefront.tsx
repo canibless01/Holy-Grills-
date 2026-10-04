@@ -134,6 +134,30 @@ type SectionDraft = {
 /** Sections have no `placement` column — the backend keeps it inside `content`. */
 const placementOf = (s: any): string => (s?.content?.placement ?? s?.placement ?? '') as string;
 
+// Everything visual on a section lives in the single JSONB `content` column —
+// a section row has no top-level subtitle / image_url / cta_*. The editor used
+// to read and write those flat names, so every one of those fields rendered
+// permanently blank (and the image uploader always looked empty) even though
+// the save WAS persisted into content. `content` is canonical; the legacy flat
+// keys and the old alias names are still tolerated when reading.
+const SECTION_ALIASES: Record<string, string> = { subtitle: 'subheadline', cta_url: 'cta_link' };
+
+const sectionField = (s: any, name: string): any => {
+  const c = s?.content && typeof s.content === 'object' ? s.content : {};
+  const alias = SECTION_ALIASES[name];
+  const v = c[name] ?? (alias ? c[alias] : undefined) ?? s?.[name];
+  return v === undefined || v === null ? '' : v;
+};
+
+/** Patch that keeps `content` and the flat mirror in step, so the field you just
+ *  typed into shows your value immediately instead of snapping back to blank. */
+const sectionPatch = (s: any, name: string, value: any) => {
+  const alias = SECTION_ALIASES[name];
+  const content: Record<string, unknown> = { ...(s?.content || {}), [name]: value };
+  if (alias) content[alias] = value;
+  return { [name]: value, content };
+};
+
 const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', share_key: 'share_template' });
 
 export default function AdminStorefront() {
@@ -192,10 +216,10 @@ export default function AdminStorefront() {
         key: keyFor(s),
         section_type: s.section_type,
         title: s.title ?? '',
-        subtitle: s.subtitle ?? '',
-        image_url: s.image_url ?? '',
-        cta_text: s.cta_text ?? '',
-        cta_url: s.cta_url ?? '',
+        subtitle: sectionField(s, 'subtitle'),
+        image_url: sectionField(s, 'image_url'),
+        cta_text: sectionField(s, 'cta_text'),
+        cta_url: sectionField(s, 'cta_url'),
         placement: placementOf(s),
         sort_order: s.sort_order ?? 0,
         is_active: s.is_active ?? true,
@@ -412,14 +436,14 @@ export default function AdminStorefront() {
               ) : (
                 <>
                   <input value={s.title || ''} onChange={(e) => upd(s.id, { title: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm font-bold" placeholder="Title" />
-                  <input value={s.subtitle || ''} onChange={(e) => upd(s.id, { subtitle: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm" placeholder="Subtitle" />
-                  <ImageUploader value={s.image_url || ''} onChange={(url) => upd(s.id, { image_url: url })} folder="banners" />
+                  <input value={sectionField(s, 'subtitle')} onChange={(e) => upd(s.id, sectionPatch(s, 'subtitle', e.target.value))} className="w-full mb-2 p-2 rounded-lg border border-border text-sm" placeholder="Subtitle" />
+                  <ImageUploader value={sectionField(s, 'image_url')} onChange={(url) => upd(s.id, sectionPatch(s, 'image_url', url))} folder="banners" />
                   {SLIDER_TAB_IDS.includes(s.section_type) && (
                     <input value={s.content?.badge || ''} onChange={(e) => upd(s.id, { content: { ...s.content, badge: e.target.value } })} className="w-full mt-2 p-2 rounded-lg border border-border text-sm" placeholder="Optional badge (e.g. Opening soon)" />
                   )}
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    <input value={s.cta_text || ''} onChange={(e) => upd(s.id, { cta_text: e.target.value })} className="p-2 rounded-lg border border-border text-sm" placeholder="CTA text" />
-                    <input value={s.cta_url || ''} onChange={(e) => upd(s.id, { cta_url: e.target.value })} className="p-2 rounded-lg border border-border text-sm" placeholder="CTA URL" />
+                    <input value={sectionField(s, 'cta_text')} onChange={(e) => upd(s.id, sectionPatch(s, 'cta_text', e.target.value))} className="p-2 rounded-lg border border-border text-sm" placeholder="CTA text" />
+                    <input value={sectionField(s, 'cta_url')} onChange={(e) => upd(s.id, sectionPatch(s, 'cta_url', e.target.value))} className="p-2 rounded-lg border border-border text-sm" placeholder="CTA URL" />
                   </div>
                 </>
               )}

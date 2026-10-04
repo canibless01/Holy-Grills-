@@ -1821,6 +1821,42 @@ class MSG:
     FE_USE_KITCHEN_DATA_ADVANCED               = "Advanced"
     FE_USE_KITCHEN_DATA_BATCH_SKIPPED          = "{count} skipped"
 
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_ADMIN_DELIVERY_AREA_COULDN_T_LOAD              = "Couldn't load the delivery area"
+    FE_ADMIN_DELIVERY_AREA_COORDS_INVALID             = "Enter coordinates as \"latitude, longitude\" — for example 7.3021, 5.1391"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_CLEARED             = "Campus centre cleared"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_SAVED               = "Campus centre saved"
+    FE_ADMIN_DELIVERY_AREA_DELIVERY_IS_MEASURED_FROM  = "Delivery distance is now measured from this point."
+    FE_ADMIN_DELIVERY_AREA_SAVE_FAILED                = "Could not save the campus centre"
+    FE_ADMIN_DELIVERY_AREA_FAILED                     = "Failed"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_INVALID             = "Radius must be a number greater than 0"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_SAVED               = "Delivery radius saved"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_SAVED_DESC          = "Orders beyond {km} km from the campus centre will be refused."
+    FE_ADMIN_DELIVERY_AREA_FAILED                     = "Failed"
+    FE_ADMIN_DELIVERY_AREA_TITLE                      = "Delivery area"
+    FE_ADMIN_DELIVERY_AREA_SUBTITLE                   = "Set the campus centre point and how far you deliver from it. Checkout refuses any address further away."
+    FE_ADMIN_DELIVERY_AREA_CAMPUS                     = "Campus"
+    FE_ADMIN_DELIVERY_AREA_SELECT_CAMPUS              = "Select a campus…"
+    FE_ADMIN_DELIVERY_AREA_PICK_CAMPUS                = "Pick a campus to edit its delivery area."
+    FE_ADMIN_DELIVERY_AREA_LOADING                    = "Loading…"
+    FE_ADMIN_DELIVERY_AREA_EDITING                    = "Editing"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_SET                 = "centre set"
+    FE_ADMIN_DELIVERY_AREA_NO_CENTRE                  = "no centre set"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_LABEL               = "Campus centre point"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_HINT                = "Copy straight from Google Maps — right-click the spot and paste “latitude, longitude”. Leave empty to clear."
+    FE_ADMIN_DELIVERY_AREA_SAVING                     = "Saving…"
+    FE_ADMIN_DELIVERY_AREA_SAVE_CENTRE                = "Save centre point"
+    FE_ADMIN_DELIVERY_AREA_OPEN_IN_MAPS               = "Open in Maps"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_LABEL               = "Delivery radius (km)"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_HINT                = "Measured from the centre point above. This is per campus — saved to kitchen_settings.max_delivery_radius_km."
+    FE_ADMIN_DELIVERY_AREA_SAVING                     = "Saving…"
+    FE_ADMIN_DELIVERY_AREA_SAVE_RADIUS                = "Save radius"
+    FE_ADMIN_DELIVERY_AREA_SAVE_ANYWAY                = "These coordinates are outside Nigeria — save anyway"
+    FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING          = "Without a centre point every address is measured against nothing, so students get the 15 km default instead of your campus."
+
 # Short alias
 M = MSG
 

@@ -6,6 +6,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } from './ui/AdminKit';
 import EmailDeliverySettings from './EmailDeliverySettings';
 import { useCampus } from '@/lib/campusContext';
+import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
 
 // Documented settings from the backend reference (system_settings table) —
@@ -63,6 +64,19 @@ const parseValue = (key, raw) => {
 
 const displayValue = (v) => Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
 
+// One key can exist once globally AND once per campus, and GET /admin/settings
+// returns every row — so `key` alone does not identify a row. Using it as the
+// React key duplicated keys, and `editKey === s.key` opened the editor on every
+// campus copy at once.
+const rowId = (s) => `${s.key}:${s.campus_id ?? 'global'}`;
+
+// Write permission mirrors app/routes/admin_gifts.py
+// require_settings_write_permission(): a global row (campus_id NULL) is
+// super-admin-only; a campus row can also be written by that campus's own
+// admin. PATCH must carry the row's campus_id or a campus admin is refused
+// with 403 — and without it the backend updates the GLOBAL row instead.
+const canEditRow = (s, isSuperAdmin) => Boolean(s.campus_id) || isSuperAdmin;
+
 // System Settings — Domain 17. GET /admin/settings · POST /admin/settings
 // (create key) · PATCH /admin/settings/:key. Server-side constraint errors
 // (e.g. "hp_multiplier must be 0.5, 1.0, or 2.0") surface as toasts.
@@ -78,6 +92,7 @@ export default function AdminSystemSettings() {
   // once per campus, and the list shows every row, so "which one is live?" was
   // unanswerable from here.
   const { campuses, adminCampusId } = useCampus();
+  const isSuperAdmin = useIsSuperAdmin();
 
   const load = async () => {
     try {
@@ -90,11 +105,15 @@ export default function AdminSystemSettings() {
 
   useEffect(() => { load(); }, []);
 
-  const save = async (key, rawValue = null) => {
+  const save = async (s, rawValue = null) => {
+    const key = s.key;
     const value = parseValue(key, rawValue != null ? String(rawValue) : editValue);
-    setBusy(key);
+    const id = rowId(s);
+    setBusy(id);
     try {
-      await liveApi.admin.updateSystemSetting(key, { value });
+      // The row's campus_id is what tells the backend which row to write and
+      // whether this admin may write it at all.
+      await liveApi.admin.updateSystemSetting(key, { value, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_UPDATED', 'Setting updated'), description: msg('FE_ADMIN_SYSTEM_SETTINGS_KEY_SAVED', '{key} saved.', { key: key }) });
       setEditKey(null);
       await load();
@@ -104,10 +123,11 @@ export default function AdminSystemSettings() {
     setBusy(null);
   };
 
-  const toggleBool = async (key, current) => {
-    setBusy(key);
+  const toggleBool = async (s, current) => {
+    const key = s.key;
+    setBusy(rowId(s));
     try {
-      await liveApi.admin.updateSystemSetting(key, { value: !current });
+      await liveApi.admin.updateSystemSetting(key, { value: !current, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
       toast({
         title: current
           ? msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_DISABLED', '{key} disabled', { key })
@@ -184,8 +204,10 @@ export default function AdminSystemSettings() {
             const isBool = typeof s.value === 'boolean';
             const known = KNOWN_SETTINGS[s.key];
             const desc = s.description || known?.purpose;
+            const id = rowId(s);
+            const editable = canEditRow(s, isSuperAdmin);
             return (
-              <motion.div key={s.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
+              <motion.div key={id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
                 <Card className="p-4">
                   <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
                     <span className="font-mono font-bold text-xs text-foreground truncate min-w-0 flex-1">{s.key}</span>
@@ -194,18 +216,22 @@ export default function AdminSystemSettings() {
                       {s.campus_id && adminCampusId === s.campus_id && <Pill tone="green">viewing</Pill>}
                       {s.is_public === false && <Pill tone="red">private</Pill>}
                     </span>
-                    {isBool ? (
-                      <Toggle checked={s.value} onChange={() => toggleBool(s.key, s.value)} disabled={busy === s.key} />
-                    ) : editKey === s.key ? (
+                    {!editable ? (
+                      // Global rows are super-admin-only by backend policy; say
+                      // so instead of offering a Save that answers 403.
+                      <SuperAdminBadge />
+                    ) : isBool ? (
+                      <Toggle checked={s.value} onChange={() => toggleBool(s, s.value)} disabled={busy === id} />
+                    ) : editKey === id ? (
                       <div className="flex gap-1.5 shrink-0">
-                        <button onClick={() => save(s.key)} disabled={busy === s.key} className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold active:scale-95 transition disabled:opacity-50 flex items-center gap-1">
+                        <button onClick={() => save(s)} disabled={busy === id} className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold active:scale-95 transition disabled:opacity-50 flex items-center gap-1">
                           <Save className="w-3 h-3" /> Save
                         </button>
                         <button onClick={() => setEditKey(null)} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-bold active:scale-95 transition">Cancel</button>
                       </div>
                     ) : (
                       <button
-                        onClick={() => { setEditKey(s.key); setEditValue(displayValue(s.value)); }}
+                        onClick={() => { setEditKey(id); setEditValue(displayValue(s.value)); }}
                         className="px-3 py-1.5 rounded-lg bg-secondary text-secondary-foreground text-xs font-bold active:scale-95 transition hover:bg-primary/10 hover:text-primary shrink-0"
                       >
                         Edit
@@ -215,7 +241,7 @@ export default function AdminSystemSettings() {
                   {desc && <div className="text-[11px] text-muted-foreground mb-2 break-words">{desc}{known && s.value !== known.default && ` · documented default: ${displayValue(known.default)}`}</div>}
                   {isBool ? (
                     <div className="font-bold text-sm text-foreground">{s.value ? 'Enabled' : 'Disabled'}</div>
-                  ) : editKey === s.key ? (
+                  ) : editKey === id ? (
                     <div>
                       {known?.hint && <p className="text-[11px] font-bold text-accent-foreground mb-1">⚠ {known.hint}</p>}
                       {s.key === 'hp_multiplier' ? (
@@ -225,8 +251,8 @@ export default function AdminSystemSettings() {
                           {[0.5, 1.0, 2.0].map((m) => (
                             <button
                               key={m}
-                              onClick={() => save(s.key, String(m))}
-                              disabled={busy === s.key}
+                              onClick={() => save(s, String(m))}
+                              disabled={busy === id}
                               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition disabled:opacity-50 ${Number(s.value) === m ? 'bg-primary text-white' : 'bg-secondary text-secondary-foreground hover:bg-primary/10 hover:text-primary'}`}
                             >
                               {m}×
