@@ -19,7 +19,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { resolvePath } from './routes.mjs';
+import { patternToRegExp, resolvePath } from './routes.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = join(root, 'dist');
@@ -59,11 +59,31 @@ const isFile = async (p) => {
   }
 };
 
-const send = (res, file, status) => {
+/**
+ * The header rules from vercel.json, applied exactly as the host applies them —
+ * so the CSP/security headers are verified locally, not just declared.
+ */
+const headerRules = (config.headers || []).map((rule) => ({
+  test: patternToRegExp(rule.source),
+  headers: rule.headers,
+}));
+
+const securityHeadersFor = (pathname) => {
+  const out = {};
+  for (const rule of headerRules) {
+    if (rule.test.test(pathname)) {
+      for (const { key, value } of rule.headers) out[key] = value;
+    }
+  }
+  return out;
+};
+
+const send = (res, file, status, reqPath = '/') => {
   const body = readFileSync(file);
   res.writeHead(status, {
     'Content-Type': MIME[extname(file)] || 'text/html; charset=utf-8',
     'Content-Length': body.length,
+    ...securityHeadersFor(reqPath),
   });
   res.end(body);
 };
@@ -81,7 +101,7 @@ const server = createServer(async (req, res) => {
   // Step 1 — `handle: filesystem`.
   for (const candidate of candidates) {
     if (candidate.startsWith(distDir) && (await isFile(candidate))) {
-      send(res, candidate, 200);
+      send(res, candidate, 200, urlPath);
       return;
     }
   }
@@ -91,10 +111,10 @@ const server = createServer(async (req, res) => {
   const dest = join(distDir, resolved.dest.replace(/^\//, ''));
   if (!(await isFile(dest))) {
     console.error(`[static] ${urlPath} -> ${resolved.dest} is missing from dist/`);
-    send(res, join(distDir, 'app-shell.html'), 500);
+    send(res, join(distDir, 'app-shell.html'), 500, urlPath);
     return;
   }
-  send(res, dest, resolved.status || 200);
+  send(res, dest, resolved.status || 200, urlPath);
 });
 
 server.listen(port, '0.0.0.0', () => {

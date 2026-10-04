@@ -20,13 +20,19 @@ file and line it came from.
 | S1 | Medium | Payment redirect targets (`authorization_url`) are assigned to `window.location.href` with no scheme/host validation — 3 sites | proposed |
 | S2 | Medium | Password-reset token stays in the URL after use (history, referrer, shoulder-surfing) | proposed |
 | S3 | Medium | Access/refresh tokens live in `localStorage`/`sessionStorage` — XSS-reachable by design | accepted (frozen), mitigate via S4 |
-| S4 | Medium | No CSP and no security headers anywhere (`vercel.json` has no `headers` key; `index.html` has no meta policy) | proposed |
-| S5 | Low–Med | 16 `npm audit` findings; 4 of the flagged packages are pulled in by dependencies the source never imports | proposed (S6 fixes half) |
-| S6 | Low | 13 declared runtime dependencies are never imported — dead weight and extra supply-chain surface | proposed |
+| S4 | Medium | No CSP and no security headers anywhere (`vercel.json` had no `headers` key) | **applied** — report-only, see below |
+| S5 | Low–Med | `npm audit`: 16 findings, now **11** after S6; the rest are build-chain or the react-router moderates | reduced |
+| S6 | Low | 15 declared runtime dependencies were never imported | **applied** — removed, build unchanged |
 | S7 | Low | Server-provided `call_link` assigned to `window.location.href` without validating the `tel:` scheme — 2 sites | proposed |
 | S8 | Low | CMS link fields are handled inconsistently: one site guards external URLs, two `navigate()` any string | proposed |
 | S9 | Low | Google Fonts loaded from a third-party origin on every page (privacy/supply chain) | proposed (later) |
 | S10 | Info | Guest `claim_token` and a `hg_admin_*` selector in storage; sidebar cookie has no flags; one GPS `console.log` | documented |
+
+> **Applied so far (2026-10-04):** S4 (CSP report-only + enforcing headers,
+> through the `vercel.json` generator and asserted in the smoke suite) and S6
+> (15 unused runtime dependencies removed; 16 → 11 audit findings; shipped bundle
+> byte-identical). S1, S2, S7 and S8 are still proposals and are explained in
+> detail below.
 
 **Verified clean** (evidence in the last section): no `eval`/`innerHTML`/
 `javascript:` sinks in app code, **no secrets in the shipped bundles**, no token
@@ -85,36 +91,37 @@ change the auth contract (out of scope). Two mitigations are cheap and already
 mostly in place: short access-token TTL (backend `JWT_ACCESS_TOKEN_EXPIRES`,
 default 1 h) and the refresh-on-401 path. The third, a CSP, is S4.
 
-## S4 — No CSP, no security headers (medium)
+## S4 — No CSP, no security headers (medium) — **applied, report-only**
 
-`vercel.json` contains only `installCommand`, `buildCommand`,
-`outputDirectory`, `routes` — no `headers` block — and no page carries a
+`vercel.json` contained only `installCommand`, `buildCommand`,
+`outputDirectory`, `routes` — no `headers` block — and no page carried a
 `Content-Security-Policy` meta tag. For a token-in-localStorage app, CSP is the
-main structural defence against XSS and the one thing all of S1/S3 lean on.
+main structural defence against XSS and the one thing S1/S3 lean on.
 
-**Proposed fix:** add a `headers` entry to the `vercel.json` **generator**
-(`scripts/sync-routes.mjs`), not to the generated file, so `npm run build`'s
-`--check` keeps passing. A workable starting policy given the app's actual
-dependencies:
+What shipped (2026-10-04): `scripts/routes.mjs` now emits a `headers` block for
+every path in the generated `vercel.json`, `scripts/serve-static.mjs` applies those
+rules locally so they are testable, and `scripts/smoke.mjs` asserts them.
 
-```
-Content-Security-Policy: default-src 'self';
-  script-src 'self' https://cdn.onesignal.com;
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;   /* React style attrs */
-  font-src 'self' https://fonts.gstatic.com;
-  img-src 'self' data: https://res.cloudinary.com https://media.base44.com https://*.tile.openstreetmap.org;
-  connect-src 'self' https://holy-grills-backend.onrender.com https://api.cloudinary.com https://*.onesignal.com;
-  frame-ancestors 'none'; base-uri 'self'; form-action 'self'
-```
+- **`Content-Security-Policy-Report-Only`** — nothing is blocked. The string is
+  built from the origins the source actually uses (script/style/font/image/
+  connect/frame/worker), with the API origin read from `VITE_API_BASE_URL` so a
+  staging backend does not need a policy edit. Every third-party origin named
+  above was checked to be present in the generated header.
+- **Enforcing** alongside it: `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY` (clickjacking — `frame-ancestors` is ignored in
+  report-only mode, so this is the real defence), `Referrer-Policy:
+  strict-origin-when-cross-origin` (also covers S2), HSTS, and a
+  `Permissions-Policy` that keeps geolocation to self while turning camera and
+  microphone off.
 
-plus `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
-(also helps S2), `Strict-Transport-Security`, and
-`X-Frame-Options: DENY` for older browsers. One obstacle: `index.html:78` carries an
-inline `<script>` (the dev-only service-worker cleanup snippet), which a strict
-`script-src` blocks — it is static text, so a SHA-256 hash is enough, or it can move
-into the bundled entry. For that reason the policy should ship as
-`Content-Security-Policy-Report-Only` first, be checked in the browser console, then
-flipped — a deploy-config change, so it waits for your go-ahead.
+**Next step (needs a browser):** load `/`, `/menu`, a paid checkout and the rider
+map, watch the console for `[Report Only]` violations, and once the policy is
+clean change the header name from `Content-Security-Policy-Report-Only` to
+`Content-Security-Policy` — one word in `scripts/routes.mjs`, then
+`npm run routes:sync`. One known complication: `index.html:78` has an inline
+`<script>` (the dev-only service-worker cleanup), which a strict `script-src`
+blocks; it is static text, so a SHA-256 hash belongs in the policy or the snippet
+should move into the bundled entry.
 
 ## S5 — `npm audit` findings (low–medium)
 
@@ -139,28 +146,27 @@ pre-render hydrates a plain `StaticRouter` tree. The remaining "fix" is
 react-router **7.18+** (a major upgrade: `react-router-dom/server` moves, breaking
 API surface), so it belongs in a planned upgrade, not in this round.
 
-## S6 — Dependencies declared but never imported (low)
+## S6 — Dependencies declared but never imported (low) — **applied**
 
 Scan of every import/require/dynamic-import/`@import` in `src/`, `index.html` and
-the build configs, cross-checked against the built bundles. These are in
+the build configs, cross-checked against the built bundles. These were in
 `package.json` and neither imported nor present in `dist/`:
 
 ```
 @hello-pangea/dnd   @hookform/resolvers   @radix-ui/react-toast
 @stripe/react-stripe-js   @stripe/stripe-js   date-fns   html2canvas
-jspdf   moment   react-hot-toast   react-markdown   react-quill   zod
+jspdf   lodash   moment   react-hot-toast   react-markdown
+react-quill   three   zod
 ```
 
-(`lodash`, `three` also have no direct import; the bundle strings are
-`__lodash_hash_undefined__` coming from a transitive dependency and the English
-word "three". `tailwindcss-animate` is used from `tailwind.config.js`, so it is
-*not* unused.)
-
-Removing these cuts install size, removes `jspdf`→`dompurify`+`fflate`,
-`react-quill`→`quill` and `moment` from the audit output entirely, and shrinks the
-supply-chain surface. Removal is a lockfile change; `npm run typecheck`,
-`npm run build` and `npm run smoke` are the checks that prove nothing depended on
-them (the F5 lesson: never trust a grep alone — the build is the authority).
+Removed on 2026-10-04 and verified in this order: `npm run typecheck` ✅,
+`npm run lint` ✅, `npm run build` ✅ (33 route families, 7 pre-renders),
+`npm run smoke` ✅ PASS — and the entry chunk kept its content hash
+(`index-CrnT1mY2.js`), which proves no byte of shipped output depended on them.
+`npm audit --omit=dev` went **16 → 11** findings (`dompurify`, `fflate`, `quill`
+and `moment` left with their parents). `lodash` stays installed transitively via
+`recharts`; `three` is gone entirely; `tailwindcss-animate` was *not* removed — it
+is used from `tailwind.config.js`.
 
 ## S7 — `tel:` link from the server not validated (low)
 

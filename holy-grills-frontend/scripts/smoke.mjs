@@ -93,6 +93,29 @@ for (const route of PRERENDER_ROUTES) {
   }
 }
 
+// ── 1b. Security headers (Phase 7, S4) ──────────────────────────────────────
+// The CSP ships report-only on purpose: the policy must be observed against the
+// real origins before anything is blocked. These assertions fail if the header
+// block is dropped, or if it is flipped to enforcing without that being a
+// deliberate change (the Flip Is One Word — see scripts/routes.mjs).
+console.log('\nsecurity headers');
+{
+  const res = await fetch(baseUrl + '/');
+  const csp = res.headers.get('content-security-policy-report-only') || '';
+  check(csp.includes("default-src 'self'"), 'CSP report-only is served', csp.slice(0, 48));
+  check(!res.headers.get('content-security-policy'), 'nothing is blocked yet (report-only)');
+  check(res.headers.get('x-content-type-options') === 'nosniff', 'X-Content-Type-Options');
+  check(res.headers.get('x-frame-options') === 'DENY', 'X-Frame-Options');
+  check((res.headers.get('referrer-policy') || '').startsWith('strict-origin'), 'Referrer-Policy');
+  check(/max-age=\d+/.test(res.headers.get('strict-transport-security') || ''), 'HSTS');
+
+  // Headers must also cover the two non-page responses.
+  const notFound = await fetch(baseUrl + '/definitely-not-a-page');
+  check(!!notFound.headers.get('content-security-policy-report-only'), 'CSP on the 404');
+  const asset = await fetch(baseUrl + '/manifest.json');
+  check(asset.headers.get('x-content-type-options') === 'nosniff', 'nosniff on a static asset');
+}
+
 // ── 2. Every route the app declares resolves — no accidental 404s ─────────────
 console.log('\napp routes');
 const routes = [...new Set(readRoutePaths().filter((p) => p !== '*'))];

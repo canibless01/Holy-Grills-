@@ -52,6 +52,82 @@ export function routeFamilies(paths = readRoutePaths()) {
   return [...families].sort((a, b) => (a === '/' ? -1 : b === '/' ? 1 : a.localeCompare(b)));
 }
 
+/**
+ * Security headers (Phase 7, finding S4)
+ * ============================================================================
+ * The app keeps its JWTs in localStorage, so a policy that stops unexpected
+ * script execution is the structural half of the XSS defence. It ships as
+ * `Content-Security-Policy-Report-Only`: nothing is blocked until the policy has
+ * been observed against every origin the app really talks to (the browser
+ * console lists violations). Flipping the header name to `Content-Security-Policy`
+ * is then a one-word change.
+ *
+ * The allow-list below is derived from the origins the source actually uses:
+ *   scripts   OneSignal SDK (cdn.onesignal.com)
+ *   styles    Tailwind + React style attributes ('unsafe-inline') + Google Fonts
+ *   fonts     fonts.gstatic.com
+ *   images    Unsplash/CMS art, the base44 CDN, the configured asset CDN
+ *             (Cloudinary), OpenStreetMap tiles for the rider map
+ *   connect   the Flask API (VITE_API_BASE_URL, default below), Cloudinary
+ *             uploads, OneSignal
+ *
+ * `frame-ancestors` is deliberately NOT relied on here — browsers ignore it in
+ * report-only mode — so clickjacking is covered by the enforcing
+ * `X-Frame-Options: DENY` header below.
+ */
+
+/** Origin of the Flask API, from the same env var the bundle uses. */
+function apiOrigin() {
+  const raw = process.env.VITE_API_BASE_URL || 'https://holy-grills-backend.onrender.com';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    // A path-only value (e.g. "/api" behind the dev proxy) has no origin of its
+    // own; the request goes to 'self' in that setup.
+    return null;
+  }
+}
+
+export function securityHeaders() {
+  const connect = [
+    "'self'",
+    'https://api.cloudinary.com',
+    'https://cdn.onesignal.com',
+    'https://*.onesignal.com',
+    apiOrigin(),
+  ].filter(Boolean);
+
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "script-src 'self' https://cdn.onesignal.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https://images.unsplash.com https://media.base44.com https://static.wixstatic.com https://res.cloudinary.com https://*.tile.openstreetmap.org",
+    `connect-src ${connect.join(' ')}`,
+    "frame-src 'self' https://*.onesignal.com",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+
+  return [
+    {
+      source: '/(.*)',
+      headers: [
+        { key: 'Content-Security-Policy-Report-Only', value: csp },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+        { key: 'Permissions-Policy', value: 'geolocation=(self), camera=(), microphone=()' },
+      ],
+    },
+  ];
+}
+
 /** The full vercel.json for the frontend. */
 export function buildConfig() {
   const families = routeFamilies();
@@ -78,6 +154,7 @@ export function buildConfig() {
     installCommand: 'npm ci',
     buildCommand: 'npm run build',
     outputDirectory: 'dist',
+    headers: securityHeaders(),
     routes,
   };
 }
