@@ -1,0 +1,56 @@
+{
+  "name": "Holy Grill — FUTA's Only Flame Grill",
+  "short_name": "HolyGrill",
+  "description": "FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF5F0",
+  "theme_color": "#FF4E2D",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["food", "shopping", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Order Food",
+      "short_name": "Order",
+      "description": "Browse the menu and place an order",
+      "url": "/menu",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Holy Points",
+      "short_name": "HP",
+      "description": "View your Holy Points and rewards",
+      "url": "/rewards",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Events",
+      "short_name": "Events",
+      "description": "Campus events and check-ins",
+      "url": "/events",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

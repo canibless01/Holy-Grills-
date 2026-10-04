@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+# Private / account-only areas — never indexed.
+Disallow: /admin
+Disallow: /kitchen
+Disallow: /rider
+Disallow: /cart
+Disallow: /checkout
+Disallow: /orders
+Disallow: /wallet
+Disallow: /profile
+Disallow: /dashboard
+
+Sitemap: https://holygrill.app/sitemap.xml
