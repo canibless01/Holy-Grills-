@@ -26,7 +26,9 @@ type StorefrontTab = {
   desc?: string;
 };
 
-/** Loose create/update body — the backend accepts the full section row. */
+/** Loose create/update body. Only title/is_active/sort_order/content are real
+ *  columns; subtitle / image_url / cta_text / cta_url / placement are flat
+ *  aliases the backend folds into the `content` JSONB blob. */
 type SectionBody = {
   section_type?: string;
   title?: string;
@@ -129,6 +131,9 @@ type SectionDraft = {
   share_key: string;
 };
 
+/** Sections have no `placement` column — the backend keeps it inside `content`. */
+const placementOf = (s: any): string => (s?.content?.placement ?? s?.placement ?? '') as string;
+
 const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', share_key: 'share_template' });
 
 export default function AdminStorefront() {
@@ -191,7 +196,7 @@ export default function AdminStorefront() {
         image_url: s.image_url ?? '',
         cta_text: s.cta_text ?? '',
         cta_url: s.cta_url ?? '',
-        placement: s.placement ?? 'home',
+        placement: placementOf(s),
         sort_order: s.sort_order ?? 0,
         is_active: s.is_active ?? true,
         content: s.content ?? {},
@@ -378,7 +383,7 @@ export default function AdminStorefront() {
             <Card key={s.id}>
               <div className="flex items-center gap-2 mb-2">
                 <Pill tone="blue">{(s.section_type || 'banner').toUpperCase()}</Pill>
-                {s.placement && <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{s.placement}</span>}
+                {placementOf(s) && <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{placementOf(s)}</span>}
                 <div className="ml-auto flex items-center gap-1.5">
                   <button type="button" onClick={() => move(s, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move up">↑</button>
                   <button type="button" onClick={() => move(s, 1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move down">↓</button>

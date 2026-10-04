@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { UploadCloud, X, Loader2, ImageOff, Link2 } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
 import { msg } from '@/lib/messages';
@@ -30,6 +30,24 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
   const [urlMode, setUrlMode] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
   const inputRef = useRef(null);
+  // Ask the server once, on mount, whether direct upload exists at all. Without
+  // this the only way to learn Cloudinary is unconfigured was to pick a file,
+  // wait for the round trip, and read a failure toast — which is exactly what
+  // made every image field look like a broken button.
+  const [status, setStatus] = useState<{ configured: boolean; missing?: string[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    apiClient
+      .get('/upload/status')
+      .then((r: any) => {
+        if (!alive || !r) return;
+        setStatus({ configured: r.configured !== false, missing: r.missing || [] });
+        if (r.configured === false && !value) setUrlMode(true);
+      })
+      .catch(() => { if (alive) setStatus({ configured: true, missing: [] }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFile = useCallback(
     async (file) => {
@@ -198,6 +216,18 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
               <div className="text-[10px] text-muted-foreground">Drag & drop or click · PNG, JPG, WEBP · max 5MB</div>
             </>
           )}
+        </div>
+      )}
+
+      {status && status.configured === false && (
+        <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-700 font-semibold">
+          <ImageOff className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span className="min-w-0 break-words">
+            {msg('FE_IMAGE_UPLOADER_FILE_UPLOAD_OFF', 'File upload is off')} —{' '}
+            {msg('FE_IMAGE_UPLOADER_MISSING_SERVER_SETTING', 'missing server setting')}{' '}
+            <span className="font-mono break-all">{(status.missing || []).join(', ')}</span>.{' '}
+            {msg('FE_IMAGE_UPLOADER_PASTE_A_URL_INSTEAD', 'Paste an image URL instead.')}
+          </span>
         </div>
       )}
 
