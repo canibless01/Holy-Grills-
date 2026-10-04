@@ -53,6 +53,7 @@ Link surfaces are role-conditional (`TopNav` only shows the staff button for sta
 
 | # | Admin section | Component | Endpoints called | Guarded | Public-by-design | Notes |
 |---|---|---|---|---|---|---|
+|---|---|---|---|---|---|
 | 1 | `dashboard` | `AdminDashboard` | 5 | 4 | 1 | 1 public-by-design |
 | 2 | `analytics` | `AdminAnalytics` | 11 | 11 | 0 |  |
 | 3 | `economics` | `AdminEconomics` | 0 | 0 | 0 |  |
@@ -94,14 +95,36 @@ exposed, and every admin-only write on those screens is guarded. **No unguarded 
 `AdminMenu`'s archived-items view is the one admin screen whose endpoint does not exist (`GET /items/archived`, §3);
 it degrades to an empty list today.
 
-## 5. What still needs a live browser/backed run (sandbox network is allowlisted)
+## 5. Runtime verification — what passed in this workspace
 
-| Check | Why it can't run here | How to run |
-|---|---|---|
-| Login → protected page → admin → logout, both roles | egress blocked: the sandbox reaches only the npm registry | the running dev preview, with a real account |
-| Admin/user-side API responses (401/403, no data leak) | same | browser DevTools Network tab |
-| Flask endpoint latency, Lighthouse/LCP, Slow-3G skeleton checks | same | Lighthouse against the deployed/preview URL |
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | **0 errors** (whole repo, unfiltered) |
+| `npm run build` | green, 11.93 s — entry 572.95 kB / gzip 172.24, 83 chunks |
+| JS/JSX left in `src/` | **0 files** |
+| `@base44` references in `src/` + `package.json` | **0** |
+| Dev server boot | clean on 0.0.0.0:5173, no Base44 plugin warning |
+| Dev module probes | `/src/main.tsx`, `App.tsx`, `Home.tsx`, `Checkout.tsx`, `Admin.tsx`, `index.css` → 200 |
+| SPA fallback | `/menu`, `/admin`, `/mcp-consent` → 200 |
+| Static assets | `manifest.json`, `service-worker.js`, `icons/icon.svg`, `robots.txt`, `sitemap.xml` → 200 with correct content types |
+| Preview host accepted | `Host: *.e2b.app` → 200 (dev-only `allowedHosts`) |
+| Production preview | entry 572,951 B, CSS 114,185 B, lazy chunk 200, all 10 sampled routes 200 |
 
-## 6. How to regenerate
+## 6. Runtime verification — what still needs your browser
+
+The sandbox egress is allowlisted to the npm registry, so nothing in this workspace can open a
+socket to `holy-grills-backend.onrender.com`. These are the checks that need a real session:
+
+| Check | How to run |
+|---|---|
+| Login → protected page → `/admin` → logout, as **student** and as **admin** | the live dev preview |
+| Admin screens: load, guarded action, error path, lists/pagination | same, signed in as admin |
+| Student against admin routes: expect 401/403 and no data | DevTools Network tab |
+| Real API 2xx sweep across screens | `tools/measure-api-latency.js` (reports non-2xx too) |
+| Lighthouse / LCP / TTI, Slow-3G skeleton pass | Lighthouse against the preview URL |
+
+Performance history and the skeleton policy: `docs/PERF_REPORT.md`, `docs/PERF_SKELETONS.md`.
+
+## 7. How to regenerate
 
 `docs/coverage/` is generated. Re-run `tools/coverage_matrix.py` after blueprint or `liveApi` changes.

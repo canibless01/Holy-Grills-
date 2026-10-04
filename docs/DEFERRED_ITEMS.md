@@ -58,3 +58,15 @@ left in place because removing it is a product decision or needs a cross-page co
 Unused *parameters* reported by the probe (`ShareSheet` platform builders, `TestimonialSlider`,
 `toast.tsx`, `AdminLeaderboard.fulfillReward`) were left alone: they are function signatures, and the
 project does not enable `noUnusedParameters`.
+
+## F. Stop-and-ask — decisions needed from you (found by the coverage matrix)
+
+| # | Item | Why it needs a decision |
+|---|---|---|
+| F1 | **MCP consent endpoints have no Flask route**: `pages/OAuthConsent.tsx` calls `GET /api/apps/:appId/mcp/consent-info` and `POST /api/apps/:appId/mcp/authorize-grant`, and reads `appParams.appId`, `appParams.token`, `appParams.appBaseUrl`. In the Base44 build these were served by the Base44 platform. | Port the two endpoints into Flask (new backend work — needs your go-ahead), or retire the `/mcp-consent` route and page. Until then the page cannot complete a consent flow. |
+| F2 | **`media.base44.com` asset CDN** — `components/FlameMark.tsx` (the flame mark), `lib/mascots.ts` (mascot art), `public/offline.html` (offline mascot), `App.tsx` SEO default image path. | These render today and were left alone; if you want Base44 gone from the stack entirely, the images must be re-hosted (repo `public/` or your own CDN) before the URLs are removed. |
+| F3 | **Backend CORS origin** `https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app` in `app/config.py:33`. | Backend-side and possibly still in use by a deployed origin; removing it may break a live client. Your call. |
+| F4 | **42 Flask routes with no frontend caller** (list in `docs/coverage/FLASK_TO_FRONTEND.md`). | Not deleted: they may serve webhooks, the mobile client or admin tooling. Confirm which are dead before any removal — most are in `free-sides` (7), `admin` (6), `storefront` (6). |
+| F5 | **8 frontend calls with no Flask route** (§3 of the verification report). | Same list as the Phase 3 contract gaps: implement the backend route or remove the frontend call. |
+| F6 | **`GET /challenges/:id` in `liveApi`** — no caller anywhere in the frontend. | Delete as dead code (I did not, because it is a public API method) or keep as a documented gap. |
+| F7 | **SSR** — you asked whether we already have server-side rendering. | We do **not**: the app is still a client-rendered SPA (empty `<div id="root">` + a JS bundle per route). Pre-rendering is a separate project — see `docs/SSR_EXPLAINER.md` for what it would take and the two viable routes. |
