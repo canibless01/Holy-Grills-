@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { liveApi } from '@/lib/liveApi';
+import { t } from '@/lib/messages';
 import { getStoredCampusId } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 import AuthShell from '@/components/auth/AuthShell';
@@ -88,7 +89,7 @@ export default function Register() {
         setLoading(false);
         return;
       }
-      toast({ title: "You're in ❤️‍🔥", description: 'Welcome to Holy Grills.' });
+      toast({ title: t('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: t('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
       const role = data?.role || data?.user?.role || 'student';
       const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
       window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : STUDENT_HOME;

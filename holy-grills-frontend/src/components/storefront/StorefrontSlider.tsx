@@ -92,7 +92,9 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
   }, [slides, active]);
 
   const handleTap = (slide) => {
-    const dest = slide.cta_url || slide.content?.destination || '/menu';
+    // Section rows keep cta_url inside `content` (aliased to cta_link); the
+    // legacy `destination` key is still honoured last.
+    const dest = slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination || '/menu';
     if (loggedInOnly && !isAuthenticated) {
       navigate(`/login?returnTo=${encodeURIComponent(dest)}`);
     } else {

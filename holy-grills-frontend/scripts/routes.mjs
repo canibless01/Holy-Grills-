@@ -65,8 +65,9 @@ export function routeFamilies(paths = readRoutePaths()) {
  *
  * The allow-list below is derived from the origins the source actually uses:
  *   scripts   OneSignal SDK (cdn.onesignal.com)
- *   styles    Tailwind + React style attributes ('unsafe-inline') + Google Fonts
- *   fonts     fonts.gstatic.com
+ *   styles    Tailwind + React style attributes ('unsafe-inline'); fonts are
+ *             self-hosted now (S9), so no remote stylesheet origin is allowed
+ *   fonts     none — @fontsource-variable/nunito ships in the bundle ('self')
  *   images    Unsplash/CMS art, the base44 CDN, the configured asset CDN
  *             (Cloudinary), OpenStreetMap tiles for the rider map
  *   connect   the Flask API (VITE_API_BASE_URL, default below), Cloudinary
@@ -127,8 +128,8 @@ export function securityHeaders() {
     "base-uri 'self'",
     "object-src 'none'",
     ["script-src 'self' https://cdn.onesignal.com", ...inlineScriptHashes()].join(' '),
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob: https://images.unsplash.com https://media.base44.com https://static.wixstatic.com https://res.cloudinary.com https://*.tile.openstreetmap.org",
     `connect-src ${connect.join(' ')}`,
     "frame-src 'self' https://*.onesignal.com",

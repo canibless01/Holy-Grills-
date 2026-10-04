@@ -63,8 +63,10 @@ export default function CateringCard() {
   const content = section?.content || section?.data || {};
   const image = content.image_url || content.image || section?.image_url;
   const title = content.title || section?.title || 'Your crowd. Our fire.';
-  const description = content.description || content.body || 'Tell us the date.';
-  const cta = content.cta_label || content.cta || 'Request catering';
+  // The CMS form writes subtitle + cta_text; storefront.py merges both into
+  // `content`, so those are the keys that actually arrive.
+  const description = content.description || content.body || content.subtitle || section?.subtitle || 'Tell us the date.';
+  const cta = content.cta_label || content.cta_text || content.cta || section?.cta_text || 'Request catering';
 
   return (
     <>

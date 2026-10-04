@@ -53,7 +53,7 @@ export default function PromoFlyerPopup() {
   };
 
   const go = () => {
-    const dest = section?.cta_url || section?.content?.destination;
+    const dest = section?.content?.cta_url || section?.content?.cta_link || section?.cta_url || section?.content?.destination;
     dismiss();
     if (!dest) return;
     // S8 — the rule this popup used to carry inline now lives in one helper.
@@ -82,9 +82,9 @@ export default function PromoFlyerPopup() {
               aria-label={section.title || 'Promo'}
               className="block w-full rounded-3xl overflow-hidden bg-card shadow-glow focus:outline-none active:scale-[0.98] transition-transform"
             >
-              {section.image_url ? (
+              {(section.content?.image_url || section.image_url) ? (
                 <img
-                  src={section.image_url}
+                  src={section.content?.image_url || section.image_url}
                   alt={section.title || 'Promo'}
                   className="w-full object-cover"
                   style={{ aspectRatio: '4 / 5' }}
@@ -92,19 +92,19 @@ export default function PromoFlyerPopup() {
               ) : (
                 <div className="w-full p-8 text-center" style={{ aspectRatio: '4 / 5' }}>
                   <h3 className="font-heading font-extrabold text-lg text-foreground">{section.title}</h3>
-                  {section.subtitle && <p className="text-xs text-muted-foreground mt-2">{section.subtitle}</p>}
+                  {(section.content?.subtitle || section.subtitle) && <p className="text-xs text-muted-foreground mt-2">{section.content?.subtitle || section.subtitle}</p>}
                 </div>
               )}
             </button>
 
             {/* CTA button — a small overlay box floating on top of the flyer,
                 separate from the image. Same destination as the flyer tap. */}
-            {section.cta_text && (
+            {(section.content?.cta_text || section.cta_text) && (
               <button
                 onClick={go}
                 className="absolute left-1/2 -translate-x-1/2 -bottom-5 px-7 py-3 rounded-full bg-gradient-cta text-white font-bold text-sm shadow-glow whitespace-nowrap active:scale-95 transition"
               >
-                {section.cta_text}
+                {section.content?.cta_text || section.cta_text}
               </button>
             )}
           </motion.div>

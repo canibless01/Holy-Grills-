@@ -33,10 +33,13 @@ function buildSlidesFromBanners(banners: unknown): HeroSlide[] | null {
       if (!url) continue;
       slides.push({
         image: url,
+        // Banner columns are action_label/action_url (storefront.py `_banner_fields`
+        // accepts the legacy cta_text/cta_url names but STORES them under action_*).
+        // Reading b.cta_text here meant the admin's CTA never reached the hero.
         tag: b.content?.headline || b.title || '',
         sub: b.content?.sub || b.content?.body || b.subtitle || '',
-        cta: b.cta_text || 'Order Now',
-        cta_url: b.cta_url || '/menu',
+        cta: b.action_label || b.cta_text || 'Order Now',
+        cta_url: b.action_url || b.cta_url || '/menu',
       });
     }
   }
@@ -53,9 +56,11 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
   return active.map((s) => ({
     image: s.content?.image_url || s.content?.image || s.image_url || 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80',
     tag: s.content?.headline || s.content?.title || s.title || '',
-    sub: s.content?.sub || s.content?.body || s.subtitle || '',
-    cta: s.content?.cta || s.cta_text || 'Order Now',
-    cta_url: s.cta_url || '/menu',
+    // Section rows keep subtitle/cta_* inside `content` (the columns are key,
+    // section_type, title, content, is_active, sort_order) — read them there.
+    sub: s.content?.sub || s.content?.body || s.subtitle || s.content?.subtitle || '',
+    cta: s.content?.cta || s.content?.cta_text || s.cta_text || 'Order Now',
+    cta_url: s.content?.cta_url || s.content?.cta_link || s.cta_url || '/menu',
   }));
 }
 

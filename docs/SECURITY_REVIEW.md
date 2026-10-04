@@ -25,12 +25,12 @@ file and line it came from.
 | S6 | Low | 15 declared runtime dependencies were never imported | **applied** — removed, build unchanged |
 | S7 | Low | Server-provided `call_link` was assigned to `window.location.href` unvalidated — 2 sites | **applied** |
 | S8 | Low | CMS link fields were handled inconsistently | **applied** (one shared rule) |
-| S9 | Low | Google Fonts loaded from a third-party origin on every page (privacy/supply chain) | proposed (later) |
+| S9 | Low | Google Fonts loaded from a third-party origin on every page (privacy/supply chain) | **applied** — fonts are self-hosted |
 | S10 | Info | Guest `claim_token` and a `hg_admin_*` selector in storage; sidebar cookie has no flags; one GPS `console.log` | documented |
 
-> **Applied (2026-10-04):** S1, S2, S4, S6, S7, S8. Still open: S9 (self-hosted
-> fonts, deliberately deferred) and the react-router decision (see the last
-> section). Everything below is the finding as written plus what shipped.
+> **Applied (2026-10-04):** S1, S2, S4, S6, S7, S8, **S9**. Still open: the
+> react-router 7 decision (see the last section). Everything below is the finding
+> as written plus what shipped.
 
 **Verified clean** (evidence in the last section): no `eval`/`innerHTML`/
 `javascript:` sinks in app code, **no secrets in the shipped bundles**, no token
@@ -242,13 +242,27 @@ hosts and look-alikes such as `evil-paystack.com`; call links are refused for
 internally through the router. It runs in CI between lint and build (that is how
 the relative-resolution bug above was caught).
 
-## S9 — Third-party font CSS (low, deferred)
+## S9 — Third-party font CSS (low) — **applied**
 
-`index.html:45–47` preconnects to and loads `fonts.googleapis.com` on every page,
-including pre-rendered ones. That is a privacy leak (IP + referrer to Google on
-every visit) and a third-party CSS execution surface. Self-hosting the two
-families removes both and is a perf win; it is a build-output change, so it is
-noted here and left for a later round.
+`index.html:45–47` preconnected to and loaded `fonts.googleapis.com` on every
+page, including pre-rendered ones: a privacy leak (IP + referrer to Google on
+every visit) and a third-party CSS execution surface.
+
+Applied: **Nunito is now self-hosted** via `@fontsource-variable/nunito`,
+imported in `src/main.tsx` and declared in the app's font stack
+(`src/index.css` → `'Nunito Variable', 'Nunito', …`). The two Google
+`<link rel="stylesheet">` tags and both font preconnects are gone from
+`index.html`; the CSP dropped `https://fonts.googleapis.com` (style-src) and
+`https://fonts.gstatic.com` (font-src) — both now `'self'`
+(`scripts/routes.mjs` → regenerated `vercel.json`). The service worker's
+stale-while-revalidate rule already covers fonts, so they stay cached offline.
+
+Fraunces was loaded by the same `<link>` block but **never referenced by any
+style** — it was dead weight and has been removed entirely.
+
+Verification: the build emits the font files into `dist/assets/` and no
+`fonts.googleapis.com` / `fonts.gstatic.com` string survives in `dist/`; smoke
+passes (the CSP assertions read the generated policy).
 
 ## S10 — Informational
 

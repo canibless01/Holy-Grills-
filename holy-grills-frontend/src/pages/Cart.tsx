@@ -7,6 +7,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
+import { t } from '@/lib/messages';
 import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -55,15 +56,15 @@ export default function Cart() {
 
   const [savingId, setSavingId] = useState(null);
   const handleSaveForLater = async (ci) => {
-    if (!isAuthed) { toast({ title: 'Sign in to save items', description: 'Saved items sync to your account.' }); return; }
+    if (!isAuthed) { toast({ title: t('FE_CART_SIGNIN_TO_SAVE_TITLE', 'Sign in to save items'), description: t('FE_CART_SIGNIN_TO_SAVE_BODY', 'Saved items sync to your account.') }); return; }
     setSavingId(ci.id);
     try {
       await mockApi.saved.fromCart(ci.id);
       await refreshSavedItems();
       await refreshCart();
-      toast({ title: '❤️ Saved to your favourites', description: `${ci.menu_items.name} moved to Saved Items.` });
+      toast({ title: t('FE_CART_SAVED_TITLE', '❤️ Saved to your favourites'), description: t('FE_CART_SAVED_BODY', '{item} moved to Saved Items.', { item: ci.menu_items.name }) });
     } catch (e) {
-      toast({ title: 'Could not save item', description: e.message, variant: 'destructive' });
+      toast({ title: t('FE_CART_SAVE_FAILED_TITLE', 'Could not save item'), description: e.message, variant: 'destructive' });
     }
     setSavingId(null);
   };
@@ -72,7 +73,7 @@ export default function Cart() {
     play('cart_add');
     await moveSavedToCart(saved);
     if (savedItems.length === 1) setTab('cart');
-    toast({ title: 'Moved to cart', description: `${(saved.menu_items || saved).name || 'Item'} is back in your cart.` });
+    toast({ title: t('FE_CART_MOVED_BACK_TITLE', 'Moved to cart'), description: t('FE_CART_MOVED_BACK_BODY', '{item} is back in your cart.', { item: (saved.menu_items || saved).name || 'Item' }) });
   };
 
   const handleRemoveSaved = (saved) => { removeSaved(saved.id); };

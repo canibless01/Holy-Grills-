@@ -1,7 +1,13 @@
 import ReactDOM from 'react-dom/client'
 import App from '@/App'
 import { isHydratingPrerender } from '@/lib/hydrationMode'
+import { loadMessages } from '@/lib/messages'
+import '@fontsource-variable/nunito'
 import '@/index.css'
+
+// Copy catalog (GET /api/messages, see src/lib/messages.ts). Fire-and-forget:
+// every t() renders its bundled fallback until this lands, so nothing waits on it.
+void loadMessages()
 
 // Track B: pre-rendered routes ship real HTML inside #root (scripts/prerender.mjs),
 // so hydrate that markup instead of discarding it.

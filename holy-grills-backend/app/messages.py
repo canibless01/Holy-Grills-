@@ -1244,6 +1244,46 @@ class MSG:
     REWARD_FULFILLED_CHOOSE_DELIVERY_TITLE = "Your reward is ready - choose delivery"
     REWARD_FULFILLED_CHOOSE_DELIVERY_BODY  = "Your {name} is ready. Choose how you would like to receive it."
 
+    # ── Frontend copy (FE_*) ─────────────────────────────────────────────────
+    # Copy the React app renders itself (toasts, validation, empty states). It is
+    # served to the client by GET /api/messages (app/routes/messages.py) and read
+    # through src/lib/messages.ts: `t('FE_X', '<bundled fallback>')`. Edit the text
+    # HERE and every surface — API and frontend — changes together. The bundled
+    # fallback in the frontend is only a resilience net (offline / older deploy),
+    # so drift there is harmless; `npm run messages:check` still flags it.
+
+    # Checkout — delivery + guest details
+    FE_CHECKOUT_CHOOSE_DELIVERY            = "Please choose on-campus or off-campus delivery"
+    FE_CHECKOUT_SELECT_HOSTEL              = "Please select your hostel"
+    FE_CHECKOUT_SELECT_GATE                = "Please select your nearest gate"
+    FE_CHECKOUT_ENTER_NAME                 = "Please enter your name"
+    FE_CHECKOUT_INVALID_PHONE              = "Phone must be 11 digits (080...) or +234 + 10 digits"
+    FE_CHECKOUT_INVALID_EMAIL              = "Please enter a valid email"
+    FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED      = "Enter a wallet amount for your split payment."
+    FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE      = "Wallet amount can't exceed your balance."
+    FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL        = "Wallet amount can't exceed the order total."
+    FE_CHECKOUT_FREE_SIDE_ADDED_TITLE      = "🏆 Free side added"
+    FE_CHECKOUT_FREE_SIDE_ADDED_BODY       = "{item} is added to this order at ₦0. The credit is used when you place the order."
+    FE_CHECKOUT_FREE_SIDE_FAILED_TITLE     = "Could not add the free side"
+
+    # Cart
+    FE_CART_SIGNIN_TO_SAVE_TITLE           = "Sign in to save items"
+    FE_CART_SIGNIN_TO_SAVE_BODY            = "Saved items sync to your account."
+    FE_CART_SAVED_TITLE                    = "❤️ Saved to your favourites"
+    FE_CART_SAVED_BODY                     = "{item} moved to Saved Items."
+    FE_CART_SAVE_FAILED_TITLE              = "Could not save item"
+    FE_CART_MOVED_BACK_TITLE               = "Moved to cart"
+    FE_CART_MOVED_BACK_BODY                = "{item} is back in your cart."
+
+    # Auth
+    FE_LOGIN_WELCOME_TITLE                 = "🔥 Welcome back!"
+    FE_LOGIN_WELCOME_BODY                  = "Good to see you again, {name}."
+    FE_LOGIN_FAILED                        = "Login failed"
+    FE_REGISTER_SUCCESS_TITLE              = "You're in ❤️‍🔥"
+    FE_REGISTER_SUCCESS_BODY               = "Welcome to Holy Grills."
+    FE_RESET_PASSWORDS_MISMATCH            = "Passwords do not match"
+    FE_RESET_FAILED                        = "Failed to reset password"
+
 
 # Short alias
 M = MSG
@@ -1259,6 +1299,27 @@ class _PassthroughDict(dict):
         return '{' + key + '}'
 
 
+def env_defaults() -> dict:
+    """The environment-provided placeholders ({currency}, {platform})."""
+    return {
+        'currency': _os.environ.get('HP_CURRENCY_NAME', 'HP'),
+        'platform': _os.environ.get('APP_NAME', 'Holy Grills'),
+    }
+
+
+def resolve_env_only(text: str) -> str:
+    """Replace ONLY the environment placeholders, leaving every other {token} —
+    and any format spec — untouched.
+
+    Used by the copy catalog (GET /api/messages): values there are whole strings
+    that may legitimately contain format specs ({amount:.2f}) or hand-written
+    braces, which format_map cannot survive.
+    """
+    for key, value in env_defaults().items():
+        text = text.replace('{' + key + '}', value)
+    return text
+
+
 def resolve_msg(text: str, **kwargs) -> str:
     """Resolve {currency} and {platform} from env, plus caller-supplied kwargs.
 
@@ -1270,9 +1331,6 @@ def resolve_msg(text: str, **kwargs) -> str:
     """
     if '{' not in text:
         return text
-    defaults = {
-        'currency': _os.environ.get('HP_CURRENCY_NAME', 'HP'),
-        'platform': _os.environ.get('APP_NAME', 'Holy Grills'),
-    }
+    defaults = env_defaults()
     defaults.update(kwargs)
     return text.format_map(_PassthroughDict(defaults))

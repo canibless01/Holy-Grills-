@@ -26,8 +26,9 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
       }
       setUploading(true);
       try {
-        // 1. Request a signed payload from the admin-only live API endpoint
-        //    (POST /api/upload/signature, @require_role("admin")).
+        // 1. Request a signed payload from the backend (POST /api/upload/signature:
+        //    @require_auth — admins may target any folder, everyone else is scoped to
+        //    profile_photos/<own user id> by app/routes/uploads.py).
         const sigRes = await apiClient.post('/upload/signature', { folder });
         const { signature, timestamp, api_key, cloud_name, folder: signedFolder } =
           sigRes;

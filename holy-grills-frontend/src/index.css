@@ -16,9 +16,11 @@
 @layer base {
   :root {
     /* ── FONT ── */
-    --font-display: 'Nunito', ui-sans-serif, system-ui, sans-serif;
-    --font-body:    'Nunito', ui-sans-serif, system-ui, sans-serif;
-    --font-heading: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+    /* 'Nunito Variable' is self-hosted via @fontsource-variable/nunito (S9);
+       plain 'Nunito' stays in the stack for anyone who has it installed. */
+    --font-display: 'Nunito Variable', 'Nunito', ui-sans-serif, system-ui, sans-serif;
+    --font-body:    'Nunito Variable', 'Nunito', ui-sans-serif, system-ui, sans-serif;
+    --font-heading: 'Nunito Variable', 'Nunito', ui-sans-serif, system-ui, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
     /* ── BRAND — warm food palette ── */

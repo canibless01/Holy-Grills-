@@ -47,7 +47,10 @@ class Config:
     FLUTTERWAVE_WEBHOOK_SECRET = os.environ.get("FLUTTERWAVE_WEBHOOK_SECRET", "")
 
     # Cloudinary — used by the direct-upload signature endpoint (admins: any folder; everyone else: their own profile_photos/<user_id> folder).
-    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+    # The cloud name is the account's public identifier, not a secret. It falls back
+    # to the live account so uploads keep working when the env var is absent; a value
+    # in the environment still wins.
+    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME") or "risvlfhx"
     CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
     CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 

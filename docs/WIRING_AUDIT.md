@@ -221,6 +221,62 @@ tooling, deprecated shims), and **1 is a product decision** that stays open.
 | Guest tracking-email resend | No tracking route exists. Removed button. |
 | `POST /hp/bundles/initialize` | Real route, real gap: the app buys HP bundles with wallet balance (`POST /hp/bundles/purchase`); the Paystack card path has no UI. Adding it is a payment-flow decision, so it is left for you. |
 
+### 3.7 Storefront CMS — field-by-field verification (2026-10-04)
+
+Requested check: *do the fields the admin inserts link to the right keys, and can
+an update throw?* Answer: **updates cannot throw on these keys, and five render
+paths were reading the wrong key — now fixed.**
+
+#### The shape that governs everything
+
+| Table | Real columns | Everything else |
+|---|---|---|
+| `storefront_sections` | `key`, `section_type`, `title`, `content` (JSONB), `is_active`, `sort_order`, `campus_id` | The flat editor fields (`subtitle`, `body`, `image_url`, `cta_text`, `cta_url`, `config`) are **merged into `content`** by `storefront.py` (`_SECTION_CONTENT_FIELDS`), with aliases `subtitle → subheadline`, `cta_url → cta_link`. |
+| `banners` | `title`, `subtitle`, `image_url`, `mobile_image_url`, `action_url`, `action_label`, `images`, `placement`, `is_active`, `sort_order`, `starts_at`, `ends_at` | `cta_text` / `cta_url` are accepted for compatibility but **stored as `action_label` / `action_url`** (`_banner_fields`). |
+
+Consequence: anything the admin edits for a **section** comes back on
+`row.content.<field>` — never on the row's top level. Banners are the opposite:
+their CTA comes back as `action_*`.
+
+#### Can an update throw?
+
+No. `PATCH /storefront/sections/<id>` whitelists (`title`, `is_active`,
+`sort_order`, `content` + the flat fields) and **merges** `content` into the
+existing object; unknown keys are dropped silently and nothing is wiped. The
+editor's `save()` sends 11 fields, of which `key`, `section_type` and
+`placement` are ignored by the backend — harmless, but they are not how the row
+is identified (`sort_order`/`is_active`/`content` are). `sort_order` is coerced
+with `Number(...)` and `is_active` is a boolean toggle, so the only way to get a
+400 is a non-numeric `sort_order`, which the form cannot produce.
+
+#### Mismatches found (consumers reading keys the backend never returns)
+
+| Consumer | Read (broken) | Now reads | User-visible effect it fixes |
+|---|---|---|---|
+| `HeroCarousel` (banners) | `b.cta_text`, `b.cta_url` | `b.action_label`, `b.action_url` | A hero banner's CTA label/link never applied — always “Order Now” → `/menu`. |
+| `HeroCarousel` (sections) | `s.subtitle`, `s.cta_text`, `s.cta_url` | `s.content.*` | Legacy `hero` sections lost subtitle + CTA. |
+| `StorefrontSlider` (tap) | `slide.cta_url` | `slide.content.cta_url \| cta_link \| destination` | Every “What's Inside” / “How It's Made” slide went to `/menu` regardless of its destination. |
+| `PromoFlyerPopup` | `section.image_url`, `section.subtitle`, `section.cta_text`, `section.cta_url` | `section.content.*` first | The popup flyer **image never rendered** (the admin's upload lands in `content.image_url`), and its CTA button was dead. |
+| `CateringCard` | `content.description`, `content.cta_label` | also `content.subtitle`, `content.cta_text` | The catering card ignored the description and CTA the admin typed. |
+
+#### Verified correct (no change needed)
+
+Share templates (`content.base_image_url` / `caption_template` / `key` → `ShareSheet`),
+testimonials (`content.name` / `review` / `rating` → Home + Our Story), slider card
+text (`content.image_url` / `title` / `subtitle` / `badge`), tier icons
+(`content.tier_slug` / `image_url`), early supporters (real columns + fallbacks),
+Our Story hero, operating hours, banner `title` / `subtitle` / `images`, and the
+CMS link rule from S8 (`openCmsDestination`).
+
+### 3.8 Other wiring changes in this round
+
+| Change | Detail |
+|---|---|
+| Font hosting (S9) | Nunito self-hosted via `@fontsource-variable/nunito`; Google Fonts links/preconnects removed; CSP `style-src`/`font-src` reduced to `'self'`. Fraunces was loaded but unused — removed. |
+| Cloudinary cloud name | `app/config.py` now falls back to the live cloud name (`risvlfhx`) when `CLOUDINARY_CLOUD_NAME` is unset, so uploads keep working without the env var; an env value still wins. |
+| Image uploads | Verified Cloudinary-only: `ImageUploader` posts to `POST /api/upload/signature` (auth’d; folder-scoped) and uploads to `api.cloudinary.com`. Base44 remains only for **static artwork** (`VITE_ASSET_CDN_URL`, per your decision) — no upload path touches it. |
+| Message catalog | `GET /api/messages` serves the `MSG` registry (995 keys); `src/lib/messages.ts` + `npm run messages:check` enforce it. See `docs/MESSAGES.md`. |
+
 ## 4. What this audit does **not** cover
 
 * No live backend calls: the app needs Supabase credentials, and the sandbox has
