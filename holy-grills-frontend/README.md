@@ -21,6 +21,13 @@ Then start the Vite development server:
 npm run dev
 ```
 
+## Backend connections
+
+This frontend currently uses two backend connections:
+
+- Its Flask REST API calls target `https://holy-grills-backend.onrender.com/api`, configured in `src/lib/apiClient.js`.
+- Account and authentication operations use the Base44 client; configure the Base44 environment values below in Vercel.
+
 ## Deploy this frontend on Vercel
 
 1. Import the existing `Holy-Grills-` GitHub repository into Vercel.
