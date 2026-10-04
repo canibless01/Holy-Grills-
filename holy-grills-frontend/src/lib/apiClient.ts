@@ -1,7 +1,10 @@
 // HolyGrill Live API Client — calls the real backend at holy-grills-backend.onrender.com
 import { localStore, sessionStore } from '@/lib/storage';
 
-export const API_BASE_URL = 'https://holy-grills-backend.onrender.com/api';
+// Configurable so a staging backend, a local Flask run or the dev proxy can be
+// pointed at without a code change. The fallback is the production API.
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'https://holy-grills-backend.onrender.com/api';
 const BASE_URL = API_BASE_URL;
 
 const TOKEN_KEY = 'hg_access_token';

@@ -305,8 +305,10 @@ const rewards = {
       available_sides: Array.isArray(res?.available_sides) ? res.available_sides : [],
     };
   },
-  // POST /free-sides/redeem { side_choice, order_id } — spent at checkout.
-  async redeemFreeSide(body) { return apiClient.post('/free-sides/redeem', body); },
+  // F5: `redeemFreeSide` was deleted. The backend replaced the post-order
+  // /free-sides/redeem flow with cart-stage selection (POST /free-sides/select),
+  // and this app now sends `free_side_credit` + `free_side_choice` in the order
+  // payload from Checkout. Its only caller was the legacy modal, also removed.
 };
 
 // ========== MARKETPLACE ==========
@@ -622,7 +624,10 @@ const admin = {
   // --- Campuses (Domain 0 — super-admin cross-campus management) ---
   async getCampuses() { return unwrap(await apiClient.get('/admin/campuses'), 'campuses'); },
 
-  // --- Archived menu items (GET /items/archived — admin auth required) ---
+  // --- Archived menu items ---
+  // F5 GAP: no backend route serves this (menu.py filters `is_archived` but never
+  // lists archived items). AdminMenu.tsx has an "archived" view that calls it, so
+  // it is left in place and reported for a backend route rather than deleted.
   async getArchivedItems() { return unwrap(await apiClient.get('/items/archived'), 'items'); },
 
   // --- Admin webhook history (GET /admin/webhook-events) ---
@@ -1206,7 +1211,10 @@ const admin = {
   async deleteDeliveryGate(id) { return apiClient.delete(`/delivery/admin/gates/${id}`); },
   async restoreDeliveryGate(id) { return apiClient.patch(`/delivery/admin/gates/${id}`, { is_active: true }); },
 
-  // --- Free Side Credits Admin (GET /admin/free-credits, PATCH /admin/settings/...) ---
+  // --- Free Side Credits Admin (PATCH /admin/settings/...) ---
+  // F5 GAP: GET /admin/free-credits does not exist — free-sides admin lives under
+  // /free-sides/admin/* (items + a POST grant). AdminFreeCredits.tsx lists granted
+  // credits with it, so it stays and is reported. The two PATCH calls below are real.
   async getFreeSideCreditsAdmin() { return unwrap(await apiClient.get('/admin/free-credits'), 'credits', 'users'); },
   async updateFreeSideOptions(body) { return apiClient.patch('/admin/settings/free_side_options', body); },
   async updateFreeSideValidityDays(body) { return apiClient.patch('/admin/settings/free_side_credits_validity_days', body); },
@@ -1221,6 +1229,9 @@ const admin = {
   async deleteExclusiveSpinTemplateItem(id) { return apiClient.delete(`/admin/exclusive-spin-pool/${id}`); },
   async updateExclusiveSpinExtraCost(body) { return apiClient.patch('/admin/settings/exclusive_spin_extra_cost', body); },
   async updateExclusiveSpinValidityDays(body) { return apiClient.patch('/admin/settings/exclusive_spin_validity_days', body); },
+  // F5 GAP: GET /admin/exclusive-spin/history does not exist (the admin routes are
+  // the prize pool, the grant and the fulfilment list). AdminExclusiveSpin.tsx
+  // renders a history table from it, so it stays and is reported.
   async getExclusiveSpinHistoryAdmin(params = {}) { return unwrap(await apiClient.get('/admin/exclusive-spin/history', params), 'spins', 'history'); },
   // --- Exclusive Spin Prize Fulfilment (admin_flags_bp: GET /admin/exclusive-spin-prizes?status=, PATCH /:id {status, notes}) ---
   async getExclusiveSpinPrizes(params = {}) { return unwrap(await apiClient.get('/admin/exclusive-spin-prizes', params), 'prizes', 'exclusive_spin_prizes'); },
@@ -1343,6 +1354,11 @@ const storefront = {
 // Public, unauthenticated system settings (WhatsApp number, streak rewards,
 // free-side options, etc.). Students cannot read /admin/settings, so this is
 // the student-facing source of configurable values. Falls back gracefully.
+//
+// F5 GAP: the backend serves no public /settings route (only /admin/settings and
+// /kitchen/settings), so this 404s today and lib/featureConfig.ts consumes it.
+// Reported for a backend route; kept because the type contract documents it
+// (src/types/config.ts).
 const config = {
   async getPublic() { return unwrap(await apiClient.get('/settings'), 'settings'); },
 };

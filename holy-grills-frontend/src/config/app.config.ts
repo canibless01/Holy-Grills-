@@ -18,7 +18,9 @@ export const APP_CONFIG = {
   emoji: '🔥',
 
   // Update to your production domain before going live (used for canonical URLs + OG).
-  domain: 'https://holygrill.app',
+  // Configurable per environment; the fallback is the production site. Used for
+  // canonical URLs, og:url and the JSON-LD `url`.
+  domain: import.meta.env.VITE_SITE_URL || 'https://holygrill.app',
 
   university: 'FUTA',
   currency: { code: 'NGN', symbol: '₦', locale: 'en-NG' },
@@ -39,7 +41,8 @@ export const APP_CONFIG = {
   // Set it here to enable push notifications. The REST API key (server-only)
   // is stored as a secret — see holy-grills-backend/app/services/notification_service.py.
   onesignal: {
-    appId: '', // ← Paste your OneSignal App ID here to enable push
+    // Push is off until an App ID is configured (VITE_ONESIGNAL_APP_ID).
+    appId: import.meta.env.VITE_ONESIGNAL_APP_ID || '',
   },
 
   // Native Web Push (VAPID). The public key is safe in client code — it pairs

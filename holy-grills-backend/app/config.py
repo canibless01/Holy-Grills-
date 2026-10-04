@@ -29,14 +29,11 @@ class Config:
     frontend_env = os.environ.get("FRONTEND_URL")
     if frontend_env and frontend_env.strip() != "*":
         origins_set.add(frontend_env.strip())
-    origins_set.update([
-        "https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app",
-        "https://holy-grills-frontend.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ])
+    # Origins are environment-driven only. The hardcoded list — which still named
+    # the retired base44.app origin — was removed on request. Note that
+    # app/__init__.py currently sets CORS(app, origins="*"), so this list was not
+    # in effect anyway; set CORS_ORIGINS/FRONTEND_URL to pin it down before deploy.
+
     CORS_ORIGINS = list(origins_set)
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")

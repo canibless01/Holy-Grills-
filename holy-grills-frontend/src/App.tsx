@@ -60,7 +60,6 @@ const TermsPrivacy = lazy(() => import('@/pages/TermsPrivacy'));
 const OurStory = lazy(() => import('@/pages/OurStory'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
-const OAuthConsent = lazy(() => import('@/pages/OAuthConsent'));
 
 const AppRoutes = () => {
   return (
@@ -70,7 +69,6 @@ const AppRoutes = () => {
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/mcp-consent" element={<OAuthConsent />} />
       <Route element={<Layout />}>
         {/* Public browsing + ordering (guests welcome) */}
         <Route path="/" element={<Home />} />

@@ -8,7 +8,11 @@ import { useSyncExternalStore } from 'react';
  * backgrounded container or add CSS box/drop-shadows (see MascotStandee).
  */
 
-const BASE = 'https://media.base44.com/images/public/6aabfb4cc35dbff73aed07fe';
+// The asset host is configuration, not code: the mascots sit on the Base44 CDN
+// today and are expected to move to Cloudinary. Swap VITE_ASSET_CDN_URL and every
+// path below keeps working, because only the host part changes.
+const CDN = (import.meta.env.VITE_ASSET_CDN_URL || 'https://media.base44.com/images/public').replace(/\/$/, '');
+const BASE = `${CDN}/6aabfb4cc35dbff73aed07fe`;
 
 // Uploaded mascot variants + the wordmark logo. Missing variants
 // (shocked, savoring, openarms, bread, glove, flame) gracefully fall back
@@ -26,7 +30,7 @@ export const MASCOTS = {
   // container. Unlike `logo` (which only sits on the site's beige background),
   // the lockup carries its own badge so it can sit on dark/colored surfaces
   // (footer gradient, admin sidebar, etc.). Never stretch — object-contain only.
-  logoLockup: 'https://media.base44.com/images/public/6aac7de83bd551df4f9d0637/246a8693c_HGLockup.png',
+  logoLockup: `${CDN}/6aac7de83bd551df4f9d0637/246a8693c_HGLockup.png`,
 };
 
 // Closest-match fallbacks for variants the asset set does not (yet) include.

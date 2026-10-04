@@ -21,8 +21,39 @@ frozen, no new security work).
 | F6 | `liveApi.challenges.get(id)` called `GET /challenges/<id>`, a route the backend does not serve, with no caller | deleted |
 | F7 | "We do not have SSR" | pre-rendering shipped for `/`, `/faq`, `/our-story`, `/terms` — see `docs/TRACK_B_SSR_PLAN.md` |
 
-Still open from this list: §D (the six migration-era `any`s), F1–F5 (they need a
-product or backend decision — see the end of `docs/TRACK_B_SSR_PLAN.md`).
+Second pass (same session, after your answers):
+
+| # | Was | Now |
+|---|---|---|
+| D1 | two `Pill` components, two tone maps (brand tokens vs Tailwind 100/700), both untyped | **one** `Pill` on brand tokens; `AdminShared` re-exports it so the ~25 admin files are unchanged. Typed against its own keys — `tone="mauve"` is a compile error |
+| F1 | `/mcp-consent` called two endpoints no backend route serves (`GET /apps/:id/mcp/consent-info`, `POST /apps/:id/mcp/authorize-grant`) and read the Base44-only `appParams` | **page, route and `lib/app-params.ts` deleted** — the flow could never complete, and the last `VITE_BASE44_*` consumers are gone with it. `vercel.json` regenerated (33 route families). Recoverable from git if you want an MCP consent flow later |
+| F2 | `media.base44.com` artwork (flame mark, mascots, offline mascot) | **kept** (your call: artwork is fine where it is; new images go to Cloudinary). The host is now config: `VITE_ASSET_CDN_URL` in `lib/mascots.ts`, so the Cloudinary switch is an env change, not a code change |
+| F3 | hardcoded CORS origin list in `app/config.py`, including the retired base44.app | **removed** — origins now come from `CORS_ORIGINS`/`FRONTEND_URL` only. Note `app/__init__.py` sets `origins="*"`, so the list was dead config; pin it before deploy |
+| F5 | 8 frontend calls with no Flask route | audited against the backend by hand — see §G. Two were genuinely dead and are deleted; **six are gaps with real UI callers and are reported, not deleted** |
+| — | hardcoded environment values in the frontend | moved to env with production fallbacks: `VITE_API_BASE_URL`, `VITE_SITE_URL`, `VITE_ASSET_CDN_URL`, `VITE_ONESIGNAL_APP_ID`; `.env.example` documents all of them plus `VITE_DEV_PROXY_TARGET` |
+
+## G. Backend gaps reported — a route is missing, not the frontend
+
+Your rule: don't add backend handlers; remove frontend code that has nothing
+behind it, and report what is genuinely needed. These six have live UI callers and
+**no** backend route (verified by reading the blueprint files, not the matrix):
+
+| Frontend call | Caller | Backend reality | Consequence today |
+|---|---|---|---|
+| `POST /api/orders/:id/resend-tracking` | `pages/OrderDetail.tsx:94` (guest resend button) | `orders.py` has only `/<order_id>/squad-members/<member_id>/resend` | button 404s |
+| `POST /api/admin/reviews/:id/promote` | `components/admin/AdminReviews.tsx:67` | `admin.py` has `GET /reviews` only | promote action 404s |
+| `GET /api/items/archived` | `components/admin/AdminMenu.tsx:30` (archived view) | `menu.py` filters `is_archived` but never lists archived items | archived tab empty |
+| `GET /api/admin/free-credits` | `components/admin/AdminFreeCredits.tsx:25` | free-sides admin is `/free-sides/admin/items` + `POST /free-sides/admin/credits` (no GET list) | credits list empty |
+| `GET /api/admin/exclusive-spin/history` | `components/admin/AdminExclusiveSpin.tsx:36` | admin routes are the prize pool, the grant and the fulfilment list | history table empty |
+| `GET /api/settings` (public) | `lib/featureConfig.ts:100` | only `/admin/settings` and `/kitchen/settings`; `src/types/config.ts` already documents this gap | storefront system settings always fall back to defaults |
+
+Deleted instead (no caller **and** no route): `rewards.redeemFreeSide` (+ the legacy
+`FreeSideRedemptionModal` and its OrderDetail button — you confirmed Checkout sends
+`free_side_credit`/`free_side_choice` in the order payload), and
+`challenges.get(id)`. Also resolved: the 42 Flask routes with no frontend caller are
+**backend surface** — left untouched per "the backend is the source of truth".
+
+Still open from the original list: §D (the six migration-era `any`s) and F4.
 
 ## A. Cosmetic drift (needs a decision before touching)
 

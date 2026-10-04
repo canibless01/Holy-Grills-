@@ -119,14 +119,6 @@
       "dest": "/app-shell.html"
     },
     {
-      "src": "/mcp-consent",
-      "dest": "/app-shell.html"
-    },
-    {
-      "src": "/mcp-consent/(.*)",
-      "dest": "/app-shell.html"
-    },
-    {
       "src": "/menu",
       "dest": "/app-shell.html"
     },

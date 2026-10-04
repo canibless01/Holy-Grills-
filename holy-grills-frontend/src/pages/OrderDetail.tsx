@@ -9,7 +9,6 @@ import { useSound } from '@/lib/SoundProvider';
 import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer } from '@/lib/hgUtils';
 import { reviewHp } from '@/lib/appConfig';
 import ShareSheet from '@/components/ShareSheet';
-import FreeSideRedemptionModal from '@/components/FreeSideRedemptionModal';
 import SquadMembersPanel from '@/components/SquadMembersPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import ImageUploader from '@/components/admin/ImageUploader';
@@ -39,7 +38,6 @@ export default function OrderDetail() {
   const [review, setReview] = useState({ rating: 5, kitchen_rating: 4, rider_rating: 5, comment: '' });
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [showFreeSide, setShowFreeSide] = useState(false);
   const [reviewImages, setReviewImages] = useState([]);
   const [googlePrompt, setGooglePrompt] = useState(false);
   const [callLink, setCallLink] = useState(null);
@@ -386,11 +384,6 @@ export default function OrderDetail() {
             <RefreshCw className="w-4 h-4" /> Reorder
           </button>
         )}
-        {['received', 'preparing'].includes(order.status) && (
-          <button onClick={() => setShowFreeSide(true)} className="flex-1 py-3 rounded-xl bg-gradient-gold border border-accent/30 text-accent-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity">
-            <Gift className="w-4 h-4" /> Add Free Side
-          </button>
-        )}
         <button onClick={() => setShowShare(true)} className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:border-primary/30 transition-colors">
           <Share2 className="w-4 h-4" /> Share
         </button>
@@ -514,16 +507,6 @@ export default function OrderDetail() {
           </div>
         </div>
         </ModalPortal>
-      )}
-
-      {showFreeSide && (
-        <FreeSideRedemptionModal
-          orderId={order.id}
-          onClose={() => setShowFreeSide(false)}
-          onSuccess={async () => {
-            try { const o = await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {}); setOrder(o); } catch { /* ignore */ }
-          }}
-        />
       )}
 
       {/* Guest resend-tracking modal — explicit request only, never automatic */}
