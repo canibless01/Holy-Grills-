@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Save, Zap, Clock, Coins, Gift, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Save, Zap, Clock, Coins, Gift, Check, Search } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -15,7 +15,6 @@ export default function AdminExclusiveSpin() {
   const { campuses } = useCampus();
   const campusName = (id) => campuses.find((c) => c.id === id)?.name || 'This campus';
   const [template, setTemplate] = useState([]);
-  const [history, setHistory] = useState([]);
   const [prizes, setPrizes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [extraCost, setExtraCost] = useState<string | number>(0);
@@ -25,20 +24,27 @@ export default function AdminExclusiveSpin() {
   const [savingCost, setSavingCost] = useState(false);
   const [savingValidity, setSavingValidity] = useState(false);
   const [busy, setBusy] = useState(null);
+  // Grant panel — POST /admin/exclusive-spin-grant; the student is picked through
+  // GET /auth/users/search (campus-scoped, rate-limited) instead of a raw user list.
+  const [grantUser, setGrantUser] = useState(null);
+  const [grantQuery, setGrantQuery] = useState('');
+  const [grantResults, setGrantResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [grantSpins, setGrantSpins] = useState<string | number>(1);
+  const [grantReason, setGrantReason] = useState('');
+  const [granting, setGranting] = useState(false);
 
   useEffect(() => { load(); }, []);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [tmpl, hist, settings, prizeRows] = await Promise.all([
+      const [tmpl, settings, prizeRows] = await Promise.all([
         mockApi.admin.getExclusiveSpinTemplate().catch(() => []),
-        mockApi.admin.getExclusiveSpinHistoryAdmin().catch(() => []),
         mockApi.admin.getSystemSettings().catch(() => []),
         mockApi.admin.getExclusiveSpinPrizes({ status: 'pending' }).catch(() => []),
       ]);
       setTemplate(tmpl);
-      setHistory(hist);
       setPrizes(prizeRows);
       const costSetting = settings.find(s => s.key === 'exclusive_spin_extra_cost');
       const valSetting = settings.find(s => s.key === 'exclusive_spin_validity_days');
@@ -46,6 +52,39 @@ export default function AdminExclusiveSpin() {
       setValidityDays(valSetting?.value || 30);
     } catch { /* empty state */ }
     setLoading(false);
+  };
+
+  const searchStudents = async () => {
+    const q = grantQuery.trim();
+    if (!q) { setGrantResults([]); return; }
+    setSearching(true);
+    try {
+      const rows = await mockApi.users.search({ q });
+      setGrantResults(rows);
+      if (rows.length === 0) toast({ title: 'No students matched', description: 'Try a full name, nickname or email.' });
+    } catch (e) {
+      toast({ title: 'Search failed', description: e.message, variant: 'destructive' });
+    }
+    setSearching(false);
+  };
+
+  const grantSpinsToUser = async () => {
+    if (!grantUser) { toast({ title: 'Pick a student first', variant: 'destructive' }); return; }
+    const spins = Number(grantSpins);
+    if (!(spins >= 1 && spins <= 10)) { toast({ title: 'Spins must be 1-10', variant: 'destructive' }); return; }
+    setGranting(true);
+    try {
+      const res = await mockApi.admin.grantExclusiveSpinCredits({ user_id: grantUser.id, spins, reason: grantReason.trim() || undefined });
+      toast({ title: '✅ Spins granted', description: `${spins} exclusive spin${spins > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
+      setGrantUser(null);
+      setGrantQuery('');
+      setGrantResults([]);
+      setGrantSpins(1);
+      setGrantReason('');
+    } catch (e) {
+      toast({ title: 'Grant failed', description: e.message, variant: 'destructive' });
+    }
+    setGranting(false);
   };
 
   const totalWeight = template.reduce((sum, t) => sum + (t.weight || 0), 0);
@@ -199,25 +238,50 @@ export default function AdminExclusiveSpin() {
         </Card>
       </div>
 
-      <div>
-        <SectionHeader title="Spin History" action={<Pill tone="cocoa">{history.length} spins</Pill>} />
-        {history.length === 0 ? (
-          <Card><p className="text-xs text-muted-foreground text-center py-4">No spins yet.</p></Card>
-        ) : (
-          <div className="space-y-2">
-            {history.slice(0, 20).map((h) => (
-              <div key={h.id} className="rounded-xl bg-white border border-border p-3 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-cta text-white flex items-center justify-center text-xs font-bold">{(h.user_name || 'U').charAt(0)}</div>
-                <div className="flex-1">
-                  <div className="font-semibold text-sm text-foreground">{h.user_name || 'User'}</div>
-                  <div className="text-xs text-muted-foreground">Won: <span className="font-bold text-primary">{h.prize_name || h.prize || '—'}</span></div>
-                </div>
-                {h.spun_at && <span className="text-[10px] text-muted-foreground">{new Date(h.spun_at).toLocaleDateString()}</span>}
+      <Card>
+        <SectionHeader title="Grant Spin Credits" action={<Pill tone="blue"><Zap className="w-3 h-3 inline" /> admin</Pill>} />
+        <p className="text-xs text-muted-foreground mb-3">Give a student exclusive-spin credits directly (1-10 per grant). Students are searched on your campus only.</p>
+        {grantUser ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded-xl bg-accent/15 border border-border p-3">
+              <Zap className="w-4 h-4 text-accent-foreground" />
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm text-foreground truncate">{grantUser.full_name}</div>
+                <div className="text-[11px] text-muted-foreground truncate">{grantUser.email || grantUser.nickname || '—'}</div>
               </div>
-            ))}
+              <button onClick={() => setGrantUser(null)} className="text-xs font-bold text-muted-foreground hover:text-foreground">Change</button>
+            </div>
+            <div className="flex items-end gap-3">
+              <Field label="Spins (1-10)"><TextInput type="number" min={1} max={10} value={grantSpins} onChange={(e) => setGrantSpins(e.target.value)} className="w-28" /></Field>
+              <div className="flex-1"><Field label="Reason (optional)"><TextInput value={grantReason} onChange={(e) => setGrantReason(e.target.value)} placeholder="e.g. contest prize" /></Field></div>
+              <button onClick={grantSpinsToUser} disabled={granting} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50">
+                <Zap className="w-3.5 h-3.5" /> {granting ? 'Granting...' : 'Grant spins'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input value={grantQuery} onChange={(e) => setGrantQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && searchStudents()} placeholder="Search by name, nickname or email" className="flex-1 p-2.5 rounded-xl border border-border text-sm" />
+              <button onClick={searchStudents} disabled={searching} className="flex items-center gap-1 px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-bold disabled:opacity-50"><Search className="w-4 h-4" /> {searching ? 'Searching...' : 'Search'}</button>
+            </div>
+            {grantResults.length > 0 && (
+              <div className="space-y-1">
+                {grantResults.map((u) => (
+                  <button key={u.id} onClick={() => setGrantUser(u)} className="w-full flex items-center gap-2 rounded-xl border border-border p-2.5 text-left hover:bg-muted">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{(u.full_name || 'S').charAt(0)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-sm text-foreground truncate">{u.full_name}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{u.email || u.nickname || '—'}</div>
+                    </div>
+                    <span className="text-[11px] font-bold text-primary">Select</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
-      </div>
+      </Card>
 
       <div>
         <SectionHeader title="Prize Fulfilment" action={<Pill tone="amber">{prizes.length} pending</Pill>} />

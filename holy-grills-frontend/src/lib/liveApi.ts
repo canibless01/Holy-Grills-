@@ -179,10 +179,10 @@ const orders = {
   async getHistory(id) { return apiClient.get(`/orders/${id}/history`); },
   // Guest order claiming — one-time link of a guest order to a registered account.
   async claim(id, body) { return apiClient.post(`/orders/${id}/claim`, body); },
-  // Guest tracking resend — POST /orders/<id>/resend-tracking { guest_email }.
-  // Rate-limited server-side (5 min cooldown, 3 max per order) — call ONLY on
-  // explicit user request, never automatically or on page load.
-  async resendTracking(id, body) { return apiClient.post(`/orders/${id}/resend-tracking`, body); },
+  // F5 GAP (reported): the order page had a "resend tracking email" button calling
+  // POST /orders/<id>/resend-tracking — orders.py exposes NO tracking route (no
+  // /orders/*/tracking, no guest tracking link). The button is removed so the UI
+  // stops promising an email it can never send. Restore both once the route exists.
   // Active orders only — dedicated endpoint (orders.py /api/orders/active).
   async getActive() { const res = await apiClient.get('/orders/active'); return res?.order ?? null; },
   // Cancel a scheduled (future-window) order — DELETE /api/orders/{id}/scheduled.
@@ -636,10 +636,10 @@ const admin = {
   async getCampuses() { return unwrap(await apiClient.get('/admin/campuses'), 'campuses'); },
 
   // --- Archived menu items ---
-  // F5 GAP: no backend route serves this (menu.py filters `is_archived` but never
-  // lists archived items). AdminMenu.tsx has an "archived" view that calls it, so
-  // it is left in place and reported for a backend route rather than deleted.
-  async getArchivedItems() { return unwrap(await apiClient.get('/items/archived'), 'items'); },
+  // F5 GAP (reported): GET /items/archived has no backend route — menu.py filters
+  // on is_archived but never lists archived rows. The AdminMenu "Archived" view was
+  // removed rather than left rendering an empty list forever; the rows are still in
+  // the database when the route is added.
 
   // --- Admin webhook history (GET /admin/webhook-events) ---
   // Route supports provider, status, from_date, to_date, campus_id, limit, offset.
@@ -885,25 +885,37 @@ const admin = {
         sort_order: vg.sort_order ?? 0,
       };
       let groupId = vg.id;
+      let oldOpts = [];
       if (vg.id && !vg.id.startsWith('vg_')) {
-        // Existing group — update, then wipe old options so we can recreate cleanly.
+        // Existing group — update it; its options are reconciled below instead of
+        // being wiped and recreated (that burned their UUIDs, so any order history
+        // referencing an option pointed at a deleted row).
         await apiClient.patch(`/menu/items/${itemId}/variation-groups/${groupId}`, groupPayload);
-        const oldOpts = (existingVarGroups.find((g) => g.id === groupId)?.options) || [];
-        await Promise.all(oldOpts.map((o) => apiClient.delete(`/menu/items/${itemId}/variation-groups/${groupId}/options/${o.id}`).catch(() => {})));
+        oldOpts = existingVarGroups.find((g) => g.id === groupId)?.options || [];
       } else {
         // New group.
         const created = await apiClient.post(`/menu/items/${itemId}/variation-groups`, groupPayload);
         groupId = created?.id;
       }
-      // Create all options from the editor text.
-      await Promise.all((vg.options || []).map((opt, i) =>
-        apiClient.post(`/menu/items/${itemId}/variation-groups/${groupId}/options`, {
+      // The editor's text field carries names, not ids, so options are matched to
+      // existing rows by name: matches are PATCHed in place (route verified —
+      // PATCH /menu/items/<id>/variation-groups/<gid>/options/<oid>), new names are
+      // created, and options the admin removed are deleted.
+      const keptOptIds = new Set();
+      await Promise.all((vg.options || []).map((opt, i) => {
+        const payload = {
           name: opt.name,
           price_delta: Number(opt.price_delta) || 0,
           is_available: opt.is_available !== false,
           sort_order: opt.sort_order ?? i,
-        }).catch(() => {})
-      ));
+        };
+        const match = oldOpts.find((o) => o.name === opt.name && !keptOptIds.has(o.id));
+        if (match) { keptOptIds.add(match.id); return apiClient.patch(`/menu/items/${itemId}/variation-groups/${groupId}/options/${match.id}`, payload).catch(() => {}); }
+        return apiClient.post(`/menu/items/${itemId}/variation-groups/${groupId}/options`, payload).catch(() => {});
+      }));
+      await Promise.all(oldOpts
+        .filter((o) => !keptOptIds.has(o.id))
+        .map((o) => apiClient.delete(`/menu/items/${itemId}/variation-groups/${groupId}/options/${o.id}`).catch(() => {})));
       results.variation_groups.push({ id: groupId, ...groupPayload });
     }
 
@@ -917,25 +929,33 @@ const admin = {
         sort_order: ag.sort_order ?? 0,
       };
       let groupId = ag.id;
+      let oldAddons = [];
       if (ag.id && !ag.id.startsWith('ag_')) {
         await apiClient.patch(`/menu/items/${itemId}/addon-groups/${groupId}`, groupPayload);
-        // Archive old addons linked to this group before recreating.
-        const oldAddons = (existingAddonGroups.find((g) => g.id === groupId)?.addons) || [];
-        await Promise.all(oldAddons.map((a) => apiClient.post(`/menu/addons/${a.id}/archive`).catch(() => {})));
+        oldAddons = existingAddonGroups.find((g) => g.id === groupId)?.addons || [];
       } else {
         const created = await apiClient.post(`/menu/items/${itemId}/addon-groups`, groupPayload);
         groupId = created?.id;
       }
-      // Create each addon, linked to this group via group_id.
-      await Promise.all((ag.addons || []).map((addon, i) =>
-        apiClient.post('/menu/addons', {
+      // Same name-match reconciliation as variation options, so global add-on rows
+      // keep their ids: PATCH /menu/addons/<id> for kept add-ons, POST for new ones,
+      // archive for the ones the admin removed.
+      const keptAddonIds = new Set();
+      await Promise.all((ag.addons || []).map((addon, i) => {
+        const payload = {
           name: addon.name,
           price: Number(addon.price) || 0,
           group_id: groupId,
           is_available: addon.is_available !== false,
           sort_order: addon.sort_order ?? i,
-        }).catch(() => {})
-      ));
+        };
+        const match = oldAddons.find((a) => a.name === addon.name && !keptAddonIds.has(a.id));
+        if (match) { keptAddonIds.add(match.id); return apiClient.patch(`/menu/addons/${match.id}`, payload).catch(() => {}); }
+        return apiClient.post('/menu/addons', payload).catch(() => {});
+      }));
+      await Promise.all(oldAddons
+        .filter((a) => !keptAddonIds.has(a.id))
+        .map((a) => apiClient.post(`/menu/addons/${a.id}/archive`).catch(() => {})));
       results.addon_groups.push({ id: groupId, ...groupPayload });
     }
 
@@ -1074,9 +1094,12 @@ const admin = {
   async getHallOfFameRewards(params = {}) { return unwrap(await apiClient.get('/admin/hall-of-fame-rewards', params), 'inductees', 'rewards', 'hall_of_fame_rewards'); },
   async updateHallOfFameReward(id, body) { return apiClient.patch(`/admin/hall-of-fame-rewards/${id}`, body); },
 
-  // --- Reviews Admin (GET /admin/reviews, PATCH /admin/reviews/:id/promote) ---
+  // --- Reviews Admin (GET /admin/reviews) ---
+  // F5 GAP (reported): "Promote to testimonial" called POST /admin/reviews/<id>/
+  // promote — admin.py serves GET /admin/reviews only, in any method. The button is
+  // removed instead of 404-ing on click. Homepage testimonials come from storefront
+  // sections, so promotion needs a backend route that writes one.
   async getReviews(params = {}) { return unwrap(await apiClient.get('/admin/reviews', params), 'reviews'); },
-  async promoteReview(id) { return apiClient.post(`/admin/reviews/${id}/promote`); },
 
   // --- Catering Requests (GET/POST /events/catering-requests, PATCH /:id) ---
   async getCateringRequests(params = {}) { return unwrap(await apiClient.get('/events/catering-requests', params), 'requests', 'catering_requests'); },
@@ -1114,10 +1137,18 @@ const admin = {
   async deleteStorefrontSection(id) { return apiClient.delete(`/storefront/sections/${id}`); },
 
   // --- Departments & Academic Levels (verified: /admin/departments, /admin/academic-levels) ---
-  async getDepartments() { return unwrap(await apiClient.get('/admin/departments'), 'departments'); },
+  // isActive maps to the backend's ?is_active= filter (undefined = active rows only).
+  async getDepartments(isActive = undefined) {
+    return unwrap(await apiClient.get('/admin/departments', isActive === undefined ? {} : { is_active: isActive }), 'departments');
+  },
   async createDepartment(body) { return apiClient.post('/admin/departments', body); },
   async updateDepartment(id, body) { return apiClient.patch(`/admin/departments/${id}`, body); },
   async deleteDepartment(id) { return apiClient.delete(`/admin/departments/${id}`); },
+  // DELETE deactivates (soft delete); POST /restore reactivates the same row.
+  async restoreDepartment(id) { return apiClient.post(`/admin/departments/${id}/restore`); },
+  // GET /departments/faculties → { faculties: [...] } — server-side, campus-aware
+  // distinct list for the department form's suggestions.
+  async getFaculties(params = {}) { return unwrap(await apiClient.get('/departments/faculties', params), 'faculties'); },
   async getAcademicLevels() { return unwrap(await apiClient.get('/admin/academic-levels'), 'levels', 'academic_levels'); },
   async createAcademicLevel(body) { return apiClient.post('/admin/academic-levels', body); },
   async updateAcademicLevel(id, body) { return apiClient.patch(`/admin/academic-levels/${id}`, body); },
@@ -1222,13 +1253,21 @@ const admin = {
   async deleteDeliveryGate(id) { return apiClient.delete(`/delivery/admin/gates/${id}`); },
   async restoreDeliveryGate(id) { return apiClient.patch(`/delivery/admin/gates/${id}`, { is_active: true }); },
 
-  // --- Free Side Credits Admin (PATCH /admin/settings/...) ---
-  // F5 GAP: GET /admin/free-credits does not exist — free-sides admin lives under
-  // /free-sides/admin/* (items + a POST grant). AdminFreeCredits.tsx lists granted
-  // credits with it, so it stays and is reported. The two PATCH calls below are real.
-  async getFreeSideCreditsAdmin() { return unwrap(await apiClient.get('/admin/free-credits'), 'credits', 'users'); },
-  async updateFreeSideOptions(body) { return apiClient.patch('/admin/settings/free_side_options', body); },
+  // --- Free Side Credits Admin (free_sides.py /free-sides/admin/*) ---
+  // The sides customers pick from live in the free_side_items TABLE: the public
+  // GET /free-sides reads it directly (_get_free_side_options) — the old
+  // system_settings.free_side_options blob is dead, so admins curate items here.
+  async getFreeSideItemsAdmin(params = {}) { return unwrap(await apiClient.get('/free-sides/admin/items', params), 'items'); },
+  async createFreeSideItem(body) { return apiClient.post('/free-sides/admin/items', body); },
+  async updateFreeSideItem(id, body) { return apiClient.patch(`/free-sides/admin/items/${id}`, body); },
+  async deleteFreeSideItem(id) { return apiClient.delete(`/free-sides/admin/items/${id}`); },
+  // POST /free-sides/admin/credits { user_id, credits (1-20), validity_days?, reason? }
+  async grantFreeSideCredits(body) { return apiClient.post('/free-sides/admin/credits', body); },
+  // Validity stays a settings PATCH — the grant route and the monthly jobs read it.
   async updateFreeSideValidityDays(body) { return apiClient.patch('/admin/settings/free_side_credits_validity_days', body); },
+  // F5 GAP (reported): nothing lists granted credits for admins — free_sides.py has
+  // POST /admin/credits only, and GET /admin/free-credits never existed. The phantom
+  // list was removed from AdminFreeCredits.tsx; a grant ledger needs a backend route.
 
   // --- Exclusive Spin Admin (DB-backed prize pool — GET/POST/PATCH/DELETE /admin/exclusive-spin-pool) ---
   // Mismatch 5.10: runtime odds control now lives in the exclusive_spin pool
@@ -1240,10 +1279,13 @@ const admin = {
   async deleteExclusiveSpinTemplateItem(id) { return apiClient.delete(`/admin/exclusive-spin-pool/${id}`); },
   async updateExclusiveSpinExtraCost(body) { return apiClient.patch('/admin/settings/exclusive_spin_extra_cost', body); },
   async updateExclusiveSpinValidityDays(body) { return apiClient.patch('/admin/settings/exclusive_spin_validity_days', body); },
-  // F5 GAP: GET /admin/exclusive-spin/history does not exist (the admin routes are
-  // the prize pool, the grant and the fulfilment list). AdminExclusiveSpin.tsx
-  // renders a history table from it, so it stays and is reported.
-  async getExclusiveSpinHistoryAdmin(params = {}) { return unwrap(await apiClient.get('/admin/exclusive-spin/history', params), 'spins', 'history'); },
+  // F5 GAP (reported): GET /admin/exclusive-spin/history has no backend route
+  // (admin.py serves the prize pool, the grant and the fulfilment list). The phantom
+  // "Spin History" table was removed from AdminExclusiveSpin.tsx instead of sitting
+  // there empty; a spin ledger needs a backend route.
+  // Grant spin credits to one user — POST /admin/exclusive-spin-grant
+  // { user_id, spins (1-10), validity_days?, reason? }.
+  async grantExclusiveSpinCredits(body) { return apiClient.post('/admin/exclusive-spin-grant', body); },
   // --- Exclusive Spin Prize Fulfilment (admin_flags_bp: GET /admin/exclusive-spin-prizes?status=, PATCH /:id {status, notes}) ---
   async getExclusiveSpinPrizes(params = {}) { return unwrap(await apiClient.get('/admin/exclusive-spin-prizes', params), 'prizes', 'exclusive_spin_prizes'); },
   async fulfillExclusiveSpinPrize(id, body = { status: 'fulfilled' }) { return apiClient.patch(`/admin/exclusive-spin-prizes/${id}`, body); },
@@ -1337,6 +1379,12 @@ const challenges = {
   // (per-user) or the admin list.
   // Backend route reads no body (challenges.py:135 POST /<milestone_id>/complete).
   async complete(id) { return apiClient.post(`/challenges/${id}/complete`); },
+  // Register a Web Push subscription AND claim the push-subscribe milestone /
+  // PWA-push bonus — POST /challenges/push-subscribed { subscription, device_label }.
+  // /push/subscribe only stores the row, so the bonus went unclaimed until this was
+  // wired. It 404s when the milestone is not configured, so callers keep the plain
+  // registration and swallow this one's failure.
+  async pushSubscribed(body) { return apiClient.post('/challenges/push-subscribed', body); },
   // POST /challenges/social-follow — no ID in path; the backend looks up the social_follow milestone internally.
   async socialFollow(body) { return apiClient.post('/challenges/social-follow', body); },
 };
@@ -1363,6 +1411,15 @@ const storefront = {
   async getOperatingHours() { return apiClient.get('/storefront/operating-hours'); },
   // Public system config (storefront.py get_public_config) — WhatsApp number, platform name, etc.
   async getPublicConfig() { return apiClient.get('/storefront/config/public'); },
+  // --- Newsletter campaigns (storefront.py newsletter_campaigns_*; admin only) ---
+  // Plain text only (HTML-escaped server-side); the backend computes the audience
+  // (campus admins always send to their own campus, super_admin picks campus/all).
+  async getNewsletterCampaigns(params = {}) { return await apiClient.get('/storefront/newsletter/campaigns', params) || []; },
+  async createNewsletterCampaign(body) { return apiClient.post('/storefront/newsletter/campaigns', body); },
+  async getNewsletterCampaign(id) { return apiClient.get(`/storefront/newsletter/campaigns/${id}`); },
+  // Sends to the calling admin's own address only; nothing is stored.
+  async sendNewsletterTest(body) { return apiClient.post('/storefront/newsletter/campaigns/test', body); },
+  async cancelNewsletterCampaign(id) { return apiClient.post(`/storefront/newsletter/campaigns/${id}/cancel`); },
 };
 
 // ========== PUBLIC CONFIG ==========

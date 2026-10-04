@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft, MapPin, Clock, CreditCard, Flame, Star, RefreshCw, Share2, X, Check, Package, Bike, Phone, User, Gift, Mail } from 'lucide-react';
+import { ChevronLeft, MapPin, Clock, CreditCard, Flame, Star, RefreshCw, Share2, X, Check, Package, Bike, Phone, User, Gift } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { liveApi } from '@/lib/liveApi';
 import { safeCallHref } from '@/lib/safeNavigation';
@@ -43,10 +43,6 @@ export default function OrderDetail() {
   const [googlePrompt, setGooglePrompt] = useState(false);
   const [callLink, setCallLink] = useState(null);
   const [callingRider, setCallingRider] = useState(false);
-  const [showResend, setShowResend] = useState(false);
-  const [resendEmail, setResendEmail] = useState('');
-  const [resending, setResending] = useState(false);
-  const [resendMsg, setResendMsg] = useState(null);
 
   // Guest tracking — load the claim token from localStorage first when the
   // guest returns without ?claim_token= in the URL (new device, cleared
@@ -63,17 +59,12 @@ export default function OrderDetail() {
   };
 
   useEffect(() => {
-    let first = true;
     const load = async () => {
       try {
         const token = resolveClaimToken();
         const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
         setOrder(o);
-        // Pre-fill the resend email with the guest's email on file — only on the
-        // first load, so polling never overwrites what the guest has typed.
-        if (first) setResendEmail(o?.guest_email || o?.email || o?.customer_email || '');
       } catch (e) { console.error(e); }
-      first = false;
       setLoading(false);
     };
     load();
@@ -82,21 +73,11 @@ export default function OrderDetail() {
     return () => clearInterval(timer);
   }, [id, claimToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resend tracking email — explicit only (rate-limited 5 min / 3 max per order
-  // server-side). guest_email is checked against the order's email on file, so
-  // the value the guest confirms here is used, not a stale cached one.
-  const handleResend = async () => {
-    if (!resendEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(resendEmail)) { setResendMsg({ ok: false, text: 'Enter a valid email.' }); return; }
-    setResending(true);
-    setResendMsg(null);
-    try {
-      const res = await liveApi.orders.resendTracking(id, { guest_email: resendEmail.trim() });
-      setResendMsg({ ok: true, text: res?.message || 'Tracking email sent. Check your inbox.' });
-    } catch (e) {
-      setResendMsg({ ok: false, text: e.message || 'Could not resend. Try again in a few minutes.' });
-    }
-    setResending(false);
-  };
+  // F5 GAP (reported): the guest "Resend tracking email" action was removed — the
+  // backend exposes no tracking route at all (no /orders/<id>/resend-tracking, no
+  // tracking-link endpoint), so the button could only 404. The guest-facing order
+  // page keeps its status timeline and share sheet; restore the resend UI together
+  // with a POST /orders/<id>/resend-tracking route.
 
   const handleCancel = async () => {
     const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
@@ -368,15 +349,6 @@ export default function OrderDetail() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
-        {/* Guest tracking resend — explicit only, never automatic. */}
-        {!user && (
-          <button
-            onClick={() => setShowResend(true)}
-            className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:border-primary/30 transition-colors"
-          >
-            <Mail className="w-4 h-4" /> Resend tracking email
-          </button>
-        )}
         {canCancel && (
           <button onClick={handleCancel} className="flex-1 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-bold text-sm hover:bg-destructive/20 transition-colors">
             {isScheduled ? 'Cancel Scheduled Order' : 'Cancel Order'}
@@ -510,41 +482,6 @@ export default function OrderDetail() {
           </div>
         </div>
         </ModalPortal>
-      )}
-
-      {/* Guest resend-tracking modal — explicit request only, never automatic */}
-      {showResend && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !resending && setShowResend(false)}>
-          <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-heading font-bold text-lg text-foreground flex items-center gap-2"><Mail className="w-5 h-5 text-primary" /> Resend tracking email</h3>
-              <button onClick={() => setShowResend(false)} disabled={resending}><X className="w-5 h-5 text-muted-foreground" /></button>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              Lost the email or on a new device? We'll resend your tracking link. Use the email you ordered with:
-              it must match the order on file. (Rate-limited: 3 sends per order, 5 min cooldown.)
-            </p>
-            <input
-              type="email"
-              value={resendEmail}
-              onChange={(e) => setResendEmail(e.target.value)}
-              placeholder="Your order email"
-              className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition mb-3"
-            />
-            {resendMsg && (
-              <div className={`mb-3 p-2.5 rounded-xl text-xs font-semibold ${resendMsg.ok ? 'bg-success/10 text-success border border-success/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
-                {resendMsg.text}
-              </div>
-            )}
-            <button
-              onClick={handleResend}
-              disabled={resending}
-              className="w-full py-3 rounded-xl bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 active:scale-[0.98] transition flex items-center justify-center gap-2"
-            >
-              {resending ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Sending…</> : <><Mail className="w-4 h-4" /> Send tracking email</>}
-            </button>
-          </div>
-        </div>
       )}
 
       <ShareSheet

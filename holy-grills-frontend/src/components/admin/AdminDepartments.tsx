@@ -9,9 +9,19 @@ export default function AdminDepartments() {
   const [tab, setTab] = useState('depts');
   const [depts, setDepts] = useState([]);
   const [levels, setLevels] = useState([]);
+  const [faculties, setFaculties] = useState([]);
   const [modal, setModal] = useState(null);
 
-  const load = async () => { setDepts(await mockApi.admin.getDepartments()); setLevels(await mockApi.admin.getAcademicLevels()); };
+  // Faculties come from GET /departments/faculties (server-side, campus-aware
+  // distinct list) instead of being guessed from the loaded department rows.
+  const load = async () => {
+    const [deptRows, levelRows, facultyRows] = await Promise.all([
+      mockApi.admin.getDepartments().catch(() => []),
+      mockApi.admin.getAcademicLevels().catch(() => []),
+      mockApi.admin.getFaculties().catch(() => []),
+    ]);
+    setDepts(deptRows); setLevels(levelRows); setFaculties(facultyRows);
+  };
   useEffect(() => { load(); }, []);
 
   const saveDept = async () => {
@@ -33,7 +43,15 @@ export default function AdminDepartments() {
   };
   const delDept = async (id) => { try { await mockApi.admin.deleteDepartment(id); await load(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } };
   const delLevel = async (id) => { try { const res = await mockApi.admin.deleteAcademicLevel(id); toast({ title: res?.message || 'Level deactivated' }); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } await load(); };
-  const toggleDept = async (d) => { try { await mockApi.admin.updateDepartment(d.id, { is_active: !d.is_active }); await load(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } };
+  // Same deactivate/restore pair as academic levels: DELETE soft-deletes and the
+  // dedicated POST /admin/departments/<id>/restore brings the row back.
+  const toggleDept = async (d) => {
+    try {
+      const res = await (d.is_active ? mockApi.admin.deleteDepartment(d.id) : mockApi.admin.restoreDepartment(d.id));
+      toast({ title: res?.message || (d.is_active ? 'Department deactivated' : 'Department restored') });
+    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    await load();
+  };
   const toggleLevel = async (l) => {
     try {
       const res = await (l.is_active ? mockApi.admin.deleteAcademicLevel(l.id) : mockApi.admin.restoreAcademicLevel(l.id));
@@ -82,7 +100,7 @@ export default function AdminDepartments() {
             <Field label="Department name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, kind: modal.kind, isNew: modal.isNew })} /></Field>
             <Field label="Faculty" hint="Type any faculty name — existing faculties appear as suggestions.">
               <input list="faculties-list" value={modal.item.faculty} onChange={(e) => setModal({ item: { ...modal.item, faculty: e.target.value }, kind: modal.kind, isNew: modal.isNew })} placeholder="e.g. Engineering, Sciences…" className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card" />
-              <datalist id="faculties-list">{[...new Set(depts.map((d) => d.faculty).filter(Boolean))].map((f) => <option key={f} value={f} />)}</datalist>
+              <datalist id="faculties-list">{(faculties.length ? faculties : [...new Set(depts.map((d) => d.faculty).filter(Boolean))]).map((f) => <option key={f} value={f} />)}</datalist>
             </Field>
             <button onClick={saveDept} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">Save</button>
           </div>

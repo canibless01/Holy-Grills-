@@ -46,6 +46,9 @@ export const isWebPushSupported = () => {
  *   1. Request Notification permission (if not already granted).
  *   2. Subscribe via pushManager.subscribe({ userVisibleOnly: true, applicationServerKey }).
  *   3. POST the subscription object to /push/subscribe with a device label.
+ *   4. POST the same subscription to /challenges/push-subscribed, which claims the
+ *      push-subscribe milestone / PWA-push bonus (it 404s when the milestone is not
+ *      configured, so its failure never blocks registration).
  */
 export const subscribeToWebPush = async () => {
   const vapidKey = APP_CONFIG.webPush?.vapidPublicKey;
@@ -81,10 +84,13 @@ export const subscribeToWebPush = async () => {
 
   // Step 3 — register with backend
   const subJSON = subscription.toJSON();
-  await liveApi.push.subscribe({
-    subscription: subJSON,
-    device_label: navigator.userAgent || 'Web browser',
-  });
+  const deviceLabel = navigator.userAgent || 'Web browser';
+  await liveApi.push.subscribe({ subscription: subJSON, device_label: deviceLabel });
+
+  // Reward path: /challenges/push-subscribed stores the same subscription AND
+  // awards the push milestone / PWA-push bonus. Kept non-blocking — enabling push
+  // must succeed even where the milestone is not configured.
+  await liveApi.challenges.pushSubscribed({ subscription: subJSON, device_label: deviceLabel }).catch(() => {});
 
   return true;
 };

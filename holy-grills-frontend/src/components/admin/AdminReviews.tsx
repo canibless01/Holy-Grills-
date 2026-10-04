@@ -37,7 +37,6 @@ export default function AdminReviews() {
   const [flaggedFilter, setFlaggedFilter] = useState('all');
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState(null);
-  const [promoting, setPromoting] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -61,17 +60,10 @@ export default function AdminReviews() {
     return okQ;
   });
 
-  const promote = async (review) => {
-    setPromoting(review.id);
-    try {
-      const res = await liveApi.admin.promoteReview(review.id);
-      toast({ title: res?.message || 'Review promoted' });
-      await load();
-    } catch (e) {
-      toast({ title: 'Promotion failed', description: e.message, variant: 'destructive' });
-    }
-    setPromoting(null);
-  };
+  // F5 GAP (reported): this panel used to POST /admin/reviews/<id>/promote to push a
+  // review onto the homepage. No such route exists in any method (admin.py serves
+  // GET /admin/reviews only) and the button 404'd. Homepage testimonials are
+  // storefront sections, so promotion needs a backend route before it can come back.
 
   if (loading) return <LoadingSpinner label="Loading reviews..." />;
 
@@ -172,15 +164,6 @@ export default function AdminReviews() {
                       </div>
                     )}
 
-                    {!isPromoted && r.rating >= 4 && (
-                      <button
-                        onClick={() => promote(r)}
-                        disabled={promoting === r.id}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent text-foreground text-xs font-bold disabled:opacity-50 hover:bg-accent/50 transition-colors"
-                      >
-                        <Star className="w-3.5 h-3.5" /> {promoting === r.id ? 'Promoting…' : 'Promote to testimonial'}
-                      </button>
-                    )}
                   </div>
                 )}
               </div>

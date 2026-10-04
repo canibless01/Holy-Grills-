@@ -1,56 +1,91 @@
 import { useState, useEffect } from 'react';
-import { Save, Plus, X, Gift, Clock } from 'lucide-react';
+import { Save, Plus, Pencil, Trash2, Gift, Clock, Search, Zap } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
-import { Card, Field, TextInput, Pill, SectionHeader } from './AdminShared';
+import { Card, Field, TextInput, Pill, SectionHeader, Modal, Toggle } from './AdminShared';
+import ImageUploader from './ImageUploader';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 
+// Free side credits (free_sides.py).
+//   • The sides students can pick live in the free_side_items TABLE — the public
+//     GET /free-sides reads it directly — so they are curated here with
+//     /free-sides/admin/items (POST/PATCH/DELETE). The old system_settings
+//     `free_side_options` blob this page used to edit is dead config: nothing
+//     reads it, so writing it changed nothing for students.
+//   • Credits are granted with POST /free-sides/admin/credits, picking the student
+//     through GET /auth/users/search (campus-scoped, rate-limited).
 export default function AdminFreeCredits() {
   const isSuperAdmin = useIsSuperAdmin();
-  const [credits, setCredits] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sideOptions, setSideOptions] = useState([]);
-  const [newOption, setNewOption] = useState('');
   const [validityDays, setValidityDays] = useState<string | number>(60);
-  const [savingOptions, setSavingOptions] = useState(false);
   const [savingValidity, setSavingValidity] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [busy, setBusy] = useState(null);
+  // Grant panel state
+  const [grantUser, setGrantUser] = useState(null);
+  const [grantQuery, setGrantQuery] = useState('');
+  const [grantResults, setGrantResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [grantCount, setGrantCount] = useState<string | number>(1);
+  const [grantReason, setGrantReason] = useState('');
+  const [granting, setGranting] = useState(false);
 
   useEffect(() => { load(); }, []);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [creditsData, settings] = await Promise.all([
-        mockApi.admin.getFreeSideCreditsAdmin().catch(() => []),
+      const [sideItems, settings] = await Promise.all([
+        mockApi.admin.getFreeSideItemsAdmin().catch(() => []),
         mockApi.admin.getSystemSettings().catch(() => []),
       ]);
-      setCredits(creditsData);
-      const optsSetting = settings.find(s => s.key === 'free_side_options');
-      const valSetting = settings.find(s => s.key === 'free_side_credits_validity_days');
-      setSideOptions(Array.isArray(optsSetting?.value) ? optsSetting.value : []);
+      setItems(sideItems);
+      const valSetting = settings.find((s) => s.key === 'free_side_credits_validity_days');
       setValidityDays(valSetting?.value || 60);
     } catch { /* empty state */ }
     setLoading(false);
   };
 
-  const addOption = () => {
-    if (!newOption.trim()) return;
-    setSideOptions([...sideOptions, newOption.trim()]);
-    setNewOption('');
-  };
-
-  const removeOption = (idx) => setSideOptions(sideOptions.filter((_, i) => i !== idx));
-
-  const saveOptions = async () => {
-    setSavingOptions(true);
+  const saveItem = async () => {
+    if (!editItem?.name?.trim()) { toast({ title: 'Name is required', variant: 'destructive' }); return; }
+    setBusy('item');
     try {
-      await mockApi.admin.updateFreeSideOptions({ value: sideOptions });
-      toast({ title: '✅ Side options updated', description: `${sideOptions.length} sides are now available for free side credits.` });
+      const body = { name: editItem.name.trim(), image_url: editItem.image_url || null, is_active: editItem.is_active !== false };
+      if (editItem.id) await mockApi.admin.updateFreeSideItem(editItem.id, body);
+      else await mockApi.admin.createFreeSideItem(body);
+      toast({ title: editItem.id ? '✅ Side updated' : '✅ Side added', description: 'Students can pick it at checkout with a free side credit.' });
+      setEditItem(null);
+      await load();
     } catch (e) {
       toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
     }
-    setSavingOptions(false);
+    setBusy(null);
+  };
+
+  const toggleItem = async (item) => {
+    setBusy(item.id);
+    try {
+      await mockApi.admin.updateFreeSideItem(item.id, { is_active: !(item.is_active !== false) });
+      await load();
+    } catch (e) {
+      toast({ title: 'Failed to update', description: e.message, variant: 'destructive' });
+    }
+    setBusy(null);
+  };
+
+  const removeItem = async (item) => {
+    if (!confirm(`Deactivate "${item.name}"? It stops showing to students; past orders keep it.`)) return;
+    setBusy(item.id);
+    try {
+      await mockApi.admin.deleteFreeSideItem(item.id);
+      toast({ title: 'Side deactivated' });
+      await load();
+    } catch (e) {
+      toast({ title: 'Failed to deactivate', description: e.message, variant: 'destructive' });
+    }
+    setBusy(null);
   };
 
   const saveValidity = async () => {
@@ -64,76 +99,128 @@ export default function AdminFreeCredits() {
     setSavingValidity(false);
   };
 
+  const searchStudents = async () => {
+    const q = grantQuery.trim();
+    if (!q) { setGrantResults([]); return; }
+    setSearching(true);
+    try {
+      const rows = await mockApi.users.search({ q });
+      setGrantResults(rows);
+      if (rows.length === 0) toast({ title: 'No students matched', description: 'Try a full name, nickname or email.' });
+    } catch (e) {
+      toast({ title: 'Search failed', description: e.message, variant: 'destructive' });
+    }
+    setSearching(false);
+  };
+
+  const grantCredits = async () => {
+    if (!grantUser) { toast({ title: 'Pick a student first', variant: 'destructive' }); return; }
+    const credits = Number(grantCount);
+    if (!(credits >= 1 && credits <= 20)) { toast({ title: 'Credits must be 1-20', variant: 'destructive' }); return; }
+    setGranting(true);
+    try {
+      const res = await mockApi.admin.grantFreeSideCredits({ user_id: grantUser.id, credits, reason: grantReason.trim() || undefined });
+      toast({ title: '✅ Credits granted', description: `${credits} free side credit${credits > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
+      setGrantUser(null);
+      setGrantQuery('');
+      setGrantResults([]);
+      setGrantCount(1);
+      setGrantReason('');
+    } catch (e) {
+      toast({ title: 'Grant failed', description: e.message, variant: 'destructive' });
+    }
+    setGranting(false);
+  };
+
   if (loading) return <LoadingSpinner label="Loading free credits..." />;
+
+  const activeItems = items.filter((i) => i.is_active !== false);
 
   return (
     <div className="space-y-5">
       <div>
-        <SectionHeader title="User Free Side Credits" action={<Pill tone="flame">{credits.length} users</Pill>} />
-        <p className="text-xs text-muted-foreground mb-3">Students with active free side credits — awarded monthly to the leaderboard's top 3 ranks (5 / 3 / 1 credits) when the leaderboard resets. Credits decrement automatically when spent at checkout.</p>
-        {credits.length === 0 ? (
-          <Card><p className="text-xs text-muted-foreground text-center py-4">No users with free side credits yet.</p></Card>
+        <SectionHeader title="Free Side Credits" action={<Pill tone="flame"><Gift className="w-3 h-3 inline" /> {activeItems.length} sides live</Pill>} />
+        <p className="text-xs text-muted-foreground mb-3">Students earn free side credits (monthly leaderboard top 3 get 5 / 3 / 1) and spend one at checkout to take a side for ₦0. The list below is what they choose from.</p>
+        {items.length === 0 ? (
+          <Card><p className="text-xs text-muted-foreground text-center py-4">No sides configured yet — students cannot redeem a credit until at least one is active.</p></Card>
         ) : (
           <div className="space-y-2">
-            {credits.map((c) => (
-              <Card key={c.user_id || c.id}>
-                <div className="flex items-center gap-3">
-                  <Gift className="w-5 h-5 text-primary" />
-                  <div className="flex-1">
-                    <div className="font-bold text-sm text-foreground">{c.user_name || c.full_name || 'User'}</div>
-                    <div className="text-xs text-muted-foreground">{c.credits_remaining || c.count || 0} credits remaining</div>
-                  </div>
-                  {c.expires_at && (
-                    <div className="text-right">
-                      <div className="text-[10px] text-muted-foreground flex items-center gap-0.5"><Clock className="w-3 h-3" /> Expires</div>
-                      <div className="text-xs font-bold text-foreground">{new Date(c.expires_at).toLocaleDateString()}</div>
-                    </div>
-                  )}
+            {items.map((it) => (
+              <Card key={it.id} className="flex items-center gap-3 !p-3">
+                {it.image_url ? (
+                  <img src={it.image_url} alt={it.name} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center"><Gift className="w-4 h-4 text-accent-foreground" /></div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm text-foreground truncate">{it.name}</div>
+                  <div className="text-[11px] text-muted-foreground">{it.is_active !== false ? 'Available at checkout' : 'Inactive — hidden from students'}{it.campus_id ? ' · campus-scoped' : ' · all campuses'}</div>
                 </div>
+                {isSuperAdmin && (
+                  <>
+                    <Toggle checked={it.is_active !== false} onChange={() => toggleItem(it)} disabled={busy === it.id} />
+                    <button onClick={() => setEditItem({ id: it.id, name: it.name, image_url: it.image_url || '', is_active: it.is_active !== false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+                    <button onClick={() => removeItem(it)} disabled={busy === it.id} className="p-2 rounded-lg hover:bg-red-50 disabled:opacity-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                  </>
+                )}
               </Card>
             ))}
+            {!isSuperAdmin && <SuperAdminBadge />}
           </div>
+        )}
+        {isSuperAdmin && (
+          <button onClick={() => setEditItem({ name: '', image_url: '', is_active: true })} className="flex items-center gap-1 mt-3 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold"><Plus className="w-3.5 h-3.5" /> Add side</button>
         )}
       </div>
 
       <Card>
-        <SectionHeader title="Available Side Options" action={<Pill tone="blue">config</Pill>} />
-        <p className="text-xs text-muted-foreground mb-3">These are the sides students can choose from when redeeming a free side credit.</p>
-        {isSuperAdmin ? (
-          <>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {sideOptions.map((opt, idx) => (
-                <div key={idx} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-sm text-foreground">
-                  {opt}
-                  <button onClick={() => removeOption(idx)} className="text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
+        <SectionHeader title="Grant Credits" action={<Pill tone="blue">admin</Pill>} />
+        <p className="text-xs text-muted-foreground mb-3">Give a student free side credits directly (1-20 per grant). Students are searched on your campus only.</p>
+        {grantUser ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded-xl bg-accent/15 border border-border p-3">
+              <Gift className="w-4 h-4 text-accent-foreground" />
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm text-foreground truncate">{grantUser.full_name}</div>
+                <div className="text-[11px] text-muted-foreground truncate">{grantUser.email || grantUser.nickname || '—'}</div>
+              </div>
+              <button onClick={() => setGrantUser(null)} className="text-xs font-bold text-muted-foreground hover:text-foreground">Change</button>
             </div>
-            <div className="flex gap-2">
-              <input value={newOption} onChange={(e) => setNewOption(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addOption()} placeholder="e.g. Coleslaw, Fries, Plantain" className="flex-1 p-2.5 rounded-xl border border-border text-sm" />
-              <button onClick={addOption} className="flex items-center gap-1 px-3 py-2 rounded-xl bg-secondary text-foreground text-sm font-bold"><Plus className="w-4 h-4" /> Add</button>
+            <div className="flex items-end gap-3">
+              <Field label="Credits (1-20)"><TextInput type="number" min={1} max={20} value={grantCount} onChange={(e) => setGrantCount(e.target.value)} className="w-28" /></Field>
+              <div className="flex-1"><Field label="Reason (optional)"><TextInput value={grantReason} onChange={(e) => setGrantReason(e.target.value)} placeholder="e.g. support goodwill" /></Field></div>
+              <button onClick={grantCredits} disabled={granting} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50">
+                <Zap className="w-3.5 h-3.5" /> {granting ? 'Granting...' : 'Grant credits'}
+              </button>
             </div>
-            <button onClick={saveOptions} disabled={savingOptions} className="flex items-center gap-1.5 mt-3 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50">
-              <Save className="w-3.5 h-3.5" /> {savingOptions ? 'Saving...' : 'Save Side Options'}
-            </button>
-          </>
+          </div>
         ) : (
-          // Options live in system settings (free_side_options) — super-admin-only write.
-          <>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {sideOptions.map((opt, idx) => (
-                <span key={idx} className="px-3 py-1.5 rounded-full bg-secondary text-sm text-foreground">{opt}</span>
-              ))}
-              {sideOptions.length === 0 && <span className="text-xs text-muted-foreground">No side options configured yet.</span>}
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input value={grantQuery} onChange={(e) => setGrantQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && searchStudents()} placeholder="Search by name, nickname or email" className="flex-1 p-2.5 rounded-xl border border-border text-sm" />
+              <button onClick={searchStudents} disabled={searching} className="flex items-center gap-1 px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-bold disabled:opacity-50"><Search className="w-4 h-4" /> {searching ? 'Searching...' : 'Search'}</button>
             </div>
-            <SuperAdminBadge />
-          </>
+            {grantResults.length > 0 && (
+              <div className="space-y-1">
+                {grantResults.map((u) => (
+                  <button key={u.id} onClick={() => setGrantUser(u)} className="w-full flex items-center gap-2 rounded-xl border border-border p-2.5 text-left hover:bg-muted">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{(u.full_name || 'S').charAt(0)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-sm text-foreground truncate">{u.full_name}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{u.email || u.nickname || '—'}</div>
+                    </div>
+                    <span className="text-[11px] font-bold text-primary">Select</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </Card>
 
       <Card>
-        <SectionHeader title="Credit Validity Period" action={<Pill tone="amber">expiry</Pill>} />
-        <p className="text-xs text-muted-foreground mb-3">How long free side credits remain valid before they expire. Default is 60 days.</p>
+        <SectionHeader title="Credit Validity Period" action={<Pill tone="amber"><Clock className="w-3 h-3 inline" /> days</Pill>} />
+        <p className="text-xs text-muted-foreground mb-3">How long free side credits remain valid before they expire. Default is 60 days. Used by manual grants and by the monthly leaderboard awards.</p>
         {isSuperAdmin ? (
           <div className="flex items-end gap-3">
             <Field label="Validity (days)">
@@ -151,6 +238,27 @@ export default function AdminFreeCredits() {
           </div>
         )}
       </Card>
+
+      <Modal open={!!editItem} onClose={() => setEditItem(null)} title={editItem?.id ? 'Edit free side' : 'Add free side'}>
+        {editItem && (
+          <div className="space-y-3">
+            <Field label="Name"><TextInput value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })} placeholder="e.g. Coleslaw" /></Field>
+            <Field label="Image (optional)"><ImageUploader value={editItem.image_url} onChange={(url) => setEditItem({ ...editItem, image_url: url })} folder="free_side_items" /></Field>
+            {editItem.id && (
+              <div className="flex items-center justify-between rounded-xl border border-border p-3">
+                <span className="text-sm text-foreground">Available to students</span>
+                <Toggle checked={editItem.is_active !== false} onChange={(next) => setEditItem({ ...editItem, is_active: next })} />
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setEditItem(null)} className="px-4 py-2 rounded-full bg-secondary text-foreground text-xs font-bold">Cancel</button>
+              <button onClick={saveItem} disabled={busy === 'item'} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50">
+                <Save className="w-3.5 h-3.5" /> {busy === 'item' ? 'Saving...' : 'Save side'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

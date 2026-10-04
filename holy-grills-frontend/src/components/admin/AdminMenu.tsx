@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Star, CheckSquare, Square, Zap, Gauge, Archive, Layers } from 'lucide-react';
+import { Plus, Pencil, Trash2, Star, CheckSquare, Square, Zap, Gauge, Layers } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -20,21 +20,22 @@ export default function AdminMenu() {
   const [capacityModal, setCapacityModal] = useState(false);
   const [capacity, setCapacity] = useState(null);
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [view, setView] = useState('active'); // 'active' | 'archived'
   const [showCats, setShowCats] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const all = view === 'archived'
-        ? await mockApi.admin.getArchivedItems()
-        : await mockApi.admin.getMenuItems();
+      // F5 GAP (reported): the "Archived" view used GET /items/archived, which no
+      // backend route serves (menu.py filters is_archived but never lists archived
+      // rows), so it always rendered empty. Archived rows stay in the database; the
+      // view comes back when the backend route exists.
+      const all = await mockApi.admin.getMenuItems();
       // unwrap() already extracted the rows (or returned []).
       setItems(all);
     } catch { setItems([]); }
     setLoading(false);
   };
-  useEffect(() => { load(); setSelected(new Set()); }, [view]);
+  useEffect(() => { load(); setSelected(new Set()); }, []);
   useEffect(() => { (async () => { try { const c = await mockApi.menu.getCategories(); setCategories(Array.isArray(c) ? c : (c?.categories || [])); } catch { setCategories([]); } })(); }, []);
 
   const save = async () => {
@@ -52,7 +53,7 @@ export default function AdminMenu() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Archive this menu item? It moves to the archived list and can be restored from the backend.')) return;
+    if (!confirm('Archive this menu item? It disappears from the menu. (Listing archived items again needs a backend route — see lib/liveApi.ts.)')) return;
     try { await mockApi.admin.deleteMenuItem(id); toast({ title: 'Item archived' }); await load(); }
     catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
   };
@@ -117,13 +118,12 @@ export default function AdminMenu() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="flex gap-1 p-1 rounded-full bg-secondary">
-            <button onClick={() => setView('active')} className={`px-3 py-1.5 rounded-full text-xs font-bold ${view === 'active' ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}>Active</button>
-            <button onClick={() => setView('archived')} className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 ${view === 'archived' ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}><Archive className="w-3.5 h-3.5" /> Archived</button>
+            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-white text-primary shadow-sm">Active</span>
           </div>
-          {view === 'active' && selected.size > 0 && <span className="text-xs font-bold text-primary">{selected.size} selected</span>}
+          {selected.size > 0 && <span className="text-xs font-bold text-primary">{selected.size} selected</span>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {view === 'active' && selected.size > 0 && (
+          {selected.size > 0 && (
             <>
               <button onClick={() => bulkToggleAvail(true)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-green-600 text-white text-xs font-bold disabled:opacity-50"><CheckSquare className="w-3.5 h-3.5" /> Available</button>
               <button onClick={() => bulkToggleAvail(false)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-red-600 text-white text-xs font-bold disabled:opacity-50"><Square className="w-3.5 h-3.5" /> Sold Out</button>
@@ -131,7 +131,7 @@ export default function AdminMenu() {
               <button onClick={bulkDelete} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-foreground text-white text-xs font-bold disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
             </>
           )}
-          {view === 'active' && (
+          {(
             <>
               <button onClick={() => setShowCats(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-secondary text-foreground text-xs font-bold"><Layers className="w-4 h-4" /> Categories</button>
               <button onClick={() => loadCapacity()} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-secondary text-foreground text-xs font-bold"><Gauge className="w-4 h-4" /> Capacity</button>
@@ -143,24 +143,7 @@ export default function AdminMenu() {
 
       {items.length === 0 ? (
         <div className="text-center py-12">
-          {view === 'archived' ? (
-            <><Archive className="w-9 h-9 text-muted-foreground mx-auto mb-2" /><p className="text-sm text-muted-foreground">No archived items.</p></>
-          ) : (
-            <><Plus className="w-9 h-9 text-muted-foreground mx-auto mb-2" /><p className="text-sm text-muted-foreground">No menu items yet.</p></>
-          )}
-        </div>
-      ) : view === 'archived' ? (
-        <div className="space-y-2">
-          {items.map((it) => (
-            <div key={it.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3 opacity-75">
-              {it.image_url && <img src={it.image_url} alt={it.name} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />}
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm text-foreground line-through truncate">{it.name}</div>
-                <div className="text-xs text-muted-foreground">{it.menu_categories?.name} · {formatNaira(it.price)}{it.deleted_at ? ` · archived ${new Date(it.deleted_at).toLocaleDateString()}` : ''}</div>
-              </div>
-              <Pill tone="cocoa">Archived</Pill>
-            </div>
-          ))}
+          <Plus className="w-9 h-9 text-muted-foreground mx-auto mb-2" /><p className="text-sm text-muted-foreground">No menu items yet.</p>
         </div>
       ) : (
         items.map((it) => (

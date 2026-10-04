@@ -52,11 +52,27 @@ checked against the frontend that must supply it. Read-only against the backend
 
 Reproduce: `python3 tools/wiring_audit.py --json /tmp/audit.json`.
 
-## 1. Route level — 421 of 427 frontend calls resolve
+## 1. Route level — every frontend call now resolves (438 / 438)
 
-**Six frontend calls have no backend route.** All six are already labelled
-in-code (`// F5 GAP:`), all six degrade to an empty state rather than breaking a
-page, and none is on the checkout path:
+_Updated 2026-10-04 (wiring round, §3.6): the six calls with no backend route are
+gone. All six had real UI callers, so each was either rewired to the route that
+actually serves the data or removed with its dead UI (the honest fix — a button
+that can only 404 is worse than no button). `tools/wiring_audit.py` now reports
+**0** frontend calls with no backend route._
+
+For the record, the six that were found and what happened to each:
+
+| Old call | Backend reality | What was done |
+|---|---|---|
+| `GET /settings` (`liveApi.config.get`) | route never existed; public settings are `GET /storefront/config/public` | **rewired** (§3.2) |
+| `GET /admin/free-credits` (free-credit ledger) | no route in any method; free-sides admin is `/free-sides/admin/*` | **UI replaced** by the grant panel + items CRUD (§3.6) |
+| `GET /admin/exclusive-spin/history` (spin ledger) | no route (admin.py serves the pool, the grant, the fulfilment list) | **UI replaced** by the grant panel (§3.6) |
+| `POST /admin/reviews/<id>/promote` (testimonial) | no route; admin.py serves `GET /admin/reviews` only | **button removed**, reported (needs a backend route) |
+| `GET /items/archived` (archived menu items) | no route; `is_archived` is only ever filtered, never listed | **view removed**, reported (needs a backend route) |
+| `POST /orders/<id>/resend-tracking` | no tracking route exists at all in orders.py | **button removed**, reported (needs a backend route) |
+
+The three reported ones are frontend-safe now (nothing to click), and each comes
+back the moment the matching backend route lands.
 
 | Call | Where | What the user sees | Note |
 |---|---|---|---|
@@ -156,6 +172,55 @@ out unless you say it is essential).
   named field or none. Recommend deleting the stale type fields in a later pass
   rather than touching them now.
 
+### 3.6 Orphan-route classification — intentional vs missed wiring (2026-10-04)
+
+Every backend route with no frontend caller was classified. **16 were wired**
+(each to a surface that already existed or belonged to the page it supports — no
+new pages were invented), **16 are intentional** (aliases, parity endpoints, ops
+tooling, deprecated shims), and **1 is a product decision** that stays open.
+
+#### 3.6.1 Wired in this round (16 routes → existing UI)
+
+| Route(s) | Wired to | Why it was a miss |
+|---|---|---|
+| `GET/POST/PATCH/DELETE /free-sides/admin/items` | AdminFreeCredits → "Free Side Credits" list + add/edit/deactivate | The public `GET /free-sides` reads the **`free_side_items` table** (`_get_free_side_options`), while the admin page was writing the dead `system_settings.free_side_options` blob — so editing "side options" changed nothing students saw. The page now curates the table the checkout actually reads. |
+| `POST /free-sides/admin/credits` | AdminFreeCredits → "Grant Credits" panel | No way at all to grant a credit from the web app: the only credit sources were the monthly jobs. |
+| `GET /auth/users/search` | both grant panels (free sides, exclusive spin) | The student picker; campus-scoped and rate-limited, so it replaces the old whole-user-list drop-downs. |
+| `POST /admin/exclusive-spin-grant` | AdminExclusiveSpin → "Grant Spin Credits" panel | Same as the free-side grant: the route existed with no UI. |
+| `GET /departments/faculties` | AdminDepartments → faculty suggestions (`<datalist>`) | The form guessed faculties from the rows already loaded; the route is the campus-aware source of truth. |
+| `POST /admin/departments/<id>/restore` | AdminDepartments → restore toggle | Deactivate/restore now uses the same pair as academic levels (DELETE + POST /restore) instead of flipping `is_active` by hand. |
+| `PATCH /menu/items/<id>/variation-groups/<gid>/options/<oid>` | `liveApi.admin.saveItemModifiers` (AdminAddons editor) | The editor deleted every option and recreated it, so option UUIDs turned over on each save and any order history pointing at them dangled. Options are now matched by name and PATCHed in place (`PATCH /menu/addons/<id>` likewise for add-ons, replacing archive-and-recreate). |
+| `POST /challenges/push-subscribed` | `lib/webPush.ts` (push enable flow) | `/push/subscribe` only stores the row; the milestone-claiming route (which awards the PWA-push bonus the UI advertises) was never called. Now fired non-blocking after registration, and it still works where no milestone is configured. |
+| `GET/POST /storefront/newsletter/campaigns`, `GET /storefront/newsletter/campaigns/<id>`, `POST …/test`, `POST …/cancel` | AdminStorefront → "Newsletter" tab → Campaigns panel (compose, test-send, queue, cancel, detail) | The tab listed subscribers only, so the whole send side of the newsletter had no UI. |
+
+#### 3.6.2 Intentional — no frontend caller by design (16 routes)
+
+| Route(s) | Why it stays caller-less |
+|---|---|
+| `GET /academic-calendar`, `GET /academic-calendar/current` | Public read parity for the admin-managed calendar (the web app manages it through `GET/POST/PATCH /admin/academic-calendar`); the app's own gating reads the table server-side. |
+| `GET/PATCH /admin/campuses/<campus_id>/location` | There is no campus-management UI in the app at all — campuses are provisioned out of band. |
+| `GET /admin/delivery-batches/<batch_id>` | Detail row; the delivery-batches UI is list-driven (`GET /admin/delivery-batches`). |
+| `GET /admin/hp/pending-squad` | Ops report (JSONB RPC, campus-scoped server-side). No UI slot; surfacing it needs a payload spec first. |
+| `GET /analytics/hp-ecosystem`, `GET /analytics/items-menu` | Aliases — the same view functions are registered as `/analytics/hp` and `/analytics/items`, which the app calls. |
+| `GET /auth/users/search` (as an alias) | Same view function as `GET /users/search`, which the app calls (matched on the canonical path). |
+| `GET /kitchen/settings/<key>` | Per-key reads for other clients; the app reads and writes the whole settings map. |
+| `POST /marketplace/listings/<listing_id>/image` | Alias of `POST /marketplace/admin/listings/<id>/image`, which the app calls; image_url is also accepted by create/update. |
+| `PATCH /menu/items/<item_id>/availability` | Single-item form of the bulk route the app calls (one id is a valid bulk request). |
+| `POST /menu/items/<item_id>/image` | Dedicated upload endpoint; the app saves `image_url` through create/update and the ImageUploader. |
+| `POST /referrals/complete` | Docstring: "internal endpoint called when a referred user completes their first order" — the automatic flow already handles it. |
+| `POST /storefront/promo-codes/validate` | Explicitly deprecated shim (`_deprecated: true`, `_use_instead: POST /api/orders/validate-promo`) — the app calls the replacement. |
+
+#### 3.6.3 Reported — needs a backend route or a product decision
+
+| Item | State |
+|---|---|
+| Admin free-credit ledger | No route lists who holds credits (`GET /free-sides/admin/credits` does not exist). The page shows the grant panel instead. |
+| Exclusive-spin ledger | No route lists spins. Removed UI; the fulfilment list (`GET /admin/exclusive-spin-prizes`) remains. |
+| Review → homepage testimonial | No route promotes a review. Removed button; homepage testimonials are storefront sections. |
+| Archived menu items | No route lists archived rows. Removed view. |
+| Guest tracking-email resend | No tracking route exists. Removed button. |
+| `POST /hp/bundles/initialize` | Real route, real gap: the app buys HP bundles with wallet balance (`POST /hp/bundles/purchase`); the Paystack card path has no UI. Adding it is a payment-flow decision, so it is left for you. |
+
 ## 4. What this audit does **not** cover
 
 * No live backend calls: the app needs Supabase credentials, and the sandbox has
@@ -167,7 +232,12 @@ out unless you say it is essential).
 * Response *value* semantics (a field returned as a string where the UI expects
   a number) are only covered where a normaliser or a type exists.
 
-## Appendix — backend routes with no frontend caller (34)
+## Appendix — backend routes with no frontend caller (16, all intentional)
+
+Regenerate with `python3 tools/wiring_audit.py --json /tmp/audit.json`. As of
+2026-10-04 the tool reports **0 frontend calls without a backend route** and
+**16 backend routes without a frontend caller**, all in the intentional list in
+§3.6.2 (aliases, parity reads, ops tooling, one deprecated shim).
 
 | Methods | Route | Handler |
 |---|---|---|
@@ -176,32 +246,14 @@ out unless you say it is essential).
 | GET | `/api/admin/campuses/<campus_id>/location` | `routes/admin.py:2776` |
 | PATCH | `/api/admin/campuses/<campus_id>/location` | `routes/admin.py:2806` |
 | GET | `/api/admin/delivery-batches/<batch_id>` | `routes/admin.py:1119` |
-| POST | `/api/admin/departments/<dept_id>/restore` | `routes/departments.py:374` |
-| POST | `/api/admin/exclusive-spin-grant` | `routes/admin.py:2470` |
 | GET | `/api/admin/hp/pending-squad` | `routes/admin.py:2272` |
 | GET | `/api/analytics/hp-ecosystem` | `routes/analytics.py:730` |
 | GET | `/api/analytics/items-menu` | `routes/analytics.py:812` |
 | GET | `/api/auth/users/search` | `routes/auth.py:1070` |
-| POST | `/api/challenges/push-subscribed` | `routes/challenges.py:259` |
-| GET | `/api/departments/<dept_id>` | `routes/departments.py:138` |
-| GET | `/api/departments/faculties` | `routes/departments.py:105` |
-| POST | `/api/free-sides/admin/credits` | `routes/free_sides.py:130` |
-| GET | `/api/free-sides/admin/items` | `routes/free_sides.py:72` |
-| POST | `/api/free-sides/admin/items` | `routes/free_sides.py:96` |
-| DELETE | `/api/free-sides/admin/items/<item_id>` | `routes/free_sides.py:266` |
-| PATCH | `/api/free-sides/admin/items/<item_id>` | `routes/free_sides.py:232` |
-| POST | `/api/free-sides/select` | `routes/free_sides.py:299` |
-| DELETE | `/api/free-sides/select/<selection_id>` | `routes/free_sides.py:347` |
 | POST | `/api/hp/bundles/initialize` | `routes/hp.py:287` |
 | GET | `/api/kitchen/settings/<key>` | `routes/kitchen.py:348` |
 | POST | `/api/marketplace/listings/<listing_id>/image` | `routes/marketplace.py:903` |
 | PATCH | `/api/menu/items/<item_id>/availability` | `routes/menu.py:958` |
 | POST | `/api/menu/items/<item_id>/image` | `routes/menu.py:866` |
-| PATCH | `/api/menu/items/<item_id>/variation-groups/<group_id>/options/<option_id>` | `routes/menu.py:1246` |
 | POST | `/api/referrals/complete` | `routes/referrals.py:201` |
-| GET | `/api/storefront/newsletter/campaigns` | `routes/storefront.py:1311` |
-| POST | `/api/storefront/newsletter/campaigns` | `routes/storefront.py:1263` |
-| GET | `/api/storefront/newsletter/campaigns/<campaign_id>` | `routes/storefront.py:1326` |
-| POST | `/api/storefront/newsletter/campaigns/<campaign_id>/cancel` | `routes/storefront.py:1337` |
-| POST | `/api/storefront/newsletter/campaigns/test` | `routes/storefront.py:1354` |
 | POST | `/api/storefront/promo-codes/validate` | `routes/storefront.py:634` |

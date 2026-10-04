@@ -29,7 +29,7 @@ Second pass (same session, after your answers):
 | F1 | `/mcp-consent` called two endpoints no backend route serves (`GET /apps/:id/mcp/consent-info`, `POST /apps/:id/mcp/authorize-grant`) and read the Base44-only `appParams` | **page, route and `lib/app-params.ts` deleted** — the flow could never complete, and the last `VITE_BASE44_*` consumers are gone with it. `vercel.json` regenerated (33 route families). Recoverable from git if you want an MCP consent flow later |
 | F2 | `media.base44.com` artwork (flame mark, mascots, offline mascot) | **kept** (your call: artwork is fine where it is; new images go to Cloudinary). The host is now config: `VITE_ASSET_CDN_URL` in `lib/mascots.ts`, so the Cloudinary switch is an env change, not a code change |
 | F3 | hardcoded CORS origin list in `app/config.py`, including the retired base44.app | **removed** — origins now come from `CORS_ORIGINS`/`FRONTEND_URL` only. Note `app/__init__.py` sets `origins="*"`, so the list was dead config; pin it before deploy |
-| F5 | 8 frontend calls with no Flask route | audited against the backend by hand — see §G. Two were genuinely dead and are deleted; **six are gaps with real UI callers and are reported, not deleted** |
+| F5 | frontend calls with no Flask route | audited against the backend by hand — see §G, then re-audited and closed 2026-10-04 (`docs/WIRING_AUDIT.md` §1): the tool now reports **0**, with the three routes that still don't exist reported rather than silently left broken |
 | — | hardcoded environment values in the frontend | moved to env with production fallbacks: `VITE_API_BASE_URL`, `VITE_SITE_URL`, `VITE_ASSET_CDN_URL`, `VITE_ONESIGNAL_APP_ID`; `.env.example` documents all of them plus `VITE_DEV_PROXY_TARGET` |
 
 ## G. Backend gaps reported — a route is missing, not the frontend
@@ -116,8 +116,8 @@ project does not enable `noUnusedParameters`.
 | F1 | **MCP consent endpoints have no Flask route**: `pages/OAuthConsent.tsx` calls `GET /api/apps/:appId/mcp/consent-info` and `POST /api/apps/:appId/mcp/authorize-grant`, and reads `appParams.appId`, `appParams.token`, `appParams.appBaseUrl`. In the Base44 build these were served by the Base44 platform. | Port the two endpoints into Flask (new backend work — needs your go-ahead), or retire the `/mcp-consent` route and page. Until then the page cannot complete a consent flow. |
 | F2 | **`media.base44.com` asset CDN** — `components/FlameMark.tsx` (the flame mark), `lib/mascots.ts` (mascot art), `public/offline.html` (offline mascot), `App.tsx` SEO default image path. | These render today and were left alone; if you want Base44 gone from the stack entirely, the images must be re-hosted (repo `public/` or your own CDN) before the URLs are removed. |
 | F3 | **Backend CORS origin** `https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app` in `app/config.py:33`. | Backend-side and possibly still in use by a deployed origin; removing it may break a live client. Your call. |
-| F4 | **34 Flask routes with no frontend caller** — fresh join against the booted app's `url_map`; full list in `docs/WIRING_AUDIT.md` (appendix). | Not deleted: they may serve webhooks, the mobile client or admin tooling. Biggest clusters: free-sides admin (7, unused by the web app), newsletter campaigns (5), departments/faculty (3). Confirm which are dead before any removal. |
-| F5 | **6 frontend calls with no Flask route** — enumerated with impact in `docs/WIRING_AUDIT.md` §1 (each already carries an in-code `// F5 GAP:` note and degrades to an empty state). | Implement the backend route, or remove the frontend call — with one exception that can be fixed frontend-side today: `GET /settings` should be `GET /api/storefront/config/public` (audit §3.2: students currently read built-in defaults for admin-configured public settings). |
+| F4 | **Flask routes with no frontend caller** — fresh join against the booted app's `url_map`. | **Classified 2026-10-04** (`docs/WIRING_AUDIT.md` §3.6): 34 originally → **16 wired** to the UI that should have owned them (free-sides admin items + grant, exclusive-spin grant, user search, faculties + department restore, variation/add-on option PATCH, push-subscribed milestone, newsletter campaigns), **16 intentional** (route aliases, public parity reads, ops tooling, one deprecated shim), **1 reported** (`POST /hp/bundles/initialize` — the Paystack card path for HP bundles has no UI; wiring it is a payment-flow decision). Nothing was deleted backend-side. |
+| F5 | **Frontend calls with no Flask route.** | **Resolved 2026-10-04** — the tool now reports **0**. `GET /settings` was rewired to `GET /storefront/config/public` (§3.2); `GET /admin/free-credits` and `GET /admin/exclusive-spin/history` were replaced by real panels built on the routes that do exist; the promote-review button, the archived-menu view and the guest resend-tracking button were removed because no backend route serves them (each re-adds cleanly when the route lands — see `docs/WIRING_AUDIT.md` §1 and §3.6.3). |
 | F6 | **`GET /challenges/:id` in `liveApi`** — no caller anywhere in the frontend; the backend never served it. | **Resolved:** the method was deleted during the type pass; `liveApi.ts:1325` records the reason. |
 | F7 | **SSR** — you asked whether we already have server-side rendering. | We do **not**: the app is still a client-rendered SPA (empty `<div id="root">` + a JS bundle per route). Pre-rendering is a separate project — see `docs/SSR_EXPLAINER.md` for what it would take and the two viable routes. |
 
@@ -130,8 +130,8 @@ Third pass (post-B6 decisions) — plus the production wiring audit:
 
 
 > **Phase 7 security review is in `docs/SECURITY_REVIEW.md`** (authorised this
-> session): 10 findings, none applied yet — payment-redirect validation, the
-> reset-token URL, CSP/security headers, 13 unused runtime dependencies, and the
+> session): 10 findings, **S1/S2/S4/S6/S7/S8 applied 2026-10-04** — payment-redirect validation, the
+> reset-token URL, CSP/security headers (report-only), unused runtime dependencies, and the
 > react-router 7 upgrade decision. Every finding carries file:line evidence and a
 > proposed patch.
 

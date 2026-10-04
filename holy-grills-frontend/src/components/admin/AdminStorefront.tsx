@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Plus, Trash2, Image, Mail, Flame, Tag, Quote, Share2, Heart, Sparkles, Clock, Pencil, Utensils, Award, BookOpen } from 'lucide-react';
+import { Save, Plus, Trash2, Image, Mail, Flame, Tag, Quote, Share2, Heart, Sparkles, Clock, Pencil, Utensils, Award, BookOpen, Send, XCircle, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDate } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -8,6 +8,8 @@ import ImageUploader from './ImageUploader';
 import AdminOperatingHours from './AdminOperatingHours';
 import AdminBanners from './AdminBanners';
 import AdminTierIcons from './AdminTierIcons';
+import { useIsSuperAdmin } from './SuperAdminGate';
+import { useCampus } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 
 // The storefront CMS is split into clear groups so admins always know which
@@ -133,6 +135,13 @@ export default function AdminStorefront() {
   const [sections, setSections] = useState([]);
   const [supporters, setSupporters] = useState([]);
   const [subscribers, setSubscribers] = useState([]);
+  // Newsletter campaigns (storefront.py) — the send side of the newsletter tab.
+  const { campuses } = useCampus();
+  const isSuperAdmin = useIsSuperAdmin();
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignForm, setCampaignForm] = useState(null); // { subject, body, campusId, allCampuses }
+  const [campaignBusy, setCampaignBusy] = useState(null);
+  const [campaignView, setCampaignView] = useState(null); // detail row (body + counts)
   const [busy, setBusy] = useState(null);
   const [seeding, setSeeding] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -147,9 +156,15 @@ export default function AdminStorefront() {
 
   const load = async () => {
     try {
-      const [b, s, n] = await Promise.all([mockApi.admin.getStorefrontSections(), mockApi.admin.getEarlySupporters(), mockApi.admin.getNewsletterSubscribers()]);
+      const [b, s, n, c] = await Promise.all([
+        mockApi.admin.getStorefrontSections(),
+        mockApi.admin.getEarlySupporters(),
+        mockApi.admin.getNewsletterSubscribers(),
+        mockApi.storefront.getNewsletterCampaigns().catch(() => []),
+      ]);
       setSections(Array.isArray(b) ? [...b].sort((a, c) => (a.sort_order ?? 0) - (c.sort_order ?? 0)) : []);
       setSupporters(Array.isArray(s) ? s : []); setSubscribers(Array.isArray(n) ? n : []);
+      setCampaigns(Array.isArray(c) ? c : []);
     } catch { setSections([]); }
     setLoaded(true);
   };
@@ -262,6 +277,56 @@ export default function AdminStorefront() {
   };
   const removeSupporter = async (id) => { if (!confirm('Remove this early supporter?')) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
   const unsubscribe = async (email) => { setBusy(email); await mockApi.admin.unsubscribeNewsletter({ email }); await load(); setBusy(null); };
+
+  const campaignBody = (form) => {
+    const body: Record<string, unknown> = { subject: form.subject.trim(), body: form.body.trim() };
+    // Campus admins always send to their own campus; only a super admin picks.
+    if (isSuperAdmin) { if (form.allCampuses) body.all_campuses = true; else body.campus_id = form.campusId; }
+    return body;
+  };
+
+  const sendCampaignTest = async (form) => {
+    if (!form.subject.trim() || !form.body.trim()) { toast({ title: 'Subject and message are required', variant: 'destructive' }); return; }
+    setCampaignBusy('test');
+    try {
+      const res = await mockApi.storefront.sendNewsletterTest({ subject: form.subject.trim(), body: form.body.trim() });
+      toast({ title: '✅ Test sent', description: res?.sent_to ? `Preview delivered to ${res.sent_to}.` : 'Preview delivered to your inbox.' });
+    } catch (e) { toast({ title: 'Test failed', description: e.message, variant: 'destructive' }); }
+    setCampaignBusy(null);
+  };
+
+  const createCampaign = async (form) => {
+    if (!form.subject.trim() || !form.body.trim()) { toast({ title: 'Subject and message are required', variant: 'destructive' }); return; }
+    if (isSuperAdmin && !form.allCampuses && !form.campusId) { toast({ title: 'Pick a campus or send to all campuses', variant: 'destructive' }); return; }
+    setCampaignBusy('create');
+    try {
+      await mockApi.storefront.createNewsletterCampaign(campaignBody(form));
+      toast({ title: '✅ Campaign queued', description: form.allCampuses ? 'Sending to every campus.' : 'Subscribers will receive it shortly.' });
+      setCampaignForm(null);
+      await load();
+    } catch (e) { toast({ title: 'Could not queue campaign', description: e.message, variant: 'destructive' }); }
+    setCampaignBusy(null);
+  };
+
+  const cancelCampaign = async (c) => {
+    if (!confirm('Stop this campaign? Emails already delivered stay delivered.')) return;
+    setCampaignBusy(c.id);
+    try {
+      await mockApi.storefront.cancelNewsletterCampaign(c.id);
+      toast({ title: 'Campaign cancelled' });
+      await load();
+    } catch (e) { toast({ title: 'Could not cancel', description: e.message, variant: 'destructive' }); }
+    setCampaignBusy(null);
+  };
+
+  const openCampaign = async (c) => {
+    setCampaignBusy(c.id);
+    try { setCampaignView(await mockApi.storefront.getNewsletterCampaign(c.id)); }
+    catch (e) { toast({ title: 'Could not load campaign', description: e.message, variant: 'destructive' }); }
+    setCampaignBusy(null);
+  };
+
+  const CAMPAIGN_TONES = { queued: 'blue', sending: 'amber', sent: 'green', cancelled: 'cocoa', failed: 'red' };
 
   if (!loaded) return <LoadingSpinner label="Loading..." />;
 
@@ -387,6 +452,35 @@ export default function AdminStorefront() {
 
       {tab === 'newsletter' && (
         <div className="space-y-2">
+          {/* Campaigns — plain-text sends (storefront.py newsletter_campaigns_*). */}
+          <Card className="!p-4">
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <div className="font-bold text-sm text-foreground">Campaigns</div>
+                <div className="text-[11px] text-muted-foreground">Plain-text emails to newsletter subscribers. Test sends go to your own inbox; queued sends can be cancelled.</div>
+              </div>
+              <button onClick={() => setCampaignForm({ subject: '', body: '', campusId: '', allCampuses: false })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold shrink-0"><Plus className="w-3.5 h-3.5" /> New</button>
+            </div>
+            {campaigns.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">No campaigns yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {campaigns.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-sm text-foreground truncate">{c.subject}</div>
+                      <div className="text-[11px] text-muted-foreground">{[c.sent_count, c.total_recipients].every((v) => v !== null && v !== undefined) ? `${c.sent_count}/${c.total_recipients} sent` : '—'}{c.created_at ? ` · ${formatDate(c.created_at)}` : ''}{c.last_error ? ` · ${c.last_error}` : ''}</div>
+                    </div>
+                    <Pill tone={CAMPAIGN_TONES[c.status] || 'cocoa'}>{c.status}</Pill>
+                    <button onClick={() => openCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:bg-muted disabled:opacity-50" title="View"><Eye className="w-4 h-4 text-muted-foreground" /></button>
+                    {(c.status === 'queued' || c.status === 'sending') && (
+                      <button onClick={() => cancelCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:bg-red-50 disabled:opacity-50" title="Cancel"><XCircle className="w-4 h-4 text-red-500" /></button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
           <div className="rounded-xl bg-muted border border-border p-3 text-xs text-muted-foreground flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {subscribers.length} subscribers.</div>
           {subscribers.length === 0 ? <Card><p className="text-xs text-muted-foreground text-center py-6">No newsletter subscribers yet.</p></Card> : subscribers.map((s) => (
             <Card key={s.id} className="flex items-center gap-3 !p-3">
@@ -397,6 +491,51 @@ export default function AdminStorefront() {
           ))}
         </div>
       )}
+
+      <Modal open={!!campaignForm} onClose={() => setCampaignForm(null)} title="New newsletter campaign">
+        {campaignForm && (
+          <div className="space-y-3">
+            <Field label="Subject"><TextInput value={campaignForm.subject} onChange={(e) => setCampaignForm({ ...campaignForm, subject: e.target.value })} maxLength={200} placeholder="e.g. 🔥 New week, new sides" /></Field>
+            <Field label="Message" hint="Plain text — line breaks are kept, HTML is escaped.">
+              <textarea value={campaignForm.body} onChange={(e) => setCampaignForm({ ...campaignForm, body: e.target.value })} rows={6} maxLength={20000} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" placeholder="What should students know this week?" />
+            </Field>
+            {isSuperAdmin && (
+              <>
+                <div className="flex items-center justify-between rounded-xl border border-border p-3">
+                  <span className="text-sm text-foreground">Send to every campus</span>
+                  <Toggle checked={campaignForm.allCampuses} onChange={(next) => setCampaignForm({ ...campaignForm, allCampuses: next })} />
+                </div>
+                {!campaignForm.allCampuses && (
+                  <Field label="Campus">
+                    <select value={campaignForm.campusId} onChange={(e) => setCampaignForm({ ...campaignForm, campusId: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card">
+                      <option value="">Select a campus…</option>
+                      {campuses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </Field>
+                )}
+              </>
+            )}
+            <div className="flex justify-between gap-2">
+              <button onClick={() => sendCampaignTest(campaignForm)} disabled={campaignBusy === 'test'} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-secondary text-foreground text-xs font-bold disabled:opacity-50"><Send className="w-3.5 h-3.5" /> {campaignBusy === 'test' ? 'Sending…' : 'Send test to me'}</button>
+              <button onClick={() => createCampaign(campaignForm)} disabled={campaignBusy === 'create'} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50"><Send className="w-3.5 h-3.5" /> {campaignBusy === 'create' ? 'Queuing…' : 'Queue campaign'}</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!campaignView} onClose={() => setCampaignView(null)} title={campaignView?.subject || 'Campaign'}>
+        {campaignView && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Pill tone={CAMPAIGN_TONES[campaignView.status] || 'cocoa'}>{campaignView.status}</Pill>
+              <span className="text-[11px] text-muted-foreground">{campaignView.sent_count ?? 0}/{campaignView.total_recipients ?? '—'} sent{campaignView.failed_count ? ` · ${campaignView.failed_count} failed` : ''}</span>
+            </div>
+            <div className="rounded-xl border border-border bg-muted p-3 text-xs text-foreground whitespace-pre-wrap max-h-64 overflow-y-auto">{campaignView.body || '—'}</div>
+            {campaignView.last_error && <div className="rounded-xl bg-destructive/10 text-destructive text-xs p-3">{campaignView.last_error}</div>}
+            <div className="text-[11px] text-muted-foreground">{campaignView.created_at ? `Created ${formatDate(campaignView.created_at)}` : ''}{campaignView.completed_at ? ` · finished ${formatDate(campaignView.completed_at)}` : ''}</div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={addOpen && isSectionType} onClose={() => setAddOpen(false)} title={`Create ${tab.replace(/_/g, ' ')} section`}>
         <div className="space-y-3">
