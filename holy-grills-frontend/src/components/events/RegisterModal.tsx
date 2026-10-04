@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
 import type { RegisterEventPayload } from '@/types/events';
 import type { PaymentMethod } from '@/types/orders';
+import { msg } from '@/lib/messages';
 
 // Spec-aligned event registration modal.
 // Guests  → card-only, guest_name/guest_email/guest_phone + dynamic fields.
@@ -75,7 +76,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
       // than sending the user somewhere unexpected.
       if (res?.authorization_url) {
         if (!isAllowedPaymentUrl(res.authorization_url)) {
-          throw new Error('The payment link did not look safe, so nothing was charged. Please try again.');
+          throw new Error(msg('FE_REGISTER_MODAL_THE_PAYMENT_LINK_DID_NOT_LOOK_SAFE_SO', 'The payment link did not look safe, so nothing was charged. Please try again.'));
         }
         window.location.href = res.authorization_url;
         return;
@@ -85,11 +86,11 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
       const ticketId = t.ticket_id || t.id || t.ticket?.id || '—';
       onSuccess({ ...t, ticket_id: ticketId, tier_name: selectedTier?.name, guest_email: isGuest ? guest.guest_email.trim() : null });
       toast({
-        title: '✅ Ticket secured!',
+        title: msg('FE_REGISTER_MODAL_TICKET_SECURED', '✅ Ticket secured!'),
         description: selectedTier ? `Your ${selectedTier.name} ticket is confirmed.` : 'Your ticket is confirmed.',
       });
     } catch (e) {
-      toast({ title: 'Registration failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_REGISTER_MODAL_REGISTRATION_FAILED', 'Registration failed'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

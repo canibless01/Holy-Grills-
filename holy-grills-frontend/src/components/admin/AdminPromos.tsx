@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira, timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, BreakdownTiles, body } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 const num = (v) => (v == null || isNaN(Number(v)) ? 0 : Number(v));
 
@@ -25,7 +26,7 @@ export default function AdminPromos() {
     try {
       setPromos(await liveApi.admin.getPromoCodes());
     } catch (e) {
-      toast({ title: "Couldn't load promo codes", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_PROMOS_COULDN_T_LOAD_PROMO_CODES', "Couldn't load promo codes"), description: e.message, variant: 'destructive' });
       setPromos([]);
     }
   };
@@ -40,7 +41,7 @@ export default function AdminPromos() {
       toast({ title: p.is_active ? 'Promo deactivated' : 'Promo activated', description: p.code });
       await load();
     } catch (e) {
-      toast({ title: 'Toggle failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_PROMOS_TOGGLE_FAILED', 'Toggle failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -195,12 +196,12 @@ function PromoModal({
 
   const submit = async () => {
     const dv = Number(form.discount_value);
-    if (!form.code.trim()) { toast({ title: 'Code required', variant: 'destructive' }); return; }
-    if (isNaN(dv) || dv <= 0) { toast({ title: 'Invalid discount', description: 'Discount value must be greater than 0.', variant: 'destructive' }); return; }
+    if (!form.code.trim()) { toast({ title: msg('FE_ADMIN_PROMOS_CODE_REQUIRED', 'Code required'), variant: 'destructive' }); return; }
+    if (isNaN(dv) || dv <= 0) { toast({ title: msg('FE_ADMIN_PROMOS_INVALID_DISCOUNT', 'Invalid discount'), description: msg('FE_ADMIN_PROMOS_DISCOUNT_VALUE_MUST_BE_GREATER_THAN_0', 'Discount value must be greater than 0.'), variant: 'destructive' }); return; }
     // NOTE: the >100 percentage cap and the min-order sign are enforced by the
     // backend (admin.py update_promo / create_promo) and surface verbatim via
     // e.message below — no duplicated client wording to drift.
-    if (Number(form.min_order_amount) < 0) { toast({ title: 'Invalid min order', description: 'Minimum order amount cannot be negative.', variant: 'destructive' }); return; }
+    if (Number(form.min_order_amount) < 0) { toast({ title: msg('FE_ADMIN_PROMOS_INVALID_MIN_ORDER', 'Invalid min order'), description: msg('FE_ADMIN_PROMOS_MINIMUM_ORDER_AMOUNT_CANNOT_BE_NEGATIVE', 'Minimum order amount cannot be negative.'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
       // scope & applicable IDs — the backend already accepts this full contract
@@ -220,13 +221,13 @@ function PromoModal({
         scope: form.scope,
         ...(form.scope === 'item' ? { applicable_item_ids: splitIds(form.applicable_item_ids) || [] } : {}),
       };
-      if (promo) { await liveApi.admin.updatePromoCode(promo.id, payload); toast({ title: 'Promo updated', description: payload.code }); }
-      else { await liveApi.admin.createPromoCode(payload); toast({ title: 'Promo created', description: payload.code }); }
+      if (promo) { await liveApi.admin.updatePromoCode(promo.id, payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_UPDATED', 'Promo updated'), description: payload.code }); }
+      else { await liveApi.admin.createPromoCode(payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_CREATED', 'Promo created'), description: payload.code }); }
       onClose(); onSaved();
     } catch (e) {
       // Backend rejects >100 percentage discounts and non-boolean is_active —
       // the message lands here verbatim.
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_PROMOS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };
@@ -289,7 +290,7 @@ function UsesModal({ promo, onClose }) {
         const stats = Array.isArray(raw) ? {} : raw;
         setUses({ list, stats });
       } catch (e) {
-        toast({ title: "Couldn't load usage", description: e.message, variant: 'destructive' });
+        toast({ title: msg('FE_ADMIN_PROMOS_COULDN_T_LOAD_USAGE', "Couldn't load usage"), description: e.message, variant: 'destructive' });
         setUses({ list: [], stats: {} });
       }
     })();

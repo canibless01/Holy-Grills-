@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Card } from './AdminShared';
 import { SuperAdminBadge } from './SuperAdminGate';
+import { msg } from '@/lib/messages';
 
 // Stage 13 — Email delivery. Two independent provider defaults, kept visually
 // separate on purpose: one control that looked like it governed both would
@@ -36,10 +37,10 @@ export default function EmailDeliverySettings({ settings, onSaved, canEdit = tru
         if (e.status && e.status !== 404) throw e;
         await liveApi.admin.createSystemSetting({ key, value: { provider }, description: `Default email provider for this category` });
       }
-      toast({ title: 'Email delivery updated', description: `${key} → ${provider}` });
+      toast({ title: msg('FE_EMAIL_DELIVERY_SETTINGS_EMAIL_DELIVERY_UPDATED', 'Email delivery updated'), description: `${key} → ${provider}` });
       onSaved?.();
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_EMAIL_DELIVERY_SETTINGS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };

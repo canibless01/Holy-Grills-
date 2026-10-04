@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import PreferenceRow from '@/components/notifications/PreferenceRow';
 import PushPermissionBanner from '@/components/notifications/PushPermissionBanner';
+import { msg } from '@/lib/messages';
 
 // The 6 toggles map 1:1 to the notification_preferences table columns. No
 // unbacked toggles (e.g. "Streak reminders") are added — see discrepancy #10.
@@ -53,10 +54,10 @@ export default function NotificationPreferences() {
     setSavingKey(key);
     try {
       await liveApi.notifications.updatePreferences({ [key]: next });
-      toast({ title: 'Notification settings updated.' });
+      toast({ title: msg('FE_NOTIFICATION_PREFERENCES_NOTIFICATION_SETTINGS_UPDATED', 'Notification settings updated.') });
     } catch (e) {
       setPrefs(prev);
-      toast({ title: 'Failed to update notification preferences.', variant: 'destructive' });
+      toast({ title: msg('FE_NOTIFICATION_PREFERENCES_FAILED_TO_UPDATE_NOTIFICATION', 'Failed to update notification preferences.'), variant: 'destructive' });
     }
     setSavingKey(null);
   };

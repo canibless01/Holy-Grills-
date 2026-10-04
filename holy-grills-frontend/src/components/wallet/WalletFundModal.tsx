@@ -6,6 +6,7 @@ import { walletMinCardTopup, walletTopupMin, walletTopupHp } from '@/lib/appConf
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import ModalPortal from '@/components/ModalPortal';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const PRESETS = [1000, 3000, 5000, 10000];
 
@@ -61,8 +62,8 @@ export default function WalletFundModal({ open, onClose, wallet, onSuccess }) {
           if (!isAllowedPaymentUrl(result.authorization_url)) {
             setProcessing(false);
             toast({
-              title: 'Payment not started',
-              description: 'The payment link did not look safe, so nothing was charged. Please try again.',
+              title: msg('FE_WALLET_FUND_MODAL_PAYMENT_NOT_STARTED', 'Payment not started'),
+              description: msg('FE_WALLET_FUND_MODAL_THE_PAYMENT_LINK_DID_NOT_LOOK_SAFE_SO', 'The payment link did not look safe, so nothing was charged. Please try again.'),
               variant: 'destructive',
             });
             return;

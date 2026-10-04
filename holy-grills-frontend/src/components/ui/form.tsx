@@ -2,6 +2,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { Controller, FormProvider, useFormContext, type ControllerProps, type FieldPath, type FieldValues } from "react-hook-form";
+import { msg } from '@/lib/messages';
 
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
@@ -38,7 +39,7 @@ const useFormField = () => {
   const fieldState = getFieldState(fieldContext.name, formState)
 
   if (!fieldContext) {
-    throw new Error("useFormField should be used within <FormField>")
+    throw new Error(msg('FE_FORM_USE_FORM_FIELD_SHOULD_BE_USED_WITHIN', "useFormField should be used within <FormField>"))
   }
 
   const { id } = itemContext

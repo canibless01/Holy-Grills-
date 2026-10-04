@@ -11,6 +11,7 @@ import AdminTierIcons from './AdminTierIcons';
 import { useIsSuperAdmin } from './SuperAdminGate';
 import { useCampus } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // The storefront CMS is split into clear groups so admins always know which
 // surface they're editing. Two APIs back it:
@@ -196,8 +197,8 @@ export default function AdminStorefront() {
         content: s.content ?? {},
       };
       await mockApi.admin.updateStorefrontSection(s.id, body);
-      toast({ title: '✅ Section saved' });
-    } catch (e) { toast({ title: 'Save failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_STOREFRONT_SECTION_SAVED', '✅ Section saved') });
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null); await load();
   };
   const move = async (s, dir) => {
@@ -206,11 +207,11 @@ export default function AdminStorefront() {
     const other = sameType[j];
     setBusy(`mv-${s.id}`);
     try { await Promise.all([mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), sort_order: other.sort_order ?? j }), mockApi.admin.updateStorefrontSection(other.id, { key: keyFor(other), sort_order: s.sort_order ?? i })]); await load(); }
-    catch (e) { toast({ title: 'Reorder failed', description: e.message, variant: 'destructive' }); }
+    catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_REORDER_FAILED', 'Reorder failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
-  const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } setBusy(null); };
-  const del = async (id) => { if (!confirm('Delete this storefront section? It will be removed from the live homepage.')) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: '✅ Deleted' }); await load(); } catch (e) { toast({ title: 'Delete failed', description: e.message, variant: 'destructive' }); } };
+  const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
+  const del = async (id) => { if (!confirm('Delete this storefront section? It will be removed from the live homepage.')) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
 
   const seedSamples = async () => {
     setSeeding(true); let ok = 0;
@@ -223,15 +224,15 @@ export default function AdminStorefront() {
         await mockApi.admin.createStorefrontSection(body); ok++;
       } catch (e) { /* skip duplicates / failures */ }
     }
-    toast({ title: `Seeded ${ok} sample section(s)`, description: 'Edit them below to see how each type renders.' });
+    toast({ title: `Seeded ${ok} sample section(s)`, description: msg('FE_ADMIN_STOREFRONT_EDIT_THEM_BELOW_TO_SEE_HOW_EACH_TYPE', 'Edit them below to see how each type renders.') });
     setSeeding(false); await load();
   };
 
   const create = async () => {
     const t = newSection.section_type;
-    if (t === 'testimonial') { if (!newSection.testimonial_name || !newSection.testimonial_review) { toast({ title: 'Name and review required', variant: 'destructive' }); return; } }
-    else if (t === 'share_template') { if (!newSection.image_url) { toast({ title: 'Base image required', variant: 'destructive' }); return; } }
-    else { if (!newSection.title || !newSection.image_url) { toast({ title: 'Title and image required', variant: 'destructive' }); return; } }
+    if (t === 'testimonial') { if (!newSection.testimonial_name || !newSection.testimonial_review) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_AND_REVIEW_REQUIRED', 'Name and review required'), variant: 'destructive' }); return; } }
+    else if (t === 'share_template') { if (!newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_BASE_IMAGE_REQUIRED', 'Base image required'), variant: 'destructive' }); return; } }
+    else { if (!newSection.title || !newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_TITLE_AND_IMAGE_REQUIRED', 'Title and image required'), variant: 'destructive' }); return; } }
     setBusy('create');
     try {
       const body: SectionBody = { section_type: t, placement: newSection.placement || 'home', sort_order: Number(newSection.sort_order) || 0, is_active: true };
@@ -244,20 +245,20 @@ export default function AdminStorefront() {
       else { body.title = newSection.title; body.subtitle = newSection.subtitle; body.image_url = newSection.image_url; body.cta_text = newSection.cta_text; body.cta_url = newSection.cta_url; if (SLIDER_TAB_IDS.includes(t) && newSection.badge) body.content = { ...(body.content || {}), badge: newSection.badge }; }
       await mockApi.admin.createStorefrontSection(body);
       setAddOpen(false); setNewSection(blankSection(t)); await load();
-    } catch (e) { toast({ title: 'Failed to create', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED_TO_CREATE', 'Failed to create'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
   // Backend create_early_supporter expects { name, photo_url, social_links, note, sort_order }
   // (NOT full_name). The list returns { id, name, photo_url, social_links, note, sort_order }.
   const addSupporter = async () => {
-    if (!supporterName) { toast({ title: 'Name is required', variant: 'destructive' }); return; }
+    if (!supporterName) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
     try {
       await mockApi.admin.addEarlySupporter({ name: supporterName, photo_url: supporterPhoto || undefined, note: supporterNote || undefined, social_links: supporterSocial || undefined, sort_order: Number(supporterOrder) || 0 });
       setSupporterName(''); setSupporterPhoto(''); setSupporterNote(''); setSupporterSocial(''); setSupporterOrder(0);
       setAddOpen(false); await load();
-      toast({ title: '✅ Early supporter added' });
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_STOREFRONT_EARLY_SUPPORTER_ADDED', '✅ Early supporter added') });
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
   const saveSupporter = async () => {
     if (!editSupporter) return;
@@ -270,9 +271,9 @@ export default function AdminStorefront() {
         await mockApi.admin.updateEarlySupporterPhoto(editSupporter.id, { photo_url: editSupporter.photo_url });
       }
       setEditSupporter(null);
-      toast({ title: '✅ Supporter updated' });
+      toast({ title: msg('FE_ADMIN_STOREFRONT_SUPPORTER_UPDATED', '✅ Supporter updated') });
       await load();
-    } catch (e) { toast({ title: 'Update failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
   const removeSupporter = async (id) => { if (!confirm('Remove this early supporter?')) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
@@ -286,25 +287,25 @@ export default function AdminStorefront() {
   };
 
   const sendCampaignTest = async (form) => {
-    if (!form.subject.trim() || !form.body.trim()) { toast({ title: 'Subject and message are required', variant: 'destructive' }); return; }
+    if (!form.subject.trim() || !form.body.trim()) { toast({ title: msg('FE_ADMIN_STOREFRONT_SUBJECT_AND_MESSAGE_ARE_REQUIRED', 'Subject and message are required'), variant: 'destructive' }); return; }
     setCampaignBusy('test');
     try {
       const res = await mockApi.storefront.sendNewsletterTest({ subject: form.subject.trim(), body: form.body.trim() });
-      toast({ title: '✅ Test sent', description: res?.sent_to ? `Preview delivered to ${res.sent_to}.` : 'Preview delivered to your inbox.' });
-    } catch (e) { toast({ title: 'Test failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_STOREFRONT_TEST_SENT', '✅ Test sent'), description: res?.sent_to ? `Preview delivered to ${res.sent_to}.` : 'Preview delivered to your inbox.' });
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_TEST_FAILED', 'Test failed'), description: e.message, variant: 'destructive' }); }
     setCampaignBusy(null);
   };
 
   const createCampaign = async (form) => {
-    if (!form.subject.trim() || !form.body.trim()) { toast({ title: 'Subject and message are required', variant: 'destructive' }); return; }
-    if (isSuperAdmin && !form.allCampuses && !form.campusId) { toast({ title: 'Pick a campus or send to all campuses', variant: 'destructive' }); return; }
+    if (!form.subject.trim() || !form.body.trim()) { toast({ title: msg('FE_ADMIN_STOREFRONT_SUBJECT_AND_MESSAGE_ARE_REQUIRED', 'Subject and message are required'), variant: 'destructive' }); return; }
+    if (isSuperAdmin && !form.allCampuses && !form.campusId) { toast({ title: msg('FE_ADMIN_STOREFRONT_PICK_A_CAMPUS_OR_SEND_TO_ALL_CAMPUSES', 'Pick a campus or send to all campuses'), variant: 'destructive' }); return; }
     setCampaignBusy('create');
     try {
       await mockApi.storefront.createNewsletterCampaign(campaignBody(form));
-      toast({ title: '✅ Campaign queued', description: form.allCampuses ? 'Sending to every campus.' : 'Subscribers will receive it shortly.' });
+      toast({ title: msg('FE_ADMIN_STOREFRONT_CAMPAIGN_QUEUED', '✅ Campaign queued'), description: form.allCampuses ? 'Sending to every campus.' : 'Subscribers will receive it shortly.' });
       setCampaignForm(null);
       await load();
-    } catch (e) { toast({ title: 'Could not queue campaign', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_QUEUE_CAMPAIGN', 'Could not queue campaign'), description: e.message, variant: 'destructive' }); }
     setCampaignBusy(null);
   };
 
@@ -313,16 +314,16 @@ export default function AdminStorefront() {
     setCampaignBusy(c.id);
     try {
       await mockApi.storefront.cancelNewsletterCampaign(c.id);
-      toast({ title: 'Campaign cancelled' });
+      toast({ title: msg('FE_ADMIN_STOREFRONT_CAMPAIGN_CANCELLED', 'Campaign cancelled') });
       await load();
-    } catch (e) { toast({ title: 'Could not cancel', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_CANCEL', 'Could not cancel'), description: e.message, variant: 'destructive' }); }
     setCampaignBusy(null);
   };
 
   const openCampaign = async (c) => {
     setCampaignBusy(c.id);
     try { setCampaignView(await mockApi.storefront.getNewsletterCampaign(c.id)); }
-    catch (e) { toast({ title: 'Could not load campaign', description: e.message, variant: 'destructive' }); }
+    catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_LOAD_CAMPAIGN', 'Could not load campaign'), description: e.message, variant: 'destructive' }); }
     setCampaignBusy(null);
   };
 

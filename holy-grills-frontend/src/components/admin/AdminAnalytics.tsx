@@ -26,6 +26,7 @@ import {
   RetentionLtvDashboard,
 } from './AdminAnalyticsDashboards';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const DASH_TABS = [
   { id: 'sales', label: 'Sales & Revenue' },
@@ -98,18 +99,18 @@ export default function AdminAnalytics() {
 
   const submitBrandPartnership = async () => {
     if (!brandForm.brand_name || !brandForm.contact_email) {
-      toast({ title: 'Brand name and contact email are required', variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ANALYTICS_BRAND_NAME_AND_CONTACT_EMAIL_ARE', 'Brand name and contact email are required'), variant: 'destructive' });
       return;
     }
     setBrandBusy(true);
     try {
       await liveApi.analytics.createBrandPartnership(brandForm);
-      toast({ title: 'Brand partnership logged' });
+      toast({ title: msg('FE_ADMIN_ANALYTICS_BRAND_PARTNERSHIP_LOGGED', 'Brand partnership logged') });
       setBrandModal(false);
       setBrandForm({ brand_name: '', contact_email: '', requested_data: {} });
       setBrandPartnerships(await liveApi.analytics.getBrandPartnerships());
     } catch (e) {
-      toast({ title: 'Failed to log brand partnership', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ANALYTICS_FAILED_TO_LOG_BRAND_PARTNERSHIP', 'Failed to log brand partnership'), description: e.message, variant: 'destructive' });
     }
     setBrandBusy(false);
   };
@@ -119,7 +120,7 @@ export default function AdminAnalytics() {
       await liveApi.analytics.updateBrandPartnership(id, { status });
       setBrandPartnerships(await liveApi.analytics.getBrandPartnerships());
     } catch (e) {
-      toast({ title: 'Failed to update', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ANALYTICS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
     }
   };
 

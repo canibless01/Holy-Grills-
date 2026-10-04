@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Pill, type PillTone } from '@/components/admin/ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 // Reads the real response shape from GET /marketplace/purchases:
 // each row carries nested marketplace_listings(title, listing_type, image_url)
@@ -28,12 +29,12 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
     setSubmitting(true);
     try {
       const res = await liveApi.marketplace.reportPurchaseProblem(reporting.id, { reason: reason.trim() });
-      toast({ title: 'Report sent', description: res?.message || 'Your report was sent to the admins.' });
+      toast({ title: msg('FE_MARKETPLACE_PURCHASES_PANEL_REPORT_SENT', 'Report sent'), description: res?.message || 'Your report was sent to the admins.' });
       setReporting(null);
       setReason('');
       onRefresh?.();
     } catch (e) {
-      toast({ title: 'Could not send report', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_MARKETPLACE_PURCHASES_PANEL_COULD_NOT_SEND_REPORT', 'Could not send report'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

@@ -5,6 +5,7 @@ import { liveApi as mockApi } from '@/lib/liveApi';
 import { Card, Pill, SectionHeader } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { msg } from '@/lib/messages';
 
 // Unified "HP & Multipliers" page — everything HP-multiplier related in one
 // place instead of spread across the HP panel and the Menu page:
@@ -39,9 +40,9 @@ function PerItemMultipliers() {
     setBusy(id);
     try {
       await mockApi.admin.updateMenuItemHpMultiplier(id, { multiplier });
-      toast({ title: '✅ HP multiplier updated', description: `${multiplier === 2 ? 'Double' : multiplier === 0.5 ? 'Half' : 'Normal'} HP earning for "${name}".` });
+      toast({ title: msg('FE_ADMIN_HP_MULTIPLIERS_HP_MULTIPLIER_UPDATED', '✅ HP multiplier updated'), description: `${multiplier === 2 ? 'Double' : multiplier === 0.5 ? 'Half' : 'Normal'} HP earning for "${name}".` });
       await load();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_HP_MULTIPLIERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -103,10 +104,10 @@ function GlobalMultiplier() {
     if (typeof val !== 'number' && !isNaN(val) && val !== '') val = Number(val);
     try {
       await mockApi.admin.updateSystemSetting(key, { value: val });
-      toast({ title: 'Global multiplier saved' });
+      toast({ title: msg('FE_ADMIN_HP_MULTIPLIERS_GLOBAL_MULTIPLIER_SAVED', 'Global multiplier saved') });
       setEditKey(null);
       await load();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_HP_MULTIPLIERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 

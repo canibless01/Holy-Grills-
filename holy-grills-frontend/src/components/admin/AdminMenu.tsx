@@ -8,6 +8,7 @@ import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import MenuItemModifiers from './MenuItemModifiers';
 import AdminCategories from './AdminCategories';
+import { msg } from '@/lib/messages';
 
 const BLANK = { name: '', price: '', category_id: '', daily_limit: 50, hp_earn_value: 10, hp_multiplier: 1, description: '', image_url: '', is_featured: false, is_available: true, is_secret: false };
 
@@ -41,21 +42,21 @@ export default function AdminMenu() {
   const save = async () => {
     const body = { ...modal.item, price: Number(modal.item.price), hp_multiplier: Number(modal.item.hp_multiplier) || 1, is_featured: !!modal.item.is_featured, is_available: modal.item.is_available !== false, is_secret: !!modal.item.is_secret };
     try {
-      if (modal.isNew) { await mockApi.admin.createMenuItem(body); toast({ title: '✅ Menu item created', description: `"${body.name}" is now live.` }); }
-      else { await mockApi.admin.updateMenuItem(modal.item.id, body); toast({ title: '✅ Menu item updated', description: `"${body.name}" saved.` }); }
+      if (modal.isNew) { await mockApi.admin.createMenuItem(body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_CREATED', '✅ Menu item created'), description: `"${body.name}" is now live.` }); }
+      else { await mockApi.admin.updateMenuItem(modal.item.id, body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_UPDATED', '✅ Menu item updated'), description: `"${body.name}" saved.` }); }
       setModal(null); await load();
-    } catch (e) { toast({ title: 'Failed to save', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
   };
 
   const toggleAvail = async (id) => {
-    try { await mockApi.admin.toggleMenuItemAvailability(id); toast({ title: 'Availability toggled' }); await load(); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.toggleMenuItemAvailability(id); toast({ title: msg('FE_ADMIN_MENU_AVAILABILITY_TOGGLED', 'Availability toggled') }); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const remove = async (id) => {
     if (!confirm('Archive this menu item? It disappears from the menu. (Listing archived items again needs a backend route — see lib/liveApi.ts.)')) return;
-    try { await mockApi.admin.deleteMenuItem(id); toast({ title: 'Item archived' }); await load(); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.deleteMenuItem(id); toast({ title: msg('FE_ADMIN_MENU_ITEM_ARCHIVED', 'Item archived') }); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const toggleSelect = (id) => {
@@ -70,7 +71,7 @@ export default function AdminMenu() {
       await mockApi.admin.bulkToggleMenuItemAvailability([...selected], makeAvailable);
       toast({ title: `✅ ${selected.size} items ${makeAvailable ? 'made available' : 'marked sold out'}` });
       setSelected(new Set()); await load();
-    } catch (e) { toast({ title: 'Bulk update failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_MENU_BULK_UPDATE_FAILED', 'Bulk update failed'), description: e.message, variant: 'destructive' }); }
     setBulkBusy(false);
   };
 
@@ -80,7 +81,7 @@ export default function AdminMenu() {
       await mockApi.admin.bulkUpdateMenuItemHpMultiplier([...selected], multiplier);
       toast({ title: `✅ HP multiplier set to ${multiplier}× for ${selected.size} items` });
       setSelected(new Set()); await load();
-    } catch (e) { toast({ title: 'Bulk update failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_MENU_BULK_UPDATE_FAILED', 'Bulk update failed'), description: e.message, variant: 'destructive' }); }
     setBulkBusy(false);
   };
 
@@ -93,22 +94,22 @@ export default function AdminMenu() {
       const ok = results.filter((r) => r.status === 'fulfilled').length;
       toast({ title: `✅ ${ok} item(s) archived`, description: results.length - ok ? `${results.length - ok} failed` : 'All done.' });
       setSelected(new Set()); await load();
-    } catch (e) { toast({ title: 'Bulk delete failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_MENU_BULK_DELETE_FAILED', 'Bulk delete failed'), description: e.message, variant: 'destructive' }); }
     setBulkBusy(false);
   };
 
   const adjustHp = async (id, multiplier, name) => {
     try {
       await mockApi.admin.updateMenuItemHpMultiplier(id, { multiplier });
-      toast({ title: '✅ HP multiplier updated', description: `${multiplier === 2 ? 'Double' : 'Half'} HP earning for "${name}".` });
+      toast({ title: msg('FE_ADMIN_MENU_HP_MULTIPLIER_UPDATED', '✅ HP multiplier updated'), description: `${multiplier === 2 ? 'Double' : 'Half'} HP earning for "${name}".` });
       await load();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const loadCapacity = async () => { setCapacity(await mockApi.admin.getMenuCapacitySettings()); setCapacityModal(true); };
   const saveCapacity = async () => {
-    try { await mockApi.admin.updateMenuCapacitySettings(capacity); toast({ title: '✅ Capacity settings saved' }); setCapacityModal(false); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.updateMenuCapacitySettings(capacity); toast({ title: msg('FE_ADMIN_MENU_CAPACITY_SETTINGS_SAVED', '✅ Capacity settings saved') }); setCapacityModal(false); }
+    catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   if (loading) return <LoadingSpinner label="Loading menu..." />;

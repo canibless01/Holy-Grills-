@@ -6,6 +6,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Card, Field, TextInput, Pill, SectionHeader, Modal, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
+import { msg } from '@/lib/messages';
 
 // Free side credits (free_sides.py).
 //   • The sides students can pick live in the free_side_items TABLE — the public
@@ -49,17 +50,17 @@ export default function AdminFreeCredits() {
   };
 
   const saveItem = async () => {
-    if (!editItem?.name?.trim()) { toast({ title: 'Name is required', variant: 'destructive' }); return; }
+    if (!editItem?.name?.trim()) { toast({ title: msg('FE_ADMIN_FREE_CREDITS_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
     setBusy('item');
     try {
       const body = { name: editItem.name.trim(), image_url: editItem.image_url || null, is_active: editItem.is_active !== false };
       if (editItem.id) await mockApi.admin.updateFreeSideItem(editItem.id, body);
       else await mockApi.admin.createFreeSideItem(body);
-      toast({ title: editItem.id ? '✅ Side updated' : '✅ Side added', description: 'Students can pick it at checkout with a free side credit.' });
+      toast({ title: editItem.id ? '✅ Side updated' : '✅ Side added', description: msg('FE_ADMIN_FREE_CREDITS_STUDENTS_CAN_PICK_IT_AT_CHECKOUT_WITH_A', 'Students can pick it at checkout with a free side credit.') });
       setEditItem(null);
       await load();
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -70,7 +71,7 @@ export default function AdminFreeCredits() {
       await mockApi.admin.updateFreeSideItem(item.id, { is_active: !(item.is_active !== false) });
       await load();
     } catch (e) {
-      toast({ title: 'Failed to update', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -80,10 +81,10 @@ export default function AdminFreeCredits() {
     setBusy(item.id);
     try {
       await mockApi.admin.deleteFreeSideItem(item.id);
-      toast({ title: 'Side deactivated' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_SIDE_DEACTIVATED', 'Side deactivated') });
       await load();
     } catch (e) {
-      toast({ title: 'Failed to deactivate', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_FAILED_TO_DEACTIVATE', 'Failed to deactivate'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -92,9 +93,9 @@ export default function AdminFreeCredits() {
     setSavingValidity(true);
     try {
       await mockApi.admin.updateFreeSideValidityDays({ value: Number(validityDays) });
-      toast({ title: '✅ Validity updated', description: `Free side credits now expire after ${validityDays} days.` });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_VALIDITY_UPDATED', '✅ Validity updated'), description: `Free side credits now expire after ${validityDays} days.` });
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setSavingValidity(false);
   };
@@ -106,28 +107,28 @@ export default function AdminFreeCredits() {
     try {
       const rows = await mockApi.users.search({ q });
       setGrantResults(rows);
-      if (rows.length === 0) toast({ title: 'No students matched', description: 'Try a full name, nickname or email.' });
+      if (rows.length === 0) toast({ title: msg('FE_ADMIN_FREE_CREDITS_NO_STUDENTS_MATCHED', 'No students matched'), description: msg('FE_ADMIN_FREE_CREDITS_TRY_A_FULL_NAME_NICKNAME_OR_EMAIL', 'Try a full name, nickname or email.') });
     } catch (e) {
-      toast({ title: 'Search failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_SEARCH_FAILED', 'Search failed'), description: e.message, variant: 'destructive' });
     }
     setSearching(false);
   };
 
   const grantCredits = async () => {
-    if (!grantUser) { toast({ title: 'Pick a student first', variant: 'destructive' }); return; }
+    if (!grantUser) { toast({ title: msg('FE_ADMIN_FREE_CREDITS_PICK_A_STUDENT_FIRST', 'Pick a student first'), variant: 'destructive' }); return; }
     const credits = Number(grantCount);
-    if (!(credits >= 1 && credits <= 20)) { toast({ title: 'Credits must be 1-20', variant: 'destructive' }); return; }
+    if (!(credits >= 1 && credits <= 20)) { toast({ title: msg('FE_ADMIN_FREE_CREDITS_CREDITS_MUST_BE_1_20', 'Credits must be 1-20'), variant: 'destructive' }); return; }
     setGranting(true);
     try {
       const res = await mockApi.admin.grantFreeSideCredits({ user_id: grantUser.id, credits, reason: grantReason.trim() || undefined });
-      toast({ title: '✅ Credits granted', description: `${credits} free side credit${credits > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_CREDITS_GRANTED', '✅ Credits granted'), description: `${credits} free side credit${credits > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
       setGrantUser(null);
       setGrantQuery('');
       setGrantResults([]);
       setGrantCount(1);
       setGrantReason('');
     } catch (e) {
-      toast({ title: 'Grant failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FREE_CREDITS_GRANT_FAILED', 'Grant failed'), description: e.message, variant: 'destructive' });
     }
     setGranting(false);
   };

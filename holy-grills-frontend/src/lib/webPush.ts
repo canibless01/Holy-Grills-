@@ -15,6 +15,7 @@
  */
 import APP_CONFIG from '@/config/app.config';
 import { liveApi } from './liveApi';
+import { msg } from '@/lib/messages';
 
 /**
  * Convert a base64 string to a Uint8Array for pushManager.subscribe().
@@ -54,16 +55,16 @@ export const subscribeToWebPush = async () => {
   const vapidKey = APP_CONFIG.webPush?.vapidPublicKey;
   if (!vapidKey) {
     throw new Error(
-      'Web Push isn’t configured yet. Set the VAPID public key in app.config → webPush.vapidPublicKey to enable it.'
+      msg('FE_WEB_PUSH_WEB_PUSH_ISN_T_CONFIGURED_YET_SET_THE', 'Web Push isn’t configured yet. Set the VAPID public key in app.config → webPush.vapidPublicKey to enable it.')
     );
   }
   if (!isWebPushSupported()) {
-    throw new Error('This browser doesn’t support Web Push notifications.');
+    throw new Error(msg('FE_WEB_PUSH_THIS_BROWSER_DOESN_T_SUPPORT_WEB_PUSH', 'This browser doesn’t support Web Push notifications.'));
   }
 
   // Step 1 — permission
   if (Notification.permission === 'denied') {
-    throw new Error('Push is blocked in your browser settings. Update site permissions to allow notifications.');
+    throw new Error(msg('FE_WEB_PUSH_PUSH_IS_BLOCKED_IN_YOUR_BROWSER', 'Push is blocked in your browser settings. Update site permissions to allow notifications.'));
   }
   if (Notification.permission !== 'granted') {
     const perm = await Notification.requestPermission();

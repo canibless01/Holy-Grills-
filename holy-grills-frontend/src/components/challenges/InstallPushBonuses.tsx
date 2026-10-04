@@ -4,6 +4,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import { subscribeToWebPush } from '@/lib/webPush';
 import StreakPwaBonus from '@/components/streak/StreakPwaBonus';
+import { msg } from '@/lib/messages';
 
 /**
  * InstallPushBonuses — the app-install + push-subscribe bonuses, living
@@ -33,7 +34,7 @@ export default function InstallPushBonuses() {
       .then(async (res) => {
         if (res?.hp_awarded && !res?.already_completed) {
           await refreshHp();
-          toast({ title: '🎉 PWA install bonus!', description: `+${res.hp_awarded} HP added to your wallet.` });
+          toast({ title: msg('FE_INSTALL_PUSH_BONUSES_PWA_INSTALL_BONUS', '🎉 PWA install bonus!'), description: `+${res.hp_awarded} HP added to your wallet.` });
         }
         const updated = await apiClient.get('/challenges/pwa-push-bonus-status').catch(() => null);
         if (updated) setPwaStatus(updated);
@@ -47,14 +48,14 @@ export default function InstallPushBonuses() {
       // Native Web Push — requests permission, subscribes via PushManager, and
       // registers the subscription with the backend (POST /push/subscribe).
       const ok = await subscribeToWebPush();
-      if (!ok) throw new Error('Push permission was not granted.');
+      if (!ok) throw new Error(msg('FE_INSTALL_PUSH_BONUSES_PUSH_PERMISSION_WAS_NOT_GRANTED', 'Push permission was not granted.'));
 
       await refreshHp();
       const updated = await apiClient.get('/challenges/pwa-push-bonus-status').catch(() => null);
       if (updated) setPwaStatus(updated);
-      toast({ title: '🔔 Push enabled!', description: 'You\'ll receive alerts on this device.' });
+      toast({ title: msg('FE_INSTALL_PUSH_BONUSES_PUSH_ENABLED', '🔔 Push enabled!'), description: msg('FE_INSTALL_PUSH_BONUSES_YOU_LL_RECEIVE_ALERTS_ON_THIS_DEVICE', 'You\'ll receive alerts on this device.') });
     } catch (e) {
-      toast({ title: 'Could not enable push', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_INSTALL_PUSH_BONUSES_COULD_NOT_ENABLE_PUSH', 'Could not enable push'), description: e.message, variant: 'destructive' });
     }
     setPushLoading(false);
   };

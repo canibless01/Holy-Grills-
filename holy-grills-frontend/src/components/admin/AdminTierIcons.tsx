@@ -5,6 +5,7 @@ import { Card, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { toast } from '@/components/ui/use-toast';
 import { clearTierIconsCache } from '@/lib/tierIcons';
+import { msg } from '@/lib/messages';
 
 // One fixed slot per membership tier. Each tier's artwork is its own storefront
 // section (section_type 'tier_icon') keyed by content.tier_slug — so uploading
@@ -39,7 +40,7 @@ export default function AdminTierIcons() {
   const save = async (slot) => {
     const row = rows[slot.slug] || {};
     const url = row.image_url || row.content?.image_url || '';
-    if (!url) { toast({ title: 'Upload an image first', variant: 'destructive' }); return; }
+    if (!url) { toast({ title: msg('FE_ADMIN_TIER_ICONS_UPLOAD_AN_IMAGE_FIRST', 'Upload an image first'), variant: 'destructive' }); return; }
     setBusy(slot.slug);
     try {
       const content = { ...(row.content || {}), tier_slug: slot.slug, image_url: url };
@@ -54,9 +55,9 @@ export default function AdminTierIcons() {
       if (row.id) await liveApi.admin.updateStorefrontSection(row.id, body);
       else await liveApi.admin.createStorefrontSection({ ...body, key: `tier_icon_${slot.slug}` });
       clearTierIconsCache();
-      toast({ title: `✅ ${slot.name} icon saved`, description: 'Live everywhere a tier is shown.' });
+      toast({ title: `✅ ${slot.name} icon saved`, description: msg('FE_ADMIN_TIER_ICONS_LIVE_EVERYWHERE_A_TIER_IS_SHOWN', 'Live everywhere a tier is shown.') });
       await load();
-    } catch (e) { toast({ title: 'Save failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_TIER_ICONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 

@@ -11,6 +11,7 @@ import StreakHero from '@/components/streak/StreakHero';
 import StreakWeekCalendar from '@/components/streak/StreakWeekCalendar';
 import StreakMilestones from '@/components/streak/StreakMilestones';
 import { triggerMascotCelebration } from '@/lib/mascots';
+import { msg } from '@/lib/messages';
 
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -96,15 +97,15 @@ export default function Streak() {
       const updated = await liveApi.challenges.my().catch(() => null);
       if (updated) setMyChallenges(updated);
       if (res?.already_completed) {
-        toast({ title: 'Already completed', description: 'You claimed this milestone already.' });
+        toast({ title: msg('FE_STREAK_ALREADY_COMPLETED', 'Already completed'), description: msg('FE_STREAK_YOU_CLAIMED_THIS_MILESTONE_ALREADY', 'You claimed this milestone already.') });
       } else if (res?.hp_awarded) {
         triggerMascotCelebration('thumbsup');
-        toast({ title: '🎉 Milestone complete!', description: `+${res.hp_awarded} HP added.` });
+        toast({ title: msg('FE_STREAK_MILESTONE_COMPLETE', '🎉 Milestone complete!'), description: `+${res.hp_awarded} HP added.` });
       } else {
-        toast({ title: 'Not yet!', description: 'Keep going — you haven\'t met the target yet.' });
+        toast({ title: msg('FE_STREAK_NOT_YET', 'Not yet!'), description: msg('FE_STREAK_KEEP_GOING_YOU_HAVEN_T_MET_THE_TARGET', 'Keep going — you haven\'t met the target yet.') });
       }
     } catch (e) {
-      toast({ title: 'Could not complete', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_STREAK_COULD_NOT_COMPLETE', 'Could not complete'), description: e.message, variant: 'destructive' });
     }
     setCompleting(null);
   };

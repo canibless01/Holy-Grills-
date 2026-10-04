@@ -13,6 +13,7 @@ import MascotStandee from '@/components/mascot/MascotStandee';
 import ModalPortal from '@/components/ModalPortal';
 import TierIcon from '@/components/TierIcon';
 import { triggerMascotCelebration } from '@/lib/mascots';
+import { msg } from '@/lib/messages';
 
 const VIEWS = [{ id: 'user', label: 'Solo' }, { id: 'squad', label: 'Squad' }];
 const PERIODS = [
@@ -84,7 +85,7 @@ export default function Leaderboard() {
       setSquadRankings(sqRes?.rankings || (Array.isArray(sqRes) ? sqRes : []));
       const hofRes = hof.status === 'fulfilled' ? hof.value : null;
       setHallOfFame(hofRes?.inductees || hofRes?.monthly_winners || (Array.isArray(hofRes) ? hofRes : []));
-      if (lb.status === 'rejected' && my.status === 'rejected') setError('Something slipped. Try again.');
+      if (lb.status === 'rejected' && my.status === 'rejected') setError(msg('FE_LEADERBOARD_SOMETHING_SLIPPED_TRY_AGAIN', 'Something slipped. Try again.'));
       setLoading(false);
     };
     load();

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Users, Send, UserMinus, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 /**
  * SquadMembersPanel — per-order squad member management.
@@ -43,9 +44,9 @@ export default function SquadMembersPanel({ orderId, initialMembers, delivered }
     setBusyId(m.id);
     try {
       await liveApi.orders.resendSquadMemberInvite(orderId, m.id);
-      toast({ title: '📨 Invite resent', description: m.email });
+      toast({ title: msg('FE_SQUAD_MEMBERS_PANEL_INVITE_RESENT', '📨 Invite resent'), description: m.email });
     } catch (e) {
-      toast({ title: 'Could not resend invite', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SQUAD_MEMBERS_PANEL_COULD_NOT_RESEND_INVITE', 'Could not resend invite'), description: e.message, variant: 'destructive' });
     }
     setBusyId(null);
   };
@@ -56,9 +57,9 @@ export default function SquadMembersPanel({ orderId, initialMembers, delivered }
     try {
       await liveApi.orders.removeSquadMember(orderId, m.id);
       setMembers((ms) => ms.filter((x) => x.id !== m.id));
-      toast({ title: 'Removed from this order' });
+      toast({ title: msg('FE_SQUAD_MEMBERS_PANEL_REMOVED_FROM_THIS_ORDER', 'Removed from this order') });
     } catch (e) {
-      toast({ title: 'Could not remove member', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SQUAD_MEMBERS_PANEL_COULD_NOT_REMOVE_MEMBER', 'Could not remove member'), description: e.message, variant: 'destructive' });
     }
     setBusyId(null);
   };

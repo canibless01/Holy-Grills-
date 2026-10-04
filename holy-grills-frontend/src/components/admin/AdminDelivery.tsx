@@ -7,6 +7,7 @@ import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import OrderingWindowsTab from './OrderingWindowsTab';
 import AdminRiders from './AdminRiders';
+import { msg } from '@/lib/messages';
 
 export default function AdminDelivery() {
   const [tab, setTab] = useState('windows');
@@ -47,8 +48,8 @@ export default function AdminDelivery() {
 
   const handleNudge = async (id) => { setBusy(id); await mockApi.admin.nudgeAbandonedCart(id); await load(); setBusy(null); };
 
-  const completeBatch = async (id) => { setBatchBusy(id); try { await mockApi.admin.updateDeliveryBatch(id, { status: 'completed' }); toast({ title: '✅ Batch completed' }); await load(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
-  const cancelBatch = async (id) => { if (!confirm('Cancel this batch? Its orders will be unassigned.')) return; setBatchBusy(id); try { await mockApi.admin.deleteDeliveryBatch(id); toast({ title: 'Batch cancelled' }); await load(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
+  const completeBatch = async (id) => { setBatchBusy(id); try { await mockApi.admin.updateDeliveryBatch(id, { status: 'completed' }); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_COMPLETED', '✅ Batch completed') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
+  const cancelBatch = async (id) => { if (!confirm('Cancel this batch? Its orders will be unassigned.')) return; setBatchBusy(id); try { await mockApi.admin.deleteDeliveryBatch(id); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CANCELLED', 'Batch cancelled') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
 
   const saveZone = async (type, item) => {
     if (item && item.id) {
@@ -70,13 +71,13 @@ export default function AdminDelivery() {
       setZoneModal(null);
       await load();
     } catch (e) {
-      toast({ title: 'Delete failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_DELIVERY_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' });
     }
   };
 
   const restoreGate = async (id) => {
-    try { await mockApi.admin.restoreDeliveryGate(id); toast({ title: '✅ Gate restored', description: 'Gate is active and visible to students again.' }); await load(); }
-    catch (e) { toast({ title: 'Restore failed', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.restoreDeliveryGate(id); toast({ title: msg('FE_ADMIN_DELIVERY_GATE_RESTORED', '✅ Gate restored'), description: msg('FE_ADMIN_DELIVERY_GATE_IS_ACTIVE_AND_VISIBLE_TO_STUDENTS', 'Gate is active and visible to students again.') }); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_RESTORE_FAILED', 'Restore failed'), description: e.message, variant: 'destructive' }); }
   };
 
   if (loading) return <LoadingSpinner label="Loading delivery..." />;
@@ -250,8 +251,8 @@ function CreateWindowModal({
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    if (!form.ends_at) { toast({ title: 'End time required', variant: 'destructive' }); return; }
-    if (form.starts_at && form.ends_at && new Date(form.ends_at) <= new Date(form.starts_at)) { toast({ title: 'End time must be after the start time', variant: 'destructive' }); return; }
+    if (!form.ends_at) { toast({ title: msg('FE_ADMIN_DELIVERY_END_TIME_REQUIRED', 'End time required'), variant: 'destructive' }); return; }
+    if (form.starts_at && form.ends_at && new Date(form.ends_at) <= new Date(form.starts_at)) { toast({ title: msg('FE_ADMIN_DELIVERY_END_TIME_MUST_BE_AFTER_THE_START_TIME', 'End time must be after the start time'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
       const payload = {
@@ -262,7 +263,7 @@ function CreateWindowModal({
       };
       if (editing) {
         await mockApi.admin.updateDeliveryWindow(existing.id, payload);
-        toast({ title: '✅ Window updated' });
+        toast({ title: msg('FE_ADMIN_DELIVERY_WINDOW_UPDATED', '✅ Window updated') });
       } else {
         await mockApi.admin.createDeliveryWindow(payload);
       }
@@ -305,13 +306,13 @@ function CreateBatchModal({ windows, onClose, onSaved }) {
   const toggle = (id) => { const n = new Set(selected); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
 
   const submit = async () => {
-    if (!windowId || !riderId || !zone) { toast({ title: 'Missing fields', description: 'Window, rider and zone are all required.', variant: 'destructive' }); return; }
+    if (!windowId || !riderId || !zone) { toast({ title: msg('FE_ADMIN_DELIVERY_MISSING_FIELDS', 'Missing fields'), description: msg('FE_ADMIN_DELIVERY_WINDOW_RIDER_AND_ZONE_ARE_ALL_REQUIRED', 'Window, rider and zone are all required.'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
       await mockApi.admin.createDeliveryBatch({ window_id: windowId, rider_id: riderId, zone, order_ids: [...selected] });
-      toast({ title: '✅ Batch created', description: `${selected.size} order(s) assigned.` });
+      toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CREATED', '✅ Batch created'), description: `${selected.size} order(s) assigned.` });
       onSaved(); onClose();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSubmitting(false);
   };
 

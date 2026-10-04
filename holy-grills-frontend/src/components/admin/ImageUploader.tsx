@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { UploadCloud, X, Loader2, ImageOff } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
+import { msg } from '@/lib/messages';
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
@@ -13,15 +14,15 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
 
   const handleFile = useCallback(
     async (file) => {
-      setError('');
+      setError(msg('FE_IMAGE_UPLOADER_MESSAGE', ''));
       if (!file) return;
       const type = (file.type || '').toLowerCase();
       if (!ACCEPTED.includes(type)) {
-        setError('Please upload PNG, JPG, or WEBP');
+        setError(msg('FE_IMAGE_UPLOADER_PLEASE_UPLOAD_PNG_JPG_OR_WEBP', 'Please upload PNG, JPG, or WEBP'));
         return;
       }
       if (file.size > MAX_SIZE) {
-        setError('File size exceeds 5MB limit');
+        setError(msg('FE_IMAGE_UPLOADER_FILE_SIZE_EXCEEDS_5_MB_LIMIT', 'File size exceeds 5MB limit'));
         return;
       }
       setUploading(true);
@@ -53,13 +54,13 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
           `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`,
           { method: 'POST', body: form }
         );
-        if (!cloudRes.ok) throw new Error('Upload failed');
+        if (!cloudRes.ok) throw new Error(msg('FE_IMAGE_UPLOADER_UPLOAD_FAILED', 'Upload failed'));
         const cloudData = await cloudRes.json();
 
         // 4. Hand the secure URL back to the parent form.
         onChange(cloudData.secure_url);
       } catch (e) {
-        setError('Upload failed. Please try again.');
+        setError(msg('FE_IMAGE_UPLOADER_UPLOAD_FAILED_PLEASE_TRY_AGAIN', 'Upload failed. Please try again.'));
       } finally {
         setUploading(false);
       }
@@ -78,7 +79,7 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
   );
 
   const remove = () => {
-    setError('');
+    setError(msg('FE_IMAGE_UPLOADER_MESSAGE', ''));
     onChange('');
     if (inputRef.current) inputRef.current.value = '';
   };

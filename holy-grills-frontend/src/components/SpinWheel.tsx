@@ -8,6 +8,7 @@ import { toast } from '@/components/ui/use-toast';
 import { EXCLUSIVE_SPIN_PRIZES, getExclusivePrize } from '@/lib/rewardUtils';
 import ModalPortal from '@/components/ModalPortal';
 import type { ExclusiveSpinPrize, ExclusiveSpinResult } from '@/types/exclusive-spin';
+import { msg } from '@/lib/messages';
 
 const RADIUS = 130;
 const CENTER = 150;
@@ -158,7 +159,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
       apiResult = await liveApi.hp.exclusiveSpin();
     } catch (e) {
       setSpinning(false);
-      toast({ title: 'Spin failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SPIN_WHEEL_SPIN_FAILED', 'Spin failed'), description: e.message, variant: 'destructive' });
       return;
     }
 

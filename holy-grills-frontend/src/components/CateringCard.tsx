@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 /**
  * CateringCard — storefront-driven Catering card on the Home page, visible to
@@ -38,7 +39,7 @@ export default function CateringCard() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) { toast({ title: 'Name & phone required', variant: 'destructive' }); return; }
+    if (!form.name.trim() || !form.phone.trim()) { toast({ title: msg('FE_CATERING_CARD_NAME_PHONE_REQUIRED', 'Name & phone required'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
       await liveApi.events.cateringRequest({
@@ -49,11 +50,11 @@ export default function CateringCard() {
         guests: form.guests ? Number(form.guests) : undefined,
         details: form.details.trim() || undefined,
       });
-      toast({ title: '🍽️ Request sent', description: 'Our team will reach out shortly.' });
+      toast({ title: msg('FE_CATERING_CARD_REQUEST_SENT', '🍽️ Request sent'), description: msg('FE_CATERING_CARD_OUR_TEAM_WILL_REACH_OUT_SHORTLY', 'Our team will reach out shortly.') });
       setShowForm(false);
       setForm({ name: '', phone: '', email: '', event_date: '', guests: '', details: '' });
     } catch (err) {
-      toast({ title: 'Request failed', description: err.message, variant: 'destructive' });
+      toast({ title: msg('FE_CATERING_CARD_REQUEST_FAILED', 'Request failed'), description: err.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

@@ -12,6 +12,7 @@ import { isAuthenticated } from '@/lib/apiClient';
 import { useSound } from '@/lib/SoundProvider';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 /**
  * All data + action logic for the Kitchen (KDS) panel, isolated from its UI.
@@ -97,7 +98,7 @@ export function useKitchenData() {
         }
       } catch (e) {
         console.error(e);
-        if (alive) setError('Could not load kitchen data. Check your connection and try again.');
+        if (alive) setError(msg('FE_USE_KITCHEN_DATA_COULD_NOT_LOAD_KITCHEN_DATA_CHECK_YOUR', 'Could not load kitchen data. Check your connection and try again.'));
       }
       if (alive) setLoading(false);
     };
@@ -126,7 +127,7 @@ export function useKitchenData() {
       toast({ title: `Marked ${ORDER_STATUS_LABELS[status]}` });
       await refreshQueue();
     } catch (e) {
-      toast({ title: 'Failed to update order status', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_FAILED_TO_UPDATE_ORDER_STATUS', 'Failed to update order status'), description: e.message, variant: 'destructive' });
     }
     setActionLoading(null);
   };
@@ -138,25 +139,25 @@ export function useKitchenData() {
       setSettings((prev) => ({ ...prev, is_accepting_orders: String(newValue) }));
       toast({ title: newValue ? 'Kitchen open — accepting orders' : 'Kitchen paused — orders closed' });
     } catch (e) {
-      toast({ title: 'Could not update kitchen state', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_COULD_NOT_UPDATE_KITCHEN_STATE', 'Could not update kitchen state'), description: e.message, variant: 'destructive' });
     }
   };
 
   const handleMarkUnavailable = async (itemId) => {
     try {
       await liveApi.kitchen.markItemUnavailable(itemId);
-      toast({ title: 'Item marked as sold out' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_ITEM_MARKED_AS_SOLD_OUT', 'Item marked as sold out') });
     } catch (e) {
-      toast({ title: 'Could not update item', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_COULD_NOT_UPDATE_ITEM', 'Could not update item'), description: e.message, variant: 'destructive' });
     }
   };
 
   const handleMarkAvailable = async (itemId) => {
     try {
       await liveApi.kitchen.markItemAvailable(itemId);
-      toast({ title: 'Item back in stock' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_ITEM_BACK_IN_STOCK', 'Item back in stock') });
     } catch (e) {
-      toast({ title: 'Could not update item', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_COULD_NOT_UPDATE_ITEM', 'Could not update item'), description: e.message, variant: 'destructive' });
     }
   };
 
@@ -176,7 +177,7 @@ export function useKitchenData() {
       toast({ title: `${label || 'Advanced'} — ${advanced} moved`, description: skipped ? `${skipped} skipped` : undefined });
       await refreshQueue();
     } catch (e) {
-      toast({ title: 'Batch update failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_USE_KITCHEN_DATA_BATCH_UPDATE_FAILED', 'Batch update failed'), description: e.message, variant: 'destructive' });
     }
     setBatchBusy(false);
   };

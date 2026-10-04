@@ -275,7 +275,7 @@ CMS link rule from S8 (`openCmsDestination`).
 | Font hosting (S9) | Nunito self-hosted via `@fontsource-variable/nunito`; Google Fonts links/preconnects removed; CSP `style-src`/`font-src` reduced to `'self'`. Fraunces was loaded but unused — removed. |
 | Cloudinary cloud name | `app/config.py` now falls back to the live cloud name (`risvlfhx`) when `CLOUDINARY_CLOUD_NAME` is unset, so uploads keep working without the env var; an env value still wins. |
 | Image uploads | Verified Cloudinary-only: `ImageUploader` posts to `POST /api/upload/signature` (auth’d; folder-scoped) and uploads to `api.cloudinary.com`. Base44 remains only for **static artwork** (`VITE_ASSET_CDN_URL`, per your decision) — no upload path touches it. |
-| Message catalog | `GET /api/messages` serves the `MSG` registry (995 keys); `src/lib/messages.ts` + `npm run messages:check` enforce it. See `docs/MESSAGES.md`. |
+| Message catalog | `GET /api/messages` serves the `MSG` registry (1,413 keys; `?prefix=FE_` returns the 443 frontend keys — 30 KB instead of 95 KB, which is what the client asks for); `src/lib/messages.ts` exposes `msg(key, fallback, vars)` + `useMessages()`, and `npm run messages:check` (inside `npm run build`) fails on a call site whose key is missing from the registry |
 
 ## 4. What this audit does **not** cover
 

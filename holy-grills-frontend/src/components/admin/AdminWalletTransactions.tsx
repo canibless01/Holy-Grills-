@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime, timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Pill, Pagination, Segmented, SectionTitle } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 // Wallet Transactions — GET /wallet/admin/transactions.
 // The admin-side view of every wallet movement across all users: funding,
@@ -63,7 +64,7 @@ export default function AdminWalletTransactions() {
       setRows(list);
       setHasMore(list.length === PAGE_SIZE);
     } catch (e) {
-      toast({ title: "Couldn't load wallet transactions", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_WALLET_TRANSACTIONS_COULDN_T_LOAD_WALLET_TRANSACTIONS', "Couldn't load wallet transactions"), description: e.message, variant: 'destructive' });
       setRows([]);
       setHasMore(false);
     }

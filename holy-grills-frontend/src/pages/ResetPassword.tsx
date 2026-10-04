@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Lock, Loader2, AlertTriangle, Eye, EyeOff, Check } from "lucide-react";
 import { liveApi } from "@/lib/liveApi";
-import { t } from "@/lib/messages";
 import AuthLayout from "@/components/AuthLayout";
+import { msg } from "@/lib/messages";
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -41,9 +41,9 @@ export default function ResetPassword() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setError(msg('FE_RESET_PASSWORD_MESSAGE', ""));
     if (newPassword !== confirmPassword) {
-      setError(t('FE_RESET_PASSWORDS_MISMATCH', 'Passwords do not match'));
+      setError(msg('FE_RESET_PASSWORDS_MISMATCH', 'Passwords do not match'));
       return;
     }
     setLoading(true);
@@ -58,7 +58,7 @@ export default function ResetPassword() {
       // password actually changed (and that every other session was signed out).
       setDone(true);
     } catch (err) {
-      setError(err.message || t('FE_RESET_FAILED', 'Failed to reset password'));
+      setError(err.message || msg('FE_RESET_FAILED', 'Failed to reset password'));
     } finally {
       setLoading(false);
     }

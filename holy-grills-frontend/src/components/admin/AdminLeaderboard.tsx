@@ -4,6 +4,7 @@ import { liveApi as mockApi } from '@/lib/liveApi';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Pill, SectionHeader, Modal, Field, TextInput } from './AdminShared';
+import { msg } from '@/lib/messages';
 
 export default function AdminLeaderboard() {
   const [tab, setTab] = useState('rewards');
@@ -42,7 +43,7 @@ export default function AdminLeaderboard() {
       setLbNotes((prev) => { const n = { ...prev }; delete n[id]; return n; });
       await load();
     } catch (e) {
-      toast({ title: 'Fulfillment failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_LEADERBOARD_FULFILLMENT_FAILED', 'Fulfillment failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -56,7 +57,7 @@ export default function AdminLeaderboard() {
       setAdvance(null);
       await load();
     } catch (e) {
-      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_LEADERBOARD_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };

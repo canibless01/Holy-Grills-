@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { KeyRound, MailCheck, LogOut, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // Security & Account actions backed by dedicated auth routes that previously
 // had no UI entry point:
@@ -28,7 +29,7 @@ export default function ProfileSecurityPanel() {
     setChangingPw(true);
     try {
       const res = await liveApi.auth.changePassword({ current_password: pw.current, new_password: pw.next });
-      toast({ title: '✅ Password updated', description: res?.message || 'Your password has been changed.' });
+      toast({ title: msg('FE_PROFILE_SECURITY_PANEL_PASSWORD_UPDATED', '✅ Password updated'), description: res?.message || 'Your password has been changed.' });
       setPw({ current: '', next: '', confirm: '' });
       setOpenPw(false);
     } catch (e) {
@@ -42,9 +43,9 @@ export default function ProfileSecurityPanel() {
     setVerifying(true);
     try {
       const res = await liveApi.auth.verifyEmail({});
-      toast({ title: '📬 Verification email sent', description: res?.message || 'Check your inbox for the verification link.' });
+      toast({ title: msg('FE_PROFILE_SECURITY_PANEL_VERIFICATION_EMAIL_SENT', '📬 Verification email sent'), description: res?.message || 'Check your inbox for the verification link.' });
     } catch (e) {
-      toast({ title: 'Could not resend', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_PROFILE_SECURITY_PANEL_COULD_NOT_RESEND', 'Could not resend'), description: e.message, variant: 'destructive' });
     } finally {
       setVerifying(false);
     }
@@ -57,7 +58,7 @@ export default function ProfileSecurityPanel() {
       await liveApi.auth.logoutAll();
       window.location.href = '/login';
     } catch (e) {
-      toast({ title: 'Could not sign out everywhere', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_PROFILE_SECURITY_PANEL_COULD_NOT_SIGN_OUT_EVERYWHERE', 'Could not sign out everywhere'), description: e.message, variant: 'destructive' });
       setLoggingOutAll(false);
     }
   };

@@ -31,11 +31,11 @@ function TrackSkeleton() {
 
 // Turn the backend's claim failures into something a guest can act on.
 function describeLookupError(e) {
-  const msg = e?.message || '';
-  if (msg.includes('INVALID_CLAIM')) return 'That tracking code doesn\'t match this order. Check the code in your email.';
-  if (msg.includes('ACCESS_DENIED')) return 'This order is already linked to an account. Log in to track it.';
-  if (msg.includes('404') || msg.toLowerCase().includes('not found')) return 'We couldn\'t find an order with that number.';
-  return msg || 'Could not find that order.';
+  const errText = e?.message || '';
+  if (errText.includes('INVALID_CLAIM')) return 'That tracking code doesn\'t match this order. Check the code in your email.';
+  if (errText.includes('ACCESS_DENIED')) return 'This order is already linked to an account. Log in to track it.';
+  if (errText.includes('404') || errText.toLowerCase().includes('not found')) return 'We couldn\'t find an order with that number.';
+  return errText || 'Could not find that order.';
 }
 
 export default function TrackOrders() {

@@ -3,6 +3,7 @@ import { Target, Award, Flame, Check, Download, Bell } from 'lucide-react';
 import { isStandalone, hasInstallPrompt, triggerInstall } from '@/lib/installPromptStore';
 import { toast } from '@/components/ui/use-toast';
 import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge';
+import { msg } from '@/lib/messages';
 
 // Detect the two browser-action challenges by title / slug / trigger_type.
 const challengeText = (ch) => `${ch.title || ch.name || ''} ${ch.slug || ''} ${ch.trigger_type || ''}`.toLowerCase();
@@ -39,12 +40,12 @@ export default function StreakMilestones({ badges, availableChallenges, complete
           if (res?.outcome === 'accepted') {
             await onComplete(ch);
           } else if (res?.outcome === 'dismissed') {
-            toast({ title: 'Install dismissed', description: 'Tap again to retry the install prompt.' });
+            toast({ title: msg('FE_STREAK_MILESTONES_INSTALL_DISMISSED', 'Install dismissed'), description: msg('FE_STREAK_MILESTONES_TAP_AGAIN_TO_RETRY_THE_INSTALL_PROMPT', 'Tap again to retry the install prompt.') });
           } else {
-            toast({ title: 'Install unavailable', description: 'Use your browser menu → "Add to Home Screen" to install, then come back.' });
+            toast({ title: msg('FE_STREAK_MILESTONES_INSTALL_UNAVAILABLE', 'Install unavailable'), description: msg('FE_STREAK_MILESTONES_USE_YOUR_BROWSER_MENU_ADD_TO_HOME', 'Use your browser menu → "Add to Home Screen" to install, then come back.') });
           }
         } else {
-          toast({ title: 'Install from your browser', description: 'Open your browser menu and tap "Add to Home Screen" / "Install app", then come back to claim.' });
+          toast({ title: msg('FE_STREAK_MILESTONES_INSTALL_FROM_YOUR_BROWSER', 'Install from your browser'), description: msg('FE_STREAK_MILESTONES_OPEN_YOUR_BROWSER_MENU_AND_TAP_ADD_TO', 'Open your browser menu and tap "Add to Home Screen" / "Install app", then come back to claim.') });
         }
       } else if (isPushChallenge(ch)) {
         if (!('Notification' in window)) {
@@ -56,7 +57,7 @@ export default function StreakMilestones({ badges, availableChallenges, complete
           if (perm === 'granted') {
             await onComplete(ch);
           } else {
-            toast({ title: 'Notifications blocked', description: 'Enable push in your browser settings, then come back to claim.' });
+            toast({ title: msg('FE_STREAK_MILESTONES_NOTIFICATIONS_BLOCKED', 'Notifications blocked'), description: msg('FE_STREAK_MILESTONES_ENABLE_PUSH_IN_YOUR_BROWSER_SETTINGS', 'Enable push in your browser settings, then come back to claim.') });
           }
         }
       } else {

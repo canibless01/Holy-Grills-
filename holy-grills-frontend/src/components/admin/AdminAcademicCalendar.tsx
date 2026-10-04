@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatDate } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 const PERIOD_TYPES = [
   { value: 'semester', label: 'Semester' },
@@ -28,7 +29,7 @@ export default function AdminAcademicCalendar() {
       const list = await liveApi.admin.getAcademicCalendar();
       setPeriods([...(list || [])].sort((a, b) => new Date(sortEntry(b)).getTime() - new Date(sortEntry(a)).getTime()));
     } catch (e) {
-      toast({ title: "Couldn't load academic calendar", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_COULDN_T_LOAD_ACADEMIC_CALENDAR', "Couldn't load academic calendar"), description: e.message, variant: 'destructive' });
       setPeriods([]);
     }
   };
@@ -144,9 +145,9 @@ function CalendarModal({
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    if (!form.name.trim()) { toast({ title: 'Name required', variant: 'destructive' }); return; }
-    if (!period && !form.academic_year.trim()) { toast({ title: 'Academic year required', variant: 'destructive' }); return; }
-    if (!form.start_date || !form.end_date) { toast({ title: 'Start and end dates required', variant: 'destructive' }); return; }
+    if (!form.name.trim()) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_NAME_REQUIRED', 'Name required'), variant: 'destructive' }); return; }
+    if (!period && !form.academic_year.trim()) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_ACADEMIC_YEAR_REQUIRED', 'Academic year required'), variant: 'destructive' }); return; }
+    if (!form.start_date || !form.end_date) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_START_AND_END_DATES_REQUIRED', 'Start and end dates required'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
       const payload = {
@@ -161,14 +162,14 @@ function CalendarModal({
       };
       if (period) {
         await liveApi.admin.updateAcademicCalendar(period.id, { ...payload, is_active: form.is_active });
-        toast({ title: 'Period updated', description: payload.name });
+        toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_PERIOD_UPDATED', 'Period updated'), description: payload.name });
       } else {
         await liveApi.admin.createAcademicCalendar(payload);
-        toast({ title: 'Period created', description: payload.name });
+        toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_PERIOD_CREATED', 'Period created'), description: payload.name });
       }
       onClose(); onSaved();
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

@@ -11,6 +11,7 @@ import WalletVirtualAccount from '@/components/wallet/WalletVirtualAccount';
 import WalletTransactionList from '@/components/wallet/WalletTransactionList';
 import WalletFundModal from '@/components/wallet/WalletFundModal';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import { msg } from '@/lib/messages';
 
 export default function Wallet() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,7 +42,7 @@ export default function Wallet() {
         try {
           await refreshWallet();
           await refreshHp();
-          toast({ title: 'Wallet funded ❤️‍🔥', description: 'Your balance is updated.' });
+          toast({ title: msg('FE_WALLET_WALLET_FUNDED', 'Wallet funded ❤️‍🔥'), description: msg('FE_WALLET_YOUR_BALANCE_IS_UPDATED', 'Your balance is updated.') });
         } catch { /* ignore */ }
         setVerifying(false);
         searchParams.delete('reference');
@@ -71,7 +72,7 @@ export default function Wallet() {
     ]);
     if (wt.status === 'fulfilled') setWalletTxns(Array.isArray(wt.value) ? wt.value : (wt.value?.transactions || wt.value?.items || []));
     if (ht.status === 'fulfilled') setHpTxns(Array.isArray(ht.value) ? ht.value : (ht.value?.transactions || ht.value?.items || []));
-    toast({ title: 'Wallet funded ❤️‍🔥' });
+    toast({ title: msg('FE_WALLET_WALLET_FUNDED', 'Wallet funded ❤️‍🔥') });
   };
 
   if (loading || verifying) return <WalletSkeleton />;

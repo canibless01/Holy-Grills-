@@ -4,6 +4,7 @@ import { liveApi as mockApi } from '@/lib/liveApi';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Card, Toggle, Pill } from './AdminShared';
+import { msg } from '@/lib/messages';
 
 export default function AdminDepartments() {
   const [tab, setTab] = useState('depts');
@@ -25,38 +26,38 @@ export default function AdminDepartments() {
   useEffect(() => { load(); }, []);
 
   const saveDept = async () => {
-    if (!modal.item.name?.trim()) { toast({ title: 'Department name is required', variant: 'destructive' }); return; }
+    if (!modal.item.name?.trim()) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_DEPARTMENT_NAME_IS_REQUIRED', 'Department name is required'), variant: 'destructive' }); return; }
     try {
       if (modal.isNew) await mockApi.admin.createDepartment(modal.item);
       else await mockApi.admin.updateDepartment(modal.item.id, modal.item);
       setModal(null); await load();
-    } catch (e) { toast({ title: 'Failed to save department', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_FAILED_TO_SAVE_DEPARTMENT', 'Failed to save department'), description: e.message, variant: 'destructive' }); }
   };
   const saveLevel = async () => {
-    if (!modal.item.name?.trim() || !modal.item.value?.trim()) { toast({ title: 'Level name and value are required', variant: 'destructive' }); return; }
+    if (!modal.item.name?.trim() || !modal.item.value?.trim()) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_LEVEL_NAME_AND_VALUE_ARE_REQUIRED', 'Level name and value are required'), variant: 'destructive' }); return; }
     const body = { ...modal.item, value: modal.item.value, sort_order: Number(modal.item.sort_order) || undefined };
     try {
       if (modal.isNew) await mockApi.admin.createAcademicLevel(body);
       else await mockApi.admin.updateAcademicLevel(modal.item.id, body);
       setModal(null); await load();
-    } catch (e) { toast({ title: 'Failed to save level', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_FAILED_TO_SAVE_LEVEL', 'Failed to save level'), description: e.message, variant: 'destructive' }); }
   };
-  const delDept = async (id) => { try { await mockApi.admin.deleteDepartment(id); await load(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } };
-  const delLevel = async (id) => { try { const res = await mockApi.admin.deleteAcademicLevel(id); toast({ title: res?.message || 'Level deactivated' }); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } await load(); };
+  const delDept = async (id) => { try { await mockApi.admin.deleteDepartment(id); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
+  const delLevel = async (id) => { try { const res = await mockApi.admin.deleteAcademicLevel(id); toast({ title: res?.message || 'Level deactivated' }); } catch (e) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } await load(); };
   // Same deactivate/restore pair as academic levels: DELETE soft-deletes and the
   // dedicated POST /admin/departments/<id>/restore brings the row back.
   const toggleDept = async (d) => {
     try {
       const res = await (d.is_active ? mockApi.admin.deleteDepartment(d.id) : mockApi.admin.restoreDepartment(d.id));
       toast({ title: res?.message || (d.is_active ? 'Department deactivated' : 'Department restored') });
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     await load();
   };
   const toggleLevel = async (l) => {
     try {
       const res = await (l.is_active ? mockApi.admin.deleteAcademicLevel(l.id) : mockApi.admin.restoreAcademicLevel(l.id));
       toast({ title: res?.message || (l.is_active ? 'Level deactivated' : 'Level restored') });
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_DEPARTMENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     await load();
   };
 

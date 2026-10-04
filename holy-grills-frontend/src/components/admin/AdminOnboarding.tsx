@@ -6,6 +6,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { Field, TextInput, Card, Toggle, Pill } from './AdminShared';
 import { useIsSuperAdmin, SuperAdminNotice } from './SuperAdminGate';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 export default function AdminOnboarding() {
   const isSuperAdmin = useIsSuperAdmin();
@@ -31,15 +32,15 @@ export default function AdminOnboarding() {
     try {
       await mockApi.admin.updateGiftSetting(key, { value: String(value) });
       setSettings((cur) => ({ ...cur, [key]: value }));
-      toast({ title: 'Gift setting saved', description: key });
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_ONBOARDING_GIFT_SETTING_SAVED', 'Gift setting saved'), description: key });
+    } catch (e) { toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
   };
 
   const updateGift = async (id, status) => {
     setBusy(id);
     try { const res = await mockApi.admin.updateFirstOrderGiftStatus(id, { status }); toast({ title: res?.message || 'Gift updated' }); await load(); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    catch (e) { toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 

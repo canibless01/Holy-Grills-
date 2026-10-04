@@ -5,6 +5,7 @@ import { isHydratingPrerender } from './hydrationMode';
 import { useHolyGrill } from './HolyGrillContext';
 import CampusGate from '@/components/CampusGate';
 import { useLocation } from 'react-router-dom';
+import { msg } from '@/lib/messages';
 
 // Domain 0 — Multi-Campus / Multi-Tenant frontend layer.
 // Students never switch campus after registration; guests get a one-time,
@@ -158,6 +159,6 @@ export const CampusProvider = ({ children }) => {
 
 export const useCampus = () => {
   const ctx = useContext(CampusContext);
-  if (!ctx) throw new Error('useCampus must be used within CampusProvider');
+  if (!ctx) throw new Error(msg('FE_CAMPUS_CONTEXT_USE_CAMPUS_MUST_BE_USED_WITHIN_CAMPUS', 'useCampus must be used within CampusProvider'));
   return ctx;
 };

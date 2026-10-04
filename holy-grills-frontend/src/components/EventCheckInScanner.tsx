@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, X, AlertCircle, Keyboard } from 'lucide-react';
 import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 
 /**
  * EventCheckInScanner — opens the device camera and reads the venue's QR code
@@ -53,7 +54,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
         };
         detectorRef.current = requestAnimationFrame(tick);
       } catch (e) {
-        setError('Could not open the camera. Allow camera access or enter the token manually.');
+        setError(msg('FE_EVENT_CHECK_IN_SCANNER_COULD_NOT_OPEN_THE_CAMERA_ALLOW_CAMERA', 'Could not open the camera. Allow camera access or enter the token manually.'));
         setSupported(false);
       }
     };
@@ -66,18 +67,18 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
   const handleRaw = (raw) => {
     const parts = raw.split('-'); // ['HG','EVT',eventId, ...tokenParts]
     if (parts.length < 4 || parts[0] !== 'HG' || parts[1] !== 'EVT') {
-      setError('That QR code is not a Holy Grill event code.');
+      setError(msg('FE_EVENT_CHECK_IN_SCANNER_THAT_QR_CODE_IS_NOT_A_HOLY_GRILL_EVENT', 'That QR code is not a Holy Grill event code.'));
       stopCamera();
       return;
     }
     const scannedEventId = parts.slice(2, -1).join('-') || parts[2];
     const token = parts[parts.length - 1];
     if (scannedEventId !== eventId) {
-      setError('This QR code is for a different event.');
+      setError(msg('FE_EVENT_CHECK_IN_SCANNER_THIS_QR_CODE_IS_FOR_A_DIFFERENT_EVENT', 'This QR code is for a different event.'));
       stopCamera();
       return;
     }
-    if (!token) { setError('Invalid QR code.'); stopCamera(); return; }
+    if (!token) { setError(msg('FE_EVENT_CHECK_IN_SCANNER_INVALID_QR_CODE', 'Invalid QR code.')); stopCamera(); return; }
     setScanning(false);
     stopCamera();
     onScan(token);

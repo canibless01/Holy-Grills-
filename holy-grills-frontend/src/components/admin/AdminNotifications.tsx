@@ -7,6 +7,7 @@ import { Field, TextInput, Card, Toggle, Modal } from './AdminShared';
 import { Pill } from './ui/AdminKit';
 import { toast } from '@/components/ui/use-toast';
 import type { NotificationBlastPayload } from '@/types/notifications';
+import { msg } from '@/lib/messages';
 
 const ROLES = [
   { id: 'all', label: 'All roles' },
@@ -84,23 +85,23 @@ export default function AdminNotifications() {
     try {
       const res = await mockApi.admin.sendNotificationBlast(buildPayload());
       if (isScheduled) {
-        toast({ title: '📅 Campaign scheduled', description: `Will send on ${new Date(sendAt).toLocaleString()}` });
+        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SCHEDULED', '📅 Campaign scheduled'), description: `Will send on ${new Date(sendAt).toLocaleString()}` });
       } else {
         const sentTo = res?.sent_to ?? res?.recipients ?? res?.recipient_count;
-        toast({ title: '🔔 Campaign sent', description: sentTo != null ? `Delivered to ${sentTo} recipients` : 'Blast sent successfully' });
+        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SENT', '🔔 Campaign sent'), description: sentTo != null ? `Delivered to ${sentTo} recipients` : 'Blast sent successfully' });
       }
       setTitle(''); setBody(''); setSendAt(''); setRole('all'); setTier('all');
       setConfirmOpen(false);
       await load();
     } catch (e) {
-      toast({ title: 'Failed to send', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_NOTIFICATIONS_FAILED_TO_SEND', 'Failed to send'), description: e.message, variant: 'destructive' });
       setConfirmOpen(false);
     }
     setSending(false);
   };
 
   const handleSubmit = () => {
-    if (!valid) { toast({ title: 'Missing fields', description: 'Title, body and at least one channel are required.', variant: 'destructive' }); return; }
+    if (!valid) { toast({ title: msg('FE_ADMIN_NOTIFICATIONS_MISSING_FIELDS', 'Missing fields'), description: msg('FE_ADMIN_NOTIFICATIONS_TITLE_BODY_AND_AT_LEAST_ONE_CHANNEL_ARE', 'Title, body and at least one channel are required.'), variant: 'destructive' }); return; }
     // Immediate sends get a confirm dialog so an admin doesn't fire a blast
     // by accident while previewing. Scheduled sends don't need one — the
     // date picker is the explicit intent.

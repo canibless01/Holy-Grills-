@@ -4,6 +4,7 @@ import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
 import { loadSystemSettings, loadFeatureFlags, getSetting } from './featureConfig';
 import { loadTiers } from './hgUtils';
+import { msg } from '@/lib/messages';
 
 // Holy Grills app context — real JWT auth against the live backend.
 // No demo auto-login. Authenticated users hit the server-side cart; guests
@@ -367,6 +368,6 @@ export const HolyGrillProvider = ({ children }) => {
 
 export const useHolyGrill = () => {
   const ctx = useContext(HolyGrillContext);
-  if (!ctx) throw new Error('useHolyGrill must be used within HolyGrillProvider');
+  if (!ctx) throw new Error(msg('FE_HOLY_GRILL_CONTEXT_USE_HOLY_GRILL_MUST_BE_USED_WITHIN_HOLY', 'useHolyGrill must be used within HolyGrillProvider'));
   return ctx;
 };

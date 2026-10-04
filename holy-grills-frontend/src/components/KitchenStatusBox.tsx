@@ -103,11 +103,19 @@ export default function KitchenStatusBox({ onStatus, compact = false }: KitchenS
           || null;
         const nextWindow = allWindows.find((w) => !w.is_full && !w.is_closed && w.starts_at) || null;
 
-        // When closed, the countdown target is the next operating-hours opening,
-        // computed from the schedule the backend returned.
-        const nextOpening = (!isOpen && !unknown && hours)
+        // Next opening — the backend states it (orders.py ->
+        // find_next_available_ordering_slot, over the ordering windows it
+        // curates), and that answer already accounts for capacity and holidays.
+        // The local computation below is a FALLBACK for a deploy that predates
+        // those two fields — never a second opinion that can disagree with the
+        // number checkout will enforce.
+        const nextDate = windows?.next_available_date ?? null;
+        const nextTime = windows?.next_opens_at ?? null;
+        const localOpening = (!isOpen && !unknown && hours && !nextDate)
           ? computeNextOpening(hours.schedule, hours.today_override)
           : null;
+        const openingDate = nextDate ?? localOpening?.date ?? null;
+        const openingTime = nextTime ?? localOpening?.time ?? null;
 
         const combined: KitchenStatus = {
           // Unknown (no campus chosen / hours unreadable) must NEVER read as
@@ -119,14 +127,14 @@ export default function KitchenStatusBox({ onStatus, compact = false }: KitchenS
           next_window: nextWindow,
           windows: allWindows,
           scheduled_windows: allWindows,
-          next_available_date: nextOpening?.date ?? windows?.next_available_date ?? null,
-          next_opens_at: nextOpening?.time ?? windows?.next_opens_at ?? null,
+          next_available_date: openingDate,
+          next_opens_at: openingTime,
           message: isOpen
             ? (firstOpen
               ? `Order now, delivery ${to12h(firstOpen.delivery_starts_at)}–${to12h(firstOpen.delivery_ends_at)}${firstOpen.remaining != null ? ` · ${firstOpen.remaining} slots left` : ''}`
               : (nextWindow ? `Kitchen is open. Next window ${nextWindow.label || ''} ${to12h(nextWindow.starts_at)}`.trim() : 'Kitchen is open'))
-            : (nextOpening
-              ? `Schedule your order for ${new Date(`${nextOpening.date}T00:00:00`).toLocaleDateString('en-NG', { weekday: 'long' })}`
+            : (openingDate
+              ? `Schedule your order for ${new Date(`${openingDate}T00:00:00`).toLocaleDateString('en-NG', { weekday: 'long' })}`
               : 'Kitchen is currently closed. Check back soon.'),
         };
         setStatus(combined);

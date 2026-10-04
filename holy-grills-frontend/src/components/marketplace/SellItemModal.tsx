@@ -3,6 +3,7 @@ import { X, Send, Store } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 
 const CATEGORIES = [
   { value: 'voucher', label: 'Voucher' },
@@ -36,10 +37,10 @@ export default function SellItemModal({ open, onClose }) {
         description: form.description.trim(),
         proposed_price: Number(form.proposed_price),
       });
-      toast({ title: 'Request submitted', description: res?.message || "We'll review your listing and get back to you." });
+      toast({ title: msg('FE_SELL_ITEM_MODAL_REQUEST_SUBMITTED', 'Request submitted'), description: res?.message || "We'll review your listing and get back to you." });
       onClose();
     } catch (e) {
-      toast({ title: 'Submission failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SELL_ITEM_MODAL_SUBMISSION_FAILED', 'Submission failed'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

@@ -4,6 +4,7 @@ import { Flame, X, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const DISMISS_KEY = 'hg_suggestion_dismissed';
 
@@ -42,10 +43,10 @@ export default function OrderSuggestionCard() {
     setBusy(true);
     try {
       await liveApi.orders.reorder(suggestion.order_id);
-      toast({ title: '🔥 Last order added to your cart', description: 'Pick up where you left off.' });
+      toast({ title: msg('FE_ORDER_SUGGESTION_CARD_LAST_ORDER_ADDED_TO_YOUR_CART', '🔥 Last order added to your cart'), description: msg('FE_ORDER_SUGGESTION_CARD_PICK_UP_WHERE_YOU_LEFT_OFF', 'Pick up where you left off.') });
       navigate('/cart');
     } catch (e) {
-      toast({ title: 'Could not reorder', description: e.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: msg('FE_ORDER_SUGGESTION_CARD_COULD_NOT_REORDER', 'Could not reorder'), description: e.message || 'Please try again.', variant: 'destructive' });
     }
     setBusy(false);
   };

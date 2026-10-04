@@ -5,6 +5,7 @@ import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // Dedicated carousel-banner manager (POST/PATCH/DELETE /storefront/banners,
 // POST /storefront/banners/:id/image). Each banner holds an `images` array —
@@ -47,9 +48,9 @@ export default function AdminBanners({ placement = 'home' }) {
         title: b.title, subtitle: b.subtitle, cta_text: b.cta_text,
         cta_url: b.cta_url, is_active: b.is_active, sort_order: Number(b.sort_order) || 0,
       });
-      toast({ title: '✅ Banner saved' });
+      toast({ title: msg('FE_ADMIN_BANNERS_BANNER_SAVED', '✅ Banner saved') });
     } catch (e) {
-      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_BANNERS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
     await load();
@@ -58,14 +59,14 @@ export default function AdminBanners({ placement = 'home' }) {
   const toggleActive = async (b, v) => {
     setBusy(`act-${b.id}`);
     try { await liveApi.admin.updateBanner(b.id, { is_active: v }); await load(); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
   const del = async (id) => {
     if (!confirm('Delete this banner? Its carousel will be removed from the live site.')) return;
-    try { await liveApi.admin.deleteBanner(id); toast({ title: '✅ Deleted' }); await load(); }
-    catch (e) { toast({ title: 'Delete failed', description: e.message, variant: 'destructive' }); }
+    try { await liveApi.admin.deleteBanner(id); toast({ title: msg('FE_ADMIN_BANNERS_DELETED', '✅ Deleted') }); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const move = async (b, dir) => {
@@ -80,7 +81,7 @@ export default function AdminBanners({ placement = 'home' }) {
         liveApi.admin.updateBanner(other.id, { sort_order: b.sort_order ?? i }),
       ]);
       await load();
-    } catch (e) { toast({ title: 'Reorder failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_REORDER_FAILED', 'Reorder failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -90,10 +91,10 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(`img-${b.id}`);
     try {
       await liveApi.admin.updateBannerImage(b.id, { image_url: url });
-      toast({ title: '✅ Image added to carousel' });
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_ADDED_TO_CAROUSEL', '✅ Image added to carousel') });
       await load();
     } catch (e) {
-      toast({ title: 'Image add failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_ADD_FAILED', 'Image add failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -106,10 +107,10 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(`rmimg-${b.id}`);
     try {
       await liveApi.admin.updateBanner(b.id, { images: next });
-      toast({ title: '✅ Image removed' });
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_REMOVED', '✅ Image removed') });
       await load();
     } catch (e) {
-      toast({ title: 'Remove failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_BANNERS_REMOVE_FAILED', 'Remove failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -125,9 +126,9 @@ export default function AdminBanners({ placement = 'home' }) {
       setAddOpen(false);
       setDraft({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0 });
       await load();
-      toast({ title: '✅ Banner created — add carousel images below' });
+      toast({ title: msg('FE_ADMIN_BANNERS_BANNER_CREATED_ADD_CAROUSEL_IMAGES_BELOW', '✅ Banner created — add carousel images below') });
     } catch (e) {
-      toast({ title: 'Failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_BANNERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };

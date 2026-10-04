@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Modal, Field, TextInput, Toggle, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // Full CRUD for menu categories (POST/PATCH/DELETE /menu/categories). The list
 // reuses the public GET /menu/categories so admins see exactly what students see.
@@ -27,7 +28,7 @@ export default function AdminCategories({ open, onClose, onChanged }) {
   const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 
   const create = async () => {
-    if (!form.name.trim()) { toast({ title: 'Name is required', variant: 'destructive' }); return; }
+    if (!form.name.trim()) { toast({ title: msg('FE_ADMIN_CATEGORIES_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
     setSaving(true);
     try {
       await liveApi.admin.createCategory({
@@ -37,19 +38,19 @@ export default function AdminCategories({ open, onClose, onChanged }) {
         sort_order: Number(form.sort_order) || 0,
         is_active: form.is_active !== false,
       });
-      toast({ title: '✅ Category created' });
+      toast({ title: msg('FE_ADMIN_CATEGORIES_CATEGORY_CREATED', '✅ Category created') });
       setForm({ name: '', slug: '', description: '', sort_order: 0, is_active: true });
       await load(); onChanged?.();
-    } catch (e) { toast({ title: 'Failed to create category', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_CATEGORIES_FAILED_TO_CREATE_CATEGORY', 'Failed to create category'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
   };
 
   const toggleActive = async (cat) => {
     try {
-      if (cat.is_active) { await liveApi.admin.deleteCategory(cat.id); toast({ title: 'Category deactivated' }); }
-      else { await liveApi.admin.updateCategory(cat.id, { is_active: true }); toast({ title: 'Category reactivated' }); }
+      if (cat.is_active) { await liveApi.admin.deleteCategory(cat.id); toast({ title: msg('FE_ADMIN_CATEGORIES_CATEGORY_DEACTIVATED', 'Category deactivated') }); }
+      else { await liveApi.admin.updateCategory(cat.id, { is_active: true }); toast({ title: msg('FE_ADMIN_CATEGORIES_CATEGORY_REACTIVATED', 'Category reactivated') }); }
       await load(); onChanged?.();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_CATEGORIES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   return (

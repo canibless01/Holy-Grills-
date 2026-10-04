@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDate } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const STATUS_FLOW = ['new', 'reviewed', 'quoted', 'accepted', 'completed', 'rejected', 'cancelled'];
 
@@ -93,11 +94,11 @@ export default function AdminCatering() {
         assigned_to: detail._assigned_to || undefined,
       };
       await liveApi.admin.updateCateringRequest(detail.id, body);
-      toast({ title: '✅ Catering request updated', description: `Status: ${detail._status}` });
+      toast({ title: msg('FE_ADMIN_CATERING_CATERING_REQUEST_UPDATED', '✅ Catering request updated'), description: `Status: ${detail._status}` });
       setDetail(null);
       await load();
     } catch (e) {
-      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_CATERING_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -280,10 +281,10 @@ function EventCateringTab({ events }) {
     setEmailing(true);
     try {
       await liveApi.admin.sendRegistrantsToHost(selectedEvent, { host_email: hostEmail });
-      toast({ title: '✅ Registrant list sent to host', description: hostEmail });
+      toast({ title: msg('FE_ADMIN_CATERING_REGISTRANT_LIST_SENT_TO_HOST', '✅ Registrant list sent to host'), description: hostEmail });
       setHostEmail('');
     } catch (e) {
-      toast({ title: 'Failed to send', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_CATERING_FAILED_TO_SEND', 'Failed to send'), description: e.message, variant: 'destructive' });
     }
     setEmailing(false);
   };

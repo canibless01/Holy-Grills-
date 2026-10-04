@@ -5,6 +5,7 @@ import { safeCallHref } from '@/lib/safeNavigation';
 import { isAuthenticated, clearTokens } from '@/lib/apiClient';
 import { useSound } from '@/lib/SoundProvider';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 /**
  * All data + action logic for the Rider panel, isolated from its UI.
@@ -63,7 +64,7 @@ export function useRiderData() {
         setOnline(Boolean(s?.is_available));
       } catch (e) {
         console.error(e);
-        setError('Could not load rider dashboard. Check your connection and try again.');
+        setError(msg('FE_USE_RIDER_DATA_COULD_NOT_LOAD_RIDER_DASHBOARD_CHECK', 'Could not load rider dashboard. Check your connection and try again.'));
       }
       setLoading(false);
     };
@@ -124,7 +125,7 @@ export function useRiderData() {
       toast({ title: action === 'pickup' ? 'Pickup confirmed' : action === 'deliver' ? 'Delivery completed — HP awarded to customer' : 'Delivery attempted' });
       await loadBatch();
     } catch (e) {
-      toast({ title: 'Action failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_USE_RIDER_DATA_ACTION_FAILED', 'Action failed'), description: e.message, variant: 'destructive' });
     }
     setActionLoading(null);
   };
@@ -135,10 +136,10 @@ export function useRiderData() {
       const link = await liveApi.riders.getCallLink(orderId);
       // S7 — only tel:/https: from the backend is followed.
       const href = safeCallHref(link && (link.call_link || link.call_url));
-      if (!href) throw new Error('No phone number available');
+      if (!href) throw new Error(msg('FE_USE_RIDER_DATA_NO_PHONE_NUMBER_AVAILABLE', 'No phone number available'));
       window.location.href = href;
     } catch (e) {
-      toast({ title: 'Call failed', description: e?.message || 'No phone number available', variant: 'destructive' });
+      toast({ title: msg('FE_USE_RIDER_DATA_CALL_FAILED', 'Call failed'), description: e?.message || 'No phone number available', variant: 'destructive' });
     }
     setCalling(null);
   };
@@ -151,7 +152,7 @@ export function useRiderData() {
     const newStatus = !online;
     if (newStatus) {
       if (!navigator.geolocation) {
-        toast({ title: 'Location unsupported', description: 'This device cannot share GPS.', variant: 'destructive' });
+        toast({ title: msg('FE_USE_RIDER_DATA_LOCATION_UNSUPPORTED', 'Location unsupported'), description: msg('FE_USE_RIDER_DATA_THIS_DEVICE_CANNOT_SHARE_GPS', 'This device cannot share GPS.'), variant: 'destructive' });
         return;
       }
       setToggling(true);
@@ -174,7 +175,7 @@ export function useRiderData() {
         setToggling(false);
         const code = lastErr && lastErr.code;
         toast({
-          title: 'Could not get your location',
+          title: msg('FE_USE_RIDER_DATA_COULD_NOT_GET_YOUR_LOCATION', 'Could not get your location'),
           description: code === 1
             ? 'Location is blocked for this site. Allow location access in your browser settings, then try again.'
             : code === 3
@@ -187,20 +188,20 @@ export function useRiderData() {
       setOnline(true);
       try {
         await liveApi.riders.setAvailability({ is_available: true, location_lat: pos.coords.latitude, location_lng: pos.coords.longitude });
-        toast({ title: 'You are online', description: 'GPS shared with dispatch.' });
+        toast({ title: msg('FE_USE_RIDER_DATA_YOU_ARE_ONLINE', 'You are online'), description: msg('FE_USE_RIDER_DATA_GPS_SHARED_WITH_DISPATCH', 'GPS shared with dispatch.') });
       } catch (e) {
         setOnline(false);
-        toast({ title: 'Could not go online', description: e.message, variant: 'destructive' });
+        toast({ title: msg('FE_USE_RIDER_DATA_COULD_NOT_GO_ONLINE', 'Could not go online'), description: e.message, variant: 'destructive' });
       }
       setToggling(false);
     } else {
       setOnline(false);
       try {
         await liveApi.riders.setAvailability({ is_available: false });
-        toast({ title: 'You are offline' });
+        toast({ title: msg('FE_USE_RIDER_DATA_YOU_ARE_OFFLINE', 'You are offline') });
       } catch (e) {
         setOnline(true);
-        toast({ title: 'Could not go offline', description: e.message, variant: 'destructive' });
+        toast({ title: msg('FE_USE_RIDER_DATA_COULD_NOT_GO_OFFLINE', 'Could not go offline'), description: e.message, variant: 'destructive' });
       }
     }
   };

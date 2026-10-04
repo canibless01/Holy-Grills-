@@ -9,6 +9,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Segmented, Pill, Pagination, BreakdownTiles, body } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 // System — Cron & Audit. Cron jobs: GET /admin/cron/status + POST /admin/cron/:job
 // (super-admin only server-side). Audit log: GET /admin/audit-log with
@@ -132,7 +133,7 @@ function CronJobs() {
     try {
       setJobs(await liveApi.admin.getCronStatus());
     } catch (e) {
-      toast({ title: "Couldn't load cron status", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_COULDN_T_LOAD_CRON_STATUS', "Couldn't load cron status"), description: e.message, variant: 'destructive' });
       setJobs([]);
     }
     setRefreshing(false);
@@ -151,7 +152,7 @@ function CronJobs() {
       await load();
     } catch (e) {
       // The only hard super_admin wall in the backend lives here (POST /admin/cron/:job).
-      toast({ title: 'Cron trigger failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_CRON_TRIGGER_FAILED', 'Cron trigger failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -237,7 +238,7 @@ function AuditLog() {
       setLog(res);
       setHasMore(res.length === PAGE_SIZE);
     } catch (e) {
-      toast({ title: "Couldn't load the audit log", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_COULDN_T_LOAD_THE_AUDIT_LOG', "Couldn't load the audit log"), description: e.message, variant: 'destructive' });
       setLog([]);
     }
     setLoading(false);

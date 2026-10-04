@@ -68,10 +68,16 @@ export function routeFamilies(paths = readRoutePaths()) {
  *   styles    Tailwind + React style attributes ('unsafe-inline'); fonts are
  *             self-hosted now (S9), so no remote stylesheet origin is allowed
  *   fonts     none — @fontsource-variable/nunito ships in the bundle ('self')
- *   images    Unsplash/CMS art, the base44 CDN, the configured asset CDN
- *             (Cloudinary), OpenStreetMap tiles for the rider map
+ *   images    any https host, on purpose: admins paste image URLs into the CMS
+ *             (storefront sections, banners, menu art) and those legitimately
+ *             live anywhere. Images cannot execute, and http: stays blocked, so
+ *             the allow-list form would only ever break a real picture. Known
+ *             hosts in use today: Unsplash/CMS art, media.base44.com,
+ *             static.wixstatic.com, res.cloudinary.com, OpenStreetMap tiles.
  *   connect   the Flask API (VITE_API_BASE_URL, default below), Cloudinary
- *             uploads, OneSignal
+ *             uploads, OneSignal, and images.unsplash.com — a <link rel=preconnect>
+ *             is governed by connect-src, so leaving it out logs a violation for
+ *             a hint we deliberately ship.
  *
  * `frame-ancestors` is deliberately NOT relied on here — browsers ignore it in
  * report-only mode — so clickjacking is covered by the enforcing
@@ -120,6 +126,11 @@ export function securityHeaders() {
     'https://api.cloudinary.com',
     'https://cdn.onesignal.com',
     'https://*.onesignal.com',
+    // The SDK's own API host is api.onesignal.com; the bare domain is listed
+    // because the v16 SDK also falls back to https://onesignal.com/api/*.
+    'https://onesignal.com',
+    // Drives the <link rel=preconnect> in index.html (a connect, not an image).
+    'https://images.unsplash.com',
     apiOrigin(),
   ].filter(Boolean);
 
@@ -130,7 +141,9 @@ export function securityHeaders() {
     ["script-src 'self' https://cdn.onesignal.com", ...inlineScriptHashes()].join(' '),
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
-    "img-src 'self' data: blob: https://images.unsplash.com https://media.base44.com https://static.wixstatic.com https://res.cloudinary.com https://*.tile.openstreetmap.org",
+    // https: (not an allow-list) — see the `images` note above; admins may
+    // paste a picture URL from any host and that must keep working.
+    "img-src 'self' data: blob: https:",
     `connect-src ${connect.join(' ')}`,
     "frame-src 'self' https://*.onesignal.com",
     "worker-src 'self' blob:",

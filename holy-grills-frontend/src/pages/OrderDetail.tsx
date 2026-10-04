@@ -16,6 +16,7 @@ import ImageUploader from '@/components/admin/ImageUploader';
 import ModalPortal from '@/components/ModalPortal';
 import { toast } from '@/components/ui/use-toast';
 import APP_CONFIG from '@/config/app.config';
+import { msg } from '@/lib/messages';
 
 // Google review handoff — deep-links into the Business Profile review form when
 // a Place ID is configured, otherwise falls back to a Google search for the brand.
@@ -81,8 +82,8 @@ export default function OrderDetail() {
 
   const handleCancel = async () => {
     const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
-    const msg = isScheduled ? 'Cancel this scheduled order? Your slot will be released.' : 'Cancel this order? You will be refunded.';
-    if (!confirm(msg)) return;
+    const prompt = isScheduled ? 'Cancel this scheduled order? Your slot will be released.' : 'Cancel this order? You will be refunded.';
+    if (!confirm(prompt)) return;
     try {
       if (isScheduled) await mockApi.orders.cancelScheduled(id);
       else await mockApi.orders.cancel(id, { reason: 'Changed my mind' });
@@ -113,7 +114,7 @@ export default function OrderDetail() {
     try {
       await mockApi.orders.claim(id, { claim_token: token });
       await refreshUser();
-      toast({ title: '✅ Order linked to your account', description: 'You can now track it from your orders.' });
+      toast({ title: msg('FE_ORDER_DETAIL_ORDER_LINKED_TO_YOUR_ACCOUNT', '✅ Order linked to your account'), description: msg('FE_ORDER_DETAIL_YOU_CAN_NOW_TRACK_IT_FROM_YOUR_ORDERS', 'You can now track it from your orders.') });
       const o = await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {});
       setOrder(o);
     } catch (e) { alert(e.message); }
@@ -135,7 +136,7 @@ export default function OrderDetail() {
       setReviewImages([]);
     } catch (e) {
       // Surface the failure — a silent catch made the review button feel dead.
-      toast({ title: 'Review failed', description: e.message || 'Please try again in a moment.', variant: 'destructive' });
+      toast({ title: msg('FE_ORDER_DETAIL_REVIEW_FAILED', 'Review failed'), description: e.message || 'Please try again in a moment.', variant: 'destructive' });
     }
   };
 
@@ -150,8 +151,8 @@ export default function OrderDetail() {
       const res = await liveApi.orders.callRider(id);
       const link = safeCallHref(res?.rider?.call_link || res?.call_link || res?.call_url);
       if (link) { setCallLink(link); window.location.href = link; }
-      else toast({ title: 'Call unavailable', description: 'No rider call link right now.', variant: 'destructive' });
-    } catch (e) { toast({ title: 'Call failed', description: e.message, variant: 'destructive' }); }
+      else toast({ title: msg('FE_ORDER_DETAIL_CALL_UNAVAILABLE', 'Call unavailable'), description: msg('FE_ORDER_DETAIL_NO_RIDER_CALL_LINK_RIGHT_NOW', 'No rider call link right now.'), variant: 'destructive' });
+    } catch (e) { toast({ title: msg('FE_ORDER_DETAIL_CALL_FAILED', 'Call failed'), description: e.message, variant: 'destructive' }); }
     setCallingRider(false);
   };
 

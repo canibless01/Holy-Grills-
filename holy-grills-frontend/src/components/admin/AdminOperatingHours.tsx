@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { Card, Field, TextInput, Toggle, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { msg } from '@/lib/messages';
 
 // Admin manager for the storefront operating-hours routes (storefront.py):
 //   GET   /storefront/operating-hours        → { schedule, today_override, is_open }
@@ -60,7 +61,7 @@ export default function AdminOperatingHours() {
       }
     } catch (e) {
       setSchedule(new Array(7).fill(null));
-      toast({ title: 'Could not load operating hours', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_OPERATING_HOURS_COULD_NOT_LOAD_OPERATING_HOURS', 'Could not load operating hours'), description: e.message, variant: 'destructive' });
     }
     setLoaded(true);
   };
@@ -84,13 +85,13 @@ export default function AdminOperatingHours() {
       toast({ title: `✅ ${dayKey} hours saved` });
       await load();
     } catch (e) {
-      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_OPERATING_HOURS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
 
   const saveOverride = async () => {
-    if (!ovDate) { toast({ title: 'Pick a date', variant: 'destructive' }); return; }
+    if (!ovDate) { toast({ title: msg('FE_ADMIN_OPERATING_HOURS_PICK_A_DATE', 'Pick a date'), variant: 'destructive' }); return; }
     setBusy('override');
     try {
       await liveApi.admin.setOperatingHoursOverride({
@@ -100,10 +101,10 @@ export default function AdminOperatingHours() {
         close_time: ovClosed ? null : ovClose,
         reason: ovReason || undefined,
       });
-      toast({ title: '✅ Override saved', description: ovClosed ? `${ovDate} marked closed.` : `${ovDate} hours updated.` });
+      toast({ title: msg('FE_ADMIN_OPERATING_HOURS_OVERRIDE_SAVED', '✅ Override saved'), description: ovClosed ? `${ovDate} marked closed.` : `${ovDate} hours updated.` });
       await load();
     } catch (e) {
-      toast({ title: 'Override failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_OPERATING_HOURS_OVERRIDE_FAILED', 'Override failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };

@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const RATING_TONE = {
   5: 'bg-green-100 text-green-700',
@@ -46,7 +47,7 @@ export default function AdminReviews() {
       if (flaggedFilter !== 'all') params.is_flagged = flaggedFilter === 'flagged';
       setReviews(await liveApi.admin.getReviews(params));
     } catch (e) {
-      toast({ title: 'Failed to load reviews', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_REVIEWS_FAILED_TO_LOAD_REVIEWS', 'Failed to load reviews'), description: e.message, variant: 'destructive' });
       setReviews([]);
     }
     setLoading(false);

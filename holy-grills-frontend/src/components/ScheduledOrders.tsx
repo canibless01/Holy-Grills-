@@ -3,6 +3,7 @@ import { Clock, Calendar, X } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { formatDateTime, formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // GET /orders/scheduled → upcoming scheduled orders (is_scheduled=true, status=received).
 // Each carries order_items + delivery_windows(label,starts_at,ends_at). Cancel uses
@@ -26,9 +27,9 @@ export default function ScheduledOrders() {
     setCancelling(id);
     try {
       await mockApi.orders.cancelScheduled(id);
-      toast({ title: 'Scheduled order cancelled' });
+      toast({ title: msg('FE_SCHEDULED_ORDERS_SCHEDULED_ORDER_CANCELLED', 'Scheduled order cancelled') });
       await load();
-    } catch (e) { toast({ title: 'Cancel failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_SCHEDULED_ORDERS_CANCEL_FAILED', 'Cancel failed'), description: e.message, variant: 'destructive' }); }
     setCancelling(null);
   };
 

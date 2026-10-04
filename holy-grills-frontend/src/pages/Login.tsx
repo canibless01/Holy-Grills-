@@ -3,7 +3,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Check, Eye, EyeOff } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
-import { t } from '@/lib/messages';
+import { msg } from '@/lib/messages';
 import AuthShell from '@/components/auth/AuthShell';
 import AuthField from '@/components/auth/AuthField';
 
@@ -31,7 +31,7 @@ export default function Login() {
     try {
       const data = await login(emailVal, passwordVal);
       const role = data?.role || data?.user?.role || 'student';
-      toast({ title: t('FE_LOGIN_WELCOME_TITLE', '🔥 Welcome back!'), description: t('FE_LOGIN_WELCOME_BODY', 'Good to see you again, {name}.', { name: data?.user?.full_name?.split(' ')[0] || 'griller' }) });
+      toast({ title: msg('FE_LOGIN_WELCOME_TITLE', '🔥 Welcome back!'), description: msg('FE_LOGIN_WELCOME_BODY', 'Good to see you again, {name}.', { name: data?.user?.full_name?.split(' ')[0] || 'griller' }) });
       // Role-based routing: staff (admin/kitchen/rider) ALWAYS land on their own
       // role page — never on a student route, regardless of any `from` deep-link.
       // Students return to the page they were trying to reach IF it's a student
@@ -50,7 +50,7 @@ export default function Login() {
       }
       navigate(dest, { replace: true });
     } catch (err) {
-      setError(err.message || t('FE_LOGIN_FAILED', 'Login failed'));
+      setError(err.message || msg('FE_LOGIN_FAILED', 'Login failed'));
     }
     setLoading(false);
   };

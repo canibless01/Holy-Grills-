@@ -114,19 +114,27 @@ console.log('\nsecurity headers');
   // is read out of index.html at build time, so this ties the two together: edit
   // the snippet without re-running `npm run routes:sync` and the smoke suite
   // fails instead of the policy silently blocking the script later.
+  //
+  // EVERY page is checked, not just "/": the pre-rendered pages and the SPA shell
+  // are copies of index.html today, but the moment one of them grows its own
+  // inline block the enforcing policy would block it — and that must fail here,
+  // in the build, not in a browser console after the flip.
   {
-    const page = await (await fetch(baseUrl + '/')).text();
-    const hashes = [];
-    for (const m of page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)) {
-      if (/ld\+json/i.test(m[1]) || !m[2].trim()) continue;
-      hashes.push(`sha256-${createHash('sha256').update(m[2]).digest('base64')}`);
+    const pages = ['/', '/faq', '/our-story', '/terms', '/menu', '/events', '/marketplace', '/app-shell.html', '/404.html'];
+    const uncovered = [];
+    let seen = 0;
+    for (const path of pages) {
+      const res = await fetch(baseUrl + path);
+      const page = await res.text();
+      for (const m of page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)) {
+        if (/ld\+json/i.test(m[1]) || !m[2].trim()) continue;
+        seen++;
+        const hash = `sha256-${createHash('sha256').update(m[2]).digest('base64')}`;
+        if (!csp.includes(hash)) uncovered.push(`${path} ${hash}`);
+      }
     }
-    check(hashes.length > 0, 'index.html has an inline script to cover', `${hashes.length}`);
-    check(
-      hashes.every((h) => csp.includes(h)),
-      'every inline script hash is in the policy',
-      hashes.join(', '),
-    );
+    check(seen > 0, 'the inline script in the page source is exercised', `${seen} block(s)`);
+    check(uncovered.length === 0, 'every inline script on every page is covered by the policy', uncovered.join(', ') || `${seen} block(s), all covered`);
   }
 
   // Headers must also cover the two non-page responses.

@@ -11,6 +11,7 @@ import ReferralMilestones from '@/components/referrals/ReferralMilestones';
 import ReferredFriends from '@/components/referrals/ReferredFriends';
 import ShareSheet from '@/components/ShareSheet';
 import ReferralsSkeleton from '@/components/skeletons/ReferralsSkeleton';
+import { msg } from '@/lib/messages';
 
 // Defensive read of the referral stats response — the backend shapes for
 // /referrals/stats aren't pinned in the spec, so we accept whatever keys it
@@ -68,10 +69,10 @@ export default function Referrals() {
     try {
       await navigator.clipboard?.writeText(link);
       setCopied(true);
-      toast({ title: 'Referral link copied!' });
+      toast({ title: msg('FE_REFERRALS_REFERRAL_LINK_COPIED', 'Referral link copied!') });
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast({ title: 'Failed to copy referral link.', variant: 'destructive' });
+      toast({ title: msg('FE_REFERRALS_FAILED_TO_COPY_REFERRAL_LINK', 'Failed to copy referral link.'), variant: 'destructive' });
     }
   };
 

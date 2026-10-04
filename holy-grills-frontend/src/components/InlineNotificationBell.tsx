@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Bell, X, Check, CheckCheck } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 /**
  * InlineNotificationBell — opens a dropdown panel of notifications in-place,
  * so admin/kitchen/rider panels never navigate away to the student /notifications
@@ -44,7 +45,7 @@ export default function InlineNotificationBell() {
       await liveApi.notifications.markRead(id);
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString(), is_read: true } : n)));
       setUnread((u) => Math.max(0, u - 1));
-    } catch (e) { toast({ title: 'Could not mark notification', variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_INLINE_NOTIFICATION_BELL_COULD_NOT_MARK_NOTIFICATION', 'Could not mark notification'), variant: 'destructive' }); }
   };
 
   const markAllRead = async () => {
@@ -54,8 +55,8 @@ export default function InlineNotificationBell() {
       await liveApi.notifications.markAllRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString(), is_read: true })));
       setUnread(0);
-      toast({ title: 'All caught up ✅' });
-    } catch (e) { toast({ title: 'Could not mark all read', variant: 'destructive' }); }
+      toast({ title: msg('FE_INLINE_NOTIFICATION_BELL_ALL_CAUGHT_UP', 'All caught up ✅') });
+    } catch (e) { toast({ title: msg('FE_INLINE_NOTIFICATION_BELL_COULD_NOT_MARK_ALL_READ', 'Could not mark all read'), variant: 'destructive' }); }
     setBusy(false);
   };
 

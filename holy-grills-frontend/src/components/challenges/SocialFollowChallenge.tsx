@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ExternalLink, Flame, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // POST /challenges/social-follow — the dedicated social-follow milestone
 // endpoint. Unlike the generic /challenges/<id>/complete route, this one looks
@@ -21,10 +22,10 @@ export default function SocialFollowChallenge({ challenge, onClaimed }) {
     try {
       const res = await liveApi.challenges.socialFollow({ social_link: link || undefined });
       const hp = res?.hp_awarded ?? challenge?.hp_awarded ?? 0;
-      toast({ title: '🎉 Follow claimed!', description: `+${hp} HP added.` });
+      toast({ title: msg('FE_SOCIAL_FOLLOW_CHALLENGE_FOLLOW_CLAIMED', '🎉 Follow claimed!'), description: `+${hp} HP added.` });
       onClaimed?.(challenge);
     } catch (e) {
-      toast({ title: 'Could not claim', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SOCIAL_FOLLOW_CHALLENGE_COULD_NOT_CLAIM', 'Could not claim'), description: e.message, variant: 'destructive' });
     } finally {
       setClaiming(false);
     }

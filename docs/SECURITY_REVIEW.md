@@ -123,6 +123,16 @@ rules locally so they are testable, and `scripts/smoke.mjs` asserts them.
   connect/frame/worker), with the API origin read from `VITE_API_BASE_URL` so a
   staging backend does not need a policy edit. Every third-party origin named
   above was checked to be present in the generated header.
+- **Two deliberate widenings, both so the flip cannot break a real feature**
+  (2026-04-10 review pass, after "no legit access must be blocked"):
+  `img-src 'self' data: blob: https:` instead of an image-host allow-list —
+  admins paste image URLs into the CMS (storefront sections, banners, menu art)
+  and those legitimately live anywhere, images cannot execute, and `http:` stays
+  blocked; and `connect-src` gained `https://images.unsplash.com` (a
+  `<link rel=preconnect>` hint is governed by `connect-src`, so omitting it logs
+  a violation for a hint we ship on purpose) plus the bare `https://onesignal.com`
+  (the v16 SDK also calls the domain root). Paystack needs nothing: payments are
+  a redirect to `authorization_url`, not an inline SDK or iframe.
 - **Enforcing** alongside it: `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY` (clickjacking — `frame-ancestors` is ignored in
   report-only mode, so this is the real defence), `Referrer-Policy:
@@ -135,7 +145,11 @@ rules locally so they are testable, and `scripts/smoke.mjs` asserts them.
 blocks. `scripts/routes.mjs` now **reads that snippet's SHA-256 out of
 `index.html` at build time** and puts it in `script-src`, so the hash cannot drift
 from the file; `npm run smoke` re-computes the hash from the *served* HTML and
-fails if it is not in the policy. `public/offline.html` had one inline `onclick`
+fails if it is not in the policy — and now checks **every** built page (`/`,
+the three pre-rendered legal/marketing pages, the campus-gated shells, the app
+shell and the 404), 9 blocks across 9 documents at the time of writing, because
+a page that grows its own inline block would otherwise only fail in a browser
+console after the flip. `public/offline.html` had one inline `onclick`
 on its retry button (attribute handlers cannot be hashed without
 `'unsafe-hashes'`); it is now a link styled the same, which reloads through the
 service worker anyway.

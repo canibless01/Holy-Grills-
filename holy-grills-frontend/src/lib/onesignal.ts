@@ -12,6 +12,7 @@
  */
 import APP_CONFIG from '@/config/app.config';
 import { liveApi } from '@/lib/liveApi';
+import { msg } from '@/lib/messages';
 
 let initialized = false;
 
@@ -85,10 +86,10 @@ export const requestPushPermission = async () => {
     // OneSignal isn't configured yet — surface the real reason instead of a
     // silent "permission denied". Push uses OneSignal (not VAPID); the App ID
     // must be set in src/config/app.config.js → onesignal.appId.
-    throw new Error('Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them.');
+    throw new Error(msg('FE_ONESIGNAL_PUSH_NOTIFICATIONS_AREN_T_CONFIGURED', 'Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them.'));
   }
   if (!window.OneSignal) {
-    throw new Error('OneSignal is still loading — try again in a moment.');
+    throw new Error(msg('FE_ONESIGNAL_ONE_SIGNAL_IS_STILL_LOADING_TRY_AGAIN', 'OneSignal is still loading — try again in a moment.'));
   }
   try {
     await window.OneSignal.push(() => window.OneSignal.showSlidedownPrompt());

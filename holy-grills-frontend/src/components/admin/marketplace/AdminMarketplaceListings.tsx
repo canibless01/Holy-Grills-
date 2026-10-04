@@ -6,6 +6,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill } from '../AdminShared';
 import ImageUploader from '../ImageUploader';
 import AdminMarketplaceListingManager from './AdminMarketplaceListingManager';
+import { msg } from '@/lib/messages';
 
 const BLANK = { title: '', listing_type: 'voucher', price: 0, hp_price: 0, vendor_name: '', description: '', image_url: '', status: 'active', is_featured: false, sort_order: 0, is_out_of_stock: false, rejection_reason: '' };
 const STATUSES = ['active', 'paused', 'archived', 'rejected', 'pending', 'draft'];
@@ -26,15 +27,15 @@ export default function AdminMarketplaceListings({ listings, reload }) {
     try {
       if (modal.isNew) {
         await liveApi.admin.createListing(body);
-        toast({ title: 'Listing created' });
+        toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTINGS_LISTING_CREATED', 'Listing created') });
       } else {
         await liveApi.admin.updateListing(modal.item.id, body);
-        toast({ title: 'Listing updated' });
+        toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTINGS_LISTING_UPDATED', 'Listing updated') });
       }
       setModal(null);
       await reload();
     } catch (e) {
-      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTINGS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' });
     }
   };
 
@@ -42,10 +43,10 @@ export default function AdminMarketplaceListings({ listings, reload }) {
     if (!confirm('Delete this listing? This cannot be undone.')) return;
     try {
       const res = await liveApi.admin.deleteListing(id);
-      toast({ title: 'Listing deleted', description: res?.message });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTINGS_LISTING_DELETED', 'Listing deleted'), description: res?.message });
       await reload();
     } catch (e) {
-      toast({ title: 'Delete failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTINGS_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' });
     }
   };
 

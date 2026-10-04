@@ -4,6 +4,7 @@ import { Plus, Info, Clock, AlertCircle } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, Toggle } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 // Flag metadata — admin guidance only. On/off values come from the backend's
 // feature_flags table (is_active column), never from this map.
@@ -38,7 +39,7 @@ export default function AdminFeatureFlags() {
     try {
       setFlags(await liveApi.admin.getFeatureFlags());
     } catch (e) {
-      toast({ title: "Couldn't load feature flags", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FEATURE_FLAGS_COULDN_T_LOAD_FEATURE_FLAGS', "Couldn't load feature flags"), description: e.message, variant: 'destructive' });
       setFlags([]);
     }
   };
@@ -54,7 +55,7 @@ export default function AdminFeatureFlags() {
       toast({ title: res?.message || `${FLAG_META[name]?.label || name} ${!current ? 'enabled' : 'disabled'}` });
       await load();
     } catch (e) {
-      toast({ title: 'Failed to update flag', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FEATURE_FLAGS_FAILED_TO_UPDATE_FLAG', 'Failed to update flag'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -62,7 +63,7 @@ export default function AdminFeatureFlags() {
   const createFlag = async () => {
     const name = draft.feature_name.trim();
     if (!/^[a-z][a-z0-9_]{2,}$/.test(name)) {
-      toast({ title: 'Invalid flag name', description: 'Use lowercase letters, numbers and underscores (min 3 chars).', variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FEATURE_FLAGS_INVALID_FLAG_NAME', 'Invalid flag name'), description: msg('FE_ADMIN_FEATURE_FLAGS_USE_LOWERCASE_LETTERS_NUMBERS_AND', 'Use lowercase letters, numbers and underscores (min 3 chars).'), variant: 'destructive' });
       return;
     }
     setCreating(true);
@@ -74,7 +75,7 @@ export default function AdminFeatureFlags() {
       await load();
     } catch (e) {
       // Server rejects duplicates with "Feature flag already exists" — shown verbatim.
-      toast({ title: 'Failed to create flag', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_FEATURE_FLAGS_FAILED_TO_CREATE_FLAG', 'Failed to create flag'), description: e.message, variant: 'destructive' });
     }
     setCreating(false);
   };

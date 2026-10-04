@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatDateTime, timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Pill, BreakdownTiles } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 // GET /admin/webhook-events — the platform's recent webhook delivery log.
 // Each row carries the provider, event, status, HTTP code, and timestamps so
@@ -34,7 +35,7 @@ export default function AdminWebhooks() {
       const arr = (Array.isArray(list) ? list : []).sort((a, b) => new Date(b.created_at || b.received_at || 0).getTime() - new Date(a.created_at || a.received_at || 0).getTime());
       setEvents(arr);
     } catch (e) {
-      toast({ title: "Couldn't load webhook events", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_WEBHOOKS_COULDN_T_LOAD_WEBHOOK_EVENTS', "Couldn't load webhook events"), description: e.message, variant: 'destructive' });
       setEvents([]);
     }
     setRefreshing(false);

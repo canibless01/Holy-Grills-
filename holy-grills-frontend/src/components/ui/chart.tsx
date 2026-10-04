@@ -1,3 +1,4 @@
+import { msg } from '@/lib/messages';
 "use client";
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
@@ -30,7 +31,7 @@ function useChart() {
   const context = React.useContext(ChartContext)
 
   if (!context) {
-    throw new Error("useChart must be used within a <ChartContainer />")
+    throw new Error(msg('FE_CHART_USE_CHART_MUST_BE_USED_WITHIN_A_CHART', "useChart must be used within a <ChartContainer />"))
   }
 
   return context

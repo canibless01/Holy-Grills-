@@ -6,6 +6,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // No flash_* columns here — flash sales live in flash_redemptions, created via
 // POST /rewards/admin/flash-sales. The reward editor only owns the reward itself.
@@ -332,14 +333,14 @@ function FlashSaleModal({ reward, onClose, onSaved }) {
 
   const submit = async () => {
     setError(null);
-    if (!form.window_ends_at) { setError('End time is required.'); return; }
+    if (!form.window_ends_at) { setError(msg('FE_ADMIN_REWARDS_END_TIME_IS_REQUIRED', 'End time is required.')); return; }
     const startsAt = form.window_starts_at ? new Date(form.window_starts_at).toISOString() : null;
     const endsAt = new Date(form.window_ends_at).toISOString();
-    if (startsAt && new Date(endsAt) <= new Date(startsAt)) { setError('End time must be after the start time.'); return; }
+    if (startsAt && new Date(endsAt) <= new Date(startsAt)) { setError(msg('FE_ADMIN_REWARDS_END_TIME_MUST_BE_AFTER_THE_START_TIME', 'End time must be after the start time.')); return; }
     const qty = Number(form.quantity_limit);
     const disc = Number(form.discount_pct);
-    if (!qty || qty < 1) { setError('Slot limit must be at least 1.'); return; }
-    if (!disc || disc <= 0 || disc >= 100) { setError('Discount must be between 1 and 99 percent.'); return; }
+    if (!qty || qty < 1) { setError(msg('FE_ADMIN_REWARDS_SLOT_LIMIT_MUST_BE_AT_LEAST_1', 'Slot limit must be at least 1.')); return; }
+    if (!disc || disc <= 0 || disc >= 100) { setError(msg('FE_ADMIN_REWARDS_DISCOUNT_MUST_BE_BETWEEN_1_AND_99', 'Discount must be between 1 and 99 percent.')); return; }
     setSubmitting(true);
     try {
       await mockApi.admin.createFlashSale({
@@ -349,7 +350,7 @@ function FlashSaleModal({ reward, onClose, onSaved }) {
         quantity_limit: qty,
         discount_pct: disc / 100,
       });
-      toast({ title: '🔥 Flash sale created' });
+      toast({ title: msg('FE_ADMIN_REWARDS_FLASH_SALE_CREATED', '🔥 Flash sale created') });
       onSaved(); onClose();
     } catch (e) {
       setError(e.message);

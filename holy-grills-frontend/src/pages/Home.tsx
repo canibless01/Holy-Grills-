@@ -26,6 +26,7 @@ import FlameMark from '@/components/FlameMark';
 import ModalPortal from '@/components/ModalPortal';
 import PromoFlyerPopup from '@/components/storefront/PromoFlyerPopup';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
+import { msg } from '@/lib/messages';
 
 const HOLY_POINTS_FEATURES = [
   { icon: Flame, title: 'Earn on orders', body: 'Every plate counts.', to: '/menu' },
@@ -96,7 +97,7 @@ export default function Home() {
     const hasRequired = (detail.variation_groups || []).some((vg) => vg.is_required) || (addons.addon_groups || []).some((ag) => ag.is_required);
     if (!hasRequired) {
       await addToCart({ menu_item_id: item.id, quantity: 1 });
-      toast({ title: 'Added to your cart', description: `${item.name} is ready to checkout.`, sound: 'cart_add' });
+      toast({ title: msg('FE_HOME_ADDED_TO_YOUR_CART', 'Added to your cart'), description: `${item.name} is ready to checkout.`, sound: 'cart_add' });
     } else {
       navigate(`/menu/${item.id}`);
     }
@@ -112,9 +113,9 @@ export default function Home() {
     try {
       await liveApi.storefront.subscribeNewsletter({ email, source: 'website' });
       setSubscribed(true);
-      toast({ title: "You're in ❤️‍🔥", description: 'Watch your inbox.' });
+      toast({ title: msg('FE_HOME_YOU_RE_IN', "You're in ❤️‍🔥"), description: msg('FE_HOME_WATCH_YOUR_INBOX', 'Watch your inbox.') });
     } catch (e) {
-      toast({ title: 'Newsletter subscription failed.', variant: 'destructive' });
+      toast({ title: msg('FE_HOME_NEWSLETTER_SUBSCRIPTION_FAILED', 'Newsletter subscription failed.'), variant: 'destructive' });
     }
     setSubscribing(false);
   };

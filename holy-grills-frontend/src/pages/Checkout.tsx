@@ -7,7 +7,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatNaira } from '@/lib/hgUtils';
 import { squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
-import { t } from '@/lib/messages';
+import { msg } from '@/lib/messages';
 import FreeSideCreditModal from '@/components/FreeSideCreditModal';
 import SquadOrderButton from '@/components/checkout/SquadOrderButton';
 import OffCampusMap from '@/components/OffCampusMap';
@@ -224,9 +224,9 @@ export default function Checkout() {
       setFreeSideSelectionId(res?.id ?? res?.[0]?.id ?? null);
       setFreeSideChoice(item);
       setShowFreeSide(false);
-      toast({ title: t('FE_CHECKOUT_FREE_SIDE_ADDED_TITLE', '🏆 Free side added'), description: t('FE_CHECKOUT_FREE_SIDE_ADDED_BODY', '{item} is added to this order at ₦0. The credit is used when you place the order.', { item: item.name }) });
+      toast({ title: msg('FE_CHECKOUT_FREE_SIDE_ADDED_TITLE', '🏆 Free side added'), description: msg('FE_CHECKOUT_FREE_SIDE_ADDED_BODY', '{item} is added to this order at ₦0. The credit is used when you place the order.', { item: item.name }) });
     } catch (e) {
-      toast({ title: t('FE_CHECKOUT_FREE_SIDE_FAILED_TITLE', 'Could not add the free side'), description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_CHECKOUT_FREE_SIDE_FAILED_TITLE', 'Could not add the free side'), description: e.message, variant: 'destructive' });
     }
     setFreeSideBusy(false);
   };
@@ -238,24 +238,24 @@ export default function Checkout() {
     // kitchen is closed but the user scheduled a window, send it through; if
     // no window was picked, still attempt and surface the backend's own error.
     const scheduled = !windowStatus?.is_open ? scheduledWindow : null;
-    if (!deliveryType) { setError(t('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return; }
-    if (deliveryType === 'on_campus' && !hostelId) { setError(t('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return; }
+    if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return; }
+    if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return; }
     if (deliveryType === 'off_campus') {
       const hasPin = deliveryPin && deliveryPin.lat != null && deliveryPin.lng != null;
       // Block only when there is no pin and no chosen gate. A pin is enough —
       // the backend fills in the nearest gate from the coordinates.
-      if (!hasPin && !gateId) { setError(t('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return; }
+      if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return; }
       if (radiusError) { setError(radiusError); return; }
     }
     if (!isAuthenticated) {
-      if (!guestName.trim()) { setError(t('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return; }
-      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(t('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return; }
-      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(t('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return; }
+      if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return; }
+      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(msg('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return; }
+      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(msg('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return; }
     }
     if (effectivePayment === 'split' && isAuthenticated) {
-      if (walletAmount <= 0) { setError(t('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return; }
-      if (walletAmount > (wallet?.balance || 0)) { setError(t('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return; }
-      if (walletAmount > total) { setError(t('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return; }
+      if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return; }
+      if (walletAmount > (wallet?.balance || 0)) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return; }
+      if (walletAmount > total) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return; }
     }
 
     setPlacing(true);

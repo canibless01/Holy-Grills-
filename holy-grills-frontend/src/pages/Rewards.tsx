@@ -17,6 +17,7 @@ import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { triggerMascotCelebration } from '@/lib/mascots';
 import type { MyChallengesEnvelope } from '@/types/challenges';
+import { msg } from '@/lib/messages';
 
 const CATEGORY_LABELS = { food: 'Food', discount: 'Wallet', experience: 'Experience' };
 
@@ -129,11 +130,11 @@ export default function Rewards() {
     try {
       await liveApi.hp.flashRedeem(reward.id);
       await refreshHp();
-      toast({ title: '⚡ Flash reward redeemed!', description: `${reward.name} unlocked at flash price.` });
+      toast({ title: msg('FE_REWARDS_FLASH_REWARD_REDEEMED', '⚡ Flash reward redeemed!'), description: `${reward.name} unlocked at flash price.` });
       const r = await liveApi.rewards.list();
       setRewards(r);
     } catch (e) {
-      toast({ title: 'Flash redemption failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_REWARDS_FLASH_REDEMPTION_FAILED', 'Flash redemption failed'), description: e.message, variant: 'destructive' });
     }
     setFlashRedeeming(null);
   };
@@ -143,10 +144,10 @@ export default function Rewards() {
     try {
       const res = await liveApi.graduation.claim({});
       await refreshHp();
-      toast({ title: '🎓 Graduation HP claimed!', description: `${res?.hp_awarded ?? graduationHp()} HP awarded at level ${res?.academic_level ?? ''}.`.trim() });
+      toast({ title: msg('FE_REWARDS_GRADUATION_HP_CLAIMED', '🎓 Graduation HP claimed!'), description: `${res?.hp_awarded ?? graduationHp()} HP awarded at level ${res?.academic_level ?? ''}.`.trim() });
       setGradClaimed(true);
     } catch (e) {
-      toast({ title: 'Claim failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_REWARDS_CLAIM_FAILED', 'Claim failed'), description: e.message, variant: 'destructive' });
     }
     setClaimingGrad(false);
   };
@@ -158,9 +159,9 @@ export default function Rewards() {
       await refreshHp();
       const myChallenges = await liveApi.challenges.my().catch(() => ({ badges: [], challenges_available: [], challenges_completed: [] }));
       setChallenges(myChallenges);
-      toast({ title: '🎉 Challenge complete!', description: 'Bonus HP added.' });
+      toast({ title: msg('FE_REWARDS_CHALLENGE_COMPLETE', '🎉 Challenge complete!'), description: msg('FE_REWARDS_BONUS_HP_ADDED', 'Bonus HP added.') });
     } catch (e) {
-      toast({ title: 'Could not complete', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_REWARDS_COULD_NOT_COMPLETE', 'Could not complete'), description: e.message, variant: 'destructive' });
     }
     setCompleting(null);
   };
@@ -178,10 +179,10 @@ export default function Rewards() {
     try {
       await liveApi.rewards.redeem(selectedReward.id);
       await refreshHp();
-      toast({ title: '🎉 Reward redeemed!', description: `${selectedReward.name} is on its way.` });
+      toast({ title: msg('FE_REWARDS_REWARD_REDEEMED', '🎉 Reward redeemed!'), description: `${selectedReward.name} is on its way.` });
       setSelectedReward(null);
     } catch (e) {
-      toast({ title: 'Redemption failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_REWARDS_REDEMPTION_FAILED', 'Redemption failed'), description: e.message, variant: 'destructive' });
     }
     setRedeeming(false);
   };

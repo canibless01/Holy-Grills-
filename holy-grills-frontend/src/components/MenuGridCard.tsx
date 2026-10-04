@@ -7,6 +7,7 @@ import { useSound } from '@/lib/SoundProvider';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import { fadeUp } from '@/lib/animationPresets';
+import { msg } from '@/lib/messages';
 
 /**
  * MenuGridCard — compact vertical card for the menu page's two-up grid.
@@ -36,7 +37,7 @@ export default function MenuGridCard({ item, onAdd }) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
     if (!isAuthed) {
-      toast({ title: 'Sign in to save items', description: 'Saved items sync to your account.' });
+      toast({ title: msg('FE_MENU_GRID_CARD_SIGN_IN_TO_SAVE_ITEMS', 'Sign in to save items'), description: msg('FE_MENU_GRID_CARD_SAVED_ITEMS_SYNC_TO_YOUR_ACCOUNT', 'Saved items sync to your account.') });
       return;
     }
     const nowSaved = await toggleSavedItem(item);

@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle } from './ui/AdminKit';
 import EmailDeliverySettings from './EmailDeliverySettings';
+import { msg } from '@/lib/messages';
 
 // Documented settings from the backend reference (system_settings table) —
 // used only to enrich rows with default + purpose when the backend row has no
@@ -53,7 +54,7 @@ export default function AdminSystemSettings() {
     try {
       setSettings(await liveApi.admin.getSystemSettings());
     } catch (e) {
-      toast({ title: "Couldn't load settings", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_COULDN_T_LOAD_SETTINGS', "Couldn't load settings"), description: e.message, variant: 'destructive' });
       setSettings([]);
     }
   };
@@ -65,11 +66,11 @@ export default function AdminSystemSettings() {
     setBusy(key);
     try {
       await liveApi.admin.updateSystemSetting(key, { value });
-      toast({ title: 'Setting updated', description: `${key} saved.` });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_UPDATED', 'Setting updated'), description: `${key} saved.` });
       setEditKey(null);
       await load();
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -81,7 +82,7 @@ export default function AdminSystemSettings() {
       toast({ title: `${key} ${!current ? 'enabled' : 'disabled'}` });
       await load();
     } catch (e) {
-      toast({ title: 'Failed to update', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -90,7 +91,7 @@ export default function AdminSystemSettings() {
   const createSetting = async () => {
     const key = draft.key.trim();
     if (!/^[a-z][a-z0-9_]*$/.test(key)) {
-      toast({ title: 'Invalid key', description: 'Use lowercase letters, numbers and underscores.', variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_INVALID_KEY', 'Invalid key'), description: msg('FE_ADMIN_SYSTEM_SETTINGS_USE_LOWERCASE_LETTERS_NUMBERS_AND', 'Use lowercase letters, numbers and underscores.'), variant: 'destructive' });
       return;
     }
     setCreating(true);
@@ -100,12 +101,12 @@ export default function AdminSystemSettings() {
         value: parseValue(key, draft.value.trim()),
         description: draft.description.trim() || null,
       });
-      toast({ title: 'Setting created', description: key });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_CREATED', 'Setting created'), description: key });
       setCreateOpen(false);
       setDraft({ key: '', value: '', description: '' });
       await load();
     } catch (e) {
-      toast({ title: 'Failed to create setting', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_CREATE_SETTING', 'Failed to create setting'), description: e.message, variant: 'destructive' });
     }
     setCreating(false);
   };

@@ -3,6 +3,7 @@ import { Plus, Trash2, Save } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Field, TextInput } from './AdminShared';
+import { msg } from '@/lib/messages';
 
 // Per-item variations & add-ons editor, embedded inside the menu item modal.
 // Two distinct modifier kinds, each fully CRUD via the live per-item endpoints:
@@ -59,8 +60,8 @@ export default function MenuItemModifiers({ itemId }) {
     const addon_groups = addonGroups.map((g) => ({ id: g.id, name: g.name, is_required: !!g.is_required, min_select: g.min_select || 0, max_select: g.max_select || 3, addons: parseOpts(g.addonsText).map((a) => ({ id: a.id, name: a.name, price: a.price_delta })) }));
     try {
       await mockApi.admin.saveItemModifiers(itemId, { variation_groups, addon_groups });
-      toast({ title: '✅ Modifiers saved' });
-    } catch (e) { toast({ title: 'Save failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_MENU_ITEM_MODIFIERS_MODIFIERS_SAVED', '✅ Modifiers saved') });
+    } catch (e) { toast({ title: msg('FE_MENU_ITEM_MODIFIERS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
   };
 

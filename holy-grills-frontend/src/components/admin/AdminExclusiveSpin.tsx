@@ -6,6 +6,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Field, TextInput, Pill, SectionHeader, Modal } from './AdminShared';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
+import { msg } from '@/lib/messages';
 
 // DB-backed prize pool (GET/POST/PATCH/DELETE /admin/exclusive-spin-pool).
 // Every prize carries a campus scope: campus_id = null is GLOBAL — editing it
@@ -61,28 +62,28 @@ export default function AdminExclusiveSpin() {
     try {
       const rows = await mockApi.users.search({ q });
       setGrantResults(rows);
-      if (rows.length === 0) toast({ title: 'No students matched', description: 'Try a full name, nickname or email.' });
+      if (rows.length === 0) toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_NO_STUDENTS_MATCHED', 'No students matched'), description: msg('FE_ADMIN_EXCLUSIVE_SPIN_TRY_A_FULL_NAME_NICKNAME_OR_EMAIL', 'Try a full name, nickname or email.') });
     } catch (e) {
-      toast({ title: 'Search failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_SEARCH_FAILED', 'Search failed'), description: e.message, variant: 'destructive' });
     }
     setSearching(false);
   };
 
   const grantSpinsToUser = async () => {
-    if (!grantUser) { toast({ title: 'Pick a student first', variant: 'destructive' }); return; }
+    if (!grantUser) { toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_PICK_A_STUDENT_FIRST', 'Pick a student first'), variant: 'destructive' }); return; }
     const spins = Number(grantSpins);
-    if (!(spins >= 1 && spins <= 10)) { toast({ title: 'Spins must be 1-10', variant: 'destructive' }); return; }
+    if (!(spins >= 1 && spins <= 10)) { toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_SPINS_MUST_BE_1_10', 'Spins must be 1-10'), variant: 'destructive' }); return; }
     setGranting(true);
     try {
       const res = await mockApi.admin.grantExclusiveSpinCredits({ user_id: grantUser.id, spins, reason: grantReason.trim() || undefined });
-      toast({ title: '✅ Spins granted', description: `${spins} exclusive spin${spins > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_SPINS_GRANTED', '✅ Spins granted'), description: `${spins} exclusive spin${spins > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
       setGrantUser(null);
       setGrantQuery('');
       setGrantResults([]);
       setGrantSpins(1);
       setGrantReason('');
     } catch (e) {
-      toast({ title: 'Grant failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_GRANT_FAILED', 'Grant failed'), description: e.message, variant: 'destructive' });
     }
     setGranting(false);
   };
@@ -98,11 +99,11 @@ export default function AdminExclusiveSpin() {
       } else {
         await mockApi.admin.createExclusiveSpinTemplateItem(body);
       }
-      toast({ title: '✅ Prize saved', description: `"${item.name}" updated in the exclusive spin template.` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_PRIZE_SAVED', '✅ Prize saved'), description: `"${item.name}" updated in the exclusive spin template.` });
       setEditItem(null); setAdding(false);
       await load();
     } catch (e) {
-      toast({ title: 'Failed to save prize', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_SAVE_PRIZE', 'Failed to save prize'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -115,7 +116,7 @@ export default function AdminExclusiveSpin() {
       toast({ title: res?.message || 'Prize deactivated' });
       await load();
     } catch (e) {
-      toast({ title: 'Failed to delete', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_DELETE', 'Failed to delete'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -124,9 +125,9 @@ export default function AdminExclusiveSpin() {
     setSavingCost(true);
     try {
       await mockApi.admin.updateExclusiveSpinExtraCost({ value: Number(extraCost) });
-      toast({ title: '✅ Extra spin cost updated', description: `Extra spins now cost ${extraCost} HP.` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_EXTRA_SPIN_COST_UPDATED', '✅ Extra spin cost updated'), description: `Extra spins now cost ${extraCost} HP.` });
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setSavingCost(false);
   };
@@ -135,9 +136,9 @@ export default function AdminExclusiveSpin() {
     setSavingValidity(true);
     try {
       await mockApi.admin.updateExclusiveSpinValidityDays({ value: Number(validityDays) });
-      toast({ title: '✅ Validity updated', description: `Exclusive spin rewards now expire after ${validityDays} days.` });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_VALIDITY_UPDATED', '✅ Validity updated'), description: `Exclusive spin rewards now expire after ${validityDays} days.` });
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setSavingValidity(false);
   };
@@ -150,7 +151,7 @@ export default function AdminExclusiveSpin() {
       toast({ title: res?.message || 'Prize fulfilled' });
       await load();
     } catch (e) {
-      toast({ title: 'Fulfillment failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FULFILLMENT_FAILED', 'Fulfillment failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };

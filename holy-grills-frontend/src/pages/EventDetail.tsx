@@ -8,6 +8,7 @@ import { toast } from '@/components/ui/use-toast';
 import EventDetailSkeleton from '@/components/skeletons/EventDetailSkeleton';
 import EventCheckInScanner from '@/components/EventCheckInScanner';
 import RegisterModal from '@/components/events/RegisterModal';
+import { msg } from '@/lib/messages';
 
 export default function EventDetail() {
   const { id } = useParams();
@@ -68,7 +69,7 @@ export default function EventDetail() {
           if (cancelled) return;
           setTicket({ ticket_id: found.ticket_id || found.id, status: found.status || 'confirmed', qr_code: found.qr_token, tier_name: found.tier_name, guest_email: found.guest_email });
           setPaystackProcessing(false);
-          toast({ title: '✅ Payment confirmed!', description: 'Your ticket is ready.' });
+          toast({ title: msg('FE_EVENT_DETAIL_PAYMENT_CONFIRMED', '✅ Payment confirmed!'), description: msg('FE_EVENT_DETAIL_YOUR_TICKET_IS_READY', 'Your ticket is ready.') });
           // Clean the reference from the URL.
           window.history.replaceState({}, '', window.location.pathname);
           return;
@@ -78,7 +79,7 @@ export default function EventDetail() {
         setTimeout(() => poll(attempt + 1), 1500);
       } else if (!cancelled) {
         setPaystackProcessing(false);
-        toast({ title: 'Payment processing', description: 'Your ticket will appear here once confirmed.', variant: 'default' });
+        toast({ title: msg('FE_EVENT_DETAIL_PAYMENT_PROCESSING', 'Payment processing'), description: msg('FE_EVENT_DETAIL_YOUR_TICKET_WILL_APPEAR_HERE_ONCE', 'Your ticket will appear here once confirmed.'), variant: 'default' });
         window.history.replaceState({}, '', window.location.pathname);
       }
     };
@@ -304,7 +305,7 @@ export default function EventDetail() {
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(url), 10000);
               } catch (e) {
-                toast({ title: 'Download failed', description: e.message, variant: 'destructive' });
+                toast({ title: msg('FE_EVENT_DETAIL_DOWNLOAD_FAILED', 'Download failed'), description: e.message, variant: 'destructive' });
               }
             }}
             className="w-full py-2.5 rounded-2xl border border-border text-foreground text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition"

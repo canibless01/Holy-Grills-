@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { msg } from '@/lib/messages';
 
 // Ordering Windows — when ordering is open each weekday/date, the per-slot
 // capacity, and the delivery window a fulfilled order is linked to. A
@@ -28,7 +29,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
 
   const load = async () => {
     setWindows(null);
-    try { setWindows(await liveApi.admin.getOrderingWindows()); } catch (e) { toast({ title: "Couldn't load ordering windows", description: e.message, variant: 'destructive' }); setWindows([]); }
+    try { setWindows(await liveApi.admin.getOrderingWindows()); } catch (e) { toast({ title: msg('FE_ORDERING_WINDOWS_TAB_COULDN_T_LOAD_ORDERING_WINDOWS', "Couldn't load ordering windows"), description: e.message, variant: 'destructive' }); setWindows([]); }
   };
   useEffect(() => { load(); }, []);
 
@@ -50,7 +51,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
       setModal(null);
       await load();
     } catch (e) {
-      toast({ title: 'Failed to save', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ORDERING_WINDOWS_TAB_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     setBusy(false);
   };

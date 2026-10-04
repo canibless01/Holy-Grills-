@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, Pill } from '../AdminShared';
+import { msg } from '@/lib/messages';
 
 // Approve/reject a vendor listing request. The PATCH route accepts an optional
 // admin_notes string, surfaced here so the vendor sees the reason in their
@@ -25,7 +26,7 @@ export default function AdminMarketplaceRequests({ requests, reload }) {
       setNotes('');
       await reload();
     } catch (e) {
-      toast({ title: 'Action failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_REQUESTS_ACTION_FAILED', 'Action failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(false);
   };

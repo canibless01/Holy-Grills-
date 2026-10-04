@@ -5,6 +5,7 @@ import { formatNaira } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Field, TextInput, Card } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const parseOpts = (text) => text.split('\n').map((s) => s.trim()).filter(Boolean).map((line, i) => {
   const [name, delta = '0'] = line.split(':').map((x) => x.trim());
@@ -40,16 +41,16 @@ export default function AdminAddons() {
   const reloadGlobal = async () => { try { setConfig(await mockApi.admin.getAddonsConfig()); } catch { /* ignore */ } };
   const addGlobal = () => setEditing({ name: '', price: 0 });
   const saveGlobal = async () => {
-    if (!editing.name) { toast({ title: 'Name required', variant: 'destructive' }); return; }
+    if (!editing.name) { toast({ title: msg('FE_ADMIN_ADDONS_NAME_REQUIRED', 'Name required'), variant: 'destructive' }); return; }
     try {
       if (editing.id) await mockApi.admin.updateGlobalAddon(editing.id, { name: editing.name, price: Number(editing.price) || 0 });
       else await mockApi.admin.createGlobalAddon({ name: editing.name, price: Number(editing.price) || 0, group_id: null });
-      toast({ title: '✅ Global addon saved' });
+      toast({ title: msg('FE_ADMIN_ADDONS_GLOBAL_ADDON_SAVED', '✅ Global addon saved') });
       setEditing(null);
       await reloadGlobal();
-    } catch (e) { toast({ title: 'Save failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
   };
-  const delGlobal = async (id) => { if (!confirm('Archive this global addon?')) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: 'Addon archived' }); await reloadGlobal(); } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); } };
+  const delGlobal = async (id) => { if (!confirm('Archive this global addon?')) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: msg('FE_ADMIN_ADDONS_ADDON_ARCHIVED', 'Addon archived') }); await reloadGlobal(); } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
 
   const addVarGroup = () => setVarGroups((gs) => [...gs, { id: `vg_${Date.now()}`, name: '', is_required: true, optionsText: '' }]);
   const addAddonGroup = () => setAddonGroups((gs) => [...gs, { id: `ag_${Date.now()}`, name: '', is_required: false, min_select: 0, max_select: 3, addonsText: '' }]);
@@ -61,9 +62,9 @@ export default function AdminAddons() {
     const addon_groups = addonGroups.map((g) => ({ id: g.id, name: g.name, is_required: !!g.is_required, min_select: g.min_select || 0, max_select: g.max_select || 3, addons: parseOpts(g.addonsText).map((a) => ({ id: a.id, name: a.name, price: a.price_delta })) }));
     try {
       await mockApi.admin.saveItemModifiers(itemId, { variation_groups, addon_groups });
-      toast({ title: '✅ Modifiers saved' });
+      toast({ title: msg('FE_ADMIN_ADDONS_MODIFIERS_SAVED', '✅ Modifiers saved') });
       await load(itemId);
-    } catch (e) { toast({ title: 'Save failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
   };
 

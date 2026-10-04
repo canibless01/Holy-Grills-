@@ -24,6 +24,7 @@ import { formatNaira, timeAgo, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, Pagination, body } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 const ROLES = [
   { value: 'student', label: 'Student' },
@@ -80,7 +81,7 @@ export default function AdminUsers() {
       setUsers(res);
       setHasMore(res.length === PAGE_SIZE);
     } catch (e) {
-      toast({ title: "Couldn't load users", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_COULDN_T_LOAD_USERS', "Couldn't load users"), description: e.message, variant: 'destructive' });
       setUsers([]);
       setHasMore(false);
     }
@@ -100,20 +101,20 @@ export default function AdminUsers() {
   const handleRole = async (u, role) => {
     if (role === u.role) return;
     if (u.id === me?.id) {
-      toast({ title: 'Not allowed', description: 'You cannot change your own role.', variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_YOU_CANNOT_CHANGE_YOUR_OWN_ROLE', 'You cannot change your own role.'), variant: 'destructive' });
       return;
     }
     if (role === 'super_admin' && me?.role !== 'super_admin') {
-      toast({ title: 'Not allowed', description: 'Only a super admin can assign the super_admin role.', variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_ONLY_A_SUPER_ADMIN_CAN_ASSIGN_THE_SUPER', 'Only a super admin can assign the super_admin role.'), variant: 'destructive' });
       return;
     }
     setUpdating(u.id);
     try {
       await liveApi.admin.updateRole(u.id, { role });
-      toast({ title: 'Role updated', description: `${u.full_name} is now ${role.replace('_', ' ')}.` });
+      toast({ title: msg('FE_ADMIN_USERS_ROLE_UPDATED', 'Role updated'), description: `${u.full_name} is now ${role.replace('_', ' ')}.` });
       load();
     } catch (e) {
-      toast({ title: 'Role change failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_ROLE_CHANGE_FAILED', 'Role change failed'), description: e.message, variant: 'destructive' });
     }
     setUpdating(null);
   };
@@ -122,7 +123,7 @@ export default function AdminUsers() {
   // deactivation and non-super-admin deactivating a super_admin.
   const handleToggle = async (u) => {
     if (u.id === me?.id) {
-      toast({ title: 'Not allowed', description: 'You cannot deactivate your own account.', variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_YOU_CANNOT_DEACTIVATE_YOUR_OWN_ACCOUNT', 'You cannot deactivate your own account.'), variant: 'destructive' });
       setConfirmToggle(null);
       return;
     }
@@ -133,7 +134,7 @@ export default function AdminUsers() {
       setConfirmToggle(null);
       load();
     } catch (e) {
-      toast({ title: 'Action failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_ACTION_FAILED', 'Action failed'), description: e.message, variant: 'destructive' });
       setConfirmToggle(null);
     }
     setUpdating(null);
@@ -351,7 +352,7 @@ function UserDrawer({ user, onClose }) {
       else if (t === 'wallet') setWallet(await liveApi.admin.getUserWallet(user.id));
       else setOrders(await liveApi.admin.getUserOrders(user.id, { limit: 50 }));
     } catch (e) {
-      toast({ title: "Couldn't load this tab", description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_COULDN_T_LOAD_THIS_TAB', "Couldn't load this tab"), description: e.message, variant: 'destructive' });
     }
     setTabLoading(false);
   };
@@ -552,13 +553,13 @@ function GrantModal({ user, onClose, onDone }) {
     try {
       const res = await liveApi.admin.grantHpToUser(user.id, { amount: Number(amount), notes });
       toast({
-        title: 'HP adjusted',
+        title: msg('FE_ADMIN_USERS_HP_ADJUSTED', 'HP adjusted'),
         description: `${res?.amount ?? amount} HP · new balance ${res?.new_balance != null ? Number(res.new_balance).toLocaleString() : 'updated'}`,
       });
       onDone();
       onClose();
     } catch (e) {
-      toast({ title: 'HP adjustment failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_HP_ADJUSTMENT_FAILED', 'HP adjustment failed'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };
@@ -594,7 +595,7 @@ function BulkGrantModal({ userIds, users, onClose, onDone }) {
       const res = await liveApi.admin.bulkGrantHp({ user_ids: userIds, amount: Number(amount), reason, dry_run: true });
       setPreview(res);
     } catch (e) {
-      toast({ title: 'Preview failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_PREVIEW_FAILED', 'Preview failed'), description: e.message, variant: 'destructive' });
     }
     setPreviewing(false);
   };
@@ -604,10 +605,10 @@ function BulkGrantModal({ userIds, users, onClose, onDone }) {
     try {
       const res = await liveApi.admin.bulkGrantHp({ user_ids: userIds, amount: Number(amount), reason });
       setResult(res);
-      toast({ title: 'Bulk grant sent', description: `${res?.awarded_count ?? userIds.length} users granted ${amount} HP each.` });
+      toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_SENT', 'Bulk grant sent'), description: `${res?.awarded_count ?? userIds.length} users granted ${amount} HP each.` });
       setTimeout(onDone, 1200);
     } catch (e) {
-      toast({ title: 'Bulk grant failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_FAILED', 'Bulk grant failed'), description: e.message, variant: 'destructive' });
       setSubmitting(false);
     }
   };

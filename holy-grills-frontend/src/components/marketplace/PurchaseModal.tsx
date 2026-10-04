@@ -8,6 +8,7 @@ import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
 import type { PurchaseListingPayload } from '@/types/marketplace';
 import type { PaymentMethod } from '@/types/orders';
+import { msg } from '@/lib/messages';
 
 export default function PurchaseModal({ listing, onClose, onSuccess }) {
   const { hpBalance, wallet, refreshHp, refreshWallet } = useHolyGrill();
@@ -61,7 +62,7 @@ export default function PurchaseModal({ listing, onClose, onSuccess }) {
       // S1 — only https on a Paystack host is followed.
       if (res?.authorization_url) {
         if (!isAllowedPaymentUrl(res.authorization_url)) {
-          throw new Error('The payment link did not look safe, so nothing was charged. Please try again.');
+          throw new Error(msg('FE_PURCHASE_MODAL_THE_PAYMENT_LINK_DID_NOT_LOOK_SAFE_SO', 'The payment link did not look safe, so nothing was charged. Please try again.'));
         }
         window.location.href = res.authorization_url;
         return;
@@ -74,7 +75,7 @@ export default function PurchaseModal({ listing, onClose, onSuccess }) {
       await refreshWallet();
       setDone({ code, hp_earned: hpEarned, message: res?.message });
     } catch (e) {
-      toast({ title: 'Purchase failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_PURCHASE_MODAL_PURCHASE_FAILED', 'Purchase failed'), description: e.message, variant: 'destructive' });
     }
     setPurchasing(false);
   };

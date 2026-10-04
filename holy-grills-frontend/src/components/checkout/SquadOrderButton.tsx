@@ -3,6 +3,7 @@ import { Users, ChevronDown } from 'lucide-react';
 import { squadOrderMinItems, squadOrderMaxItems, squadOrdersEnabled } from '@/lib/appConfig';
 import SquadOrderSection from '@/components/checkout/SquadOrderSection';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 /**
  * SquadOrderButton — the always-visible squad entry point on checkout.
@@ -25,7 +26,7 @@ export default function SquadOrderButton({ itemCount, value, onChange }) {
   const handleClick = () => {
     if (!eligible) {
       if (toGo > 0) {
-        toast({ title: 'Your order is not valid for Squad Order', description: `Add ${toGo} more item${toGo !== 1 ? 's' : ''} to reach the ${min}-item squad minimum.` });
+        toast({ title: msg('FE_SQUAD_ORDER_BUTTON_YOUR_ORDER_IS_NOT_VALID_FOR_SQUAD_ORDER', 'Your order is not valid for Squad Order'), description: `Add ${toGo} more item${toGo !== 1 ? 's' : ''} to reach the ${min}-item squad minimum.` });
       } else {
         toast({ title: `Squad orders are capped at ${max} items`, description: `Remove ${over} item${over !== 1 ? 's' : ''} to keep your squad order within the ${max}-item limit.` });
       }

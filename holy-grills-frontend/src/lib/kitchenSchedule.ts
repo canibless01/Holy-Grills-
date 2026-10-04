@@ -5,10 +5,12 @@
 //   - today_override: a single date override for today (or null)
 //   - is_open: boolean when a campus is chosen, null when it isn't
 //
-// The backend does NOT return the next opening time, so when the kitchen is
-// closed we compute it here from the same schedule the backend already
-// authored. This is a display helper over backend data — it never decides
-// open/closed on its own (is_open is the backend's call).
+// The backend states the next opening itself (orders.py ->
+// find_next_available_ordering_slot), and callers prefer those fields. This
+// helper is only the FALLBACK for a deploy that predates them, computed from
+// the schedule the backend authored. It never decides open/closed — is_open is
+// the backend's call — and it is never preferred over a number the backend
+// sent, so it cannot drift the countdown away from what checkout enforces.
 
 // WAT is UTC+1 with no DST. Shift the epoch +1h and read the UTC fields so the
 // wall-clock math stays correct on a device set to any timezone.

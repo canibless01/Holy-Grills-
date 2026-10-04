@@ -7,6 +7,7 @@ import { orderLockMaxReschedules } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import { msg } from '@/lib/messages';
 
 const LOCK_STATUS_LABELS = {
   active: 'Active',
@@ -41,52 +42,52 @@ export default function OrderLocks() {
   const load = async () => {
     setLoading(true);
     setError(null);
-    try { setLocks(((await liveApi.orderLocks.list()) || {}).locks || []); } catch (e) { console.error(e); setError('Something slipped. Try again.'); }
+    try { setLocks(((await liveApi.orderLocks.list()) || {}).locks || []); } catch (e) { console.error(e); setError(msg('FE_ORDER_LOCKS_SOMETHING_SLIPPED_TRY_AGAIN', 'Something slipped. Try again.')); }
     setLoading(false);
   };
 
   const handleCreate = async () => {
-    if (!form.locked_date) { toast({ title: 'Pick a date', description: 'Choose a future date to lock.' }); return; }
+    if (!form.locked_date) { toast({ title: msg('FE_ORDER_LOCKS_PICK_A_DATE', 'Pick a date'), description: msg('FE_ORDER_LOCKS_CHOOSE_A_FUTURE_DATE_TO_LOCK', 'Choose a future date to lock.') }); return; }
     if (new Date(form.locked_date) <= new Date(new Date().toDateString())) {
-      toast({ title: 'Must be a future date', description: 'The lock date has to be after today.' }); return;
+      toast({ title: msg('FE_ORDER_LOCKS_MUST_BE_A_FUTURE_DATE', 'Must be a future date'), description: msg('FE_ORDER_LOCKS_THE_LOCK_DATE_HAS_TO_BE_AFTER_TODAY', 'The lock date has to be after today.') }); return;
     }
     const maxCreate = new Date(); maxCreate.setDate(maxCreate.getDate() + 7);
     if (new Date(form.locked_date) > maxCreate) {
-      toast({ title: 'Too far ahead', description: 'You can only lock a date within the next 7 days.' }); return;
+      toast({ title: msg('FE_ORDER_LOCKS_TOO_FAR_AHEAD', 'Too far ahead'), description: msg('FE_ORDER_LOCKS_YOU_CAN_ONLY_LOCK_A_DATE_WITHIN_THE', 'You can only lock a date within the next 7 days.') }); return;
     }
     setCreating(true);
     try {
       const body = { locked_date: form.locked_date, reward_type: form.reward_kind === 'hp' ? 'hp' : 'discount' };
       await liveApi.orderLocks.create(body);
-      toast({ title: '🔒 Lock created', description: `Locked for ${new Date(form.locked_date).toLocaleDateString()}.` });
+      toast({ title: msg('FE_ORDER_LOCKS_LOCK_CREATED', '🔒 Lock created'), description: `Locked for ${new Date(form.locked_date).toLocaleDateString()}.` });
       setShowCreate(false);
       setForm({ ...form, locked_date: '' });
       load();
     } catch (e) {
-      toast({ title: 'Lock failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ORDER_LOCKS_LOCK_FAILED', 'Lock failed'), description: e.message, variant: 'destructive' });
     }
     setCreating(false);
   };
 
   const handleCancel = async (id) => {
     if (!confirm('Cancel this order lock? You will lose the locked reward.')) return;
-    try { await liveApi.orderLocks.cancel(id); load(); } catch (e) { toast({ title: 'Cancel failed', description: e.message, variant: 'destructive' }); }
+    try { await liveApi.orderLocks.cancel(id); load(); } catch (e) { toast({ title: msg('FE_ORDER_LOCKS_CANCEL_FAILED', 'Cancel failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const handleReschedule = async () => {
     if (!rescheduleLock || !rescheduleDate) return;
-    if (new Date(rescheduleDate) <= new Date(new Date().toDateString())) { toast({ title: 'Must be a future date' }); return; }
+    if (new Date(rescheduleDate) <= new Date(new Date().toDateString())) { toast({ title: msg('FE_ORDER_LOCKS_MUST_BE_A_FUTURE_DATE', 'Must be a future date') }); return; }
     const maxReschedule = new Date(); maxReschedule.setDate(maxReschedule.getDate() + 3);
     if (new Date(rescheduleDate) > maxReschedule) {
-      toast({ title: 'Too far ahead', description: 'Reschedule must be within the next 3 days.' }); return;
+      toast({ title: msg('FE_ORDER_LOCKS_TOO_FAR_AHEAD', 'Too far ahead'), description: msg('FE_ORDER_LOCKS_RESCHEDULE_MUST_BE_WITHIN_THE_NEXT_3', 'Reschedule must be within the next 3 days.') }); return;
     }
     setRescheduling(true);
     try {
       await liveApi.orderLocks.reschedule(rescheduleLock.id, { locked_date: rescheduleDate });
-      toast({ title: '🔒 Rescheduled', description: `Lock moved to ${new Date(rescheduleDate).toLocaleDateString()}.` });
+      toast({ title: msg('FE_ORDER_LOCKS_RESCHEDULED', '🔒 Rescheduled'), description: `Lock moved to ${new Date(rescheduleDate).toLocaleDateString()}.` });
       setRescheduleLock(null);
       load();
-    } catch (e) { toast({ title: 'Reschedule failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ORDER_LOCKS_RESCHEDULE_FAILED', 'Reschedule failed'), description: e.message, variant: 'destructive' }); }
     setRescheduling(false);
   };
 

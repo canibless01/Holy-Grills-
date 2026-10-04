@@ -5,6 +5,7 @@ import { formatNaira, formatDateTime, timeAgo } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 // Riders tab for AdminDelivery — backed by riders.py /api/riders/admin/*.
 // Roster (who is online), payments summary, per-rider batches with set-pay +
@@ -60,10 +61,10 @@ export default function AdminRiders() {
       const res = await mockApi.admin.markBatchesPaid([batchId]);
       const skipped = res?.skipped?.length || 0;
       const notFound = res?.not_found?.length || 0;
-      if (skipped || notFound) toast({ title: 'Marked paid', description: `${(res?.updated || []).length} paid · ${skipped} skipped · ${notFound} not found`, variant: 'default' });
-      else toast({ title: '✅ Marked paid' });
+      if (skipped || notFound) toast({ title: msg('FE_ADMIN_RIDERS_MARKED_PAID', 'Marked paid'), description: `${(res?.updated || []).length} paid · ${skipped} skipped · ${notFound} not found`, variant: 'default' });
+      else toast({ title: msg('FE_ADMIN_RIDERS_MARKED_PAID_2', '✅ Marked paid') });
       await reloadRider(riderId);
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_RIDERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -71,9 +72,9 @@ export default function AdminRiders() {
     setBusy(batchId);
     try {
       await mockApi.admin.markBatchesUnpaid([batchId]);
-      toast({ title: 'Marked unpaid' });
+      toast({ title: msg('FE_ADMIN_RIDERS_MARKED_UNPAID', 'Marked unpaid') });
       await reloadRider(riderId);
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_RIDERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -177,11 +178,11 @@ function SetPayModal({ batch, onClose, onSaved }) {
   const submit = async () => {
     setError(null);
     const value = Number(amount);
-    if (!Number.isFinite(value) || value < 0) { setError('Enter a valid amount.'); return; }
+    if (!Number.isFinite(value) || value < 0) { setError(msg('FE_ADMIN_RIDERS_ENTER_A_VALID_AMOUNT', 'Enter a valid amount.')); return; }
     setSubmitting(true);
     try {
       await mockApi.admin.setBatchPay(batch.batch_id || batch.id, { rider_pay_total: value });
-      toast({ title: '✅ Pay saved', description: formatNaira(value) });
+      toast({ title: msg('FE_ADMIN_RIDERS_PAY_SAVED', '✅ Pay saved'), description: formatNaira(value) });
       onSaved(); onClose();
     } catch (e) { setError(e.message); }
     setSubmitting(false);

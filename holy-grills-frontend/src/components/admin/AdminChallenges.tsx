@@ -4,6 +4,7 @@ import { liveApi as mockApi } from '@/lib/liveApi';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { Field, TextInput, Card, Pill, Toggle, Modal } from './AdminShared';
+import { msg } from '@/lib/messages';
 
 // Trigger types map 1:1 to the backend's milestone verification logic.
 const TRIGGER_TYPES = [
@@ -51,7 +52,7 @@ export default function AdminChallenges() {
       await mockApi.admin.updateChallenge(id, { is_active: !current });
       toast({ title: `${!current ? '✅ Activated' : '⏸ Deactivated'}`, description: `"${title}" is now ${!current ? 'live' : 'paused'}.` });
       await load();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -60,9 +61,9 @@ export default function AdminChallenges() {
     setBusy(id);
     try {
       await mockApi.admin.deleteChallenge(id);
-      toast({ title: 'Milestone deleted', description: `"${title}" removed.` });
+      toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_DELETED', 'Milestone deleted'), description: `"${title}" removed.` });
       await load();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -72,9 +73,9 @@ export default function AdminChallenges() {
     setBusy(id);
     try {
       await mockApi.admin.grantChallenge(id, { user_id: uid.trim() });
-      toast({ title: '✅ Milestone granted', description: `"${title}" manually granted.` });
+      toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_GRANTED', '✅ Milestone granted'), description: `"${title}" manually granted.` });
       await load();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -140,10 +141,10 @@ function ChallengeModal({ item, onClose, onSaved }) {
       is_active: form.is_active ?? false,
     };
     try {
-      if (item) { await mockApi.admin.updateChallenge(item.id, body); toast({ title: '✅ Milestone updated', description: `"${body.title}" saved.` }); }
-      else { await mockApi.admin.createChallenge(body); toast({ title: '✅ Milestone created', description: `"${body.title}" is now live.` }); }
+      if (item) { await mockApi.admin.updateChallenge(item.id, body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_UPDATED', '✅ Milestone updated'), description: `"${body.title}" saved.` }); }
+      else { await mockApi.admin.createChallenge(body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_CREATED', '✅ Milestone created'), description: `"${body.title}" is now live.` }); }
       onClose(); onSaved();
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSubmitting(false);
   };
 

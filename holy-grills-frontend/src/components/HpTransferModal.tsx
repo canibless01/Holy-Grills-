@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 
 const DEFAULT_MIN_TRANSFER = 10;
 
@@ -62,10 +63,10 @@ export default function HpTransferModal({ open, onClose }) {
 
   const handleSend = async () => {
     setError(null);
-    if (!selected) { setError('Pick a recipient first.'); return; }
-    if (selected.id === user?.id) { setError('You can\'t send HP to yourself.'); return; }
+    if (!selected) { setError(msg('FE_HP_TRANSFER_MODAL_PICK_A_RECIPIENT_FIRST', 'Pick a recipient first.')); return; }
+    if (selected.id === user?.id) { setError(msg('FE_HP_TRANSFER_MODAL_YOU_CAN_T_SEND_HP_TO_YOURSELF', 'You can\'t send HP to yourself.')); return; }
     if (isNaN(amt) || amt < MIN_AMOUNT) { setError(`Minimum transfer is ${MIN_AMOUNT} HP.`); return; }
-    if (amt > activeHp) { setError('Insufficient HP balance.'); return; }
+    if (amt > activeHp) { setError(msg('FE_HP_TRANSFER_MODAL_INSUFFICIENT_HP_BALANCE', 'Insufficient HP balance.')); return; }
     setSending(true);
     try {
       const res = await liveApi.hp.transfer({ recipient_id: selected.id, amount: amt, notes: notes.trim() || undefined });
@@ -73,8 +74,8 @@ export default function HpTransferModal({ open, onClose }) {
       setDone({ amount: amt, name: res?.recipient_name || selected.full_name, newBalance: res?.new_balance });
       toast({ title: `🔥 ${amt} HP sent!`, description: `Sent to ${res?.recipient_name || selected.full_name}.`, sound: 'hp_transfer_sent' });
     } catch (e) {
-      const msg = e?.message || 'Transfer failed.';
-      setError(msg);
+      const failure = e?.message || 'Transfer failed.';
+      setError(failure);
     }
     setSending(false);
   };

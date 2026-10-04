@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 
 const EMPTY = {
   organizer_name: '', email: '', phone: '', organization: '',
@@ -36,9 +37,9 @@ export default function CateringRequestModal({ open, onClose }) {
         budget: form.budget ? Number(form.budget) : undefined,
       });
       setDone(true);
-      toast({ title: '✅ Request submitted!', description: "Our team will contact you shortly." });
+      toast({ title: msg('FE_CATERING_REQUEST_MODAL_REQUEST_SUBMITTED', '✅ Request submitted!'), description: msg('FE_CATERING_REQUEST_MODAL_OUR_TEAM_WILL_CONTACT_YOU_SHORTLY', "Our team will contact you shortly.") });
     } catch (e) {
-      toast({ title: 'Submission failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_CATERING_REQUEST_MODAL_SUBMISSION_FAILED', 'Submission failed'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

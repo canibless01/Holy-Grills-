@@ -23,6 +23,7 @@ import {
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import { Card, Skeleton, EmptyState, SectionTitle, StatTile, body } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 const COLORS = ['#E70E0E', '#F2B84B', '#6A1F00', '#FF9500', '#A8301A', '#C47B3A'];
 const TIER_COLORS = { ember: '#A8301A', flame: '#E70E0E', blaze: '#F2B84B', holy: '#FFD700' };
@@ -75,7 +76,7 @@ function useDashboard(fetcher, deps = []) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const load = useCallback(async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(msg('FE_ADMIN_ANALYTICS_DASHBOARDS_MESSAGE', ''));
     try { setData(body(await fetcher())); } catch (e) { setError(e.message); setData(null); }
     setLoading(false);
   }, deps);

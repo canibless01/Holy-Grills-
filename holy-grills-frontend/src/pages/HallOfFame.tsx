@@ -5,6 +5,7 @@ import { isFeatureEnabled } from '@/lib/featureConfig';
 import HallOfFameSkeleton from '@/components/skeletons/HallOfFameSkeleton';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import ShareSheet from '@/components/ShareSheet';
+import { msg } from '@/lib/messages';
 
 export default function HallOfFame() {
   const [inductees, setInductees] = useState([]);
@@ -22,7 +23,7 @@ export default function HallOfFame() {
         // unwrap() already handles the inductees/winners/hall_of_fame keys.
         setInductees(res);
       } catch (e) {
-        setError('Something slipped. Try again.');
+        setError(msg('FE_HALL_OF_FAME_SOMETHING_SLIPPED_TRY_AGAIN', 'Something slipped. Try again.'));
       }
       setLoading(false);
     })();

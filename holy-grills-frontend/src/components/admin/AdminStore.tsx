@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Boxes, Plus, Minus, AlertTriangle, History, PackagePlus, PackageMinus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 import {
   Card,
   Skeleton,
@@ -209,7 +210,7 @@ function PurchaseModal({ item, unitName, onClose, onDone }) {
         cost: cost ? parseFloat(cost) : 0,
         notes: notes.trim() || undefined,
       });
-      toast({ title: '✓ Purchase logged', description: `${quantity} ${purchaseUnitName} added to ${item.name}` });
+      toast({ title: msg('FE_ADMIN_STORE_PURCHASE_LOGGED', '✓ Purchase logged'), description: `${quantity} ${purchaseUnitName} added to ${item.name}` });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to log purchase'); }
     setSaving(false);
@@ -254,7 +255,7 @@ function UsageModal({ item, unitName, onClose, onDone }) {
         type,
         notes: notes.trim() || undefined,
       });
-      toast({ title: '✓ Usage logged', description: `${quantity} ${unitName(item.usage_unit_id) || 'units'} of ${item.name}` });
+      toast({ title: msg('FE_ADMIN_STORE_USAGE_LOGGED', '✓ Usage logged'), description: `${quantity} ${unitName(item.usage_unit_id) || 'units'} of ${item.name}` });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to log usage'); }
     setSaving(false);
@@ -326,7 +327,7 @@ function AddItemModal({ onClose, onDone }: {
         conversion_factor: conversionFactor ? parseFloat(conversionFactor) : undefined,
         low_stock_threshold: threshold ? parseFloat(threshold) : undefined,
       });
-      toast({ title: '✓ Item added', description: `${name.trim()} is now tracked` });
+      toast({ title: msg('FE_ADMIN_STORE_ITEM_ADDED', '✓ Item added'), description: `${name.trim()} is now tracked` });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to add item'); }
     setSaving(false);

@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import ModalBackdrop from '@/components/ModalBackdrop';
 import type { CreateSquadPayload } from '@/types/squads';
+import { msg } from '@/lib/messages';
 
 // Parse the free-form emails field into a clean list — accepts newlines,
 // commas, and semicolons as separators.
@@ -23,14 +24,14 @@ export default function CreateSquadModal({ open, onClose, onCreated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    if (!name.trim()) { setError('Give your squad a name.'); return; }
+    if (!name.trim()) { setError(msg('FE_CREATE_SQUAD_MODAL_GIVE_YOUR_SQUAD_A_NAME', 'Give your squad a name.')); return; }
     const list = parseEmails(emails);
     setCreating(true);
     try {
       const body: CreateSquadPayload = { name: name.trim() };
       if (list.length) body.emails = list;
       await liveApi.squads.create(body);
-      toast({ title: '🔥 Squad created', description: list.length ? `Invites are on their way to ${list.length} friend${list.length !== 1 ? 's' : ''}.` : 'Add members from the squad page anytime.' });
+      toast({ title: msg('FE_CREATE_SQUAD_MODAL_SQUAD_CREATED', '🔥 Squad created'), description: list.length ? `Invites are on their way to ${list.length} friend${list.length !== 1 ? 's' : ''}.` : 'Add members from the squad page anytime.' });
       setName(''); setEmails('');
       onCreated();
     } catch (err) {

@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, Pill } from '../AdminShared';
+import { msg } from '@/lib/messages';
 
 // Resolve a reported broken code: replace (issue a fresh code), refund
 // (wallet+HP refund, no restock) or reject (no problem confirmed). The PATCH
@@ -25,12 +26,12 @@ export default function AdminMarketplaceReports({ reports, reload }) {
       const body: { action: string; admin_note?: string } = { action: acting.action };
       if (note.trim()) body.admin_note = note.trim();
       const res = await liveApi.admin.resolveMarketplaceReport(acting.report.id, body);
-      toast({ title: 'Report resolved', description: res?.message });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_REPORTS_REPORT_RESOLVED', 'Report resolved'), description: res?.message });
       setActing(null);
       setNote('');
       await reload();
     } catch (e) {
-      toast({ title: 'Resolve failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_REPORTS_RESOLVE_FAILED', 'Resolve failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(false);
   };

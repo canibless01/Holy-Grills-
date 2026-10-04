@@ -4,6 +4,7 @@ import { ChevronLeft, Users, UserPlus, UserMinus, Mail, Loader2 } from 'lucide-r
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDate, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 export default function SquadDetail({ squadId, currentUserId, onBack }) {
   const navigate = useNavigate();
@@ -27,15 +28,15 @@ export default function SquadDetail({ squadId, currentUserId, onBack }) {
 
   const handleAddMember = async () => {
     const email = newEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast({ title: 'Enter a valid email address' }); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast({ title: msg('FE_SQUAD_DETAIL_ENTER_A_VALID_EMAIL_ADDRESS', 'Enter a valid email address') }); return; }
     setAdding(true);
     try {
       await liveApi.squads.addMember(squadId, { email });
       setNewEmail('');
-      toast({ title: '👍 Member added', description: email });
+      toast({ title: msg('FE_SQUAD_DETAIL_MEMBER_ADDED', '👍 Member added'), description: email });
       load();
     } catch (e) {
-      toast({ title: 'Could not add member', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SQUAD_DETAIL_COULD_NOT_ADD_MEMBER', 'Could not add member'), description: e.message, variant: 'destructive' });
     }
     setAdding(false);
   };
@@ -44,10 +45,10 @@ export default function SquadDetail({ squadId, currentUserId, onBack }) {
     if (!confirm(`Remove ${m.display_name || m.email} from the squad?`)) return;
     try {
       await liveApi.squads.removeMember(squadId, m.id);
-      toast({ title: 'Member removed', description: 'They no longer join new squad orders.' });
+      toast({ title: msg('FE_SQUAD_DETAIL_MEMBER_REMOVED', 'Member removed'), description: msg('FE_SQUAD_DETAIL_THEY_NO_LONGER_JOIN_NEW_SQUAD_ORDERS', 'They no longer join new squad orders.') });
       load();
     } catch (e) {
-      toast({ title: 'Could not remove member', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_SQUAD_DETAIL_COULD_NOT_REMOVE_MEMBER', 'Could not remove member'), description: e.message, variant: 'destructive' });
     }
   };
 

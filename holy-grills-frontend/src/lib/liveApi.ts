@@ -163,7 +163,11 @@ const orders = {
     const windows = res.available_windows || res.windows || res.scheduled_windows || [];
     const open = windows.filter((w) => w.status === 'open');
     return {
-      is_open: res.is_open ?? open.length > 0,
+      // Unknown stays unknown: when the backend does not state is_open, the
+      // frontend must not derive it from window rows (that is a business call,
+      // and checkout re-asks the backend anyway). `null` never opens the
+      // "kitchen closed" popup — only an explicit false does.
+      is_open: res.is_open ?? null,
       active_window: res.active_window || open[0] || null,
       can_schedule: res.can_schedule ?? true,
       scheduled_windows: res.scheduled_windows || windows,

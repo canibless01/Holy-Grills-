@@ -1,13 +1,13 @@
 /**
  * messages-check — the guard between frontend copy and the backend registry.
  * ============================================================================
- * The frontend renders its own copy through `t('FE_KEY', '<fallback>')`
+ * The frontend renders its own copy through `msg('FE_KEY', '<fallback>')`
  * (src/lib/messages.ts), and the authoritative text lives in
  * `holy-grills-backend/app/messages.py` under the `FE_` keys, served by
  * `GET /api/messages`.
  *
  * This check keeps the two in step:
- *   • ERROR — a `t('FE_…')` call site whose key is missing from the registry.
+ *   • ERROR — a `msg('FE_…')` call site whose key is missing from the registry.
  *     (That would silently render the fallback forever, so the copy could never
  *     be reworded from the backend.)
  *   • WARN  — fallback text that no longer matches the registry. Authoritative
@@ -39,7 +39,7 @@ for (const match of registry.matchAll(/^\s{4}(FE_[A-Z0-9_]+)\s*=\s*"((?:[^"\\]|\
   registryKeys.set(match[1], unescapePython(match[2]));
 }
 
-/** Every `t('FE_…', '…')` call in the frontend source. */
+/** Every `msg('FE_…', '…')` call in the frontend source. */
 const callSites = [];
 const walk = (dir) => {
   for (const entry of readdirSync(dir)) {
@@ -48,7 +48,7 @@ const walk = (dir) => {
     if (!['.ts', '.tsx'].includes(extname(path))) continue;
     const source = readFileSync(path, 'utf8');
     // The fallback may be single- OR double-quoted (copy often contains an apostrophe).
-    for (const match of source.matchAll(/\bt\(\s*'(FE_[A-Z0-9_]+)'\s*,\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g)) {
+    for (const match of source.matchAll(/\bmsg\(\s*'(FE_[A-Z0-9_]+)'\s*,\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g)) {
       const line = source.slice(0, match.index).split('\n').length;
       callSites.push({
         key: match[1],

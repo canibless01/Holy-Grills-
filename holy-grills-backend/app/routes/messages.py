@@ -21,10 +21,15 @@ registry, or an offline load, still renders real text — never a raw key.
 Frontend-owned copy lives under the ``FE_`` prefix in the registry; keys without
 the prefix are API/notification messages that the client mostly receives in
 response bodies. ``npm run messages:check`` (frontend) fails the build when a
-``t('FE_*', '…')`` call site and the registry disagree.
+``msg('FE_*', '…')`` call site and the registry disagree.
+
+``?prefix=`` narrows the catalog (the frontend asks for ``FE_`` and gets ~1/3 of
+the bytes; the unfiltered catalog stays available for anyone who wants it all).
 """
 
-from flask import Blueprint, jsonify
+import re
+
+from flask import Blueprint, jsonify, request
 
 from app.messages import MSG, resolve_env_only
 
@@ -38,14 +43,27 @@ def list_messages():
     ---
     tags: [Meta]
     security: []
+      400:
+        description: Malformed prefix
+    parameters:
+      - in: query
+        name: prefix
+        type: string
+        required: false
+        description: Only return keys starting with this prefix (e.g. "FE_")
     responses:
       200:
         description: Every MSG constant as a key → text map
     """
+    prefix = (request.args.get("prefix") or "").strip()
+    if prefix and not re.fullmatch(r"[A-Z][A-Z0-9_]{0,24}", prefix):
+        return jsonify({"error": MSG.MESSAGES_PREFIX_INVALID}), 400
+
     catalog = {
         key: resolve_env_only(value)     # {currency}/{platform} come from the environment
         for key, value in vars(MSG).items()
         if not key.startswith("_") and isinstance(value, str)
+        and (not prefix or key.startswith(prefix))
     }
     response = jsonify({"messages": catalog, "count": len(catalog)})
     # Copy changes at deploy time, not per request — let browsers and the CDN hold it.

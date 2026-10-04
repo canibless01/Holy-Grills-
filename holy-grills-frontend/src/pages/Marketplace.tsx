@@ -13,6 +13,7 @@ const META = metaForPath('/marketplace');
 import SellItemModal from '@/components/marketplace/SellItemModal';
 import MarketplacePurchasesPanel from '@/components/marketplace/MarketplacePurchasesPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import { msg } from '@/lib/messages';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -53,14 +54,14 @@ export default function Marketplace() {
   }, []);
 
   const loadPurchases = async () => {
-    if (!isAuthenticated) { toast({ title: 'Sign in to view purchases', description: 'Your purchase history is tied to your account.' }); return; }
+    if (!isAuthenticated) { toast({ title: msg('FE_MARKETPLACE_SIGN_IN_TO_VIEW_PURCHASES', 'Sign in to view purchases'), description: msg('FE_MARKETPLACE_YOUR_PURCHASE_HISTORY_IS_TIED_TO_YOUR', 'Your purchase history is tied to your account.') }); return; }
     setShowPurchases(true);
     setLoadingPurchases(true);
     try {
       setPurchases(await liveApi.marketplace.myPurchases());
     } catch (e) {
       setPurchases([]);
-      toast({ title: 'Could not load purchases', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_MARKETPLACE_COULD_NOT_LOAD_PURCHASES', 'Could not load purchases'), description: e.message, variant: 'destructive' });
     }
     setLoadingPurchases(false);
   };

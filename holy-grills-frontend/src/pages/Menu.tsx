@@ -12,6 +12,7 @@ import KitchenStatusBox from '@/components/KitchenStatusBox';
 import { staggerContainer } from '@/lib/animationPresets';
 import SEO from '@/components/SEO';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import { msg } from '@/lib/messages';
 
 
 function MenuSkeleton() {
@@ -74,7 +75,7 @@ export default function Menu() {
         const result = await mockApi.menu.getItems(params);
         setItems(result.items || []);
       } catch (e) {
-        setError('Failed to fetch menu items.');
+        setError(msg('FE_MENU_FAILED_TO_FETCH_MENU_ITEMS', 'Failed to fetch menu items.'));
       }
       setLoading(false);
     };
@@ -92,12 +93,12 @@ export default function Menu() {
       if (!hasRequired) {
         play('cart_add');
         await addToCart({ menu_item_id: item.id, quantity: 1 });
-        toast({ title: 'Added to your cart', description: `${item.name} is ready to checkout.` });
+        toast({ title: msg('FE_MENU_ADDED_TO_YOUR_CART', 'Added to your cart'), description: `${item.name} is ready to checkout.` });
       } else {
         navigate(`/menu/${item.id}`);
       }
     } catch (e) {
-      toast({ title: 'Could not add item', description: e.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: msg('FE_MENU_COULD_NOT_ADD_ITEM', 'Could not add item'), description: e.message || 'Please try again.', variant: 'destructive' });
     }
   };
 

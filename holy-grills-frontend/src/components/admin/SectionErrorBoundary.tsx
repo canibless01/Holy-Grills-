@@ -40,8 +40,8 @@ export default class SectionErrorBoundary extends React.Component<SectionErrorBo
 
   render() {
     if (this.state.hasError) {
-      const msg = this.state.error?.message || 'Something went wrong loading this section.';
-      const isAuth = /401|unauthor|session expired|log in/i.test(msg);
+      const detail = this.state.error?.message || 'Something went wrong loading this section.';
+      const isAuth = /401|unauthor|session expired|log in/i.test(detail);
       return (
         <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
           <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-4">
@@ -53,7 +53,7 @@ export default class SectionErrorBoundary extends React.Component<SectionErrorBo
           <p className="text-sm text-muted-foreground max-w-sm mb-4">
             {isAuth
               ? 'Your session may have expired. Try reloading the page — if you\'re sent to login, sign back in and return here.'
-              : msg}
+              : detail}
           </p>
           <button
             onClick={this.handleRetry}

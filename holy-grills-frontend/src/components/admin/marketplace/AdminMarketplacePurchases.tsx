@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira, timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, Pill } from '../AdminShared';
+import { msg } from '@/lib/messages';
 
 // Purchase status transitions: pending → completed | refunded | cancelled.
 // refunded/cancelled trigger a real wallet+HP refund server-side; the route
@@ -22,12 +23,12 @@ export default function AdminMarketplacePurchases({ purchases, reload }) {
       const body: { status: string; admin_note?: string } = { status: acting.status };
       if (note.trim()) body.admin_note = note.trim();
       const res = await liveApi.admin.updateMarketplacePurchase(acting.purchase.id, body);
-      toast({ title: 'Purchase updated', description: res?.message });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_PURCHASES_PURCHASE_UPDATED', 'Purchase updated'), description: res?.message });
       setActing(null);
       setNote('');
       await reload();
     } catch (e) {
-      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_PURCHASES_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(false);
   };

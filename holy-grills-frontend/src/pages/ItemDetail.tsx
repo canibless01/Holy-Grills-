@@ -12,6 +12,7 @@ import { fadeUp } from '@/lib/animationPresets';
 import SEO from '@/components/SEO';
 import { menuItemJsonLd } from '@/lib/seoJsonLd';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import { msg } from '@/lib/messages';
 
 export default function ItemDetail() {
   const { id } = useParams();
@@ -46,7 +47,7 @@ export default function ItemDetail() {
         setSelections(init);
         setSaved(isSavedItem(detail.id));
       } catch (e) {
-        setError('Failed to load item details.');
+        setError(msg('FE_ITEM_DETAIL_FAILED_TO_LOAD_ITEM_DETAILS', 'Failed to load item details.'));
       }
       setLoading(false);
     };
@@ -117,9 +118,9 @@ export default function ItemDetail() {
       });
       play('cart_add');
       await addToCart({ menu_item_id: item.id, quantity, notes, selected_variations, selected_addons });
-      toast({ title: '🔥 Added to your cart', description: `${quantity}× ${item.name} is in your cart.` });
+      toast({ title: msg('FE_ITEM_DETAIL_ADDED_TO_YOUR_CART', '🔥 Added to your cart'), description: `${quantity}× ${item.name} is in your cart.` });
     } catch (e) {
-      toast({ title: 'Could not add to cart', description: e.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: msg('FE_ITEM_DETAIL_COULD_NOT_ADD_TO_CART', 'Could not add to cart'), description: e.message || 'Please try again.', variant: 'destructive' });
     }
     setAdding(false);
   };
@@ -143,14 +144,14 @@ export default function ItemDetail() {
       await addToCart({ menu_item_id: item.id, quantity, notes, selected_variations, selected_addons });
       navigate('/checkout');
     } catch (e) {
-      toast({ title: 'Could not add to cart', description: e.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: msg('FE_ITEM_DETAIL_COULD_NOT_ADD_TO_CART', 'Could not add to cart'), description: e.message || 'Please try again.', variant: 'destructive' });
     }
     setAdding(false);
   };
 
   const handleSaveToggle = async () => {
     if (!isAuthed) {
-      toast({ title: 'Sign in to save items', description: 'Saved items sync to your account.' });
+      toast({ title: msg('FE_ITEM_DETAIL_SIGN_IN_TO_SAVE_ITEMS', 'Sign in to save items'), description: msg('FE_ITEM_DETAIL_SAVED_ITEMS_SYNC_TO_YOUR_ACCOUNT', 'Saved items sync to your account.') });
       return;
     }
     const nowSaved = await toggleSavedItem(item);

@@ -5,6 +5,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
+import { msg } from '@/lib/messages';
 
 const BLANK = { title: '', description: '', location: '', starts_at: '', ends_at: '', hp_reward: 30, hp_per_attendee: 30, max_attendees: 100, ticket_price_wallet: 0, ticket_price_hp: 0, funding_source: 'hg_funded', is_paid: false, is_featured: false, image_url: '' };
 
@@ -25,8 +26,8 @@ export default function AdminEvents() {
     const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_per_attendee), max_attendees: Number(modal.item.max_attendees), ticket_price_wallet: Number(modal.item.ticket_price_wallet), ticket_price_hp: Number(modal.item.ticket_price_hp), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
     try {
       let savedEvent = null;
-      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: '✅ Event created', description: `"${body.title}" is now live.` }); }
-      else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: '✅ Event updated', description: `"${body.title}" has been saved.` }); }
+      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: `"${body.title}" is now live.` }); }
+      else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: `"${body.title}" has been saved.` }); }
       // image_url is not an accepted column on create/update event — push it
       // through the dedicated POST /events/<id>/image route or the upload is
       // silently dropped by the backend.
@@ -34,18 +35,18 @@ export default function AdminEvents() {
         try { await mockApi.admin.updateEventImage(savedEvent.id, { image_url: body.image_url }); } catch { /* image save best-effort */ }
       }
       setModal(null); await load();
-    } catch (e) { toast({ title: 'Failed to save', description: e.message, variant: 'destructive' }); }
+    } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
   };
 
   const togglePub = async (id) => {
-    try { await mockApi.admin.toggleEventPublish(id); toast({ title: 'Publish status toggled' }); await load(); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.toggleEventPublish(id); toast({ title: msg('FE_ADMIN_EVENTS_PUBLISH_STATUS_TOGGLED', 'Publish status toggled') }); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const remove = async (id) => {
     if (confirm('Delete event?')) {
-      try { await mockApi.admin.deleteEvent(id); toast({ title: 'Event deleted' }); await load(); }
-      catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+      try { await mockApi.admin.deleteEvent(id); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_DELETED', 'Event deleted') }); await load(); }
+      catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     }
   };
 
@@ -55,8 +56,8 @@ export default function AdminEvents() {
   };
 
   const genQR = async (id) => {
-    try { setQr(await mockApi.admin.generateEventQR(id)); toast({ title: 'QR code generated' }); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    try { setQr(await mockApi.admin.generateEventQR(id)); toast({ title: msg('FE_ADMIN_EVENTS_QR_CODE_GENERATED', 'QR code generated') }); }
+    catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const viewTiers = async (id) => {
@@ -75,7 +76,7 @@ export default function AdminEvents() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res: any = await mockApi.admin.exportEventRegistrations(eventId);
       const rows = res?.rows || res?.data || res?.registrants || (Array.isArray(res) ? res : []);
-      if (!rows.length) { toast({ title: 'No registrants to export', description: 'The export endpoint returned no data.', variant: 'destructive' }); return; }
+      if (!rows.length) { toast({ title: msg('FE_ADMIN_EVENTS_NO_REGISTRANTS_TO_EXPORT', 'No registrants to export'), description: msg('FE_ADMIN_EVENTS_THE_EXPORT_ENDPOINT_RETURNED_NO_DATA', 'The export endpoint returned no data.'), variant: 'destructive' }); return; }
       const headers = Object.keys(rows[0]);
       const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
@@ -83,13 +84,13 @@ export default function AdminEvents() {
       const a = document.createElement('a');
       a.href = url; a.download = `event_${eventId}_registrations.csv`; a.click();
       URL.revokeObjectURL(url);
-      toast({ title: '✅ CSV exported', description: `${rows.length} registrants downloaded.` });
-    } catch (e) { toast({ title: 'Export failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_EVENTS_CSV_EXPORTED', '✅ CSV exported'), description: `${rows.length} registrants downloaded.` });
+    } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_EXPORT_FAILED', 'Export failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const emailToHost = async (eventId, hostEmail) => {
-    try { await mockApi.admin.emailEventRegistrationsToHost(eventId, { host_email: hostEmail }); toast({ title: '✅ Sent to host', description: `Registrant list emailed to ${hostEmail}.` }); setEmailModal(null); }
-    catch (e) { toast({ title: 'Failed to send', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.emailEventRegistrationsToHost(eventId, { host_email: hostEmail }); toast({ title: msg('FE_ADMIN_EVENTS_SENT_TO_HOST', '✅ Sent to host'), description: `Registrant list emailed to ${hostEmail}.` }); setEmailModal(null); }
+    catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SEND', 'Failed to send'), description: e.message, variant: 'destructive' }); }
   };
 
   if (loading) return <LoadingSpinner label="Loading events..." />;
@@ -279,8 +280,8 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
       setTiers([...tiers, created]);
       setNewTier({ name: '', price_wallet: 0, price_hp: 0, quantity_available: 50, description: '' });
       setAdding(false);
-      toast({ title: '✅ Tier added', description: `"${body.name}" tier created.` });
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_EVENTS_TIER_ADDED', '✅ Tier added'), description: `"${body.name}" tier created.` });
+    } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
@@ -293,16 +294,16 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
       const updated = await mockApi.admin.updateEventTicketTier(eventId, editTier.id, body);
       setTiers(tiers.map(t => t.id === editTier.id ? (updated || { ...t, ...body }) : t));
       setEditTier(null);
-      toast({ title: '✅ Tier updated', description: `"${body.name}" saved.` });
-    } catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+      toast({ title: msg('FE_ADMIN_EVENTS_TIER_UPDATED', '✅ Tier updated'), description: `"${body.name}" saved.` });
+    } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 
   const deleteTier = async (tierId, name) => {
     if (!confirm(`Delete "${name}" tier?`)) return;
     setBusy(tierId);
-    try { await mockApi.admin.deleteEventTicketTier(eventId, tierId); setTiers(tiers.filter(t => t.id !== tierId)); toast({ title: 'Tier deleted', description: `"${name}" removed.` }); }
-    catch (e) { toast({ title: 'Failed', description: e.message, variant: 'destructive' }); }
+    try { await mockApi.admin.deleteEventTicketTier(eventId, tierId); setTiers(tiers.filter(t => t.id !== tierId)); toast({ title: msg('FE_ADMIN_EVENTS_TIER_DELETED', 'Tier deleted'), description: `"${name}" removed.` }); }
+    catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 

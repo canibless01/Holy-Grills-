@@ -3,6 +3,7 @@ import { X, Truck, PackagePlus, MapPin, Loader2, Check } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import type { RedemptionDeliveryChoicePayload } from '@/types/rewards';
+import { msg } from '@/lib/messages';
 
 /**
  * Post-fulfilment "How would you like this delivered?" flow.
@@ -54,18 +55,18 @@ export default function RewardDeliveryModal({ redemption, open, onClose, onDeliv
       }
       const res = await liveApi.rewards.chooseDelivery(redemption.id, body);
       if (chosenMode === 'next_order') {
-        toast({ title: 'Added to your next order', description: res?.message || 'Will attach to your next order.' });
+        toast({ title: msg('FE_REWARD_DELIVERY_MODAL_ADDED_TO_YOUR_NEXT_ORDER', 'Added to your next order'), description: res?.message || 'Will attach to your next order.' });
         onClose();
         onDelivered?.(null);
       } else {
         // instant — backend records the choice and points to checkout; it does
         // NOT create the order here. Surface the backend message verbatim.
-        toast({ title: 'Reward ready for checkout', description: res?.message || 'Continue to checkout to place your reward order.' });
+        toast({ title: msg('FE_REWARD_DELIVERY_MODAL_REWARD_READY_FOR_CHECKOUT', 'Reward ready for checkout'), description: res?.message || 'Continue to checkout to place your reward order.' });
         onClose();
         onDelivered?.(res);
       }
     } catch (e) {
-      toast({ title: 'Delivery setup failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_REWARD_DELIVERY_MODAL_DELIVERY_SETUP_FAILED', 'Delivery setup failed'), description: e.message, variant: 'destructive' });
     }
     setSubmitting(false);
   };

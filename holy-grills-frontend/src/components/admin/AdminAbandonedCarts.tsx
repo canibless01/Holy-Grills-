@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
 
 const STATUS_TONE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -44,8 +45,8 @@ export default function AdminAbandonedCarts() {
 
   const nudge = async (id) => {
     setBusy(id);
-    try { await liveApi.admin.nudgeAbandonedCart(id); toast({ title: '🔔 Recovery nudge sent' }); await load(); }
-    catch (e) { toast({ title: 'Nudge failed', description: e.message, variant: 'destructive' }); }
+    try { await liveApi.admin.nudgeAbandonedCart(id); toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_RECOVERY_NUDGE_SENT', '🔔 Recovery nudge sent') }); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_NUDGE_FAILED', 'Nudge failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
 

@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority";
+import { msg } from '@/lib/messages';
 import { PanelLeft } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -39,7 +40,7 @@ const SidebarContext = React.createContext<SidebarContext | null>(null)
 function useSidebar() {
   const context = React.useContext(SidebarContext)
   if (!context) {
-    throw new Error("useSidebar must be used within a SidebarProvider.")
+    throw new Error(msg('FE_SIDEBAR_USE_SIDEBAR_MUST_BE_USED_WITHIN_A', "useSidebar must be used within a SidebarProvider."))
   }
 
   return context

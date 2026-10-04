@@ -5,6 +5,7 @@ import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Modal, Field, TextInput, Card, Pill, Toggle } from './AdminShared';
+import { msg } from '@/lib/messages';
 
 const OVERRIDE_STATUSES = ['received', 'preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'];
 // Valid walk targets — terminal states (cancelled/refunded) can't be advanced.
@@ -83,14 +84,14 @@ export default function AdminOrders() {
     setBusy(walkOrder.id);
     try {
       await mockApi.orders.walk(walkOrder.id, { target_status: walkOrder.target_status, notes: walkOrder.reason || '' });
-      toast({ title: '✅ Order advanced', description: `Order moved to ${walkOrder.target_status.replace(/_/g, ' ')} via the shortest valid path.` });
+      toast({ title: msg('FE_ADMIN_ORDERS_ORDER_ADVANCED', '✅ Order advanced'), description: `Order moved to ${walkOrder.target_status.replace(/_/g, ' ')} via the shortest valid path.` });
       const wid = walkOrder.id;
       setWalkOrder(null);
       await load();
       const h = await mockApi.orders.getHistory(wid);
       setHistory((s) => ({ ...s, [wid]: h }));
     } catch (e) {
-      toast({ title: 'Walk failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ORDERS_WALK_FAILED', 'Walk failed'), description: e.message, variant: 'destructive' });
     }
     setBusy(null);
   };
@@ -303,10 +304,10 @@ function AbandonedCarts() {
     setNudging(id);
     try {
       await mockApi.admin.nudgeAbandonedCart(id);
-      toast({ title: '🔔 Nudge sent', description: 'Reminder pushed to the customer.' });
+      toast({ title: msg('FE_ADMIN_ORDERS_NUDGE_SENT', '🔔 Nudge sent'), description: msg('FE_ADMIN_ORDERS_REMINDER_PUSHED_TO_THE_CUSTOMER', 'Reminder pushed to the customer.') });
       await load();
     } catch (e) {
-      toast({ title: 'Nudge failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_ORDERS_NUDGE_FAILED', 'Nudge failed'), description: e.message, variant: 'destructive' });
     }
     setNudging(null);
   };

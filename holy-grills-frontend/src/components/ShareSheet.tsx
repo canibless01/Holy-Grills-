@@ -5,6 +5,7 @@ import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 
 type SharePayload = {
   caption?: string;
@@ -155,7 +156,7 @@ export default function ShareSheet({
     try {
       await mockApi.orders.share(payload.orderId, { platform });
       setRecorded(true);
-      toast({ title: 'Shared ❤️‍🔥', description: 'Thanks for sharing. HP lands in your pending balance.' });
+      toast({ title: msg('FE_SHARE_SHEET_SHARED', 'Shared ❤️‍🔥'), description: msg('FE_SHARE_SHEET_THANKS_FOR_SHARING_HP_LANDS_IN_YOUR', 'Thanks for sharing. HP lands in your pending balance.') });
       refreshHp?.();
     } catch { /* ignore — still let the user share */ }
   }, [type, payload.orderId, recorded, refreshHp]);

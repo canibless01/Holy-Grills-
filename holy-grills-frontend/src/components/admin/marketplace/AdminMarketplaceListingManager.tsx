@@ -5,6 +5,7 @@ import { toast } from '@/components/ui/use-toast';
 import { useCampus } from '@/lib/campusContext';
 import type { ListingAvailabilityPayload } from '@/types/marketplace';
 import { Modal, Field, TextInput } from '../AdminShared';
+import { msg } from '@/lib/messages';
 
 // Per-listing management: live code inventory counts (from the admin detail
 // endpoint), per-campus availability override (inventory/price/stock flag) and
@@ -26,7 +27,7 @@ export default function AdminMarketplaceListingManager({ listing, onClose, reloa
       const d = await liveApi.admin.getMarketplaceListing(listing.id);
       setDetail(d);
     } catch (e) {
-      toast({ title: 'Could not load listing detail', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_COULD_NOT_LOAD_LISTING_DETAIL', 'Could not load listing detail'), description: e.message, variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -42,11 +43,11 @@ export default function AdminMarketplaceListingManager({ listing, onClose, reloa
     if (adminCampusId) body.campus_id = adminCampusId;
     try {
       await liveApi.admin.updateListingAvailability(listing.id, body);
-      toast({ title: 'Availability updated' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_AVAILABILITY_UPDATED', 'Availability updated') });
       await reload();
       await loadDetail();
     } catch (e) {
-      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' });
     }
     setSavingAvail(false);
   };
@@ -56,12 +57,12 @@ export default function AdminMarketplaceListingManager({ listing, onClose, reloa
     const codes = codesText.split('\n').map((s) => s.trim()).filter(Boolean);
     try {
       const res = await liveApi.admin.uploadListingCodes(listing.id, { codes });
-      toast({ title: 'Codes uploaded', description: `Uploaded ${res?.uploaded || 0}${res?.skipped_duplicates?.length ? ` · skipped ${res.skipped_duplicates.length} duplicates` : ''}` });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_CODES_UPLOADED', 'Codes uploaded'), description: `Uploaded ${res?.uploaded || 0}${res?.skipped_duplicates?.length ? ` · skipped ${res.skipped_duplicates.length} duplicates` : ''}` });
       setCodesText('');
       await reload();
       await loadDetail();
     } catch (e) {
-      toast({ title: 'Upload failed', description: e.message, variant: 'destructive' });
+      toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTING_MANAGER_UPLOAD_FAILED', 'Upload failed'), description: e.message, variant: 'destructive' });
     }
     setUploading(false);
   };
