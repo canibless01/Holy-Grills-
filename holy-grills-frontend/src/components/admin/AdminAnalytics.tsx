@@ -36,6 +36,13 @@ const DASH_TABS = [
 
 const COLORS = ['#E70E0E', '#F2B84B', '#6A1F00', '#FF9500', '#A8301A', '#C47B3A'];
 
+// A timestamp that is missing or unparseable used to render as "Invalid Date"
+// in the middle of a row; it now renders as nothing.
+const formatDateLabel = (value) => {
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+};
+
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 
@@ -348,9 +355,15 @@ export default function AdminAnalytics() {
       <ReferralNetworkDashboard />
 
       <Card className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle icon={Building2} title="Brand Partnerships" sub="Log and track brand data-sharing requests · GET/POST/PATCH /analytics/brand-partnerships" />
-          <button onClick={() => setBrandModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition">
+        {/* flex + min-w-0: a long brand name or contact email is a single
+            unbreakable run of characters, and as a flex item it refused to
+            shrink below its min-content width — pushing the row (and the page)
+            wider than the viewport on both mobile and desktop. */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-3">
+          <div className="min-w-0 flex-1">
+            <SectionTitle icon={Building2} title="Brand Partnerships" sub="Log and track brand data-sharing requests · GET/POST/PATCH /analytics/brand-partnerships" />
+          </div>
+          <button onClick={() => setBrandModal(true)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition shrink-0 self-start">
             <Plus className="w-3.5 h-3.5" /> Log request
           </button>
         </div>
@@ -359,18 +372,20 @@ export default function AdminAnalytics() {
         ) : (
           <div className="space-y-2">
             {brandPartnerships.map((b) => (
-              <div key={b.id} className="flex items-center gap-3 p-3 rounded-xl border border-border">
-                <div className="flex-1">
-                  <div className="font-bold text-sm text-foreground">{b.brand_name}</div>
-                  <div className="text-xs text-muted-foreground">{b.contact_email} · {new Date(b.created_at).toLocaleDateString()}</div>
+              <div key={b.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl border border-border">
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-sm text-foreground break-words">{b.brand_name || '—'}</div>
+                  <div className="text-xs text-muted-foreground break-words">
+                    {b.contact_email || '—'}{b.created_at ? ` · ${formatDateLabel(b.created_at)}` : ''}
+                  </div>
                 </div>
                 {b.status === 'pending' ? (
-                  <div className="flex gap-1">
-                    <button onClick={() => updateBrandStatus(b.id, 'approved')} className="px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-xs font-bold active:scale-95">Approve</button>
-                    <button onClick={() => updateBrandStatus(b.id, 'rejected')} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold active:scale-95">Reject</button>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => updateBrandStatus(b.id, 'approved')} className="px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-xs font-bold active:scale-95 whitespace-nowrap">Approve</button>
+                    <button onClick={() => updateBrandStatus(b.id, 'rejected')} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold active:scale-95 whitespace-nowrap">Reject</button>
                   </div>
                 ) : (
-                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${b.status === 'approved' ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'}`}>{b.status}</span>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 self-start ${b.status === 'approved' ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'}`}>{b.status}</span>
                 )}
               </div>
             ))}

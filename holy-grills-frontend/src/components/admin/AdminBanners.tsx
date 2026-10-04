@@ -23,7 +23,7 @@ export default function AdminBanners({ placement = 'home' }) {
   const [busy, setBusy] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [draft, setDraft] = useState<{ title: string; subtitle: string; cta_text: string; cta_url: string; placement: string; sort_order: number | string }>({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0 });
+  const [draft, setDraft] = useState<{ title: string; subtitle: string; cta_text: string; cta_url: string; placement: string; sort_order: number | string; image_url: string }>({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '' });
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +99,32 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(null);
   };
 
+  // Replace the banner's main image (PATCH /storefront/banners/:id).
+  const saveImage = async (b, url) => {
+    setBusy(`img-${b.id}`);
+    try {
+      await liveApi.admin.updateBanner(b.id, { image_url: url });
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_UPDATED', '✅ Image updated') });
+      await load();
+    } catch (e) {
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_UPDATE_FAILED', 'Image update failed'), description: e.message, variant: 'destructive' });
+    }
+    setBusy(null);
+  };
+
+  // PATCH /storefront/banners/:id — the phone-sized crop.
+  const saveMobileImage = async (b, url) => {
+    setBusy(`mimg-${b.id}`);
+    try {
+      await liveApi.admin.updateBanner(b.id, { mobile_image_url: url });
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_UPDATED', '✅ Image updated') });
+      await load();
+    } catch (e) {
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_UPDATE_FAILED', 'Image update failed'), description: e.message, variant: 'destructive' });
+    }
+    setBusy(null);
+  };
+
   // Remove a single image from the carousel — PATCH the full images array
   // minus the removed index (no dedicated delete-image endpoint).
   const removeImage = async (b, idx) => {
@@ -115,16 +141,35 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(null);
   };
 
+  const blankDraft = () => ({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '' });
+
   const create = async () => {
+    // POST /storefront/banners requires BOTH `title` and `image_url` as
+    // non-empty strings. The create form used to send neither (title was
+    // dropped when blank, image_url was never sent at all), so creating a
+    // banner failed with "title is required" / "image_url is required" and the
+    // only way through was to know to type a title.
+    if (!draft.title.trim()) {
+      toast({ title: msg('FE_ADMIN_BANNERS_TITLE_REQUIRED', 'Title is required'), description: msg('FE_ADMIN_BANNERS_GIVE_THE_BANNER_A_TITLE_SO_YOU_CAN', 'Give the banner a title so you can tell it apart in this list.'), variant: 'destructive' });
+      return;
+    }
+    if (!draft.image_url.trim()) {
+      toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_REQUIRED', 'An image is required'), description: msg('FE_ADMIN_BANNERS_UPLOAD_THE_MAIN_IMAGE_OR_PASTE_AN_IMAGE', 'Upload the main image or paste an image URL before creating.'), variant: 'destructive' });
+      return;
+    }
     setBusy('create');
     try {
       await liveApi.admin.createBanner({
-        placement, title: draft.title || undefined, subtitle: draft.subtitle || undefined,
+        placement, title: draft.title.trim(), subtitle: draft.subtitle || undefined,
         cta_text: draft.cta_text || undefined, cta_url: draft.cta_url || undefined,
-        sort_order: Number(draft.sort_order) || 0, is_active: true, images: [],
+        // Same URL seeds both the legacy single-image column and the carousel
+        // array, so the banner renders whether the storefront reads image_url
+        // or images[0].
+        image_url: draft.image_url.trim(), images: [draft.image_url.trim()],
+        sort_order: Number(draft.sort_order) || 0, is_active: true,
       });
       setAddOpen(false);
-      setDraft({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0 });
+      setDraft(blankDraft());
       await load();
       toast({ title: msg('FE_ADMIN_BANNERS_BANNER_CREATED_ADD_CAROUSEL_IMAGES_BELOW', '✅ Banner created — add carousel images below') });
     } catch (e) {
@@ -155,6 +200,7 @@ export default function AdminBanners({ placement = 'home' }) {
             <div className="flex items-center gap-2 mb-3">
               <Pill tone="flame">{(placement || 'banner').toUpperCase()}</Pill>
               <span className="text-[10px] text-muted-foreground">{images.length} image{images.length !== 1 ? 's' : ''}</span>
+              {(b.is_active === false) && <Pill tone="red">INACTIVE</Pill>}
               <div className="ml-auto flex items-center gap-1.5">
                 <button type="button" onClick={() => move(b, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs">↑</button>
                 <button type="button" onClick={() => move(b, 1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs">↓</button>
@@ -181,6 +227,36 @@ export default function AdminBanners({ placement = 'home' }) {
                 ))}
               </div>
             )}
+
+            {/* Main image — the single image the storefront falls back to and
+                the one the row is rejected without. Editable in place. */}
+            <div className="mb-3">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                <ImageIcon className="w-3 h-3" /> Main image
+              </p>
+              <ImageUploader
+                value={b.image_url || ''}
+                onChange={(url) => saveImage(b, url)}
+                folder={`banners/${placement}`}
+                label="main image"
+              />
+            </div>
+
+            {/* Mobile image — a real column on `banners` (mobile_image_url)
+                with no admin UI before, so the mobile crop could only be set
+                by hand in the database. */}
+            <div className="mb-3">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                <ImageIcon className="w-3 h-3" /> Mobile image (optional)
+              </p>
+              <ImageUploader
+                value={b.mobile_image_url || ''}
+                onChange={(url) => saveMobileImage(b, url)}
+                folder={`banners/${placement}`}
+                label="mobile image"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Shown instead of the main image on phones; leave empty to reuse it.</p>
+            </div>
 
             {/* Add image to carousel */}
             <div className="mb-3">
@@ -218,9 +294,12 @@ export default function AdminBanners({ placement = 'home' }) {
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={`Add ${placement === 'hero' ? 'hero' : placement} banner`}>
         <div className="space-y-3">
           <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">
-            Create the banner, then add carousel images to it. Each image becomes a swipeable slide on the live site.
+            The main image is required — the API rejects a banner without one. Add more images afterwards and each becomes a swipeable slide on the live site.
           </div>
-          <Field label="Overlay title"><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Flame-Grilled, Campus-Fresh" /></Field>
+          <Field label="Overlay title (required)"><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Flame-Grilled, Campus-Fresh" /></Field>
+          <Field label="Main image (required)">
+            <ImageUploader value={draft.image_url} onChange={(url) => setDraft({ ...draft, image_url: url })} folder={`banners/${placement}`} label="main image" />
+          </Field>
           <Field label="Overlay subtitle"><TextInput value={draft.subtitle} onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })} placeholder="Order fresh meals in minutes" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="CTA text"><TextInput value={draft.cta_text} onChange={(e) => setDraft({ ...draft, cta_text: e.target.value })} placeholder="Order now" /></Field>

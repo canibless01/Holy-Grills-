@@ -17,6 +17,10 @@ import { msg } from '@/lib/messages';
 
 const CAMPUS_KEY = 'hg_campus_id';
 const ADMIN_CAMPUS_KEY = 'hg_admin_campus_id';
+// Set when a super-admin explicitly chooses "All Campuses" (as opposed to
+// never having touched the switcher) — apiClient must then send no campus
+// scope at all instead of falling back to their profile campus.
+const ADMIN_ALL_KEY = 'hg_admin_scope_all';
 // TODO(ts): the context value is an untyped bag today; giving it a real
 // interface is follow-up work (no runtime change: createContext() and
 // createContext(undefined) are identical).
@@ -127,13 +131,24 @@ export const CampusProvider = ({ children }) => {
 
   // Super-admin campus switch — persists across admin sessions and is sent
   // as X-Campus-ID by apiClient for all authenticated admin requests.
+  // "All Campuses" has to be recorded explicitly, not just left blank: a
+  // super_admin's own profile campus would otherwise be sent as the scope
+  // (see the note in apiClient) and they would see one campus while the
+  // header reads "All Campuses".
   const selectAdminCampus = useCallback((id) => {
-    if (id) localStore.setItem(ADMIN_CAMPUS_KEY, id); else localStore.removeItem(ADMIN_CAMPUS_KEY);
+    if (id) {
+      localStore.setItem(ADMIN_CAMPUS_KEY, id);
+      localStore.removeItem(ADMIN_ALL_KEY);
+    } else {
+      localStore.removeItem(ADMIN_CAMPUS_KEY);
+      localStore.setItem(ADMIN_ALL_KEY, '1');
+    }
     setAdminCampusId(id);
   }, []);
 
   const clearAdminCampus = useCallback(() => {
     localStore.removeItem(ADMIN_CAMPUS_KEY);
+    localStore.removeItem(ADMIN_ALL_KEY);
     setAdminCampusId(null);
   }, []);
 

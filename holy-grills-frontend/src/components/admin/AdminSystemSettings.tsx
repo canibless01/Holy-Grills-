@@ -3,8 +3,10 @@ import { motion } from 'framer-motion';
 import { Save, Plus, SlidersHorizontal, AlertCircle } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
-import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle } from './ui/AdminKit';
+import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } from './ui/AdminKit';
 import EmailDeliverySettings from './EmailDeliverySettings';
+import SupportChannelSettings from './SupportChannelSettings';
+import { useCampus } from '@/lib/campusContext';
 import { msg } from '@/lib/messages';
 
 // Documented settings from the backend reference (system_settings table) —
@@ -72,6 +74,10 @@ export default function AdminSystemSettings() {
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState({ key: '', value: '', description: '' });
   const [creating, setCreating] = useState(false);
+  // Campus names for the scope badge: the same key can exist once globally and
+  // once per campus, and the list shows every row, so "which one is live?" was
+  // unanswerable from here.
+  const { campuses, adminCampusId } = useCampus();
 
   const load = async () => {
     try {
@@ -127,6 +133,11 @@ export default function AdminSystemSettings() {
         key,
         value: parseValue(key, draft.value.trim()),
         description: draft.description.trim() || null,
+        // A private row is invisible to GET /storefront/config/public, which is
+        // the only settings source a signed-out visitor has — so a new key
+        // created private would show here and never reach the app it is meant
+        // to configure. Default to public; the badge on each row flips it.
+        is_public: true,
       });
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_CREATED', 'Setting created'), description: key });
       setCreateOpen(false);
@@ -148,6 +159,8 @@ export default function AdminSystemSettings() {
           <Plus className="w-4 h-4" /> New Setting
         </button>
       </div>
+
+      {settings != null && <SupportChannelSettings settings={settings} onChanged={load} />}
 
       {settings != null && <EmailDeliverySettings settings={settings} onSaved={load} />}
 
@@ -175,8 +188,13 @@ export default function AdminSystemSettings() {
             return (
               <motion.div key={s.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
                 <Card className="p-4">
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <span className="font-mono font-bold text-xs text-foreground truncate">{s.key}</span>
+                  <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
+                    <span className="font-mono font-bold text-xs text-foreground truncate min-w-0 flex-1">{s.key}</span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      <Pill tone={s.campus_id ? 'blue' : 'cocoa'}>{s.campus_id ? (campuses.find((c) => c.id === s.campus_id)?.name || 'campus') : 'global'}</Pill>
+                      {s.campus_id && adminCampusId === s.campus_id && <Pill tone="green">viewing</Pill>}
+                      {s.is_public === false && <Pill tone="red">private</Pill>}
+                    </span>
                     {isBool ? (
                       <Toggle checked={s.value} onChange={() => toggleBool(s.key, s.value)} disabled={busy === s.key} />
                     ) : editKey === s.key ? (
@@ -195,7 +213,7 @@ export default function AdminSystemSettings() {
                       </button>
                     )}
                   </div>
-                  {desc && <div className="text-[11px] text-muted-foreground mb-2">{desc}{known && s.value !== known.default && ` · documented default: ${displayValue(known.default)}`}</div>}
+                  {desc && <div className="text-[11px] text-muted-foreground mb-2 break-words">{desc}{known && s.value !== known.default && ` · documented default: ${displayValue(known.default)}`}</div>}
                   {isBool ? (
                     <div className="font-bold text-sm text-foreground">{s.value ? 'Enabled' : 'Disabled'}</div>
                   ) : editKey === s.key ? (
@@ -232,8 +250,8 @@ export default function AdminSystemSettings() {
                       )}
                     </div>
                   ) : (
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="font-bold text-sm text-foreground break-words">{displayValue(s.value)}</span>
+                    <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                      <span className="font-bold text-sm text-foreground break-words min-w-0">{displayValue(s.value)}</span>
                       {UNITS[s.key] && (
                         <span className="text-[10px] font-bold tracking-wide px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                           {UNITS[s.key]}

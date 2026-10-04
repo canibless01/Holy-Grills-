@@ -4,6 +4,7 @@
 // backend at https://holy-grills-backend.onrender.com/api (Aug 2026).
 import { apiClient, ApiError, login as apiLogin, clearTokens, isAuthenticated, getToken, API_BASE_URL } from './apiClient';
 import { getOrderCustomer } from './hgUtils';
+import { hpTierName } from './valueText';
 import type { MyChallengesEnvelope } from '@/types/challenges';
 import type { SelectFreeSidePayload } from '@/types/free-sides';
 
@@ -17,6 +18,11 @@ import type { SelectFreeSidePayload } from '@/types/free-sides';
 // per-endpoint is a per-call-site job, and a call site that knows its shape can
 // now say `unwrap<Hostel>(res, 'hostels')` instead of casting.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// Shared with the admin panel: the tier-name extraction lives in
+// ./valueText (import-free, unit-tested) and is re-exported here so
+// components can keep importing it from either module.
+export { hpTierName } from './valueText';
+
 const unwrap = <T = any>(res: unknown, ...keys: string[]): T[] => {
   if (Array.isArray(res)) return res as T[];
   if (res && typeof res === 'object') {
@@ -668,11 +674,22 @@ const admin = {
     // Drill into it so total/active/pending read the real numbers, not the dict.
     const b = (r?.hp_balance && typeof r.hp_balance === 'object' && !Array.isArray(r.hp_balance)) ? r.hp_balance : r;
     return {
-      total: b?.total ?? b?.balance ?? b?.active_balance ?? b?.total_hp ?? r?.total ?? 0,
+      // get_hp_balance() names the combined figure `total_visible`
+      // (active + pending); `total` is not a field it returns, so it has to
+      // be read here or the drawer always shows 0.
+      total: b?.total ?? b?.total_visible ?? b?.balance ?? b?.active_balance ?? b?.total_hp ?? r?.total ?? 0,
       active: b?.active ?? b?.active_hp ?? b?.active_balance ?? r?.active ?? 0,
       pending: b?.pending ?? b?.pending_hp ?? b?.pending_hp_balance ?? b?.reserved ?? r?.pending ?? 0,
-      tier: r?.tier ?? b?.tier ?? null,
-      tier_multiplier: r?.tier_multiplier ?? b?.tier_multiplier ?? null,
+      // get_hp_balance() nests the tier row one level deep
+      //   { tier: { tier: {name: 'Flame', ...}, is_in_grace_period: false } }
+      // while /admin/users/:id returns the same shape at the top level.
+      // Handing either dict to a component renders it as a React child, which
+      // is what crashed the user drawer — so flatten to a display string here.
+      tier: hpTierName(r?.tier) ?? hpTierName(b?.tier) ?? null,
+      // The balance dict calls the earn rate `tier_bonus_multiplier`.
+      tier_multiplier: r?.tier_multiplier ?? b?.tier_bonus_multiplier ?? b?.tier_multiplier ?? null,
+      hp_earned_120day: b?.hp_earned_120day ?? r?.hp_earned_120day ?? null,
+      degraded: !!(b?.degraded ?? r?.degraded),
       transactions: tx,
     };
   },
@@ -1135,7 +1152,10 @@ const admin = {
 
   // --- Storefront Sections (GET/POST/PATCH/DELETE /storefront/sections) ---
   // Full storefront lifecycle: hero, banner, promo, testimonial, share_template.
-  async getStorefrontSections(params = {}) { return unwrap(await apiClient.get('/storefront/sections', params), 'sections'); },
+  // The CMS list is the admin's own editing surface, so it asks for the
+  // inactive rows too (the public storefront route still hides them). Without
+  // this, switching a section off removed it from the admin list for good.
+  async getStorefrontSections(params = {}) { return unwrap(await apiClient.get('/storefront/sections', { include_inactive: '1', ...params }), 'sections'); },
   async createStorefrontSection(body) { return apiClient.post('/storefront/sections', body); },
   async updateStorefrontSection(id, body) { return apiClient.patch(`/storefront/sections/${id}`, body); },
   async deleteStorefrontSection(id) { return apiClient.delete(`/storefront/sections/${id}`); },
@@ -1162,7 +1182,10 @@ const admin = {
   async restoreAcademicLevel(id) { return apiClient.post(`/admin/academic-levels/${id}/restore`); },
 
   // --- Storefront (verified: /storefront/banners, /early-supporters, /newsletter) ---
-  async getBanners() { return unwrap(await apiClient.get('/storefront/banners'), 'banners'); },
+  // include_inactive — the public list route only returns is_active rows, so an
+  // admin could never see (or fix) a banner they had switched off. The admin
+  // panel always asks for everything and shows the active state as a toggle.
+  async getBanners(params = {}) { return unwrap(await apiClient.get('/storefront/banners', { include_inactive: '1', ...params }), 'banners'); },
   async updateBanner(id, body) { return apiClient.patch(`/storefront/banners/${id}`, body); },
   async createBanner(body) { return apiClient.post('/storefront/banners', body); },
   async getEarlySupporters() { return unwrap(await apiClient.get('/storefront/early-supporters'), 'early_supporters', 'sections'); },

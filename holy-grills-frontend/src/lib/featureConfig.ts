@@ -122,6 +122,46 @@ export function getSetting(key, defaultValue = null) {
   return val;
 }
 
+/**
+ * Boolean read for on/off settings.
+ *
+ * `getSetting('whatsapp_support_enabled', true)` looks safe but is not: a value
+ * stored as the *string* "false" (which is what the admin screen writes for an
+ * unknown key) is truthy in JavaScript, so the switch could never be turned
+ * off from the database. Every toggle-shaped setting must come through here.
+ */
+export function getBoolSetting(key, defaultValue = false) {
+  const val = settingsMap[key];
+  if (val === undefined || val === null) return defaultValue;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val !== 0;
+  if (typeof val === 'string') {
+    const v = val.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off' || v === '') return false;
+  }
+  return defaultValue;
+}
+
+/**
+ * The same read as getSetting() WITHOUT the numeric coercion, for values that
+ * are text even when they happen to be all digits.
+ *
+ * A WhatsApp number is the obvious case: stored as "2348012345678" it came
+ * back from getSetting() as the number 2348012345678 (harmless), but as
+ * "+234 801 234 5678" it came back as NaN — and `https://wa.me/NaN` is exactly
+ * the "the button opens some other number, it never reads the table" report.
+ * Anything shown as text, dropped into a URL or echoed back to the user must
+ * come through here.
+ */
+export function getStringSetting(key, defaultValue = '') {
+  const val = settingsMap[key];
+  if (val === undefined || val === null) return defaultValue;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return defaultValue;
+}
+
 // Feature flags — read from /admin/feature-flags (loadFeatureFlags) so toggling
 // a flag in the admin panel immediately hides/shows the feature for students.
 // Keys include: leaderboard_prizes, hall_of_fame, exclusive_spin,

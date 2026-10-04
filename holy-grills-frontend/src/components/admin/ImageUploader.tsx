@@ -1,28 +1,47 @@
 import { useState, useRef, useCallback } from 'react';
-import { UploadCloud, X, Loader2, ImageOff } from 'lucide-react';
+import { UploadCloud, X, Loader2, ImageOff, Link2 } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
 import { msg } from '@/lib/messages';
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 
+/**
+ * Admin image field.
+ *
+ * TWO ways to fill it, because the two failure modes were indistinguishable
+ * before and both looked like "the upload button is broken":
+ *
+ *   1. Direct upload — the browser signs and posts the file straight to
+ *      Cloudinary using a short-lived signature from POST /upload/signature.
+ *      Needs CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET on the server; when
+ *      they are absent the endpoint answers 503 and we say so, naming the
+ *      variables, instead of "Upload failed. Please try again."
+ *   2. Paste a URL — always available, and the only option that still works
+ *      when Cloudinary is not configured. Every create form that requires an
+ *      image (storefront sections, banners, share templates) was a dead end
+ *      without it: the API rejects the row with "image_url is required" and
+ *      there was no way to supply one.
+ */
 export default function ImageUploader({ value, onChange, folder = 'general', label = 'Image' }) {
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ text: string; hint?: string } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [urlMode, setUrlMode] = useState(false);
+  const [urlDraft, setUrlDraft] = useState('');
   const inputRef = useRef(null);
 
   const handleFile = useCallback(
     async (file) => {
-      setError(msg('FE_IMAGE_UPLOADER_MESSAGE', ''));
+      setError(null);
       if (!file) return;
       const type = (file.type || '').toLowerCase();
       if (!ACCEPTED.includes(type)) {
-        setError(msg('FE_IMAGE_UPLOADER_PLEASE_UPLOAD_PNG_JPG_OR_WEBP', 'Please upload PNG, JPG, or WEBP'));
+        setError({ text: msg('FE_IMAGE_UPLOADER_PLEASE_UPLOAD_PNG_JPG_OR_WEBP', 'Please upload PNG, JPG, or WEBP') });
         return;
       }
       if (file.size > MAX_SIZE) {
-        setError(msg('FE_IMAGE_UPLOADER_FILE_SIZE_EXCEEDS_5_MB_LIMIT', 'File size exceeds 5MB limit'));
+        setError({ text: msg('FE_IMAGE_UPLOADER_FILE_SIZE_EXCEEDS_5_MB_LIMIT', 'File size exceeds 5MB limit') });
         return;
       }
       setUploading(true);
@@ -54,13 +73,27 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
           `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`,
           { method: 'POST', body: form }
         );
-        if (!cloudRes.ok) throw new Error(msg('FE_IMAGE_UPLOADER_UPLOAD_FAILED', 'Upload failed'));
+        if (!cloudRes.ok) {
+          const detail = await cloudRes.json().catch(() => null);
+          throw Object.assign(
+            new Error(detail?.error?.message || msg('FE_IMAGE_UPLOADER_UPLOAD_FAILED', 'Upload failed')),
+            { status: cloudRes.status, detail }
+          );
+        }
         const cloudData = await cloudRes.json();
 
         // 4. Hand the secure URL back to the parent form.
         onChange(cloudData.secure_url);
+        setUrlMode(false);
       } catch (e) {
-        setError(msg('FE_IMAGE_UPLOADER_UPLOAD_FAILED_PLEASE_TRY_AGAIN', 'Upload failed. Please try again.'));
+        // Surface what actually went wrong. apiClient puts the server's `error`
+        // text on `message` and the raw body on `detail`, so a 503 from
+        // /upload/signature arrives here with the missing-variable hint.
+        const text = e?.message || msg('FE_IMAGE_UPLOADER_UPLOAD_FAILED_PLEASE_TRY_AGAIN', 'Upload failed. Please try again.');
+        setError({ text, hint: e?.detail?.hint });
+        // Uploading is unavailable right now — reveal the URL field so this
+        // form is never a dead end.
+        if (e?.status === 503 || e?.status === 501) setUrlMode(true);
       } finally {
         setUploading(false);
       }
@@ -79,8 +112,22 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
   );
 
   const remove = () => {
-    setError(msg('FE_IMAGE_UPLOADER_MESSAGE', ''));
+    setError(null);
     onChange('');
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const applyUrl = () => {
+    const url = urlDraft.trim();
+    if (!url) return;
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      setError({ text: msg('FE_IMAGE_UPLOADER_ENTER_A_FULL_IMAGE_URL', 'Enter a full image URL starting with http:// or https://') });
+      return;
+    }
+    setError(null);
+    onChange(url);
+    setUrlDraft('');
+    setUrlMode(false);
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -154,9 +201,46 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
         </div>
       )}
 
+      {/* Paste-a-URL fallback — always reachable, auto-opened when the server
+          says uploads are not configured, so no image field is ever a dead end. */}
+      <button
+        type="button"
+        onClick={() => setUrlMode((v) => !v)}
+        className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+      >
+        <Link2 className="w-3 h-3" /> {urlMode ? 'Hide URL field' : 'Use an image URL instead'}
+      </button>
+      {urlMode && (
+        <div className="mt-1.5 flex gap-1.5">
+          <input
+            value={urlDraft}
+            onChange={(e) => setUrlDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyUrl();
+              }
+            }}
+            placeholder="https://…/image.jpg"
+            className="flex-1 min-w-0 p-2 rounded-xl border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+          <button
+            type="button"
+            onClick={applyUrl}
+            className="shrink-0 px-3 py-2 rounded-xl bg-secondary text-secondary-foreground text-xs font-bold active:scale-95 transition"
+          >
+            Use
+          </button>
+        </div>
+      )}
+
       {error && (
-        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600 font-semibold">
-          <ImageOff className="w-3.5 h-3.5" /> {error}
+        <div className="mt-1.5 flex items-start gap-1.5 text-xs text-red-600 font-semibold">
+          <ImageOff className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span className="min-w-0 break-words">
+            {error.text}
+            {error.hint && <span className="block font-normal text-red-500 mt-0.5">{error.hint}</span>}
+          </span>
         </div>
       )}
     </div>
