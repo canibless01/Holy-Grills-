@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.db import get_user_client
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from datetime import date, datetime, timezone, timedelta
 from dateutil.parser import isoparse
 from app.utils.tz import today_wat, WAT_OFFSET
@@ -1553,7 +1554,11 @@ def marketplace_analytics():
         q_l = q_l.eq("campus_id", campus_id)
     listings = q_l.execute() or []
     low_stock = []
-    low_stock_threshold = current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5)
+    low_stock_threshold = setting_or_config(
+        db, "low_code_inventory_threshold",
+        current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5),
+        minimum=0, maximum=10000,
+    )
     for l in listings:
         if l.get("listing_type") in _CODE_LISTING_TYPES:
             codes = db.table("marketplace_access_codes").select("id").eq("listing_id", l["id"]).eq("status", "available").execute() or []

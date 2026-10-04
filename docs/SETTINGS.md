@@ -86,7 +86,9 @@ way.
 |---|---|
 | `wallet_min_withdrawal` | frontend constant only — the backend has **no** withdrawal endpoint, so nothing to align yet; it gates nothing today (verified) |
 | `order_lock_max_discount_pct` (frontend) / `ORDER_LOCK_MAX_DISCOUNT_PCT` (env) | **unused on both sides** — the real bound is the 1–50 validation inside `order_locks.py`. Dead config; delete or wire deliberately |
-| `window_capacity`, `referral_hp`, `daily_checkin_hp`, `event_checkin_hp`, `wallet_topup_hp`, `hp_bundle_price_per_hp`, `hp_bundles`, `paystack_preferred_bank`, `flash_discount_pct` | shown/used by the frontend with defaults that match the backend env defaults today; **not yet** read by the backend from settings. Each needs the same two-line treatment when it matters |
+| `window_capacity`, `referral_hp`, `daily_checkin_hp`, `hp_bundle_price_per_hp`, `hp_bundles`, `paystack_preferred_bank`, `flash_discount_pct` | shown/used by the frontend with defaults that match the backend env defaults today; **not yet** read by the backend from settings. Each needs the same two-line treatment when it matters |
+| `event_checkin_hp`, `wallet_topup_hp`, `marketplace_purchase_hp`, `low_code_inventory_threshold` | **wired in this pass** — the seeded row now drives the backend (`setting_or_config`: setting → env), so the admin UI row is real |
+
 | Secrets / infra (`SUPABASE_*`, `PAYSTACK_*`, `CLOUDINARY_*`, `SECRET_KEY`, CORS) | stay in env, by design |
 | `LOGIN_STREAK_HP`, `MONTHLY_HP_CAP`, `REFERRAL_HP`, `GRADUATION_HP` | defined in Config but **no reader** — the live paths are `login_streak_rewards` (table), `monthly_pending_cap` (setting), tier perks and `graduation_min_level`. Left out of the seed on purpose |
 | `order_lock_default_discount` (legacy key) | still honoured as a fallback behind `order_lock_default_discount_pct` |

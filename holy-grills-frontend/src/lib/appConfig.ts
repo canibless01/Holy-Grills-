@@ -48,7 +48,10 @@ const json = (key, fallback) => {
 
 // ── SQUAD ORDERS ──────────────────────────────────────────────────────────────
 export const squadOrderMinItems = () => num('squad_order_min_items', 3);
-export const squadOrderMaxItems = () => num('squad_order_max_items', 20);
+// 6 matches SQUAD_ORDER_MAX_ITEMS (backend config + the seeded row): above it an
+// order stops qualifying as a squad order, so a 20 here invited students to build
+// a cart the discount would never cover.
+export const squadOrderMaxItems = () => num('squad_order_max_items', 6);
 export const squadOrderDiscountEnabled = () => bool('squad_order_discount_enabled', false);
 export const squadOrderDiscountPct = () => num('squad_order_discount_pct', 10);
 export const squadDeliveryDiscountEnabled = () => bool('squad_delivery_discount_enabled', true);

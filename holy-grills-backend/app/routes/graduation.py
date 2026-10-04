@@ -122,7 +122,9 @@ def claim_graduation():
     # Notify
     try:
         from app.services.notification_service import send_notification
-        name = (profile.get("full_name") or "").split()[0] or "Graduate"
+        # Nickname-first, like every other notification that greets someone.
+        from app.services.squad_service import resolve_display_name
+        name = (resolve_display_name(profile=profile) or "").split()[0] or "Graduate"
         send_notification(
             user_id=g.user_id,
             notif_type="graduation_hp",

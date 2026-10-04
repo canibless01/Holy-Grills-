@@ -571,7 +571,10 @@ def transfer_hp():
         return jsonify({"error": "You can only transfer HP to students on your own campus."}), 400
 
     sender_name = (sender or {}).get("full_name", "Someone")
-    recipient_name = recipient.get("full_name", "Someone")
+    # Nickname-first, the same rule every other surface uses (the recipient is
+    # named by their nickname in notifications and on the leaderboard).
+    from app.services.squad_service import resolve_display_name
+    recipient_name = resolve_display_name(profile=recipient) or "Someone"
 
     balance = get_hp_balance(g.user_id)
     if balance.get("active", 0) < amount:

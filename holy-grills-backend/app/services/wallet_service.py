@@ -7,6 +7,7 @@ from app.db import get_db, get_user_client
 from app.services.hp_service import award_active_hp
 
 from app.utils.logger import get_logger
+from app.utils.settings import setting_or_config
 
 logger = get_logger(__name__)
 from flask import current_app
@@ -63,7 +64,10 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         try:
             award_active_hp(
                 user_id=user_id,
-                amount=config.get("WALLET_TOPUP_HP", 50),
+                amount=setting_or_config(
+                    db, "wallet_topup_hp", config.get("WALLET_TOPUP_HP", 50),
+                    minimum=0, maximum=100000,
+                ),
                 txn_type="earn",
                 reference_id=payment_reference,
                 reference_type="wallet_topup",

@@ -113,8 +113,14 @@ BEGIN
       ('1', 'hp_transfer_min_orders',       '3',      'Orders a user must have completed before sending HP — hp'),
       ('1', 'graduation_min_level',         '500',    'Level a student must reach to be graduation-eligible — graduation'),
 
-      -- ── SECTION 2 — frontend reads the key today; the backend still resolves the same
-      --    value from env config (value below = that env default, so nothing moves yet) ──
+      -- ── SECTION 2 — frontend reads the key today. Where the backend resolves the
+      --    same value from env config, the value below is that env default, so
+      --    nothing moves yet. FOUR of these are already read back through
+      --    setting_or_config, so editing them takes effect without a deploy:
+      --      event_checkin_hp · wallet_topup_hp · marketplace_purchase_hp ·
+      --      low_code_inventory_threshold
+      --    The rest are the frontend's copy of an env value until they are wired
+      --    the same way (see SETTINGS.md → leftovers).
       ('2', 'hp_per_naira_food',            '0.1',    'HP earned per ₦1 of food spend — HP_PER_NAIRA_FOOD'),
       ('2', 'hp_unlock_rate_pct',           '0.3',    'Share of earned HP unlocked immediately vs pending (0-1) — HP_UNLOCK_RATE_PCT'),
       ('2', 'referral_hp',                  '75',     'HP awarded when a referred friend completes their first order — REFERRAL_HP'),
