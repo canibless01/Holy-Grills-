@@ -10,8 +10,31 @@ import { msg } from '@/lib/messages';
 // Documented settings from the backend reference (system_settings table) —
 // used only to enrich rows with default + purpose when the backend row has no
 // description, and to hint server-side constraints.
+// `_pct` reads the same in every key but does not mean the same thing: two of
+// these are FRACTIONS (0–1) and the rest are real percentages (0–100). The
+// ranges below are the ones `hg_validate_system_setting` enforces in the
+// database — a value outside them is refused when you hit Save, and the refusal
+// message is what the toast shows. Label them, or someone types 50 into
+// `flash_discount_pct` meaning 50% and gets a rejection they cannot explain.
+const UNITS: Record<string, string> = {
+  flash_discount_pct: 'fraction 0–1 · 0.5 = 50% off',
+  hp_unlock_rate_pct: 'fraction 0–1 · 0.3 = 30% unlocked now',
+  squad_delivery_discount_pct: 'percent 0–100 · 100 = fee waived fully',
+  squad_order_discount_pct: 'percent 0–100',
+  squad_hp_bonus_pct: 'percent 0–100',
+  order_lock_default_discount_pct: 'percent 0–100',
+  order_lock_max_discount_pct: 'percent 0–100',
+};
+
 const KNOWN_SETTINGS = {
   hp_multiplier: { default: 1, purpose: 'Active loyalty points earn multiplier', hint: 'Must be 0.5, 1.0, or 2.0 — any other value is rejected. Setting it above 1.0 immediately notifies all active users.' },
+  flash_discount_pct: { default: 0.5, purpose: 'Discount applied to flash redemptions', hint: 'FRACTION, not a percent: 0.5 = half price, 1 = free. Anything above 1 is refused by the database.' },
+  hp_unlock_rate_pct: { default: 0.3, purpose: 'Share of earned HP unlocked immediately', hint: 'FRACTION, not a percent: 0.3 = 30% unlocks now, the rest stays pending. Anything above 1 is refused by the database.' },
+  squad_delivery_discount_pct: { default: 100, purpose: 'Share of the delivery fee waived on squad orders', hint: 'Percent 0–100: 100 waives the whole delivery fee.' },
+  squad_order_discount_pct: { default: 10, purpose: 'Discount on the squad-order subtotal', hint: 'Percent 0–100: 10 = 10% off the subtotal.' },
+  squad_hp_bonus_pct: { default: 10, purpose: 'Extra HP awarded on a squad order', hint: 'Percent 0–100.' },
+  order_lock_default_discount_pct: { default: 10, purpose: 'Default goodwill discount on an order lock', hint: 'Percent 0–100 here; the order-lock route itself honours only 1–50 and falls back to the default outside that.' },
+  order_lock_max_discount_pct: { default: 50, purpose: 'Highest discount an order lock may offer', hint: 'Percent 0–100. No backend reader today — the order-lock cap is the route default (1–50).' },
   daily_checkin_hp: { default: 0, purpose: 'Daily check-in attendance — no HP is paid per day; the weekly completion reward is what pays HP', hint: 'Daily check-in itself awards 0 HP' },
   free_side_options: { default: 'Coleslaw, Extra Sauce, Soft Drink', purpose: 'Side credit choices', hint: 'Comma-separated list' },
   first_order_gift_enabled: { default: true, purpose: 'Welcome gift toggle' },
@@ -195,16 +218,28 @@ export default function AdminSystemSettings() {
                           <button onClick={() => setEditKey(null)} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-bold active:scale-95 transition">Cancel</button>
                         </div>
                       ) : (
-                        <input
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          autoFocus
-                          className={`w-full p-2.5 rounded-xl border text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 ${known?.hint ? 'border-accent/60 bg-accent/10' : 'border-primary/40 bg-card'}`}
-                        />
+                        <>
+                          <input
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            autoFocus
+                            className={`w-full p-2.5 rounded-xl border text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 ${known?.hint ? 'border-accent/60 bg-accent/10' : 'border-primary/40 bg-card'}`}
+                          />
+                          {UNITS[s.key] && (
+                            <p className="text-[11px] text-muted-foreground mt-1">Value format — {UNITS[s.key]}</p>
+                          )}
+                        </>
                       )}
                     </div>
                   ) : (
-                    <div className="font-bold text-sm text-foreground break-words">{displayValue(s.value)}</div>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-foreground break-words">{displayValue(s.value)}</span>
+                      {UNITS[s.key] && (
+                        <span className="text-[10px] font-bold tracking-wide px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                          {UNITS[s.key]}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </Card>
               </motion.div>

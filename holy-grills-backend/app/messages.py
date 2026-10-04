@@ -475,6 +475,7 @@ class MSG:
     SETTING_UPDATED              = "Setting updated"
     SETTING_CREATED              = "Setting created"
     SETTING_KEY_EXISTS           = "A setting with this key already exists"
+    SETTING_VALUE_REJECTED       = "That value was refused by the settings validator in the database."
 
     # ── Login Streak ───────────────────────────────────────────────────────────
     LOGIN_STREAK_TITLE           = "🔥 {streak}-Day Login Streak!"
