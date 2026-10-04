@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { liveApi } from './liveApi';
+import { localStore } from './storage';
 import { useHolyGrill } from './HolyGrillContext';
 import CampusGate from '@/components/CampusGate';
 import { useLocation } from 'react-router-dom';
@@ -19,8 +20,8 @@ const ADMIN_CAMPUS_KEY = 'hg_admin_campus_id';
 // createContext(undefined) are identical).
 const CampusContext = createContext<any>(undefined);
 
-export const getStoredCampusId = () => localStorage.getItem(CAMPUS_KEY);
-export const getStoredAdminCampusId = () => localStorage.getItem(ADMIN_CAMPUS_KEY);
+export const getStoredCampusId = () => localStore.getItem(CAMPUS_KEY);
+export const getStoredAdminCampusId = () => localStore.getItem(ADMIN_CAMPUS_KEY);
 
 export const CampusProvider = ({ children }) => {
   const { user, isLoading } = useHolyGrill();
@@ -85,7 +86,7 @@ export const CampusProvider = ({ children }) => {
   }, [location.pathname, gateOpen, gateMode]);
 
   const selectCampus = useCallback((id) => {
-    if (id) localStorage.setItem(CAMPUS_KEY, id); else localStorage.removeItem(CAMPUS_KEY);
+    if (id) localStore.setItem(CAMPUS_KEY, id); else localStore.removeItem(CAMPUS_KEY);
     setGuestCampusId(id);
     setGateOpen(false);
   }, []);
@@ -93,12 +94,12 @@ export const CampusProvider = ({ children }) => {
   // Super-admin campus switch — persists across admin sessions and is sent
   // as X-Campus-ID by apiClient for all authenticated admin requests.
   const selectAdminCampus = useCallback((id) => {
-    if (id) localStorage.setItem(ADMIN_CAMPUS_KEY, id); else localStorage.removeItem(ADMIN_CAMPUS_KEY);
+    if (id) localStore.setItem(ADMIN_CAMPUS_KEY, id); else localStore.removeItem(ADMIN_CAMPUS_KEY);
     setAdminCampusId(id);
   }, []);
 
   const clearAdminCampus = useCallback(() => {
-    localStorage.removeItem(ADMIN_CAMPUS_KEY);
+    localStore.removeItem(ADMIN_CAMPUS_KEY);
     setAdminCampusId(null);
   }, []);
 

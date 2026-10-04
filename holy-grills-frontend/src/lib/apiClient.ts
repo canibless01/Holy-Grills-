@@ -1,4 +1,6 @@
 // HolyGrill Live API Client — calls the real backend at holy-grills-backend.onrender.com
+import { localStore, sessionStore } from '@/lib/storage';
+
 export const API_BASE_URL = 'https://holy-grills-backend.onrender.com/api';
 const BASE_URL = API_BASE_URL;
 
@@ -8,8 +10,8 @@ const REFRESH_KEY = 'hg_refresh_token';
 // "Remember me" — when the user leaves the checkbox unchecked, tokens are
 // stored in sessionStorage so they are cleared when the browser closes.
 // When checked, tokens persist in localStorage across sessions.
-const isRemember = () => localStorage.getItem('hg_remember') === '1';
-const storage = () => isRemember() ? localStorage : sessionStorage;
+const isRemember = () => localStore.getItem('hg_remember') === '1';
+const storage = () => isRemember() ? localStore : sessionStore;
 
 export class ApiError extends Error {
   status: number;
@@ -22,30 +24,30 @@ export class ApiError extends Error {
 }
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+  return localStore.getItem(TOKEN_KEY) || sessionStore.getItem(TOKEN_KEY);
 }
 
 export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY) || sessionStorage.getItem(REFRESH_KEY);
+  return localStore.getItem(REFRESH_KEY) || sessionStore.getItem(REFRESH_KEY);
 }
 
 export function setTokens(access, refresh) {
   // Clear both stores first so a stale token from the other storage can't
   // linger and cause isAuthenticated() to read a phantom session.
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(REFRESH_KEY);
+  localStore.removeItem(TOKEN_KEY);
+  localStore.removeItem(REFRESH_KEY);
+  sessionStore.removeItem(TOKEN_KEY);
+  sessionStore.removeItem(REFRESH_KEY);
   const s = storage();
   if (access) s.setItem(TOKEN_KEY, access);
   if (refresh) s.setItem(REFRESH_KEY, refresh);
 }
 
 export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(REFRESH_KEY);
+  localStore.removeItem(TOKEN_KEY);
+  localStore.removeItem(REFRESH_KEY);
+  sessionStore.removeItem(TOKEN_KEY);
+  sessionStore.removeItem(REFRESH_KEY);
 }
 
 async function refreshToken() {
@@ -107,9 +109,9 @@ async function request(path: string, options: RequestOptions = {}) {
   // X-Campus-ID from their persisted profile campus (hg_user_campus_id,
   // saved by HolyGrillContext) — the storefront/kitchen-status endpoints
   // need campus context even for signed-in users, not just guests.
-  const adminCampusId = token && localStorage.getItem('hg_admin_campus_id');
-  const userCampusId = token && localStorage.getItem('hg_user_campus_id');
-  const guestCampusId = !token && localStorage.getItem('hg_campus_id');
+  const adminCampusId = token && localStore.getItem('hg_admin_campus_id');
+  const userCampusId = token && localStore.getItem('hg_user_campus_id');
+  const guestCampusId = !token && localStore.getItem('hg_campus_id');
   const campusHeader = adminCampusId || userCampusId || guestCampusId;
   const headers = {
     'Content-Type': 'application/json',
@@ -163,9 +165,9 @@ async function request(path: string, options: RequestOptions = {}) {
 // it as JSON.
 async function requestRaw(path: string, options: RequestOptions = {}) {
   const token = getToken();
-  const adminCampusId = token && localStorage.getItem('hg_admin_campus_id');
-  const userCampusId = token && localStorage.getItem('hg_user_campus_id');
-  const guestCampusId = !token && localStorage.getItem('hg_campus_id');
+  const adminCampusId = token && localStore.getItem('hg_admin_campus_id');
+  const userCampusId = token && localStore.getItem('hg_user_campus_id');
+  const guestCampusId = !token && localStore.getItem('hg_campus_id');
   const campusHeader = adminCampusId || userCampusId || guestCampusId;
   const headers = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

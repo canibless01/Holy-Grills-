@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
+import { localStore, sessionStore } from './storage';
 import { loadSystemSettings, loadFeatureFlags, getSetting } from './featureConfig';
 import { loadTiers } from './hgUtils';
 
@@ -13,9 +14,9 @@ const HolyGrillContext = createContext<any>(undefined);
 const GUEST_CART_KEY = 'hg_guest_cart';
 
 const readGuestCart = () => {
-  try { return JSON.parse(localStorage.getItem(GUEST_CART_KEY) || '[]'); } catch { return []; }
+  try { return JSON.parse(localStore.getItem(GUEST_CART_KEY) || '[]'); } catch { return []; }
 };
-const writeGuestCart = (items) => localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
+const writeGuestCart = (items) => localStore.setItem(GUEST_CART_KEY, JSON.stringify(items));
 
 const computeCart = (items) => ({
   items,
@@ -32,8 +33,8 @@ const EMPTY_CART = { items: [], subtotal: 0, item_count: 0, hp_earn_preview: 0, 
 // those endpoints from the JWT alone, which made the storefront read
 // "closed" for signed-in users on an open campus.
 const persistUserCampus = (profile) => {
-  if (profile?.campus_id) localStorage.setItem('hg_user_campus_id', profile.campus_id);
-  else localStorage.removeItem('hg_user_campus_id');
+  if (profile?.campus_id) localStore.setItem('hg_user_campus_id', profile.campus_id);
+  else localStore.removeItem('hg_user_campus_id');
 };
 
 // /api/auth/me nests HP under `profile` (hp_earned_120day, hp_balance) and
@@ -195,9 +196,9 @@ export const HolyGrillProvider = ({ children }) => {
   // Restore session on load — real token → fetch profile; no token → guest cart.
   useEffect(() => {
     const init = async () => {
-      // Promo-flyer popup session marker — survives refresh (same sessionStorage),
+      // Promo-flyer popup session marker — survives refresh (same sessionStore),
       // re-shows the flyer after a fresh login (login/register regenerate it).
-      if (!sessionStorage.getItem('hg_login_session')) sessionStorage.setItem('hg_login_session', String(Date.now()));
+      if (!sessionStore.getItem('hg_login_session')) sessionStore.setItem('hg_login_session', String(Date.now()));
       if (isAuthenticated()) {
         try {
           const profile = await liveApi.auth.me();
@@ -247,7 +248,7 @@ export const HolyGrillProvider = ({ children }) => {
     setWallet(profile.wallet || null);
     setAuthed(true);
     // Fresh login → new session id so the promo-flyer popup re-shows.
-    sessionStorage.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
+    sessionStore.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
     // Migrate any guest cart items into the now-authenticated server cart.
     const guestItems = readGuestCart();
     if (guestItems.length) {
@@ -274,7 +275,7 @@ export const HolyGrillProvider = ({ children }) => {
     setHpBalance(normalizeHpBalance(profile));
     setWallet(profile.wallet || null);
     setAuthed(true);
-    sessionStorage.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
+    sessionStore.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
     await refreshCart();
     return { ...data, role: profile.role || data?.user?.role || 'student' };
   };
@@ -282,8 +283,8 @@ export const HolyGrillProvider = ({ children }) => {
   const logout = async () => {
     try { await liveApi.auth.logout(); } catch { /* ignore */ }
     clearTokens();
-    localStorage.removeItem('hg_admin_campus_id');
-    localStorage.removeItem('hg_user_campus_id');
+    localStore.removeItem('hg_admin_campus_id');
+    localStore.removeItem('hg_user_campus_id');
     setUser(null); setHpBalance(null); setWallet(null);
     setNotifications([]); setUnreadCount(0); setStreak(null); setSavedItems([]);
     setAuthed(false);

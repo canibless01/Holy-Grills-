@@ -14,6 +14,7 @@ import CookieConsent from '@/components/CookieConsent';
 import RequireAuth from '@/components/RequireAuth';
 import { SoundProvider } from '@/lib/SoundProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import ClientOnly from '@/components/ClientOnly';
 
 // Eager imports — the entry-critical screens render with no per-route
 // Suspense spinner. Everything else is split at the route (see below).
@@ -121,25 +122,55 @@ const AppRoutes = () => {
   );
 };
 
-function App() {
+/**
+ * AppProviders — everything above the router. Shared by the browser entry
+ * (App, below) and the pre-render entry (src/entry-server.tsx) so a
+ * server-rendered page hydrates into the exact same tree.
+ *
+ * DOM-only chrome (toasts, install prompt, cookie banner) sits behind
+ * <ClientOnly> so the server markup and React's first client pass agree.
+ */
+export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ErrorBoundary>
-        <QueryClientProvider client={queryClientInstance}>
-          <Router>
-            <ScrollToTop />
-            <SoundProvider>
-              <HolyGrillProvider>
-                <CampusProvider>
-                  <AppRoutes />
-                </CampusProvider>
-                <InstallPrompt />
-                <CookieConsent />
-              </HolyGrillProvider>
-            </SoundProvider>
-          </Router>
+      <QueryClientProvider client={queryClientInstance}>
+        {children}
+        <ClientOnly>
           <Toaster />
-        </QueryClientProvider>
+        </ClientOnly>
+      </QueryClientProvider>
     </ErrorBoundary>
+  );
+}
+
+/**
+ * AppShell — the routed part of the app, router-agnostic: the browser entry
+ * wraps it in <BrowserRouter>, the pre-render entry in <StaticRouter>.
+ */
+export function AppShell() {
+  return (
+    <SoundProvider>
+      <HolyGrillProvider>
+        <CampusProvider>
+          <ScrollToTop />
+          <AppRoutes />
+        </CampusProvider>
+        <ClientOnly>
+          <InstallPrompt />
+          <CookieConsent />
+        </ClientOnly>
+      </HolyGrillProvider>
+    </SoundProvider>
+  );
+}
+
+function App() {
+  return (
+    <AppProviders>
+      <Router>
+        <AppShell />
+      </Router>
+    </AppProviders>
   )
 }
 

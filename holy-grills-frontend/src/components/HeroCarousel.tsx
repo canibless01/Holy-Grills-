@@ -137,7 +137,7 @@ export default function HeroCarousel({ onCta }) {
               alt={slide.tag || 'Holy Grill'}
               loading={idx === 0 ? 'eager' : 'lazy'}
               decoding="async"
-              fetchPriority={idx === 0 ? 'high' : 'auto'}
+              {...({ fetchpriority: idx === 0 ? 'high' : 'auto' } as { fetchpriority: string })}
               className={`absolute inset-0 w-full h-full object-cover ${idx === i ? 'animate-ken-burns' : ''}`}
             />
             {/* Legibility scrim only — a plain dark gradient, never a blur or
