@@ -19,6 +19,7 @@
  * This module holds the single definition of "a route family" that all three
  * use. App.tsx remains the source of truth for the routes themselves.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,6 +89,30 @@ function apiOrigin() {
   }
 }
 
+/**
+ * SHA-256 of every executable inline `<script>` in index.html, in CSP hash form.
+ * ============================================================================
+ * `index.html` carries one inline snippet (the dev-only service-worker cleanup),
+ * which a strict `script-src 'self'` blocks. Rather than hard-coding its hash —
+ * and letting it drift the moment someone edits the snippet — the hash is read
+ * out of the file at build time. `npm run smoke` asserts the hash in the served
+ * policy matches the script actually in the HTML, so the two cannot diverge.
+ *
+ * Non-executable blocks (`type="application/ld+json"`) are ignored: CSP does not
+ * apply to them.
+ */
+function inlineScriptHashes() {
+  const html = readFileSync(join(repoRoot, 'index.html'), 'utf8');
+  const hashes = new Set();
+  for (const match of html.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)) {
+    const [, attrs, body] = match;
+    if (/type\s*=\s*["']application\/ld\+json["']/i.test(attrs)) continue;
+    if (!body.trim()) continue;
+    hashes.add(`'sha256-${createHash('sha256').update(body).digest('base64')}'`);
+  }
+  return [...hashes];
+}
+
 export function securityHeaders() {
   const connect = [
     "'self'",
@@ -101,7 +126,7 @@ export function securityHeaders() {
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
-    "script-src 'self' https://cdn.onesignal.com",
+    ["script-src 'self' https://cdn.onesignal.com", ...inlineScriptHashes()].join(' '),
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://images.unsplash.com https://media.base44.com https://static.wixstatic.com https://res.cloudinary.com https://*.tile.openstreetmap.org",

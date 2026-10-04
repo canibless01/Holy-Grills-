@@ -19,7 +19,8 @@
       .mascot { width: 160px; height: 160px; object-fit: contain; margin: 0 auto 12px; display: block; }
       h1 { font-size: 28px; font-weight: 800; margin-bottom: 12px; color: #3D0A00; }
       p { font-size: 16px; color: #6A1F00; line-height: 1.6; margin-bottom: 24px; }
-      button {
+      .retry {
+        display: inline-block; text-decoration: none;
         background: linear-gradient(135deg, #E70E0E 0%, #F2B84B 100%);
         color: #fff; border: none; border-radius: 9999px;
         padding: 14px 32px; font-size: 16px; font-weight: 700; cursor: pointer;
@@ -36,7 +37,10 @@
       />
       <h1>You're offline</h1>
       <p>The grill's still hot — we just can't reach it right now. Check your connection and try again.</p>
-      <button onclick="window.location.reload()">Try Again</button>
+      <!-- A link, not a button with an inline onclick: the CSP blocks inline event
+           handlers once it stops being report-only, and a link to "/" loads the
+           cached shell through the service worker anyway. -->
+      <a href="/" class="retry">Try Again</a>
     </div>
   </body>
 </html>

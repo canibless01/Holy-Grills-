@@ -214,23 +214,35 @@ npm run build
 
 | Check | Result |
 |---|---|
-| View-source real HTML | ✅ 29 046 / 48 832 / 30 657 / 33 363 bytes of markup in `#root` for `/`, `/faq`, `/our-story`, `/terms` |
+| View-source real HTML | ✅ 29 051 / 15 664 / 15 371 / 15 423 / 48 832 / 30 657 / 33 363 bytes of markup in `#root` for the seven pre-rendered routes (the three campus pickers included) |
 | No user data for unauth requests | ✅ all 39 non-pre-rendered routes (incl. `/admin`, `/dashboard`, `/checkout`, `/kitchen`, `/rider`) serve an **empty** shell; zero token/email/`Bearer` strings in any served HTML |
 | Images in raw HTML and after hydration | ✅ images present in the prerendered markup (lazy-loaded ones hydrate client-side) |
 | CSS/JS load post-hydration | ✅ entry JS `573 981 B` raw / `172 326 B` gzip, CSS `114 185 B` / `18 587 B` gzip |
 | Bundle size before/after | perf baseline 572.95 kB → **573.98 kB raw (+1.03 kB, +0.18%)**; gzip 172.24 → 172.33 kB. CSS unchanged. Zero new runtime dependencies. |
 | Route coverage | ✅ 39/39 routes 200, 0 accidental 404s; 3/3 unknown paths 404 |
 | Determinism | ✅ two consecutive builds byte-identical |
-| Hydration mismatches | ⏳ needs a real browser; see below |
+| Hydration mismatches | ✅ **verified 2026-10-04 with a jsdom harness** — the shipped pre-renders hydrate with zero React mismatch warnings on all 7 routes, signed out and with a seeded signed-in session. A real-browser console pass is still recommended (see below) |
 | Lighthouse Performance/SEO before-after | ⏳ needs a real browser (deferred to B7 completion on your side) |
 
 ### Deferred — needs your browser, or your call
 
-1. **Hydration console pass** (the one check I cannot run here): open `/`, `/faq`, `/our-story`,
-   `/terms` signed **out**, then signed **in**, and confirm no React hydration warnings. The two
-   storage-dependent first-render reads are deferred by design (`HolyGrillContext.authed`,
-   `campusContext` campus ids) and everything else reads storage inside effects, so a mismatch
-   should be structurally impossible — but this is the empirical proof.
+1. **Hydration console pass** — partially covered on 2026-10-04. No browser exists in this
+   sandbox (no Chromium or its shared libraries, no apt, and the Playwright/Chrome-for-Testing
+   CDNs are blocked), so the check was reproduced with **jsdom**: each *shipped* pre-render is
+   loaded, jsdom installed as the DOM, the real app bundle hydrated into `#root`, and React's
+   console output read. Result: **14/14 clean** — 7 routes × signed-out and signed-in
+   (`hg_access_token`, `hg_campus_id`, `hg_user`, `hg_remember` seeded before hydration), no
+   "Hydration failed" / "did not match" messages, no wiped container. That is the empirical
+   proof that the storage-deferral design (`isHydratingPrerender()`) holds even when a session
+   is present at first paint, which is exactly the case the pre-render cannot see.
+   **Still worth a real browser:** jsdom cannot prove anything about paint, layout, real
+   network timing, or engine-specific behaviour — and it needed stubs for `matchMedia`,
+   `Element.scrollTo`, canvas and the observers. Re-run this in a browser when one is
+   available; the harness is a supplement, not a replacement.
+
+   *Harness (kept out of the repo so no test dependency is added): it transpiles an entry that
+   calls `hydrateRoot` and runs it in jsdom with the built `dist/` HTML. Reproduce with the
+   commands in the session log; ask and I will bring it into `scripts/` behind a devDependency.*
 2. **Lighthouse before/after** on `/` and `/faq` (Performance + SEO).
 3. **Images have no `width`/`height`** in the server HTML (7 on `/`): a CLS risk independent of
    this workstream. Fixing it means touching hero/mascot markup, so I left it alone.

@@ -11,6 +11,7 @@
  *
  * Exits non-zero on the first failed assertion group, so CI can gate a deploy.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,6 +109,25 @@ console.log('\nsecurity headers');
   check(res.headers.get('x-frame-options') === 'DENY', 'X-Frame-Options');
   check((res.headers.get('referrer-policy') || '').startsWith('strict-origin'), 'Referrer-Policy');
   check(/max-age=\d+/.test(res.headers.get('strict-transport-security') || ''), 'HSTS');
+
+  // The policy carries a SHA-256 for the inline snippet in index.html. That hash
+  // is read out of index.html at build time, so this ties the two together: edit
+  // the snippet without re-running `npm run routes:sync` and the smoke suite
+  // fails instead of the policy silently blocking the script later.
+  {
+    const page = await (await fetch(baseUrl + '/')).text();
+    const hashes = [];
+    for (const m of page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)) {
+      if (/ld\+json/i.test(m[1]) || !m[2].trim()) continue;
+      hashes.push(`sha256-${createHash('sha256').update(m[2]).digest('base64')}`);
+    }
+    check(hashes.length > 0, 'index.html has an inline script to cover', `${hashes.length}`);
+    check(
+      hashes.every((h) => csp.includes(h)),
+      'every inline script hash is in the policy',
+      hashes.join(', '),
+    );
+  }
 
   // Headers must also cover the two non-page responses.
   const notFound = await fetch(baseUrl + '/definitely-not-a-page');

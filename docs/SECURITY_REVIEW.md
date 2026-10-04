@@ -130,14 +130,27 @@ rules locally so they are testable, and `scripts/smoke.mjs` asserts them.
   `Permissions-Policy` that keeps geolocation to self while turning camera and
   microphone off.
 
-**Next step (needs a browser):** load `/`, `/menu`, a paid checkout and the rider
-map, watch the console for `[Report Only]` violations, and once the policy is
-clean change the header name from `Content-Security-Policy-Report-Only` to
-`Content-Security-Policy` — one word in `scripts/routes.mjs`, then
-`npm run routes:sync`. One known complication: `index.html:78` has an inline
+**The inline-script obstacle is solved.** `index.html:78` carries an inline
 `<script>` (the dev-only service-worker cleanup), which a strict `script-src`
-blocks; it is static text, so a SHA-256 hash belongs in the policy or the snippet
-should move into the bundled entry.
+blocks. `scripts/routes.mjs` now **reads that snippet's SHA-256 out of
+`index.html` at build time** and puts it in `script-src`, so the hash cannot drift
+from the file; `npm run smoke` re-computes the hash from the *served* HTML and
+fails if it is not in the policy. `public/offline.html` had one inline `onclick`
+on its retry button (attribute handlers cannot be hashed without
+`'unsafe-hashes'`); it is now a link styled the same, which reloads through the
+service worker anyway.
+
+**Readiness scan of the built HTML** (10 files, after the change): 0 executable
+inline scripts not covered by the policy, **0 inline event handlers**, 40 `style=`
+attributes (covered by `style-src 'unsafe-inline'`). The two origins that look
+"missing" from the policy — `holygrill.app` and `wa.me` — are a `rel=canonical`
+link and outbound `<a href>` targets, neither of which is a subresource fetch.
+
+**Next step (needs a browser):** load `/`, `/menu`, a paid checkout and the rider
+map, watch the console for `[Report Only]` violations, and once the policy is clean
+change the header name from `Content-Security-Policy-Report-Only` to
+`Content-Security-Policy` — one word in `scripts/routes.mjs`, then
+`npm run routes:sync`.
 
 ## S5 — `npm audit` findings (low–medium)
 
@@ -263,6 +276,7 @@ noted here and left for a later round.
 | Cloudinary uploads | signature minted server-side by `POST /upload/signature` (`app/routes/uploads.py:18–21`), `@require_auth` + folder scoping in the handler — admins may target any folder, everyone else only their own profile-photo folder. **Note:** the frontend comment (`admin/ImageUploader.tsx:30`) claims `@require_role("admin")`, which overstates the guard; the comment should be corrected to match the route |
 | Server-side authorisation | 239 `@require_role` guards across `app/routes/`; client-side role gates are UX only |
 | Pre-rendered HTML | contains no user data (B7 verification) — no authed content is baked into any pre-rendered file |
+| Hydration | the shipped pre-renders hydrate with **zero React mismatch warnings** on all 7 routes, signed out *and* with a seeded signed-in session (jsdom approximation — see `docs/TRACK_B_SSR_PLAN.md`, B7) |
 | Deep-link guard | `Notifications.tsx:23` only navigates relative paths from a notification payload |
 | Auth transport | Bearer tokens in headers, no cookies and no `credentials: 'include'`, so CSRF does not apply; refresh token is sent in a POST body, never in a URL |
 
