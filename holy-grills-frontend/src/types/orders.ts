@@ -140,8 +140,6 @@ export interface CreateOrderPayload {
   extra_members?: unknown[];
   notes?: string;
   wallet_amount?: number;
-  free_side_credit?: boolean;
-  free_side_choice?: string;
   guest_name?: string;
   guest_phone?: string;
   guest_email?: string;

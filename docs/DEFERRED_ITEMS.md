@@ -125,8 +125,8 @@ Third pass (post-B6 decisions) — plus the production wiring audit:
 
 | # | Item | Why it needs a decision |
 |---|---|---|
-| F10 | **Free-side credits are never applied** — the modal promises a ₦0 side, but Checkout sends `free_side_credit`/`free_side_choice`, which **no backend code reads**; consumption requires a `cart_free_side_selections` row written by `POST /free-sides/select`, which the frontend never calls. Evidence: `docs/WIRING_AUDIT.md` §3.1. | Fix is frontend-only (choose by `available_sides[].id`, call `/free-sides/select`, drop the two dead body fields) but it changes **checkout behaviour**, so it is not applied. Go-ahead needed. |
-| F11 | **`GET /settings` (P2)** — `featureConfig.ts` reads public settings from a route that does not exist, falls back to an admin-only route and then to built-in defaults, so **students never see admin-configured public settings**. | Repoint to `GET /api/storefront/config/public` and adapt the shape. Small, safe, frontend-only — say the word and it ships with F10. |
+| F10 | **Free-side credits were never applied** — the modal promised a ₦0 side, but Checkout sent `free_side_credit`/`free_side_choice`, which **no backend code reads**; consumption requires a `cart_free_side_selections` row written by `POST /free-sides/select`, which the frontend never called. Evidence: `docs/WIRING_AUDIT.md` §3.1. | **Resolved:** the modal now lists the backend's curated `available_sides` by id and Checkout selects/deselects through the documented endpoints; the two unread body fields are removed. Fails loudly instead of promising a side that is not delivered. |
+| F11 | **`GET /settings` (P2)** — `featureConfig.ts` read public settings from a route that does not exist, fell back to an admin-only route and then to built-in defaults, so **students never saw admin-configured public settings**. | **Resolved:** reads `GET /api/storefront/config/public` (flat key→value map); the dead `config.getPublic()` method is removed and `types/config.ts` updated. |
 
 
 > **Phase 7 security review is in `docs/SECURITY_REVIEW.md`** (authorised this

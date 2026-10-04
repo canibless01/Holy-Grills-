@@ -14,6 +14,7 @@ import DeliveryZonesInfo from '@/components/DeliveryZonesInfo';
 import { useSound } from '@/lib/SoundProvider';
 import Skeleton from '@/components/Skeleton';
 import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } from '@/types/orders';
+import type { FreeSideItem } from '@/types/free-sides';
 
 function CheckoutSkeleton() {
   return (
@@ -55,9 +56,19 @@ export default function Checkout() {
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [error, setError] = useState(null);
-  const [freeSideCredits, setFreeSideCredits] = useState({ count: 0, expires_at: null });
+  // `available_sides` are the backend's curated free-side items — the only
+  // things a credit can be spent on (GET /free-sides).
+  const [freeSideCredits, setFreeSideCredits] = useState<{
+    count: number;
+    expires_at: string | null;
+    available_sides: FreeSideItem[];
+  }>({ count: 0, expires_at: null, available_sides: [] });
   const [showFreeSide, setShowFreeSide] = useState(false);
-  const [freeSideChoice, setFreeSideChoice] = useState(null);
+  const [freeSideChoice, setFreeSideChoice] = useState<FreeSideItem | null>(null);
+  // The cart_free_side_selections row created by POST /free-sides/select — kept
+  // so changing the choice can replace it instead of stacking selections.
+  const [freeSideSelectionId, setFreeSideSelectionId] = useState<string | number | null>(null);
+  const [freeSideBusy, setFreeSideBusy] = useState(false);
   const [showGateSelector, setShowGateSelector] = useState(true);
   const [globalAddons, setGlobalAddons] = useState([]);
   const [selectedGlobalAddonIds, setSelectedGlobalAddonIds] = useState([]);
@@ -101,7 +112,7 @@ export default function Checkout() {
     let live = true;
     (async () => {
       try { const a = await mockApi.addresses.list(); if (live) setAddresses(a || []); } catch { /* ignore */ }
-      try { const c = await mockApi.rewards.getFreeSideCredits(); if (live) setFreeSideCredits(c || { count: 0, expires_at: null }); } catch { /* ignore */ }
+      try { const c = await mockApi.rewards.getFreeSideCredits(); if (live) setFreeSideCredits(c || { count: 0, expires_at: null, available_sides: [] }); } catch { /* ignore */ }
     })();
     return () => { live = false; };
   }, [isAuthenticated]);
@@ -193,6 +204,32 @@ export default function Checkout() {
     setValidatingPromo(false);
   };
 
+  /**
+   * Confirming a free side records a cart-stage selection — that is what the
+   * backend consumes at order creation (it decrements a credit and inserts the
+   * ₦0 line). Sending it in the order body did nothing: nothing server-side
+   * reads free_side_credit/free_side_choice (docs/WIRING_AUDIT.md §3.1).
+   */
+  const handleUseFreeSide = async (item: FreeSideItem) => {
+    setFreeSideBusy(true);
+    try {
+      if (freeSideSelectionId != null) {
+        // Changing the choice: drop the previous selection first (best effort —
+        // the new selection is still worth making if this fails).
+        await mockApi.rewards.deselectFreeSide(freeSideSelectionId).catch(() => { /* ignore */ });
+        setFreeSideSelectionId(null);
+      }
+      const res = await mockApi.rewards.selectFreeSide({ free_side_item_id: item.id });
+      setFreeSideSelectionId(res?.id ?? res?.[0]?.id ?? null);
+      setFreeSideChoice(item);
+      setShowFreeSide(false);
+      toast({ title: '🏆 Free side added', description: `${item.name} is added to this order at ₦0. The credit is used when you place the order.` });
+    } catch (e) {
+      toast({ title: 'Could not add the free side', description: e.message, variant: 'destructive' });
+    }
+    setFreeSideBusy(false);
+  };
+
   const handlePlaceOrder = async () => {
     setError(null);
     // The backend is the source of truth for whether ordering is allowed —
@@ -244,7 +281,6 @@ export default function Checkout() {
         } : {}),
         notes,
         ...(paymentMethod === 'split' && isAuthenticated ? { wallet_amount: walletAmount } : {}),
-        ...(freeSideChoice ? { free_side_credit: true, free_side_choice: freeSideChoice } : {}),
         ...(!isAuthenticated ? { guest_name: guestName, guest_phone: guestPhone, guest_email: guestEmail } : {}),
         ...(deliveryType === 'on_campus'
           ? { delivery_location_id: hostelId }
@@ -341,7 +377,7 @@ export default function Checkout() {
             <span className="text-xl">🏆</span>
             <div className="flex-1 text-xs text-foreground">
               {freeSideCredits.count > 0 ? (
-                <>You have <span className="font-bold text-primary">{freeSideCredits.count}</span> free side credit{freeSideCredits.count !== 1 ? 's' : ''}!{freeSideChoice && <span className="text-success font-semibold"> · {freeSideChoice} added at ₦0</span>}</>
+                <>You have <span className="font-bold text-primary">{freeSideCredits.count}</span> free side credit{freeSideCredits.count !== 1 ? 's' : ''}!{freeSideChoice && <span className="text-success font-semibold"> · {freeSideChoice.name} added at ₦0</span>}</>
               ) : (
                 <>No free side credits yet. Earn them through rewards and challenges.</>
               )}
@@ -576,7 +612,7 @@ export default function Checkout() {
         <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold text-foreground">{formatNaira(subtotal)}</span></div>
         {promoDiscount > 0 && <div className="flex justify-between text-success"><span>Promo ({promoResult?.code})</span><span>-{formatNaira(promoDiscount)}</span></div>}
         {squadDiscount > 0 && <div className="flex justify-between text-success"><span>Squad ({squadSubPct}%)</span><span>-{formatNaira(squadDiscount)}</span></div>}
-        {freeSideChoice && <div className="flex justify-between text-success"><span>🏆 Reward · {freeSideChoice}</span><span>₦0</span></div>}
+        {freeSideChoice && <div className="flex justify-between text-success"><span>🏆 Reward · {freeSideChoice.name}</span><span>₦0</span></div>}
         <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{effectiveDeliveryFee > 0 ? formatNaira(effectiveDeliveryFee) : <span className="text-success">FREE</span>}</span></div>
         {squadDeliveryPct > 0 && deliveryFee > 0 && <div className="flex justify-between text-success"><span>Squad delivery ({squadDeliveryPct}%)</span><span>-{formatNaira(deliveryFee - effectiveDeliveryFee)}</span></div>}
         {globalAddonsTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-semibold">{formatNaira(globalAddonsTotal)}</span></div>}
@@ -611,12 +647,10 @@ export default function Checkout() {
       <FreeSideCreditModal
         open={showFreeSide}
         count={freeSideCredits.count}
+        sides={freeSideCredits.available_sides}
+        busy={freeSideBusy}
         onClose={() => setShowFreeSide(false)}
-        onUse={(choice) => {
-          setFreeSideChoice(choice);
-          setShowFreeSide(false);
-          toast({ title: '🏆 Free side added', description: `${choice} added to your order at ₦0. Your credit is used when you place the order.` });
-        }}
+        onUse={handleUseFreeSide}
       />
     </div>
   );

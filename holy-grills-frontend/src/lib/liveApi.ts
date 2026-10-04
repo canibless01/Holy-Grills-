@@ -5,6 +5,7 @@
 import { apiClient, ApiError, login as apiLogin, clearTokens, isAuthenticated, getToken, API_BASE_URL } from './apiClient';
 import { getOrderCustomer } from './hgUtils';
 import type { MyChallengesEnvelope } from '@/types/challenges';
+import type { SelectFreeSidePayload } from '@/types/free-sides';
 
 // Many list endpoints wrap the array in a keyed object (e.g. { hostels: [...] },
 // { departments: [...] }, { levels: [...] }). This pulls the array out so every
@@ -312,9 +313,13 @@ const rewards = {
     };
   },
   // F5: `redeemFreeSide` was deleted. The backend replaced the post-order
-  // /free-sides/redeem flow with cart-stage selection (POST /free-sides/select),
-  // and this app now sends `free_side_credit` + `free_side_choice` in the order
-  // payload from Checkout. Its only caller was the legacy modal, also removed.
+  // /free-sides/redeem flow with cart-stage selection — and selection is what
+  // actually spends the credit (order_service consumes cart_free_side_selections
+  // at order creation and inserts the ₦0 line). Checkout now selects/deselects
+  // through these two methods instead of sending order-body fields the backend
+  // ignored (docs/WIRING_AUDIT.md §3.1).
+  async selectFreeSide(body: SelectFreeSidePayload) { return apiClient.post('/free-sides/select', body); },
+  async deselectFreeSide(selectionId: string | number) { return apiClient.delete(`/free-sides/select/${selectionId}`); },
 };
 
 // ========== MARKETPLACE ==========
@@ -1365,14 +1370,6 @@ const storefront = {
 // free-side options, etc.). Students cannot read /admin/settings, so this is
 // the student-facing source of configurable values. Falls back gracefully.
 //
-// F5 GAP: the backend serves no public /settings route (only /admin/settings and
-// /kitchen/settings), so this 404s today and lib/featureConfig.ts consumes it.
-// Reported for a backend route; kept because the type contract documents it
-// (src/types/config.ts).
-const config = {
-  async getPublic() { return unwrap(await apiClient.get('/settings'), 'settings'); },
-};
-
 // ========== HEALTH (public, Domain 17 — GET /health) ==========
 // Unauthenticated API health check: API status + Supabase and Redis connectivity.
 const health = {
@@ -1383,7 +1380,7 @@ const health = {
 export const liveApi = {
   auth, addresses, menu, cart, orders, events, hp, rewards, marketplace,
   wallet, notifications, push, referrals, leaderboard, kitchen, riders, analytics, admin, delivery, orderLocks, squads,
-  saved, challenges, graduation, departments, academicLevels, campuses, storefront, config, health, users,
+  saved, challenges, graduation, departments, academicLevels, campuses, storefront, health, users,
   demoLogin() {
     // No-op for live API — use login() instead
     console.warn('demoLogin is not available with the live API. Use login() instead.');

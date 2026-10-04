@@ -85,7 +85,7 @@ mobile/webhook/admin-API surface, or retire. Full list in the appendix.
 
 ## 3. Findings
 
-### 3.1 P1 — free-side credits are not actually applied to orders (confirmed break)
+### 3.1 P1 — free-side credits are not actually applied to orders — **FIXED 2026-10-04**
 
 The UI says "it's added to this order at ₦0. The credit is used the moment you
 place the order" (`FreeSideCreditModal.tsx:44`). The backend disagrees.
@@ -105,15 +105,17 @@ place the order" (`FreeSideCreditModal.tsx:44`). The backend disagrees.
 * **Net effect:** a customer with a credit sees the ₦0 line and the credit is
   never spent — the order is priced without it. No money is lost, but the
   feature is not delivered.
-* **Fix (frontend-only, aligns to the documented backend flow):** keep the
-  `available_sides` rows that `GET /free-sides` already returns
-  (`{id, name, image_url}`), let the modal choose by **id**, call
-  `POST /free-sides/select` when the user confirms, and drop the two unread body
-  fields. `src/types/free-sides.ts` already types both this payload and
-  `FreeSideItem` — only the wiring is missing. **Not applied: it changes
-  checkout behaviour, so it needs your go-ahead.**
+* **Fix (applied, frontend-only, aligns to the documented backend flow):**
+  `FreeSideCreditModal` now lists the backend's curated `available_sides` by id;
+  Checkout's `handleUseFreeSide` calls `POST /free-sides/select` (replacing any
+  previous selection via `DELETE /free-sides/select/<id>`), and the two unread
+  body fields are gone from `Checkout.tsx` and `CreateOrderPayload`. If selection
+  fails the UI says so and adds nothing — the summary can no longer promise a
+  free side the backend will not deliver. `liveApi.rewards.selectFreeSide` /
+  `deselectFreeSide` are the new methods (`src/types/free-sides.ts` already had
+  the payload types).
 
-### 3.2 P2 — `GET /settings` should be `GET /storefront/config/public`
+### 3.2 P2 — `GET /settings` should be `GET /storefront/config/public` — **FIXED 2026-10-04**
 
 `featureConfig.ts` reads public settings (WhatsApp number, streak rewards,
 free-side options…) from a route that does not exist, then falls back to
@@ -121,8 +123,10 @@ free-side options…) from a route that does not exist, then falls back to
 defaults. The documented public route — `storefront.py`,
 `config/public` — is not called by the client at all. Consequence: **students
 get built-in defaults, not admin-configured values**, for every setting read
-through this path. Small frontend fix (adapt the response into the key/value map
-`getSetting()` already expects).
+through this path. **Applied:** `loadSystemSettings()` reads
+`liveApi.storefront.getPublicConfig()` and folds the flat key→value map into
+`settingsMap`; the dead `liveApi.config.getPublic()` method is removed and
+`types/config.ts` documents the real route.
 
 ### 3.3 P3 — documented-but-missing routes (section 1)
 

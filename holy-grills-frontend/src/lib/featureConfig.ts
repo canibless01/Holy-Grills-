@@ -91,15 +91,18 @@ export async function loadFeatureFlags() {
 export function isFlagLoaded() { return flagsLoaded; }
 
 export async function loadSystemSettings() {
-  // Students cannot read /admin/settings, so prefer the public /settings
-  // endpoint first (WhatsApp number, streak rewards, free-side options, etc.).
-  // Admins fall through to /admin/settings for the full privileged set. Either
-  // failing is non-fatal — getSetting() returns its built-in default.
+  // Students cannot read /admin/settings, so prefer the public config first
+  // (WhatsApp number, streak rewards, free-side options, etc.). The real route
+  // is GET /api/storefront/config/public, which returns a flat key→value map;
+  // the old GET /settings call 404'd, so students only ever saw the built-in
+  // defaults (docs/WIRING_AUDIT.md §3.2). Admins fall through to
+  // /admin/settings for the full privileged set. Either failing is non-fatal —
+  // getSetting() returns its built-in default.
   settingsMap = {};
   try {
-    const publicSettings = await liveApi.config.getPublic();
-    (publicSettings || []).forEach((s) => {
-      if (s && s.key) settingsMap[s.key] = s.value;
+    const publicConfig = await liveApi.storefront.getPublicConfig();
+    Object.entries(publicConfig || {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) settingsMap[key] = value;
     });
   } catch (e) { /* public endpoint unavailable — try admin below */ }
   try {

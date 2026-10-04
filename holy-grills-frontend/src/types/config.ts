@@ -1,9 +1,10 @@
 /**
  * Public configuration contract.
  *
- * `liveApi.config.getPublic()` calls `GET /settings` — that path does **not**
- * exist on the backend (Phase 0 audit §5 M12). Public settings are served by
- * `GET /api/storefront/config/public` (see `PublicConfig` in ./storefront).
+ * Public settings are served by `GET /api/storefront/config/public` as a flat
+ * key→value map (see `PublicConfig` in ./storefront) — `lib/featureConfig.ts`
+ * reads them from there. The old `GET /settings` call 404'd and was removed
+ * (docs/WIRING_AUDIT.md §3.2).
  */
 import type { PublicConfig } from './storefront';
 
