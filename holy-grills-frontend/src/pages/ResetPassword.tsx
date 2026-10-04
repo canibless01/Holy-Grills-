@@ -35,8 +35,8 @@ export default function ResetPassword() {
     setLoading(true);
     try {
       // Custom-backend confirm — POST /api/auth/reset-password/confirm with the
-      // token from the reset email + the new password. The Base44 SDK is NOT
-      // used: users live in the custom backend, so a Base44 resetPassword call
+      // token from the reset email + the new password, straight to the Flask
+      // backend that owns the users (POST /auth/reset-password/confirm).
       // could never validate the custom-backend token. If this endpoint 404s,
       // the error surfaces here so the backend route can be corrected.
       await liveApi.auth.confirmReset({ access_token: resetToken, new_password: newPassword });

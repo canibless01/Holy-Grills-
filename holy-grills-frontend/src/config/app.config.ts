@@ -37,7 +37,7 @@ export const APP_CONFIG = {
 
   // OneSignal web push. The App ID is a PUBLIC value (safe in client code).
   // Set it here to enable push notifications. The REST API key (server-only)
-  // is stored as a secret — see base44/functions/sendPushNotification.
+  // is stored as a secret — see holy-grills-backend/app/services/notification_service.py.
   onesignal: {
     appId: '', // ← Paste your OneSignal App ID here to enable push
   },

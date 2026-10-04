@@ -51,7 +51,7 @@ const auth = {
   async resetPassword(body) { return apiClient.post('/auth/reset-password', body); },
   // Confirm step: POST /auth/reset-password/confirm { token, new_password } —
   // consumes the token from the reset email and sets the new password. This is
-  // the custom-backend confirm endpoint (Base44 SDK is NOT used — users live in
+  // the custom-backend confirm endpoint (users live in
   // the custom backend, so a Base44 resetPassword call could never validate the
   // custom-backend token). Endpoint path needs backend verification.
   async confirmReset(body) { return apiClient.post('/auth/reset-password/confirm', body); },
