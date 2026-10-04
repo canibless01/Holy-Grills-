@@ -15,7 +15,7 @@ import BrandLogo from '@/components/BrandLogo';
  *
  * The global search jumps to any admin section (type "multiplier" → HP &
  * Multipliers) and matches live records — available on BOTH mobile and desktop.
- * Title/subtitle come from the TITLES map in Admin.jsx.
+ * Title/subtitle come from the TITLES map in Admin.tsx.
  */
 export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, onNavigate }) {
   const [searchOpen, setSearchOpen] = useState(false);

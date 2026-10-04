@@ -50,6 +50,12 @@ export function TextInput(props: React.ComponentProps<'input'>) {
   );
 }
 
+// D1: this map is the one the admin pages actually use (25 files import Pill
+// from AdminShared; AdminKit exports a second Pill on brand tokens). It always
+// had `blue`, so the call sites were never wrong — but `tone` was typed as
+// `string`, so a typo or a tone that only exists in the other map would compile
+// and render nothing. The union below closes that, and the fallback keeps the
+// old default for any value arriving from API data.
 const TONES = {
   cocoa: 'bg-secondary text-foreground',
   green: 'bg-green-100 text-green-700',
@@ -57,10 +63,13 @@ const TONES = {
   red: 'bg-red-100 text-red-700',
   blue: 'bg-blue-100 text-blue-700',
   flame: 'bg-primary/15 text-primary/90',
+  outline: 'border border-border text-muted-foreground',
 };
 
-export function Pill({ children, tone = 'cocoa' }: { children?: React.ReactNode; tone?: string }) {
-  return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TONES[tone]}`}>{children}</span>;
+export type AdminPillTone = keyof typeof TONES;
+
+export function Pill({ children, tone = 'cocoa' }: { children?: React.ReactNode; tone?: AdminPillTone }) {
+  return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TONES[tone] || TONES.cocoa}`}>{children}</span>;
 }
 
 export function Card({ children, className = '' }: { children?: React.ReactNode; className?: string }) {

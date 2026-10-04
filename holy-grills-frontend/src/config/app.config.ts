@@ -67,7 +67,7 @@ export const APP_CONFIG = {
       type: 'Restaurant',
       description:
         "Made With More Than Flame. Real flame grilled chicken, wings and kebabs with crispy sides, delivered hot across campus.",
-      logo: '/logo.png',
+      logo: '/icons/icon.svg',
       image: '',
       servesCuisine: ['Grilled Chicken', 'Fast Food', 'Nigerian'],
       priceRange: '₦₦',

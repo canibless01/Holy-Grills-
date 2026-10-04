@@ -1306,8 +1306,9 @@ const challenges = {
   async list(params = {}) { return unwrap(await apiClient.get('/challenges', params), 'challenges'); },
   async badges() { return unwrap(await apiClient.get('/challenges/badges'), 'badges', 'challenges'); },
   async my(params = {}) { return unwrap(await apiClient.get('/challenges/my', params), 'challenges'); },
-  // GET /challenges/<id> — no such backend route; milestones are fetched via my() or admin list.
-  async get(id) { return apiClient.get(`/challenges/${id}`); },
+  // F6: `get(id)` was deleted — it called GET /challenges/<id>, which no backend
+  // route serves, and nothing in the app called it. Milestones come from my()
+  // (per-user) or the admin list.
   // Backend route reads no body (challenges.py:135 POST /<milestone_id>/complete).
   async complete(id) { return apiClient.post(`/challenges/${id}/complete`); },
   // POST /challenges/social-follow — no ID in path; the backend looks up the social_follow milestone internally.

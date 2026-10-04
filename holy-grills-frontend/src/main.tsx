@@ -1,6 +1,6 @@
 import ReactDOM from 'react-dom/client'
 import App from '@/App'
-import { PRERENDER_STAMP_ATTR, currentPath, isHydratingPrerender } from '@/lib/hydrationMode'
+import { isHydratingPrerender } from '@/lib/hydrationMode'
 import '@/index.css'
 
 // Track B: pre-rendered routes ship real HTML inside #root (scripts/prerender.mjs),

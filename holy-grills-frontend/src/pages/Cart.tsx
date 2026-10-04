@@ -6,7 +6,6 @@ import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira } from '@/lib/hgUtils';
-import { squadOrderDiscountEnabled, squadOrderDiscountPct } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
 import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
@@ -36,21 +35,15 @@ export default function Cart() {
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('cart');
-  const [promoResult, setPromoResult] = useState(null);
-  const [squadEnabled, setSquadEnabled] = useState(false);
-  const [selectedSquadId, setSelectedSquadId] = useState(null);
 
   useEffect(() => {
     refreshCart().then(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // E3: promo codes and squad orders live in Checkout (it owns the promo input
+  // and the squad selector). The state removed here could no longer be set, so
+  // promoDiscount/squadDiscount were always 0 and `total` was always `subtotal`.
   const subtotal = cart?.subtotal || 0;
-  const promoDiscount = promoResult?.calculated_discount || 0;
-  const squadSubEnabled = squadOrderDiscountEnabled();
-  const squadSubPct = squadSubEnabled ? squadOrderDiscountPct() : 0;
-  const squadItemCount = (cart?.items || []).reduce((s, ci) => s + (ci.quantity || 1), 0);
-  const squadDiscount = squadEnabled && squadSubPct > 0 ? subtotal * (squadSubPct / 100) : 0;
-  const total = Math.max(0, subtotal - promoDiscount - squadDiscount);
 
   const handleQty = async (itemId, currentQty, delta) => {
     const newQty = currentQty + delta;
@@ -84,9 +77,9 @@ export default function Cart() {
 
   const handleRemoveSaved = (saved) => { removeSaved(saved.id); };
 
-  const checkoutState = { promoResult, squadEnabled, squadId: squadEnabled ? selectedSquadId : null, total, subtotal };
-
-  const handleCheckout = () => navigate('/checkout', { state: checkoutState });
+  // Checkout still reads `subtotal` as a fallback when the cart object has not
+  // loaded yet (Checkout.tsx), so that stays part of the navigation contract.
+  const handleCheckout = () => navigate('/checkout', { state: { subtotal } });
 
   if (loading) {
     return (
@@ -226,11 +219,11 @@ export default function Cart() {
             {/* Summary */}
             <div className="hg-card space-y-2">
               <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold text-foreground">{formatNaira(subtotal)}</span></div>
-              <div className="border-t border-border pt-2 flex items-center justify-between"><span className="font-semibold text-foreground">Total</span><span className="font-heading font-bold text-lg text-foreground">{formatNaira(total)}</span></div>
+              <div className="border-t border-border pt-2 flex items-center justify-between"><span className="font-semibold text-foreground">Total</span><span className="font-heading font-bold text-lg text-foreground">{formatNaira(subtotal)}</span></div>
             </div>
 
             <motion.button whileTap={{ scale: 0.97 }} onClick={handleCheckout} disabled={cart.has_unavailable_items} className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-50">
-              Checkout · {formatNaira(total)} <ChevronRight className="w-4 h-4" />
+              Checkout · {formatNaira(subtotal)} <ChevronRight className="w-4 h-4" />
             </motion.button>
           </>
         )

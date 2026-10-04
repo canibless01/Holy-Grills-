@@ -60,7 +60,9 @@ export default function Checkout() {
   const [globalAddons, setGlobalAddons] = useState([]);
   const [selectedGlobalAddonIds, setSelectedGlobalAddonIds] = useState([]);
   const [scheduledWindow, setScheduledWindow] = useState(null);
-  const [squadSelection, setSquadSelection] = useState(passed.squadId ? { squad_id: passed.squadId, excluded_member_ids: [], extra_members: [] } : null);
+  // E3: this used to be seeded from location.state.squadId, which the cart could
+  // never set (its squad switch was unreachable). Squad selection is made here.
+  const [squadSelection, setSquadSelection] = useState(null);
   const [reschedule, setReschedule] = useState(null); // { date, payload } — today full, awaiting schedule confirm
   // Promo code is now managed here (moved from the cart page) so the cart stays
   // a pure review of items and checkout owns all order-level adjustments.

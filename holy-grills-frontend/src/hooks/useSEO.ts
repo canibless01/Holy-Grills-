@@ -54,6 +54,8 @@ const upsertJsonLd = (id, data) => {
 /** Options accepted by useSEO(); every field is optional. */
 interface SeoOptions {
   title?: string;
+  /** Skip the "| <app name>" suffix (used when the title is already complete). */
+  bare?: boolean;
   description?: string;
   image?: string;
   path?: string;
@@ -61,12 +63,12 @@ interface SeoOptions {
   jsonLd?: Record<string, unknown> | null;
 }
 
-export const useSEO = ({ title, description, image, path, type, jsonLd }: SeoOptions = {}) => {
+export const useSEO = ({ title, bare, description, image, path, type, jsonLd }: SeoOptions = {}) => {
   // Serialised so the effect only re-runs when the data actually changes.
   const jsonLdKey = jsonLd ? JSON.stringify(jsonLd) : '';
 
   useEffect(() => {
-    const fullTitle = title ? `${title} | ${APP_CONFIG.name}` : APP_CONFIG.seo.defaultTitle;
+    const fullTitle = title ? (bare ? title : `${title} | ${APP_CONFIG.name}`) : APP_CONFIG.seo.defaultTitle;
     const desc = description || APP_CONFIG.seo.defaultDescription;
     const img = absoluteUrl(image || APP_CONFIG.seo.defaultImage);
     const url = `${APP_CONFIG.domain}${path || window.location.pathname}`;
@@ -96,7 +98,7 @@ export const useSEO = ({ title, description, image, path, type, jsonLd }: SeoOpt
     // Structured data — global identity on every page, plus optional page block.
     upsertJsonLd('business', restaurantJsonLd());
     upsertJsonLd('page', jsonLd || null);
-  }, [title, description, image, path, type, jsonLdKey]);
+  }, [title, bare, description, image, path, type, jsonLdKey]);
 };
 
 export default useSEO;

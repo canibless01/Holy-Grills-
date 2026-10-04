@@ -36,6 +36,12 @@ export interface RouteMeta {
   /** Absolute or app-relative social image; falls back to the template's tag */
   /** Per-route social image, overriding APP_CONFIG.seo.defaultImage. */
   image?: string;
+  /**
+   * Skip the "| <app name>" suffix. Some page titles are already complete
+   * sentences (Our Story's is 59 characters on its own); appending the brand
+   * pushed it past the ~60-character limit search results show.
+   */
+  bareTitle?: boolean;
 }
 
 export const ROUTE_META: Record<string, RouteMeta> = {
@@ -52,7 +58,8 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     path: '/faq',
   },
   '/our-story': {
-    // verbatim from src/pages/OurStory.tsx
+    // verbatim from src/pages/OurStory.tsx — 59 chars, so no brand suffix
+    bareTitle: true,
     title: 'Holy Grills: The Student Flame Grill Built at FUTA, Akure',
     description:
       "Holy Grills is FUTA's student focused flame grill in Akure. Real open flame, campus delivery, Holy Points and a community that shows up together.",
@@ -80,7 +87,8 @@ export function metaForPath(path: string): RouteMeta {
 
 /** The exact <title> the SPA writes at runtime (mirrors useSEO). */
 export function documentTitle(meta: RouteMeta): string {
-  return meta.useAppDefaultTitle ? APP_CONFIG.seo.defaultTitle : `${meta.title} | ${APP_CONFIG.name}`;
+  if (meta.useAppDefaultTitle) return APP_CONFIG.seo.defaultTitle;
+  return meta.bareTitle ? meta.title : `${meta.title} | ${APP_CONFIG.name}`;
 }
 
 /**

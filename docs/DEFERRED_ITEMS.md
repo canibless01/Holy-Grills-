@@ -5,11 +5,30 @@ pre-existing frontend/backend mismatch, a cosmetic drift, or tooling that needs 
 decision the migration is not allowed to make on its own (no new UI, contract
 frozen, no new security work).
 
+## 0. Resolved (Track B session) — kept here for the audit trail
+
+| # | Was | Now |
+|---|---|---|
+| D3 | `seo.business.logo: '/logo.png'` — no such file in `public/`, so the JSON-LD logo 404'd | points at the real `/icons/icon.svg`; the `seoJsonLd` special-case that papered over it is gone. Social image stays the new 1200×630 `og-cover.jpg` |
+| D4 | Relative `/api/*` callers could not be exercised locally (no dev proxy) | `vite.config.ts` proxies `/api` when `VITE_DEV_PROXY_TARGET` is set. Unset = previous behaviour, and dev-only |
+| D5 | `eslint.config.js` globs matched **no** files, so `npm run lint` linted nothing | globs are TS/TSX and the parser is `typescript-eslint`. Same rule set as before the migration — coverage restored, no new policy. It immediately found two unused imports in `main.tsx` |
+| D6 | `jsconfig.json` pointed at `.js`/`.jsx` globs that no longer exist | deleted; `tsconfig.json` (which has the same `@/*` paths) is the single source of truth |
+| D7 | Comments referenced `App.jsx`, `Admin.jsx`, `AdminShared.jsx`, `toast.jsx`, `ImageUploader.jsx` | the seven references now name the real files |
+| D1 | *Original note:* "8 call sites of `Pill tone="blue"` silently render cocoa" | **the note was wrong and is corrected below** — see §A |
+| E1 | Four components with no static import, possibly reachable through the dynamic storefront registry | confirmed against the renderer (`how_its_made` is rendered by `StorefrontSlider`) and deleted: `storefront/EarlySupporters.tsx`, `storefront/HowItsMade.tsx`, `MenuListCard.tsx`, `Sparkline.tsx` (recoverable from git) |
+| E2 | `MarketplacePurchasesPanel` computed `STATUS_TONE` and then ignored it, hardcoding `text-success`/`text-blue-600`/`text-destructive` inline — so `pending` and `refunded` lost their colours | the row renders the computed tone; the map is typed, so a status without a tone fails the build |
+| E3 | `Cart.tsx` carried promo/squad state whose setters no longer existed, so both discounts were always 0 and `total === subtotal` | remnant and the dead Checkout-side seeding removed; the navigation contract that still matters (`subtotal`) is kept and documented |
+| F6 | `liveApi.challenges.get(id)` called `GET /challenges/<id>`, a route the backend does not serve, with no caller | deleted |
+| F7 | "We do not have SSR" | pre-rendering shipped for `/`, `/faq`, `/our-story`, `/terms` — see `docs/TRACK_B_SSR_PLAN.md` |
+
+Still open from this list: §D (the six migration-era `any`s), F1–F5 (they need a
+product or backend decision — see the end of `docs/TRACK_B_SSR_PLAN.md`).
+
 ## A. Cosmetic drift (needs a decision before touching)
 
 | # | Where | What | Options |
 |---|---|---|---|
-| D1 | `Pill` with `tone="blue"` — 8 call sites (verified) | `PILL_TONES` keys are `cocoa, flame, green, amber, red, outline` — no `blue`, so those pills silently render as cocoa at runtime. The prop is typed `string`, so tsc cannot see it. | (a) alias `blue` → an existing tone, or (b) add a real blue tone. Any choice changes appearance, so it waits for you. |
+| D1 | ~~`Pill` with `tone="blue"` — 8 call sites | `PILL_TONES` keys are `cocoa, flame, green, amber, red, outline` — no `blue`, so those pills silently render as cocoa at runtime.~~ | **Corrected in the Track B session.** All eight call sites import `Pill` from `AdminShared.tsx`, whose `TONES` map *does* include `blue` — so nothing rendered as cocoa; the original note conflated two components. There are in fact **two** `Pill` implementations with two different tone maps (see below), and the real defect was that both typed `tone` as `string` while their key sets differed. Both are now typed against their own keys, `AdminKit` gained the missing `blue`, and `AdminShared` gained the `outline` tone that `AdminExclusiveSpin` was already asking for (an unknown key produced an `undefined` class, i.e. an unstyled pill). Enforced: `tone="mauve"` is now a compile error. **Open decision:** the two maps are still separate — `AdminKit` uses brand tokens, `AdminShared` uses Tailwind 100/700 pairs, so the same tone looks different depending on the import. Unifying them is a visual change across ~25 admin files → your call. |
 
 _Checked and cleared: `components/admin/AdminHp.tsx`'s `amount` state is **not** dead — it feeds the
 bulk-grant request body (`:49`) and the bulk-grant input (`:111`). No Phase 6a action needed._

@@ -1,7 +1,7 @@
 /**
  * Holy Grill — SoundProvider
  * ----------------------------------------------------------------------------
- * App-wide context for the sound system. Wraps the app once (in App.jsx) and
+ * App-wide context for the sound system. Wraps the app once (in App.tsx) and
  * exposes play() + enabled state to every component via useSound().
  *
  *   import { useSound } from '@/lib/SoundProvider';

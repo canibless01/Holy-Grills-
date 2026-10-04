@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 // UI kit scoped to the Admin Panel & User Management + Analytics domains.
-// Other admin domains keep using AdminShared.jsx — nothing cross-domain changes.
+// Other admin domains keep using AdminShared.tsx — nothing cross-domain changes.
 
 // Pulls the payload out of a {status, message, data} envelope without
 // inventing shapes — returns the response as-is when already unwrapped.
@@ -34,9 +34,16 @@ const PILL_TONES = {
   amber: 'bg-accent/25 text-accent-foreground',
   red: 'bg-destructive/10 text-destructive',
   outline: 'border border-border text-muted-foreground',
+  // D1: `blue` was missing from this map (and from ADMIN_TONES in AdminShared
+  // until it was audited too). It is the palette's informational tone.
+  blue: 'bg-blue-500/10 text-blue-600',
 };
 
-export function Pill({ children, tone = 'cocoa', className = '' }: { children?: ReactNode; tone?: string; className?: string }) {
+// Typing `tone` as the key union (not `string`) is the other half of D1: an
+// unknown tone is now a compile error instead of a silent cocoa fallback.
+export type PillTone = keyof typeof PILL_TONES;
+
+export function Pill({ children, tone = 'cocoa', className = '' }: { children?: ReactNode; tone?: PillTone; className?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full ${PILL_TONES[tone] || PILL_TONES.cocoa} ${className}`}>
       {children}

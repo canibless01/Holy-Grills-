@@ -89,7 +89,7 @@ export default function OurStory() {
 
   return (
     <div className="animate-fade-in">
-      <SEO title={META.title} description={META.description} path={META.path} />
+      <SEO title={META.title} description={META.description} path={META.path} bare={META.bareTitle} />
 
       {/* Top of page */}
       <div className="text-center pt-2 max-w-2xl mx-auto">

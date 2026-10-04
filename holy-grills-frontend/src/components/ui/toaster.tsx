@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/toast";
 
 /* Compact toaster — no close button (swipe or auto-dismiss instead). The toast
- * itself is swipeable (see toast.jsx) and auto-dismisses after a short duration
+ * itself is swipeable (see toast.tsx) and auto-dismisses after a short duration
  * (configured in use-toast.toast()), so an X button would only add chrome. */
 export function Toaster() {
   const { toasts } = useToast();

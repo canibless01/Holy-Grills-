@@ -6,7 +6,7 @@
  * the native prompt. On iOS (no beforeinstallprompt) shows a "Add to Home
  * Screen" instruction sheet.
  *
- * Rendered once at the app root (App.jsx) — covers every page automatically.
+ * Rendered once at the app root (App.tsx) — covers every page automatically.
  */
 import { useEffect, useState } from 'react';
 import { Download, X, Share2, Plus, Flame } from 'lucide-react';

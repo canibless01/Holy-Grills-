@@ -243,3 +243,45 @@ menu-derived pre-render would need. **§6 item 2 is done**: I implemented the 40
 (next static file + host rule), not as an in-app change, which is what the item asked to confirm.
 If you would rather not switch `vercel.json` to the legacy `routes` dialect, say so and I will
 revert to the previous `rewrites` (and lose real 404 statuses).
+
+---
+
+# Question: do admin-CMS image changes affect the pre-render?
+
+Short answer: **no, and they never reach the raw HTML — by design.**
+
+`Home` renders images from three places, and all three are runtime fetches:
+
+| Source | Where | What the pre-render emits |
+|---|---|---|
+| `HeroCarousel.tsx` | `DEFAULT_SLIDES` (3 hardcoded Unsplash URLs) as `useState` initial value, replaced by `liveApi.storefront.getBanners({ placement: 'hero' })` / `getSections('hero')` in an effect | the `DEFAULT_SLIDES` URLs |
+| `getStorefrontSections(...)` consumers (`StorefrontSlider`, `EarlySupportersSlider`, testimonial slider, catering card) | `liveApi.storefront.getSections` in effects | nothing (no data) or the component's own fallback |
+| `FeaturedItems` / menu-derived cards | `liveApi` in effects | nothing |
+
+The build runs **zero** API calls (`docs/TRACK_B_SSR_PLAN.md` §4), so a CMS change
+cannot alter the pre-rendered markup, cannot fail the build, and cannot leak
+CMS draft content into a static file. Consequences worth knowing:
+
+1. **Crawlers see the fallback art**, not the published hero. This is a
+   pre-existing property of a client-rendered SPA; pre-rendering does not change it.
+2. **A visitor may briefly see the fallback** and then the CMS image, because the
+   pre-rendered fallback paints before hydration and the fetch resolves after. Before
+   pre-rendering, the same swap happened one paint later — the pre-render makes the
+   fallback visible *earlier*, which is a small improvement, not a regression.
+3. **No hydration mismatch**, because the first client render uses the same three
+   defaults the server used; the CMS data arrives as a normal state update afterwards.
+
+### If you want CMS images *in* the HTML
+
+Two options, neither of which is free:
+
+- **Build-time fetch** (smallest change): `scripts/prerender.mjs` fetches the public
+  `storefront/banners?placement=hero` endpoint and injects those URLs into the
+  `HeroCarousel` server render, with the known caveat that the build then depends on
+  the live backend and needs a rerun (or a publish webhook) after every CMS change.
+  Requires an env flag and a hard fallback to `DEFAULT_SLIDES` when the API is down.
+- **A real SSR runtime** (bigger): render per request so CMS content, prices and
+  availability are always current. That is the "live-data SEO" item in §6 and it needs
+  a Node process — the static pre-render was chosen specifically to avoid one.
+
+Say which and I will scope it; nothing is implemented for either today.

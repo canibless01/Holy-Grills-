@@ -1,6 +1,6 @@
 // Captures the PWA `beforeinstallprompt` event so any component can trigger
 // the native install flow on demand. The listener is registered at module-eval
-// time — the Streak page imports this eagerly via App.jsx, so it's ready before
+// time — the Streak page imports this eagerly via App.tsx, so it's ready before
 // the event fires. A consumed prompt can only be used once per browser event.
 let deferredPrompt = null;
 let consumed = false;

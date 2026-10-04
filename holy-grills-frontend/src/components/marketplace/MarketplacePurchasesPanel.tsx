@@ -3,6 +3,7 @@ import { X, Send, Loader2, Flag } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
+import { Pill, type PillTone } from '@/components/admin/ui/AdminKit';
 
 // Reads the real response shape from GET /marketplace/purchases:
 // each row carries nested marketplace_listings(title, listing_type, image_url)
@@ -11,7 +12,10 @@ import { toast } from '@/components/ui/use-toast';
 const purchaseTitle = (p) => p?.marketplace_listings?.title || p?.title || 'Listing';
 const purchaseCode = (p) => p?.metadata?.code || p?.code;
 
-const STATUS_TONE = {
+// E2: this map was computed and then thrown away — the row hardcoded
+// text-success / text-blue-600 / text-destructive inline instead, so 'pending'
+// and 'refunded' lost their colours. Typing it keeps it honest.
+const STATUS_TONE: Record<string, PillTone> = {
   pending: 'amber', completed: 'green', refunded: 'blue', cancelled: 'red',
 };
 
@@ -49,7 +53,7 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
             <div key={p.id} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-muted">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-foreground truncate">{purchaseTitle(p)}</div>
-                <div className="text-[10px] text-muted-foreground">{timeAgo(p.created_at)} · <span className={`font-bold ${p.status === 'completed' ? 'text-success' : p.status === 'refunded' ? 'text-blue-600' : p.status === 'cancelled' ? 'text-destructive' : ''}`}>{p.status}</span></div>
+                <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">{timeAgo(p.created_at)} · <Pill tone={tone}>{p.status}</Pill></div>
                 {code && <div className="font-mono font-bold text-sm text-primary mt-0.5">{code}</div>}
               </div>
               {p.status === 'completed' && (

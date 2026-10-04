@@ -108,10 +108,12 @@ const flashStatus = (r) => {
   return 'live';
 };
 
+// `as const` keeps the tone literals (the Pill tone union rejects a widened
+// `string`, which is what the new typing caught here).
 const FLASH_BADGE = {
   live: { icon: Flame, label: '🔥 Live', tone: 'flame' },
   ended: { icon: Clock, label: '⏰ Ended', tone: 'cocoa' },
-};
+} as const;
 
 export default function AdminRewards() {
   const [tab, setTab] = useState('rewards');
