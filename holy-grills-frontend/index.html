@@ -33,17 +33,18 @@
     <meta property="og:title" content="Holy Grills 🔥 — FUTA's Only Flame Grill" />
     <meta property="og:description" content="FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards." />
     <meta property="og:url" content="https://holygrill.app/" />
-    <meta property="og:image" content="/icons/icon.svg" />
+    <meta property="og:image" content="https://holygrill.app/og-cover.jpg" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Holy Grills 🔥 — FUTA's Only Flame Grill" />
     <meta name="twitter:description" content="FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards." />
-    <meta name="twitter:image" content="/icons/icon.svg" />
+    <meta name="twitter:image" content="https://holygrill.app/og-cover.jpg" />
 
+    <!-- Fonts are self-hosted (S9): @fontsource-variable/nunito is imported by
+         src/main.tsx, so no third-party font origin is contacted on page load.
+         Fraunces was loaded here but never referenced by any style — removed. -->
     <!-- Performance: preconnect to origins -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://images.unsplash.com" />
     <link rel="dns-prefetch" href="https://images.unsplash.com" />
 
@@ -58,15 +59,15 @@
       "priceRange": "₦",
       "areaServed": "FUTA",
       "url": "https://holygrill.app/",
-      "logo": "https://holygrill.app/icons/icon.svg",
-      "image": "https://holygrill.app/icons/icon.svg",
+      "logo": "https://holygrill.app/og-cover.jpg",
+      "image": "https://holygrill.app/og-cover.jpg",
       "acceptsReservations": "False"
     }
     </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
 
     <!-- Dev-sandbox guard: run before the app modules execute.
          If this page is served by the Vite dev server, any service worker left

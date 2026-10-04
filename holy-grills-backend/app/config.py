@@ -29,15 +29,27 @@ class Config:
     frontend_env = os.environ.get("FRONTEND_URL")
     if frontend_env and frontend_env.strip() != "*":
         origins_set.add(frontend_env.strip())
-    origins_set.update([
-        "https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app",
-        "https://holy-grills-frontend.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ])
-    CORS_ORIGINS = list(origins_set)
+    # Origins are environment-driven, with the known deployments as the default
+    # so the API is not left on a wildcard. CORS_ORIGINS / ALLOWED_ORIGINS /
+    # FRONTEND_URL (comma-separated) override this list entirely; a "*" in any of
+    # them is ignored — pinning the list is the point.
+    #
+    # Preview deployments (holy-grills-<hash>.vercel.app) are NOT listed: add them
+    # through CORS_ORIGINS on that environment if you test on a preview URL.
+    DEFAULT_CORS_ORIGINS = (
+        "https://holy-grills.vercel.app",
+        "https://holygrill.app",
+        "https://www.holygrill.app",
+        # Local dev: vite dev server, vite preview, the static smoke server.
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:4174", "http://127.0.0.1:4174",
+    )
+
+    # The known origins are always allowed; env entries (CORS_ORIGINS /
+    # ALLOWED_ORIGINS / FRONTEND_URL) only ADD to them — so a stale or missing
+    # FRONTEND_URL can never lock the real frontend out of its own API.
+    CORS_ORIGINS = sorted(set(DEFAULT_CORS_ORIGINS) | origins_set)
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
@@ -50,7 +62,10 @@ class Config:
     FLUTTERWAVE_WEBHOOK_SECRET = os.environ.get("FLUTTERWAVE_WEBHOOK_SECRET", "")
 
     # Cloudinary — used by the direct-upload signature endpoint (admins: any folder; everyone else: their own profile_photos/<user_id> folder).
-    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+    # The cloud name is the account's public identifier, not a secret. It falls back
+    # to the live account so uploads keep working when the env var is absent; a value
+    # in the environment still wins.
+    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME") or "risvlfhx"
     CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
     CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 

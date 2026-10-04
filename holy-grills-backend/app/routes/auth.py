@@ -791,7 +791,11 @@ def delete_account():
     try:   # email captured BEFORE anonymisation (profile email is scrubbed now)
         from app.services.notification_templates import render_notification_template
         from app.services.notification_service import _dispatch_email_via_onesignal
-        rendered = render_notification_template("account_deleted", {"name": profile.get("full_name") or "there"})
+        from app.services.squad_service import resolve_display_name
+        rendered = render_notification_template(
+            "account_deleted",
+            {"name": resolve_display_name(profile=profile) or "there"},
+        )
         if rendered:
             title, body, _inc, _ch = rendered
             _dispatch_email_via_onesignal(profile["email"], profile.get("full_name") or "", title, f"<p>{body}</p>")

@@ -17,6 +17,7 @@ class OrderingWindowUnavailable(ValueError):
 from decimal import Decimal
 from app.utils.tz import today_wat
 from app.utils.schedule import effective_ordering_windows
+from app.utils.settings import setting_or_config, setting_bool
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
 from app.services import hp_service
@@ -670,12 +671,14 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         squad_roster_rows = db.table("squad_roster").select("id,user_id,email").eq("squad_id", squad_id).eq("is_active", True).execute() or []
 
     if not is_squad_order and config.get("SQUAD_ORDER_ENABLED", True):
-        min_items = int(config.get("SQUAD_ORDER_MIN_ITEMS", 3))
-        try:
-            _row = db.table("system_settings").select("value").eq("key", "squad_order_max_items").is_("campus_id", "null").single().execute()
-            max_items = int(_row["value"]) if _row and _row.get("value") is not None else int(config.get("SQUAD_ORDER_MAX_ITEMS", 20))
-        except Exception:
-            max_items = int(config.get("SQUAD_ORDER_MAX_ITEMS", 20))
+        min_items = int(setting_or_config(
+            db, "squad_order_min_items", config.get("SQUAD_ORDER_MIN_ITEMS", 3),
+            minimum=1, maximum=50,
+        ))
+        max_items = int(setting_or_config(
+            db, "squad_order_max_items", config.get("SQUAD_ORDER_MAX_ITEMS", 20),
+            minimum=1, maximum=200,
+        ))
         if min_items <= squad_item_count <= max_items:
             is_squad_order = True
 
@@ -777,16 +780,26 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     # Apply squad delivery-fee discount
     delivery_fee_dec = Decimal(str(delivery_fee))
-    if is_squad_order and config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True):
-        pct = Decimal(str(config.get("SQUAD_DELIVERY_DISCOUNT_PCT", 100)))
+    if is_squad_order and setting_bool(
+        db, "squad_delivery_discount_enabled", config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True)
+    ):
+        pct = Decimal(str(setting_or_config(
+            db, "squad_delivery_discount_pct", config.get("SQUAD_DELIVERY_DISCOUNT_PCT", 100),
+            minimum=0, maximum=100,
+        )))
         squad_delivery_discount_dec = (delivery_fee_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
         delivery_fee_dec = max(Decimal("0.0"), delivery_fee_dec - squad_delivery_discount_dec)
         delivery_fee = float(delivery_fee_dec)
 
     # Apply squad subtotal discount
     subtotal_dec = Decimal(str(subtotal))
-    if is_squad_order and config.get("SQUAD_ORDER_DISCOUNT_ENABLED", False):
-        pct = Decimal(str(config.get("SQUAD_ORDER_DISCOUNT_PCT", 10)))
+    if is_squad_order and setting_bool(
+        db, "squad_order_discount_enabled", config.get("SQUAD_ORDER_DISCOUNT_ENABLED", False)
+    ):
+        pct = Decimal(str(setting_or_config(
+            db, "squad_order_discount_pct", config.get("SQUAD_ORDER_DISCOUNT_PCT", 10),
+            minimum=0, maximum=100,
+        )))
         squad_discount_dec = (subtotal_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
         squad_discount = float(squad_discount_dec)
 

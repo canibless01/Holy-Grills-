@@ -5,6 +5,7 @@ from app.services.wallet_service import debit_wallet
 from app.constants import ADMIN_ROLES
 from app.db import get_db, get_user_client
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from app.services.feature_flags import is_feature_enabled
 from app.utils.upload_urls import is_trusted_upload_url
 from app.utils.validators import validate_choice
@@ -1485,7 +1486,10 @@ def _complete_marketplace_purchase(
     from flask import current_app
     from app.services.notification_service import send_notification
 
-    marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
+    marketplace_hp = int(setting_or_config(
+        db, "marketplace_purchase_hp", current_app.config.get("MARKETPLACE_PURCHASE_HP", 50),
+        minimum=0, maximum=100000,
+    ))
     if marketplace_hp > 0:
         try:
             award_active_hp(
@@ -1526,7 +1530,11 @@ def _complete_marketplace_purchase(
             )
         if listing and listing.get("listing_type") in CODE_LISTING_TYPES:
             codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
-            if len(codes_left or []) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
+            if len(codes_left or []) <= setting_or_config(
+                db, "low_code_inventory_threshold",
+                current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5),
+                minimum=0, maximum=10000,
+            ):
                 _alert_admin_low_inventory(listing_id, listing_title, len(codes_left or []))
     except Exception:
         current_app.logger.exception("marketplace purchase side effects failed purchase=%s", purchase_id)

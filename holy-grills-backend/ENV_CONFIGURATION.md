@@ -23,9 +23,19 @@ Every environment variable the app reads, what it controls, its default, and
 | `APP_NAME` | Platform name used in emails and push notifications | `Holy Grills` |
 | `APP_TAGLINE` | Sign-off line on all emails | `Holy Grills FUTA` |
 | `FLASK_DEBUG` | Enable debug mode (`true`/`false`) | `false` |
-| `FRONTEND_URL` | Allowed CORS origin for the mobile/web frontend | `http://localhost:3000` |
-| `CORS_ORIGINS` | Comma-separated list of allowed origins | `*` |
+| `FRONTEND_URL` | Frontend URL — password-reset links, and **added to** `Config.CORS_ORIGINS` | `http://localhost:3000` |
+| `CORS_ORIGINS` / `ALLOWED_ORIGINS` | Comma-separated origins to **add** to the allowed list (`*` is ignored — the list is never a wildcard) | *(unset)* |
 | `SWAGGER_CONTACT_EMAIL` | Contact email shown in API docs | `dev@example.com` |
+
+> **CORS is pinned, not wildcarded.** `app/__init__.py` passes
+> `origins=Config.CORS_ORIGINS` to `CORS(...)`. That list always contains the known
+> deployments (`https://holy-grills.vercel.app`, `https://holygrill.app`,
+> `https://www.holygrill.app`) and the local dev ports, and the variables above
+> *add* to it — so a stale or missing `FRONTEND_URL` can never lock the frontend
+> out of its own API. A request from an origin outside the list gets no
+> `Access-Control-Allow-Origin` header. Preview deployments
+> (`holy-grills-<hash>.vercel.app`) are not on the default list: add the preview
+> URL through `CORS_ORIGINS` on that environment when you test one.
 
 ### 1.2 Supabase (Database + Auth)
 
@@ -153,10 +163,10 @@ end-to-end run with automatic cleanup).
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SQUAD_ORDER_ENABLED` | Enable squad order feature | `true` |
-| `SQUAD_ORDER_MIN_ITEMS` | Min item quantity to qualify as squad order | `3` |
+| `SQUAD_ORDER_MIN_ITEMS` | Min item quantity to qualify as squad order — **fallback**: the `squad_order_min_items` system setting wins | `3` |
 | `SQUAD_ORDER_MAX_ITEMS` | Max item quantity allowed | `20` |
-| `SQUAD_DELIVERY_DISCOUNT_ENABLED` | Waive delivery fee for squad orders | `true` |
-| `SQUAD_DELIVERY_DISCOUNT_PCT` | % of delivery fee waived | `100` |
+| `SQUAD_DELIVERY_DISCOUNT_ENABLED` | Waive delivery fee for squad orders — **fallback**: the `squad_delivery_discount_enabled` system setting wins | `true` |
+| `SQUAD_DELIVERY_DISCOUNT_PCT` | % of delivery fee waived — **fallback**: the `squad_delivery_discount_pct` system setting wins | `100` |
 | `SQUAD_ORDER_DISCOUNT_ENABLED` | Apply % off subtotal | `false` |
 | `SQUAD_ORDER_DISCOUNT_PCT` | Subtotal discount % | `10` |
 | `SQUAD_HP_SPLIT_ENABLED` | Split HP across squad members | `true` |
@@ -166,7 +176,7 @@ end-to-end run with automatic cleanup).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `WALLET_MIN_CARD_TOPUP` | Minimum card top-up amount (₦) | `100` |
+| `WALLET_MIN_CARD_TOPUP` | Minimum card top-up amount (₦) — **fallback**: the `wallet_min_card_topup` system setting wins | `100` |
 | `WALLET_MIN_WITHDRAWAL` | Minimum withdrawal amount (₦) | `500` |
 | `WALLET_REF_PREFIX` | Transaction reference prefix | `HG-WALLET-` |
 
@@ -174,9 +184,9 @@ end-to-end run with automatic cleanup).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ORDER_LOCK_MAX_RESCHEDULES` | Max reschedules per lock | `1` |
+| `ORDER_LOCK_MAX_RESCHEDULES` | Max reschedules per lock — **fallback**: the `order_lock_max_reschedules` system setting wins | `1` |
 | `ORDER_LOCK_MAX_DISCOUNT_PCT` | Max discount % admin can assign | `50` |
-| `ORDER_LOCK_DEFAULT_DISCOUNT_PCT` | Default discount % | `10` |
+| `ORDER_LOCK_DEFAULT_DISCOUNT_PCT` | Default discount % — **fallback**: `order_lock_default_discount_pct` (then the legacy `order_lock_default_discount`) wins | `10` |
 
 ### 1.15 Login Streak
 
@@ -327,8 +337,8 @@ APP_NAME              # Your platform name
 APP_TAGLINE           # Sign-off line in emails
 EMAIL_FROM            # Sender email
 EMAIL_FROM_NAME       # Sender display name
-FRONTEND_URL          # Your mobile/web frontend URL
-CORS_ORIGINS          # Comma-separated allowed origins
+FRONTEND_URL          # Your mobile/web frontend URL (also added to CORS_ORIGINS)
+CORS_ORIGINS          # Extra origins to allow (adds to the pinned defaults)
 HP_CURRENCY_NAME      # Your loyalty currency name
 ```
 
@@ -372,4 +382,5 @@ The `{platform}` and `{currency}` placeholders in notification strings are resol
 - [ ] `REDIS_URL` (and optionally `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`)
 - [ ] `APP_NAME`, `APP_TAGLINE` — your brand name
 - [ ] `EMAIL_FROM`, `EMAIL_FROM_NAME` — your verified sender address
-- [ ] `FRONTEND_URL`, `CORS_ORIGINS` — your production frontend URL
+- [ ] `FRONTEND_URL` — your production frontend URL. The pinned CORS list already
+      allows it; set `CORS_ORIGINS` only to add a preview or extra origin
