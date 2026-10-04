@@ -15,46 +15,51 @@ import RequireAuth from '@/components/RequireAuth';
 import { SoundProvider } from '@/lib/SoundProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
-// Eager imports — instant navigation with no per-route Suspense spinner.
+// Eager imports — the entry-critical screens render with no per-route
+// Suspense spinner. Everything else is split at the route (see below).
 import Home from '@/pages/Home';
-import Menu from '@/pages/Menu';
-import ItemDetail from '@/pages/ItemDetail';
-import Cart from '@/pages/Cart';
-import Checkout from '@/pages/Checkout';
-import OrderConfirmation from '@/pages/OrderConfirmation';
-import Orders from '@/pages/Orders';
-import OrderDetail from '@/pages/OrderDetail';
-import TrackOrders from '@/pages/TrackOrders';
-import Dashboard from '@/pages/Dashboard';
-import HpEducation from '@/pages/HpEducation';
-import Rewards from '@/pages/Rewards';
-import Leaderboard from '@/pages/Leaderboard';
-import Wallet from '@/pages/Wallet';
-import Marketplace from '@/pages/Marketplace';
-import MarketplaceDetail from '@/pages/MarketplaceDetail';
-import Events from '@/pages/Events';
-import EventDetail from '@/pages/EventDetail';
-import TierDetail from '@/pages/TierDetail';
-import Profile from '@/pages/Profile';
-import Addresses from '@/pages/Addresses';
-import NotificationPreferences from '@/pages/NotificationPreferences';
-import Notifications from '@/pages/Notifications';
-import Referrals from '@/pages/Referrals';
-import OrderLocks from '@/pages/OrderLocks';
-import Squads from '@/pages/Squads';
-import Streak from '@/pages/Streak';
-import HallOfFame from '@/pages/HallOfFame';
 const Kitchen = lazy(() => import('@/pages/Kitchen'));
 const Rider = lazy(() => import('@/pages/Rider'));
 const Admin = lazy(() => import('@/pages/Admin'));
-import FAQ from '@/pages/FAQ';
-import TermsPrivacy from '@/pages/TermsPrivacy';
-import OurStory from '@/pages/OurStory';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
-import ForgotPassword from '@/pages/ForgotPassword';
-import ResetPassword from '@/pages/ResetPassword';
-import OAuthConsent from '@/pages/OAuthConsent';
+
+// Route-level code splitting — each non-entry page loads on first visit,
+// which keeps the initial JS to the landing/auth screens instead of the
+// whole app. <Suspense> below renders the app skeleton during the fetch.
+const Menu = lazy(() => import('@/pages/Menu'));
+const ItemDetail = lazy(() => import('@/pages/ItemDetail'));
+const Cart = lazy(() => import('@/pages/Cart'));
+const Checkout = lazy(() => import('@/pages/Checkout'));
+const OrderConfirmation = lazy(() => import('@/pages/OrderConfirmation'));
+const Orders = lazy(() => import('@/pages/Orders'));
+const OrderDetail = lazy(() => import('@/pages/OrderDetail'));
+const TrackOrders = lazy(() => import('@/pages/TrackOrders'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const HpEducation = lazy(() => import('@/pages/HpEducation'));
+const Rewards = lazy(() => import('@/pages/Rewards'));
+const Leaderboard = lazy(() => import('@/pages/Leaderboard'));
+const Wallet = lazy(() => import('@/pages/Wallet'));
+const Marketplace = lazy(() => import('@/pages/Marketplace'));
+const MarketplaceDetail = lazy(() => import('@/pages/MarketplaceDetail'));
+const Events = lazy(() => import('@/pages/Events'));
+const EventDetail = lazy(() => import('@/pages/EventDetail'));
+const TierDetail = lazy(() => import('@/pages/TierDetail'));
+const Profile = lazy(() => import('@/pages/Profile'));
+const Addresses = lazy(() => import('@/pages/Addresses'));
+const NotificationPreferences = lazy(() => import('@/pages/NotificationPreferences'));
+const Notifications = lazy(() => import('@/pages/Notifications'));
+const Referrals = lazy(() => import('@/pages/Referrals'));
+const OrderLocks = lazy(() => import('@/pages/OrderLocks'));
+const Squads = lazy(() => import('@/pages/Squads'));
+const Streak = lazy(() => import('@/pages/Streak'));
+const HallOfFame = lazy(() => import('@/pages/HallOfFame'));
+const FAQ = lazy(() => import('@/pages/FAQ'));
+const TermsPrivacy = lazy(() => import('@/pages/TermsPrivacy'));
+const OurStory = lazy(() => import('@/pages/OurStory'));
+const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
+const OAuthConsent = lazy(() => import('@/pages/OAuthConsent'));
 
 const AppRoutes = () => {
   return (

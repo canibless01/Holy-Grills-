@@ -152,7 +152,7 @@ export default function AdminMenu() {
         <div className="space-y-2">
           {items.map((it) => (
             <div key={it.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3 opacity-75">
-              {it.image_url && <img src={it.image_url} alt={it.name} className="w-10 h-10 rounded-lg object-cover" />}
+              {it.image_url && <img src={it.image_url} alt={it.name} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />}
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm text-foreground line-through truncate">{it.name}</div>
                 <div className="text-xs text-muted-foreground">{it.menu_categories?.name} · {formatNaira(it.price)}{it.deleted_at ? ` · archived ${new Date(it.deleted_at).toLocaleDateString()}` : ''}</div>

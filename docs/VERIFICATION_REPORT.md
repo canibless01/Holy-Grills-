@@ -53,7 +53,6 @@ Link surfaces are role-conditional (`TopNav` only shows the staff button for sta
 
 | # | Admin section | Component | Endpoints called | Guarded | Public-by-design | Notes |
 |---|---|---|---|---|---|---|
-|---|---|---|---|---|---|
 | 1 | `dashboard` | `AdminDashboard` | 5 | 4 | 1 | 1 public-by-design |
 | 2 | `analytics` | `AdminAnalytics` | 11 | 11 | 0 |  |
 | 3 | `economics` | `AdminEconomics` | 0 | 0 | 0 |  |

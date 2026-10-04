@@ -367,7 +367,7 @@ export default function AdminStorefront() {
           {supporters.length === 0 ? <Card><p className="text-xs text-muted-foreground text-center py-6">No early supporters yet.</p></Card> : supporters.map((s) => (
             <Card key={s.id} className="flex items-center gap-3 !p-3">
               {s.photo_url ? (
-                <img src={s.photo_url} alt={s.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                <img src={s.photo_url} alt={s.name} loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shrink-0" />
               ) : (
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><Heart className="w-4 h-4 text-primary" /></div>
               )}

@@ -82,7 +82,7 @@ export default function AdminTierIcons() {
             </div>
             <div className="flex items-center gap-3">
               {url ? (
-                <img src={url} alt={slot.name} className="w-12 h-12 object-contain shrink-0 rounded-xl bg-muted p-1" />
+                <img src={url} alt={slot.name} loading="lazy" decoding="async" className="w-12 h-12 object-contain shrink-0 rounded-xl bg-muted p-1" />
               ) : (
                 <div className="w-12 h-12 shrink-0 rounded-xl bg-muted flex items-center justify-center"><Award className="w-5 h-5 text-muted-foreground" /></div>
               )}

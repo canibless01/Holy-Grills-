@@ -425,7 +425,7 @@ export default function Rewards() {
             return (
               <div key={reward.id} className={`rounded-2xl bg-white border p-3 flex gap-3 shadow-card ${flash ? 'border-primary/30' : 'border-border'}`}>
                 {reward.image_url ? (
-                  <img src={reward.image_url} alt={reward.name} className="w-16 h-16 rounded-xl object-cover shrink-0" />
+                  <img src={reward.image_url} alt={reward.name} loading="lazy" decoding="async" className="w-16 h-16 rounded-xl object-cover shrink-0" />
                 ) : (
                   <div className="w-16 h-16 rounded-xl bg-secondary flex items-center justify-center text-2xl shrink-0">🎁</div>
                 )}
@@ -657,7 +657,7 @@ export default function Rewards() {
             </div>
             <div className="text-center py-2">
               {selectedReward.image_url ? (
-                <img src={selectedReward.image_url} alt="" className="w-24 h-24 rounded-2xl object-cover mx-auto mb-3" />
+                <img src={selectedReward.image_url} alt="" loading="lazy" decoding="async" className="w-24 h-24 rounded-2xl object-cover mx-auto mb-3" />
               ) : (
                 <div className="w-24 h-24 rounded-2xl bg-secondary flex items-center justify-center text-4xl mx-auto mb-3">🎁</div>
               )}
