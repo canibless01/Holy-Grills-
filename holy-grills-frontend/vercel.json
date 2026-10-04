@@ -2,10 +2,282 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/(.*)",
-      "destination": "/app-shell.html"
+      "handle": "filesystem"
+    },
+    {
+      "src": "/addresses",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/addresses/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/admin",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/cart",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/cart/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/checkout",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/checkout/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/dashboard",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/dashboard/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/events",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/events/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/faq",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/faq/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/forgot-password",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/forgot-password/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/hall-of-fame",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/hall-of-fame/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/hp-education",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/hp-education/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/kitchen",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/kitchen/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/leaderboard",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/leaderboard/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/login",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/login/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/marketplace",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/marketplace/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/mcp-consent",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/mcp-consent/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/menu",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/menu/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/notification-preferences",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/notification-preferences/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/notifications",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/notifications/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/order-confirmation",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/order-confirmation/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/order-locks",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/order-locks/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/orders",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/orders/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/our-story",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/our-story/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/profile",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/profile/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/referrals",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/referrals/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/register",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/register/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/reset-password",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/reset-password/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/rewards",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/rewards/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/rider",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/rider/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/squads",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/squads/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/streak",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/streak/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/terms",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/terms/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/track-orders",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/track-orders/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/wallet",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/wallet/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/(.*)",
+      "status": 404,
+      "dest": "/404.html"
     }
   ]
 }

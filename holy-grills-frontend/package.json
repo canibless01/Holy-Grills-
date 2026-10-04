@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:client && npm run build:ssr && npm run prerender",
+    "build": "npm run routes:check && npm run build:client && npm run build:ssr && npm run prerender",
+    "routes:check": "node scripts/sync-routes.mjs --check",
+    "routes:sync": "node scripts/sync-routes.mjs --write",
+    "serve": "node scripts/serve-static.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "build:client": "vite build",
     "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist-ssr --emptyOutDir",
     "prerender": "node scripts/prerender.mjs",

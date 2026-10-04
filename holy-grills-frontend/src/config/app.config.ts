@@ -55,8 +55,10 @@ export const APP_CONFIG = {
       "Made With More Than Flame. Real flame grilled chicken, wings, kebabs and crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards.",
     ogType: 'website',
     twitterCard: 'summary_large_image',
-    // Default social share image (absolute URL recommended for crawlers).
-    defaultImage: '',
+    // Default social share image. App-relative is fine: useSEO runs it through
+    // absoluteUrl() before writing og:image/twitter:image, and the pre-render
+    // does the same. 1200x630 JPEG — social platforms do not render SVG.
+    defaultImage: '/og-cover.jpg',
 
     // ── ONE global business identity, inherited by every campus ──
     // Feeds the Restaurant structured data injected on every page. Add one

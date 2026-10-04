@@ -19,6 +19,7 @@
  * is unchanged.
  */
 import APP_CONFIG from '@/config/app.config';
+import { absoluteUrl } from '@/lib/seoJsonLd';
 
 /** Canonical origin — the same value the SPA uses for canonical/og:url. */
 export const SITE_ORIGIN = APP_CONFIG.domain;
@@ -33,6 +34,7 @@ export interface RouteMeta {
   /** True when the page renders <SEO /> with no props, inheriting app defaults. */
   useAppDefaultTitle?: boolean;
   /** Absolute or app-relative social image; falls back to the template's tag */
+  /** Per-route social image, overriding APP_CONFIG.seo.defaultImage. */
   image?: string;
 }
 
@@ -91,7 +93,9 @@ export function headFor(path: string): { title: string; description: string; pat
     title: documentTitle(meta),
     description: meta.description,
     path: meta.path,
-    image: meta.image,
+    // Always absolute: useSEO runs APP_CONFIG.seo.defaultImage through
+    // absoluteUrl() too, so the static tag and the runtime tag agree.
+    image: absoluteUrl(meta.image || APP_CONFIG.seo.defaultImage),
   };
 }
 

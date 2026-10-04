@@ -92,6 +92,7 @@ const buildHead = (html, route) => {
     out = upsertMeta(out, 'property', 'og:image', m.image);
     out = upsertMeta(out, 'name', 'twitter:image', m.image);
   }
+  // og:image must be absolute for crawlers; headFor() already resolved it.
   return out;
 };
 
@@ -128,6 +129,17 @@ for (const route of routes) {
 // and metadata.
 const shellFile = join(distDir, 'app-shell.html');
 writeFileSync(shellFile, template);
-console.log(`[prerender] app shell -> ${shellFile.replace(root + '/', '')} (SPA fallback for all other routes)`);
+console.log(`[prerender] app shell -> ${shellFile.replace(root + '/', '')} (SPA fallback for all SPA routes)`);
+
+// Unknown paths get a REAL 404 (see vercel.json's final route entry). The body is
+// the same shell so the SPA can render its own PageNotFound for the visitor, with
+// noindex on top: the URL genuinely does not exist, and a crawler must not index
+// the shell for it.
+const notFound = template
+  .replace(/<title>[\s\S]*?<\/title>/i, '<title>Page not found — Holy Grills</title>')
+  .replace('</head>', '  <meta name="robots" content="noindex" />\n  </head>');
+const notFoundFile = join(distDir, '404.html');
+writeFileSync(notFoundFile, notFound);
+console.log(`[prerender] 404 -> ${notFoundFile.replace(root + '/', '')} (served with HTTP 404 for unknown paths)`);
 
 console.log(`[prerender] ${written} route(s) pre-rendered.`);

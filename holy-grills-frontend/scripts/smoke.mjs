@@ -1,0 +1,116 @@
+/**
+ * Post-build smoke tests (Track B, B6)
+ * ============================================================================
+ * Asserts that what the build produced is what the host will serve, using the
+ * production routing rules (scripts/routes.mjs -> vercel.json). Run it against a
+ * built `dist/`:
+ *
+ *   npm run build
+ *   node scripts/serve-static.mjs 4174 &
+ *   npm run smoke                       # or: node scripts/smoke.mjs [baseUrl]
+ *
+ * Exits non-zero on the first failed assertion group, so CI can gate a deploy.
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readRoutePaths, routeFamilies } from './routes.mjs';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const baseUrl = process.argv[2] || process.env.SMOKE_BASE_URL || 'http://localhost:4174';
+const dist = join(root, 'dist');
+
+const { PRERENDER_ROUTES } = await import(
+  // The pre-render script's own route list, via the SSR bundle it already built.
+  new URL(`file://${join(dist, '..', 'dist-ssr', 'entry-server.js')}`).href
+);
+
+let failures = 0;
+const check = (ok, label, detail = '') => {
+  if (!ok) failures++;
+  console.log(`${ok ? '  ok  ' : '  FAIL'} ${label}${detail ? ` — ${detail}` : ''}`);
+};
+
+const get = async (path) => {
+  const res = await fetch(baseUrl + path);
+  return { status: res.status, body: await res.text() };
+};
+
+const rootMarkup = (html) => {
+  const m = html.match(/<div id="root"[^>]*>([\s\S]*)<\/div>/);
+  return m ? m[1] : null;
+};
+
+console.log(`\n[smoke] ${baseUrl}  (${routeFamilies().length} route families, ${PRERENDER_ROUTES.length} pre-rendered)\n`);
+
+// ── 1. Pre-rendered routes carry real content and their own head ──────────────
+console.log('pre-rendered routes');
+for (const route of PRERENDER_ROUTES) {
+  const { status, body } = await get(route);
+  const markup = rootMarkup(body) || '';
+  const title = (body.match(/<title>([^<]*)<\/title>/) || [])[1] || '';
+  const canonical = (body.match(/<link rel="canonical" href="([^"]*)"/) || [])[1] || '';
+  const ogImage = (body.match(/<meta property="og:image" content="([^"]*)"/) || [])[1] || '';
+  const ld = body.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+
+  check(status === 200, `${route} HTTP 200`, String(status));
+  // A Suspense fallback or an empty shell would be a few hundred bytes at most;
+  // the real pages are tens of kilobytes of markup.
+  check(markup.length > 5000, `${route} has rendered markup`, `${markup.length} bytes`);
+  check(!!title && !/FUTA's Only Flame Grill/.test(title), `${route} has a route-specific <title>`, title);
+  check(canonical === `https://holygrill.app${route === '/' ? '/' : route}`, `${route} canonical`, canonical);
+  check(ogImage.startsWith('https://'), `${route} og:image is absolute`, ogImage);
+  check(!!ld, `${route} has JSON-LD`);
+  if (ld) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(ld[1]);
+    } catch (e) {
+      check(false, `${route} JSON-LD parses`, String(e));
+    }
+    if (parsed) check(parsed['@type'] === 'Restaurant', `${route} JSON-LD @type`, String(parsed['@type']));
+  }
+}
+
+// ── 2. Every route the app declares resolves — no accidental 404s ─────────────
+console.log('\napp routes');
+const routes = [...new Set(readRoutePaths().filter((p) => p !== '*'))];
+let routeFailures = 0;
+for (const path of routes) {
+  const url = path.replace(':id', '1').replace(':tierId', '2');
+  const { status } = await get(url);
+  if (status !== 200) {
+    routeFailures++;
+    console.log(`  FAIL ${url} — HTTP ${status}`);
+  }
+}
+check(routeFailures === 0, `all ${routes.length} declared routes answer 200`, `${routeFailures} failed`);
+
+// ── 3. Unknown paths are real 404s, and not indexable ────────────────────────
+console.log('\nunknown paths');
+for (const path of ['/definitely-not-a-page', '/blog', '/oldsite']) {
+  const { status, body } = await get(path);
+  check(status === 404, `${path} HTTP 404`, String(status));
+  check(/name="robots" content="noindex"/.test(body), `${path} is noindex`);
+}
+
+// ── 4. The app-shell fallback stays empty, so CSR routes mount normally ───────
+console.log('\napp shell');
+const shell = readFileSync(join(dist, 'app-shell.html'), 'utf8');
+check((rootMarkup(shell) || '').length === 0, 'app-shell.html has an empty #root');
+check(!/data-prerendered-route/.test(shell), 'app-shell.html carries no pre-render stamp');
+
+// ── 5. Static assets referenced by the build exist ───────────────────────────
+console.log('\nassets');
+const home = readFileSync(join(dist, 'index.html'), 'utf8');
+for (const asset of [...home.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1])) {
+  const { status } = await get(asset);
+  check(status === 200, `asset ${asset}`, String(status));
+}
+for (const file of ['/robots.txt', '/sitemap.xml', '/og-cover.jpg', '/manifest.json']) {
+  const { status } = await get(file);
+  check(status === 200, `static ${file}`, String(status));
+}
+
+console.log(`\n[smoke] ${failures === 0 ? 'PASS' : `FAIL (${failures} checks)`}\n`);
+process.exit(failures === 0 ? 0 : 1);

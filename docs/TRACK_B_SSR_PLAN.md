@@ -159,3 +159,87 @@ closest thing to production.
    (`downloadTicketPdf`, `auth.refresh`) behind the storage shim. They only run on user action
    today, which is why these four routes are safe.
 5. §6 items 1 and 3 (campus-gated SEO routes, live-data SEO) are unchanged and still yours.
+
+---
+
+# B5–B7 implementation log
+
+## B5 — SEO hardening
+
+| Item | Before | After |
+|---|---|---|
+| `og:image` / `twitter:image` | `/icons/icon.svg` — **relative**, and social platforms do not render SVG | `https://holygrill.app/og-cover.jpg` — new 1200×630 JPEG (140 kB) generated for this purpose into `public/`, wired through `APP_CONFIG.seo.defaultImage` so `useSEO` and the pre-render agree |
+| JSON-LD `logo` / `image` | `/logo.png` (a file that does not exist in `public/`) and an SVG | the same real cover, absolute |
+| `<title>` / description / canonical / OG / Twitter | template defaults on every route | per-route values on all four pre-rendered routes, identical to what `useSEO` writes after hydration (`FAQ` and `TermsPrivacy` had **no** `<SEO>` call at all before this) |
+| `robots.txt` | 9 disallowed prefixes, sitemap advertised | unchanged — still correct (all four now-indexable routes are `Allow`) |
+| **Unknown paths** | **HTTP 200** with a soft-404 body | **HTTP 404** with `noindex`, verified locally and mirrored 1:1 in `vercel.json` |
+| `html lang` / charset / viewport | already correct | unchanged |
+
+The 404 work is the one that needs care: a static host answers 200 for every path, and the
+modern `rewrites` dialect **cannot** set a status code (confirmed: Vercel community discussion
+#9567; only the legacy `routes` dialect supports `status`). So:
+
+- `scripts/routes.mjs` is the single definition of "a route family the SPA owns", derived from
+  `src/App.tsx` (40 `<Route path>` entries → 34 families covering every nested path: `/events`
+  also covers `/events/:id` and `/events/tiers/:tierId`).
+- `scripts/sync-routes.mjs --write` regenerates `vercel.json`; `--check` (run first in
+  `npm run build`) **fails the build** if App.tsx has a route the config does not know, so a new
+  page can never silently 404 in production.
+- `vercel.json` route order: `handle: filesystem` → one rewrite per route family →
+  `{"src": "/(.*)", "status": 404, "dest": "/404.html"}`.
+- `scripts/serve-static.mjs` now runs that same config, so local checks and the host cannot drift.
+
+## B6 — build & deploy pipeline
+
+```
+npm run build
+  routes:check      vercel.json matches App.tsx
+  build:client      vite build                       -> dist/
+  build:ssr         vite build --ssr src/entry-server -> dist-ssr/
+  prerender         dist/{index.html,faq,our-story,terms,app-shell.html,404.html}
+```
+
+- `.github/workflows/frontend.yml` runs typecheck → lint → build → serve → smoke on every push
+  to `main` and every PR touching the frontend.
+- `npm run smoke` (`scripts/smoke.mjs`) asserts, per route: HTTP 200, >5 kB of rendered markup,
+  a route-specific `<title>`, the exact canonical, an absolute `og:image`, parseable JSON-LD with
+  the right `@type`; then that all 39 declared app routes answer 200, that 3 unknown paths answer
+  **404 + noindex**, that `app-shell.html` has an empty `#root` and no pre-render stamp, and that
+  every asset the HTML references resolves.
+- Backend: untouched. `git diff --name-only` over the entire Track B range shows **0 backend files**.
+- Smoke tests need the built output and a server, so they run after the build (they cannot be a
+  `postbuild` hook that also runs in a bare `npm ci`).
+
+## B7 — runtime verification (what I can prove here vs. what needs your browser)
+
+| Check | Result |
+|---|---|
+| View-source real HTML | ✅ 29 046 / 48 832 / 30 657 / 33 363 bytes of markup in `#root` for `/`, `/faq`, `/our-story`, `/terms` |
+| No user data for unauth requests | ✅ all 39 non-pre-rendered routes (incl. `/admin`, `/dashboard`, `/checkout`, `/kitchen`, `/rider`) serve an **empty** shell; zero token/email/`Bearer` strings in any served HTML |
+| Images in raw HTML and after hydration | ✅ images present in the prerendered markup (lazy-loaded ones hydrate client-side) |
+| CSS/JS load post-hydration | ✅ entry JS `573 981 B` raw / `172 326 B` gzip, CSS `114 185 B` / `18 587 B` gzip |
+| Bundle size before/after | perf baseline 572.95 kB → **573.98 kB raw (+1.03 kB, +0.18%)**; gzip 172.24 → 172.33 kB. CSS unchanged. Zero new runtime dependencies. |
+| Route coverage | ✅ 39/39 routes 200, 0 accidental 404s; 3/3 unknown paths 404 |
+| Determinism | ✅ two consecutive builds byte-identical |
+| Hydration mismatches | ⏳ needs a real browser; see below |
+| Lighthouse Performance/SEO before-after | ⏳ needs a real browser (deferred to B7 completion on your side) |
+
+### Deferred — needs your browser, or your call
+
+1. **Hydration console pass** (the one check I cannot run here): open `/`, `/faq`, `/our-story`,
+   `/terms` signed **out**, then signed **in**, and confirm no React hydration warnings. The two
+   storage-dependent first-render reads are deferred by design (`HolyGrillContext.authed`,
+   `campusContext` campus ids) and everything else reads storage inside effects, so a mismatch
+   should be structurally impossible — but this is the empirical proof.
+2. **Lighthouse before/after** on `/` and `/faq` (Performance + SEO).
+3. **Images have no `width`/`height`** in the server HTML (7 on `/`): a CLS risk independent of
+   this workstream. Fixing it means touching hero/mascot markup, so I left it alone.
+
+### Already open (unchanged)
+
+§6 items 1 (campus-gated SEO routes), 2 (now implemented — but see below) and 3 (live-data SEO),
+plus the `/our-story` 78-char title and the `liveApi` raw-storage reads that any future
+menu-derived pre-render would need. **§6 item 2 is done**: I implemented the 404 outside the app
+(next static file + host rule), not as an in-app change, which is what the item asked to confirm.
+If you would rather not switch `vercel.json` to the legacy `routes` dialect, say so and I will
+revert to the previous `rewrites` (and lose real 404 statuses).

@@ -33,8 +33,11 @@ interface SeoBusiness {
 
 export const restaurantJsonLd = () => {
   const b: SeoBusiness = APP_CONFIG.seo.business || {};
-  const logo = absoluteUrl(b.logo);
-  const image = absoluteUrl(b.image);
+  // Track B: `business.logo` is '/logo.png', but no such file exists in public/
+  // (the app only ships SVG marks). Structured data must not advertise a URL
+  // that 404s, so fall back to the social cover, which is absolute and real.
+  const logo = absoluteUrl(b.logo && b.logo !== '/logo.png' ? b.logo : APP_CONFIG.seo.defaultImage);
+  const image = absoluteUrl(b.image || APP_CONFIG.seo.defaultImage);
   return {
     '@context': 'https://schema.org',
     '@type': b.type || 'Restaurant',
