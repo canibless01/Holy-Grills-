@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#E70E0E" />
+    <title>Holy Grills — Offline</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: linear-gradient(135deg, #F3EBDD 0%, #E5D6BD 100%);
+        color: #3D0A00;
+        min-height: 100vh;
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px; text-align: center;
+      }
+      .card { max-width: 420px; }
+      .mascot { width: 160px; height: 160px; object-fit: contain; margin: 0 auto 12px; display: block; }
+      h1 { font-size: 28px; font-weight: 800; margin-bottom: 12px; color: #3D0A00; }
+      p { font-size: 16px; color: #6A1F00; line-height: 1.6; margin-bottom: 24px; }
+      button {
+        background: linear-gradient(135deg, #E70E0E 0%, #F2B84B 100%);
+        color: #fff; border: none; border-radius: 9999px;
+        padding: 14px 32px; font-size: 16px; font-weight: 700; cursor: pointer;
+        box-shadow: 0 8px 24px rgba(231,14,14,0.28);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img
+        class="mascot"
+        src="https://media.base44.com/images/public/6aabfb4cc35dbff73aed07fe/427d13814_worried.png"
+        alt="Holy Grills mascot"
+      />
+      <h1>You're offline</h1>
+      <p>The grill's still hot — we just can't reach it right now. Check your connection and try again.</p>
+      <button onclick="window.location.reload()">Try Again</button>
+    </div>
+  </body>
+</html>
