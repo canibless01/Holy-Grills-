@@ -41,7 +41,8 @@ export default function AdminStore() {
         liveApi.admin.getStockItems(),
         liveApi.admin.getMeasurementUnits().catch(() => []),
       ]);
-      setItems(Array.isArray(stockRes) ? stockRes : (stockRes?.items || []));
+      // unwrap() already extracted the rows (or returned []).
+      setItems(stockRes);
       setUnits(Array.isArray(unitRes) ? unitRes : []);
     } catch {
       setItems([]);
@@ -387,7 +388,8 @@ function LedgerModal({ item, unitName, onClose }) {
     (async () => {
       try {
         const res = await liveApi.admin.getStockItemLedger(item.id);
-        setEntries(Array.isArray(res) ? res : (res?.entries || res?.ledger || []));
+        // unwrap() already handles the entries/ledger/transactions keys.
+        setEntries(res);
       } catch { setEntries([]); }
       setLoading(false);
     })();

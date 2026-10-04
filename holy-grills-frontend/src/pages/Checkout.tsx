@@ -13,6 +13,7 @@ import OffCampusMap from '@/components/OffCampusMap';
 import DeliveryZonesInfo from '@/components/DeliveryZonesInfo';
 import { useSound } from '@/lib/SoundProvider';
 import Skeleton from '@/components/Skeleton';
+import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } from '@/types/orders';
 
 function CheckoutSkeleton() {
   return (
@@ -46,7 +47,8 @@ export default function Checkout() {
   const [landmark, setLandmark] = useState('');
   const [feePreview, setFeePreview] = useState(null);
   const [radiusError, setRadiusError] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('card');
+  // Exactly the three methods the picker below offers (wallet/card/split).
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [walletAmount, setWalletAmount] = useState(0);
   const [notes, setNotes] = useState('');
   const [guestName, setGuestName] = useState('');
@@ -142,9 +144,8 @@ export default function Checkout() {
   const runFeeCalc = async ({ keepGate = false } = {}) => {
     const ll = pinRef.current;
     if (!ll || ll.lat == null || ll.lng == null) { setDeliveryFee(0); setFeePreview(null); setRadiusError(null); return; }
-    // TODO(ts): POST /delivery/calculate-fee params are untyped in liveApi;
     // delivery_location_id is attached below once a gate is pinned/kept.
-    const body: Record<string, any> = { delivery_type: 'off_campus', lat: ll.lat, lon: ll.lng };
+    const body: CalculateDeliveryFeePayload = { delivery_type: 'off_campus', lat: ll.lat, lon: ll.lng };
     if (keepGate && gateRef.current) body.delivery_location_id = gateRef.current;
     setRadiusError(null);
     try {
@@ -220,10 +221,11 @@ export default function Checkout() {
     }
 
     setPlacing(true);
-    // TODO(ts): the checkout body is assembled as an optional-field bag; the one
-    // field read after construction is accept_next_available_date, which the
-    // backend capacity flow does read (order_service.py:456).
-    const payload: Record<string, any> = {
+    // The body is an optional-field bag by design (only items + payment_method
+    // are always present); CreateOrderPayload describes it. The one field read
+    // after construction is accept_next_available_date, which the backend
+    // capacity flow does read (order_service.py:456).
+    const payload: CreateOrderPayload = {
         items: (cart?.items || []).map((ci) => ({
           menu_item_id: ci.menu_item_id,
           quantity: ci.quantity,
@@ -271,7 +273,7 @@ export default function Checkout() {
 
   // Shared submit — places the order and hands off to the confirmation screen.
   // Throws so the caller can apply its own error handling (capacity reschedule).
-  const submitOrder = async (payload) => {
+  const submitOrder = async (payload: CreateOrderPayload) => {
     const result = await mockApi.orders.create(payload);
     const order = result?.order || result;
     play('order_placed');
@@ -503,9 +505,9 @@ export default function Checkout() {
         <h3 className="hg-section-title mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" /> Payment Method</h3>
         <div className="space-y-2">
           {[
-            { id: 'wallet', label: 'Wallet', icon: Wallet, desc: wallet ? `Balance: ${formatNaira(wallet.balance)}` : '', authOnly: true },
-            { id: 'card', label: 'Card', icon: CreditCard, desc: 'Paystack secure payment' },
-            { id: 'split', label: 'Split (Wallet + Card)', icon: Split, desc: 'Pay part with wallet, rest with card', authOnly: true },
+            { id: 'wallet' as PaymentMethod, label: 'Wallet', icon: Wallet, desc: wallet ? `Balance: ${formatNaira(wallet.balance)}` : '', authOnly: true },
+            { id: 'card' as PaymentMethod, label: 'Card', icon: CreditCard, desc: 'Paystack secure payment' },
+            { id: 'split' as PaymentMethod, label: 'Split (Wallet + Card)', icon: Split, desc: 'Pay part with wallet, rest with card', authOnly: true },
           ].filter((pm) => !pm.authOnly || isAuthenticated).map((pm) => {
             const Icon = pm.icon;
             return (

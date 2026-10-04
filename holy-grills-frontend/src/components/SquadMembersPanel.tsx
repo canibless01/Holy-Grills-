@@ -9,15 +9,25 @@ import { toast } from '@/components/ui/use-toast';
  * Resend re-invites an unregistered member; removal is blocked once the
  * order has been delivered (the backend enforces it too).
  */
+/** A squad member row on an order (GET /api/orders/:id/squad-members). */
+export interface SquadMemberRow {
+  id: string | number;
+  user_id?: string | number | null;
+  email?: string;
+  display_name?: string;
+  hp_share?: number;
+  is_registered?: boolean;
+}
+
 interface SquadMembersPanelProps {
   orderId: string;
   // Optional: when omitted the panel loads the roster itself.
-  initialMembers?: any[]; // TODO(ts): squad member rows are untyped in liveApi
+  initialMembers?: SquadMemberRow[];
   delivered?: boolean;
 }
 
 export default function SquadMembersPanel({ orderId, initialMembers, delivered }: SquadMembersPanelProps) {
-  const [members, setMembers] = useState(initialMembers || null);
+  const [members, setMembers] = useState<SquadMemberRow[] | null>(initialMembers || null);
   const [busyId, setBusyId] = useState(null);
 
   useEffect(() => {
@@ -29,7 +39,7 @@ export default function SquadMembersPanel({ orderId, initialMembers, delivered }
 
   if (!members || !members.length) return null;
 
-  const resend = async (m) => {
+  const resend = async (m: SquadMemberRow) => {
     setBusyId(m.id);
     try {
       await liveApi.orders.resendSquadMemberInvite(orderId, m.id);
@@ -40,7 +50,7 @@ export default function SquadMembersPanel({ orderId, initialMembers, delivered }
     setBusyId(null);
   };
 
-  const remove = async (m) => {
+  const remove = async (m: SquadMemberRow) => {
     if (!confirm(`Remove ${m.display_name || m.email} from this order? The squad roster stays unchanged.`)) return;
     setBusyId(m.id);
     try {

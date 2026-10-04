@@ -26,6 +26,44 @@ export interface Challenge {
 /** GET /api/challenges/my — the same rows with per-user progress. */
 export type MyChallenge = Challenge;
 
+/**
+ * A challenge row as the live endpoint returns it: the canonical `Challenge`
+ * fields plus the legacy aliases the backend still emits. Rewards.tsx reads both
+ * spellings (`hp_awarded ?? hp_award`, `progress ?? current_progress`), so they
+ * are declared rather than cast at the call site.
+ */
+export interface MyChallengeRow extends Challenge {
+  hp_awarded?: number;
+  hp_award?: number;
+  current_progress?: number;
+  requirement?: string;
+  target_count?: number;
+  trigger_type?: string;
+  trigger_value?: number;
+  slug?: string;
+  expires_at?: string;
+}
+
+/** An earned badge row inside GET /api/challenges/my. */
+export interface EarnedBadge {
+  title?: string;
+  name?: string;
+  /** The badge's emoji/mark; rendered as-is when present. */
+  icon_won?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/challenges/my — milestone_service.get_user_milestones() returns this
+ * envelope (not a list), and both consumers (Rewards, Streak) read it as one.
+ */
+export interface MyChallengesEnvelope {
+  badges?: EarnedBadge[];
+  challenges_available?: MyChallengeRow[];
+  challenges_completed?: MyChallengeRow[];
+  [key: string]: unknown;
+}
+
 /** PWA/push bonus status (GET /api/challenges/pwa-push-bonus-status). */
 export interface PwaPushBonusStatus {
   pwa_installed?: boolean;

@@ -19,8 +19,8 @@ export default function HallOfFame() {
     (async () => {
       try {
         const res = await liveApi.leaderboard.getInductees();
-        const list = Array.isArray(res) ? res : (res?.inductees || res?.winners || res?.hall_of_fame || []);
-        setInductees(list);
+        // unwrap() already handles the inductees/winners/hall_of_fame keys.
+        setInductees(res);
       } catch (e) {
         setError('Something slipped. Try again.');
       }

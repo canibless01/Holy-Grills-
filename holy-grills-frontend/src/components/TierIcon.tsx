@@ -15,10 +15,23 @@ import { TIER_MARK_ICONS } from '@/components/TierMarkIcons';
  * `className` sizes all forms (e.g. "w-8 h-8"): the image uses the box,
  * the SVG uses the box, the emoji uses the text size.
  */
+/**
+ * The tier fields this component reads — a structural subset of the tier payload
+ * (liveApi returns it untyped, and callers pass whatever their tier hook holds,
+ * so the contract here is "at least these").
+ */
+export interface TierIconSource {
+  id?: string | number | null;
+  slug?: string | null;
+  name?: string | null;
+  icon?: string | null;
+  icon_url?: string | null;
+}
+
 interface TierIconProps {
   slug?: string;
   // Optional: callers that only know the slug still get the admin/built-in mark.
-  tier?: Record<string, any>; // TODO(ts): tier payload is untyped in liveApi
+  tier?: TierIconSource;
   fallback?: string;
   className?: string;
 }

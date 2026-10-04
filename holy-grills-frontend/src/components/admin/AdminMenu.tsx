@@ -29,7 +29,8 @@ export default function AdminMenu() {
       const all = view === 'archived'
         ? await mockApi.admin.getArchivedItems()
         : await mockApi.admin.getMenuItems();
-      setItems(Array.isArray(all) ? all : (all?.items || []));
+      // unwrap() already extracted the rows (or returned []).
+      setItems(all);
     } catch { setItems([]); }
     setLoading(false);
   };

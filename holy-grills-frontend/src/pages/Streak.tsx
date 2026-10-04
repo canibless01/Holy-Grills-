@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, RotateCcw } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
+import type { MyChallengesEnvelope } from '@/types/challenges';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { getTierProgressGradient } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
@@ -15,7 +16,7 @@ const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function Streak() {
   const { streak, refreshStreak, refreshHp, hpBalance } = useHolyGrill();
-  const [myChallenges, setMyChallenges] = useState(null);
+  const [myChallenges, setMyChallenges] = useState<MyChallengesEnvelope | null>(null);
   const [checkinHistory, setCheckinHistory] = useState([]);
   const [completing, setCompleting] = useState(null);
   const loading = !streak;

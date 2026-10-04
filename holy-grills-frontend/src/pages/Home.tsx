@@ -11,6 +11,7 @@ import HeroCarousel from '@/components/HeroCarousel';
 import AutoScrollCarousel from '@/components/AutoScrollCarousel';
 import TestimonialSlider from '@/components/TestimonialSlider';
 import KitchenClosedPopup from '@/components/KitchenClosedPopup';
+import type { KitchenStatus } from '@/components/KitchenStatusBox';
 import KitchenStatusBox from '@/components/KitchenStatusBox';
 import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import ActiveOrderCard from '@/components/ActiveOrderCard';
@@ -36,7 +37,7 @@ const HOLY_POINTS_FEATURES = [
 export default function Home() {
   const navigate = useNavigate();
   const { hpBalance, addToCart, isAuthenticated, streak } = useHolyGrill();
-  const [kitchenStatus, setKitchenStatus] = useState(null);
+  const [kitchenStatus, setKitchenStatus] = useState<KitchenStatus | null>(null);
   const [featuredItems, setFeaturedItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');

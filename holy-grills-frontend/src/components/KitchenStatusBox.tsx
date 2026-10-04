@@ -3,6 +3,7 @@ import { ICONS, ICON_SIZES } from '@/config/icons';
 import { liveApi } from '@/lib/liveApi';
 import { computeNextOpening } from '@/lib/kitchenSchedule';
 import ScheduleOrderPanel from '@/components/ScheduleOrderPanel';
+import type { DeliveryWindow, DeliveryWindowsStatus } from '@/types/orders';
 
 const { Clock, ChevronRight, X } = ICONS;
 
@@ -48,14 +49,32 @@ const countdownText = (ms) => {
  *
  * Refreshes on mount and every 45s; the countdown re-renders every second.
  */
+/**
+ * The combined status published to the parent after both endpoints resolve.
+ * `is_open` is `null` when there is no campus context yet — "unknown" must never
+ * read as "closed" (see the comment on `combined`), which is why the delivery
+ * status type allows the third state.
+ */
+export interface KitchenStatus extends DeliveryWindowsStatus {
+  unknown: boolean;
+  is_open: boolean | null;
+  first_open_window: DeliveryWindow | null;
+  next_window: DeliveryWindow | null;
+  windows: DeliveryWindow[];
+  scheduled_windows: DeliveryWindow[];
+  next_available_date: string | null;
+  next_opens_at: string | null;
+  message: string;
+}
+
 interface KitchenStatusBoxProps {
   // Optional observer: pages that only want the visual radar pass nothing.
-  onStatus?: (status: any) => void; // TODO(ts): combined kitchen status payload
+  onStatus?: (status: KitchenStatus) => void;
   compact?: boolean;
 }
 
 export default function KitchenStatusBox({ onStatus, compact = false }: KitchenStatusBoxProps) {
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<KitchenStatus | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
 
   useEffect(() => {
@@ -90,7 +109,7 @@ export default function KitchenStatusBox({ onStatus, compact = false }: KitchenS
           ? computeNextOpening(hours.schedule, hours.today_override)
           : null;
 
-        const combined = {
+        const combined: KitchenStatus = {
           // Unknown (no campus chosen / hours unreadable) must NEVER read as
           // "closed": the closed popup keys off is_open === false, so a guest who
           // hasn't picked a campus would otherwise get a permanent closed popup.

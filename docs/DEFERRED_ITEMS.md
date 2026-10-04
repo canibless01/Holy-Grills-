@@ -79,12 +79,12 @@ bulk-grant request body (`:49`) and the bulk-grant input (`:111`). No Phase 6a a
 | D6 | `jsconfig.json` (`include: src/components/**/*.js, src/pages/**/*.jsx, src/Layout.jsx`) | Same staleness; `tsconfig.json` is now the source of truth for the language service. Either delete `jsconfig.json` or repoint its include globs. |
 | D7 | Comment references to old filenames (`App.jsx`, `Admin.jsx`, `toast.jsx`, `ImageUploader.jsx`, `AdminShared.jsx`) | Comments were preserved verbatim per the migration rules; the paths they name are now `.tsx`/`.ts`. |
 
-## D. Migration-era `any`s carrying a `// TODO(ts):` marker
+## D. Migration-era `any`s carrying a `// TODO(ts):` marker — **CLOSED 2026-10-04**
 
-Each was introduced because the source value is genuinely untyped today
-(untyped `liveApi` returns, index-signature `unknown` from shared contract types,
-or dynamic request-body bags). They are the follow-up list for tightening types
-in Phase 6, not silent escapes:
+All six were retyped against what the code actually reads, which is how the
+`/challenges/my` envelope bug and the untyped payment method were found (see
+`docs/WIRING_AUDIT.md` §3.4). The section is kept for the audit trail; the
+original list was:
 
 - `lib/liveApi.ts` — `unwrap(res: any, …)` (returns the envelope or a bare array)
 - `components/TierIcon.tsx` — `tier?: Record<string, any>` (tier payload untyped in liveApi)
@@ -116,12 +116,18 @@ project does not enable `noUnusedParameters`.
 | F1 | **MCP consent endpoints have no Flask route**: `pages/OAuthConsent.tsx` calls `GET /api/apps/:appId/mcp/consent-info` and `POST /api/apps/:appId/mcp/authorize-grant`, and reads `appParams.appId`, `appParams.token`, `appParams.appBaseUrl`. In the Base44 build these were served by the Base44 platform. | Port the two endpoints into Flask (new backend work — needs your go-ahead), or retire the `/mcp-consent` route and page. Until then the page cannot complete a consent flow. |
 | F2 | **`media.base44.com` asset CDN** — `components/FlameMark.tsx` (the flame mark), `lib/mascots.ts` (mascot art), `public/offline.html` (offline mascot), `App.tsx` SEO default image path. | These render today and were left alone; if you want Base44 gone from the stack entirely, the images must be re-hosted (repo `public/` or your own CDN) before the URLs are removed. |
 | F3 | **Backend CORS origin** `https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app` in `app/config.py:33`. | Backend-side and possibly still in use by a deployed origin; removing it may break a live client. Your call. |
-| F4 | **42 Flask routes with no frontend caller** (list in `docs/coverage/FLASK_TO_FRONTEND.md`). | Not deleted: they may serve webhooks, the mobile client or admin tooling. Confirm which are dead before any removal — most are in `free-sides` (7), `admin` (6), `storefront` (6). |
-| F5 | **8 frontend calls with no Flask route** (§3 of the verification report). | Same list as the Phase 3 contract gaps: implement the backend route or remove the frontend call. |
-| F6 | **`GET /challenges/:id` in `liveApi`** — no caller anywhere in the frontend. | Delete as dead code (I did not, because it is a public API method) or keep as a documented gap. |
+| F4 | **34 Flask routes with no frontend caller** — fresh join against the booted app's `url_map`; full list in `docs/WIRING_AUDIT.md` (appendix). | Not deleted: they may serve webhooks, the mobile client or admin tooling. Biggest clusters: free-sides admin (7, unused by the web app), newsletter campaigns (5), departments/faculty (3). Confirm which are dead before any removal. |
+| F5 | **6 frontend calls with no Flask route** — enumerated with impact in `docs/WIRING_AUDIT.md` §1 (each already carries an in-code `// F5 GAP:` note and degrades to an empty state). | Implement the backend route, or remove the frontend call — with one exception that can be fixed frontend-side today: `GET /settings` should be `GET /api/storefront/config/public` (audit §3.2: students currently read built-in defaults for admin-configured public settings). |
+| F6 | **`GET /challenges/:id` in `liveApi`** — no caller anywhere in the frontend; the backend never served it. | **Resolved:** the method was deleted during the type pass; `liveApi.ts:1325` records the reason. |
 | F7 | **SSR** — you asked whether we already have server-side rendering. | We do **not**: the app is still a client-rendered SPA (empty `<div id="root">` + a JS bundle per route). Pre-rendering is a separate project — see `docs/SSR_EXPLAINER.md` for what it would take and the two viable routes. |
 
-Third pass (post-B6 decisions):
+Third pass (post-B6 decisions) — plus the production wiring audit:
+
+| # | Item | Why it needs a decision |
+|---|---|---|
+| F10 | **Free-side credits are never applied** — the modal promises a ₦0 side, but Checkout sends `free_side_credit`/`free_side_choice`, which **no backend code reads**; consumption requires a `cart_free_side_selections` row written by `POST /free-sides/select`, which the frontend never calls. Evidence: `docs/WIRING_AUDIT.md` §3.1. | Fix is frontend-only (choose by `available_sides[].id`, call `/free-sides/select`, drop the two dead body fields) but it changes **checkout behaviour**, so it is not applied. Go-ahead needed. |
+| F11 | **`GET /settings` (P2)** — `featureConfig.ts` reads public settings from a route that does not exist, falls back to an admin-only route and then to built-in defaults, so **students never see admin-configured public settings**. | Repoint to `GET /api/storefront/config/public` and adapt the shape. Small, safe, frontend-only — say the word and it ships with F10. |
+
 
 > **Phase 7 security review is in `docs/SECURITY_REVIEW.md`** (authorised this
 > session): 10 findings, none applied yet — payment-redirect validation, the

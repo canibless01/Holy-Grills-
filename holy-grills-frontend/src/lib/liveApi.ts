@@ -4,19 +4,25 @@
 // backend at https://holy-grills-backend.onrender.com/api (Aug 2026).
 import { apiClient, ApiError, login as apiLogin, clearTokens, isAuthenticated, getToken, API_BASE_URL } from './apiClient';
 import { getOrderCustomer } from './hgUtils';
+import type { MyChallengesEnvelope } from '@/types/challenges';
 
 // Many list endpoints wrap the array in a keyed object (e.g. { hostels: [...] },
 // { departments: [...] }, { levels: [...] }). This pulls the array out so every
 // admin list view receives a plain array and `.map()` never crashes.
-// TODO(ts): the backend often documents a `{ key: [...] }` envelope while the
-// live route returns a bare array, so call sites keep a defensive
-// `Array.isArray(x) ? x : (x?.key || [])`. Typing the helper's result as `any`
-// keeps both shapes valid without narrowing the negative branch to `never`.
+// The backend often documents a `{ key: [...] }` envelope while the live route
+// returns a bare array, so this accepts both. The *input* is `unknown` — the
+// value came off the wire and nothing may be assumed about it — while the result
+// defaults to `any[]` so the ~90 call sites keep compiling: typing the rows
+// per-endpoint is a per-call-site job, and a call site that knows its shape can
+// now say `unwrap<Hostel>(res, 'hostels')` instead of casting.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unwrap = (res: any, ...keys: string[]): any => {
-  if (Array.isArray(res)) return res;
-  for (const k of keys) {
-    if (res && Array.isArray(res[k])) return res[k];
+const unwrap = <T = any>(res: unknown, ...keys: string[]): T[] => {
+  if (Array.isArray(res)) return res as T[];
+  if (res && typeof res === 'object') {
+    const bag = res as Record<string, unknown>;
+    for (const k of keys) {
+      if (Array.isArray(bag[k])) return bag[k] as T[];
+    }
   }
   return [];
 };
@@ -389,7 +395,7 @@ const leaderboard = {
   async getSquad(params = {}) { return apiClient.get('/leaderboard/squad', params); },
   async getHallOfFame() { return apiClient.get('/leaderboard/hall-of-fame'); },
   // Enriched inductee list (photo/faculty/department) — GET /leaderboard/hall-of-fame/inductees.
-  async getInductees() { return unwrap(await apiClient.get('/leaderboard/hall-of-fame/inductees'), 'inductees'); },
+  async getInductees() { return unwrap(await apiClient.get('/leaderboard/hall-of-fame/inductees'), 'inductees', 'winners', 'hall_of_fame'); },
   // Shareable Hall of Fame inductee card — GET /leaderboard/hall-of-fame/inductees/{id}/card.
   async getHallOfFameCard(id) { return apiClient.get(`/leaderboard/hall-of-fame/inductees/${id}/card`); },
   // Authed user's squad ranks — GET /leaderboard/squad/my-rank.
@@ -1316,7 +1322,11 @@ const saved = {
 const challenges = {
   async list(params = {}) { return unwrap(await apiClient.get('/challenges', params), 'challenges'); },
   async badges() { return unwrap(await apiClient.get('/challenges/badges'), 'badges', 'challenges'); },
-  async my(params = {}) { return unwrap(await apiClient.get('/challenges/my', params), 'challenges'); },
+  // NOT unwrapped: GET /challenges/my returns {badges, challenges_available,
+  // challenges_completed} (milestone_service.get_user_milestones) — there is no
+  // `challenges` key, so unwrap() returned [] and both challenge lists rendered
+  // empty. Callers read the envelope directly.
+  async my(params = {}): Promise<MyChallengesEnvelope> { return apiClient.get('/challenges/my', params); },
   // F6: `get(id)` was deleted — it called GET /challenges/<id>, which no backend
   // route serves, and nothing in the app called it. Milestones come from my()
   // (per-user) or the admin list.

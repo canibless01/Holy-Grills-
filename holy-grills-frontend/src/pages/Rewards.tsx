@@ -16,6 +16,7 @@ import InstallPushBonuses from '@/components/challenges/InstallPushBonuses';
 import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { triggerMascotCelebration } from '@/lib/mascots';
+import type { MyChallengesEnvelope } from '@/types/challenges';
 
 const CATEGORY_LABELS = { food: 'Food', discount: 'Wallet', experience: 'Experience' };
 
@@ -46,14 +47,8 @@ const formatCountdown = (endsAt) => {
   return `${m}m left`;
 };
 
-// TODO(ts): challenge rows are read with legacy aliases (hp_awarded/hp_award,
-// trigger_value/target_count) — consolidate against src/types/challenges.ts
-// before narrowing these to Challenge[].
-interface ChallengesEnvelope {
-  badges?: any[];
-  challenges_available?: any[];
-  challenges_completed?: any[];
-}
+// Rows are read through the legacy aliases the endpoint still emits; the
+// envelope itself is the endpoint's documented shape (types/challenges.ts).
 
 export default function Rewards() {
   const { hpBalance, refreshHp, streak, user } = useHolyGrill();
@@ -67,7 +62,7 @@ export default function Rewards() {
   // GET /challenges/my returns an envelope ({ badges, challenges_available,
   // challenges_completed }) — the page reads it with `?.`, so null is a safe
   // initial value and matches the pre-API render.
-  const [challenges, setChallenges] = useState<ChallengesEnvelope | null>(null);
+  const [challenges, setChallenges] = useState<MyChallengesEnvelope | null>(null);
   const [spinHistory, setSpinHistory] = useState([]);
   const [unlockHistory, setUnlockHistory] = useState([]);
   const [completing, setCompleting] = useState(null);

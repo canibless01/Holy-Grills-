@@ -106,36 +106,68 @@ export type NormalisedOrder = Order & {
   total_amount: Naira;
 };
 
-/** An item inside POST /api/orders. */
+/**
+ * An item inside POST /api/orders, as the storefront sends it (Checkout.tsx) —
+ * `notes`, variations and add-ons are all optional per line.
+ */
 export interface CreateOrderItem {
   menu_item_id: Uuid;
   quantity: number;
-  addons?: Array<{ addon_option_id: Uuid }>;
+  notes?: string;
+  selected_variations?: Array<{ option_id: Uuid }>;
+  selected_addons?: Array<{ addon_id: Uuid; quantity: number }>;
+  addons?: Array<{ addon_id: Uuid; quantity?: number }>;
 }
 
-/** Delivery address inside POST /api/orders. */
-export interface CreateOrderAddress {
-  address_line: string;
-  landmark?: string;
-  zone?: string;
-}
-
-/** POST /api/orders request body (guest checkout allowed). */
+/**
+ * POST /api/orders request body (guest checkout allowed).
+ *
+ * Retyped against the live caller: the previous shape required a
+ * `delivery_window_id` and an object `delivery_address`, while Checkout sends a
+ * window only when the order is scheduled and a *string* address for off-campus
+ * deliveries — which is why the caller used `Record<string, any>` instead. Only
+ * `items` and `payment_method` are always present.
+ */
 export interface CreateOrderPayload {
   items: CreateOrderItem[];
-  delivery_window_id: Uuid;
   payment_method: PaymentMethod;
-  delivery_address: CreateOrderAddress;
-  hp_points_to_redeem?: number;
+  /** 'website' | 'pwa' | … — mirrored from sessionStorage. */
+  order_source?: string;
+  delivery_type?: string;
   promo_code?: string;
-  is_scheduled?: boolean;
-  scheduled_for_window_id?: Uuid;
-  is_squad_order?: boolean;
+  squad_id?: Uuid;
+  excluded_member_ids?: Array<Uuid>;
+  extra_members?: unknown[];
+  notes?: string;
+  wallet_amount?: number;
+  free_side_credit?: boolean;
+  free_side_choice?: string;
   guest_name?: string;
   guest_phone?: string;
+  guest_email?: string;
+  delivery_location_id?: Uuid;
+  delivery_location_lat?: number;
+  delivery_location_lon?: number;
+  delivery_address?: string;
+  addons?: Array<{ addon_id: Uuid; quantity: number }>;
+  delivery_window_id?: Uuid;
+  is_scheduled?: boolean;
+  /** Retry flag set by the capacity flow ("today's orders are full"). */
+  accept_next_available_date?: boolean;
+  hp_points_to_redeem?: number;
+  scheduled_for_window_id?: Uuid;
+  is_squad_order?: boolean;
   paystack_reference?: string;
-  wallet_amount?: number;
   [key: string]: unknown;
+}
+
+/** POST /api/delivery/calculate-fee request body (Checkout's pin/gate flow). */
+export interface CalculateDeliveryFeePayload {
+  delivery_type: string;
+  lat: number;
+  lon: number;
+  /** Set once a gate is pinned or kept from an earlier calculation. */
+  delivery_location_id?: Uuid;
 }
 
 /** GET /api/orders query parameters. */
@@ -146,7 +178,11 @@ export interface OrderListParams {
   [key: string]: unknown;
 }
 
-/** Delivery window (GET /api/orders/delivery-windows). */
+/**
+ * Delivery window (GET /api/orders/delivery-windows). The scheduling UI also
+ * reads the capacity/slot fields the same endpoint attaches to each window
+ * (`is_closed`/`is_full` are what ScheduleOrderPanel filters on).
+ */
 export interface DeliveryWindow {
   id: Uuid;
   label: string;
@@ -154,14 +190,31 @@ export interface DeliveryWindow {
   close_time?: string;
   is_open?: boolean;
   date?: IsoDate;
+  is_closed?: boolean;
+  is_full?: boolean;
+  starts_at?: string | null;
+  delivery_starts_at?: string | null;
+  delivery_ends_at?: string | null;
+  remaining?: number | null;
   [key: string]: unknown;
 }
 
-/** GET /api/orders/delivery-windows/status. */
+/**
+ * GET /api/orders/delivery-windows/status.
+ *
+ * `is_open` is tri-state at the source: `null` means "not known yet" (no campus
+ * chosen), which the UI must never render as closed — see KitchenStatusBox.
+ * `next_available_date`/`next_opens_at` are the schedule hints
+ * ScheduleOrderPanel turns into the next-opening countdown.
+ */
 export interface DeliveryWindowsStatus {
-  is_open: boolean;
+  is_open?: boolean | null;
   message?: string;
   next_window?: DeliveryWindow | null;
+  next_available_date?: string | null;
+  next_opens_at?: string | null;
+  first_open_window?: DeliveryWindow | null;
+  windows?: DeliveryWindow[];
   [key: string]: unknown;
 }
 
