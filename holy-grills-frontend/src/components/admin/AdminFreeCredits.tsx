@@ -7,6 +7,7 @@ import { Card, Field, TextInput, Pill, SectionHeader, Modal, Toggle } from './Ad
 import ImageUploader from './ImageUploader';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
+import { displayName, displayInitial } from '@/lib/displayName';
 
 // Free side credits (free_sides.py).
 //   • The sides students can pick live in the free_side_items TABLE — the public
@@ -121,7 +122,16 @@ export default function AdminFreeCredits() {
     setGranting(true);
     try {
       const res = await mockApi.admin.grantFreeSideCredits({ user_id: grantUser.id, credits, reason: grantReason.trim() || undefined });
-      toast({ title: msg('FE_ADMIN_FREE_CREDITS_CREDITS_GRANTED', '✅ Credits granted'), description: `${credits} free side credit${credits > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
+      const grantedName = displayName(grantUser);
+      toast({
+        title: msg('FE_ADMIN_FREE_CREDITS_CREDITS_GRANTED', '✅ Credits granted'),
+        description: [
+          credits === 1
+            ? msg('FE_ADMIN_FREE_CREDITS_ONE_CREDIT_FOR_NAME', '1 free side credit for {name}.', { name: grantedName })
+            : msg('FE_ADMIN_FREE_CREDITS_CREDITS_FOR_NAME', '{count} free side credits for {name}.', { count: credits, name: grantedName }),
+          res?.expires_at ? msg('FE_ADMIN_FREE_CREDITS_CREDIT_EXPIRES_ON', 'Expires {date}.', { date: new Date(res.expires_at).toLocaleDateString() }) : '',
+        ].filter(Boolean).join(' '),
+      });
       setGrantUser(null);
       setGrantQuery('');
       setGrantResults([]);
@@ -182,7 +192,7 @@ export default function AdminFreeCredits() {
             <div className="flex items-center gap-2 rounded-xl bg-accent/15 border border-border p-3">
               <Gift className="w-4 h-4 text-accent-foreground" />
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm text-foreground truncate">{grantUser.full_name}</div>
+                <div className="font-bold text-sm text-foreground truncate">{displayName(grantUser)}</div>
                 <div className="text-[11px] text-muted-foreground truncate">{grantUser.email || grantUser.nickname || '—'}</div>
               </div>
               <button onClick={() => setGrantUser(null)} className="text-xs font-bold text-muted-foreground hover:text-foreground">Change</button>
@@ -205,9 +215,9 @@ export default function AdminFreeCredits() {
               <div className="space-y-1">
                 {grantResults.map((u) => (
                   <button key={u.id} onClick={() => setGrantUser(u)} className="w-full flex items-center gap-2 rounded-xl border border-border p-2.5 text-left hover:bg-muted">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{(u.full_name || 'S').charAt(0)}</div>
+                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{displayInitial(u, 'S')}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm text-foreground truncate">{u.full_name}</div>
+                      <div className="font-bold text-sm text-foreground truncate">{displayName(u)}</div>
                       <div className="text-[11px] text-muted-foreground truncate">{u.email || u.nickname || '—'}</div>
                     </div>
                     <span className="text-[11px] font-bold text-primary">Select</span>

@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Card, Field, TextInput, Pill, SectionHeader, Modal } from './AdminShared';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
+import { displayName, displayInitial } from '@/lib/displayName';
 
 // DB-backed prize pool (GET/POST/PATCH/DELETE /admin/exclusive-spin-pool).
 // Every prize carries a campus scope: campus_id = null is GLOBAL — editing it
@@ -76,7 +77,16 @@ export default function AdminExclusiveSpin() {
     setGranting(true);
     try {
       const res = await mockApi.admin.grantExclusiveSpinCredits({ user_id: grantUser.id, spins, reason: grantReason.trim() || undefined });
-      toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_SPINS_GRANTED', '✅ Spins granted'), description: `${spins} exclusive spin${spins > 1 ? 's' : ''} for ${grantUser.full_name}.${res?.expires_at ? ` Expires ${new Date(res.expires_at).toLocaleDateString()}.` : ''}` });
+      const grantedName = displayName(grantUser);
+      toast({
+        title: msg('FE_ADMIN_EXCLUSIVE_SPIN_SPINS_GRANTED', '✅ Spins granted'),
+        description: [
+          spins === 1
+            ? msg('FE_ADMIN_EXCLUSIVE_SPIN_ONE_SPIN_FOR_NAME', '1 exclusive spin for {name}.', { name: grantedName })
+            : msg('FE_ADMIN_EXCLUSIVE_SPIN_SPINS_FOR_NAME', '{count} exclusive spins for {name}.', { count: spins, name: grantedName }),
+          res?.expires_at ? msg('FE_ADMIN_EXCLUSIVE_SPIN_CREDIT_EXPIRES_ON', 'Expires {date}.', { date: new Date(res.expires_at).toLocaleDateString() }) : '',
+        ].filter(Boolean).join(' '),
+      });
       setGrantUser(null);
       setGrantQuery('');
       setGrantResults([]);
@@ -247,7 +257,7 @@ export default function AdminExclusiveSpin() {
             <div className="flex items-center gap-2 rounded-xl bg-accent/15 border border-border p-3">
               <Zap className="w-4 h-4 text-accent-foreground" />
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm text-foreground truncate">{grantUser.full_name}</div>
+                <div className="font-bold text-sm text-foreground truncate">{displayName(grantUser)}</div>
                 <div className="text-[11px] text-muted-foreground truncate">{grantUser.email || grantUser.nickname || '—'}</div>
               </div>
               <button onClick={() => setGrantUser(null)} className="text-xs font-bold text-muted-foreground hover:text-foreground">Change</button>
@@ -270,9 +280,9 @@ export default function AdminExclusiveSpin() {
               <div className="space-y-1">
                 {grantResults.map((u) => (
                   <button key={u.id} onClick={() => setGrantUser(u)} className="w-full flex items-center gap-2 rounded-xl border border-border p-2.5 text-left hover:bg-muted">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{(u.full_name || 'S').charAt(0)}</div>
+                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{displayInitial(u, 'S')}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm text-foreground truncate">{u.full_name}</div>
+                      <div className="font-bold text-sm text-foreground truncate">{displayName(u)}</div>
                       <div className="text-[11px] text-muted-foreground truncate">{u.email || u.nickname || '—'}</div>
                     </div>
                     <span className="text-[11px] font-bold text-primary">Select</span>

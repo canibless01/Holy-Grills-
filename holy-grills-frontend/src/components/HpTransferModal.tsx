@@ -5,6 +5,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
 import { msg } from '@/lib/messages';
+import { displayName, displayInitial } from '@/lib/displayName';
 
 const DEFAULT_MIN_TRANSFER = 10;
 
@@ -59,7 +60,7 @@ export default function HpTransferModal({ open, onClose }) {
   const amt = parseInt(amount, 10);
   const amountValid = !isNaN(amt) && amt >= MIN_AMOUNT && amt <= activeHp;
 
-  const pickRecipient = (r) => { setSelected(r); setQuery(r.full_name); setShowResults(false); };
+  const pickRecipient = (r) => { setSelected(r); setQuery(displayName(r)); setShowResults(false); };
 
   const handleSend = async () => {
     setError(null);
@@ -71,8 +72,12 @@ export default function HpTransferModal({ open, onClose }) {
     try {
       const res = await liveApi.hp.transfer({ recipient_id: selected.id, amount: amt, notes: notes.trim() || undefined });
       await refreshHp();
-      setDone({ amount: amt, name: res?.recipient_name || selected.full_name, newBalance: res?.new_balance });
-      toast({ title: msg('FE_HP_TRANSFER_MODAL_AMOUNT_HP_SENT', '🔥 {amount} HP sent!', { amount: amt }), description: msg('FE_HP_TRANSFER_MODAL_SENT_TO_NAME', 'Sent to {name}.', { name: res?.recipient_name || selected.full_name }), sound: 'hp_transfer_sent' });
+      setDone({ amount: amt, name: res?.recipient_name || displayName(selected), newBalance: res?.new_balance });
+      toast({
+        title: msg('FE_HP_TRANSFER_MODAL_AMOUNT_HP_SENT', '🔥 {amount} HP sent!', { amount: amt }),
+        description: msg('FE_HP_TRANSFER_MODAL_SENT_TO_NAME', 'Sent to {name}.', { name: res?.recipient_name || displayName(selected) }),
+        sound: 'hp_transfer_sent',
+      });
     } catch (e) {
       const failure = e?.message || 'Transfer failed.';
       setError(failure);
@@ -132,11 +137,11 @@ export default function HpTransferModal({ open, onClose }) {
                       className={`w-full flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${selected?.id === r.id ? 'border-primary/60 bg-primary/10' : 'border-border hover:border-input'}`}
                     >
                       <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-foreground">
-                        {(r.full_name || r.nickname || '?').charAt(0).toUpperCase()}
+                        {displayInitial(r)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-foreground truncate">{r.full_name || r.nickname}</div>
-                        {r.nickname && r.full_name && <div className="text-[10px] text-muted-foreground truncate">@{r.nickname}</div>}
+                        <div className="text-sm font-semibold text-foreground truncate">{displayName(r)}</div>
+                        {r.nickname && r.full_name && <div className="text-[10px] text-muted-foreground truncate">{r.full_name}</div>}
                       </div>
                       {selected?.id === r.id && <Check className="w-4 h-4 text-primary" />}
                     </button>

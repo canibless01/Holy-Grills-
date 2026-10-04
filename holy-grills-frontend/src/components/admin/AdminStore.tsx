@@ -255,7 +255,14 @@ function UsageModal({ item, unitName, onClose, onDone }) {
         type,
         notes: notes.trim() || undefined,
       });
-      toast({ title: msg('FE_ADMIN_STORE_USAGE_LOGGED', '✓ Usage logged'), description: `${quantity} ${unitName(item.usage_unit_id) || 'units'} of ${item.name}` });
+      toast({
+        title: msg('FE_ADMIN_STORE_USAGE_LOGGED', '✓ Usage logged'),
+        description: msg('FE_ADMIN_STORE_USAGE_LOGGED_BODY', '{quantity} {unit} of {name}', {
+          quantity,
+          unit: unitName(item.usage_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units'),
+          name: item.name,
+        }),
+      });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to log usage'); }
     setSaving(false);

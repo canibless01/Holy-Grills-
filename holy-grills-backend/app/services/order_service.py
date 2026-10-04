@@ -675,11 +675,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             db, "squad_order_min_items", config.get("SQUAD_ORDER_MIN_ITEMS", 3),
             minimum=1, maximum=50,
         ))
-        try:
-            _row = db.table("system_settings").select("value").eq("key", "squad_order_max_items").is_("campus_id", "null").single().execute()
-            max_items = int(_row["value"]) if _row and _row.get("value") is not None else int(config.get("SQUAD_ORDER_MAX_ITEMS", 20))
-        except Exception:
-            max_items = int(config.get("SQUAD_ORDER_MAX_ITEMS", 20))
+        max_items = int(setting_or_config(
+            db, "squad_order_max_items", config.get("SQUAD_ORDER_MAX_ITEMS", 20),
+            minimum=1, maximum=200,
+        ))
         if min_items <= squad_item_count <= max_items:
             is_squad_order = True
 

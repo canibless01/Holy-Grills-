@@ -23,15 +23,19 @@ Every environment variable the app reads, what it controls, its default, and
 | `APP_NAME` | Platform name used in emails and push notifications | `Holy Grills` |
 | `APP_TAGLINE` | Sign-off line on all emails | `Holy Grills FUTA` |
 | `FLASK_DEBUG` | Enable debug mode (`true`/`false`) | `false` |
-| `FRONTEND_URL` | Frontend URL — password-reset links, and added to `Config.CORS_ORIGINS` | `http://localhost:3000` |
-| `CORS_ORIGINS` | Comma-separated allowed origins (`*` is ignored — unset = empty list) | *(unset)* |
+| `FRONTEND_URL` | Frontend URL — password-reset links, and **added to** `Config.CORS_ORIGINS` | `http://localhost:3000` |
+| `CORS_ORIGINS` / `ALLOWED_ORIGINS` | Comma-separated origins to **add** to the allowed list (`*` is ignored — the list is never a wildcard) | *(unset)* |
 | `SWAGGER_CONTACT_EMAIL` | Contact email shown in API docs | `dev@example.com` |
 
-> **CORS is wide open until deployment.** `app/__init__.py` registers
-> `CORS(app, origins="*")`, so every origin is accepted today and the two variables
-> above are collected but **not enforced**. The previously hardcoded origin list
-> (which still named the retired `base44.app` host) has been removed. Before going to
-> production, set them and pass `origins=Config.CORS_ORIGINS` to `CORS(...)`.
+> **CORS is pinned, not wildcarded.** `app/__init__.py` passes
+> `origins=Config.CORS_ORIGINS` to `CORS(...)`. That list always contains the known
+> deployments (`https://holy-grills.vercel.app`, `https://holygrill.app`,
+> `https://www.holygrill.app`) and the local dev ports, and the variables above
+> *add* to it — so a stale or missing `FRONTEND_URL` can never lock the frontend
+> out of its own API. A request from an origin outside the list gets no
+> `Access-Control-Allow-Origin` header. Preview deployments
+> (`holy-grills-<hash>.vercel.app`) are not on the default list: add the preview
+> URL through `CORS_ORIGINS` on that environment when you test one.
 
 ### 1.2 Supabase (Database + Auth)
 
@@ -334,7 +338,7 @@ APP_TAGLINE           # Sign-off line in emails
 EMAIL_FROM            # Sender email
 EMAIL_FROM_NAME       # Sender display name
 FRONTEND_URL          # Your mobile/web frontend URL (also added to CORS_ORIGINS)
-CORS_ORIGINS          # Comma-separated allowed origins (not enforced while CORS uses "*")
+CORS_ORIGINS          # Extra origins to allow (adds to the pinned defaults)
 HP_CURRENCY_NAME      # Your loyalty currency name
 ```
 
@@ -378,5 +382,5 @@ The `{platform}` and `{currency}` placeholders in notification strings are resol
 - [ ] `REDIS_URL` (and optionally `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`)
 - [ ] `APP_NAME`, `APP_TAGLINE` — your brand name
 - [ ] `EMAIL_FROM`, `EMAIL_FROM_NAME` — your verified sender address
-- [ ] `FRONTEND_URL`, `CORS_ORIGINS` — your production frontend URL, **and** switch
-      `CORS(app, origins="*")` in `app/__init__.py` over to `Config.CORS_ORIGINS`
+- [ ] `FRONTEND_URL` — your production frontend URL. The pinned CORS list already
+      allows it; set `CORS_ORIGINS` only to add a preview or extra origin

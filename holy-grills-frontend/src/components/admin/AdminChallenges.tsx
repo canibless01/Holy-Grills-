@@ -50,7 +50,14 @@ export default function AdminChallenges() {
     setBusy(id);
     try {
       await mockApi.admin.updateChallenge(id, { is_active: !current });
-      toast({ title: `${!current ? '✅ Activated' : '⏸ Deactivated'}`, description: `"${title}" is now ${!current ? 'live' : 'paused'}.` });
+      toast({
+        title: current
+          ? msg('FE_ADMIN_CHALLENGES_CHALLENGE_DEACTIVATED', '⏸ Deactivated')
+          : msg('FE_ADMIN_CHALLENGES_CHALLENGE_ACTIVATED', '✅ Activated'),
+        description: current
+          ? msg('FE_ADMIN_CHALLENGES_CHALLENGE_PAUSED_BODY', '"{title}" is now paused.', { title })
+          : msg('FE_ADMIN_CHALLENGES_CHALLENGE_LIVE_BODY', '"{title}" is now live.', { title }),
+      });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);

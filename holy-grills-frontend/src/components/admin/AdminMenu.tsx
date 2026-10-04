@@ -69,7 +69,16 @@ export default function AdminMenu() {
     setBulkBusy(true);
     try {
       await mockApi.admin.bulkToggleMenuItemAvailability([...selected], makeAvailable);
-      toast({ title: `✅ ${selected.size} items ${makeAvailable ? 'made available' : 'marked sold out'}` });
+      const count = selected.size;
+      toast({
+        title: makeAvailable
+          ? (count === 1
+            ? msg('FE_ADMIN_MENU_ONE_ITEM_MADE_AVAILABLE', '✅ 1 item made available')
+            : msg('FE_ADMIN_MENU_ITEMS_MADE_AVAILABLE', '✅ {count} items made available', { count }))
+          : (count === 1
+            ? msg('FE_ADMIN_MENU_ONE_ITEM_MARKED_SOLD_OUT', '✅ 1 item marked sold out')
+            : msg('FE_ADMIN_MENU_ITEMS_MARKED_SOLD_OUT', '✅ {count} items marked sold out', { count })),
+      });
       setSelected(new Set()); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_MENU_BULK_UPDATE_FAILED', 'Bulk update failed'), description: e.message, variant: 'destructive' }); }
     setBulkBusy(false);
@@ -101,7 +110,13 @@ export default function AdminMenu() {
   const adjustHp = async (id, multiplier, name) => {
     try {
       await mockApi.admin.updateMenuItemHpMultiplier(id, { multiplier });
-      toast({ title: msg('FE_ADMIN_MENU_HP_MULTIPLIER_UPDATED', '✅ HP multiplier updated'), description: `${multiplier === 2 ? 'Double' : 'Half'} HP earning for "${name}".` });
+      const hpLabel = multiplier === 2
+        ? msg('FE_ADMIN_MENU_DOUBLE', 'Double')
+        : msg('FE_ADMIN_MENU_HALF', 'Half');
+      toast({
+        title: msg('FE_ADMIN_MENU_HP_MULTIPLIER_UPDATED', '✅ HP multiplier updated'),
+        description: msg('FE_ADMIN_MENU_HP_EARNING_FOR_NAME', '{label} HP earning for "{name}".', { label: hpLabel, name }),
+      });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };

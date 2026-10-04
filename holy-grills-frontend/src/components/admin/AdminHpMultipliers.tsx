@@ -40,7 +40,15 @@ function PerItemMultipliers() {
     setBusy(id);
     try {
       await mockApi.admin.updateMenuItemHpMultiplier(id, { multiplier });
-      toast({ title: msg('FE_ADMIN_HP_MULTIPLIERS_HP_MULTIPLIER_UPDATED', '✅ HP multiplier updated'), description: `${multiplier === 2 ? 'Double' : multiplier === 0.5 ? 'Half' : 'Normal'} HP earning for "${name}".` });
+      const label = multiplier === 2
+        ? msg('FE_ADMIN_HP_MULTIPLIERS_DOUBLE', 'Double')
+        : multiplier === 0.5
+          ? msg('FE_ADMIN_HP_MULTIPLIERS_HALF', 'Half')
+          : msg('FE_ADMIN_HP_MULTIPLIERS_NORMAL', 'Normal');
+      toast({
+        title: msg('FE_ADMIN_HP_MULTIPLIERS_HP_MULTIPLIER_UPDATED', '✅ HP multiplier updated'),
+        description: msg('FE_ADMIN_HP_MULTIPLIERS_EARNING_FOR_NAME', '{label} HP earning for "{name}".', { label, name }),
+      });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_HP_MULTIPLIERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);

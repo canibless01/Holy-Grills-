@@ -1771,6 +1771,45 @@ class MSG:
 
     FE_CAMPUS_PICKER_REMEMBERED             = "Pick once — we remember it on this device. The picker also opens on top of this page."
 
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_ADMIN_CHALLENGES_CHALLENGE_DEACTIVATED  = "⏸ Deactivated"
+    FE_ADMIN_CHALLENGES_CHALLENGE_ACTIVATED    = "✅ Activated"
+    FE_ADMIN_CHALLENGES_CHALLENGE_PAUSED_BODY  = "\"{title}\" is now paused."
+    FE_ADMIN_CHALLENGES_CHALLENGE_LIVE_BODY    = "\"{title}\" is now live."
+    FE_ADMIN_EXCLUSIVE_SPIN_ONE_SPIN_FOR_NAME  = "1 exclusive spin for {name}."
+    FE_ADMIN_EXCLUSIVE_SPIN_SPINS_FOR_NAME     = "{count} exclusive spins for {name}."
+    FE_ADMIN_EXCLUSIVE_SPIN_CREDIT_EXPIRES_ON  = "Expires {date}."
+    FE_ADMIN_FREE_CREDITS_ONE_CREDIT_FOR_NAME  = "1 free side credit for {name}."
+    FE_ADMIN_FREE_CREDITS_CREDITS_FOR_NAME     = "{count} free side credits for {name}."
+    FE_ADMIN_FREE_CREDITS_CREDIT_EXPIRES_ON    = "Expires {date}."
+    FE_ADMIN_HP_MULTIPLIERS_DOUBLE             = "Double"
+    FE_ADMIN_HP_MULTIPLIERS_HALF               = "Half"
+    FE_ADMIN_HP_MULTIPLIERS_NORMAL             = "Normal"
+    FE_ADMIN_HP_MULTIPLIERS_EARNING_FOR_NAME   = "{label} HP earning for \"{name}\"."
+    FE_ADMIN_MENU_ONE_ITEM_MADE_AVAILABLE      = "✅ 1 item made available"
+    FE_ADMIN_MENU_ITEMS_MADE_AVAILABLE         = "✅ {count} items made available"
+    FE_ADMIN_MENU_ONE_ITEM_MARKED_SOLD_OUT     = "✅ 1 item marked sold out"
+    FE_ADMIN_MENU_ITEMS_MARKED_SOLD_OUT        = "✅ {count} items marked sold out"
+    FE_ADMIN_MENU_DOUBLE                       = "Double"
+    FE_ADMIN_MENU_HALF                         = "Half"
+    FE_ADMIN_MENU_HP_EARNING_FOR_NAME          = "{label} HP earning for \"{name}\"."
+    FE_ADMIN_STORE_USAGE_LOGGED_BODY           = "{quantity} {unit} of {name}"
+    FE_ADMIN_STORE_UNITS                       = "units"
+    FE_ADMIN_SYSTEM_SETTINGS_SETTING_DISABLED  = "{key} disabled"
+    FE_ADMIN_SYSTEM_SETTINGS_SETTING_ENABLED   = "{key} enabled"
+    FE_ADMIN_USERS_HP_GRANT_RESULT             = "{hp} HP · new balance {balance}"
+    FE_ADMIN_USERS_UPDATED                     = "updated"
+    FE_SQUAD_ORDER_BUTTON_ADD_ONE_MORE_ITEM    = "Add 1 more item to reach the {min}-item squad minimum."
+    FE_SQUAD_ORDER_BUTTON_ADD_MORE_ITEMS       = "Add {count} more items to reach the {min}-item squad minimum."
+    FE_SQUAD_ORDER_BUTTON_REMOVE_ONE_ITEM      = "Remove 1 item to keep your squad order within the {max}-item limit."
+    FE_SQUAD_ORDER_BUTTON_REMOVE_ITEMS         = "Remove {count} items to keep your squad order within the {max}-item limit."
+    FE_USE_KITCHEN_DATA_BATCH_ADVANCED         = "{label} — {count} moved"
+    FE_USE_KITCHEN_DATA_ADVANCED               = "Advanced"
+    FE_USE_KITCHEN_DATA_BATCH_SKIPPED          = "{count} skipped"
+
 # Short alias
 M = MSG
 

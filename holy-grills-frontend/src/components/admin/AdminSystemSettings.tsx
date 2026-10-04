@@ -79,7 +79,11 @@ export default function AdminSystemSettings() {
     setBusy(key);
     try {
       await liveApi.admin.updateSystemSetting(key, { value: !current });
-      toast({ title: `${key} ${!current ? 'enabled' : 'disabled'}` });
+      toast({
+        title: current
+          ? msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_DISABLED', '{key} disabled', { key })
+          : msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_ENABLED', '{key} enabled', { key }),
+      });
       await load();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });

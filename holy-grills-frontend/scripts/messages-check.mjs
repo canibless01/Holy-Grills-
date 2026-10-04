@@ -17,8 +17,11 @@
  *
  * Run: `npm run messages:check` (part of `npm run build`). Skips with a note when
  * the backend checkout is not present next to the frontend.
+ *
+ * `--fix` (`npm run messages:fix`) appends any missing key to the registry using
+ * the call site's fallback as the first text — for hand-written call sites.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -79,6 +82,24 @@ for (const site of drifted) {
   console.log(`         registry:          ${JSON.stringify(registryKeys.get(site.key))}`);
 }
 if (unused.length) console.log(`  note   registry keys not used yet: ${unused.sort().join(', ')}`);
+
+// `--fix` puts the missing keys in the registry (text = the frontend fallback,
+// which is already the string the UI renders today). Handy for a call site
+// written by hand; the codemod is the tool for bulk work.
+if (missing.length && process.argv.includes('--fix')) {
+  const width = Math.max(40, ...missing.map((site) => site.key.length + 2));
+  const block = [
+    '',
+    '    # Added from frontend call sites (`npm run messages:fix`). Preview text is',
+    '    # the fallback the UI already shipped; reword it here and the app follows.',
+    '',
+    ...missing.map((site) => `    ${site.key.padEnd(width)}= ${JSON.stringify(site.fallback)}`),
+    '',
+  ].join('\n');
+  writeFileSync(registryPath, registry.replace('\n# Short alias', `\n${block}\n# Short alias`), 'utf8');
+  console.log(`  fixed  added ${missing.length} key(s) to app/messages.py — re-run the check`);
+  process.exit(0);
+}
 
 if (missing.length) {
   for (const site of missing) {

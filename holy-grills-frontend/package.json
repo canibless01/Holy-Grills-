@@ -9,6 +9,7 @@
     "routes:check": "node scripts/sync-routes.mjs --check",
     "routes:sync": "node scripts/sync-routes.mjs --write",
     "messages:check": "node scripts/messages-check.mjs",
+    "messages:fix": "node scripts/messages-check.mjs --fix",
     "serve": "node scripts/serve-static.mjs",
     "smoke": "node scripts/smoke.mjs",
     "build:client": "vite build",

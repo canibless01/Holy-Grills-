@@ -31,7 +31,13 @@ export default function ScheduleOrderPanel({
   const { pathname } = useLocation();
 
   const opensAt = watDate(status?.next_available_date, status?.next_opens_at);
-  const nextWindow = windows.find((w) => w && !w.is_closed && !w.is_full) || windows[0] || null;
+  // Only a window the backend would accept: open, not full. There is no
+  // `windows[0]` fallback on purpose — that first row can be closed or full,
+  // and pre-filling it would hand checkout a window the backend then refuses.
+  // With nothing bookable the panel says so and checkout submits without a
+  // window, so the backend answers with its own message instead of the
+  // frontend inventing a slot.
+  const nextWindow = windows.find((w) => w && !w.is_closed && !w.is_full) || null;
 
   const confirm = () => {
     if (nextWindow) {
@@ -47,6 +53,12 @@ export default function ScheduleOrderPanel({
       <p className="text-sm text-muted-foreground text-center mt-1.5 leading-relaxed">
         No date to pick — we'll place it in the next ordering window automatically.
       </p>
+
+      {!nextWindow && (
+        <p className="mt-3 text-xs text-muted-foreground text-center leading-relaxed">
+          No bookable window right now. Continue and checkout will check with the kitchen again.
+        </p>
+      )}
 
       {opensAt && (
         <div className="mt-4 rounded-2xl border border-border bg-secondary/40 px-4 py-3 text-center">

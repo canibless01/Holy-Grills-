@@ -174,7 +174,13 @@ export function useKitchenData() {
         skippedReasons[r] = (skippedReasons[r] || 0) + 1;
       });
       setBatchResult({ advanced, skipped, skippedReasons, label: label || 'Batch advanced' });
-      toast({ title: `${label || 'Advanced'} — ${advanced} moved`, description: skipped ? `${skipped} skipped` : undefined });
+      toast({
+        title: msg('FE_USE_KITCHEN_DATA_BATCH_ADVANCED', '{label} — {count} moved', {
+          label: label || msg('FE_USE_KITCHEN_DATA_ADVANCED', 'Advanced'),
+          count: advanced,
+        }),
+        description: skipped ? msg('FE_USE_KITCHEN_DATA_BATCH_SKIPPED', '{count} skipped', { count: skipped }) : undefined,
+      });
       await refreshQueue();
     } catch (e) {
       toast({ title: msg('FE_USE_KITCHEN_DATA_BATCH_UPDATE_FAILED', 'Batch update failed'), description: e.message, variant: 'destructive' });

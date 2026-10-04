@@ -554,7 +554,10 @@ function GrantModal({ user, onClose, onDone }) {
       const res = await liveApi.admin.grantHpToUser(user.id, { amount: Number(amount), notes });
       toast({
         title: msg('FE_ADMIN_USERS_HP_ADJUSTED', 'HP adjusted'),
-        description: `${res?.amount ?? amount} HP · new balance ${res?.new_balance != null ? Number(res.new_balance).toLocaleString() : 'updated'}`,
+        description: msg('FE_ADMIN_USERS_HP_GRANT_RESULT', '{hp} HP · new balance {balance}', {
+          hp: res?.amount ?? amount,
+          balance: res?.new_balance != null ? Number(res.new_balance).toLocaleString() : msg('FE_ADMIN_USERS_UPDATED', 'updated'),
+        }),
       });
       onDone();
       onClose();

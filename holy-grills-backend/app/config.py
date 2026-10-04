@@ -29,12 +29,27 @@ class Config:
     frontend_env = os.environ.get("FRONTEND_URL")
     if frontend_env and frontend_env.strip() != "*":
         origins_set.add(frontend_env.strip())
-    # Origins are environment-driven only. The hardcoded list — which still named
-    # the retired base44.app origin — was removed on request. Note that
-    # app/__init__.py currently sets CORS(app, origins="*"), so this list was not
-    # in effect anyway; set CORS_ORIGINS/FRONTEND_URL to pin it down before deploy.
+    # Origins are environment-driven, with the known deployments as the default
+    # so the API is not left on a wildcard. CORS_ORIGINS / ALLOWED_ORIGINS /
+    # FRONTEND_URL (comma-separated) override this list entirely; a "*" in any of
+    # them is ignored — pinning the list is the point.
+    #
+    # Preview deployments (holy-grills-<hash>.vercel.app) are NOT listed: add them
+    # through CORS_ORIGINS on that environment if you test on a preview URL.
+    DEFAULT_CORS_ORIGINS = (
+        "https://holy-grills.vercel.app",
+        "https://holygrill.app",
+        "https://www.holygrill.app",
+        # Local dev: vite dev server, vite preview, the static smoke server.
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:4174", "http://127.0.0.1:4174",
+    )
 
-    CORS_ORIGINS = list(origins_set)
+    # The known origins are always allowed; env entries (CORS_ORIGINS /
+    # ALLOWED_ORIGINS / FRONTEND_URL) only ADD to them — so a stale or missing
+    # FRONTEND_URL can never lock the real frontend out of its own API.
+    CORS_ORIGINS = sorted(set(DEFAULT_CORS_ORIGINS) | origins_set)
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")

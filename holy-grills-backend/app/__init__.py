@@ -93,9 +93,13 @@ def create_app(config_class=Config):
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+    # Pinned to the real frontend origins (Config.CORS_ORIGINS, env-overridable)
+    # instead of "*". Requests are Bearer-token based, not cookie based, so this
+    # was hygiene rather than a hole — but a wildcard let any site script calls
+    # against the API from a visitor's browser.
     CORS(
         app,
-        origins="*",
+        origins=Config.CORS_ORIGINS,
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "Accept", "Origin", "X-Requested-With"],
         expose_headers=["Authorization", "Deprecation", "Sunset", "Link"],
