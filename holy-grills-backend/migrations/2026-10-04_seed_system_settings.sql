@@ -16,6 +16,9 @@
 --    literals (100, true, [..], "08:00") so the same file is correct whether the
 --    project stores system_settings.value as jsonb or as text.
 --
+--  The list below holds 43 candidates; 40 are inserted. Three are skipped on
+--  purpose and are explained at the end of this file.
+--
 --  WHAT IT SEEDS
 --    Global rows only (campus_id IS NULL) — per-campus overrides are the admin
 --    UI's job, and the backend reads campus row → global row → env.
@@ -36,9 +39,18 @@
 --      APP_ENV: read before a request (and sometimes before a DB) exists.
 --    ✘ everything in the NEEDS-A-DECISION list at the bottom of this file.
 --
---  is_public = true on every row here: each of these values already ships inside
---  the frontend JS bundle, so publishing them from the table discloses nothing
---  that a visitor cannot read in the bundle today.
+--  PUBLIC vs PRIVATE
+--    is_public = true on every row EXCEPT four operational keys, which
+--    GET /storefront/config/public does not serve (applied on test 2):
+--        low_code_inventory_threshold, notification_daily_cap,
+--        paystack_preferred_bank, wallet_ref_prefix
+--    Those four are for the backend and the admin screen; a student's client
+--    falls back to its built-in default for them (the defaults currently match,
+--    so nothing is visibly different — an admin edit just will not reach the
+--    student bundle until the value is made public again).
+--    Everything else is public on purpose: each such value already ships inside
+--    the frontend JS bundle, so publishing it from the table discloses nothing
+--    that a visitor cannot read in the bundle today.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 DO $$
@@ -56,6 +68,15 @@ DECLARE
   has_public   boolean;
   has_upd_at   boolean;
   has_upd_by   boolean;
+  -- is_public = false for these four (see PUBLIC vs PRIVATE in the header).
+  -- Declared here, once, so the rule is reviewable in a single line instead of
+  -- being repeated on 40 rows.
+  v_private    text[] := ARRAY[
+    'low_code_inventory_threshold',
+    'notification_daily_cap',
+    'paystack_preferred_bank',
+    'wallet_ref_prefix'
+  ];
 BEGIN
   IF to_regclass('public.system_settings') IS NULL THEN
     RAISE EXCEPTION 'public.system_settings does not exist — nothing seeded';
@@ -118,7 +139,7 @@ BEGIN
       --    nothing moves yet. FOUR of these are already read back through
       --    setting_or_config, so editing them takes effect without a deploy:
       --      event_checkin_hp · wallet_topup_hp · marketplace_purchase_hp ·
-      --      low_code_inventory_threshold
+      --      low_code_inventory_threshold   (the only private one of the four)
       --    The rest are the frontend's copy of an env value until they are wired
       --    the same way (see SETTINGS.md → leftovers).
       ('2', 'hp_per_naira_food',            '0.1',    'HP earned per ₦1 of food spend — HP_PER_NAIRA_FOOD'),
@@ -137,12 +158,9 @@ BEGIN
       ('2', 'hp_bundles',                   '[{"hp":100,"label":"Starter"},{"hp":250,"label":"Basic"},{"hp":500,"label":"Standard"},{"hp":1000,"label":"Premium"},{"hp":2500,"label":"Elite"}]', 'Bundle tiers offered to event hosts — HP_BUNDLES'),
       ('2', 'notification_gap_minutes',     '30',     'Minimum minutes between two notifications of the same type — NOTIFICATION_GAP_MINUTES'),
       ('2', 'notification_daily_cap',       '20',     'Maximum notifications one user receives per day — NOTIFICATION_DAILY_CAP'),
-      ('2', 'ordering_window_open_time',    '"08:00"',  'Time orders open (campus local time, HH:MM) — ORDERING_WINDOW_OPEN_TIME'),
-      ('2', 'ordering_window_close_time',   '"16:00"',  'Time orders close (campus local time, HH:MM) — ORDERING_WINDOW_CLOSE_TIME'),
       ('2', 'free_side_options',            '["Fries","Coleslaw","Plantain","Gizzard"]', 'Free-side choices offered when a credit is redeemed — FREE_SIDE_OPTIONS'),
       ('2', 'login_streak_rewards',         '{"1":25,"2":40,"3":60,"4+":80}', 'HP per completed streak week — LOGIN_STREAK_WEEK1..4_HP / login_streak_rewards table'),
       ('2', 'paystack_preferred_bank',      '"wema-bank"', 'Virtual-account bank code shown at top-up — PAYSTACK_PREFERRED_BANK'),
-      ('2', 'app_name',                     '"Holy Grills"', 'Product name used in copy and receipts — APP_NAME'),
       ('2', 'hp_currency_name',             '"HP"',     'What the loyalty currency is called in copy — HP_CURRENCY_NAME'),
       ('2', 'wallet_ref_prefix',            '"HG-WALLET-"', 'Prefix on generated wallet transaction references — WALLET_REF_PREFIX')
     ) AS t(section, key, value, description)
@@ -173,7 +191,9 @@ BEGIN
 
     IF has_desc   THEN v_vals := v_vals || format(', %L', r.description); END IF;
     IF has_campus THEN v_vals := v_vals || ', NULL';   END IF;
-    IF has_public THEN v_vals := v_vals || ', TRUE';   END IF;
+    -- is_public is what GET /storefront/config/public serves; the four
+    -- operational keys above stay backend/admin-only.
+    IF has_public THEN v_vals := v_vals || format(', %L', NOT (r.key = ANY(v_private))); END IF;
     IF has_upd_at THEN v_vals := v_vals || ', now()';  END IF;
     IF has_upd_by THEN v_vals := v_vals || ', NULL';   END IF;
 
@@ -196,6 +216,11 @@ END $$;
 --     WHERE campus_id IS NULL
 --     ORDER BY key;
 --
+--  Expect the keys from this file (40 rows if the table started empty).
+--  Exactly four are is_public = false:
+--    low_code_inventory_threshold, notification_daily_cap,
+--    paystack_preferred_bank, wallet_ref_prefix
+--
 --  A per-campus override, for when a campus runs a different number
 --  (only this campus's admin or a super admin may write it — same rule as the
 --  admin screen; the backend reads campus row → global row → env):
@@ -215,7 +240,16 @@ END $$;
 --         'wallet_min_card_topup', 'free_side_credits_validity_days',
 --         'exclusive_spin_validity_days', 'hp_multiplier', 'monthly_pending_cap',
 --         'welcome_bonus_hp', 'signup_bonus_hp', 'review_hp', 'share_prompt_hp',
---         'hp_transfer_min_orders', 'graduation_min_level' );
+--         'hp_transfer_min_orders', 'graduation_min_level',
+--         -- SECTION 2
+--         'hp_per_naira_food', 'hp_unlock_rate_pct', 'referral_hp',
+--         'event_checkin_hp', 'wallet_topup_hp', 'wallet_topup_min',
+--         'hp_transfer_min_amount', 'marketplace_purchase_hp',
+--         'low_code_inventory_threshold', 'flash_discount_pct', 'flash_max_qty',
+--         'hp_bundle_price_per_hp', 'hp_bundle_min_purchase', 'hp_bundles',
+--         'notification_gap_minutes', 'notification_daily_cap',
+--         'free_side_options', 'login_streak_rewards', 'paystack_preferred_bank',
+--         'hp_currency_name', 'wallet_ref_prefix' );
 --
 --
 -- ───────────────────────────────────────────────────────────────────────────
@@ -249,6 +283,61 @@ END $$;
 --                                         no row exists while FIRST_ORDER_GIFT_ENABLED
 --                                         defaults to true — a real conflict to
 --                                         settle before enabling the gift.
+--
+--  SKIPPED ON PURPOSE (applied on test 2 without them)
+--
+--   ordering_window_open_time / ordering_window_close_time
+--                                         opening hours are data, not config:
+--                                         they live in ordering_windows plus
+--                                         per-campus overrides, which is what
+--                                         the kitchen and checkout actually
+--                                         read. A settings row would be a
+--                                         second, ignored source of truth.
+--   app_name                              duplicates platform_name, which the
+--                                         admin/platform screen already owns.
+--
+--  If an earlier run of this file created any of those three, remove them so
+--  the table stops advertising a value nothing reads (review the row first —
+--  an admin may have edited it):
+--
+--    DELETE FROM public.system_settings
+--     WHERE campus_id IS NULL
+--       AND key IN ('ordering_window_open_time',
+--                   'ordering_window_close_time',
+--                   'app_name');
+--
+--
+-- ───────────────────────────────────────────────────────────────────────────
+--  THE VALIDATOR — hg_validate_system_setting
+--
+--  Applied on test 2 alongside this seed: a BEFORE INSERT OR UPDATE trigger on
+--  system_settings that range-checks numeric settings. Out-of-range or
+--  non-numeric values are refused with a sentence written for whoever is
+--  editing the value, e.g.
+--
+--    flash_discount_pct must be between 0 and 1 (got 5)
+--
+--  The canonical body lives in the database (same convention as
+--  2026-10-01_free_sides_reward_consumption.sql) — this note records the
+--  contract, not a second copy of the code.
+--
+--  FRACTIONS vs PERCENTAGES — the one place the key names lie:
+--
+--    fraction (0–1)   flash_discount_pct       0.5 = half price
+--                     hp_unlock_rate_pct        0.3 = 30% unlocked now
+--    percent (0–100)  squad_delivery_discount_pct, squad_order_discount_pct,
+--                     squad_hp_bonus_pct, order_lock_default_discount_pct,
+--                     order_lock_max_discount_pct
+--
+--  Where the code is stricter than the trigger, the admin row's hint says so
+--  (order_locks.py honours only 1–50 for its default discount).
+--
+--  A refusal reaches the admin verbatim: Postgres reports a RAISE as P0001, and
+--  `_validator_refusal` in app/routes/admin_gifts.py turns that back into the
+--  sentence on both settings write routes. Anything else (RLS denial, schema
+--  drift, network) keeps going to the global error handler. Covered by
+--  tests/test_setting_validator_surfacing.py.
+--
 --
 --  Feature flags (leaderboard_prizes, free_side_credits, hp_transfer, ...) are
 --  NOT system_settings rows — they live in the feature_flags table and are

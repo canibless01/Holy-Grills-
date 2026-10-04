@@ -99,6 +99,9 @@ export const hpTransferEnabled = () => isFeatureEnabled('hp_transfer', false);
 
 // ── REWARDS & MARKETPLACE ────────────────────────────────────────────────────
 export const marketplacePurchaseHp = () => num('marketplace_purchase_hp', 50);
+// Not public in system_settings (is_public = false): the public config endpoint
+// does not serve it, so a student sees the fallback below. Fine while the two
+// agree; make the row public if a student's screen must follow an admin edit.
 export const lowCodeInventoryThreshold = () => num('low_code_inventory_threshold', 5);
 export const flashDiscountPct = () => num('flash_discount_pct', 0.50);
 export const flashMaxQty = () => num('flash_max_qty', 5);

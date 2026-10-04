@@ -206,9 +206,11 @@ permission note at the end of this section matters for two of them.
 ## 4. This release's two infrastructure checks
 
 ### 4.1 Settings seed — `holy-grills-backend/migrations/2026-10-04_seed_system_settings.sql`
-- [ ] Run it in the Supabase SQL editor → the NOTICE lists the rows inserted (43 on a clean table) and skips any key that already had a value.
+- [ ] Run it in the Supabase SQL editor → the NOTICE lists the rows inserted (40 on a clean table; the list has 43 candidates and 3 are skipped on purpose) and skips any key that already had a value.
 - [ ] Run it a second time → nothing is inserted (idempotent), and any value you edited by hand is untouched.
-- [ ] Verify: `SELECT key, value, is_public FROM public.system_settings WHERE campus_id IS NULL ORDER BY key;`
+- [ ] Verify: `SELECT key, value, is_public FROM public.system_settings WHERE campus_id IS NULL ORDER BY key;` → exactly four rows are `is_public = false`: `low_code_inventory_threshold`, `notification_daily_cap`, `paystack_preferred_bank`, `wallet_ref_prefix`. The other public rows are what `/storefront/config/public` serves to students.
+- [ ] If an earlier run created `ordering_window_open_time`, `ordering_window_close_time` or `app_name`, delete them (the file has the exact `DELETE`) — opening hours belong to `ordering_windows`, and `app_name` duplicates `platform_name`.
+- [ ] Type a bad value into the validator's path: edit `flash_discount_pct` (a **fraction**: 0.5 = half price) to `50` → the admin screen must show the database's own sentence (`... must be between 0 and 1 (got 50)`), not a generic failure. Same for `squad_delivery_discount_pct` at `500` (a **percent**: 0–100).
 - [ ] Change `squad_order_min_items` from 3 to 4 in the admin Settings panel → add items to a student cart and watch the squad-order threshold move without a deploy; set it back to 3.
 - [ ] Confirm no secret is in the table: nothing matching `SUPABASE_*`, `PAYSTACK_*`, `CLOUDINARY_*`, `SECRET_KEY`, `RESEND_*`, `ONESIGNAL_*`, and `is_public = true` only on business values.
 

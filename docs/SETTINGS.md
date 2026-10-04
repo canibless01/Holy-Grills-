@@ -57,9 +57,19 @@ row exists, so it never overwrites a value an admin has edited) and column-aware
 * **Section 1 — live**: 19 keys the backend reads today (squad/order-lock/wallet
   numbers, free-side and spin validity, welcome/signup/review/share HP, transfer
   minimum orders, graduation level, multiplier, monthly cap).
-* **Section 2 — frontend-facing**: 24 keys the frontend reads today where the
+* **Section 2 — frontend-facing**: 21 keys the frontend reads today where the
   backend still resolves the same value from env config; the seeded value is that
-  exact default, so nothing moves until someone edits it.
+  exact default, so nothing moves until someone edits it. Four of these are
+  **`is_public = false`** — `low_code_inventory_threshold`, `notification_daily_cap`,
+  `paystack_preferred_bank`, `wallet_ref_prefix` — so `GET /storefront/config/public`
+  does not serve them and a student's client uses its built-in default for them.
+* **Skipped on purpose**: `ordering_window_open_time` / `ordering_window_close_time`
+  (opening hours live in `ordering_windows` + per-campus overrides, which is what
+  the kitchen and checkout read) and `app_name` (duplicates `platform_name`).
+  Candidate list 43 → 40 inserted. The file explains each at the end.
+* **Verified against real Postgres** (jsonb, text and a reduced two-column table):
+  40 rows on a clean table, exactly the four above private, re-running inserts
+  nothing.
 * **Not seeded** — the file ends with a NEEDS-A-DECISION list (dead keys,
   tier-driven values, kitchen_settings keys) so nobody seeds a value an edit
   cannot move.
