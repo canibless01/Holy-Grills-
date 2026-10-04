@@ -446,7 +446,8 @@ class MSG:
     ORDER_LOCK_NOT_ACTIVE        = "Order lock is not active"
     ORDER_LOCK_DATE_REQUIRED     = "'locked_date' is required"
     ORDER_LOCK_DATE_INVALID      = "Invalid date format. Use YYYY-MM-DD"
-    ORDER_LOCK_DATE_FUTURE       = "locked_date must be a future date"
+    ORDER_LOCK_DATE_FUTURE       = "locked_date must be a future date (tomorrow or later, within 7 days)"
+    ORDER_LOCK_DATE_OUT_OF_RANGE = "locked_date must be between tomorrow and 7 days from today (WAT)"
     ORDER_LOCK_RESCHEDULE_LIMIT  = "This lock has already been rescheduled once"
     ORDER_LOCK_REMINDER_TITLE    = "🔒 Locked Order Reminder — {days} day{plural} to go"
     ORDER_LOCK_REMINDER_BODY     = "Your {pct:.0f}% discount is reserved for {date}. Don't miss it!"
@@ -853,7 +854,7 @@ class MSG:
     # ── Phase 1b Centralized Error Messages ───────────────────────────────────
     PHONE_FORMAT_INVALID           = "Invalid phone number format. Use international format e.g. +2348012345678."
     DOB_FORMAT_INVALID             = "Invalid date of birth. Use YYYY-MM-DD format."
-    REGISTER_EMAIL_AMBIGUOUS       = "If this email can be registered, you'll receive a confirmation shortly. If you already have an account, try logging in or resetting your password."
+    REGISTER_EMAIL_AMBIGUOUS       = "Almost there. If this email can be registered, check your inbox for a confirmation. Already have an account? Log in or reset your password."
     REGISTER_FAILED_RETRY          = "Registration failed. Please try again."
     NO_VALID_FIELDS_TO_UPDATE      = "No valid fields to update"
     MILESTONE_NOT_FOUND            = "Milestone not found or inactive"

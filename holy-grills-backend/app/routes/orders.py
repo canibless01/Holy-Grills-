@@ -1542,18 +1542,24 @@ def add_squad_members(order_id):
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
+    # B-8: refuse to add members to an already delivered order (true split would overpay)
+    if order.get("status") == "delivered":
+        return jsonify({"error": "Cannot add squad members to a delivered order"}), 409
+
     data = request.get_json(force=True) or {}
     emails = [e.strip().lower() for e in (data.get("emails") or []) if e and e.strip()]
     user_ids = [u.strip() for u in (data.get("user_ids") or []) if u and u.strip()]
     if user_ids:
         try:
-            u_profiles = db.table("profiles").select("id,email").in_("id", user_ids).execute() or []
+            # Use service client for user_id -> email lookup (privacy + RLS)
+            u_profiles = get_db().table("profiles").select("id,email,campus_id").in_("id", user_ids).execute() or []
             for p in (u_profiles if isinstance(u_profiles, list) else []):
                 if p.get("email"):
+                    # Same-campus check for user_ids as well
+                    if order.get("campus_id") and p.get("campus_id") and p.get("campus_id") != order.get("campus_id"):
+                        continue
                     emails.append(p["email"].strip().lower())
         except Exception as exc:
-            # The invitee list loses these users: they are not emailed, and the caller
-            # is told the invite succeeded.
             logger.warning("squad invite: profile lookup failed for %s, those users are not invited: %s",
                            user_ids, exc)
     emails = list(dict.fromkeys(emails))
@@ -1588,9 +1594,21 @@ def add_squad_members(order_id):
             results.append({"email": email, "status": "already_added"})
             continue
 
-        profile = (
-            db.table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("email", email).single().execute()
-        )
+        # B-7: profile lookup must use service client, only id and campus_id, same-campus only
+        profile = None
+        try:
+            svc = get_db()
+            prof_row = svc.table("profiles").select("id,campus_id").eq("email", email).single().execute()
+            if prof_row:
+                # Same-campus guard: accept only if profile campus matches order campus
+                if order_campus_id and prof_row.get("campus_id") and prof_row.get("campus_id") != order_campus_id:
+                    profile = None  # treat as not found for privacy / campus isolation
+                else:
+                    profile = prof_row
+        except Exception as exc:
+            logger.warning("squad invite: service lookup failed for %s: %s", email, exc)
+            profile = None
+
         member_payload = {
             "order_id": order_id,
             "email": email,
@@ -1605,27 +1623,36 @@ def add_squad_members(order_id):
             member_payload["user_id"] = profile["id"]
 
         try:
-            db.table("squad_members").insert(member_payload)
+            db.table("squad_members").insert(member_payload).execute()
         except Exception:
             results.append({"email": email, "status": "error"})
             continue
-        successfully_added_names.append(resolve_display_name(profile=profile) if profile else email)
+
+        # For display, resolve via service client without leaking to caller
+        display_name = email
+        if profile:
+            try:
+                # Resolve display name via service client (nickname-first)
+                from app.services.squad_service import resolve_display_name as _resolve
+                full_prof = get_db().table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("id", profile["id"]).single().execute()
+                display_name = _resolve(profile=full_prof) if full_prof else email
+            except Exception:
+                display_name = email
+        successfully_added_names.append(display_name)
 
         if squad_id_for_order:
             try:
                 db.table("squad_roster").insert({
                     "squad_id": squad_id_for_order, "email": email,
                     "user_id": profile["id"] if profile else None,
-                })
+                }).execute()
             except Exception as exc:
-                # Usually a duplicate (already on the roster), but a database failure
-                # looks identical from here and would leave the member off the roster.
                 logger.warning("squad roster: insert failed for %s on order %s: %s", email, order_id, exc)
 
         if not profile:
-            # Send auto-invite for referral vector
+            # Send auto-invite for referral vector — only for truly unregistered emails after B-7 fix
             ref_code = organizer_profile.get("referral_code", "")
-            invite_link = f"{frontend_url}/register?ref={ref_code}&email={email}" if ref_code else f"{frontend_url}/register"
+            invite_link = f"{frontend_url}/register?ref={ref_code}&email={email}" if ref_code else f"{frontend_url}/register?email={email}"
             try:
                 from app.utils.email import send_email
                 send_email(
@@ -1637,7 +1664,7 @@ def add_squad_members(order_id):
                         "invite_link": invite_link,
                     },
                 )
-                db.table("squad_members").eq("order_id", order_id).eq("email", email).update({"invite_sent": True})
+                db.table("squad_members").eq("order_id", order_id).eq("email", email).update({"invite_sent": True}).execute()
             except Exception:
                 pass
             results.append({"email": email, "status": "invited"})
@@ -1667,6 +1694,7 @@ def add_squad_members(order_id):
             pass
 
     # If order is already delivered and split_hp is enabled, distribute HP now
+    # Note: delivered check above already returns 409, so this branch is now only for race safety
     if split_hp and order.get("status") == "delivered" and order.get("hp_earned", 0) > 0:
         from app.services.squad_service import distribute_squad_hp
         distribute_squad_hp(order_id, order["hp_earned"], g.user_id, campus_id=order_campus_id)

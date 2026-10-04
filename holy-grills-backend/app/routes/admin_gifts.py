@@ -165,6 +165,13 @@ def update_setting(key):
                 return jsonify({"error": MSG.HP_MULTIPLIER_INVALID}), 400
         except (TypeError, ValueError):
             return jsonify({"error": MSG.HP_MULTIPLIER_INVALID}), 400
+    if key == "squad_hp_bonus_pct":
+        try:
+            iv = int(str(value))
+            if iv < 0 or iv > 100:
+                return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
 
     update_payload = {
         "value": value,

@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
+from app.middleware.rate_limit import rate_limit
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
@@ -207,14 +208,14 @@ def checkin(event_id):
         if existing_checkin:
             return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
 
-        # Insert check-in record
+        # Insert check-in record - B-6: use service client for the insert only, after validation
         checked_by = getattr(g, "user_id", None)
         try:
-            db.table("event_checkins").insert({
+            get_db().table("event_checkins").insert({
                 "ticket_id": ticket_id_str,
                 "checked_in_by": checked_by,
                 "qr_code": clean_token or ticket_id_str,
-            })
+            }).execute()
         except SupabaseError as insert_err:
             err_str = str(insert_err)
             if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
@@ -1021,6 +1022,7 @@ def update_catering_request(request_id):
 
 
 @events_bp.route("/catering-requests", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 def submit_catering_request():
     """
     Submit a catering / event partnership request.
