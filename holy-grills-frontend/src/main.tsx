@@ -1,20 +1,20 @@
 import ReactDOM from 'react-dom/client'
 import App from '@/App'
+import { PRERENDER_STAMP_ATTR, currentPath, isHydratingPrerender } from '@/lib/hydrationMode'
 import '@/index.css'
 
 // Track B: pre-rendered routes ship real HTML inside #root (scripts/prerender.mjs),
 // so hydrate that markup instead of discarding it.
 //
-// The pre-render stamps the route it rendered on the container. Hydrate only
-// when the stamp matches what the browser asked for: if a host ever serves the
-// wrong pre-rendered file (stale deploy, SPA fallback), hydrating blind would
-// run React against markup from another page, so we drop it and mount fresh —
-// the exact behaviour the app had before pre-rendering existed.
+// The pre-render stamps the route it rendered on the container
+// (PRERENDER_STAMP_ATTR, see src/lib/hydrationMode.ts). Hydrate only when the
+// stamp matches what the browser asked for: if a host ever serves the wrong
+// pre-rendered file (stale deploy, SPA fallback), hydrating blind would run
+// React against markup from another page, so we drop it and mount fresh — the
+// exact behaviour the app had before pre-rendering existed.
 const container = document.getElementById('root')
-const prerenderedRoute = container?.getAttribute('data-prerendered-route') ?? null
-const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
 
-if (container && prerenderedRoute === currentPath) {
+if (container && isHydratingPrerender()) {
   ReactDOM.hydrateRoot(container, <App />)
 } else if (container) {
   container.innerHTML = ''

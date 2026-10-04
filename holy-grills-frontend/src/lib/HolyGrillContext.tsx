@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
 import { localStore, sessionStore } from './storage';
+import { isHydratingPrerender } from './hydrationMode';
 import { loadSystemSettings, loadFeatureFlags, getSetting } from './featureConfig';
 import { loadTiers } from './hgUtils';
 
@@ -85,7 +86,11 @@ export const HolyGrillProvider = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [streak, setStreak] = useState(null);
   const [systemSettings, setSystemSettings] = useState({});
-  const [authed, setAuthed] = useState(isAuthenticated());
+  // Track B: a pre-rendered page is built with empty storage, so its HTML shows
+  // the signed-out state. Start there while hydrating (otherwise React sees a
+  // different tree than the server sent); the session effect below adopts the
+  // real token immediately after mount.
+  const [authed, setAuthed] = useState(() => !isHydratingPrerender() && isAuthenticated());
   const [savedItems, setSavedItems] = useState([]);
 
   const loadGuestCart = useCallback(() => {

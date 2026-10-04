@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Flame, Mail, FileText, Lock, ArrowUp } from 'lucide-react';
+import SEO from '@/components/SEO';
+import { metaForPath } from '@/seo/routeMeta';
+
+/** Head data for /terms — same object the pre-render writes (src/seo/routeMeta.ts). */
+const META = metaForPath('/terms');
 
 const TERMS = [
   { n: 1, title: 'Welcome to Holy Grills', body: 'These Terms are the ground rules for using the Holy Grills app and website. By creating an account, placing an order or otherwise using Holy Grills, you agree to them. If you do not agree, please do not use the app. Holy Grills is built for students and staff on and around campus, and runs as a campus food service and community. We are glad you are here.' },
@@ -90,6 +95,8 @@ export default function TermsPrivacy() {
 
   return (
     <div className="animate-fade-in max-w-5xl mx-auto">
+      <SEO title={META.title} description={META.description} path={META.path} />
+
       {/* Header */}
       <div className="text-center pt-2">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/5 text-primary text-[11px] font-extrabold uppercase tracking-wider rounded-full">

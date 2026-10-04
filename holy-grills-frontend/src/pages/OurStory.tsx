@@ -5,8 +5,12 @@ import { Flame, ChevronRight } from 'lucide-react';
 import EarlySupportersSlider from '@/components/storefront/EarlySupportersSlider';
 import TestimonialSlider from '@/components/TestimonialSlider';
 import SEO from '@/components/SEO';
+import { metaForPath } from '@/seo/routeMeta';
 import { liveApi } from '@/lib/liveApi';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
+
+/** Head data for /our-story — same object the pre-render writes (src/seo/routeMeta.ts). */
+const META = metaForPath('/our-story');
 
 // Last-resort artwork only — the real image comes from the admin panel's
 // storefront section of type `our_story`.
@@ -85,10 +89,7 @@ export default function OurStory() {
 
   return (
     <div className="animate-fade-in">
-      <SEO
-        title="Holy Grills: The Student Flame Grill Built at FUTA, Akure"
-        description="Holy Grills is FUTA's student focused flame grill in Akure. Real open flame, campus delivery, Holy Points and a community that shows up together."
-      />
+      <SEO title={META.title} description={META.description} path={META.path} />
 
       {/* Top of page */}
       <div className="text-center pt-2 max-w-2xl mx-auto">

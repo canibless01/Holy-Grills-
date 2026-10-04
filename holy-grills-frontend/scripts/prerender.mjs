@@ -56,16 +56,14 @@ if (!template || !template.includes('<div id="root"></div>')) {
 }
 // One import: the SSR bundle carries both the renderer and the route metadata
 // (re-exported from src/seo/routeMeta.ts by src/entry-server.tsx).
-const { render, ROUTE_META: meta, PRERENDER_ROUTES: routes } = await import(pathToFileURL(ssrEntry).href);
-if (typeof render !== 'function' || !meta || !routes) {
+const { render, PRERENDER_ROUTES: routes, headFor, SITE_ORIGIN } = await import(pathToFileURL(ssrEntry).href);
+if (typeof render !== 'function' || !routes || typeof headFor !== 'function') {
   console.error('[prerender] the SSR bundle did not expose render() + route metadata.');
   process.exit(1);
 }
 
 const escapeHtml = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-const ORIGIN = 'https://holygrill.app';
 
 const replaceTag = (html, pattern, replacement) =>
   pattern.test(html) ? html.replace(pattern, replacement) : html.replace('</head>', `${replacement}\n  </head>`);
@@ -77,8 +75,8 @@ const upsertMeta = (html, attr, key, content) => {
 };
 
 const buildHead = (html, route) => {
-  const m = meta[route];
-  const canonical = `${ORIGIN}${m.path === '/' ? '/' : m.path}`;
+  const m = headFor(route);
+  const canonical = `${SITE_ORIGIN}${m.path}`;
   let out = html;
 
   out = out.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(m.title)}</title>`);

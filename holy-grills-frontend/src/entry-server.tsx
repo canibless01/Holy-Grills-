@@ -26,7 +26,7 @@ import { AppProviders, AppShell } from '@/App';
 
 // Re-exported so scripts/prerender.mjs can read the same objects it renders
 // with straight out of the SSR bundle (no duplicate metadata in build tooling).
-export { ROUTE_META, PRERENDER_ROUTES } from '@/seo/routeMeta';
+export { ROUTE_META, PRERENDER_ROUTES, headFor, SITE_ORIGIN } from '@/seo/routeMeta';
 
 /** Render one URL to a complete HTML string. */
 export function render(url: string): Promise<string> {

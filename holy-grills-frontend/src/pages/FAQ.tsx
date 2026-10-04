@@ -1,7 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import SEO from '@/components/SEO';
+import { metaForPath } from '@/seo/routeMeta';
 import { Plus, Flame, Search, Mail, Phone } from 'lucide-react';
+
+/** Head data for /faq — same object the pre-render writes (src/seo/routeMeta.ts). */
+const META = metaForPath('/faq');
 
 const CATS = [
   'All',
@@ -143,6 +148,8 @@ export default function FAQ() {
 
   return (
     <div className="space-y-5 animate-fade-in max-w-3xl mx-auto">
+      <SEO title={META.title} description={META.description} path={META.path} />
+
       {/* Header */}
       <div className="text-center pt-2">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/5 text-primary text-[11px] font-extrabold uppercase tracking-wider rounded-full">

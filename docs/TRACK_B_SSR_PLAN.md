@@ -98,3 +98,64 @@ For pre-rendered routes the server render runs with an empty storage shim, so th
 1. **Campus-scoped SEO routes** (`/menu`, `/events`, `/marketplace`, `/leaderboard`): they currently show guests a campus gate/skeleton, so pre-rendering them means pre-rendering a gate. Options: (a) let crawlers see a default campus, (b) render a crawler-friendly campus-picker page with real copy, (c) leave them CSR and accept they are not indexable. Each changes guest behaviour → your call. `robots.txt`/`sitemap.xml` currently advertise some of these, which is what makes it SEO-relevant.
 2. **Real 404 status codes** (B5): a static host serving the SPA returns HTTP 200 for unknown paths. Returning a true 404 needs a hosting-level rule (e.g. Vercel `404.html` or a rewrite) rather than an app change → confirm before I touch deploy config.
 3. **Live-data SEO** (menu prices, events in HTML): that requires server-side data fetching, which means either a Node SSR runtime or Flask rendering — a bigger project than static pre-render, and it would need the auth/data path re-thought. Flagged, not started.
+
+---
+
+# B1/B2 implementation log
+
+## What actually shipped (differs from §4 in one place)
+
+| Plan line | Reality |
+|---|---|
+| SPA fallback stays `dist/index.html` | **Changed.** `dist/index.html` is now the pre-rendered home page, so the fallback moved to a new `dist/app-shell.html` (`vercel.json` rewrite updated). Serving home's markup (and home's title/canonical) for `/menu`, `/login`, `/admin`… would have been wrong on every CSR route, and `main.tsx` would have tried to hydrate home's HTML as `/menu`. |
+| `renderToString` | **Changed to `renderToPipeableStream` + `onAllReady`.** Every page is `React.lazy`-loaded; `renderToString` cannot wait for Suspense, so it emitted the page's loading fallback (≈2.2 kB) instead of the page. |
+| `AppProviders` / `AppShell` split | **Kept, with one correction:** `CampusProvider` calls `useLocation()`, so it belongs *inside* the router. `AppProviders` = ErrorBoundary + QueryClient + (post-hydration) Toaster; `AppShell` = Sound → HolyGrill → Campus → routes, with the two popups behind `ClientOnly`. |
+
+## Hydration safety
+
+`scripts/prerender.mjs` stamps `<div id="root" data-prerendered-route="/faq">`. `src/main.tsx`
+hydrates only when that stamp equals the URL being hydrated (`src/lib/hydrationMode.ts`); any
+mismatch clears the container and mounts fresh — the pre-pre-render behaviour.
+
+The pre-render runs with an empty storage shim, so its HTML is always the signed-out,
+no-campus view. Three storage reads happened during the *first* render and would have
+mismatched for a signed-in visitor hydrating a pre-rendered page:
+
+| Where | Before | Now |
+|---|---|---|
+| `HolyGrillContext` `authed` | `useState(isAuthenticated())` (reads token) | guest default while hydrating; the existing session effect adopts the real token right after mount |
+| `campusContext` `guestCampusId` / `adminCampusId` | `useState(getStoredCampusId())` | null while hydrating, adopted in a mount effect (still earlier than the campus-list fetch the gate waits on) |
+| `app-params.ts` | `defaultValue: window.location.href` evaluated on import (throws on a server import) | `isNode ? '' : window.location.href` |
+
+Everything else that touches storage on a pre-rendered route does so in an effect
+(`PromoFlyerPopup`, `KitchenClosePopup`, `InstallPrompt`/`CookieConsent` via `ClientOnly`).
+
+## Verification (all run)
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `npm run build` | client 11.3s → SSR 2.9s → prerender ~1.7s, **zero React warnings** |
+| `curl` per route (static host simulator, `scripts/serve-static.mjs`) | `/` 29 046 B, `/faq` 48 830 B, `/our-story` 30 651 B, `/terms` 33 361 B of real markup inside `#root`; correct `<title>`, canonical, OG and Twitter tags per route; images present in the raw HTML |
+| CSR routes (`/menu`, `/login`, `/admin`, `/events`) | empty `app-shell.html` (0 bytes in `#root`), client mounts as before |
+| Assets | entry JS 573 546 B, CSS 114 185 B — unchanged from the perf baseline |
+| Determinism | two consecutive pre-renders produce byte-identical files (no `Date.now`/random in any render path) |
+| SPA `<title>` parity | `headFor()` composes exactly what `useSEO` writes at runtime; `FAQ`/`TermsPrivacy` gained the `<SEO>` call they never had, `OurStory` now reads the same object |
+| Service worker | navigations are network-first, so a new deploy is never shadowed by the cached HTML |
+
+Not verifiable in this sandbox: the browser console (no headless browser here). The hydration
+gate, the storage deferrals and the single shared tree make a mismatch structurally
+impossible on these four routes, but the empirical pass is yours — the preview on 4174 is the
+closest thing to production.
+
+## Open items for later phases
+
+1. **`og:image` is relative and SVG** (`/icons/icon.svg`): crawlers need an absolute URL and most
+   social platforms do not render SVG. Needs a 1200×630 raster in `public/` (B5).
+2. **Unknown paths answer 200** with the app shell (soft 404) — B5, and §6 item 2 stays open.
+3. **`/our-story` title is 78 chars** because the SPA appends `| Holy Grills` to the page title.
+   Shortening it changes live copy → your call (B5).
+4. **Pre-rendering a menu-derived route** additionally needs `liveApi`'s raw `localStorage` reads
+   (`downloadTicketPdf`, `auth.refresh`) behind the storage shim. They only run on user action
+   today, which is why these four routes are safe.
+5. §6 items 1 and 3 (campus-gated SEO routes, live-data SEO) are unchanged and still yours.

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { liveApi } from './liveApi';
 import { localStore } from './storage';
+import { isHydratingPrerender } from './hydrationMode';
 import { useHolyGrill } from './HolyGrillContext';
 import CampusGate from '@/components/CampusGate';
 import { useLocation } from 'react-router-dom';
@@ -27,8 +28,12 @@ export const CampusProvider = ({ children }) => {
   const { user, isLoading } = useHolyGrill();
   const [campuses, setCampuses] = useState([]);
   const [campusesLoading, setCampusesLoading] = useState(true);
-  const [guestCampusId, setGuestCampusId] = useState(getStoredCampusId());
-  const [adminCampusId, setAdminCampusId] = useState(getStoredAdminCampusId());
+  // Track B: the pre-render has no storage, so it can only show the
+  // no-campus state. Read the stored selection during the first client render
+  // only when this is NOT a hydration pass (a CSR page, where there is no
+  // server markup to disagree with).
+  const [guestCampusId, setGuestCampusId] = useState(() => (isHydratingPrerender() ? null : getStoredCampusId()));
+  const [adminCampusId, setAdminCampusId] = useState(() => (isHydratingPrerender() ? null : getStoredAdminCampusId()));
   const [gateOpen, setGateOpen] = useState(false);
   const [gateAction, setGateAction] = useState('continue');
   // 'prompt' — dismissible (homepage only). 'blocking' — campus-scoped routes.
@@ -43,6 +48,18 @@ export const CampusProvider = ({ children }) => {
   const campusId = user?.campus_id || guestCampusId || null;
   const campus = campuses.find((c) => c.id === campusId) || null;
   const adminCampus = campuses.find((c) => c.id === adminCampusId) || null;
+
+  useEffect(() => {
+    // Track B: adopt the selection stored in this browser once the pre-rendered
+    // markup has hydrated. Runs before the gate can show anything, because the
+    // gate also waits on the campus list fetched below.
+    if (isHydratingPrerender()) {
+      const storedGuest = getStoredCampusId();
+      const storedAdmin = getStoredAdminCampusId();
+      if (storedGuest) setGuestCampusId(storedGuest);
+      if (storedAdmin) setAdminCampusId(storedAdmin);
+    }
+  }, []);
 
   useEffect(() => {
     // Public campus list — campuses RLS allows everyone to select. If the
