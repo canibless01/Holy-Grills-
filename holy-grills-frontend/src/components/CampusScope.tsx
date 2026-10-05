@@ -2,13 +2,22 @@ import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useCampus } from '@/lib/campusContext';
 import Skeleton from '@/components/Skeleton';
-import CampusPickerLanding, { type CampusPickerCopy } from '@/components/CampusPickerLanding';
 
-// Domain 0 — route guard for campus-scoped pages. Guests without a selected
-// campus get the non-cancelable CampusGate (rendered globally by CampusProvider)
-// and the page content is withheld until a campus is chosen. Authenticated
-// users pass straight through (scoped by their own campus_id). Static pages
-// (Home, FAQ, Terms, Our Story) are intentionally NOT wrapped here.
+// Domain 0 — route guard for campus-scoped pages.
+//
+// A guest with no campus chosen must NOT see the page: the menu, cart, checkout,
+// events, marketplace and leaderboard all resolve their data from a campus, so
+// rendering them unscoped is what produced the "no menu items / retry" screen —
+// the page mounted, asked the API for a campus it did not have, and got nothing.
+//
+// So: withhold the content, and let the CampusGate modal (rendered globally by
+// CampusProvider) be the single place a campus is chosen. What renders here is a
+// compact placeholder — a real <h1> so the route stays indexable, and one button
+// back into the picker for a guest who dismissed it. No second copy of the
+// campus list, and no explanatory copy.
+//
+// Authenticated users pass straight through (scoped by their own campus_id).
+// Static pages (Home, FAQ, Terms, Our Story) are intentionally NOT wrapped here.
 const ACTION_BY_PATH = {
   '/menu': 'browse the menu',
   '/cart': 'review your cart',
@@ -18,59 +27,25 @@ const ACTION_BY_PATH = {
   '/leaderboard': 'view the leaderboard',
 };
 
-// Track B, section 6 item 1: what a guest sees on a campus-scoped route before
-// choosing a campus. This is also what the build-time pre-render writes into the
-// HTML for /menu, /events and /marketplace, so those URLs carry real indexable
-// content instead of an empty shell. Routes without copy here (cart, checkout)
-// keep the old behaviour: a transactional page has nothing useful for a crawler.
-const LANDING_BY_PATH: Record<string, CampusPickerCopy> = {
-  '/menu': {
-    title: "Today's menu at FUTA",
-    intro:
-      'Flame-grilled chicken, wings, kebabs and crispy sides, cooked to order and delivered across campus.',
-    bullets: [
-      'Live menu with prices and what is available right now',
-      'Delivery to hostels and gates, or pickup from the grill',
-      'Holy Points on every order, spendable on rewards',
-    ],
-  },
-  '/events': {
-    title: 'Campus events at FUTA',
-    intro: 'Tickets, tiers and check-in for the events happening around campus.',
-    bullets: [
-      'Ticket tiers with live availability',
-      'QR check-in on the day',
-      'Holy Points for turning up',
-    ],
-  },
-  '/marketplace': {
-    title: 'The campus marketplace',
-    intro: 'Vouchers, tickets, goodies and services listed by students and campus businesses.',
-    bullets: [
-      'Browse what is listed on your campus',
-      'Buy and collect alongside your order',
-      'Reporting built in for anything that looks wrong',
-    ],
-  },
-  '/leaderboard': {
-    title: 'The Holy Grills leaderboard',
-    intro: 'Who is showing up, earning and climbing this term.',
-    bullets: ['Weekly and all-time rankings', 'Top ten earners win free sides', 'Your rank and streak'],
-  },
+// What the build-time pre-render writes into the HTML for these routes, so the
+// URLs still carry indexable content instead of an empty shell.
+const TITLE_BY_PATH: Record<string, string> = {
+  '/menu': "Today's menu",
+  '/events': 'Campus events',
+  '/marketplace': 'The campus marketplace',
+  '/leaderboard': 'The Holy Grills leaderboard',
 };
 
 export default function CampusScope() {
   const { campusId, campuses, campusesLoading, requireCampus, releaseCampus } = useCampus();
   const { pathname } = useLocation();
   const base = '/' + (pathname.split('/')[1] || '');
-  const landing = LANDING_BY_PATH[base];
+  const action = ACTION_BY_PATH[base] || 'continue';
 
   useEffect(() => {
-    requireCampus(ACTION_BY_PATH[base] || 'continue');
-    // Leaving this page: keep the picker up, but stop insisting — browse pages
-    // let the guest dismiss it.
+    requireCampus(action);
     return () => releaseCampus();
-  }, [base, requireCampus, releaseCampus]);
+  }, [base, action, requireCampus, releaseCampus]);
 
   if (campusId) return <Outlet />;
 
@@ -78,9 +53,6 @@ export default function CampusScope() {
   // backend fall back to global/unscoped data rather than trapping the guest.
   if (!campusesLoading && campuses.length === 0) return <Outlet />;
 
-  // Either the campus list is still loading or the gate is open (it renders
-  // globally, on top of this). A guest sees what the page is for either way.
-  if (landing) return <CampusPickerLanding {...landing} />;
   if (campusesLoading) return (
     <div className="space-y-3 py-6">
       <Skeleton className="h-5 w-32" />
@@ -89,5 +61,21 @@ export default function CampusScope() {
       <Skeleton className="h-10 w-full rounded-xl" />
     </div>
   );
-  return null;
+
+  // The gate is normally open on top of this. If it was dismissed, this button
+  // is how the guest gets back to it — re-entering the route also re-opens it.
+  return (
+    <div className="mx-auto max-w-md px-4 py-20 text-center">
+      <h1 className="font-heading font-extrabold text-xl text-foreground">
+        {TITLE_BY_PATH[base] || 'Choose your campus'}
+      </h1>
+      <button
+        type="button"
+        onClick={() => requireCampus(action)}
+        className="mt-4 px-5 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold active:scale-95 transition"
+      >
+        Choose your campus
+      </button>
+    </div>
+  );
 }

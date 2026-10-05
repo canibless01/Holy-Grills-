@@ -1780,7 +1780,6 @@ class MSG:
     FE_STREAK_HP_HP_ADDED                                            = "+{hp} HP added."
     FE_USE_KITCHEN_DATA_MARKED_STATUS                                = "Marked {status}"
 
-    FE_CAMPUS_PICKER_REMEMBERED             = "Pick once — we remember it on this device. The picker also opens on top of this page."
 
 
     # Added from frontend call sites (`npm run messages:fix`). Preview text is

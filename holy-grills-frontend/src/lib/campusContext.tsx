@@ -166,12 +166,20 @@ export const CampusProvider = ({ children }) => {
     return false;
   }, [isLoading, user, guestCampusId, openGate]);
 
-  // Called when a campus-scoped page unmounts: the guest still has to choose
-  // eventually, but a browse page (home, track-orders, legal) may dismiss the
-  // picker instead of being trapped behind it.
+  // Called when a campus-scoped page unmounts (navigating away, or the back
+  // button). This used to only DOWNGRADE blocking -> prompt and leave the gate
+  // open, which stranded it: going back to a browse page showed a picker that
+  // no longer applied to anything, and navigating into the next campus-scoped
+  // route inherited that half-released state — the gate could end up closed
+  // while the page still withheld its content, which is the blank "no menu
+  // items / retry" screen.
+  //
+  // Close it instead. Re-entering a campus-scoped route re-opens it through
+  // requireCampus(); a browse page re-opens the dismissible prompt on its own.
   const releaseCampus = useCallback(() => {
-    setGateMode((mode) => (mode === 'blocking' ? 'prompt' : mode));
-  }, []);
+    setGateMode('prompt');
+    closeGate();
+  }, [closeGate]);
 
   // Homepage dismissal — closes the prompt without a selection; the next
   // campus-scoped page re-opens it in blocking mode.

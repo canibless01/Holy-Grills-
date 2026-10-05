@@ -186,9 +186,6 @@ export default function Login() {
           </label>
           <Link to="/forgot-password" className="text-xs text-muted-foreground font-semibold hover:text-primary transition shrink-0">Forgot password?</Link>
         </div>
-        <p className="-mt-2 text-[11px] text-muted-foreground leading-snug">
-          Keeps you signed in on this device and pre-fills your email. Your browser will offer to remember the password when you sign in.
-        </p>
 
         {error && (
           <div className="flex items-center gap-2 p-2.5 rounded-xl bg-destructive/10 border border-destructive/20">
