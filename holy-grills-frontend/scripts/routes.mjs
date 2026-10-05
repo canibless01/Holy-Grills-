@@ -57,11 +57,17 @@ export function routeFamilies(paths = readRoutePaths()) {
  * Security headers (Phase 7, finding S4)
  * ============================================================================
  * The app keeps its JWTs in localStorage, so a policy that stops unexpected
- * script execution is the structural half of the XSS defence. It ships as
- * `Content-Security-Policy-Report-Only`: nothing is blocked until the policy has
- * been observed against every origin the app really talks to (the browser
- * console lists violations). Flipping the header name to `Content-Security-Policy`
- * is then a one-word change.
+ * script execution is the structural half of the XSS defence.
+ *
+ * Status: ENFORCED as of 2026-10-05. It shipped first as
+ * `Content-Security-Policy-Report-Only` so the policy could be observed against
+ * every origin the app really talks to, and `npm run smoke` was built to verify
+ * the built HTML against it (0 executable inline scripts not covered by the
+ * policy, 0 inline event handlers, across every generated page).
+ *
+ * REVERT, if a real feature is ever blocked: change the key back to
+ * `Content-Security-Policy-Report-Only` below and run `npm run routes:sync`.
+ * Nothing else depends on the name.
  *
  * The allow-list below is derived from the origins the source actually uses:
  *   scripts   OneSignal SDK (cdn.onesignal.com)
@@ -156,7 +162,7 @@ export function securityHeaders() {
     {
       source: '/(.*)',
       headers: [
-        { key: 'Content-Security-Policy-Report-Only', value: csp },
+        { key: 'Content-Security-Policy', value: csp },
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'X-Frame-Options', value: 'DENY' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

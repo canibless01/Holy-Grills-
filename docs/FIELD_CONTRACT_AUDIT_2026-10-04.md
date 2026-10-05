@@ -341,6 +341,75 @@ Both values are what `GET /storefront/config/public` returns as `campus_lat`, `c
 and `max_delivery_radius_km`, and what `is_within_delivery_area` enforces at checkout — so
 this is admin → API → user, wired end to end.
 
+## 5e. Browser security headers — they existed, but CSP was report-only
+
+The six headers were **already in `vercel.json`** — the scanner counts CSP as missing
+because it was `Content-Security-Policy-Report-Only`, which blocks nothing.
+
+Important: `vercel.json` is **generated** by `scripts/routes.mjs` (the same script behind
+`npm run routes:check`), so the fix is one word in the generator, not a hand edit. That was
+already the documented plan (`docs/SECURITY_REVIEW.md` §S4).
+
+**Flipped to enforcing** (`Content-Security-Policy`), regenerated with `npm run routes:sync`,
+and verified:
+
+- `scripts/routes.mjs` reads the inline script's SHA-256 **out of `index.html` at build
+  time**, so the hash cannot drift from the file. Verified by hand: the served page's inline
+  script hashes to `sha256-mxK/8VZ+…`, which is in the policy. (The other `<script>` in
+  `index.html` is `type="application/ld+json"` — a data block, which CSP does not govern.)
+- `npm run smoke` — **PASS**. It fetches every generated page from a local server that
+  applies the same header rules Vercel will, and asserts: CSP enforced (not report-only), no
+  duplicate report-only header, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, HSTS,
+  CSP on the 404, and **all 9 inline script blocks across all 9 pages covered by the policy**.
+- Static readiness scan of the source: **0 inline event handlers**, **0 `eval` /
+  `new Function`**, no Google Fonts (`font-src 'self'` is correct), and **no direct Supabase
+  access from the browser** (all Supabase traffic goes through the Flask API).
+
+The four smoke assertions that were pinned to the old report-only name were updated to pin
+the enforced state instead.
+
+**How to verify before it reaches production:** this branch gets its own Vercel **preview**
+deployment. Load the preview, open DevTools, and check the console for CSP violations on
+`/`, `/menu`, a paid checkout and the rider map. Only merge to `main` once it is clean.
+If anything legitimately breaks, revert is one word in `scripts/routes.mjs` (rename the key
+back to `Content-Security-Policy-Report-Only`) plus `npm run routes:sync`.
+
+Two things I could **not** verify from here (no outbound network / no DB access):
+- whether `VITE_API_BASE_URL` is set to something other than
+  `https://holy-grills-backend.onrender.com` in the Vercel project — if it is, add that
+  origin to `connect-src`;
+- the live database schema (see §5f).
+
+## 5f. Delivery radius and the database — yes, it needs checking
+
+**I built against the existing row shape and added no new table or column.** The UI writes
+exactly what the backend already consumed:
+
+| Value | Write path | Row shape used |
+|---|---|---|
+| Centre point | `PATCH /admin/campuses/<id>/location` | `campuses.lat`, `campuses.lon`, `campuses.updated_at` |
+| Radius | `PATCH /kitchen/settings` | `kitchen_settings` upsert on `key,campus_id`, with `value`, `updated_by`, `updated_at` |
+
+**But I found a real alignment risk while checking.** `BACKEND_SOURCE_OF_TRUTH.md` documents
+
+- `public.campuses` → `id, name, slug, is_active, created_at, updated_at` — **no `lat`, no `lon`**
+- `public.kitchen_settings` → `key, value, updated_at, updated_by` — **no `campus_id`**
+
+while the live code reads and writes all three. There is no checked-in schema (the two files
+in `migrations/` are seeds), so I cannot resolve which is true from here. Most likely the
+document is stale — the code comments describe *observed* live behaviour ("the anon/customer
+client always read 0 rows here and every guest silently got the 15 km default"). But if the
+columns really are missing, `set_campus_location` will 500 (it selects `lat,lon` outside a
+try/except) and the radius upsert will fail on the `on_conflict="key,campus_id"`.
+
+Added **`migrations/2026-10-05_delivery_area_columns.sql`**: fully idempotent, every
+statement guarded, safe to run against a database that already has the columns. It starts
+with a **VERIFY query** — run that in the Supabase SQL editor first; if it returns true for
+all three, you do not need the rest. If not, it adds `campuses.lat/lon` with range
+constraints, `kitchen_settings.campus_id`, the **unique index on `(key, campus_id)`** that
+the PostgREST upsert requires, an `id` default, and seeds one `max_delivery_radius_km` row
+per campus.
+
 ## 6. Corrections to earlier rounds
 
 Three things I reported previously were wrong and are withdrawn:
@@ -376,6 +445,10 @@ Three things I reported previously were wrong and are withdrawn:
 | `holy-grills-frontend/src/components/admin/AdminDelivery.tsx` | new "Delivery area" tab |
 | `holy-grills-frontend/src/lib/liveApi.ts` | `getCampusLocation()` / `setCampusLocation()` |
 | `holy-grills-backend/app/messages.py` | 31 new `FE_ADMIN_DELIVERY_AREA_*` keys |
+| `holy-grills-frontend/scripts/routes.mjs` | CSP flipped from report-only to **enforced** |
+| `holy-grills-frontend/vercel.json` | regenerated (`npm run routes:sync`) — now serves `Content-Security-Policy` |
+| `holy-grills-frontend/scripts/smoke.mjs` | assertions re-pinned to the enforced header |
+| `holy-grills-backend/migrations/2026-10-05_delivery_area_columns.sql` | **new** — idempotent, guarded; verify query first |
 
 ## 8. Verification
 
@@ -390,7 +463,11 @@ npm run messages:check                           # every call site resolves
 npm run test:value-text                          # render-safety guards
 npm run test:settings-merge                      # 14 passed — admin vs user value precedence
 npm run build:client                             # builds
+npm run smoke                                    # PASS — headers + every pre-rendered page
 ```
+
+`npm run smoke` needs `npm run serve` running in another shell (it applies the same header
+rules Vercel will, so the headers are tested rather than assumed).
 
 Not verifiable from here: live Cloudinary credentials, whether a `whatsapp_support_number`
 row exists with `is_public = true`, and campus-scoped data on the deployed service.
