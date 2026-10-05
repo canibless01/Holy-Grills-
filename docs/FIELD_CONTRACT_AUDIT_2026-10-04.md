@@ -350,11 +350,11 @@ Important: `vercel.json` is **generated** by `scripts/routes.mjs` (the same scri
 `npm run routes:check`), so the fix is one word in the generator, not a hand edit. That was
 already the documented plan (`docs/SECURITY_REVIEW.md` §S4).
 
-**Status: left REPORT-ONLY.** It was flipped to enforcing and verified, then put back on
-2026-10-05 — the project is still in development and the API origin is not final, while
-`connect-src` pins `https://holy-grills-backend.onrender.com`. An enforced policy against the
-wrong origin does not warn, it blocks every request, which reaches the user as a bare
-"Failed to fetch" on login. Flip it when the API origin is settled (see the checklist below).
+**Status: ENFORCED (2026-10-05).** It was briefly enforced, reverted, then re-enforced at
+the owner's request: a report-only policy hides breakage in a console nobody reads, whereas
+an enforced one makes a wrong allow-list entry obvious the moment the page loads. The
+earlier "Failed to fetch" on login was CORS (the frontend origin was not in
+`CORS_ORIGINS`), not CSP — that is now fixed separately.
 
 - `scripts/routes.mjs` reads the inline script's SHA-256 **out of `index.html` at build
   time**, so the hash cannot drift from the file. Verified by hand: the served page's inline

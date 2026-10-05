@@ -1,4 +1,6 @@
 import os
+import re
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,7 +39,9 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES", 2592000))
     JWT_REFRESH_WINDOW_MINUTES = int(os.environ.get("JWT_REFRESH_WINDOW_MINUTES", 5))
 
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    # Outbound links (password reset, verification) are built from this, so a
+    # stale or unset value mails users a link that does not resolve.
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://holy-grills.vercel.app")
     AUTH_RESET_REDIRECT_PATH = os.environ.get("AUTH_RESET_REDIRECT_PATH", "/reset-password")
     AUTH_VERIFY_REDIRECT_PATH = os.environ.get("AUTH_VERIFY_REDIRECT_PATH", "/login")
     APP_NAME = os.environ.get("APP_NAME", "Holy Grills")
@@ -59,8 +63,6 @@ class Config:
     # FRONTEND_URL (comma-separated) override this list entirely; a "*" in any of
     # them is ignored — pinning the list is the point.
     #
-    # Preview deployments (holy-grills-<hash>.vercel.app) are NOT listed: add them
-    # through CORS_ORIGINS on that environment if you test on a preview URL.
     DEFAULT_CORS_ORIGINS = (
         "https://holy-grills.vercel.app",
         "https://holygrill.app",
@@ -75,6 +77,19 @@ class Config:
     # ALLOWED_ORIGINS / FRONTEND_URL) only ADD to them — so a stale or missing
     # FRONTEND_URL can never lock the real frontend out of its own API.
     CORS_ORIGINS = sorted(set(DEFAULT_CORS_ORIGINS) | origins_set)
+
+    # Vercel PREVIEW deployments get a fresh random host per push
+    # (holy-grills-<hash>.vercel.app, holy-grills-git-<branch>-<scope>.vercel.app),
+    # so a fixed allow-list can never keep up and every branch preview was
+    # blocked by CORS — "Failed to fetch" on login, with the API itself fine.
+    #
+    # flask_cors' try_match() calls pattern.match() for any compiled regex in the
+    # origins list, so a pattern covers every preview without opening CORS up.
+    # Turn it off with ALLOW_VERCEL_PREVIEWS=false once you no longer need it.
+    ALLOW_VERCEL_PREVIEWS = os.environ.get("ALLOW_VERCEL_PREVIEWS", "true").strip().lower() != "false"
+    CORS_ORIGIN_PATTERNS = (
+        [re.compile(r"^https://holy-grills[a-z0-9-]*\.vercel\.app$")] if ALLOW_VERCEL_PREVIEWS else []
+    )
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")

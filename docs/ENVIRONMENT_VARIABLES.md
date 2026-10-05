@@ -114,7 +114,7 @@ reports.
 
 | Variable | Feature that needs it | What happens when unset |
 |---|---|---|
-| `FRONTEND_URL` | CORS **and every outbound link** | Defaults to `http://localhost:3000`, so **password-reset and verification emails link to localhost**. Add it to CORS automatically. Set `https://holygrill.app` |
+| `FRONTEND_URL` | CORS **and every outbound link** | Now defaults to `https://holy-grills.vercel.app` (was `http://localhost:3000`, which made **password-reset emails link to localhost**). Add it to CORS automatically |
 | `CLOUDINARY_API_KEY` | Image uploads | `POST /api/upload/signature` → 503 naming these. **This is the upload failure from the audit** |
 | `CLOUDINARY_API_SECRET` | Image uploads | same as above |
 | `CLOUDINARY_CLOUD_NAME` | Image uploads | Has a hardcoded fallback (`risvlfhx`); set it anyway so it is not implicit |
@@ -133,10 +133,24 @@ reports.
 ### CORS
 
 `CORS_ORIGINS` / `ALLOWED_ORIGINS` (comma-separated) only **add** to a built-in list that
-already contains `https://holygrill.app`, `https://www.holygrill.app` and the localhost dev
-ports. A `*` is deliberately ignored. Vercel **preview** URLs
-(`holy-grills-<hash>.vercel.app`) are **not** in the list — add them via `CORS_ORIGINS` if
-you test on a preview.
+already contains `https://holy-grills.vercel.app`, `https://holygrill.app`,
+`https://www.holygrill.app` and the localhost dev ports. A `*` is deliberately ignored.
+
+**Branch previews now work.** Every push gets a fresh random host
+(`holy-grills-<hash>.vercel.app`, `holy-grills-git-<branch>-<scope>.vercel.app`), which a
+fixed list can never keep up with — that is why previews were blocked and login failed with
+"Failed to fetch". `Config.CORS_ORIGIN_PATTERNS` adds the anchored pattern
+`^https://holy-grills[a-z0-9-]*\.vercel\.app$`, so:
+
+| Origin | Allowed |
+|---|---|
+| `https://holy-grills.vercel.app` | yes |
+| `https://holy-grills-git-my-branch-owner.vercel.app` | yes |
+| `https://holy-grills-abc123.vercel.app` | yes |
+| `https://evil.vercel.app` | no |
+| `https://holy-grills.vercel.app.evil.com` | no |
+
+Disable it once you no longer need previews: `ALLOW_VERCEL_PREVIEWS=false`.
 
 ---
 

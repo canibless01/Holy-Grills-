@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useCampus } from '@/lib/campusContext';
-import Skeleton from '@/components/Skeleton';
 
 // Domain 0 — route guard for campus-scoped pages.
 //
@@ -53,17 +52,14 @@ export default function CampusScope() {
   // backend fall back to global/unscoped data rather than trapping the guest.
   if (!campusesLoading && campuses.length === 0) return <Outlet />;
 
-  if (campusesLoading) return (
-    <div className="space-y-3 py-6">
-      <Skeleton className="h-5 w-32" />
-      <Skeleton className="h-10 w-full rounded-xl" />
-      <Skeleton className="h-10 w-full rounded-xl" />
-      <Skeleton className="h-10 w-full rounded-xl" />
-    </div>
-  );
-
-  // The gate is normally open on top of this. If it was dismissed, this button
-  // is how the guest gets back to it — re-entering the route also re-opens it.
+  // Deliberately the same markup while the campus list is still loading: the
+  // build-time pre-render runs no API calls, so this branch is what writes real
+  // indexable content into /menu, /events and /marketplace. A loading-only
+  // skeleton here would pre-render an empty shell, and a different first client
+  // render would break hydration.
+  //
+  // The gate is normally open on top of this. If it was dismissed, the button
+  // below is how the guest gets back to it — re-entering the route re-opens it.
   return (
     <div className="mx-auto max-w-md px-4 py-20 text-center">
       <h1 className="font-heading font-extrabold text-xl text-foreground">
