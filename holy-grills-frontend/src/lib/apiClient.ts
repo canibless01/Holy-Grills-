@@ -112,8 +112,17 @@ async function request(path: string, options: RequestOptions = {}) {
   // X-Campus-ID from their persisted profile campus (hg_user_campus_id,
   // saved by HolyGrillContext) — the storefront/kitchen-status endpoints
   // need campus context even for signed-in users, not just guests.
-  const adminCampusId = token && localStore.getItem('hg_admin_campus_id');
-  const userCampusId = token && localStore.getItem('hg_user_campus_id');
+  //
+  // A super_admin who has NOT picked a campus (or picked "All Campuses")
+  // sends NO header, because the server's default for that role is
+  // platform-wide. Sending their profile campus here would silently scope
+  // them to one campus — which is exactly the bug the switcher was supposed
+  // to fix, inverted.
+  const role = token ? localStore.getItem('hg_user_role') : null;
+  const isSuperAdmin = role === 'super_admin';
+  const adminAll = token && localStore.getItem('hg_admin_scope_all') === '1';
+  const adminCampusId = token && !adminAll && localStore.getItem('hg_admin_campus_id');
+  const userCampusId = token && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
   const guestCampusId = !token && localStore.getItem('hg_campus_id');
   const campusHeader = adminCampusId || userCampusId || guestCampusId;
   const headers = {
@@ -168,8 +177,24 @@ async function request(path: string, options: RequestOptions = {}) {
 // it as JSON.
 async function requestRaw(path: string, options: RequestOptions = {}) {
   const token = getToken();
-  const adminCampusId = token && localStore.getItem('hg_admin_campus_id');
-  const userCampusId = token && localStore.getItem('hg_user_campus_id');
+  // Domain 0 — campus scope. Guests send X-Campus-ID from the campus gate
+  // (hg_campus_id). Authenticated super-admins send X-Campus-ID from the
+  // admin campus selector (hg_admin_campus_id) so they can view/manage a
+  // campus other than their own. Regular authenticated users get
+  // X-Campus-ID from their persisted profile campus (hg_user_campus_id,
+  // saved by HolyGrillContext) — the storefront/kitchen-status endpoints
+  // need campus context even for signed-in users, not just guests.
+  //
+  // A super_admin who has NOT picked a campus (or picked "All Campuses")
+  // sends NO header, because the server's default for that role is
+  // platform-wide. Sending their profile campus here would silently scope
+  // them to one campus — which is exactly the bug the switcher was supposed
+  // to fix, inverted.
+  const role = token ? localStore.getItem('hg_user_role') : null;
+  const isSuperAdmin = role === 'super_admin';
+  const adminAll = token && localStore.getItem('hg_admin_scope_all') === '1';
+  const adminCampusId = token && !adminAll && localStore.getItem('hg_admin_campus_id');
+  const userCampusId = token && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
   const guestCampusId = !token && localStore.getItem('hg_campus_id');
   const campusHeader = adminCampusId || userCampusId || guestCampusId;
   const headers = {

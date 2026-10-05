@@ -8,6 +8,16 @@
 // keeps working with sensible built-in defaults.
 
 import { liveApi } from './liveApi';
+import { localStore } from './storage';
+import { mergeAdminSettings } from './settingsMerge';
+
+export { mergeAdminSettings };
+
+// Kept in sync with campusContext.tsx. Imported from there instead of
+// importing getStoredCampusId(), because campusContext -> HolyGrillContext ->
+// featureConfig is a cycle: the binding can be undefined at the moment this
+// module evaluates. storage.ts imports nothing that leads back here.
+const CAMPUS_STORAGE_KEY = 'hg_campus_id';
 
 let settingsMap = {};
 let flagsMap = {};
@@ -107,9 +117,7 @@ export async function loadSystemSettings() {
   } catch (e) { /* public endpoint unavailable — try admin below */ }
   try {
     const adminSettings = await liveApi.admin.getSystemSettings();
-    (adminSettings || []).forEach((s) => {
-      if (s && s.key) settingsMap[s.key] = s.value;
-    });
+    mergeAdminSettings(settingsMap, adminSettings, localStore.getItem(CAMPUS_STORAGE_KEY) || null);
   } catch (e) { /* admin endpoint not accessible — keep public/defaults */ }
   return settingsMap;
 }
@@ -120,6 +128,46 @@ export function getSetting(key, defaultValue = null) {
   // Coerce numeric strings back to numbers.
   if (typeof val === 'string' && val !== '' && !isNaN(Number(val))) return Number(val);
   return val;
+}
+
+/**
+ * Boolean read for on/off settings.
+ *
+ * `getSetting('whatsapp_support_enabled', true)` looks safe but is not: a value
+ * stored as the *string* "false" (which is what the admin screen writes for an
+ * unknown key) is truthy in JavaScript, so the switch could never be turned
+ * off from the database. Every toggle-shaped setting must come through here.
+ */
+export function getBoolSetting(key, defaultValue = false) {
+  const val = settingsMap[key];
+  if (val === undefined || val === null) return defaultValue;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val !== 0;
+  if (typeof val === 'string') {
+    const v = val.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off' || v === '') return false;
+  }
+  return defaultValue;
+}
+
+/**
+ * The same read as getSetting() WITHOUT the numeric coercion, for values that
+ * are text even when they happen to be all digits.
+ *
+ * A WhatsApp number is the obvious case: stored as "2348012345678" it came
+ * back from getSetting() as the number 2348012345678 (harmless), but as
+ * "+234 801 234 5678" it came back as NaN — and `https://wa.me/NaN` is exactly
+ * the "the button opens some other number, it never reads the table" report.
+ * Anything shown as text, dropped into a URL or echoed back to the user must
+ * come through here.
+ */
+export function getStringSetting(key, defaultValue = '') {
+  const val = settingsMap[key];
+  if (val === undefined || val === null) return defaultValue;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return defaultValue;
 }
 
 // Feature flags — read from /admin/feature-flags (loadFeatureFlags) so toggling

@@ -152,6 +152,34 @@
   .admin-scope {
     --radius-menu-card: 24px;
   }
+
+  /* ── ADMIN PANEL — long-value containment ──────────────────────────────────
+     A flex item's automatic minimum size is its min-content width. That means
+     a long value — a JSON blob, a URL, an email, a reference — inside a `.flex`
+     row pushes the row (and the page) wider than the viewport, and neither
+     `truncate` nor `break-words` can stop it: `overflow-wrap: break-word` never
+     shrinks an item below min-content on its own. That is what made long
+     system-setting values and brand-partnership emails break the page margin
+     on mobile *and* desktop.
+
+     `min-width: 0` unlocks the shrink; only then does `truncate` render its
+     ellipsis and `break-words` wrap the long run. Applied to flex children
+     that were already asking to be clipped or wrapped, so nothing that
+     intentionally keeps its width is affected. */
+  .admin-scope .flex > .truncate,
+  .admin-scope .inline-flex > .truncate,
+  .admin-scope .flex > .break-words,
+  .admin-scope .inline-flex > .break-words,
+  .admin-scope .flex > .flex-1,
+  .admin-scope .inline-flex > .flex-1 {
+    min-width: 0;
+  }
+
+  /* A wrapped long value keeps the card's rounded corners inside the page. */
+  .admin-scope .break-words {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
 }
 
 @layer base {

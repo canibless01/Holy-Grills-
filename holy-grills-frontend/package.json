@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run routes:check && npm run messages:check && npm run build:client && npm run build:ssr && npm run prerender",
+    "build": "npm run routes:check && npm run messages:check && npm run test:value-text && npm run test:settings-merge && npm run build:client && npm run build:ssr && npm run prerender",
     "routes:check": "node scripts/sync-routes.mjs --check",
     "routes:sync": "node scripts/sync-routes.mjs --write",
     "messages:check": "node scripts/messages-check.mjs",
@@ -19,7 +19,9 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "test:safe-navigation": "node scripts/test-safe-navigation.mjs"
+    "test:safe-navigation": "node scripts/test-safe-navigation.mjs",
+    "test:value-text": "node scripts/test-value-text.mjs",
+    "test:settings-merge": "node scripts/test-settings-merge.mjs"
   },
   "dependencies": {
     "@fontsource-variable/nunito": "^5.3.0",
