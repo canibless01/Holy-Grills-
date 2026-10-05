@@ -293,9 +293,6 @@ export default function AdminBanners({ placement = 'home' }) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={`Add ${placement === 'hero' ? 'hero' : placement} banner`}>
         <div className="space-y-3">
-          <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">
-            The main image is required — the API rejects a banner without one. Add more images afterwards and each becomes a swipeable slide on the live site.
-          </div>
           <Field label="Overlay title (required)"><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Flame-Grilled, Campus-Fresh" /></Field>
           <Field label="Main image (required)">
             <ImageUploader value={draft.image_url} onChange={(url) => setDraft({ ...draft, image_url: url })} folder={`banners/${placement}`} label="main image" />
