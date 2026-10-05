@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, ArrowRight, Check, ArrowLeft } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
+import { localStore } from '@/lib/storage';
 import AuthShell from '@/components/auth/AuthShell';
 import AuthField from '@/components/auth/AuthField';
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  // Same remembered address the sign-in screen pre-fills, so a returning
+  // user does not have to retype it to recover the account.
+  const [email, setEmail] = useState(() => localStore.getItem('hg_remember_email') || '');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -56,8 +59,9 @@ export default function ForgotPassword() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="student@futa.edu.ng"
+              name="email"
               required
-              autoComplete="email"
+              autoComplete="username"
             />
             <button type="submit" disabled={loading || !email} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-60 active:scale-[0.98] transition-transform">
               {loading ? (

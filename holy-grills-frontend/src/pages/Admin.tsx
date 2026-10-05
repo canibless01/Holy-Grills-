@@ -37,6 +37,7 @@ import AdminWalletTransactions from '@/components/admin/AdminWalletTransactions'
 import AdminAcademicCalendar from '@/components/admin/AdminAcademicCalendar';
 import AdminWebhooks from '@/components/admin/AdminWebhooks';
 import { isAuthenticated, clearTokens } from '@/lib/apiClient';
+import { useCampus } from '@/lib/campusContext';
 
 const TITLES = {
   dashboard: 'Dashboard Overview',
@@ -77,6 +78,12 @@ export default function Admin() {
   const { user, isLoading } = useHolyGrill();
   const navigate = useNavigate();
   const [active, setActive] = useState('dashboard');
+  // Campus scope. The header selector writes hg_admin_campus_id, which
+  // apiClient sends as X-Campus-ID on the *next* request — but every admin
+  // section loads once on mount, so without a remount the tables kept showing
+  // the previous campus's data. Keying the content region on the campus id is
+  // what makes the switcher actually re-query (and re-render) the panel.
+  const { adminCampusId } = useCampus();
 
   // Check the live token (not a local snapshot) so that a session cleared by
   // HolyGrillContext on profile-fetch failure also redirects to login.
@@ -167,7 +174,9 @@ export default function Admin() {
         navigate('/login', { replace: true });
       }}
     >
-      {renderSection()}
+      {/* Remount the section when the campus scope changes so its data is
+          re-fetched with the new X-Campus-ID header. */}
+      <div key={adminCampusId || 'all-campuses'}>{renderSection()}</div>
     </AdminLayout>
   );
 }

@@ -1569,9 +1569,19 @@ class MSG:
     FE_HP_TRANSFER_MODAL_INSUFFICIENT_HP_BALANCE                        = "Insufficient HP balance."
     FE_HP_TRANSFER_MODAL_PICK_A_RECIPIENT_FIRST                         = "Pick a recipient first."
     FE_HP_TRANSFER_MODAL_YOU_CAN_T_SEND_HP_TO_YOURSELF  = "You can't send HP to yourself."
+    FE_ADMIN_BANNERS_GIVE_THE_BANNER_A_TITLE_SO_YOU_CAN                 = "Give the banner a title so you can tell it apart in this list."
+    FE_ADMIN_BANNERS_IMAGE_REQUIRED                                     = "An image is required"
+    FE_ADMIN_BANNERS_IMAGE_UPDATE_FAILED                                = "Image update failed"
+    FE_ADMIN_BANNERS_IMAGE_UPDATED                                      = "✅ Image updated"
+    FE_ADMIN_BANNERS_TITLE_REQUIRED                                     = "Title is required"
+    FE_ADMIN_BANNERS_UPLOAD_THE_MAIN_IMAGE_OR_PASTE_AN_IMAGE            = "Upload the main image or paste an image URL before creating."
     FE_IMAGE_UPLOADER_FILE_SIZE_EXCEEDS_5_MB_LIMIT                      = "File size exceeds 5MB limit"
     FE_IMAGE_UPLOADER_MESSAGE                                           = ""
+    FE_IMAGE_UPLOADER_ENTER_A_FULL_IMAGE_URL                            = "Enter a full image URL starting with http:// or https://"
     FE_IMAGE_UPLOADER_PLEASE_UPLOAD_PNG_JPG_OR_WEBP                     = "Please upload PNG, JPG, or WEBP"
+    FE_IMAGE_UPLOADER_FILE_UPLOAD_OFF                                   = "File upload is off"
+    FE_IMAGE_UPLOADER_MISSING_SERVER_SETTING                            = "missing server setting"
+    FE_IMAGE_UPLOADER_PASTE_A_URL_INSTEAD                               = "Paste an image URL instead."
     FE_IMAGE_UPLOADER_UPLOAD_FAILED                                     = "Upload failed"
     FE_IMAGE_UPLOADER_UPLOAD_FAILED_PLEASE_TRY_AGAIN                    = "Upload failed. Please try again."
     FE_INLINE_NOTIFICATION_BELL_ALL_CAUGHT_UP                           = "All caught up ✅"
@@ -1770,7 +1780,6 @@ class MSG:
     FE_STREAK_HP_HP_ADDED                                            = "+{hp} HP added."
     FE_USE_KITCHEN_DATA_MARKED_STATUS                                = "Marked {status}"
 
-    FE_CAMPUS_PICKER_REMEMBERED             = "Pick once — we remember it on this device. The picker also opens on top of this page."
 
 
     # Added from frontend call sites (`npm run messages:fix`). Preview text is
@@ -1810,6 +1819,42 @@ class MSG:
     FE_USE_KITCHEN_DATA_BATCH_ADVANCED         = "{label} — {count} moved"
     FE_USE_KITCHEN_DATA_ADVANCED               = "Advanced"
     FE_USE_KITCHEN_DATA_BATCH_SKIPPED          = "{count} skipped"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_ADMIN_DELIVERY_AREA_COULDN_T_LOAD              = "Couldn't load the delivery area"
+    FE_ADMIN_DELIVERY_AREA_COORDS_INVALID             = "Enter coordinates as \"latitude, longitude\" — for example 7.3021, 5.1391"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_CLEARED             = "Campus centre cleared"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_SAVED               = "Campus centre saved"
+    FE_ADMIN_DELIVERY_AREA_DELIVERY_IS_MEASURED_FROM  = "Delivery distance is now measured from this point."
+    FE_ADMIN_DELIVERY_AREA_SAVE_FAILED                = "Could not save the campus centre"
+    FE_ADMIN_DELIVERY_AREA_FAILED                     = "Failed"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_INVALID             = "Radius must be a number greater than 0"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_SAVED               = "Delivery radius saved"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_SAVED_DESC          = "Orders beyond {km} km from the campus centre will be refused."
+    FE_ADMIN_DELIVERY_AREA_FAILED                     = "Failed"
+    FE_ADMIN_DELIVERY_AREA_TITLE                      = "Delivery area"
+    FE_ADMIN_DELIVERY_AREA_SUBTITLE                   = "Set the campus centre point and how far you deliver from it. Checkout refuses any address further away."
+    FE_ADMIN_DELIVERY_AREA_CAMPUS                     = "Campus"
+    FE_ADMIN_DELIVERY_AREA_SELECT_CAMPUS              = "Select a campus…"
+    FE_ADMIN_DELIVERY_AREA_PICK_CAMPUS                = "Pick a campus to edit its delivery area."
+    FE_ADMIN_DELIVERY_AREA_LOADING                    = "Loading…"
+    FE_ADMIN_DELIVERY_AREA_EDITING                    = "Editing"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_SET                 = "centre set"
+    FE_ADMIN_DELIVERY_AREA_NO_CENTRE                  = "no centre set"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_LABEL               = "Campus centre point"
+    FE_ADMIN_DELIVERY_AREA_CENTRE_HINT                = "Copy straight from Google Maps — right-click the spot and paste “latitude, longitude”. Leave empty to clear."
+    FE_ADMIN_DELIVERY_AREA_SAVING                     = "Saving…"
+    FE_ADMIN_DELIVERY_AREA_SAVE_CENTRE                = "Save centre point"
+    FE_ADMIN_DELIVERY_AREA_OPEN_IN_MAPS               = "Open in Maps"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_LABEL               = "Delivery radius (km)"
+    FE_ADMIN_DELIVERY_AREA_RADIUS_HINT                = "Measured from the centre point above. This is per campus — saved to kitchen_settings.max_delivery_radius_km."
+    FE_ADMIN_DELIVERY_AREA_SAVING                     = "Saving…"
+    FE_ADMIN_DELIVERY_AREA_SAVE_RADIUS                = "Save radius"
+    FE_ADMIN_DELIVERY_AREA_SAVE_ANYWAY                = "These coordinates are outside Nigeria — save anyway"
+    FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING          = "Without a centre point every address is measured against nothing, so students get the 15 km default instead of your campus."
 
 # Short alias
 M = MSG

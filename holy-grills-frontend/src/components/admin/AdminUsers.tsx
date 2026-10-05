@@ -20,6 +20,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
+import { hpTierName, safeText } from '@/lib/valueText';
 import { formatNaira, timeAgo, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/hgUtils';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
@@ -38,18 +39,14 @@ const PAGE_SIZE = 24;
 // The backend occasionally returns a nested object where the UI expects text
 // (a tier, a status, a transaction type). Rendering that object as a React
 // child would take the whole drawer down, so every such value is coerced to
-// display text first.
-const txt = (v, fallback = '') => {
-  if (v == null) return fallback;
-  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
-  if (typeof v === 'object') return v.name || v.label || v.title || v.full_name || v.code || v.value || fallback;
-  return fallback;
-};
+// display text first. safeText() walks up to four levels deep, which covers
+// the HP balance's twice-nested tier row.
+const txt = (v, fallback = '') => safeText(v, fallback) || fallback;
 
-// Tier label comes straight from the backend's user list ("HP balance and
-// tier info") — no mock tier table lookup.
-const tierLabel = (u) =>
-  u.tier_name || (typeof u.tier === 'string' ? u.tier : (u.tier && typeof u.tier === 'object' ? (u.tier.name || u.tier.tier) : null)) || null;
+// Tier label — always a string or null, never the backend's tier container.
+// (get_hp_balance nests the hp_tiers row two levels deep; returning it as-is
+// crashed the drawer with "Objects are not valid as a React child".)
+const tierLabel = (u) => hpTierName(u?.tier_name ?? u?.tier ?? u?.tier_info);
 
 // User Directory — GET /admin/users (q, role, limit, offset) · role changes
 // (PATCH /admin/users/:id/role) · activate/deactivate · per-user HP ledger,
@@ -463,8 +460,15 @@ function UserDrawer({ user, onClose }) {
                 <div className="flex gap-1.5 flex-wrap items-center">
                   <Pill tone="flame">{Number(hp.active ?? 0).toLocaleString()} active</Pill>
                   <Pill tone="amber">{Number(hp.pending ?? 0).toLocaleString()} pending</Pill>
-                  {hp.tier && <Pill tone="green">🔥 {tierLabel(hp)}</Pill>}
+                  {tierLabel(hp) && <Pill tone="green">🔥 {tierLabel(hp)}</Pill>}
                   {hp.tier_multiplier != null && <Pill tone="outline">×{txt(hp.tier_multiplier)} earn rate</Pill>}
+                  {hp.hp_earned_120day != null && <Pill tone="cocoa">{Number(hp.hp_earned_120day).toLocaleString()} HP / 120d</Pill>}
+                </div>
+              )}
+              {hp?.degraded && (
+                <div className="flex items-start gap-2 rounded-xl bg-accent/20 border border-accent/40 p-2.5 text-[11px] text-foreground">
+                  <AlertTriangle className="w-3.5 h-3.5 text-accent-foreground shrink-0 mt-0.5" />
+                  <span>Some HP figures could not be read just now and are shown as 0. Retry in a moment.</span>
                 </div>
               )}
               {hpTxs.length === 0 ? (
