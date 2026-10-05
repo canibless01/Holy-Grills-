@@ -17,10 +17,6 @@ import { msg } from '@/lib/messages';
 
 const CAMPUS_KEY = 'hg_campus_id';
 const ADMIN_CAMPUS_KEY = 'hg_admin_campus_id';
-// Set when a super-admin explicitly chooses "All Campuses" (as opposed to
-// never having touched the switcher) — apiClient must then send no campus
-// scope at all instead of falling back to their profile campus.
-const ADMIN_ALL_KEY = 'hg_admin_scope_all';
 // TODO(ts): the context value is an untyped bag today; giving it a real
 // interface is follow-up work (no runtime change: createContext() and
 // createContext(undefined) are identical).
@@ -131,24 +127,13 @@ export const CampusProvider = ({ children }) => {
 
   // Super-admin campus switch — persists across admin sessions and is sent
   // as X-Campus-ID by apiClient for all authenticated admin requests.
-  // "All Campuses" has to be recorded explicitly, not just left blank: a
-  // super_admin's own profile campus would otherwise be sent as the scope
-  // (see the note in apiClient) and they would see one campus while the
-  // header reads "All Campuses".
   const selectAdminCampus = useCallback((id) => {
-    if (id) {
-      localStore.setItem(ADMIN_CAMPUS_KEY, id);
-      localStore.removeItem(ADMIN_ALL_KEY);
-    } else {
-      localStore.removeItem(ADMIN_CAMPUS_KEY);
-      localStore.setItem(ADMIN_ALL_KEY, '1');
-    }
+    if (id) localStore.setItem(ADMIN_CAMPUS_KEY, id); else localStore.removeItem(ADMIN_CAMPUS_KEY);
     setAdminCampusId(id);
   }, []);
 
   const clearAdminCampus = useCallback(() => {
     localStore.removeItem(ADMIN_CAMPUS_KEY);
-    localStore.removeItem(ADMIN_ALL_KEY);
     setAdminCampusId(null);
   }, []);
 
@@ -166,20 +151,12 @@ export const CampusProvider = ({ children }) => {
     return false;
   }, [isLoading, user, guestCampusId, openGate]);
 
-  // Called when a campus-scoped page unmounts (navigating away, or the back
-  // button). This used to only DOWNGRADE blocking -> prompt and leave the gate
-  // open, which stranded it: going back to a browse page showed a picker that
-  // no longer applied to anything, and navigating into the next campus-scoped
-  // route inherited that half-released state — the gate could end up closed
-  // while the page still withheld its content, which is the blank "no menu
-  // items / retry" screen.
-  //
-  // Close it instead. Re-entering a campus-scoped route re-opens it through
-  // requireCampus(); a browse page re-opens the dismissible prompt on its own.
+  // Called when a campus-scoped page unmounts: the guest still has to choose
+  // eventually, but a browse page (home, track-orders, legal) may dismiss the
+  // picker instead of being trapped behind it.
   const releaseCampus = useCallback(() => {
-    setGateMode('prompt');
-    closeGate();
-  }, [closeGate]);
+    setGateMode((mode) => (mode === 'blocking' ? 'prompt' : mode));
+  }, []);
 
   // Homepage dismissal — closes the prompt without a selection; the next
   // campus-scoped page re-opens it in blocking mode.

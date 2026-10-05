@@ -47,16 +47,9 @@ const rootMarkup = (html) => {
 // entity-free fragments of the picker's <h1> for each route, plus the eyebrow
 // every picker page shares. A route that falls back to the app shell (or to the
 // campus-less pass-through) instead of the picker fails here.
-// Must match APP_CONFIG.domain in src/config/app.config.ts — the canonical
-// links in the built HTML are generated from it.
-const SITE_ORIGIN = 'https://holy-grills.vercel.app';
-
-// Campus-scoped routes render a compact placeholder instead of their content
-// until a campus is chosen (src/components/CampusScope.tsx). It still has to
-// carry a real <h1> so the URL stays indexable — that is what this pins.
 const PICKER_H1 = {
-  '/menu': "Today's menu",
-  '/events': 'Campus events',
+  '/menu': 'menu at FUTA',
+  '/events': 'Campus events at FUTA',
   '/marketplace': 'campus marketplace',
 };
 
@@ -77,24 +70,16 @@ for (const route of PRERENDER_ROUTES) {
   // the real pages are tens of kilobytes of markup.
   check(markup.length > 5000, `${route} has rendered markup`, `${markup.length} bytes`);
   check(!!title && !/FUTA's Only Flame Grill/.test(title), `${route} has a route-specific <title>`, title);
-  check(canonical === `${SITE_ORIGIN}${route === '/' ? '/' : route}`, `${route} canonical`, canonical);
+  check(canonical === `https://holygrill.app${route === '/' ? '/' : route}`, `${route} canonical`, canonical);
   check(ogImage.startsWith('https://'), `${route} og:image is absolute`, ogImage);
   // React 18.3's stream encoder pads a full buffer with NUL bytes when a chunk
   // boundary lands mid-character (see src/entry-server.tsx). Any NUL in the
   // response means that repair stopped working and text is being lost.
   check(!body.includes('\u0000'), `${route} has no NUL bytes`);
   if (PICKER_H1[route]) {
-    // React escapes apostrophes in text (Today&#x27;s), so match against a
-    // decoded copy — otherwise the assertion only passes on headings that
-    // happen to contain no punctuation.
-    const decoded = body
-      .replace(/&#x27;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&');
     check(
-      decoded.includes('Choose your campus') && decoded.includes(PICKER_H1[route]),
-      `${route} pre-renders the campus placeholder`,
+      body.includes('Choose your campus') && body.includes(PICKER_H1[route]),
+      `${route} pre-renders the campus picker`,
     );
   }
   check(!!ld, `${route} has JSON-LD`);
@@ -110,22 +95,16 @@ for (const route of PRERENDER_ROUTES) {
 }
 
 // ── 1b. Security headers (Phase 7, S4) ──────────────────────────────────────
-// The CSP is ENFORCED (2026-10-05). It shipped report-only first so the policy
-// could be observed against the real origins; these assertions now pin the
-// enforced state so the header block can never be dropped by accident.
-//
-// The gate for the flip was: every page's inline script covered by a hash in the
-// policy, zero inline event handlers, and the allow-list derived from the origins
-// the source actually uses. This suite verifies the first two on every generated
-// page; the third was verified by reading the source (see docs/SECURITY_REVIEW.md
-// S4). If a real feature is ever blocked, revert the header name in
-// scripts/routes.mjs and this block back to *-Report-Only.
+// The CSP ships report-only on purpose: the policy must be observed against the
+// real origins before anything is blocked. These assertions fail if the header
+// block is dropped, or if it is flipped to enforcing without that being a
+// deliberate change (the Flip Is One Word — see scripts/routes.mjs).
 console.log('\nsecurity headers');
 {
   const res = await fetch(baseUrl + '/');
-  const csp = res.headers.get('content-security-policy') || '';
-  check(csp.includes("default-src 'self'"), 'CSP is enforced (not report-only)', csp.slice(0, 48) || 'MISSING');
-  check(!res.headers.get('content-security-policy-report-only'), 'no report-only duplicate is served');
+  const csp = res.headers.get('content-security-policy-report-only') || '';
+  check(csp.includes("default-src 'self'"), 'CSP report-only is served', csp.slice(0, 48));
+  check(!res.headers.get('content-security-policy'), 'nothing is blocked yet (report-only)');
   check(res.headers.get('x-content-type-options') === 'nosniff', 'X-Content-Type-Options');
   check(res.headers.get('x-frame-options') === 'DENY', 'X-Frame-Options');
   check((res.headers.get('referrer-policy') || '').startsWith('strict-origin'), 'Referrer-Policy');
@@ -160,7 +139,7 @@ console.log('\nsecurity headers');
 
   // Headers must also cover the two non-page responses.
   const notFound = await fetch(baseUrl + '/definitely-not-a-page');
-  check(!!notFound.headers.get('content-security-policy'), 'CSP on the 404');
+  check(!!notFound.headers.get('content-security-policy-report-only'), 'CSP on the 404');
   const asset = await fetch(baseUrl + '/manifest.json');
   check(asset.headers.get('x-content-type-options') === 'nosniff', 'nosniff on a static asset');
 }

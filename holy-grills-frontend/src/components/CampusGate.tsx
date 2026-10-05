@@ -1,23 +1,10 @@
 import { Flame, MapPin } from 'lucide-react';
 import { useCampus } from '@/lib/campusContext';
 
-// Domain 0 — guest campus gate. The ONE campus picker, and the only place the
-// campus list is rendered.
-//
-// Two modes:
-//   'prompt'   — dismissible. Used on browse pages, where a guest must never be
-//                trapped behind a picker.
-//   'blocking' — not dismissible. Used on campus-scoped routes (menu, cart,
-//                checkout, events, marketplace, leaderboard): those pages have
-//                no meaningful content without a campus, so the guest picks one
-//                or goes back. There is deliberately no close affordance and no
-//                backdrop-dismiss in this mode.
-//
-// Campus-scoped pages render a compact placeholder instead of their content
-// while no campus is chosen (src/components/CampusScope.tsx) rather than a
-// second copy of this list, so the two are never on screen together.
+// Domain 0 — guest campus gate. Blocking (non-cancelable) on campus-scoped
+// routes; dismissible when shown as the homepage prompt.
 export default function CampusGate() {
-  const { gateOpen, gateMode, campuses, selectCampus, dismissGate } = useCampus();
+  const { gateOpen, gateAction, gateMode, campuses, selectCampus, dismissGate } = useCampus();
   if (!gateOpen || campuses.length === 0) return null;
   const dismissible = gateMode === 'prompt';
 
@@ -32,6 +19,9 @@ export default function CampusGate() {
             <Flame className="w-6 h-6 text-white" />
           </div>
           <h2 className="font-heading font-bold text-lg text-foreground">Choose your campus</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Pick your campus to {gateAction}. We remember it on this device — you can change it from your profile.
+          </p>
         </div>
         <div className="space-y-2 max-h-72 overflow-y-auto">
           {campuses.map((c) => (
@@ -49,8 +39,8 @@ export default function CampusGate() {
             </button>
           ))}
         </div>
-        {/* Campus-scoped routes (blocking) intentionally offer no way out — the
-            action only proceeds once a campus is chosen. */}
+        {/* Campus-scoped routes (blocking): no close affordance — the action
+            only proceeds once a campus is chosen. Homepage prompt: dismissible. */}
         {dismissible && (
           <button
             onClick={(e) => { e.stopPropagation(); dismissGate(); }}

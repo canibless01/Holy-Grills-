@@ -18,11 +18,7 @@ const FLAG_META = {
   marketplace_general: { label: 'Marketplace', flipWhen: '500+ active users', impact: 'Shows/hides the marketplace' },
   hp_transfer: { label: 'HP Transfer', flipWhen: 'Phase 3', impact: 'Shows/hides HP transfer between users' },
   squad_order_enabled: { label: 'Squad Orders', flipWhen: 'Once live-verified', impact: 'Backend flag for squad ordering' },
-  // whatsapp_support_enabled is deliberately NOT here. The support button is a
-  // per-campus system setting (system_settings.whatsapp_support_number /
-  // .whatsapp_support_enabled), so each campus can run its own number. A second
-  // global flag here only created a second switch for the same button — the app
-  // now reads system_settings only.
+  whatsapp_support_enabled: { label: 'WhatsApp Support', flipWhen: 'When support number is staffed', impact: 'Toggles the support button in the app' },
 };
 
 // Feature Flags — Domain 16. GET /admin/feature-flags (campus_id query) ·

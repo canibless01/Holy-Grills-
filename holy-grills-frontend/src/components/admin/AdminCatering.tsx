@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { UtensilsCrossed, RefreshCw, Search, Calendar, Users, Phone, Mail, DollarSign, StickyNote, X } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
-import { safeText } from '@/lib/valueText';
 import { formatNaira, formatDate } from '@/lib/hgUtils';
-
-// A joined row here would render as an object and take the panel down.
-const tierText = (r) => safeText(r?.tier_name || r?.tier || r?.ticket_tier, '');
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
@@ -332,7 +328,7 @@ function EventCateringTab({ events }) {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-foreground">{r.full_name || r.user?.name || r.name || 'Attendee'}</span>
-                        {tierText(r) && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/30 text-accent-foreground/80">{tierText(r)}</span>}
+                        {(r.tier_name || r.tier) && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/30 text-accent-foreground/80">{r.tier_name || r.tier}</span>}
                         {r.checked_in && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Checked in</span>}
                       </div>
                       <div className="text-xs text-muted-foreground">{r.email || r.user?.email || '—'}</div>

@@ -204,12 +204,6 @@ def update_setting(key):
     }
     if "description" in data:
         update_payload["description"] = data["description"]
-    # is_public decides whether students can read this key at all: the public
-    # config route (GET /storefront/config/public) is the ONLY settings source
-    # available to a signed-out visitor, and it filters on this flag. The admin
-    # screen shows a Public/Private badge per row and toggles it here.
-    if "is_public" in data:
-        update_payload["is_public"] = bool(data["is_public"])
 
     q = db.table("system_settings").eq("key", key)
     q = q.is_("campus_id", "null") if not campus_id else q.eq("campus_id", campus_id)
@@ -285,31 +279,15 @@ def create_setting():
         return jsonify({"error": MSG.SETTING_KEY_EXISTS}), 409
 
     now = datetime.now(timezone.utc).isoformat()
-    payload = {
-        "key": key,
-        "value": value,
-        "description": data.get("description", ""),
-        "campus_id": campus_id,
-        "updated_at": now,
-        "updated_by": g.user_id,
-    }
-    # New keys are public unless the caller says otherwise. A private row is
-    # invisible to the app it is meant to configure (students read settings
-    # only through the public config), which is exactly the trap the WhatsApp
-    # number fell into: saved, listed for admins, never used by the button.
-    payload["is_public"] = data.get("is_public") is not False
     try:
-        try:
-            result = db.table("system_settings").insert(payload)
-        except SupabaseError as exc:
-            # Schema without the column — retry without it rather than failing
-            # the create.
-            if "is_public" in str(exc) and "is_public" in payload:
-                logger.warning("settings: system_settings has no is_public column — creating %s without it", key)
-                payload.pop("is_public")
-                result = db.table("system_settings").insert(payload)
-            else:
-                raise
+        result = db.table("system_settings").insert({
+            "key": key,
+            "value": value,
+            "description": data.get("description", ""),
+            "campus_id": campus_id,
+            "updated_at": now,
+            "updated_by": g.user_id,
+        })
     except SupabaseError as exc:
         refusal = _validator_refusal(exc)
         if refusal is None:

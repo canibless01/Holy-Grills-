@@ -20,9 +20,7 @@ export const APP_CONFIG = {
   // Update to your production domain before going live (used for canonical URLs + OG).
   // Configurable per environment; the fallback is the production site. Used for
   // canonical URLs, og:url and the JSON-LD `url`.
-  // Canonical/origin for og:url, canonical links and JSON-LD. Must match the
-  // host actually serving the site, or search results point at a dead domain.
-  domain: import.meta.env.VITE_SITE_URL || 'https://holy-grills.vercel.app',
+  domain: import.meta.env.VITE_SITE_URL || 'https://holygrill.app',
 
   university: 'FUTA',
   currency: { code: 'NGN', symbol: '₦', locale: 'en-NG' },

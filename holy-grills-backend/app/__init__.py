@@ -99,7 +99,7 @@ def create_app(config_class=Config):
     # against the API from a visitor's browser.
     CORS(
         app,
-        origins=[*Config.CORS_ORIGINS, *Config.CORS_ORIGIN_PATTERNS],
+        origins=Config.CORS_ORIGINS,
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "Accept", "Origin", "X-Requested-With"],
         expose_headers=["Authorization", "Deprecation", "Sunset", "Link"],

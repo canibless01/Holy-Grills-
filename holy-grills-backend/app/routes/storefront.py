@@ -10,9 +10,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, g
 
-from app.middleware.auth import require_auth, require_role, header_campus_id     # D17-B04 (validate_promo now requires login)
+from app.middleware.auth import require_auth, require_role                      # D17-B04 (validate_promo now requires login)
 from app.middleware.rate_limit import rate_limit                                 # D17-B16: newsletter abuse guard
-from app.constants import ADMIN_ROLES
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.routes.events import _get_campus_id
@@ -36,41 +35,11 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$")
 _SECTION_CONTENT_FIELDS = ("subtitle", "body", "image_url", "cta_text", "cta_url", "config")   # D17-B01
 _SECTION_CONTENT_ALIASES = {"subtitle": "subheadline", "cta_url": "cta_link"}                        # D17-B01: the live hero content stores these under other names
 _WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
-_SECTION_FLAT_KEYS = _SECTION_CONTENT_FIELDS + ("placement",)    # D17-B02: flat body keys folded into `content`
 
 
 # ───────────────────────────── helpers ─────────────────────────────
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-def _section_content(data, base=None):
-    """Fold the flat section fields the admin editors post into the single JSONB `content` column.
-
-    `storefront_sections` stores everything visual in `content`, but the editors submit
-    `subtitle`, `image_url`, `cta_text`, `cta_url` (and `placement`) as flat body keys.
-    Both shapes are merged so a create/edit never silently drops the image or CTA.
-    Returns None when `content` is present but not an object (caller answers 400).
-    """
-    content = dict(base) if isinstance(base, dict) else {}
-    if "content" in data:
-        if not isinstance(data["content"], dict):
-            return None
-        content.update(data["content"])
-    for k in _SECTION_CONTENT_FIELDS:
-        if k in data:
-            content[k] = data[k]
-            alias = _SECTION_CONTENT_ALIASES.get(k)
-            if alias:
-                content[alias] = data[k]                                            # live hero reads the legacy names
-    if "placement" in data:
-        content["placement"] = data["placement"]                                    # sections have no placement column — lives in content
-    return content
-
-
-def _section_content_touched(data):
-    """True when the body carries anything that belongs in `content`."""
-    return "content" in data or any(k in data for k in _SECTION_FLAT_KEYS)
 
 
 def _json_body():
@@ -133,12 +102,7 @@ def _write_campus_id(explicit=None):
     """
     if getattr(g, "user_role", None) == "super_admin":
         wanted = str(explicit or request.args.get("campus_id") or "").strip()
-        if wanted:
-            return wanted
-        # No explicit campus: follow the admin header switcher (X-Campus-ID) so
-        # a banner/section created while "Futa" is selected belongs to Futa
-        # instead of silently becoming a global row.
-        return header_campus_id() or getattr(g, "campus_id", None)
+        return wanted or getattr(g, "campus_id", None)
     return getattr(g, "campus_id", None)
 
 
@@ -263,14 +227,8 @@ def get_public_config():
     config_dict["max_delivery_radius_km"] = max_radius
     config_dict["campus_lat"] = c_lat
     config_dict["campus_lon"] = c_lon
-    # Support contact. Per-campus DB value wins; the server env is the fallback
-    # when the table has no row at all (D17-B22). The DB row must be
-    # is_public = TRUE to be visible here — the floating chat button is the
-    # only consumer, and it reads this and nothing else.
-    if not config_dict.get("whatsapp_support_number"):
+    if not config_dict.get("whatsapp_support_number"):                               # D17-B22: per-campus DB value wins; server env is the fallback
         config_dict["whatsapp_support_number"] = (os.environ.get("WHATSAPP_SUPPORT_NUMBER") or "").strip() or None
-    if not config_dict.get("whatsapp_support_message"):
-        config_dict["whatsapp_support_message"] = (os.environ.get("WHATSAPP_SUPPORT_MESSAGE") or "").strip() or None
     return jsonify(config_dict), 200
 
 
@@ -288,14 +246,7 @@ def list_sections():
     """
     db = get_user_client()
     campus_id = _get_campus_id()
-    q = db.table("storefront_sections").select("*")
-    # Public callers get the active rows only. An admin needs to see the rows
-    # they switched off too — otherwise flipping is_active off makes a section
-    # vanish from the CMS list with no way to turn it back on.
-    include_inactive = str(request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
-    if not (include_inactive and getattr(g, "user_role", None) in ADMIN_ROLES):
-        q = q.eq("is_active", "true")
-    sections = q.order("sort_order").execute() or []
+    sections = db.table("storefront_sections").select("*").eq("is_active", "true").order("sort_order").execute() or []
     return jsonify(_scoped(sections, campus_id)), 200
 
 
@@ -352,10 +303,21 @@ def update_section(section_id):
     except (TypeError, ValueError):
         return _bad_request()
 
-    content = _section_content(data, existing.get("content"))
-    if content is None:
-        return _bad_request()                                                       # D17-B13 (content: null -> NOT NULL 500)
-    if _section_content_touched(data):
+    content = existing.get("content") if isinstance(existing.get("content"), dict) else {}
+    content = dict(content)
+    touched = False
+    if "content" in data:
+        if not isinstance(data["content"], dict):
+            return _bad_request()
+        content.update(data["content"])
+        touched = True
+    for k in _SECTION_CONTENT_FIELDS:
+        if k in data:
+            content[k] = data[k]
+            if k in _SECTION_CONTENT_ALIASES:
+                content[_SECTION_CONTENT_ALIASES[k]] = data[k]
+            touched = True
+    if touched:
         update["content"] = content
     if not update:
         return jsonify({"error": MSG.STOREFRONT_NOTHING_TO_UPDATE}), 400
@@ -385,12 +347,6 @@ def create_section():
             title: {type: string}
             section_type: {type: string, description: "e.g. hero, banner, promo, faq"}
             content: {type: object}
-            subtitle: {type: string, description: "folded into content.subtitle / content.subheadline"}
-            image_url: {type: string, description: "folded into content.image_url"}
-            body: {type: string, description: "folded into content.body"}
-            cta_text: {type: string, description: "folded into content.cta_text"}
-            cta_url: {type: string, description: "folded into content.cta_url / content.cta_link"}
-            placement: {type: string, description: "folded into content.placement (sections have no placement column)"}
             is_active: {type: boolean}
             sort_order: {type: integer}
             campus_id: {type: string, description: "super_admin only — target campus"}
@@ -407,8 +363,8 @@ def create_section():
     for f in ("key", "title", "section_type"):
         if not isinstance(data.get(f), str) or not data[f].strip():
             return _field_required(f)
-    content = _section_content(data)
-    if content is None:
+    content = data.get("content", {})
+    if not isinstance(content, dict):
         return _bad_request()                                                       # D17-B13 (content: null -> NOT NULL 500)
     try:
         safe = {
@@ -967,15 +923,7 @@ def list_banners():
         description: Active banners ordered by sort_order
     """
     db = get_user_client()
-    q = db.table("banners").select("*")
-    # The public list only ever served is_active rows, so an admin could not
-    # see — let alone repair or re-enable — a banner that had been switched
-    # off; it simply vanished from the panel. `include_inactive=1` is honoured
-    # for admin callers only (a public caller asking for it gets the active
-    # set, never the hidden rows).
-    include_inactive = str(request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
-    if not (include_inactive and getattr(g, "user_role", None) in ADMIN_ROLES):
-        q = q.eq("is_active", "true")
+    q = db.table("banners").select("*").eq("is_active", "true")
     placement = request.args.get("placement")
     if placement:
         q = q.eq("placement", placement)

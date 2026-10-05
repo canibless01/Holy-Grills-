@@ -3,7 +3,7 @@ or belongs to one campus (that campus's admin)."""
 from flask import g, abort
 
 from app.messages import MSG
-from app.middleware.auth import assert_owns_campus, header_campus_id
+from app.middleware.auth import assert_owns_campus
 from app.utils.validators import validate_uuid
 
 
@@ -49,9 +49,7 @@ def resolve_write_campus(requested):
     Anyone else: their own campus; naming a different campus is 403."""
     assert_owns_campus(requested)
     if getattr(g, "user_role", None) == "super_admin":
-        # Fall back to the campus selected in the admin header switcher
-        # (X-Campus-ID) so admin writes land on the campus being viewed.
-        return requested or header_campus_id() or None
+        return requested or None
     return getattr(g, "campus_id", None)
 
 

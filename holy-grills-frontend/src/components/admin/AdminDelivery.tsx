@@ -7,7 +7,6 @@ import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import OrderingWindowsTab from './OrderingWindowsTab';
 import AdminRiders from './AdminRiders';
-import AdminDeliveryArea from './AdminDeliveryArea';
 import { msg } from '@/lib/messages';
 
 export default function AdminDelivery() {
@@ -88,7 +87,6 @@ export default function AdminDelivery() {
     { id: 'ordering', label: 'Ordering', icon: Clock },
     { id: 'batches', label: 'Batches', icon: Truck },
     { id: 'zones', label: 'Zones & Fees', icon: MapPin },
-    { id: 'area', label: 'Delivery area', icon: MapPin },
     { id: 'riders', label: 'Riders', icon: Bike },
     { id: 'carts', label: 'Abandoned', icon: ShoppingCart },
   ];
@@ -207,7 +205,6 @@ export default function AdminDelivery() {
         </div>
       )}
 
-      {tab === 'area' && <AdminDeliveryArea />}
       {tab === 'riders' && <AdminRiders />}
 
       {tab === 'carts' && (

@@ -57,24 +57,11 @@ export function routeFamilies(paths = readRoutePaths()) {
  * Security headers (Phase 7, finding S4)
  * ============================================================================
  * The app keeps its JWTs in localStorage, so a policy that stops unexpected
- * script execution is the structural half of the XSS defence.
- *
- * Status: ENFORCED (2026-10-05).
- *
- * Enforced on purpose: a report-only policy hides breakage in a console nobody
- * reads, whereas an enforced one makes a wrong allow-list entry obvious the
- * moment you load the page. That is what we want while testing.
- *
- * If something legitimately breaks, revert is one word — rename the key below to
- * `Content-Security-Policy-Report-Only` and run `npm run routes:sync`.
- *
- * The allow-list is derived from the origins the source actually uses (see the
- * list below), and `npm run smoke` re-checks it against the built HTML: every
- * inline script on every generated page must be covered by a hash in the policy,
- * and there must be no inline event handlers.
- *
- * Local `npm run dev` is never affected either way: vercel.json is read by
- * Vercel only, never by the vite dev server.
+ * script execution is the structural half of the XSS defence. It ships as
+ * `Content-Security-Policy-Report-Only`: nothing is blocked until the policy has
+ * been observed against every origin the app really talks to (the browser
+ * console lists violations). Flipping the header name to `Content-Security-Policy`
+ * is then a one-word change.
  *
  * The allow-list below is derived from the origins the source actually uses:
  *   scripts   OneSignal SDK (cdn.onesignal.com)
@@ -169,7 +156,7 @@ export function securityHeaders() {
     {
       source: '/(.*)',
       headers: [
-        { key: 'Content-Security-Policy', value: csp },
+        { key: 'Content-Security-Policy-Report-Only', value: csp },
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'X-Frame-Options', value: 'DENY' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

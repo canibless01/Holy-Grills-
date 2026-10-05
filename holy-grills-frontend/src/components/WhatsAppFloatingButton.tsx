@@ -2,45 +2,21 @@ import { useState, useEffect } from 'react';
 import { MessageCircle, X } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { liveApi } from '@/lib/liveApi';
-import { normalizeWhatsAppNumber } from '@/lib/valueText';
 
 /**
  * WhatsAppFloatingButton — fixed bottom-right "Chat with us" button on all
  * student-facing screens. Hidden when whatsapp_support_enabled is false.
  * Pre-fills a context-aware message (includes order number if user has an
  * active order).
- *
- * WHERE THE VALUE COMES FROM (the chain, end to end):
- *   system_settings row (key = whatsapp_support_number, is_public = TRUE)
- *     → GET /api/storefront/config/public        (only is_public rows!)
- *     → featureConfig.loadSystemSettings()       (settingsMap)
- *     → getStringSetting('whatsapp_support_number')
- *     → https://wa.me/<number>
- *
- * Two things used to break that chain silently, and both made the button look
- * like it "wasn't reading the table":
- *   1. A row with is_public = false is filtered out of the public config, so
- *      the button fell back to the hardcoded '2348000000000'. New keys created
- *      from the admin screen defaulted to private, so a number typed there was
- *      saved, visible in the admin list, and never used.
- *   2. getSetting() coerced numeric-looking strings to Number, so
- *      "+234 801 234 5678" became NaN and the link became https://wa.me/NaN.
- * Both are fixed here (string read + digit sanitising) and at the source (the
- * admin screen now shows and can set is_public).
- *
- * Server-side fallback, for reference: if the table has no value the backend
- * substitutes the WHATSAPP_SUPPORT_NUMBER environment variable
- * (app/routes/storefront.py → get_public_config).
  */
-
 export default function WhatsAppFloatingButton() {
-  const { getStringSetting, getBoolSetting } = useHolyGrill();
+  const { getSetting } = useHolyGrill();
   const [activeOrder, setActiveOrder] = useState(null);
   const [dismissed, setDismissed] = useState(false);
 
-  const enabled = getBoolSetting('whatsapp_support_enabled', true);
-  const number = normalizeWhatsAppNumber(getStringSetting('whatsapp_support_number', '2348000000000'));
-  const defaultMessage = getStringSetting('whatsapp_support_message', 'Hello, I need help with my order');
+  const enabled = getSetting('whatsapp_support_enabled', true);
+  const number = getSetting('whatsapp_support_number', '2348000000000');
+  const defaultMessage = getSetting('whatsapp_support_message', 'Hello, I need help with my order');
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +32,7 @@ export default function WhatsAppFloatingButton() {
     return () => { cancelled = true; };
   }, []);
 
-  // No usable number means no button: a wa.me/NaN link is worse than nothing.
-  if (!enabled || dismissed || !number) return null;
+  if (!enabled || dismissed) return null;
 
   const orderId = activeOrder?.id || activeOrder?.order_id;
   const message = orderId

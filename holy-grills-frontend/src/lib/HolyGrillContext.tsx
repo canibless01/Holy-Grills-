@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
 import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
-import { loadSystemSettings, loadFeatureFlags, getSetting, getStringSetting, getBoolSetting } from './featureConfig';
+import { loadSystemSettings, loadFeatureFlags, getSetting } from './featureConfig';
 import { loadTiers } from './hgUtils';
 import { msg } from '@/lib/messages';
 
@@ -34,15 +34,9 @@ const EMPTY_CART = { items: [], subtotal: 0, item_count: 0, hp_earn_preview: 0, 
 // kitchen-status requests (X-Campus-ID) — the backend does not scope all of
 // those endpoints from the JWT alone, which made the storefront read
 // "closed" for signed-in users on an open campus.
-// apiClient needs the role as well as the campus to build X-Campus-ID: a
-// super_admin with a campus on their profile must NOT be scoped to it by
-// default (their default view is every campus), while every other role is.
-// Persisted here because apiClient runs outside React and cannot read context.
 const persistUserCampus = (profile) => {
   if (profile?.campus_id) localStore.setItem('hg_user_campus_id', profile.campus_id);
   else localStore.removeItem('hg_user_campus_id');
-  if (profile?.role) localStore.setItem('hg_user_role', profile.role);
-  else localStore.removeItem('hg_user_role');
 };
 
 // /api/auth/me nests HP under `profile` (hp_earned_120day, hp_balance) and
@@ -296,9 +290,7 @@ export const HolyGrillProvider = ({ children }) => {
     try { await liveApi.auth.logout(); } catch { /* ignore */ }
     clearTokens();
     localStore.removeItem('hg_admin_campus_id');
-    localStore.removeItem('hg_admin_scope_all');
     localStore.removeItem('hg_user_campus_id');
-    localStore.removeItem('hg_user_role');
     setUser(null); setHpBalance(null); setWallet(null);
     setNotifications([]); setUnreadCount(0); setStreak(null); setSavedItems([]);
     setAuthed(false);
@@ -362,7 +354,7 @@ export const HolyGrillProvider = ({ children }) => {
 
   return (
     <HolyGrillContext.Provider value={{
-      user, isLoading, cart, cartCount, hpBalance, wallet, notifications, unreadCount, streak, systemSettings, getSetting, getStringSetting, getBoolSetting,
+      user, isLoading, cart, cartCount, hpBalance, wallet, notifications, unreadCount, streak, systemSettings, getSetting,
       savedItems, isAuthenticated: authed,
       login, register, logout, refreshUser, refreshStreak, refreshCart, refreshHp, refreshWallet, refreshNotifications, refreshSavedItems,
       addToCart, updateCartItem, removeFromCart, clearCart,
