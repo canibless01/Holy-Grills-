@@ -4,6 +4,31 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# Required before the app can start at all.
+#
+# These three were read with os.environ[...] inside the class body, which runs at
+# IMPORT time. With any of them unset the process died with a bare
+# `KeyError: 'SUPABASE_URL'` and no explanation — the service looked like it had
+# deployed fine (pip install succeeds) but gunicorn never came up, so the API
+# list simply never loaded. Fail loudly and name everything that is missing.
+_REQUIRED_ENV = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY")
+
+
+def _assert_required_env():
+    missing = [name for name in _REQUIRED_ENV if not (os.environ.get(name) or "").strip()]
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variable(s): "
+            + ", ".join(missing)
+            + ". The backend cannot start without them — set them on the host "
+            "(Render → your service → Environment) and restart. "
+            "Values come from Supabase → Project Settings → API. See .env.example."
+        )
+
+
+_assert_required_env()
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("SESSION_SECRET", "change-me-in-production")
     JWT_SECRET = os.environ.get("JWT_SECRET") or os.environ.get("SUPABASE_JWT_SECRET") or os.environ.get("SECRET_KEY") or os.environ.get("SESSION_SECRET", "change-me-in-production")
