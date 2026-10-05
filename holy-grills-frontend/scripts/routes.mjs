@@ -59,15 +59,23 @@ export function routeFamilies(paths = readRoutePaths()) {
  * The app keeps its JWTs in localStorage, so a policy that stops unexpected
  * script execution is the structural half of the XSS defence.
  *
- * Status: ENFORCED as of 2026-10-05. It shipped first as
- * `Content-Security-Policy-Report-Only` so the policy could be observed against
- * every origin the app really talks to, and `npm run smoke` was built to verify
- * the built HTML against it (0 executable inline scripts not covered by the
- * policy, 0 inline event handlers, across every generated page).
+ * Status: REPORT-ONLY (2026-10-05). It was briefly enforced and then put back:
+ * the project is still in development, the API origin is not final, and
+ * `connect-src` below pins https://holy-grills-backend.onrender.com. An enforced
+ * policy against the wrong API origin does not warn — it blocks every request,
+ * which surfaces to the user as a bare "Failed to fetch" on login.
  *
- * REVERT, if a real feature is ever blocked: change the key back to
- * `Content-Security-Policy-Report-Only` below and run `npm run routes:sync`.
- * Nothing else depends on the name.
+ * BEFORE ENFORCING:
+ *   1. confirm the API origin the frontend really calls matches `connect-src`
+ *      (see getApiOrigin() below / VITE_API_BASE_URL);
+ *   2. confirm every origin the app loads is listed (script/style/font/img/
+ *      connect/frame/worker);
+ *   3. flip the key below to `Content-Security-Policy` and run
+ *      `npm run routes:sync`.
+ * `npm run smoke` verifies all of the above against the built HTML.
+ *
+ * Local `npm run dev` is never affected either way: vercel.json is read by
+ * Vercel only, never by the vite dev server.
  *
  * The allow-list below is derived from the origins the source actually uses:
  *   scripts   OneSignal SDK (cdn.onesignal.com)
@@ -162,7 +170,7 @@ export function securityHeaders() {
     {
       source: '/(.*)',
       headers: [
-        { key: 'Content-Security-Policy', value: csp },
+        { key: 'Content-Security-Policy-Report-Only', value: csp },
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'X-Frame-Options', value: 'DENY' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

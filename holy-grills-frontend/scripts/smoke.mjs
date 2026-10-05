@@ -108,9 +108,9 @@ for (const route of PRERENDER_ROUTES) {
 console.log('\nsecurity headers');
 {
   const res = await fetch(baseUrl + '/');
-  const csp = res.headers.get('content-security-policy') || '';
-  check(csp.includes("default-src 'self'"), 'CSP is enforced (not report-only)', csp.slice(0, 48) || 'MISSING');
-  check(!res.headers.get('content-security-policy-report-only'), 'no report-only duplicate is served');
+  const csp = res.headers.get('content-security-policy-report-only') || '';
+  check(csp.includes("default-src 'self'"), 'CSP is served (report-only)', csp.slice(0, 48) || 'MISSING');
+  check(!res.headers.get('content-security-policy'), 'CSP is not enforced yet (dev in progress)');
   check(res.headers.get('x-content-type-options') === 'nosniff', 'X-Content-Type-Options');
   check(res.headers.get('x-frame-options') === 'DENY', 'X-Frame-Options');
   check((res.headers.get('referrer-policy') || '').startsWith('strict-origin'), 'Referrer-Policy');
@@ -145,7 +145,7 @@ console.log('\nsecurity headers');
 
   // Headers must also cover the two non-page responses.
   const notFound = await fetch(baseUrl + '/definitely-not-a-page');
-  check(!!notFound.headers.get('content-security-policy'), 'CSP on the 404');
+  check(!!notFound.headers.get('content-security-policy-report-only'), 'CSP on the 404');
   const asset = await fetch(baseUrl + '/manifest.json');
   check(asset.headers.get('x-content-type-options') === 'nosniff', 'nosniff on a static asset');
 }

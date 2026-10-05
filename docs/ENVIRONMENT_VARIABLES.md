@@ -5,9 +5,14 @@ docs — several of those are stale. Last verified 2026-10-05.
 
 ---
 
-## 0. Why the backend loads nothing on Render right now
+## 0. If the backend ever boots to nothing
 
-This is the answer to "the build passes but my API list doesn't load".
+> **Correction (2026-10-05):** this section was written on the assumption that no
+> environment variables were set. The backend is in fact up and running, so the
+> Supabase variables **are** present. The real cause of the empty API list turned out
+> to be a malformed Swagger docstring, not a missing variable (see §0b). The startup
+> check described below is still worth having — it turns a bare `KeyError` into a
+> message that names every missing variable — but it was not the cause.
 
 `app/config.py` read the Supabase keys like this, **inside the `Config` class body**:
 
@@ -41,6 +46,33 @@ RuntimeError: Missing required environment variable(s): SUPABASE_URL,
 SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY. The backend cannot start without
 them — set them on the host (Render → your service → Environment) and restart.
 ```
+
+## 0b. What actually broke the API list: one malformed docstring
+
+`GET /api/docs/apispec.json` returned **500**, so Swagger UI had nothing to render and
+showed only `Fetch error undefined /api/docs/apispec.json`.
+
+Flasgger builds the spec by YAML-parsing **every** view docstring, so a single malformed
+one takes the whole document down — and the error names no endpoint. Here the culprit was
+`app/routes/messages.py::list_messages`, which had a `400:` response block orphaned
+between `security: []` and `parameters:`:
+
+```yaml
+tags: [Meta]
+security: []
+  400:            # <- belongs under `responses:`, not here
+    description: Malformed prefix
+parameters:
+```
+
+Fixed by moving it under `responses:`. The spec now returns 200 with 262 paths, and
+`tests/test_apispec_docstrings.py` fails the build if any docstring ever stops parsing, or
+if the spec endpoint stops returning 200.
+
+**This is unrelated to login.** The spec is only fetched by `/api/docs/`; nothing in the
+app calls it.
+
+---
 
 Two more things to set while you're in there:
 

@@ -43,8 +43,6 @@ def list_messages():
     ---
     tags: [Meta]
     security: []
-      400:
-        description: Malformed prefix
     parameters:
       - in: query
         name: prefix
@@ -54,6 +52,8 @@ def list_messages():
     responses:
       200:
         description: Every MSG constant as a key → text map
+      400:
+        description: Malformed prefix
     """
     prefix = (request.args.get("prefix") or "").strip()
     if prefix and not re.fullmatch(r"[A-Z][A-Z0-9_]{0,24}", prefix):

@@ -350,8 +350,11 @@ Important: `vercel.json` is **generated** by `scripts/routes.mjs` (the same scri
 `npm run routes:check`), so the fix is one word in the generator, not a hand edit. That was
 already the documented plan (`docs/SECURITY_REVIEW.md` §S4).
 
-**Flipped to enforcing** (`Content-Security-Policy`), regenerated with `npm run routes:sync`,
-and verified:
+**Status: left REPORT-ONLY.** It was flipped to enforcing and verified, then put back on
+2026-10-05 — the project is still in development and the API origin is not final, while
+`connect-src` pins `https://holy-grills-backend.onrender.com`. An enforced policy against the
+wrong origin does not warn, it blocks every request, which reaches the user as a bare
+"Failed to fetch" on login. Flip it when the API origin is settled (see the checklist below).
 
 - `scripts/routes.mjs` reads the inline script's SHA-256 **out of `index.html` at build
   time**, so the hash cannot drift from the file. Verified by hand: the served page's inline
@@ -367,6 +370,9 @@ and verified:
 
 The four smoke assertions that were pinned to the old report-only name were updated to pin
 the enforced state instead.
+
+**Local development is never affected either way** — `vercel.json` is read by Vercel only,
+never by the vite dev server.
 
 **How to verify before it reaches production:** this branch gets its own Vercel **preview**
 deployment. Load the preview, open DevTools, and check the console for CSP violations on
