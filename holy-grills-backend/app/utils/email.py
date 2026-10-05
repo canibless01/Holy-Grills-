@@ -222,6 +222,8 @@ Hi {d.get('name', 'there')},
 
 Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.
 
+Sign up here to join and earn HP: {d.get('invite_link', '')}
+
 — {d.get('app_tagline', '')}
 """,
     },

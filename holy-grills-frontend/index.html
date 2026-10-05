@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Primary meta -->
+    <title>Holy Grills 🔥 — FUTA's Only Flame Grill</title>
+    <meta name="description" content="FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards." />
+    <meta name="theme-color" content="#FF4E2D" />
+    <meta name="author" content="Holy Grills" />
+    <meta name="keywords" content="Holy Grill, FUTA, flame grill, chicken, wings, kebabs, food delivery, student food, Holy Points, rewards, leaderboard" />
+
+    <!-- PWA / mobile web app -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Holy Grills" />
+    <meta name="application-name" content="Holy Grills" />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23FF4E2D'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle' fill='white'%3E%F0%9F%94%A5%3C/text%3E%3C/svg%3E" />
+
+    <!-- Canonical -->
+    <link rel="canonical" href="https://holygrill.app/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Holy Grills" />
+    <meta property="og:title" content="Holy Grills 🔥 — FUTA's Only Flame Grill" />
+    <meta property="og:description" content="FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards." />
+    <meta property="og:url" content="https://holygrill.app/" />
+    <meta property="og:image" content="https://holygrill.app/og-cover.jpg" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Holy Grills 🔥 — FUTA's Only Flame Grill" />
+    <meta name="twitter:description" content="FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards." />
+    <meta name="twitter:image" content="https://holygrill.app/og-cover.jpg" />
+
+    <!-- Fonts are self-hosted (S9): @fontsource-variable/nunito is imported by
+         src/main.tsx, so no third-party font origin is contacted on page load.
+         Fraunces was loaded here but never referenced by any style — removed. -->
+    <!-- Performance: preconnect to origins -->
+    <link rel="preconnect" href="https://images.unsplash.com" />
+    <link rel="dns-prefetch" href="https://images.unsplash.com" />
+
+    <!-- Structured data: Restaurant -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Restaurant",
+      "name": "Holy Grills",
+      "description": "FUTA's Only Flame Grill — Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards.",
+      "servesCuisine": ["Grill", "Chicken", "Fast Food"],
+      "priceRange": "₦",
+      "areaServed": "FUTA",
+      "url": "https://holygrill.app/",
+      "logo": "https://holygrill.app/og-cover.jpg",
+      "image": "https://holygrill.app/og-cover.jpg",
+      "acceptsReservations": "False"
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Dev-sandbox guard: run before the app modules execute.
+         If this page is served by the Vite dev server, any service worker left
+         behind by an earlier session is torn down along with its caches. A
+         cache-serving worker in development can serve a stale React bundle
+         alongside a fresh react-dom, which crashes the app on load. -->
+    <script>
+      (function () {
+        try {
+          if (!('serviceWorker' in navigator)) return;
+          // The dev server injects /@vite/client; production builds never have it.
+          if (!document.querySelector('script[src*="/@vite/client"]')) return;
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            return Promise.all(regs.map(function (r) { return r.unregister(); }));
+          }).then(function () {
+            return window.caches ? caches.keys() : [];
+          }).then(function (keys) {
+            return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+          }).catch(function () {});
+        } catch (e) { /* non-fatal */ }
+      })();
+    </script>
+  </body>
+</html>

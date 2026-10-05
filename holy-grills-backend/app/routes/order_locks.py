@@ -2,11 +2,26 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
-from app.utils.settings import get_validated_setting, SettingError
-from datetime import datetime, timezone, date
+from app.utils.settings import get_validated_setting, setting_or_config, SettingError
+from datetime import datetime, timezone, date, timedelta
 from app.utils.tz import today_wat
 
 order_locks_bp = Blueprint("order_locks", __name__)
+
+
+def _validate_lock_date(locked_date: date) -> tuple[bool, str | None]:
+    """Validate that locked_date is WAT tomorrow through day+7 inclusive.
+    Returns (is_valid, error_message). Same-day is disallowed.
+    """
+    today = today_wat()
+    tomorrow = today + timedelta(days=1)
+    max_date = today + timedelta(days=7)
+    if locked_date < tomorrow:
+        return False, MSG.ORDER_LOCK_DATE_FUTURE
+    if locked_date > max_date:
+        # Reuse future error or craft a specific one; use MSG if available, else generic
+        return False, getattr(MSG, "ORDER_LOCK_DATE_OUT_OF_RANGE", f"Locked date must be between {tomorrow.isoformat()} and {max_date.isoformat()} (WAT)")
+    return True, None
 
 
 @order_locks_bp.route("", methods=["POST"])
@@ -42,8 +57,9 @@ def create_lock():
     except ValueError:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_INVALID}), 400
 
-    if locked_date <= today_wat():
-        return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
+    ok, err = _validate_lock_date(locked_date)
+    if not ok:
+        return jsonify({"error": err}), 400
 
     # Prevent users from having multiple active locks
     existing = db.table("order_locks").select("id").eq("user_id", g.user_id).eq("status", "active").execute()
@@ -62,14 +78,26 @@ def create_lock():
     try:
         if reward_type == "discount":
             env_default = float(current_app.config.get("ORDER_LOCK_DEFAULT_DISCOUNT_PCT", 10.0))
+            # `order_lock_default_discount_pct` is the name the admin UI and the
+            # frontend use; the shorter legacy name is still honoured so an
+            # existing row keeps working.
             discount_pct = get_validated_setting(
                 db,
-                "order_lock_default_discount",
-                default=env_default,
+                "order_lock_default_discount_pct",
+                default=None,
                 minimum=1.0,
                 maximum=50.0,
                 required=False
             )
+            if discount_pct is None:
+                discount_pct = get_validated_setting(
+                    db,
+                    "order_lock_default_discount",
+                    default=env_default,
+                    minimum=1.0,
+                    maximum=50.0,
+                    required=False
+                )
         elif reward_type == "hp":
             # order_lock_max_hp setting
             max_hp_setting = get_validated_setting(
@@ -218,7 +246,11 @@ def reschedule_lock(lock_id):
         return jsonify({"error": MSG.ORDER_LOCK_NOT_FOUND}), 404
     if lock.get("status") != "active":
         return jsonify({"error": MSG.ORDER_LOCK_NOT_ACTIVE}), 400
-    max_reschedules = current_app.config.get("ORDER_LOCK_MAX_RESCHEDULES", 1)
+    max_reschedules = setting_or_config(
+        db, "order_lock_max_reschedules",
+        current_app.config.get("ORDER_LOCK_MAX_RESCHEDULES", 1),
+        minimum=0, maximum=10,
+    )
     if int(lock.get("reschedule_count", 0)) >= max_reschedules:
         return jsonify({"error": MSG.ORDER_LOCK_RESCHEDULE_LIMIT}), 400
 
@@ -230,8 +262,9 @@ def reschedule_lock(lock_id):
         new_date = date.fromisoformat(new_date_str)
     except ValueError:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_INVALID}), 400
-    if new_date <= today_wat():
-        return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
+    ok, err = _validate_lock_date(new_date)
+    if not ok:
+        return jsonify({"error": err}), 400
 
     now = datetime.now(timezone.utc).isoformat()
     current_count = int(lock.get("reschedule_count", 0))

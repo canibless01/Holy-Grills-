@@ -2104,6 +2104,42 @@ def grant_monthly_tier_perks(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
+@celery_app.task(name="app.tasks.scheduled.sweep_pending_squad_hp", bind=True, max_retries=3)
+@with_cron_logging("sweep-pending-squad-hp")
+def sweep_pending_squad_hp(self):
+    """
+    Runs: Daily.
+    B-7b: Pays any pending_squad_hp row whose email now matches an existing account,
+    so a stuck row heals itself. Same claim logic as sign-up claim in auth_service.register.
+    """
+    db = get_db()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "sweep_pending_squad_hp"})
+    except Exception as e:
+        logger.error("sweep_pending_squad_hp: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
+
+    try:
+        from app.services.squad_service import sweep_pending_squad_hp as _sweep
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            res = _sweep(campus_id=campus_id)
+            results[campus_id] = res
+        # Also sweep global (no campus filter) for any rows without campus_id
+        res_global = _sweep(campus_id=None)
+        results["global"] = res_global
+        return results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "sweep_pending_squad_hp"})
+        except Exception as exc:
+            logger.warning("cron: could not release the job lock after this run (%s) — the job may be skipped next time", exc)
+
+
 @celery_app.task(name="app.tasks.scheduled.send_newsletter_campaigns", bind=True, max_retries=3)
 @with_cron_logging("send-newsletter-campaigns")
 def send_newsletter_campaigns(self):

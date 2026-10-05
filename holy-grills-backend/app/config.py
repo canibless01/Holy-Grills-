@@ -1,7 +1,34 @@
 import os
+import re
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+# Required before the app can start at all.
+#
+# These three were read with os.environ[...] inside the class body, which runs at
+# IMPORT time. With any of them unset the process died with a bare
+# `KeyError: 'SUPABASE_URL'` and no explanation — the service looked like it had
+# deployed fine (pip install succeeds) but gunicorn never came up, so the API
+# list simply never loaded. Fail loudly and name everything that is missing.
+_REQUIRED_ENV = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY")
+
+
+def _assert_required_env():
+    missing = [name for name in _REQUIRED_ENV if not (os.environ.get(name) or "").strip()]
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variable(s): "
+            + ", ".join(missing)
+            + ". The backend cannot start without them — set them on the host "
+            "(Render → your service → Environment) and restart. "
+            "Values come from Supabase → Project Settings → API. See .env.example."
+        )
+
+
+_assert_required_env()
 
 
 class Config:
@@ -12,7 +39,9 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES", 2592000))
     JWT_REFRESH_WINDOW_MINUTES = int(os.environ.get("JWT_REFRESH_WINDOW_MINUTES", 5))
 
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    # Outbound links (password reset, verification) are built from this, so a
+    # stale or unset value mails users a link that does not resolve.
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://holy-grills.vercel.app")
     AUTH_RESET_REDIRECT_PATH = os.environ.get("AUTH_RESET_REDIRECT_PATH", "/reset-password")
     AUTH_VERIFY_REDIRECT_PATH = os.environ.get("AUTH_VERIFY_REDIRECT_PATH", "/login")
     APP_NAME = os.environ.get("APP_NAME", "Holy Grills")
@@ -29,15 +58,38 @@ class Config:
     frontend_env = os.environ.get("FRONTEND_URL")
     if frontend_env and frontend_env.strip() != "*":
         origins_set.add(frontend_env.strip())
-    origins_set.update([
-        "https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app",
-        "https://holy-grills-frontend.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ])
-    CORS_ORIGINS = list(origins_set)
+    # Origins are environment-driven, with the known deployments as the default
+    # so the API is not left on a wildcard. CORS_ORIGINS / ALLOWED_ORIGINS /
+    # FRONTEND_URL (comma-separated) override this list entirely; a "*" in any of
+    # them is ignored — pinning the list is the point.
+    #
+    DEFAULT_CORS_ORIGINS = (
+        "https://holy-grills.vercel.app",
+        "https://holygrill.app",
+        "https://www.holygrill.app",
+        # Local dev: vite dev server, vite preview, the static smoke server.
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:4174", "http://127.0.0.1:4174",
+    )
+
+    # The known origins are always allowed; env entries (CORS_ORIGINS /
+    # ALLOWED_ORIGINS / FRONTEND_URL) only ADD to them — so a stale or missing
+    # FRONTEND_URL can never lock the real frontend out of its own API.
+    CORS_ORIGINS = sorted(set(DEFAULT_CORS_ORIGINS) | origins_set)
+
+    # Vercel PREVIEW deployments get a fresh random host per push
+    # (holy-grills-<hash>.vercel.app, holy-grills-git-<branch>-<scope>.vercel.app),
+    # so a fixed allow-list can never keep up and every branch preview was
+    # blocked by CORS — "Failed to fetch" on login, with the API itself fine.
+    #
+    # flask_cors' try_match() calls pattern.match() for any compiled regex in the
+    # origins list, so a pattern covers every preview without opening CORS up.
+    # Turn it off with ALLOW_VERCEL_PREVIEWS=false once you no longer need it.
+    ALLOW_VERCEL_PREVIEWS = os.environ.get("ALLOW_VERCEL_PREVIEWS", "true").strip().lower() != "false"
+    CORS_ORIGIN_PATTERNS = (
+        [re.compile(r"^https://holy-grills[a-z0-9-]*\.vercel\.app$")] if ALLOW_VERCEL_PREVIEWS else []
+    )
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
@@ -50,7 +102,10 @@ class Config:
     FLUTTERWAVE_WEBHOOK_SECRET = os.environ.get("FLUTTERWAVE_WEBHOOK_SECRET", "")
 
     # Cloudinary — used by the direct-upload signature endpoint (admins: any folder; everyone else: their own profile_photos/<user_id> folder).
-    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+    # The cloud name is the account's public identifier, not a secret. It falls back
+    # to the live account so uploads keep working when the env var is absent; a value
+    # in the environment still wins.
+    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME") or "risvlfhx"
     CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
     CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 

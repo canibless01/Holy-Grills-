@@ -1,9 +1,11 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
+from app.middleware.rate_limit import rate_limit
 from app.utils.email import send_qr_ticket_email
 from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from app.utils.validators import (
     validate_choice, validate_non_negative_number, validate_uuid,
     validate_datetime_order, sanitize_string,
@@ -207,14 +209,14 @@ def checkin(event_id):
         if existing_checkin:
             return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
 
-        # Insert check-in record
+        # Insert check-in record - B-6: use service client for the insert only, after validation
         checked_by = getattr(g, "user_id", None)
         try:
-            db.table("event_checkins").insert({
+            get_db().table("event_checkins").insert({
                 "ticket_id": ticket_id_str,
                 "checked_in_by": checked_by,
                 "qr_code": clean_token or ticket_id_str,
-            })
+            }).execute()
         except SupabaseError as insert_err:
             err_str = str(insert_err)
             if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
@@ -245,10 +247,16 @@ def checkin(event_id):
                 was_guest_linked = True
 
             event = db.table("events").select("hp_reward,hp_per_attendee,title").eq("id", event_id).single().execute()
+            # Fallback HP for an event that sets no reward of its own: the seeded
+            # setting decides, env is the floor — so the admin UI row is real.
+            default_checkin_hp = setting_or_config(
+                db, "event_checkin_hp", current_app.config.get("EVENT_CHECKIN_HP", 50),
+                minimum=0, maximum=10000,
+            )
             hp_amount = (
                 (event.get("hp_per_attendee") or event.get("hp_reward"))
-                if event else current_app.config.get("EVENT_CHECKIN_HP", 50)
-            ) or current_app.config.get("EVENT_CHECKIN_HP", 50)
+                if event else default_checkin_hp
+            ) or default_checkin_hp
 
             hp_result = earn_pending_hp(
                 user_id=target_user_id,
@@ -1021,6 +1029,7 @@ def update_catering_request(request_id):
 
 
 @events_bp.route("/catering-requests", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 def submit_catering_request():
     """
     Submit a catering / event partnership request.

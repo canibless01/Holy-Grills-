@@ -8,6 +8,7 @@ from app.services.wallet_service import get_wallet
 from app.services.payment_service import initialize_payment
 from app.db import get_db, get_user_client
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 import uuid
 
 wallet_bp = Blueprint("wallet", __name__)
@@ -74,7 +75,11 @@ def fund_via_card():
     import math
     data = request.get_json(silent=True) or {}
     from flask import current_app
-    min_topup = current_app.config.get("WALLET_MIN_CARD_TOPUP", 100)
+    min_topup = setting_or_config(
+        db, "wallet_min_card_topup",
+        current_app.config.get("WALLET_MIN_CARD_TOPUP", 100),
+        minimum=0,
+    )
     try:
         amount = float(data.get("amount", 0))
     except (TypeError, ValueError):

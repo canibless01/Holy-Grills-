@@ -1,0 +1,350 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════
+   HOLY GRILL — DESIGN SYSTEM (single source of truth)
+   Brand — warm food palette
+     Primary Red   #E70E0E
+     Accent Yellow #F2B84B
+     Deep Brown    #6A1F00
+     Beige         #E5D6BD   soft bg #F3EBDD
+   Radius base 1rem · gradients & shadows per spec
+   ═══════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  :root {
+    /* ── FONT ── */
+    /* 'Nunito Variable' is self-hosted via @fontsource-variable/nunito (S9);
+       plain 'Nunito' stays in the stack for anyone who has it installed. */
+    --font-display: 'Nunito Variable', 'Nunito', ui-sans-serif, system-ui, sans-serif;
+    --font-body:    'Nunito Variable', 'Nunito', ui-sans-serif, system-ui, sans-serif;
+    --font-heading: 'Nunito Variable', 'Nunito', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+    /* ── BRAND — warm food palette ── */
+    /* Primary Red #E70E0E */
+    --primary:             0 88% 48%;
+    --primary-foreground:  0 0% 100%;
+    --primary-hover:       0 88% 42%;
+    --primary-50:          0 88% 48%;
+    --primary-100:         0 88% 48%;
+    --primary-200:         0 0% 100%;
+
+    /* Accent Yellow #F2B84B */
+    --accent:              39 86% 62%;
+    --accent-foreground:  18 100% 12%;
+
+    /* Deep Brown #6A1F00 */
+    --brand-brown:         18 100% 21%;
+    --brand-brown-foreground: 38 50% 95%;
+
+    /* Neutral Beige #E5D6BD & soft bg #F3EBDD */
+    --beige:               36 47% 82%;
+    --beige-soft:          38 56% 91%;
+
+    /* ── SURFACES — light, warm ── */
+    --background:          38 56% 95%;
+    --foreground:          18 100% 12%;
+    --card:                0 0% 100%;
+    --card-foreground:     18 100% 12%;
+    --popover:             0 0% 100%;
+    --popover-foreground:  18 100% 12%;
+    --secondary:           36 47% 88%;
+    --secondary-foreground:18 100% 21%;
+    --muted:               38 40% 92%;
+    --muted-foreground:    18 30% 35%;
+    --border:              36 35% 82%;
+    --input:               36 35% 82%;
+    --ring:                0 88% 48%;
+
+    --destructive:         0 88% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success:             142 65% 38%;
+    --success-foreground:  0 0% 100%;
+
+    /* ── RADIUS ── */
+    --radius:              1rem;   /* design spec base */
+    --radius-sm:           8px;    /* inputs, badges */
+    --radius-md:           12px;
+    --radius-lg:           24px;   /* hero, modals */
+    --radius-pill:         9999px;
+    --radius-menu-card:    16px;   /* menu / item / reward cards */
+    --radius-detail-card:  12px;   /* detail-page cards */
+    --radius-button:       30px;   /* buttons — other pages */
+    --radius-button-home:  12px;   /* buttons — homepage only */
+
+    /* ── SPACING ── */
+    --space-xs:  4px;
+    --space-sm:  8px;
+    --space-md:  16px;
+    --space-lg:  24px;
+    --space-xl:  32px;
+    --space-2xl: 48px;
+
+    /* ── GRADIENTS (per spec) ── */
+    --gradient-cta:  linear-gradient(135deg, #E70E0E, #F2B84B);
+    --gradient-fire: linear-gradient(135deg, #E70E0E, #F2B84B);
+    --gradient-card: linear-gradient(135deg, #F2B84B, #E5D6BD);
+    --gradient-dark: linear-gradient(135deg, #6A1F00, #1F0A00);
+    --gradient-soft: linear-gradient(135deg, #F3EBDD, #E5D6BD);
+    --gradient-gold: linear-gradient(135deg, #F2B84B, #E5D6BD);
+    /* Brand block — deep brown bleeding into primary red. Used for the profile
+       menu header, where the tier ring needs a dark bed to read against. */
+    --gradient-brand: linear-gradient(135deg, #6A1F00 0%, #E70E0E 100%);
+
+    /* ── SHADOWS ── */
+    --shadow-glow: 0 10px 30px -10px hsl(0 88% 48% / 0.35);
+    --shadow-card: 0 8px 24px -8px hsl(18 100% 12% / 0.12);
+    --shadow-tab:  0 -8px 24px -6px hsl(18 100% 12% / 0.10);
+
+    --icon-color: 18 100% 12%;
+    --text-color: 18 100% 12%;
+
+    --chart-1: 0 88% 48%;
+    --chart-2: 39 86% 62%;
+    --chart-3: 36 47% 82%;
+    --chart-4: 18 100% 12%;
+    --chart-5: 18 100% 21%;
+
+    /* ── SIDEBAR (admin) ── */
+    --sidebar-background: 18 100% 12%;
+    --sidebar-foreground: 38 50% 90%;
+    --sidebar-primary: 0 88% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 18 80% 18%;
+    --sidebar-accent-foreground: 38 50% 95%;
+    --sidebar-border: 18 60% 22%;
+    --sidebar-ring: 39 86% 62%;
+  }
+
+  .dark {
+    --background:          18 100% 12%;
+    --foreground:          38 56% 95%;
+    --card:                18 80% 16%;
+    --card-foreground:     38 56% 95%;
+    --popover:             18 80% 16%;
+    --popover-foreground:  38 56% 95%;
+    --primary:             0 88% 48%;
+    --primary-foreground:  0 0% 100%;
+    --primary-hover:       0 88% 42%;
+    --secondary:           18 80% 18%;
+    --secondary-foreground: 38 56% 95%;
+    --muted:               18 80% 18%;
+    --muted-foreground:    38 40% 80%;
+    --accent:              39 86% 62%;
+    --accent-foreground:   18 100% 12%;
+    --destructive:         0 88% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border:              18 80% 22%;
+    --input:               18 80% 22%;
+    --ring:                0 88% 48%;
+    --icon-color:          38 56% 95%;
+    --text-color:          38 56% 95%;
+  }
+
+  /* ── ADMIN PANEL — scoped theme override ──
+     The KDS reference was for layout cleanliness & card shape, NOT a new
+     color palette. Admin keeps the brand identity (warm red #E70E0E, beige,
+     deep brown, Nunito) inherited from :root, and only borrows the cleaner
+     24px card radius from the reference. No invented colors. */
+  .admin-scope {
+    --radius-menu-card: 24px;
+  }
+
+  /* ── ADMIN PANEL — long-value containment ──────────────────────────────────
+     A flex item's automatic minimum size is its min-content width. That means
+     a long value — a JSON blob, a URL, an email, a reference — inside a `.flex`
+     row pushes the row (and the page) wider than the viewport, and neither
+     `truncate` nor `break-words` can stop it: `overflow-wrap: break-word` never
+     shrinks an item below min-content on its own. That is what made long
+     system-setting values and brand-partnership emails break the page margin
+     on mobile *and* desktop.
+
+     `min-width: 0` unlocks the shrink; only then does `truncate` render its
+     ellipsis and `break-words` wrap the long run. Applied to flex children
+     that were already asking to be clipped or wrapped, so nothing that
+     intentionally keeps its width is affected. */
+  .admin-scope .flex > .truncate,
+  .admin-scope .inline-flex > .truncate,
+  .admin-scope .flex > .break-words,
+  .admin-scope .inline-flex > .break-words,
+  .admin-scope .flex > .flex-1,
+  .admin-scope .inline-flex > .flex-1 {
+    min-width: 0;
+  }
+
+  /* A wrapped long value keeps the card's rounded corners inside the page. */
+  .admin-scope .break-words {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer components {
+  /* HolyGrill component primitives */
+  .hg-card {
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-menu-card);
+    padding: var(--space-md);
+  }
+  .hg-section-title { font-weight: 800; font-size: 0.875rem; color: hsl(var(--foreground)); }
+  .hg-eyebrow { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(var(--primary)); }
+  .hg-body { font-size: 0.875rem; font-weight: 400; color: hsl(var(--foreground)); }
+  .hg-caption { font-size: 0.75rem; font-weight: 400; color: hsl(var(--muted-foreground)); }
+}
+
+@layer utilities {
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .text-balance { text-wrap: balance; }
+
+  /* ─── Gradient utilities (per spec) ─── */
+  .text-gradient-fire {
+    background: var(--gradient-cta);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .bg-gradient-cta   { background: var(--gradient-cta); }
+  .bg-gradient-fire { background: var(--gradient-fire); }
+  .bg-gradient-card { background: var(--gradient-card); }
+  .bg-gradient-dark { background: var(--gradient-dark); }
+  .bg-gradient-soft { background: var(--gradient-soft); }
+  .bg-gradient-gold { background: var(--gradient-gold); }
+  .bg-gradient-brand { background: var(--gradient-brand); }
+  .glass { backdrop-filter: blur(12px); background: rgba(255, 254, 252, 0.7); }
+  .shimmer-bg {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    background-size: 200% 100%;
+  }
+
+  /* ─── Shadow utilities (per spec) ─── */
+  .shadow-glow { box-shadow: var(--shadow-glow); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .shadow-tab  { box-shadow: var(--shadow-tab); }
+
+  /* ─── Safe area / tab bar ─── */
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .with-tabbar { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+
+  /* ─── One press language — every tappable card responds the same way:
+         a tiny, fast scale-down on press so the whole app feels one-handed
+         and consistent (replaces the mix of active:scale-95 / 0.99 / hover
+         scale-up that was scattered across pages). ─── */
+  .hg-press {
+    transition: transform 160ms ease-out, opacity 160ms ease-out, box-shadow 160ms ease-out;
+    will-change: transform;
+  }
+  .hg-press:active { transform: scale(0.96); }
+
+  /* ─── Custom Form Field (per spec) ─── */
+  .shad-input {
+    @apply w-full pl-10 pr-4 py-2.5 rounded-lg bg-secondary border border-border
+           text-foreground text-sm
+           placeholder:text-muted-foreground
+           focus:outline-none focus:ring-2 focus:ring-primary/50
+           focus-visible:ring-0 focus-visible:outline-none
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .shad-input.no-icon { @apply pl-4; }
+
+  .shad-text-area {
+    @apply min-h-[120px] w-full rounded-lg border border-border bg-secondary
+           px-4 py-2.5 text-sm text-foreground
+           placeholder:text-muted-foreground resize-none
+           focus:outline-none focus:ring-2 focus:ring-primary/50
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .input-phone {
+    @apply flex h-[42px] w-full items-center rounded-lg border border-border
+           bg-secondary px-3 text-sm text-foreground
+           placeholder:text-muted-foreground
+           focus-within:ring-2 focus-within:ring-primary/50;
+  }
+  .input-phone .PhoneInputInput {
+    @apply flex-1 bg-transparent text-sm text-foreground
+           placeholder:text-muted-foreground outline-none;
+  }
+  .input-phone .PhoneInputCountrySelect {
+    @apply bg-secondary text-foreground outline-none mr-1;
+  }
+
+  .date-picker { @apply w-full; }
+  .date-picker .react-datepicker__input-container input {
+    @apply w-full bg-transparent px-3 py-2.5 text-sm text-foreground
+           placeholder:text-muted-foreground outline-none;
+  }
+
+  .shad-select-trigger {
+    @apply h-[42px] w-full rounded-lg border border-border bg-secondary
+           px-3 text-sm text-foreground
+           placeholder:text-muted-foreground
+           focus:outline-none focus:ring-2 focus:ring-primary/50
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .shad-select-content {
+    @apply z-50 overflow-hidden rounded-lg border border-border
+           bg-popover text-popover-foreground;
+    box-shadow: var(--shadow-card);
+  }
+  .shad-form-label { @apply block text-xs text-muted-foreground mb-1; }
+  .shad-error { @apply text-xs font-medium text-destructive mt-1; }
+  .checkbox-label {
+    @apply text-sm text-foreground leading-none cursor-pointer select-none
+           peer-disabled:cursor-not-allowed peer-disabled:opacity-50;
+  }
+
+  /* ── TIER RING LADDER ──
+     One geometry, four materials. Every ring is the same circle with the same
+     inner gap — only the band gets thicker and the material hotter as a member
+     climbs, so a tier is readable at a glance and progress feels like the halo
+     heating up: bare → warm matte → bright with glow → living gold. */
+  .tier-ring-ember {
+    background: linear-gradient(135deg, #DCC6A9 0%, #B28F6C 100%);
+  }
+  .tier-ring-flame {
+    background: linear-gradient(135deg, #F2B84B 0%, #F2542D 55%, #E70E0E 100%);
+  }
+  .tier-ring-blaze {
+    background: linear-gradient(135deg, #FFE9A8 0%, #F2B84B 40%, #E70E0E 100%);
+  }
+  .tier-ring-holy {
+    background: linear-gradient(135deg, #F2B84B 0%, #FFD700 25%, #ECA829 50%, #FFD700 75%, #F2B84B 100%);
+    background-size: 200% 200%;
+    animation: gold-shimmer 3s ease-in-out infinite;
+    box-shadow: 0 0 16px hsl(51 100% 50% / 0.8);
+  }
+
+  /* Holy tier — animated gold shimmer for check-in card & premium CTAs */
+  .tier-shimmer-holy {
+    background: linear-gradient(135deg, #F2B84B 0%, #FFD700 25%, #ECA829 50%, #FFD700 75%, #F2B84B 100%);
+    background-size: 200% 200%;
+    animation: gold-shimmer 3s ease-in-out infinite;
+  }
+  @keyframes gold-shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+}

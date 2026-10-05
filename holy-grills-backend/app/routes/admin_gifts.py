@@ -8,7 +8,7 @@ PATCH  /admin/settings/<key>             — update a system setting
 """
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role, resolve_scoped_campus_id
-from app.db import get_user_client
+from app.db import get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -100,6 +100,30 @@ def update_first_order_gift(gift_id):
 
 # ── System Settings ───────────────────────────────────────────────────────────
 
+def _validator_refusal(exc):
+    """The sentence from the database validator, or None if this wasn't it.
+
+    `hg_validate_system_setting` (BEFORE INSERT OR UPDATE on system_settings) is
+    the range check for every numeric setting. When it refuses a value it RAISEs
+    with a message written for the person editing it ("... must be between 0 and
+    1"), which Postgres reports as code P0001 — and the app-wide error handler can
+    only turn that into a generic 400/500, so the admin sees "Something went
+    wrong" instead of the reason. The settings routes catch it here and hand the
+    sentence through verbatim.
+
+    Everything else — RLS denial, a missing column, the network — returns None and
+    falls through to the global handler unchanged, so this cannot become a way to
+    surface arbitrary database text.
+    """
+    details = exc.details if isinstance(getattr(exc, "details", None), dict) else {}
+    code = str(details.get("code") or "")
+    message = str(exc) or ""
+    hint = str(details.get("hint") or "")
+    if code == "P0001" or "hg_validate_system_setting" in message or "hg_validate_system_setting" in hint:
+        return message or MSG.SETTING_VALUE_REJECTED
+    return None
+
+
 def require_settings_write_permission(g, jsonify, campus_id):
     """Insert after reading campus_id from the request body, at the top of any
     system_settings admin-write route. Global settings (campus_id is None) stay
@@ -165,6 +189,13 @@ def update_setting(key):
                 return jsonify({"error": MSG.HP_MULTIPLIER_INVALID}), 400
         except (TypeError, ValueError):
             return jsonify({"error": MSG.HP_MULTIPLIER_INVALID}), 400
+    if key == "squad_hp_bonus_pct":
+        try:
+            iv = int(str(value))
+            if iv < 0 or iv > 100:
+                return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
 
     update_payload = {
         "value": value,
@@ -173,10 +204,23 @@ def update_setting(key):
     }
     if "description" in data:
         update_payload["description"] = data["description"]
+    # is_public decides whether students can read this key at all: the public
+    # config route (GET /storefront/config/public) is the ONLY settings source
+    # available to a signed-out visitor, and it filters on this flag. The admin
+    # screen shows a Public/Private badge per row and toggles it here.
+    if "is_public" in data:
+        update_payload["is_public"] = bool(data["is_public"])
 
     q = db.table("system_settings").eq("key", key)
     q = q.is_("campus_id", "null") if not campus_id else q.eq("campus_id", campus_id)
-    q.update(update_payload)
+    try:
+        q.update(update_payload)
+    except SupabaseError as exc:
+        refusal = _validator_refusal(exc)
+        if refusal is None:
+            raise
+        logger.warning("settings: %s refused by hg_validate_system_setting: %s", key, refusal)
+        return jsonify({"error": refusal}), 400
 
     # When hp_multiplier is set above 1, broadcast to the affected users immediately
     # (that campus's users for a per-campus change, everyone for a global one)
@@ -241,13 +285,36 @@ def create_setting():
         return jsonify({"error": MSG.SETTING_KEY_EXISTS}), 409
 
     now = datetime.now(timezone.utc).isoformat()
-    result = db.table("system_settings").insert({
+    payload = {
         "key": key,
         "value": value,
         "description": data.get("description", ""),
         "campus_id": campus_id,
         "updated_at": now,
         "updated_by": g.user_id,
-    })
+    }
+    # New keys are public unless the caller says otherwise. A private row is
+    # invisible to the app it is meant to configure (students read settings
+    # only through the public config), which is exactly the trap the WhatsApp
+    # number fell into: saved, listed for admins, never used by the button.
+    payload["is_public"] = data.get("is_public") is not False
+    try:
+        try:
+            result = db.table("system_settings").insert(payload)
+        except SupabaseError as exc:
+            # Schema without the column — retry without it rather than failing
+            # the create.
+            if "is_public" in str(exc) and "is_public" in payload:
+                logger.warning("settings: system_settings has no is_public column — creating %s without it", key)
+                payload.pop("is_public")
+                result = db.table("system_settings").insert(payload)
+            else:
+                raise
+    except SupabaseError as exc:
+        refusal = _validator_refusal(exc)
+        if refusal is None:
+            raise
+        logger.warning("settings: new key %s refused by hg_validate_system_setting: %s", key, refusal)
+        return jsonify({"error": refusal}), 400
     row = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.SETTING_CREATED, "setting": row}), 201

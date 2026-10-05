@@ -2269,6 +2269,69 @@ def hp_report():
     }), 200
 
 
+@admin_bp.route("/hp/pending-squad", methods=["GET"])
+@require_role("admin")
+def hp_pending_squad():
+    """
+    Admin: unclaimed squad HP report (A9). Campus admin sees own campus, super_admin sees all.
+    Uses authenticated RPC `public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14)` — test-2 contract.
+    ---
+    tags: [Admin]
+    parameters:
+      - in: query
+        name: campus_id
+        type: string
+        description: Optional campus filter (super_admin only)
+      - in: query
+        name: stale_days
+        type: integer
+        default: 14
+        description: Age threshold for report (p_stale_days)
+    responses:
+      200:
+        description: Pending squad HP report
+    """
+    from app.middleware.auth import resolve_scoped_campus_id
+    from app.services.squad_service import get_pending_squad_hp_report as fallback_report
+
+    # Campus scoping is enforced inside the RPC via auth.uid() -> profiles role/campus_id.
+    # We still resolve for fallback path and for validation of super_admin ?campus_id= override.
+    scoped_campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    # p_stale_days is the only argument on test-2, defaults to 14
+    stale_days_raw = request.args.get("stale_days", "14")
+    try:
+        stale_days = int(stale_days_raw)
+        if stale_days < 0 or stale_days > 365:
+            raise ValueError()
+    except ValueError:
+        return jsonify({"error": "stale_days must be an integer between 0 and 365"}), 400
+
+    db = get_user_client()  # authenticated RPC per spec — required so auth.uid() resolves
+    try:
+        # Exact test-2 signature: public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14) RETURNS jsonb
+        # SECURITY DEFINER, EXECUTE granted to authenticated/service_role.
+        # Scoping (confirmed on test-2): looks up caller's role and campus_id from profiles using auth.uid().
+        # If caller isn't admin/super_admin → insufficient_privilege. super_admin sees all campuses.
+        # admin sees only rows where pending_squad_hp.campus_id = own campus. Only status='pending' included.
+        # Because it returns JSONB and already scopes, route must return it unchanged — no Flask campus filtering.
+        try:
+            rpc_result = db.rpc("get_pending_squad_hp_report", {"p_stale_days": stale_days})
+            if rpc_result is not None:
+                # Return JSONB as-is per requirement — do NOT mutate structure for campus filtering.
+                return jsonify(rpc_result), 200
+        except Exception as rpc_exc:
+            import logging
+            logging.getLogger(__name__).warning("hp_pending_squad: RPC get_pending_squad_hp_report failed, falling back: %s", rpc_exc)
+
+        # Fallback service-client report (used when RPC unavailable offline) — mimics same scoping logic
+        report = fallback_report(campus_id=scoped_campus_id, p_stale_days=stale_days)
+        # Fallback already includes p_stale_days, but ensure
+        report["p_stale_days"] = stale_days
+        return jsonify(report), 200
+    except Exception as e:
+        return db_error_response(e, "hp_pending_squad")
+
+
 @admin_bp.route("/campuses", methods=["GET"])
 @require_role("admin")
 def list_campuses():
