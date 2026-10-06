@@ -4,9 +4,11 @@
      with 1 earned badge: the backend put every *definition* in one list, so the
      UI had nothing to split on.
   2. A saved address could not be replayed at checkout — the API's field
-     allowlist silently dropped `type` / `gate_id` / `location_id`, and the
-     coordinates were stored as `latitude`/`longitude` while the client read
-     `lat`/`lng`. Both halves are pinned here.
+     allowlist silently dropped `delivery_type` / `delivery_location_id`, so
+     every saved address had them empty, and the coordinates were stored as
+     `latitude`/`longitude` while the client read `lat`/`lng`. Both halves are
+     pinned here. The two columns already exist on `user_addresses` (confirmed
+     against the live database), so no migration is involved.
 """
 
 import os
@@ -148,54 +150,195 @@ class BadgeSplitTest(unittest.TestCase):
         )
 
 
+class _RefChain:
+    """A `.table(...)` chain that RECORDS its filters, so a test can assert the
+    lookup was scoped by campus and is_active rather than answered blindly."""
+
+    def __init__(self, db, table):
+        self.db, self.table, self.filters, self._single = db, table, {}, False
+
+    def select(self, *_a, **_k):
+        return self
+
+    def eq(self, key, value):
+        self.filters[key] = value
+        return self
+
+    def limit(self, _n):
+        return self
+
+    def in_(self, _key, _values):
+        return self
+
+    def single(self):
+        self._single = True
+        return self
+
+    def execute(self):
+        return self.db.rows_for(self.table, self.filters)
+
+
+class _HostelGateDb:
+    """Answers `hostels` / `gates` lookups for the address validator.
+
+    `hostels` / `gates` map id -> campus_id, or id -> (campus_id, is_active) to
+    plant an inactive row.
+    """
+
+    def __init__(self, hostels=(), gates=()):
+        self.hostels, self.gates = dict(hostels), dict(gates)
+
+    def table(self, name):
+        return _RefChain(self, name)
+
+    def rows_for(self, table, filters):
+        source = self.hostels if table == "hostels" else self.gates if table == "gates" else {}
+        out = []
+        for rid, val in source.items():
+            campus, active = (val if isinstance(val, tuple) else (val, "true"))
+            if filters.get("id") not in (None, rid):
+                continue
+            if filters.get("campus_id") not in (None, campus):
+                continue
+            if filters.get("is_active") not in (None, active):
+                continue
+            out.append({"id": rid, "name": f"{table[:-1]}-{rid[:4]}", "campus_id": campus})
+        return out
+
+
 class AddressFieldValidationTest(unittest.TestCase):
-    """`_validate_address_fields` is the allowlist that used to drop the
-    delivery selection, so a saved address could not be replayed."""
+    """`_validate_address_fields` is the allowlist that used to drop the delivery
+    selection, so a saved address could not be replayed at checkout.
+
+    `user_addresses` stores `delivery_type` ('on_campus' | 'off_campus') and
+    `delivery_location_id` (a hostel id for on_campus, a gate id for off_campus —
+    the same meaning `orders.delivery_location_id` has). `create_order` re-reads
+    both from the saved address, so they have to survive the write.
+    """
+
+    CAMPUS = "11111111-1111-1111-1111-111111111111"
+    HOSTEL = "44444444-4444-4444-4444-444444444444"
+    GATE = "33333333-3333-3333-3333-333333333333"
 
     def setUp(self):
         self.app = create_app(config_map["production"])
+        self.db = _HostelGateDb(hostels={self.HOSTEL: self.CAMPUS},
+                                gates={self.GATE: self.CAMPUS})
 
-    def _validate(self, body):
-        return auth_routes._validate_address_fields(body)
+    def _validate(self, body, db=None):
+        return auth_routes._validate_address_fields(
+            body, db=db if db is not None else self.db, campus_id=self.CAMPUS)
 
+    # ── the delivery selection survives ──────────────────────────────────────
     def test_delivery_selection_is_kept(self):
         fields, err = self._validate({
             "label": "Home", "line1": "12 Adeyemi St", "city": "Akure",
             "delivery_type": "off_campus",
-            "gate_id": "33333333-3333-3333-3333-333333333333",
-            "delivery_location_id": "33333333-3333-3333-3333-333333333333",
+            "delivery_location_id": self.GATE,
         })
         self.assertIsNone(err)
         self.assertEqual("off_campus", fields["delivery_type"])
-        self.assertEqual("33333333-3333-3333-3333-333333333333", fields["gate_id"])
+        self.assertEqual(self.GATE, fields["delivery_location_id"])
 
-    def test_legacy_type_alias(self):
-        fields, err = self._validate({"type": "on_campus", "location_id": "44444444-4444-4444-4444-444444444444"})
+    def test_on_campus_hostel_is_kept(self):
+        fields, err = self._validate({
+            "delivery_type": "on_campus",
+            "delivery_location_id": self.HOSTEL,
+            "hostel": "Block A",
+        })
         self.assertIsNone(err)
         self.assertEqual("on_campus", fields["delivery_type"])
-        self.assertEqual("44444444-4444-4444-4444-444444444444", fields["location_id"])
+        self.assertEqual(self.HOSTEL, fields["delivery_location_id"])
+        self.assertEqual("Block A", fields["hostel"])
 
+    def test_legacy_type_alias_still_accepted(self):
+        """`type` was the field name the address form sent before this was fixed."""
+        fields, err = self._validate({
+            "type": "on_campus", "delivery_location_id": self.HOSTEL,
+        })
+        self.assertIsNone(err)
+        self.assertEqual("on_campus", fields["delivery_type"])
+        self.assertEqual(self.HOSTEL, fields["delivery_location_id"])
+
+    def test_type_without_a_location_is_allowed_but_stores_no_id(self):
+        """The form may submit the type before the user picks a hostel/gate."""
+        fields, err = self._validate({"delivery_type": "on_campus"})
+        self.assertIsNone(err)
+        self.assertEqual("on_campus", fields["delivery_type"])
+        self.assertIsNone(fields["delivery_location_id"])
+
+    def test_no_type_means_the_id_is_dropped(self):
+        """An id with no type has no meaning — hostel? gate? Store it as null."""
+        fields, err = self._validate({"delivery_location_id": self.GATE})
+        self.assertIsNone(err)
+        self.assertIsNone(fields["delivery_location_id"])
+
+    # ── validation ───────────────────────────────────────────────────────────
+    def test_bad_delivery_type_rejected(self):
+        fields, err = self._validate({"delivery_type": "banana"})
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_malformed_uuid_rejected(self):
+        fields, err = self._validate({"delivery_type": "off_campus",
+                                      "delivery_location_id": "not-a-uuid"})
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_blank_ref_becomes_null(self):
+        fields, err = self._validate({"delivery_type": "off_campus",
+                                      "delivery_location_id": ""})
+        self.assertIsNone(err)
+        self.assertIsNone(fields["delivery_location_id"])
+
+    def test_hostel_id_for_an_off_campus_address_is_rejected(self):
+        """The id must match the type, or checkout would replay a hostel as a gate."""
+        fields, err = self._validate({"delivery_type": "off_campus",
+                                      "delivery_location_id": self.HOSTEL})
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_gate_id_for_an_on_campus_address_is_rejected(self):
+        fields, err = self._validate({"delivery_type": "on_campus",
+                                      "delivery_location_id": self.GATE})
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_unknown_id_is_rejected(self):
+        fields, err = self._validate({"delivery_type": "off_campus",
+                                      "delivery_location_id": "99999999-9999-9999-9999-999999999999"})
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_inactive_gate_is_rejected(self):
+        db = _HostelGateDb(gates={self.GATE: (self.CAMPUS, "false")})
+        fields, err = self._validate({"delivery_type": "off_campus",
+                                      "delivery_location_id": self.GATE}, db=db)
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_gate_from_another_campus_is_rejected(self):
+        other = "22222222-2222-2222-2222-222222222222"
+        db = _HostelGateDb(gates={self.GATE: other})
+        fields, err = self._validate({"delivery_type": "off_campus",
+                                      "delivery_location_id": self.GATE}, db=db)
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    def test_no_campus_on_the_caller_cannot_be_proven_so_is_rejected(self):
+        """Without a campus we cannot prove the row belongs to the caller."""
+        fields, err = auth_routes._validate_address_fields(
+            {"delivery_type": "off_campus", "delivery_location_id": self.GATE},
+            db=self.db, campus_id=None)
+        self.assertIsNone(fields)
+        self.assertIsNotNone(err)
+
+    # ── unchanged behaviour ──────────────────────────────────────────────────
     def test_coordinates_survive(self):
         fields, err = self._validate({"latitude": 7.2954, "longitude": 5.1421})
         self.assertIsNone(err)
         self.assertEqual(7.2954, fields["latitude"])
         self.assertEqual(5.1421, fields["longitude"])
-
-    def test_blank_refs_become_null(self):
-        fields, err = self._validate({"delivery_type": "off_campus", "gate_id": "", "location_id": None})
-        self.assertIsNone(err)
-        self.assertIsNone(fields["gate_id"])
-        self.assertIsNone(fields["location_id"])
-
-    def test_bad_delivery_type_rejected(self):
-        fields, err = self._validate({"delivery_type": "somewhere"})
-        self.assertIsNone(fields)
-        self.assertIsNotNone(err)
-
-    def test_malformed_uuid_rejected(self):
-        fields, err = self._validate({"gate_id": "not-a-uuid"})
-        self.assertIsNone(fields)
-        self.assertIsNotNone(err)
 
     def test_unknown_keys_still_dropped(self):
         fields, err = self._validate({"label": "Home", "sneaky": "x", "is_admin": True})

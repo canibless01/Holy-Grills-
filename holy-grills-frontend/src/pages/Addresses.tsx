@@ -6,7 +6,7 @@ import OffCampusMap from '@/components/OffCampusMap';
 import AddressesSkeleton from '@/components/skeletons/AddressesSkeleton';
 import MascotStandee from '@/components/mascot/MascotStandee';
 
-const EMPTY_FORM = { label: '', type: 'on_campus', line1: '', city: 'Akure', state: 'Ondo', is_default: false, gate_id: '', location_id: '', lat: null, lng: null };
+const EMPTY_FORM = { label: '', type: 'on_campus', line1: '', hostel: '', city: 'Akure', state: 'Ondo', is_default: false, gate_id: '', location_id: '', lat: null, lng: null };
 
 export default function Addresses() {
   const [addresses, setAddresses] = useState([]);
@@ -49,16 +49,20 @@ export default function Addresses() {
     if (form.type === 'off_campus' && !form.line1.trim()) { setSaveError('Please enter your street address / description.'); return; }
     if (!form.city.trim()) { setSaveError('Please enter your city.'); return; }
     try {
-      // The backend persists the delivery selection (type + the referenced
-      // hostel/gate) so checkout can replay it. `gate_id` and `location_id` are
-      // sent separately as well as through `delivery_location_id`, because the
-      // API reads the explicit key first and only falls back to the alias.
+      // `user_addresses` stores exactly two columns for this: `delivery_type`
+      // ('on_campus' | 'off_campus') and `delivery_location_id` — a hostel id for
+      // on_campus, a gate id for off_campus, the same meaning
+      // `orders.delivery_location_id` has. create_order re-reads both from the
+      // saved address, so sending anything else (or nothing) is what left every
+      // saved address unreplayable at checkout.
+      //
+      // `gate_id` here is a FORM field, not a column: on-campus it is the gate the
+      // hostel sits behind (used only to filter the hostel list), and off-campus
+      // it is the nearest gate the pin resolved to — which IS the value persisted.
       const data = {
         ...form,
         delivery_type: form.type,
-        gate_id: form.type === 'off_campus' ? (form.gate_id || null) : (form.gate_id || null),
-        location_id: form.type === 'on_campus' ? (form.location_id || null) : null,
-        delivery_location_id: form.type === 'on_campus' ? form.location_id : form.gate_id,
+        delivery_location_id: form.type === 'on_campus' ? (form.location_id || null) : (form.gate_id || null),
         latitude: form.lat,
         longitude: form.lng,
       };
@@ -66,6 +70,9 @@ export default function Addresses() {
         const loc = hostels.find(l => l.id === form.location_id);
         const gate = gates.find(g => g.id === form.gate_id);
         data.line1 = `${loc?.name || ''}, ${gate?.name || ''}`.replace(/^,\s*|,\s*$/g, '').trim();
+        // The hostel name is the only free-text record of which hostel this was;
+        // checkout falls back to matching it when an old row has no id.
+        data.hostel = loc?.name || '';
       }
       if (editing) {
         await liveApi.addresses.update(editing, data);
@@ -114,7 +121,25 @@ export default function Addresses() {
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{addr.line1}, {addr.city}, {addr.state}</p>
               </div>
               <div className="flex gap-1 shrink-0">
-                <button onClick={() => { setEditing(addr.id); setForm({ ...addr, type: addr.delivery_type || addr.type || 'on_campus', gate_id: addr.gate_id || '', location_id: addr.location_id || '', lat: (addr.latitude ?? addr.lat) ?? null, lng: (addr.longitude ?? addr.lng) ?? null }); const la = addr.latitude ?? addr.lat; const ln = addr.longitude ?? addr.lng; setPin(la != null && ln != null ? { lat: la, lng: ln } : null); setShowForm(true); }} className="p-2 rounded-xl hover:bg-muted transition">
+                <button onClick={() => {
+                  // Read back what was actually persisted. `delivery_location_id`
+                  // is a hostel id for on_campus and a gate id for off_campus, so
+                  // it restores `location_id` or `gate_id` respectively. Rows saved
+                  // before these were written have neither, and the hostel is then
+                  // recovered by name from `hostel`/`line1`.
+                  const type = addr.delivery_type || 'on_campus';
+                  const ref = addr.delivery_location_id || '';
+                  const hostelName = addr.hostel || (addr.line1 || '').split(',')[0] || '';
+                  const matched = type === 'on_campus'
+                    ? (hostels.find(l => l.id === ref)?.id || hostels.find(l => l.name === hostelName.trim())?.id || '')
+                    : ref;
+                  const gate = type === 'off_campus' ? ref : (hostels.find(l => l.id === ref)?.gate_id || '');
+                  setEditing(addr.id);
+                  setForm({ ...addr, type, gate_id: gate, location_id: matched, lat: (addr.latitude ?? addr.lat) ?? null, lng: (addr.longitude ?? addr.lng) ?? null });
+                  const la = addr.latitude ?? addr.lat; const ln = addr.longitude ?? addr.lng;
+                  setPin(la != null && ln != null ? { lat: la, lng: ln } : null);
+                  setShowForm(true);
+                }} className="p-2 rounded-xl hover:bg-muted transition">
                   <Edit2 className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button onClick={() => handleDelete(addr.id)} className="p-2 rounded-xl hover:bg-destructive/10 transition">

@@ -1003,6 +1003,9 @@ class MSG:
     LOGOUT_FAILED                          = "Could not log you out. Please try again."
     LOGOUT_ALL_FAILED                      = "Could not sign you out of every device. Please try again."
     ADDRESS_COORDINATES_INVALID            = "Latitude/longitude are out of range."
+    ADDRESS_DELIVERY_LOCATION_INVALID      = ("That hostel or gate is not available for your campus. "
+                                              "Pick another one.")
+    FE_CHECKOUT_ADDRESS_NEEDS_RESELECT      = "Pick your delivery location again — the saved one can no longer be found."
     ADDRESS_SAVE_FAILED                    = "Could not save the address. Please try again."
     AUTH_NEW_PASSWORD_SAME                 = "Your new password must be different from the current one."
     ACCOUNT_DELETE_WALLET_BALANCE          = "Withdraw or spend your wallet balance before deleting your account."

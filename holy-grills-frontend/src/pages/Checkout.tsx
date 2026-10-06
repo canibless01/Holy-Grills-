@@ -59,6 +59,14 @@ export default function Checkout() {
   const [landmark, setLandmark] = useState('');
   const [feePreview, setFeePreview] = useState(null);
   const [radiusError, setRadiusError] = useState(null);
+  // The saved address the guest picked, if any. Sent with the order as
+  // `delivery_address_id` so the backend re-reads the stored
+  // delivery_type/delivery_location_id/coordinates instead of trusting what we
+  // replayed client-side.
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+  // A saved address whose hostel/gate no longer resolves — shown as needing a
+  // re-pick rather than failing the order.
+  const [addressNeedsReselect, setAddressNeedsReselect] = useState(null);
   // Exactly the three methods the picker below offers (wallet/card/split).
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [walletAmount, setWalletAmount] = useState(0);
@@ -304,6 +312,10 @@ export default function Checkout() {
         notes,
         ...(paymentMethod === 'split' && isAuthenticated ? { wallet_amount: walletAmount } : {}),
         ...(!isAuthenticated ? { guest_name: guestName, guest_phone: guestPhone, guest_email: guestEmail } : {}),
+        // A saved address the guest picked: the backend re-reads its stored
+        // delivery_type / delivery_location_id / coordinates and overrides
+        // whatever we send alongside. Only signed-in guests can have one.
+        ...(selectedAddressId && isAuthenticated ? { delivery_address_id: selectedAddressId } : {}),
         ...(deliveryType === 'on_campus'
           ? { delivery_location_id: hostelId }
           : {
@@ -324,6 +336,7 @@ export default function Checkout() {
     // no window was picked, still attempt and surface the backend's own error.
     if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return; }
     if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return; }
+    if (addressNeedsReselect) { setError(msg('FE_CHECKOUT_ADDRESS_NEEDS_RESELECT', 'Pick your delivery location again — the saved one can no longer be found.')); return; }
     if (deliveryType === 'off_campus') {
       const hasPin = deliveryPin && deliveryPin.lat != null && deliveryPin.lng != null;
       // Block only when there is no pin and no chosen gate. A pin is enough —
@@ -533,39 +546,53 @@ export default function Checkout() {
               <Plus className="w-3 h-3" /> Edit
             </Link>
           </div>
+          {addressNeedsReselect && (
+            <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-fade-in">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs text-amber-700 dark:text-amber-400">
+                <span className="font-semibold">{addressNeedsReselect.label || 'That saved address'}</span> points at a hostel or gate we can no longer find, so it can't be priced. Pick the location again below, or edit the address.
+              </div>
+              <button type="button" onClick={() => setAddressNeedsReselect(null)} className="text-amber-700 dark:text-amber-400 text-xs font-bold">Dismiss</button>
+            </div>
+          )}
           {addresses.length > 0 ? (
             <div className="space-y-2">
               {addresses.map((addr) => (
                 <button
                   key={addr.id}
                   onClick={() => {
-                    // Replay what was saved. The row carries the delivery type
-                    // and the referenced hostel/gate; the coordinates are stored
-                    // as latitude/longitude. Two fallbacks keep older rows
-                    // working: an address with coordinates is off-campus, and an
-                    // on-campus row written before the refs were persisted is
-                    // matched to its hostel by the name the form saved in line1.
-                    const type = addr.delivery_type || addr.type
-                      || ((addr.latitude ?? addr.lat) != null ? 'off_campus' : null);
+                    // Replay what was saved. `user_addresses` holds exactly two
+                    // columns for this: `delivery_type` ('on_campus' | 'off_campus')
+                    // and `delivery_location_id` — a hostel id for on_campus, a
+                    // gate id for off_campus, the same meaning
+                    // `orders.delivery_location_id` has. create_order re-reads both
+                    // from the saved address when the order carries
+                    // `delivery_address_id`, so we send that id too.
+                    //
+                    // Rows saved before these were written have neither. Those fall
+                    // back exactly as before: coordinates for off-campus, a hostel
+                    // name match for on-campus.
+                    const type = addr.delivery_type
+                      || ((addr.latitude ?? addr.lat) != null ? 'off_campus' : 'on_campus');
                     if (type) setDeliveryType(type);
                     if (type === 'on_campus') {
-                      const hid = addr.location_id || addr.hostel_id || addr.delivery_location_id
-                        || (() => {
-                          const savedName = (addr.hostel || (addr.line1 || '').split(',')[0] || '').trim();
-                          return savedName ? (hostels.find((h) => h.name === savedName)?.id ?? null) : null;
-                        })();
+                      const ref = addr.delivery_location_id || '';
+                      const hostelName = (addr.hostel || (addr.line1 || '').split(',')[0] || '').trim();
+                      const hid = ref
+                        || (hostelName ? (hostels.find((h) => h.name === hostelName)?.id ?? null) : null);
                       if (hid) { setHostelId(hid); calcOnCampusFee(hid); }
+                      // A saved hostel we can no longer resolve must be re-picked,
+                      // not silently charged ₦0 delivery.
+                      if (!hid) { setAddressNeedsReselect(addr); return; }
                     }
                     if (type === 'off_campus') {
-                      const gid = addr.gate_id || addr.delivery_location_id || null;
-                      if (gid) setGateId(gid);
                       const lat = addr.latitude ?? addr.lat;
                       const lng = addr.longitude ?? addr.lng;
                       const savedPin = (lat != null && lng != null) ? { lat: Number(lat), lng: Number(lng) } : null;
                       if (savedPin) { setDeliveryPin(savedPin); setDeliveryAddress(addr.line1 || addr.description || addr.address || ''); }
                       else {
-                        // A row saved before coordinates were kept must not inherit
-                        // the previous pin — that would price this address against
+                        // A row saved without coordinates must not inherit the
+                        // previous pin — that would price this address against
                         // wherever the guest dropped the last one.
                         pinRef.current = null; setDeliveryPin(null); setFeePreview(null);
                       }
@@ -574,8 +601,12 @@ export default function Checkout() {
                       // here. The backend takes the pin, resolves the nearest
                       // gate to it and prices the fee from that, which is why
                       // the fee is correct wherever the guest is standing now.
-                      calcOffCampusFee(gid, savedPin, { keepGate: true });
+                      calcOffCampusFee(addr.delivery_location_id || null, savedPin, { keepGate: !!addr.delivery_location_id });
                     }
+                    // Remember which row this was so the order can send
+                    // `delivery_address_id` and let the backend re-read the saved
+                    // values rather than trusting what we replayed client-side.
+                    setSelectedAddressId(addr.id);
                   }}
                   className="w-full flex items-center gap-2 p-3 rounded-xl border border-border text-left hover:border-primary transition-colors bg-card"
                 >
