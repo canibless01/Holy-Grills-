@@ -33,6 +33,7 @@ export const CampusProvider = ({ children }) => {
   const { user, isLoading } = useHolyGrill();
   const [campuses, setCampuses] = useState([]);
   const [campusesLoading, setCampusesLoading] = useState(true);
+  const [campusesError, setCampusesError] = useState(false);
   // Track B: the pre-render has no storage, so it can only show the
   // no-campus state. Read the stored selection during the first client render
   // only when this is NOT a hydration pass (a CSR page, where there is no
@@ -67,7 +68,14 @@ export const CampusProvider = ({ children }) => {
   // never changeable — auth_service.update_profile drops campus_id). Guests
   // use the localStorage selection from the gate. Super-admins can override
   // their own campus via the admin campus selector (hg_admin_campus_id).
-  const campusId = user?.campus_id || guestCampusId || null;
+  //
+  // `profile.campus_id` is the fallback for a backend that has not been
+  // redeployed with the top-level alias: /auth/me has always nested campus_id
+  // under `profile`, and reading only the top level left a signed-in user with
+  // NO campus — which is what asked them to pick one and silently unscoped
+  // every storefront/kitchen read.
+  const userCampusId = user?.campus_id || user?.profile?.campus_id || null;
+  const campusId = userCampusId || guestCampusId || null;
   const campus = campuses.find((c) => c.id === campusId) || null;
   const adminCampus = campuses.find((c) => c.id === adminCampusId) || null;
 
@@ -83,15 +91,19 @@ export const CampusProvider = ({ children }) => {
     }
   }, []);
 
-  useEffect(() => {
+  const loadCampuses = useCallback(() => {
+    setCampusesLoading(true);
+    setCampusesError(false);
     // Public campus list — campuses RLS allows everyone to select. If the
     // public endpoint is absent (single-campus launch) this resolves to an
     // empty list and the gate never activates (guests browse global data).
-    liveApi.campuses
+    return liveApi.campuses
       .list()
-      .then((c) => { setCampuses(c); setCampusesLoading(false); })
-      .catch(() => { setCampuses([]); setCampusesLoading(false); });
+      .then((c) => { setCampuses(Array.isArray(c) ? c : []); setCampusesLoading(false); })
+      .catch(() => { setCampuses([]); setCampusesLoading(false); setCampusesError(true); });
   }, []);
+
+  useEffect(() => { loadCampuses(); }, [loadCampuses]);
 
   // Guests get a dismissible campus prompt once on the homepage — it must
   // never block browsing the storefront. Campus-scoped routes open the
@@ -161,10 +173,10 @@ export const CampusProvider = ({ children }) => {
     if (isLoading) return true;
     // Logged-in users (a real `user` object) are scoped server-side by their own
     // campus_id — never gate them. Guests who already chose a campus pass through.
-    if (user || user?.campus_id || guestCampusId) return true;
+    if (user || userCampusId || guestCampusId) return true;
     openGate(action, 'blocking');
     return false;
-  }, [isLoading, user, guestCampusId, openGate]);
+  }, [isLoading, user, userCampusId, guestCampusId, openGate]);
 
   // Called when a campus-scoped page unmounts (navigating away, or the back
   // button). This used to only DOWNGRADE blocking -> prompt and leave the gate
@@ -190,9 +202,9 @@ export const CampusProvider = ({ children }) => {
 
   return (
     <CampusContext.Provider value={{
-      campusId, campus, campuses, campusesLoading,
+      campusId, campus, campuses, campusesLoading, campusesError, reloadCampuses: loadCampuses,
       gateOpen, gateAction, gateMode, selectCampus, requireCampus, releaseCampus, setGateOpen,
-      dismissGate,
+      openGate, dismissGate,
       adminCampusId, adminCampus, selectAdminCampus, clearAdminCampus,
     }}>
       {children}

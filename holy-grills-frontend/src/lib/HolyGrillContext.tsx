@@ -38,10 +38,16 @@ const EMPTY_CART = { items: [], subtotal: 0, item_count: 0, hp_earn_preview: 0, 
 // super_admin with a campus on their profile must NOT be scoped to it by
 // default (their default view is every campus), while every other role is.
 // Persisted here because apiClient runs outside React and cannot read context.
-const persistUserCampus = (profile) => {
-  if (profile?.campus_id) localStore.setItem('hg_user_campus_id', profile.campus_id);
+// `campus_id` is read from BOTH shapes /auth/me has returned: the top-level
+// alias and the nested `profile.campus_id`. Reading only the top level is what
+// left `hg_user_campus_id` unset, so apiClient sent no X-Campus-ID at all and
+// every campus-scoped endpoint (menu availability, gates, hostels,
+// delivery-window status, operating hours) answered with global data.
+const persistUserCampus = (me) => {
+  const campusId = me?.campus_id ?? me?.profile?.campus_id ?? null;
+  if (campusId) localStore.setItem('hg_user_campus_id', campusId);
   else localStore.removeItem('hg_user_campus_id');
-  if (profile?.role) localStore.setItem('hg_user_role', profile.role);
+  if (me?.role) localStore.setItem('hg_user_role', me.role);
   else localStore.removeItem('hg_user_role');
 };
 
@@ -80,6 +86,30 @@ const normalizeHpBalance = (me) => {
     is_in_grace_period: me.tier?.is_in_grace_period ?? false,
     grace_period_ends_at: me.tier?.grace_period_ends_at ?? null,
   };
+};
+
+// Route chunks are lazy (App.tsx), so the first navigation to a page pays for
+// its JS. Right after sign-in the app is already busy with /auth/me plus a burst
+// of background refreshes, and that first chunk request can lose the race: the
+// page sits on the Suspense fallback until something else re-renders, which is
+// what "I had to refresh before it came up" was. Warming the destination chunk
+// while those refreshes run removes the wait.
+// The specifier must match App.tsx's lazy(() => import(...)) exactly, so the
+// browser reuses the same chunk instead of fetching a second copy.
+const warmRouteChunk = (loader) => {
+  try { void loader(); } catch { /* a failed warm-up must never break sign-in */ }
+};
+
+const warmPostLoginChunks = (role) => {
+  // The role's landing page first, then the menu — it is the one page every role
+  // browses, it is its own lazy chunk, and it was the "had to refresh before it
+  // came up" report. Warming both while the post-login refreshes run means
+  // neither navigation waits on a chunk fetch.
+  if (role === 'kitchen') warmRouteChunk(() => import('@/pages/Kitchen'));
+  else if (role === 'rider') warmRouteChunk(() => import('@/pages/Rider'));
+  else if (role === 'admin' || role === 'super_admin') warmRouteChunk(() => import('@/pages/Admin'));
+  else warmRouteChunk(() => import('@/pages/Dashboard'));
+  warmRouteChunk(() => import('@/pages/Menu'));
 };
 
 export const HolyGrillProvider = ({ children }) => {
@@ -222,6 +252,10 @@ export const HolyGrillProvider = ({ children }) => {
           // parallel so a slow/cold backend never traps the user behind a
           // full-screen spinner. Each one swallows its own errors.
           setIsLoading(false);
+          // A hard refresh on /dashboard (or a staff page) renders that lazy
+          // chunk the moment we unblock — warm it now, in parallel with the
+          // refreshes, so the page is not waiting on its own JS.
+          warmPostLoginChunks(profile?.role);
           Promise.allSettled([
             refreshCart(),
             refreshNotifications(),
@@ -269,6 +303,9 @@ export const HolyGrillProvider = ({ children }) => {
     }
     // Fire background refreshes in parallel — don't block the login redirect
     // on slow/cold backend calls. The user gets to their dashboard instantly.
+    // Warm the destination chunk in the same breath, so the redirect lands on a
+    // rendered page instead of the Suspense fallback.
+    warmPostLoginChunks(profile?.role || data?.user?.role);
     Promise.allSettled([refreshCart(), refreshNotifications(), refreshHp(), refreshSavedItems(), liveApi.auth.getStreak().then(setStreak).catch(() => {}), loadSystemSettings().then(setSystemSettings).catch(() => {}), loadFeatureFlags().catch(() => {}), loadTiers().catch(() => {})]);
     return { ...data, role: profile.role || data?.user?.role || 'student' };
   };
