@@ -252,7 +252,25 @@ def calculate_fee():
 
     if not location_id:
         if data.get("delivery_type") == "off_campus" and user_lat is not None and user_lon is not None:
-            campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+            # The reference resolver (events._get_campus_id): ?campus_id=, then the
+            # X-Campus-ID header the campus gate sends, then the signed-in session.
+            # Reading only the body and g.campus_id meant a guest -- who has no
+            # g.campus_id, and whose fee request carries no campus_id in the body --
+            # resolved to None. is_within_delivery_area() fails open on None (no
+            # radius check at all) and find_nearest_gate() drops its campus filter,
+            # so the nearest gate was picked from EVERY campus and the fee priced
+            # against a gate the guest does not belong to.
+            from app.routes.events import _get_campus_id
+            campus_id = _get_campus_id()
+            if not campus_id:
+                # Same refusal /delivery/hostels and /delivery/gates already give.
+                # Without a campus there is no radius to check and no gate pool to
+                # pick from, and create_order refuses such an order anyway — so a
+                # quote priced off some other campus's gate would only mislead.
+                return jsonify({
+                    "error": "Please select a campus to continue",
+                    "code": "CAMPUS_SELECTION_REQUIRED",
+                }), 400
             if not is_within_delivery_area(db, user_lat, user_lon, campus_id):
                 return jsonify({"error": MSG.DELIVERY_OUTSIDE_AREA}), 400
             nearest = find_nearest_gate(db, user_lat, user_lon, campus_id)

@@ -35,7 +35,7 @@ export default function Checkout() {
   const location = useLocation();
   const passed = location.state || {};
   const { cart, wallet, refreshUser, isAuthenticated } = useHolyGrill();
-  const { campus } = useCampus();
+  const { campus, openGate } = useCampus();
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
@@ -207,7 +207,16 @@ export default function Checkout() {
     } catch (e) {
       setDeliveryFee(0); setFeePreview(null);
       // Backend rejects pins outside the delivery area — surface its message as-is.
-      if (e?.message && /outside|delivery area|radius/i.test(e.message)) setRadiusError(e.message);
+      if (e?.message && /outside|delivery area|radius/i.test(e.message)) { setRadiusError(e.message); return; }
+      // The backend now refuses to price an off-campus fee it cannot scope to a
+      // campus (it used to pick the nearest gate from every campus and quote a fee
+      // against it). Leaving the fee at 0 would read as free delivery, so ask for
+      // the campus instead of guessing.
+      if (e?.message && /campus/i.test(e.message)) {
+        setError(msg('FE_CHECKOUT_CAMPUS_NEEDED_FOR_FEE',
+          'Choose your campus so we can price delivery to your location.'));
+        openGate('price your delivery', 'blocking');
+      }
     }
   };
 

@@ -1257,6 +1257,7 @@ class MSG:
     FE_CHECKOUT_CHOOSE_DELIVERY            = "Please choose on-campus or off-campus delivery"
     FE_CHECKOUT_SELECT_HOSTEL              = "Please select your hostel"
     FE_CHECKOUT_SELECT_GATE                = "Please select your nearest gate"
+    FE_CHECKOUT_CAMPUS_NEEDED_FOR_FEE      = "Choose your campus so we can price delivery to your location."
     FE_CHECKOUT_ENTER_NAME                 = "Please enter your name"
     FE_CHECKOUT_INVALID_PHONE              = "Phone must be 11 digits (080...) or +234 + 10 digits"
     FE_CHECKOUT_INVALID_EMAIL              = "Please enter a valid email"
