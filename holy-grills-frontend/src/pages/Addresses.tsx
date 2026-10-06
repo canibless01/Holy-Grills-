@@ -49,7 +49,19 @@ export default function Addresses() {
     if (form.type === 'off_campus' && !form.line1.trim()) { setSaveError('Please enter your street address / description.'); return; }
     if (!form.city.trim()) { setSaveError('Please enter your city.'); return; }
     try {
-      const data = { ...form, delivery_type: form.type, delivery_location_id: form.type === 'on_campus' ? form.location_id : form.gate_id, latitude: form.lat, longitude: form.lng };
+      // The backend persists the delivery selection (type + the referenced
+      // hostel/gate) so checkout can replay it. `gate_id` and `location_id` are
+      // sent separately as well as through `delivery_location_id`, because the
+      // API reads the explicit key first and only falls back to the alias.
+      const data = {
+        ...form,
+        delivery_type: form.type,
+        gate_id: form.type === 'off_campus' ? (form.gate_id || null) : (form.gate_id || null),
+        location_id: form.type === 'on_campus' ? (form.location_id || null) : null,
+        delivery_location_id: form.type === 'on_campus' ? form.location_id : form.gate_id,
+        latitude: form.lat,
+        longitude: form.lng,
+      };
       if (form.type === 'on_campus') {
         const loc = hostels.find(l => l.id === form.location_id);
         const gate = gates.find(g => g.id === form.gate_id);
@@ -102,7 +114,7 @@ export default function Addresses() {
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{addr.line1}, {addr.city}, {addr.state}</p>
               </div>
               <div className="flex gap-1 shrink-0">
-                <button onClick={() => { setEditing(addr.id); setForm({ ...addr, gate_id: addr.gate_id || '', location_id: addr.location_id || '', lat: addr.lat ?? null, lng: addr.lng ?? null }); setPin(addr.lat && addr.lng ? { lat: addr.lat, lng: addr.lng } : null); setShowForm(true); }} className="p-2 rounded-xl hover:bg-muted transition">
+                <button onClick={() => { setEditing(addr.id); setForm({ ...addr, type: addr.delivery_type || addr.type || 'on_campus', gate_id: addr.gate_id || '', location_id: addr.location_id || '', lat: (addr.latitude ?? addr.lat) ?? null, lng: (addr.longitude ?? addr.lng) ?? null }); const la = addr.latitude ?? addr.lat; const ln = addr.longitude ?? addr.lng; setPin(la != null && ln != null ? { lat: la, lng: ln } : null); setShowForm(true); }} className="p-2 rounded-xl hover:bg-muted transition">
                   <Edit2 className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button onClick={() => handleDelete(addr.id)} className="p-2 rounded-xl hover:bg-destructive/10 transition">

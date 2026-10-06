@@ -137,6 +137,7 @@ def find_nearest_gate(db, lat: float, lon: float, campus_id: str | None) -> dict
 from app.routes.events import _require_campus_selection
 
 @delivery_bp.route("/hostels", methods=["GET"])
+@optional_auth
 def list_hostels():
     """
     List all active on-campus hostels with their delivery fees for the selected campus.
@@ -164,6 +165,7 @@ def list_hostels():
 
 
 @delivery_bp.route("/gates", methods=["GET"])
+@optional_auth
 def list_gates():
     """
     List all active delivery gates (used for off-campus fee calculation) for the selected campus.

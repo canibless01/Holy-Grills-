@@ -150,7 +150,12 @@ export interface CreateOrderPayload {
   addons?: Array<{ addon_id: Uuid; quantity: number }>;
   delivery_window_id?: Uuid;
   is_scheduled?: boolean;
-  /** Retry flag set by the capacity flow ("today's orders are full"). */
+  /**
+   * Let the backend place the order in the next bookable slot when the current
+   * window is closed or full. Set by the capacity flow AND by checkout's
+   * "Schedule my order" button — the backend then searches from TODAY, so a
+   * kitchen that has not opened yet schedules for today's opening.
+   */
   accept_next_available_date?: boolean;
   hp_points_to_redeem?: number;
   scheduled_for_window_id?: Uuid;
@@ -190,6 +195,8 @@ export interface DeliveryWindow {
   date?: IsoDate;
   is_closed?: boolean;
   is_full?: boolean;
+  /** True only while this window is bookable right now (open, not full, in hours). */
+  is_open_now?: boolean;
   starts_at?: string | null;
   delivery_starts_at?: string | null;
   delivery_ends_at?: string | null;
@@ -207,6 +214,11 @@ export interface DeliveryWindow {
  */
 export interface DeliveryWindowsStatus {
   is_open?: boolean | null;
+  /**
+   * Why ordering is unavailable right now: 'before_opening' | 'after_closing' |
+   * 'closed_today' | 'full' | 'open' | 'no_window'. Absent on older backends.
+   */
+  reason?: string | null;
   message?: string;
   next_window?: DeliveryWindow | null;
   next_available_date?: string | null;

@@ -125,3 +125,43 @@ def effective_ordering_windows(db, campus_id, date_iso, weekday):
     if weekly:
         return weekly, "weekly"
     return [], "config"
+
+
+def config_default_window() -> tuple:
+    """(opens_at, closes_at) from config — the step-4 fallback.
+
+    A campus with no `ordering_windows` rows at all still has ordering hours:
+    `ORDERING_WINDOW_OPEN_TIME`/`ORDERING_WINDOW_CLOSE_TIME`. Reading them here
+    (rather than inline in each caller) is what keeps the ordering gate
+    (`resolve_ordering_window`) and the status endpoint
+    (`get_ordering_window_status`) agreeing about the same campus.
+    """
+    from flask import current_app
+    return (
+        current_app.config.get("ORDERING_WINDOW_OPEN_TIME", "08:00"),
+        current_app.config.get("ORDERING_WINDOW_CLOSE_TIME", "16:00"),
+    )
+
+
+def effective_windows_with_config(db, campus_id, date_iso, weekday):
+    """`effective_ordering_windows`, with the config fallback materialised.
+
+    Identical precedence, except that step 4 — "no rows at all" — now returns
+    ONE synthetic open window at the configured times instead of an empty list.
+    `resolve_ordering_window` and `get_ordering_window_status` must see the same
+    thing: without this, a config-only campus is reported as permanently closed
+    by the status endpoint while checkout happily accepts orders inside the
+    configured hours.
+    """
+    rows, source = effective_ordering_windows(db, campus_id, date_iso, weekday)
+    if rows or source != "config":
+        return rows, source
+    opens, closes = config_default_window()
+    return [{
+        "id": None,
+        "opens_at": opens,
+        "closes_at": closes,
+        "is_closed": False,
+        "capacity": None,
+        "linked_delivery_window_id": None,
+    }], "config"

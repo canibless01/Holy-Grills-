@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useCampus } from '@/lib/campusContext';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 // Domain 0 — route guard for campus-scoped pages.
 //
@@ -36,7 +37,8 @@ const TITLE_BY_PATH: Record<string, string> = {
 };
 
 export default function CampusScope() {
-  const { campusId, campuses, campusesLoading, requireCampus, releaseCampus } = useCampus();
+  const { user, isLoading } = useHolyGrill();
+  const { campusId, campuses, campusesLoading, requireCampus, releaseCampus, openGate } = useCampus();
   const { pathname } = useLocation();
   const base = '/' + (pathname.split('/')[1] || '');
   const action = ACTION_BY_PATH[base] || 'continue';
@@ -46,20 +48,32 @@ export default function CampusScope() {
     return () => releaseCampus();
   }, [base, action, requireCampus, releaseCampus]);
 
+  // A signed-in user is scoped server-side by their own campus_id (set at
+  // registration, never changeable). They must never be asked to pick one —
+  // and must never see this placeholder. This is checked BEFORE campusId,
+  // because the profile's campus_id can still be in flight on first paint.
+  if (user) return <Outlet />;
+  // Auth still resolving: render the page rather than flashing a picker at
+  // someone who is about to be recognised. requireCampus() re-runs when `user`
+  // lands and opens the gate if it really is a guest.
+  if (isLoading) return <Outlet />;
   if (campusId) return <Outlet />;
 
   // No campuses to choose (single-campus / no public list endpoint) — let the
   // backend fall back to global/unscoped data rather than trapping the guest.
   if (!campusesLoading && campuses.length === 0) return <Outlet />;
 
-  // Deliberately the same markup while the campus list is still loading: the
-  // build-time pre-render runs no API calls, so this branch is what writes real
-  // indexable content into /menu, /events and /marketplace. A loading-only
-  // skeleton here would pre-render an empty shell, and a different first client
-  // render would break hydration.
-  //
   // The gate is normally open on top of this. If it was dismissed, the button
   // below is how the guest gets back to it — re-entering the route re-opens it.
+  // It calls openGate() directly, not requireCampus(): requireCampus() returns
+  // true (and opens nothing) as soon as it sees a `user` object, which is what
+  // left this as a dead-end button for a signed-in user whose campus_id had not
+  // resolved yet.
+  //
+  // This placeholder is client-only by design. `isLoading` starts true, so both
+  // the build-time pre-render and the client's first render take the `<Outlet/>`
+  // branch above — that match is what keeps hydration intact. The SEO copy for
+  // these routes lives in the route's own <title>/JSON-LD, not here.
   return (
     <div className="mx-auto max-w-md px-4 py-20 text-center">
       <h1 className="font-heading font-extrabold text-xl text-foreground">
@@ -67,7 +81,7 @@ export default function CampusScope() {
       </h1>
       <button
         type="button"
-        onClick={() => requireCampus(action)}
+        onClick={() => openGate(action, 'blocking')}
         className="mt-4 px-5 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold active:scale-95 transition"
       >
         Choose your campus

@@ -498,6 +498,23 @@ def _clean_coord(value, lo, hi):
 
 
 _ADDR_TEXT = ("label", "line1", "line2", "hostel", "city", "state", "landmark")
+_ADDR_DELIVERY_TYPES = ("on_campus", "off_campus")
+
+
+def _clean_ref(value):
+    """A uuid reference (gate_id / location_id), or None when absent/blank.
+
+    Returns the sentinel string "__invalid__" for a malformed id so the caller
+    can answer 400 rather than letting the database reject the insert.
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        return "__invalid__"
+    v = value.strip().lower()
+    if not v:
+        return None
+    return v if validate_uuid(v) else "__invalid__"
 
 
 def _validate_address_fields(data: dict):
@@ -511,6 +528,26 @@ def _validate_address_fields(data: dict):
             if isinstance(v, str) and len(v) > 200:
                 return None, MSG.AUTH_FIELD_INVALID.format(field=k)
             out[k] = v.strip() if isinstance(v, str) else v
+    # What was saved, so checkout can replay it. `delivery_type` accepts the
+    # legacy alias `type` the address form still sends; `gate_id` /
+    # `location_id` accept the `delivery_location_id` alias too (the form sends
+    # one field that means "hostel on-campus, gate off-campus").
+    raw_type = data.get("delivery_type", data.get("type"))
+    if raw_type not in (None, ""):
+        if raw_type not in _ADDR_DELIVERY_TYPES:
+            return None, MSG.AUTH_FIELD_INVALID.format(field="delivery_type")
+        out["delivery_type"] = raw_type
+    refs = {
+        "gate_id": data.get("gate_id"),
+        "location_id": data.get("location_id", data.get("delivery_location_id")),
+    }
+    for key, raw in refs.items():
+        if key not in data and "delivery_location_id" not in data:
+            continue
+        cleaned = _clean_ref(raw)
+        if cleaned == "__invalid__":
+            return None, MSG.AUTH_FIELD_INVALID.format(field=key)
+        out[key] = cleaned
     try:
         if "latitude" in data:
             out["latitude"] = _clean_coord(data["latitude"], -90, 90)
@@ -543,6 +580,9 @@ def add_address():
             latitude: {type: number}
             longitude: {type: number}
             is_default: {type: boolean}
+            delivery_type: {type: string, enum: [on_campus, off_campus], description: "What was saved, so checkout can replay it. Alias: type"}
+            gate_id: {type: string, description: "Gate an off-campus delivery is met at"}
+            location_id: {type: string, description: "Hostel an on-campus delivery goes to. Alias: delivery_location_id"}
     responses:
       201:
         description: Address saved
@@ -570,6 +610,10 @@ def add_address():
         "latitude": fields.get("latitude"), "longitude": fields.get("longitude"),
         "is_default": bool(data.get("is_default", False)),
         "campus_id": getattr(g, "campus_id", None),
+        # Replayable delivery selection — see _validate_address_fields.
+        "delivery_type": fields.get("delivery_type"),
+        "gate_id": fields.get("gate_id"),
+        "location_id": fields.get("location_id"),
     })
     res = row[0] if isinstance(row, list) and row else row
     if not res:

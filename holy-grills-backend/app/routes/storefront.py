@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, g
 
-from app.middleware.auth import require_auth, require_role, header_campus_id     # D17-B04 (validate_promo now requires login)
+from app.middleware.auth import require_auth, require_role, header_campus_id, optional_auth     # D17-B04 (validate_promo now requires login)
 from app.middleware.rate_limit import rate_limit                                 # D17-B16: newsletter abuse guard
 from app.constants import ADMIN_ROLES
 from app.db import get_db, get_user_client, SupabaseError
@@ -508,6 +508,7 @@ def _is_currently_open(schedule, override, now=None) -> bool:
 
 
 @storefront_bp.route("/operating-hours", methods=["GET"])
+@optional_auth
 def get_hours():
     """
     Get current operating hours schedule and any today-specific override.
