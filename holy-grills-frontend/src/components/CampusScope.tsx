@@ -52,28 +52,38 @@ export default function CampusScope() {
   // registration, never changeable). They must never be asked to pick one —
   // and must never see this placeholder. This is checked BEFORE campusId,
   // because the profile's campus_id can still be in flight on first paint.
+  //
+  // `user` is the ONLY safe signal here, and it is deliberately the whole check.
+  // It is null both at build-time pre-render and during hydration (no session
+  // exists in either), so this branch cannot disagree with the pre-rendered
+  // markup. An `isLoading` bypass looks equivalent but is not: isLoading starts
+  // true in BOTH the pre-render and the client's first render, so it would send
+  // the pre-render down this branch and /menu, /events and /marketplace would
+  // ship an empty shell — which scripts/smoke.mjs catches as three failures.
+  //
+  // A signed-in user whose session is still resolving therefore sees this
+  // heading for a moment. That is cosmetic and self-correcting: the campus GATE
+  // (campusContext's prompt effect) already returns early on
+  // `if (isLoading || campusesLoading)`, so it never opens for them at all.
   if (user) return <Outlet />;
-  // Auth still resolving: render the page rather than flashing a picker at
-  // someone who is about to be recognised. requireCampus() re-runs when `user`
-  // lands and opens the gate if it really is a guest.
-  if (isLoading) return <Outlet />;
   if (campusId) return <Outlet />;
 
   // No campuses to choose (single-campus / no public list endpoint) — let the
   // backend fall back to global/unscoped data rather than trapping the guest.
   if (!campusesLoading && campuses.length === 0) return <Outlet />;
 
+  // Deliberately the same markup while the campus list is still loading: the
+  // build-time pre-render runs no API calls, so this branch is what writes real
+  // indexable content into /menu, /events and /marketplace. A loading-only
+  // skeleton here would pre-render an empty shell, and a different first client
+  // render would break hydration.
+  //
   // The gate is normally open on top of this. If it was dismissed, the button
   // below is how the guest gets back to it — re-entering the route re-opens it.
   // It calls openGate() directly, not requireCampus(): requireCampus() returns
   // true (and opens nothing) as soon as it sees a `user` object, which is what
   // left this as a dead-end button for a signed-in user whose campus_id had not
   // resolved yet.
-  //
-  // This placeholder is client-only by design. `isLoading` starts true, so both
-  // the build-time pre-render and the client's first render take the `<Outlet/>`
-  // branch above — that match is what keeps hydration intact. The SEO copy for
-  // these routes lives in the route's own <title>/JSON-LD, not here.
   return (
     <div className="mx-auto max-w-md px-4 py-20 text-center">
       <h1 className="font-heading font-extrabold text-xl text-foreground">
