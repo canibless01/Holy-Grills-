@@ -479,11 +479,55 @@ def list_addresses():
     tags: [Auth]
     responses:
       200:
-        description: List of saved addresses
+        description: |
+          List of saved addresses. Each row carries the persisted
+          `delivery_type` / `delivery_location_id`, plus `delivery_location_name`
+          (the hostel or gate name) so the app can show what the saved selection
+          points at without a second call. Rows saved before these fields were
+          written have neither and are treated as "re-select".
     """
     db = get_user_client()
     rows = db.table("user_addresses").select("*").eq("user_id", g.user_id).order("is_default", ascending=False).execute()
+    rows = rows or []
+    _attach_delivery_location_names(rows)
     return jsonify(rows), 200
+
+
+def _attach_delivery_location_names(rows):
+    """Add `delivery_location_name` to each saved address.
+
+    `delivery_location_id` is a hostel id for on-campus rows and a gate id for
+    off-campus ones, and the address form only stores the name the user typed in
+    `hostel`/`line1` — so without this the app cannot show what the saved
+    selection points at. Rows saved before these fields were written have no id
+    and simply get no name, which the frontend already treats as "re-select".
+    """
+    hostels_ids, gates_ids = set(), set()
+    for r in rows:
+        lid = r.get("delivery_location_id")
+        if not lid:
+            continue
+        (hostels_ids if r.get("delivery_type") == "on_campus" else gates_ids).add(lid)
+    if not hostels_ids and not gates_ids:
+        return
+
+    names = {}
+    sdb = get_db()
+    for table, ids in (("hostels", hostels_ids), ("gates", gates_ids)):
+        if not ids:
+            continue
+        try:
+            found = sdb.table(table).select("id,name").in_("id", sorted(ids)).execute() or []
+        except Exception as exc:                               # noqa: BLE001
+            logger.warning("address delivery-location name lookup failed (%s): %s", table, exc)
+            continue
+        for row in found:
+            if row.get("id") and row.get("name"):
+                names[row["id"]] = row["name"]
+    for r in rows:
+        lid = r.get("delivery_location_id")
+        if lid and lid in names:
+            r["delivery_location_name"] = names[lid]
 
 
 def _clean_coord(value, lo, hi):
@@ -498,10 +542,58 @@ def _clean_coord(value, lo, hi):
 
 
 _ADDR_TEXT = ("label", "line1", "line2", "hostel", "city", "state", "landmark")
+_ADDR_DELIVERY_TYPES = ("on_campus", "off_campus")
 
 
-def _validate_address_fields(data: dict):
-    """Returns (cleaned_dict, error_message|None) for the address keys present in `data`."""
+def _clean_uuid_ref(value):
+    """A uuid reference, or None when absent/blank. "__invalid__" for a malformed
+    id, so the caller answers 400 instead of letting the database reject it."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        return "__invalid__"
+    v = value.strip().lower()
+    if not v:
+        return None
+    return v if validate_uuid(v) else "__invalid__"
+
+
+def _delivery_location_exists(db, delivery_type, location_id, campus_id):
+    """Whether `location_id` is an active hostel (on_campus) or gate (off_campus)
+    of the caller's campus. Uses the service client: `hostels`/`gates` are not
+    readable through the caller's own client for this check.
+
+    A missing campus_id means we cannot prove the row belongs to the caller, so
+    it is treated as not-a-match rather than accepted on trust.
+    """
+    if not location_id or not campus_id:
+        return False
+    table = "hostels" if delivery_type == "on_campus" else "gates"
+    try:
+        row = (
+            db.table(table)
+            .select("id")
+            .eq("id", location_id)
+            .eq("is_active", "true")
+            .eq("campus_id", campus_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:                                   # noqa: BLE001
+        logger.warning("address delivery-location check failed (%s %s): %s", table, location_id, exc)
+        return False
+    return bool(row)
+
+
+def _validate_address_fields(data: dict, db=None, campus_id=None):
+    """Returns (cleaned_dict, error_message|None) for the address keys present in `data`.
+
+    `delivery_type` / `delivery_location_id` are persisted exactly as
+    `user_addresses` stores them (both columns already exist, and
+    `create_order` re-reads them from a saved address). `delivery_location_id`
+    means hostel id for on_campus and gate id for off_campus — the same meaning
+    `orders.delivery_location_id` has.
+    """
     out = {}
     for k in _ADDR_TEXT:
         if k in data:
@@ -511,6 +603,31 @@ def _validate_address_fields(data: dict):
             if isinstance(v, str) and len(v) > 200:
                 return None, MSG.AUTH_FIELD_INVALID.format(field=k)
             out[k] = v.strip() if isinstance(v, str) else v
+
+    # ── the replayable delivery selection ────────────────────────────────────
+    raw_type = data.get("delivery_type", data.get("type"))
+    raw_location = data.get("delivery_location_id")
+    if raw_type not in (None, ""):
+        if raw_type not in _ADDR_DELIVERY_TYPES:
+            return None, MSG.AUTH_FIELD_INVALID.format(field="delivery_type")
+        out["delivery_type"] = raw_type
+    if "delivery_location_id" in data or raw_type:
+        cleaned = _clean_uuid_ref(raw_location)
+        if cleaned == "__invalid__":
+            return None, MSG.AUTH_FIELD_INVALID.format(field="delivery_location_id")
+        out["delivery_location_id"] = cleaned
+
+    # A type with no location, or a location with no type, is not a replayable
+    # pair. Without a type the id has no meaning (hostel? gate?), so it is
+    # dropped rather than stored to be misinterpreted later.
+    saved_type = out.get("delivery_type")
+    saved_location = out.get("delivery_location_id")
+    if saved_type and saved_location:
+        if not _delivery_location_exists(db, saved_type, saved_location, campus_id):
+            return None, MSG.ADDRESS_DELIVERY_LOCATION_INVALID
+    elif not saved_type:
+        out["delivery_location_id"] = None
+
     try:
         if "latitude" in data:
             out["latitude"] = _clean_coord(data["latitude"], -90, 90)
@@ -543,6 +660,9 @@ def add_address():
             latitude: {type: number}
             longitude: {type: number}
             is_default: {type: boolean}
+            delivery_type: {type: string, enum: [on_campus, off_campus], description: "How this address is delivered. Saved so checkout can replay it. Alias: type"}
+            delivery_location_id: {type: string, description: "A hostel id when delivery_type is on_campus, a gate id when it is off_campus. Validated against your campus."}
+            hostel: {type: string, description: "Hostel name (free text). Used as a fallback when an older row has no delivery_location_id."}
     responses:
       201:
         description: Address saved
@@ -555,7 +675,8 @@ def add_address():
         data["line1"] = data["address_line"]
     if not data.get("label") or not data.get("line1") or not data.get("city"):
         return jsonify({"error": MSG.AUTH_ADDRESS_FIELDS_REQUIRED}), 400
-    fields, err = _validate_address_fields(data)
+    fields, err = _validate_address_fields(
+        data, db=get_db(), campus_id=getattr(g, "campus_id", None))
     if err:
         return jsonify({"error": err}), 400
     if not fields.get("label") or not fields.get("line1") or not fields.get("city"):
@@ -570,6 +691,11 @@ def add_address():
         "latitude": fields.get("latitude"), "longitude": fields.get("longitude"),
         "is_default": bool(data.get("is_default", False)),
         "campus_id": getattr(g, "campus_id", None),
+        # Replayable delivery selection — see _validate_address_fields. Both
+        # columns already exist on user_addresses, and create_order re-reads them
+        # from the saved address when the order carries delivery_address_id.
+        "delivery_type": fields.get("delivery_type"),
+        "delivery_location_id": fields.get("delivery_location_id"),
     })
     res = row[0] if isinstance(row, list) and row else row
     if not res:
@@ -602,6 +728,8 @@ def update_address(address_id):
             latitude: {type: number}
             longitude: {type: number}
             is_default: {type: boolean}
+            delivery_type: {type: string, enum: [on_campus, off_campus], description: "How this address is delivered"}
+            delivery_location_id: {type: string, description: "A hostel id when delivery_type is on_campus, a gate id when it is off_campus"}
     responses:
       200:
         description: Address updated
@@ -609,7 +737,7 @@ def update_address(address_id):
         description: Address not found
     """
     db = get_user_client()
-    existing = db.table("user_addresses").select("id").eq("id", address_id).eq("user_id", g.user_id).single().execute()
+    existing = db.table("user_addresses").select("id,delivery_type").eq("id", address_id).eq("user_id", g.user_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.AUTH_ADDRESS_NOT_FOUND}), 404
 
@@ -618,7 +746,13 @@ def update_address(address_id):
         return _bad_body()
     if "address_line" in data and "line1" not in data:
         data["line1"] = data["address_line"]
-    fields, err = _validate_address_fields(data)
+    # A PATCH that changes only `delivery_location_id` does not restate the type,
+    # and an id with no type has no meaning — so inherit the stored one. Without
+    # this the new location was silently dropped.
+    if "delivery_location_id" in data and not data.get("delivery_type") and not data.get("type"):
+        data["delivery_type"] = existing.get("delivery_type")
+    fields, err = _validate_address_fields(
+        data, db=get_db(), campus_id=getattr(g, "campus_id", None))
     if err:
         return jsonify({"error": err}), 400
     for required in ("label", "line1", "city"):

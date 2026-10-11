@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useCampus } from '@/lib/campusContext';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 // Domain 0 — route guard for campus-scoped pages.
 //
@@ -36,7 +37,8 @@ const TITLE_BY_PATH: Record<string, string> = {
 };
 
 export default function CampusScope() {
-  const { campusId, campuses, campusesLoading, requireCampus, releaseCampus } = useCampus();
+  const { user, isLoading } = useHolyGrill();
+  const { campusId, campuses, campusesLoading, requireCampus, releaseCampus, openGate } = useCampus();
   const { pathname } = useLocation();
   const base = '/' + (pathname.split('/')[1] || '');
   const action = ACTION_BY_PATH[base] || 'continue';
@@ -46,6 +48,24 @@ export default function CampusScope() {
     return () => releaseCampus();
   }, [base, action, requireCampus, releaseCampus]);
 
+  // A signed-in user is scoped server-side by their own campus_id (set at
+  // registration, never changeable). They must never be asked to pick one —
+  // and must never see this placeholder. This is checked BEFORE campusId,
+  // because the profile's campus_id can still be in flight on first paint.
+  //
+  // `user` is the ONLY safe signal here, and it is deliberately the whole check.
+  // It is null both at build-time pre-render and during hydration (no session
+  // exists in either), so this branch cannot disagree with the pre-rendered
+  // markup. An `isLoading` bypass looks equivalent but is not: isLoading starts
+  // true in BOTH the pre-render and the client's first render, so it would send
+  // the pre-render down this branch and /menu, /events and /marketplace would
+  // ship an empty shell — which scripts/smoke.mjs catches as three failures.
+  //
+  // A signed-in user whose session is still resolving therefore sees this
+  // heading for a moment. That is cosmetic and self-correcting: the campus GATE
+  // (campusContext's prompt effect) already returns early on
+  // `if (isLoading || campusesLoading)`, so it never opens for them at all.
+  if (user) return <Outlet />;
   if (campusId) return <Outlet />;
 
   // No campuses to choose (single-campus / no public list endpoint) — let the
@@ -60,6 +80,10 @@ export default function CampusScope() {
   //
   // The gate is normally open on top of this. If it was dismissed, the button
   // below is how the guest gets back to it — re-entering the route re-opens it.
+  // It calls openGate() directly, not requireCampus(): requireCampus() returns
+  // true (and opens nothing) as soon as it sees a `user` object, which is what
+  // left this as a dead-end button for a signed-in user whose campus_id had not
+  // resolved yet.
   return (
     <div className="mx-auto max-w-md px-4 py-20 text-center">
       <h1 className="font-heading font-extrabold text-xl text-foreground">
@@ -67,7 +91,7 @@ export default function CampusScope() {
       </h1>
       <button
         type="button"
-        onClick={() => requireCampus(action)}
+        onClick={() => openGate(action, 'blocking')}
         className="mt-4 px-5 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold active:scale-95 transition"
       >
         Choose your campus

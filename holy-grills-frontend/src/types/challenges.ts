@@ -44,20 +44,41 @@ export interface MyChallengeRow extends Challenge {
   expires_at?: string;
 }
 
-/** An earned badge row inside GET /api/challenges/my. */
+/**
+ * A badge definition inside GET /api/challenges/my. `earned` is the backend's
+ * per-row flag: the same definition appears in `badges_earned` or
+ * `badges_locked` depending on it, and `icon_locked` / `description` are what
+ * the locked group renders.
+ */
 export interface EarnedBadge {
+  id?: string;
   title?: string;
   name?: string;
+  description?: string;
+  requirement?: string;
   /** The badge's emoji/mark; rendered as-is when present. */
   icon_won?: string;
+  /** Mark shown while the badge is still locked. */
+  icon_locked?: string;
+  hp_awarded?: number;
+  hp_award?: number;
+  /** True only when the user has actually earned this badge. */
+  earned?: boolean;
   [key: string]: unknown;
 }
 
 /**
  * GET /api/challenges/my — milestone_service.get_user_milestones() returns this
  * envelope (not a list), and both consumers (Rewards, Streak) read it as one.
+ *
+ * `badges_earned` / `badges_locked` are the two groups the UI renders.
+ * `badges` is the full set with the `earned` flag, kept for compatibility —
+ * rendering it wholesale under "Badges Earned" is what listed every badge the
+ * campus defines as if it had been won.
  */
 export interface MyChallengesEnvelope {
+  badges_earned?: EarnedBadge[];
+  badges_locked?: EarnedBadge[];
   badges?: EarnedBadge[];
   challenges_available?: MyChallengeRow[];
   challenges_completed?: MyChallengeRow[];

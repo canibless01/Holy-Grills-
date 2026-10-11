@@ -5,18 +5,62 @@ Order service — order creation, status transitions, delivery rewards, payment 
 import uuid
 from datetime import datetime, timezone, timedelta
 
+# Stable machine-readable codes for the two ways ordering can be refused. The
+# frontend must not have to match the human message text to decide whether to
+# offer "schedule for the next opening" — it reads these instead.
+ORDERING_WINDOW_CLOSED = "ORDERING_WINDOW_CLOSED"
+ORDERING_WINDOW_AT_CAPACITY = "ORDERING_WINDOW_AT_CAPACITY"
+
+
 class OrderingWindowUnavailable(ValueError):
     """Raised when an ordering window is closed or at capacity.
 
-    Carries an optional `next_available_date` so callers (routes) can surface
-    a "schedule for {date}" prompt instead of a plain rejection.
+    Carries a stable `code` (`ORDERING_WINDOW_CLOSED` / `ORDERING_WINDOW_AT_CAPACITY`)
+    plus `next_available_date` / `next_opens_at`, so callers (routes) can surface
+    a "schedule for {date}" prompt instead of a plain rejection and the client
+    never has to string-match the message.
+
+    The next-slot values are LAZY. Working them out is a day-by-day search over
+    the ordering windows (up to 14 days, each with its own queries), and raising
+    this exception happens on every refused order — including the ones the caller
+    re-raises untouched because the client did not ask to schedule. So the search
+    only runs if something actually reads the value.
     """
-    def __init__(self, message: str, next_available_date: str = None):
+    def __init__(self, message: str, next_available_date: str = None, code: str = None,
+                 next_opens_at: str = None, next_slot_resolver=None):
         super().__init__(message)
-        self.next_available_date = next_available_date
+        self.code = code or ORDERING_WINDOW_CLOSED
+        self._next_slot_resolver = next_slot_resolver
+        self._resolved = next_available_date is not None or next_opens_at is not None
+        self._next_available_date = next_available_date
+        self._next_opens_at = next_opens_at
+
+    def _resolve(self):
+        if self._resolved:
+            return
+        self._resolved = True
+        if not self._next_slot_resolver:
+            return
+        try:
+            slot = self._next_slot_resolver() or {}
+        except Exception as exc:                                   # noqa: BLE001
+            logger.warning("ordering window: next-slot lookup failed: %s", exc)
+            return
+        self._next_available_date = slot.get("date")
+        self._next_opens_at = slot.get("opens_at")
+
+    @property
+    def next_available_date(self):
+        self._resolve()
+        return self._next_available_date
+
+    @property
+    def next_opens_at(self):
+        self._resolve()
+        return self._next_opens_at
 from decimal import Decimal
 from app.utils.tz import today_wat
-from app.utils.schedule import effective_ordering_windows
+from app.utils.schedule import effective_windows_with_config
 from app.utils.settings import setting_or_config, setting_bool
 from flask import current_app
 from app.db import get_db, get_user_client, SupabaseError
@@ -467,8 +511,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         except OrderingWindowUnavailable:
             if not payload.get("accept_next_available_date"):
                 raise
-            tomorrow = (datetime.now(timezone.utc) + timedelta(hours=1) + timedelta(days=1)).date()
-            next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
+            # Search from TODAY, not tomorrow: before the kitchen opens, today's
+            # window is still the next available one. `find_next_available_ordering_slot`
+            # skips a window that has already closed, so after closing time this
+            # still lands on the next open day.
+            now_wat = datetime.now(timezone.utc) + timedelta(hours=1)
+            next_slot = find_next_available_ordering_slot(db, campus_id, start_date=now_wat.date())
             if not next_slot or not next_slot.get("date"):
                 raise
             is_scheduled = True
@@ -1862,8 +1910,8 @@ def _order_capacity_weight(order_row: dict) -> int:
 
 def resolve_ordering_window(db, campus_id):
     """
-    Raises ValueError(MSG.ORDER_OUTSIDE_ORDERING_HOURS) or
-    ValueError(MSG.ORDERING_WINDOW_AT_CAPACITY). Returns
+    Raises OrderingWindowUnavailable(ORDERING_WINDOW_CLOSED) or
+    OrderingWindowUnavailable(ORDERING_WINDOW_AT_CAPACITY). Returns
     {'id':..., 'capacity':..., 'linked_delivery_window_id':...} on success.
     """
     from datetime import time as _time, timedelta as _td, timezone as _tz
@@ -1885,25 +1933,24 @@ def resolve_ordering_window(db, campus_id):
     # a per-date operating_hours override (closed, or one window at its times), then
     # the recurring weekday rows, then the config fallback. An override applies to
     # its own date only — the next day is back on the recurring schedule.
-    candidates, _source = effective_ordering_windows(db, campus_id, _today_iso, _weekday)
-
-    if not candidates:
-        from flask import current_app
-        _open_str = current_app.config.get("ORDERING_WINDOW_OPEN_TIME", "08:00")
-        _close_str = current_app.config.get("ORDERING_WINDOW_CLOSE_TIME", "16:00")
-        if _parse_hm(_open_str, 8, 0) <= _now_wat <= _parse_hm(_close_str, 16, 0):
-            return {"id": None, "capacity": None, "linked_delivery_window_id": None}
-        raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+    # `_with_config` materialises that last step, so a campus with no
+    # ordering_windows rows is judged against the configured hours here instead of
+    # reading as permanently closed while checkout would have accepted the order.
+    candidates, _source = effective_windows_with_config(db, campus_id, _today_iso, _weekday)
 
     open_rows = [r for r in candidates if not r.get("is_closed") and r.get("opens_at") and r.get("closes_at")]
     if not open_rows:
-        raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+        raise OrderingWindowUnavailable(
+            MSG.ORDER_OUTSIDE_ORDERING_HOURS, code=ORDERING_WINDOW_CLOSED,
+            next_slot_resolver=lambda: _next_available_slot(db, campus_id, _now_wat_dt))
 
     open_rows.sort(key=lambda r: _parse_hm(r["opens_at"], 0, 0))
     earliest_open = _parse_hm(open_rows[0]["opens_at"], 0, 0)
     latest_close = max(_parse_hm(r["closes_at"], 23, 59) for r in open_rows)
     if _now_wat < earliest_open or _now_wat > latest_close:
-        raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+        raise OrderingWindowUnavailable(
+            MSG.ORDER_OUTSIDE_ORDERING_HOURS, code=ORDERING_WINDOW_CLOSED,
+            next_slot_resolver=lambda: _next_available_slot(db, campus_id, _now_wat_dt))
 
     any_time_eligible = False
     for row in open_rows:
@@ -1925,24 +1972,56 @@ def resolve_ordering_window(db, campus_id):
         return row
 
     if any_time_eligible:
-        next_slot = None
-        try:
-            tomorrow = (_now_wat_dt + _td(days=1)).date()
-            next_slot = find_next_available_ordering_slot(db, campus_id, start_date=tomorrow)
-        except Exception as _nse:
-            logger.warning("resolve_ordering_window: next-slot lookup failed: %s", _nse)
-        next_date = (next_slot or {}).get("date")
-        raise OrderingWindowUnavailable(MSG.ORDERING_WINDOW_AT_CAPACITY, next_available_date=next_date)
+        raise OrderingWindowUnavailable(
+            MSG.ORDERING_WINDOW_AT_CAPACITY, code=ORDERING_WINDOW_AT_CAPACITY,
+            next_slot_resolver=lambda: _next_available_slot(db, campus_id, _now_wat_dt))
 
-    raise OrderingWindowUnavailable(MSG.ORDER_OUTSIDE_ORDERING_HOURS)
+def _next_available_slot(db, campus_id, now_wat_dt):
+    """The next bookable ordering slot for this campus, starting from TODAY.
+
+    Deliberately not "tomorrow": before the kitchen opens, today's window is
+    still bookable, so scheduling must be able to offer today. A window that has
+    already closed is skipped inside `find_next_available_ordering_slot`.
+    """
+    return find_next_available_ordering_slot(db, campus_id, start_date=now_wat_dt.date())
+
+
+def _parse_hm_local(value, default_h, default_m):
+    """"HH:MM" / "HH:MM:SS" -> datetime.time. Module-level so the status helper,
+    the reason mapper and the next-slot search all parse identically."""
+    from datetime import time as _time
+    try:
+        parts = str(value).split(":")
+        return _time(int(parts[0]), int(parts[1]))
+    except Exception:
+        return _time(default_h, default_m)
 
 
 def get_ordering_window_status(db, campus_id, for_date=None):
     from datetime import timedelta as _td, timezone as _tz
     _now_utc = datetime.now(_tz.utc)
     _now_wat_dt = _now_utc + _td(hours=1)
+    _now_wat = _now_wat_dt.time()
     target_dt = for_date if for_date else _now_wat_dt.date()
     _today_iso = target_dt.isoformat() if hasattr(target_dt, "isoformat") else str(target_dt)
+
+    # No campus = no answer. The contract is tri-state (the client types it as
+    # `boolean | null`), and the storefront hours endpoint already answers null
+    # here — so this one must too. Reporting the global config window instead
+    # would tell a guest who has not picked a campus that SOME kitchen is shut,
+    # which is what the closed popup would then show them.
+    if not campus_id:
+        return {
+            "date": _today_iso,
+            "is_open": None,
+            "windows": [],
+            "any_capacity_remaining": False,
+            "reason": "no_campus",
+        }
+
+    # Only the day that is actually today gets a clock comparison; the 7-day
+    # calendar and the next-slot search ask about future dates.
+    is_today = _today_iso == _now_wat_dt.date().isoformat()
 
     try:
         dt_obj = datetime.fromisoformat(_today_iso) if isinstance(_today_iso, str) else target_dt
@@ -1952,11 +2031,13 @@ def get_ordering_window_status(db, campus_id, for_date=None):
 
     # Same precedence as resolve_ordering_window, through the same helper — this is
     # what makes find_next_available_ordering_slot and the 7-day calendar
-    # override-aware without their own copy of the rules.
-    candidates, _source = effective_ordering_windows(db, campus_id, _today_iso, _weekday)
+    # override-aware without their own copy of the rules, and what keeps a
+    # config-only campus reading the same hours here as checkout enforces.
+    candidates, _source = effective_windows_with_config(db, campus_id, _today_iso, _weekday)
 
     windows_out = []
     any_capacity = False
+    any_open_now = False
     for row in candidates:
         deliv = None
         if row.get("linked_delivery_window_id"):
@@ -1981,6 +2062,19 @@ def get_ordering_window_status(db, campus_id, for_date=None):
             remaining = max(0, int(row["capacity"]) - used)
             is_full = used >= int(row["capacity"])
 
+        # Clock check. For TODAY a window only counts as open while the current
+        # WAT time is inside it — a window that opens at 08:00 is not "open" at
+        # 01:00, which is exactly what the status endpoint used to get wrong (it
+        # reported is_open from the schedule alone, so the frontend never showed
+        # the closed popup and Place Order was refused instead). Future dates have
+        # no "now" to compare against, so capacity alone decides them.
+        _opens = _parse_hm_local(row.get("opens_at"), 0, 0)
+        _closes = _parse_hm_local(row.get("closes_at"), 23, 59)
+        _within_time = (not is_today) or (_opens <= _now_wat <= _closes)
+        _row_open = (not row.get("is_closed")) and (not is_full) and _within_time
+        if _row_open:
+            any_open_now = True
+
         if not row.get("is_closed") and not is_full:
             any_capacity = True
 
@@ -1993,27 +2087,68 @@ def get_ordering_window_status(db, campus_id, for_date=None):
             "closes_at": row.get("closes_at"),
             "delivery_starts_at": (deliv or {}).get("opens_at"),
             "delivery_ends_at": (deliv or {}).get("closes_at"),
+            # True only when this specific window is bookable right now.
+            "is_open_now": _row_open,
         })
 
     return {
         "date": _today_iso,
-        "is_open": any_capacity,
+        # Clock-aware for today, capacity-only for future dates.
+        "is_open": any_open_now,
         "windows": windows_out,
         "any_capacity_remaining": any_capacity,
+        # Why the kitchen is not taking orders right now — the frontend renders
+        # "opens at …" vs "closed today" vs "fully booked" from this instead of
+        # guessing from the window rows.
+        "reason": _closed_reason(candidates, is_today, _now_wat, any_capacity),
     }
 
 
+def _closed_reason(candidates, is_today, now_wat, any_capacity):
+    """Why ordering is unavailable: open | before_opening | after_closing | closed_today | full | no_window."""
+    open_rows = [r for r in candidates if not r.get("is_closed") and r.get("opens_at") and r.get("closes_at")]
+    if not open_rows:
+        return "closed_today" if candidates else "no_window"
+    if not any_capacity:
+        return "full"
+    if not is_today:
+        return "open"
+    earliest = min(_parse_hm_local(r["opens_at"], 0, 0) for r in open_rows)
+    latest = max(_parse_hm_local(r["closes_at"], 23, 59) for r in open_rows)
+    if now_wat < earliest:
+        return "before_opening"
+    if now_wat > latest:
+        return "after_closing"
+    return "open"
+
+
 def find_next_available_ordering_slot(db, campus_id, start_date, max_days_ahead=14):
+    """The next date with a bookable ordering window, searched from `start_date`.
+
+    When the search reaches TODAY, a window that has already closed is not
+    bookable and the search moves on to the next day. A window that has not
+    opened yet still counts — that is what lets "before opening" schedule for
+    today instead of always pushing to tomorrow.
+    """
     from datetime import timedelta as _td
+    _now_wat_dt = datetime.now(timezone.utc) + _td(hours=1)
+    _today_iso = _now_wat_dt.date().isoformat()
+    _now_wat = _now_wat_dt.time()
     curr = start_date
     for _ in range(max_days_ahead):
         status = get_ordering_window_status(db, campus_id, for_date=curr)
-        if status.get("any_capacity_remaining"):
-            open_wins = [w for w in status.get("windows", []) if not w["is_closed"] and not w["is_full"]]
+        open_wins = [w for w in status.get("windows", []) if not w["is_closed"] and not w["is_full"]]
+        bookable = [
+            w for w in open_wins
+            if status.get("date") != _today_iso
+            or _parse_hm_local(w.get("closes_at"), 23, 59) >= _now_wat
+        ]
+        if bookable:
+            first = min(bookable, key=lambda w: _parse_hm_local(w.get("opens_at"), 0, 0))
             return {
                 "date": status["date"],
-                "window_id": open_wins[0]["id"] if open_wins else None,
-                "opens_at": open_wins[0].get("delivery_starts_at") if open_wins else None,
+                "window_id": first["id"],
+                "opens_at": first.get("delivery_starts_at") or first.get("opens_at"),
             }
         curr = curr + _td(days=1)
     return None

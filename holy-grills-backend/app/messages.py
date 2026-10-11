@@ -1003,6 +1003,9 @@ class MSG:
     LOGOUT_FAILED                          = "Could not log you out. Please try again."
     LOGOUT_ALL_FAILED                      = "Could not sign you out of every device. Please try again."
     ADDRESS_COORDINATES_INVALID            = "Latitude/longitude are out of range."
+    ADDRESS_DELIVERY_LOCATION_INVALID      = ("That hostel or gate is not available for your campus. "
+                                              "Pick another one.")
+    FE_CHECKOUT_ADDRESS_NEEDS_RESELECT      = "Pick your delivery location again — the saved one can no longer be found."
     ADDRESS_SAVE_FAILED                    = "Could not save the address. Please try again."
     AUTH_NEW_PASSWORD_SAME                 = "Your new password must be different from the current one."
     ACCOUNT_DELETE_WALLET_BALANCE          = "Withdraw or spend your wallet balance before deleting your account."
@@ -1257,6 +1260,7 @@ class MSG:
     FE_CHECKOUT_CHOOSE_DELIVERY            = "Please choose on-campus or off-campus delivery"
     FE_CHECKOUT_SELECT_HOSTEL              = "Please select your hostel"
     FE_CHECKOUT_SELECT_GATE                = "Please select your nearest gate"
+    FE_CHECKOUT_CAMPUS_NEEDED_FOR_FEE      = "Choose your campus so we can price delivery to your location."
     FE_CHECKOUT_ENTER_NAME                 = "Please enter your name"
     FE_CHECKOUT_INVALID_PHONE              = "Phone must be 11 digits (080...) or +234 + 10 digits"
     FE_CHECKOUT_INVALID_EMAIL              = "Please enter a valid email"
@@ -1266,6 +1270,24 @@ class MSG:
     FE_CHECKOUT_FREE_SIDE_ADDED_TITLE      = "🏆 Free side added"
     FE_CHECKOUT_FREE_SIDE_ADDED_BODY       = "{item} is added to this order at ₦0. The credit is used when you place the order."
     FE_CHECKOUT_FREE_SIDE_FAILED_TITLE     = "Could not add the free side"
+
+    # Checkout — kitchen closed / scheduled orders
+    FE_CHECKOUT_KITCHEN_CLOSED_TITLE       = "The kitchen is closed"
+    FE_CHECKOUT_KITCHEN_CLOSED_OPENS       = "The kitchen is closed. It opens at {time}. You can still order now and we will schedule it for {date}."
+    FE_CHECKOUT_KITCHEN_CLOSED_NO_TIME     = "The kitchen is closed. You can still order now and we will schedule it for the next opening."
+    FE_CHECKOUT_KITCHEN_CLOSED_TODAY       = "The kitchen is closed for today. You can still order now and we will schedule it for the next opening."
+    FE_CHECKOUT_KITCHEN_CLOSED_FULL        = "Today's slots are fully booked. You can still order now and we will schedule it for the next opening."
+    FE_CHECKOUT_SCHEDULE_MY_ORDER          = "Schedule my order"
+    FE_CHECKOUT_CANCEL                     = "Cancel"
+    FE_CHECKOUT_SCHEDULED_CONFIRM_TITLE    = "Order scheduled"
+    FE_CHECKOUT_SCHEDULED_CONFIRM_BODY     = "We'll start preparing it {date} at {time}."
+    FE_CHECKOUT_SCHEDULE_FAILED_BODY       = "We couldn't schedule your order. Please try again."
+
+    # Campus gate (guests only — a signed-in user is scoped by their own campus)
+    FE_CAMPUS_GATE_SUBTITLE                = "Pick your campus so we can show its menu, gates and delivery fees."
+    FE_CAMPUS_GATE_LOAD_FAILED             = "We couldn't load the campus list. Check your connection and try again."
+    FE_CAMPUS_GATE_RETRY                   = "Try again"
+    FE_CAMPUS_SCOPE_CHOOSE                 = "Choose your campus"
 
     # Cart
     FE_CART_SIGNIN_TO_SAVE_TITLE           = "Sign in to save items"

@@ -152,9 +152,14 @@ def create_order():
             order["message"] = MSG.ORDER_PLACED
         return jsonify(order), 201
     except OrderingWindowUnavailable as e:
-        resp = {"error": str(e)}
+        # Stable machine-readable code — the client decides "offer to schedule"
+        # from this, never from the message text. next_available_date/next_opens_at
+        # tell it which slot to offer.
+        resp = {"error": str(e), "code": getattr(e, "code", None) or "ORDERING_WINDOW_CLOSED"}
         if getattr(e, "next_available_date", None):
             resp["next_available_date"] = e.next_available_date
+        if getattr(e, "next_opens_at", None):
+            resp["next_opens_at"] = e.next_opens_at
         return jsonify(resp), 409
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -998,6 +1003,7 @@ def list_delivery_windows():
 
 
 @orders_bp.route("/delivery-windows/status", methods=["GET"])
+@optional_auth
 def delivery_windows_status():
     db = get_user_client()
     from app.routes.events import _get_campus_id
@@ -1006,12 +1012,17 @@ def delivery_windows_status():
     from app.services.order_service import get_ordering_window_status, find_next_available_ordering_slot
     status = get_ordering_window_status(db, campus_id)
 
+    # The next bookable slot is the answer to "when can I order?" — and it is
+    # needed whenever ordering is not possible right now, not only when the
+    # kitchen is at capacity. Search from TODAY so a kitchen that has not opened
+    # yet offers today (find_next_available_ordering_slot skips windows that have
+    # already closed, so after closing time this lands on the next open day).
     next_avail_date = None
     next_opens_at = None
-    if not status.get("any_capacity_remaining"):
+    if not status.get("is_open"):
         from datetime import datetime, timezone, timedelta as _td
         _now_wat = datetime.now(timezone.utc) + _td(hours=1)
-        next_slot = find_next_available_ordering_slot(db, campus_id, start_date=(_now_wat + _td(days=1)).date())
+        next_slot = find_next_available_ordering_slot(db, campus_id, start_date=_now_wat.date())
         if next_slot:
             next_avail_date = next_slot.get("date")
             next_opens_at = next_slot.get("opens_at")
@@ -1032,6 +1043,7 @@ def delivery_windows_status():
 
     return jsonify({
         "is_open": status.get("is_open", False),
+        "reason": status.get("reason"),
         "windows": status.get("windows", []),
         "any_capacity_remaining": status.get("any_capacity_remaining", False),
         "next_available_date": next_avail_date,

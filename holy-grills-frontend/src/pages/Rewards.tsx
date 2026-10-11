@@ -502,21 +502,47 @@ export default function Rewards() {
           {(() => {
             const available = challenges?.challenges_available || [];
             const completed = challenges?.challenges_completed || [];
-            const badges = challenges?.badges || [];
+            // The backend splits badges into `badges_earned` / `badges_locked`
+            // (and keeps `badges` as the full set with an `earned` flag). Earned
+            // only under "Badges Earned" — listing the full set there showed
+            // every badge the campus defines, earned or not. `badges` is the
+            // fallback for a backend that has not been redeployed yet.
+            const allBadges = challenges?.badges || [];
+            const earned = challenges?.badges_earned
+              || allBadges.filter((b) => b.earned);
+            const locked = challenges?.badges_locked
+              || allBadges.filter((b) => !b.earned);
             const all = [...available, ...completed];
-            if (all.length === 0 && badges.length === 0) {
+            if (all.length === 0 && allBadges.length === 0) {
               return <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border"><p className="text-sm text-muted-foreground">Nothing here yet.</p></div>;
             }
             return (
               <>
-                {badges.length > 0 && (
+                {earned.length > 0 && (
                   <div className="rounded-2xl bg-accent/10 border border-accent/20 p-3 mb-2">
                     <div className="flex items-center gap-2 mb-2"><Award className="w-4 h-4 text-accent" /><span className="text-xs font-bold text-foreground">Badges Earned</span></div>
                     <div className="flex flex-wrap gap-2">
-                      {badges.map((b, i) => (
-                        <span key={i} className="text-xs font-bold px-2.5 py-1 rounded-full bg-white border border-accent/20 text-accent-foreground flex items-center gap-1">
+                      {earned.map((b) => (
+                        <span key={b.id} className="text-xs font-bold px-2.5 py-1 rounded-full bg-white border border-accent/20 text-accent-foreground flex items-center gap-1">
                           {b.icon_won || '🏅'} {b.title || b.name}
                         </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {locked.length > 0 && (
+                  <div className="rounded-2xl bg-secondary/40 border border-border p-3 mb-2">
+                    <div className="flex items-center gap-2 mb-2"><Lock className="w-4 h-4 text-muted-foreground" /><span className="text-xs font-bold text-foreground">Locked badges</span></div>
+                    <div className="space-y-2">
+                      {locked.map((b) => (
+                        <div key={b.id} className="flex items-start gap-2">
+                          <span className="text-sm leading-none mt-0.5 opacity-60">{b.icon_locked || '🔒'}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-foreground">{b.title || b.name}</div>
+                            <div className="text-[11px] text-muted-foreground leading-snug">{b.description || b.requirement}</div>
+                          </div>
+                          <span className="text-[11px] font-bold text-muted-foreground shrink-0">+{b.hp_awarded || b.hp_award || 0} HP</span>
+                        </div>
                       ))}
                     </div>
                   </div>

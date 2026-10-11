@@ -329,6 +329,12 @@ def get_current_user(access_token: str) -> dict:
         # Top-level aliases so mobile clients don't need to dig into profile{}
         "full_name": _profile.get("full_name"),
         "role": _profile.get("role"),
+        # The user's campus. Without this top-level alias the client cannot scope
+        # itself: it reads `campus_id` off the session user, gets undefined, sends
+        # no X-Campus-ID, and every campus-scoped read (menu availability, gates,
+        # hostels, delivery-window status) falls back to global/unscoped data —
+        # which is also what made logged-in users get asked to pick a campus.
+        "campus_id": _profile.get("campus_id"),
         "referral_code": _profile.get("referral_code"),
         "profile": profile,
         "wallet": {

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
 import { formatNaira } from '@/lib/hgUtils';
 import { squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
@@ -11,9 +12,11 @@ import { msg } from '@/lib/messages';
 import FreeSideCreditModal from '@/components/FreeSideCreditModal';
 import SquadOrderButton from '@/components/checkout/SquadOrderButton';
 import OffCampusMap from '@/components/OffCampusMap';
+import CheckoutKitchenClosedPopup from '@/components/CheckoutKitchenClosedPopup';
 import DeliveryZonesInfo from '@/components/DeliveryZonesInfo';
 import { useSound } from '@/lib/SoundProvider';
 import Skeleton from '@/components/Skeleton';
+import { readFeeCache, writeFeeCache } from '@/lib/deliveryUtils';
 import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } from '@/types/orders';
 import type { FreeSideItem } from '@/types/free-sides';
 
@@ -32,10 +35,17 @@ export default function Checkout() {
   const location = useLocation();
   const passed = location.state || {};
   const { cart, wallet, refreshUser, isAuthenticated } = useHolyGrill();
+  const { campus, openGate } = useCampus();
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [windowStatus, setWindowStatus] = useState(null);
+  // Closed-kitchen popup. Raised from two places: the status read on load, and a
+  // Place Order the backend refused because the window closed in between (a
+  // race, or the status call never returned). Either way the guest gets the same
+  // offer — schedule for the next opening, or cancel.
+  const [showClosedPopup, setShowClosedPopup] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [hostels, setHostels] = useState([]);
   const [gates, setGates] = useState([]);
   const [addresses, setAddresses] = useState([]);
@@ -49,6 +59,14 @@ export default function Checkout() {
   const [landmark, setLandmark] = useState('');
   const [feePreview, setFeePreview] = useState(null);
   const [radiusError, setRadiusError] = useState(null);
+  // The saved address the guest picked, if any. Sent with the order as
+  // `delivery_address_id` so the backend re-reads the stored
+  // delivery_type/delivery_location_id/coordinates instead of trusting what we
+  // replayed client-side.
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+  // A saved address whose hostel/gate no longer resolves — shown as needing a
+  // re-pick rather than failing the order.
+  const [addressNeedsReselect, setAddressNeedsReselect] = useState(null);
   // Exactly the three methods the picker below offers (wallet/card/split).
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [walletAmount, setWalletAmount] = useState(0);
@@ -89,7 +107,11 @@ export default function Checkout() {
     const load = async () => {
       try {
         const [status, h, g, ga] = await Promise.all([
-          mockApi.orders.getDeliveryWindowStatus(),
+          // The campus id is passed explicitly, so the status is read for THIS
+          // campus even before apiClient's persisted header is in place. No
+          // campus yet is a real state and must come back as is_open: null —
+          // never as "closed".
+          mockApi.orders.getDeliveryWindowStatus(campus?.id),
           mockApi.delivery.getHostels(),
           mockApi.delivery.getGates(),
           mockApi.menu.getGlobalAddons().catch(() => []),
@@ -104,6 +126,14 @@ export default function Checkout() {
     load();
     try { setScheduledWindow(JSON.parse(sessionStorage.getItem('hg_scheduled_window') || 'null')); } catch { /* ignore */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Closed kitchen on load. Only an EXPLICIT is_open === false counts: `null`
+  // means the campus is not resolved yet, which is "unknown", not "closed" —
+  // showing the popup then would tell a guest who has not picked a campus that
+  // the kitchen is shut.
+  useEffect(() => {
+    if (windowStatus && windowStatus.is_open === false) setShowClosedPopup(true);
+  }, [windowStatus]);
 
   // Addresses + free side credits are auth-scoped. The auth state resolves
   // AFTER mount, so this has to react to it — a mount-only fetch left both
@@ -160,6 +190,16 @@ export default function Checkout() {
     const body: CalculateDeliveryFeePayload = { delivery_type: 'off_campus', lat: ll.lat, lon: ll.lng };
     if (keepGate && gateRef.current) body.delivery_location_id = gateRef.current;
     setRadiusError(null);
+    // A re-drop on the same spot answers from cache. calculate-fee makes several
+    // database calls in a row, and on a cold or idle backend the first one is the
+    // slow one — dragging the pin around should not re-pay that cost every time.
+    const cached = readFeeCache(ll.lat, ll.lng);
+    if (cached && !keepGate) {
+      setDeliveryFee(cached.fee);
+      if (cached.gateId) { gateRef.current = cached.gateId; setGateId(cached.gateId); }
+      setFeePreview({ fee: cached.fee, km: cached.km, gateName: cached.gateName });
+      return;
+    }
     try {
       const res = await mockApi.delivery.calculateFee(body);
       const fee = res.delivery_fee ?? res.fee ?? 0;
@@ -169,11 +209,22 @@ export default function Checkout() {
         gateRef.current = returnedGate.id;
         setGateId(returnedGate.id);
       }
-      setFeePreview({ fee, km: res.distance_km ?? null, gateName: returnedGate?.name || returnedGate?.id || 'nearest gate' });
+      const preview = { fee, km: res.distance_km ?? null, gateName: returnedGate?.name || returnedGate?.id || 'nearest gate' };
+      setFeePreview(preview);
+      if (!keepGate) writeFeeCache(ll.lat, ll.lng, { ...preview, gateId: returnedGate?.id ?? null });
     } catch (e) {
       setDeliveryFee(0); setFeePreview(null);
       // Backend rejects pins outside the delivery area — surface its message as-is.
-      if (e?.message && /outside|delivery area|radius/i.test(e.message)) setRadiusError(e.message);
+      if (e?.message && /outside|delivery area|radius/i.test(e.message)) { setRadiusError(e.message); return; }
+      // The backend now refuses to price an off-campus fee it cannot scope to a
+      // campus (it used to pick the nearest gate from every campus and quote a fee
+      // against it). Leaving the fee at 0 would read as free delivery, so ask for
+      // the campus instead of guessing.
+      if (e?.message && /campus/i.test(e.message)) {
+        setError(msg('FE_CHECKOUT_CAMPUS_NEEDED_FOR_FEE',
+          'Choose your campus so we can price delivery to your location.'));
+        openGate('price your delivery', 'blocking');
+      }
     }
   };
 
@@ -231,39 +282,17 @@ export default function Checkout() {
     setFreeSideBusy(false);
   };
 
-  const handlePlaceOrder = async () => {
-    setError(null);
-    // The backend is the source of truth for whether ordering is allowed —
-    // never hard-block on the frontend's read of kitchen status. If the
-    // kitchen is closed but the user scheduled a window, send it through; if
-    // no window was picked, still attempt and surface the backend's own error.
+  // One payload builder for both order paths. The normal Place Order and the
+  // closed-kitchen popup's "Schedule my order" send the same cart; they differ
+  // only by the `accept_next_available_date` flag the schedule path adds.
+  // The body is an optional-field bag by design (only items + payment_method
+  // are always present); CreateOrderPayload describes it.
+  const buildPayload = (): CreateOrderPayload => {
+    // The kitchen is closed and a window was picked earlier in the session
+    // (home page / menu radar): attach it so the order is booked into that
+    // window. Otherwise the backend picks the next available one.
     const scheduled = !windowStatus?.is_open ? scheduledWindow : null;
-    if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return; }
-    if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return; }
-    if (deliveryType === 'off_campus') {
-      const hasPin = deliveryPin && deliveryPin.lat != null && deliveryPin.lng != null;
-      // Block only when there is no pin and no chosen gate. A pin is enough —
-      // the backend fills in the nearest gate from the coordinates.
-      if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return; }
-      if (radiusError) { setError(radiusError); return; }
-    }
-    if (!isAuthenticated) {
-      if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return; }
-      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(msg('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return; }
-      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(msg('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return; }
-    }
-    if (effectivePayment === 'split' && isAuthenticated) {
-      if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return; }
-      if (walletAmount > (wallet?.balance || 0)) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return; }
-      if (walletAmount > total) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return; }
-    }
-
-    setPlacing(true);
-    // The body is an optional-field bag by design (only items + payment_method
-    // are always present); CreateOrderPayload describes it. The one field read
-    // after construction is accept_next_available_date, which the backend
-    // capacity flow does read (order_service.py:456).
-    const payload: CreateOrderPayload = {
+    return {
         items: (cart?.items || []).map((ci) => ({
           menu_item_id: ci.menu_item_id,
           quantity: ci.quantity,
@@ -283,6 +312,10 @@ export default function Checkout() {
         notes,
         ...(paymentMethod === 'split' && isAuthenticated ? { wallet_amount: walletAmount } : {}),
         ...(!isAuthenticated ? { guest_name: guestName, guest_phone: guestPhone, guest_email: guestEmail } : {}),
+        // A saved address the guest picked: the backend re-reads its stored
+        // delivery_type / delivery_location_id / coordinates and overrides
+        // whatever we send alongside. Only signed-in guests can have one.
+        ...(selectedAddressId && isAuthenticated ? { delivery_address_id: selectedAddressId } : {}),
         ...(deliveryType === 'on_campus'
           ? { delivery_location_id: hostelId }
           : {
@@ -292,20 +325,110 @@ export default function Checkout() {
           }),
         ...(selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
         ...(scheduled ? { delivery_window_id: scheduled.id, is_scheduled: true } : {}),
-      };
+    };
+  };
+
+  const handlePlaceOrder = async () => {
+    setError(null);
+    // The backend is the source of truth for whether ordering is allowed —
+    // never hard-block on the frontend's read of kitchen status. If the
+    // kitchen is closed but the user scheduled a window, send it through; if
+    // no window was picked, still attempt and surface the backend's own error.
+    if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return; }
+    if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return; }
+    if (addressNeedsReselect) { setError(msg('FE_CHECKOUT_ADDRESS_NEEDS_RESELECT', 'Pick your delivery location again — the saved one can no longer be found.')); return; }
+    if (deliveryType === 'off_campus') {
+      const hasPin = deliveryPin && deliveryPin.lat != null && deliveryPin.lng != null;
+      // Block only when there is no pin and no chosen gate. A pin is enough —
+      // the backend fills in the nearest gate from the coordinates.
+      if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return; }
+      if (radiusError) { setError(radiusError); return; }
+    }
+    if (!isAuthenticated) {
+      if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return; }
+      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(msg('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return; }
+      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(msg('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return; }
+    }
+    if (effectivePayment === 'split' && isAuthenticated) {
+      if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return; }
+      if (walletAmount > (wallet?.balance || 0)) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return; }
+      if (walletAmount > total) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return; }
+    }
+
+    setPlacing(true);
+    const payload = buildPayload();
     try {
       await submitOrder(payload);
     } catch (e) {
-      // "Today's orders are full" — the backend signals ORDERING_WINDOW_AT_CAPACITY
-      // with a next_available_date. Offer exactly one reschedule, never a loop.
+      // Read the backend's stable code — never its message text.
       const detail = e.detail || {};
-      if ((e.message === 'ORDERING_WINDOW_AT_CAPACITY' || detail.error === 'ORDERING_WINDOW_AT_CAPACITY') && detail.next_available_date && !payload.accept_next_available_date) {
+      const code = detail.code || e.code;
+      // "Today's orders are full" — ORDERING_WINDOW_AT_CAPACITY carries a
+      // next_available_date. Offer exactly one reschedule, never a loop.
+      if (code === 'ORDERING_WINDOW_AT_CAPACITY' && detail.next_available_date && !payload.accept_next_available_date) {
         setReschedule({ date: detail.next_available_date, payload });
-      } else {
-        setError(e.message);
+        setPlacing(false);
+        return;
       }
+      // The kitchen is closed. Either a race with the status read on load, or
+      // that read never came back — so answer with the same popup the status
+      // would have raised, carrying the next slot the backend just told us
+      // about. A red error box here left the guest with no way forward.
+      if (code === 'ORDERING_WINDOW_CLOSED' || detail.error === 'ORDERING_WINDOW_CLOSED') {
+        setWindowStatus((prev) => ({
+          ...(prev || {}),
+          is_open: false,
+          reason: detail.reason || prev?.reason,
+          next_available_date: detail.next_available_date ?? prev?.next_available_date ?? null,
+          next_opens_at: detail.next_opens_at ?? prev?.next_opens_at ?? null,
+        }));
+        setShowClosedPopup(true);
+        setPlacing(false);
+        return;
+      }
+      setError(e.message);
     }
     setPlacing(false);
+  };
+
+  /**
+   * "Schedule my order" from the closed-kitchen popup. Resubmits the same cart
+   * with `accept_next_available_date: true` — the backend's own automatic
+   * scheduling path, which finds the next bookable slot (today, if the kitchen
+   * has not opened yet; otherwise the next open day) and marks the order
+   * scheduled. `report` hands the confirmation back to the popup so it can show
+   * the date and delivery window the order actually landed in.
+   */
+  const handleScheduleOrder = async (report) => {
+    setScheduling(true);
+    setError(null);
+    try {
+      const result = await mockApi.orders.create({ ...buildPayload(), accept_next_available_date: true });
+      const order = result?.order || result;
+      play('order_placed');
+      if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
+      const when = order?.scheduled_for ? new Date(order.scheduled_for) : null;
+      report?.({
+        date: when ? when.toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'short' }) : (windowStatus?.next_available_date || null),
+        time: when ? when.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' }) : (windowStatus?.next_opens_at || null),
+        window: order?.delivery_window_start && order?.delivery_window_end
+          ? `${order.delivery_window_start} – ${order.delivery_window_end}`
+          : (scheduledWindow?.label || null),
+        total: order?.total_amount ?? order?.total ?? null,
+      });
+      if (!isAuthenticated) {
+        localStorage.removeItem('hg_guest_cart');
+        try {
+          const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+          guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
+          localStorage.setItem('hg_guest_orders', JSON.stringify(guestOrders.slice(0, 10)));
+        } catch { /* ignore */ }
+      }
+    } catch (e) {
+      setShowClosedPopup(false);
+      setError(e.message || msg('FE_CHECKOUT_SCHEDULE_FAILED_BODY', "We couldn't schedule your order. Please try again."));
+    }
+    setScheduling(false);
   };
 
   // Shared submit — places the order and hands off to the confirmation screen.
@@ -423,25 +546,67 @@ export default function Checkout() {
               <Plus className="w-3 h-3" /> Edit
             </Link>
           </div>
+          {addressNeedsReselect && (
+            <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-fade-in">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs text-amber-700 dark:text-amber-400">
+                <span className="font-semibold">{addressNeedsReselect.label || 'That saved address'}</span> points at a hostel or gate we can no longer find, so it can't be priced. Pick the location again below, or edit the address.
+              </div>
+              <button type="button" onClick={() => setAddressNeedsReselect(null)} className="text-amber-700 dark:text-amber-400 text-xs font-bold">Dismiss</button>
+            </div>
+          )}
           {addresses.length > 0 ? (
             <div className="space-y-2">
               {addresses.map((addr) => (
                 <button
                   key={addr.id}
                   onClick={() => {
-                    const type = addr.type || addr.delivery_type;
+                    // Replay what was saved. `user_addresses` holds exactly two
+                    // columns for this: `delivery_type` ('on_campus' | 'off_campus')
+                    // and `delivery_location_id` — a hostel id for on_campus, a
+                    // gate id for off_campus, the same meaning
+                    // `orders.delivery_location_id` has. create_order re-reads both
+                    // from the saved address when the order carries
+                    // `delivery_address_id`, so we send that id too.
+                    //
+                    // Rows saved before these were written have neither. Those fall
+                    // back exactly as before: coordinates for off-campus, a hostel
+                    // name match for on-campus.
+                    const type = addr.delivery_type
+                      || ((addr.latitude ?? addr.lat) != null ? 'off_campus' : 'on_campus');
                     if (type) setDeliveryType(type);
-                    if (type === 'on_campus' && (addr.location_id || addr.hostel_id || addr.delivery_location_id)) {
-                      const hid = addr.location_id || addr.hostel_id || addr.delivery_location_id;
-                      setHostelId(hid); calcOnCampusFee(hid);
+                    if (type === 'on_campus') {
+                      const ref = addr.delivery_location_id || '';
+                      const hostelName = (addr.hostel || (addr.line1 || '').split(',')[0] || '').trim();
+                      const hid = ref
+                        || (hostelName ? (hostels.find((h) => h.name === hostelName)?.id ?? null) : null);
+                      if (hid) { setHostelId(hid); calcOnCampusFee(hid); }
+                      // A saved hostel we can no longer resolve must be re-picked,
+                      // not silently charged ₦0 delivery.
+                      if (!hid) { setAddressNeedsReselect(addr); return; }
                     }
                     if (type === 'off_campus') {
-                      const gid = addr.gate_id || addr.delivery_location_id;
-                      if (gid) setGateId(gid);
-                      const savedPin = (addr.lat != null && addr.lng != null) ? { lat: addr.lat, lng: addr.lng } : null;
+                      const lat = addr.latitude ?? addr.lat;
+                      const lng = addr.longitude ?? addr.lng;
+                      const savedPin = (lat != null && lng != null) ? { lat: Number(lat), lng: Number(lng) } : null;
                       if (savedPin) { setDeliveryPin(savedPin); setDeliveryAddress(addr.line1 || addr.description || addr.address || ''); }
-                      calcOffCampusFee(gid, savedPin, { keepGate: true });
+                      else {
+                        // A row saved without coordinates must not inherit the
+                        // previous pin — that would price this address against
+                        // wherever the guest dropped the last one.
+                        pinRef.current = null; setDeliveryPin(null); setFeePreview(null);
+                      }
+                      // The stored pin is a saved coordinate, NOT the guest's
+                      // current position — nothing reads the phone's location
+                      // here. The backend takes the pin, resolves the nearest
+                      // gate to it and prices the fee from that, which is why
+                      // the fee is correct wherever the guest is standing now.
+                      calcOffCampusFee(addr.delivery_location_id || null, savedPin, { keepGate: !!addr.delivery_location_id });
                     }
+                    // Remember which row this was so the order can send
+                    // `delivery_address_id` and let the backend re-read the saved
+                    // values rather than trusting what we replayed client-side.
+                    setSelectedAddressId(addr.id);
                   }}
                   className="w-full flex items-center gap-2 p-3 rounded-xl border border-border text-left hover:border-primary transition-colors bg-card"
                 >
@@ -491,6 +656,7 @@ export default function Checkout() {
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Drop your delivery pin</label>
             <OffCampusMap
               gates={gates}
+              center={campus?.lat != null && campus?.lon != null ? [Number(campus.lat), Number(campus.lon)] : null}
               pin={deliveryPin}
               onPinChange={(ll) => { setDeliveryPin(ll); calcOffCampusFee(gateId, ll); }}
               selectedGateId={gateId}
@@ -652,6 +818,17 @@ export default function Checkout() {
         busy={freeSideBusy}
         onClose={() => setShowFreeSide(false)}
         onUse={handleUseFreeSide}
+      />
+
+      {/* Closed kitchen. Only an explicit is_open === false opens it — `null`
+          (no campus resolved yet) is "unknown", never "closed", so a guest who
+          has not picked a campus is never told the kitchen is shut. */}
+      <CheckoutKitchenClosedPopup
+        open={showClosedPopup}
+        status={windowStatus}
+        busy={scheduling}
+        onSchedule={handleScheduleOrder}
+        onClose={() => setShowClosedPopup(false)}
       />
     </div>
   );

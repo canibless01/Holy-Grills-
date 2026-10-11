@@ -138,8 +138,12 @@ const orders = {
   async review(id, body) { return apiClient.post(`/orders/${id}/review`, body); },
   async validatePromo(body) { return apiClient.post('/orders/validate-promo', body); },
   async getDeliveryWindows() { return apiClient.get('/orders/delivery-windows'); },
-  async getDeliveryWindowStatus() {
-    const res = await apiClient.get('/orders/delivery-windows/status');
+  async getDeliveryWindowStatus(campusId?: string) {
+    // The campus id is sent as an explicit header when the caller has one, so
+    // the status is read for that campus even before apiClient's persisted
+    // selection is in place. Omit it and the backend resolves the campus itself
+    // (guest header, then the signed-in user's own campus).
+    const res = await apiClient.get('/orders/delivery-windows/status', undefined, campusId ? { 'X-Campus-ID': campusId } : undefined);
     // New kitchen-status contract — windows carry per-window delivery times and
     // slot counts (is_full/is_closed/remaining), and the closed case carries
     // the next opening date + time. Normalized additively so both the old

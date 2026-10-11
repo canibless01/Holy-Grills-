@@ -240,11 +240,17 @@ async function requestRaw(path: string, options: RequestOptions = {}) {
 }
 
 export const apiClient = {
-  get(path: string, params?: Record<string, unknown>) {
+  /**
+   * `headers` is merged LAST, so a caller can state a campus explicitly and
+   * override the one apiClient derived from storage. Used by the checkout
+   * kitchen-status read, which must be scoped to the campus the guest is
+   * actually ordering from even if the persisted header has not landed yet.
+   */
+  get(path: string, params?: Record<string, unknown>, headers?: Record<string, string>) {
     const qs = params ? '?' + new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]
     ).toString() : '';
-    return request(path + qs);
+    return request(path + qs, headers ? { headers } : undefined);
   },
   post(path: string, body?: unknown) {
     return request(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });

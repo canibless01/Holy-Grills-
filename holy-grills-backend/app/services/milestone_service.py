@@ -83,8 +83,8 @@ class MilestoneNotFoundError(LookupError, ValueError):
 
 def get_user_milestones(user_id: str) -> dict:
     """
-    Return all milestones split into earned badges, available challenges,
-    and pending (in-progress) challenges.
+    Return all milestones split into earned badges, locked badges, available
+    challenges, and pending (in-progress) challenges.
     """
     db = get_user_client()
     period_weekly  = _milestone_period_key("weekly", today_wat())
@@ -114,6 +114,7 @@ def get_user_milestones(user_id: str) -> dict:
     earned_monthly  = {r["milestone_id"] for r in earned_rows if r.get("period_key") == period_monthly}
 
     badges_earned = []
+    badges_locked = []
     challenges_available = []
     challenges_completed = []
 
@@ -122,14 +123,18 @@ def get_user_milestones(user_id: str) -> dict:
         tw  = m.get("time_window")
 
         if tw is None:
-            # Badge or system milestone
+            # Badge or system milestone. `earned` stays on every row (that is the
+            # flag clients have always read); the list it lands in is what decides
+            # which group it is rendered under.
             m["earned"] = mid in earned_lifetime
             m["is_system"] = m.get("trigger_type") in SYSTEM_VERIFIED_TRIGGERS
             if m["earned"]:
                 completion = next((r for r in earned_rows if r["milestone_id"] == mid and r.get("period_key") is None), {})
                 m["earned_at"] = completion.get("completed_at")
                 m["hp_awarded"] = completion.get("hp_awarded", m.get("hp_awarded", 0))
-            badges_earned.append(m)
+                badges_earned.append(m)
+            else:
+                badges_locked.append(m)
         else:
             # Challenge
             current_set = earned_weekly if tw == "weekly" else earned_monthly
@@ -139,8 +144,15 @@ def get_user_milestones(user_id: str) -> dict:
             else:
                 challenges_available.append(m)
 
+    # `badges` is the whole set with the `earned` flag, kept for clients that
+    # still read it. `badges_earned` / `badges_locked` are the two groups the UI
+    # should render — listing `badges` under a "Badges Earned" heading shows
+    # every badge the campus defines, earned or not.
+    all_badges = badges_earned + badges_locked
     return {
-        "badges": badges_earned,
+        "badges_earned": badges_earned,
+        "badges_locked": badges_locked,
+        "badges": all_badges,
         "challenges_available": challenges_available,
         "challenges_completed": challenges_completed,
     }

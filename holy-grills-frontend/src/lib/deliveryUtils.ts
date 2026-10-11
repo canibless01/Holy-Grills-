@@ -42,3 +42,25 @@ export function formatKm(km) {
   if (km == null || isNaN(km)) return '—';
   return `${km.toFixed(1)}km`;
 }
+// ── Off-campus fee cache ────────────────────────────────────────────────────
+// Dropping a pin calls calculate-fee, which makes several database calls in a
+// row (campus, radius setting, gates, zones). On a cold or idle backend the
+// FIRST call is the slow one, so a guest dragging the pin around re-pays that
+// cost on every move. Keyed on the pin rounded to ~11 m: a re-drop on the same
+// spot answers instantly, and a genuinely new position still asks the backend.
+const FEE_CACHE = new Map();
+const FEE_CACHE_MAX = 40;
+
+export const feeCacheKey = (lat, lng) => `${lat.toFixed(4)},${lng.toFixed(4)}`;
+
+export const readFeeCache = (lat, lng) => FEE_CACHE.get(feeCacheKey(lat, lng)) || null;
+
+export const writeFeeCache = (lat, lng, value) => {
+  // Simple bound — the checkout screen is short-lived, so evicting the oldest
+  // entry is enough and no timestamp bookkeeping is needed.
+  if (FEE_CACHE.size >= FEE_CACHE_MAX) {
+    const oldest = FEE_CACHE.keys().next().value;
+    if (oldest !== undefined) FEE_CACHE.delete(oldest);
+  }
+  FEE_CACHE.set(feeCacheKey(lat, lng), value);
+};
