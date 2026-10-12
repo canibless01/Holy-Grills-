@@ -75,6 +75,7 @@ def fund_via_card():
     import math
     data = request.get_json(silent=True) or {}
     from flask import current_app
+    db = get_user_client()
     min_topup = setting_or_config(
         db, "wallet_min_card_topup",
         current_app.config.get("WALLET_MIN_CARD_TOPUP", 100),
@@ -87,7 +88,6 @@ def fund_via_card():
     if not math.isfinite(amount) or amount < min_topup:
         return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=min_topup)}), 400
 
-    db = get_user_client()
     auth_user_rows = db.table("profiles").select("id").eq("id", g.user_id).single().execute()
     if not auth_user_rows:
         return jsonify({"error": MSG.WALLET_USER_NOT_FOUND}), 404

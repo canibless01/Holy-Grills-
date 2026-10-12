@@ -95,10 +95,12 @@ export default function ItemDetail() {
     if (!item) return [];
     const errs = [];
     (item.variation_groups || []).forEach((vg) => {
-      if (vg.is_required && (selections[vg.id] || []).length < vg.min_selections) errs.push(`"${vg.name}" requires ${vg.min_selections} selection(s)`);
+      const min = Math.max(vg.is_required ? 1 : 0, Number(vg.min_selections || 0));
+      if ((selections[vg.id] || []).length < min) errs.push(`"${vg.name}" requires ${min} selection(s)`);
     });
     addonGroups.forEach((ag) => {
-      if (ag.is_required && (selections[ag.id] || []).length < ag.min_select) errs.push(`"${ag.name}" requires ${ag.min_select} selection(s)`);
+      const min = Math.max(ag.is_required ? 1 : 0, Number(ag.min_select || 0));
+      if ((selections[ag.id] || []).length < min) errs.push(`"${ag.name}" requires ${min} selection(s)`);
     });
     return errs;
   };
@@ -274,9 +276,7 @@ export default function ItemDetail() {
             <Heart className={`w-5 h-5 ${saved ? 'fill-primary' : ''}`} />
           </button>
         </div>
-        {item.avg_rating != null && (
-          <div className="mt-1.5"><RatingStars rating={item.avg_rating} count={item.review_count} size="md" /></div>
-        )}
+        <div className="mt-1.5"><RatingStars rating={item.avg_rating ?? 0} count={item.review_count ?? 0} size="md" /></div>
         <p className="hg-body mt-2 leading-relaxed">{item.description}</p>
         <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-3">
           <span className="font-heading font-bold text-xl text-foreground">{formatNaira(item.price)}</span>
@@ -306,7 +306,7 @@ export default function ItemDetail() {
                 <button
                   key={opt.id}
                   onClick={() => toggleVariation(vg.id, opt.id, vg.max_selections)}
-                  disabled={item.is_sold_out}
+                  disabled={item.is_sold_out || opt.is_available === false || opt.is_archived}
                   className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/50'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <div className="flex items-center gap-3">
@@ -342,7 +342,7 @@ export default function ItemDetail() {
                 <button
                   key={ad.id}
                   onClick={() => toggleAddon(ag.id, ad.id, ag.max_select)}
-                  disabled={item.is_sold_out}
+                  disabled={item.is_sold_out || ad.is_available === false}
                   className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/50'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <div className="flex items-center gap-3">

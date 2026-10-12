@@ -111,6 +111,9 @@ def _with_flash_status(reward: dict, flash: dict = None) -> dict:
 
 def _flash_for_rewards(rewards: list) -> dict:
     """{reward_id: available flash row} for a list of rewards, in one windows query. Never raises."""
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("flash_redemptions", getattr(g, "campus_id", None)):
+        return {}
     try:
         db = get_db()
         windows = _active_flash_windows(db, [r["id"] for r in rewards if r.get("id")])

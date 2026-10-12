@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g, current_app, abort
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.middleware.rate_limit import rate_limit
 from app.utils.email import send_qr_ticket_email
@@ -27,11 +27,13 @@ def _get_campus_id():
     3. Authenticated user's session (g.campus_id)
     4. None (no campus chosen)
     """
+    if getattr(g, "user_id", None) and getattr(g, "user_role", None) != "super_admin":
+        return getattr(g, "campus_id", None)
     campus_id = request.args.get("campus_id") or request.headers.get("X-Campus-ID")
     if campus_id:
         campus_id = campus_id.strip()
         if not validate_uuid(campus_id):
-            return None
+            abort(400, description=MSG.INVALID_CAMPUS_ID)
     else:
         campus_id = getattr(g, "campus_id", None)
         campus_id = str(campus_id).strip() if campus_id else None
@@ -42,7 +44,7 @@ def _get_campus_id():
         db = get_db()
         exists = db.table("campuses").select("id").eq("id", campus_id).eq("is_active", True).single().execute()
         if not exists:
-            return None  # falls through to the caller's existing "campus_id could not be resolved" error
+            abort(400, description=MSG.CAMPUS_NOT_AVAILABLE)
     return campus_id
 
 

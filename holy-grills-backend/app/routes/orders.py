@@ -829,7 +829,7 @@ def list_scheduled_orders():
                 "delivery_windows(label,starts_at,ends_at)")
         .eq("user_id", g.user_id)
         .eq("is_scheduled", "true")
-        .eq("status", "received")
+        .in_("status", ["received", "paid"])
         .order("scheduled_for", ascending=True)
         .limit(limit)
         .offset(offset)
@@ -882,7 +882,7 @@ def cancel_scheduled_order(order_id):
     if order.get("user_id") != g.user_id:
         return jsonify({"error": MSG.ORDER_CANCEL_NOT_OWNER}), 403
     is_scheduled = order.get("is_scheduled") in (True, "true", "t")
-    if not is_scheduled or order.get("status") != "received":
+    if not is_scheduled or order.get("status") not in ("received", "paid"):
         return jsonify({"error": MSG.ORDER_NOT_SCHEDULED_PENDING}), 409
 
     data = request.get_json(silent=True) or {}
@@ -900,7 +900,7 @@ def cancel_scheduled_order(order_id):
         credit_wallet(
             user_id=g.user_id,
             amount=wallet_amount_used,
-            payment_reference=f"scheduled-cancel-{order_id[:8].upper()}",
+            payment_reference=f"order-refund-wallet-{order_id}",
             reference_id=order_id,
             reference_type="refund",
             notes=f"Refund for cancelled scheduled order #{order_id[:8].upper()}",
@@ -922,7 +922,7 @@ def cancel_scheduled_order(order_id):
         from app.services.wallet_service import credit_wallet
         credit_wallet(
             user_id=g.user_id, amount=card_amount_used,
-            payment_reference=f"scheduled-cancel-card-{order_id[:8].upper()}",
+            payment_reference=f"order-refund-card-{order_id}",
             reference_id=order_id, reference_type="refund",
             notes=f"Card-portion refund for cancelled scheduled order #{order_id[:8].upper()}",
         )
@@ -1010,7 +1010,7 @@ def delivery_windows_status():
     campus_id = _get_campus_id()
 
     from app.services.order_service import get_ordering_window_status, find_next_available_ordering_slot
-    status = get_ordering_window_status(db, campus_id)
+    status = get_ordering_window_status(get_db(), campus_id)
 
     # The next bookable slot is the answer to "when can I order?" — and it is
     # needed whenever ordering is not possible right now, not only when the
@@ -1022,7 +1022,7 @@ def delivery_windows_status():
     if not status.get("is_open"):
         from datetime import datetime, timezone, timedelta as _td
         _now_wat = datetime.now(timezone.utc) + _td(hours=1)
-        next_slot = find_next_available_ordering_slot(db, campus_id, start_date=_now_wat.date())
+        next_slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=_now_wat.date())
         if next_slot:
             next_avail_date = next_slot.get("date")
             next_opens_at = next_slot.get("opens_at")
@@ -1034,7 +1034,7 @@ def delivery_windows_status():
         _now_wat_date = (datetime.now(timezone.utc) + _td(hours=1)).date()
         for i in range(7):
             d = _now_wat_date + _td(days=i)
-            st = get_ordering_window_status(db, campus_id, for_date=d)
+            st = get_ordering_window_status(get_db(), campus_id, for_date=d)
             calendar.append({
                 "date": st["date"],
                 "is_open": st["is_open"],
@@ -1176,7 +1176,7 @@ def cancel_order(order_id):
     # Only "received" orders can be cancelled by the customer (kitchen hasn't started yet).
     # "received" means no kitchen work has begun, so cancellation is always safe regardless
     # of time-of-day — the ordering-window check has been intentionally removed here.
-    if order.get("status") != "received":
+    if order.get("status") not in ("received", "paid"):
         return jsonify({"error": MSG.ORDER_CANCEL_WRONG_STATUS}), 409
 
     data = request.get_json(force=True, silent=True) or {}
@@ -1223,7 +1223,7 @@ def cancel_order(order_id):
             credit_wallet(
                 user_id=g.user_id,
                 amount=wallet_amount,
-                payment_reference=f"cancel-{order_id[:8].upper()}",
+                payment_reference=f"order-refund-wallet-{order_id}",
                 reference_id=order_id,
                 reference_type="refund",
                 notes=f"Refund for cancelled order #{order_id[:8].upper()}",
@@ -1240,7 +1240,7 @@ def cancel_order(order_id):
             credit_wallet(
                 user_id=g.user_id,
                 amount=card_amount,
-                payment_reference=f"cancel-card-{order_id[:8].upper()}",
+                payment_reference=f"order-refund-card-{order_id}",
                 reference_id=order_id,
                 reference_type="refund",
                 notes=f"Card refund to wallet for cancelled order #{order_id[:8].upper()}",

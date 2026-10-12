@@ -8,7 +8,7 @@ import { useCampus } from '@/lib/campusContext';
 import { formatNaira } from '@/lib/hgUtils';
 import { squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 import FreeSideCreditModal from '@/components/FreeSideCreditModal';
 import SquadOrderButton from '@/components/checkout/SquadOrderButton';
 import OffCampusMap from '@/components/OffCampusMap';
@@ -19,6 +19,7 @@ import Skeleton from '@/components/Skeleton';
 import { readFeeCache, writeFeeCache } from '@/lib/deliveryUtils';
 import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } from '@/types/orders';
 import type { FreeSideItem } from '@/types/free-sides';
+import { checkoutIntent } from '@/lib/checkoutIntent';
 
 function CheckoutSkeleton() {
   return (
@@ -31,10 +32,12 @@ function CheckoutSkeleton() {
 }
 
 export default function Checkout() {
+  useMessages();
   const navigate = useNavigate();
   const location = useLocation();
   const passed = location.state || {};
-  const { cart, wallet, refreshUser, isAuthenticated } = useHolyGrill();
+  const { cart, wallet, user, refreshUser, refreshCart, clearCart, isAuthenticated } = useHolyGrill();
+  const orderRequest = useRef<Promise<any> | null>(null);
   const { campus, openGate } = useCampus();
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
@@ -46,6 +49,7 @@ export default function Checkout() {
   // offer — schedule for the next opening, or cancel.
   const [showClosedPopup, setShowClosedPopup] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [scheduleRequested, setScheduleRequested] = useState(false);
   const [hostels, setHostels] = useState([]);
   const [gates, setGates] = useState([]);
   const [addresses, setAddresses] = useState([]);
@@ -132,8 +136,8 @@ export default function Checkout() {
   // showing the popup then would tell a guest who has not picked a campus that
   // the kitchen is shut.
   useEffect(() => {
-    if (windowStatus && windowStatus.is_open === false) setShowClosedPopup(true);
-  }, [windowStatus]);
+    if (windowStatus?.is_open === false && !scheduledWindow && !scheduleRequested) setShowClosedPopup(true);
+  }, [windowStatus, scheduledWindow, scheduleRequested]);
 
   // Addresses + free side credits are auth-scoped. The auth state resolves
   // AFTER mount, so this has to react to it — a mount-only fetch left both
@@ -324,37 +328,42 @@ export default function Checkout() {
             delivery_address: deliveryAddress || landmark || 'Off-campus delivery',
           }),
         ...(selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
-        ...(scheduled ? { delivery_window_id: scheduled.id, is_scheduled: true } : {}),
+        ...((scheduled || scheduleRequested) ? { accept_next_available_date: true } : {}),
     };
   };
 
-  const handlePlaceOrder = async () => {
+  const validateCheckout = () => {
     setError(null);
     // The backend is the source of truth for whether ordering is allowed —
     // never hard-block on the frontend's read of kitchen status. If the
     // kitchen is closed but the user scheduled a window, send it through; if
     // no window was picked, still attempt and surface the backend's own error.
-    if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return; }
-    if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return; }
-    if (addressNeedsReselect) { setError(msg('FE_CHECKOUT_ADDRESS_NEEDS_RESELECT', 'Pick your delivery location again — the saved one can no longer be found.')); return; }
+    if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return false; }
+    if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return false; }
+    if (addressNeedsReselect) { setError(msg('FE_CHECKOUT_ADDRESS_NEEDS_RESELECT', 'Pick your delivery location again — the saved one can no longer be found.')); return false; }
     if (deliveryType === 'off_campus') {
       const hasPin = deliveryPin && deliveryPin.lat != null && deliveryPin.lng != null;
       // Block only when there is no pin and no chosen gate. A pin is enough —
       // the backend fills in the nearest gate from the coordinates.
-      if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return; }
-      if (radiusError) { setError(radiusError); return; }
+      if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return false; }
+      if (radiusError) { setError(radiusError); return false; }
     }
     if (!isAuthenticated) {
-      if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return; }
-      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(msg('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return; }
-      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(msg('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return; }
+      if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return false; }
+      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(msg('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return false; }
+      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(msg('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return false; }
     }
     if (effectivePayment === 'split' && isAuthenticated) {
-      if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return; }
-      if (walletAmount > (wallet?.balance || 0)) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return; }
-      if (walletAmount > total) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return; }
+      if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return false; }
+      if (walletAmount > (wallet?.balance || 0)) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return false; }
+      if (walletAmount > total) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return false; }
     }
 
+    return true;
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!validateCheckout()) return;
     setPlacing(true);
     const payload = buildPayload();
     try {
@@ -399,31 +408,14 @@ export default function Checkout() {
    * scheduled. `report` hands the confirmation back to the popup so it can show
    * the date and delivery window the order actually landed in.
    */
-  const handleScheduleOrder = async (report) => {
+  const handleScheduleOrder = async () => {
+    setScheduleRequested(true);
+    setShowClosedPopup(false);
+    if (!validateCheckout()) return;
     setScheduling(true);
     setError(null);
     try {
-      const result = await mockApi.orders.create({ ...buildPayload(), accept_next_available_date: true });
-      const order = result?.order || result;
-      play('order_placed');
-      if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
-      const when = order?.scheduled_for ? new Date(order.scheduled_for) : null;
-      report?.({
-        date: when ? when.toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'short' }) : (windowStatus?.next_available_date || null),
-        time: when ? when.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' }) : (windowStatus?.next_opens_at || null),
-        window: order?.delivery_window_start && order?.delivery_window_end
-          ? `${order.delivery_window_start} – ${order.delivery_window_end}`
-          : (scheduledWindow?.label || null),
-        total: order?.total_amount ?? order?.total ?? null,
-      });
-      if (!isAuthenticated) {
-        localStorage.removeItem('hg_guest_cart');
-        try {
-          const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
-          guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
-          localStorage.setItem('hg_guest_orders', JSON.stringify(guestOrders.slice(0, 10)));
-        } catch { /* ignore */ }
-      }
+      await submitOrder({ ...buildPayload(), accept_next_available_date: true });
     } catch (e) {
       setShowClosedPopup(false);
       setError(e.message || msg('FE_CHECKOUT_SCHEDULE_FAILED_BODY', "We couldn't schedule your order. Please try again."));
@@ -434,12 +426,28 @@ export default function Checkout() {
   // Shared submit — places the order and hands off to the confirmation screen.
   // Throws so the caller can apply its own error handling (capacity reschedule).
   const submitOrder = async (payload: CreateOrderPayload) => {
-    const result = await mockApi.orders.create(payload);
+    if (!orderRequest.current) {
+      orderRequest.current = (async () => {
+        const base = { ...payload };
+        delete base.accept_next_available_date;
+        delete base.is_scheduled;
+        delete base.delivery_window_id;
+        const idempotency_key = await checkoutIntent({
+          actor: user?.id || 'guest', campus: campus?.id,
+          cartRows: (cart?.items || []).map((item) => item.id), payload: base,
+        });
+        return mockApi.orders.create({ ...payload, idempotency_key });
+      })();
+    }
+    let result;
+    try { result = await orderRequest.current; }
+    finally { orderRequest.current = null; }
     const order = result?.order || result;
     play('order_placed');
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
+    try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
     if (!isAuthenticated) {
-      localStorage.removeItem('hg_guest_cart');
+      await clearCart();
       try {
         const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
         guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
@@ -486,6 +494,8 @@ export default function Checkout() {
         <h1 className="font-heading font-bold text-xl text-foreground mt-0.5">Checkout</h1>
         <p className="text-sm text-muted-foreground mt-1">One step to the table.</p>
       </div>
+
+      {scheduleRequested && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_YOUR_ORDER_WILL_BE_SCHEDULED_FOR_THE_NEXT_AVAILA', "Your order will be scheduled for the next available opening. Wallet payment is charged when you place the order.")}</p>}
 
       {!isAuthenticated && (
         <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/30">

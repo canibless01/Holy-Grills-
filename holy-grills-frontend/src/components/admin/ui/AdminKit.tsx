@@ -1,3 +1,4 @@
+import { msg, useMessages } from '@/lib/messages';
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -146,6 +147,8 @@ export function Modal({ open, onClose, title, children, wide = false }: {
   children?: ReactNode;
   wide?: boolean;
 }) {
+  useMessages();
+  const titleId = React.useId();
   return (
     <AnimatePresence>
       {open && (
@@ -155,6 +158,7 @@ export function Modal({ open, onClose, title, children, wide = false }: {
           onClick={onClose}
         >
           <motion.div
+            role="dialog" aria-modal="true" aria-labelledby={titleId}
             initial={{ y: 48, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 32, opacity: 0 }}
@@ -163,8 +167,8 @@ export function Modal({ open, onClose, title, children, wide = false }: {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 bg-card px-5 py-4 border-b border-border flex items-center justify-between z-10">
-              <h3 className="font-heading font-extrabold text-base text-foreground">{title}</h3>
-              <button onClick={onClose} className="p-2 -mr-2 rounded-xl hover:bg-secondary active:scale-95 transition">
+              <h3 id={titleId} className="font-heading font-extrabold text-base text-foreground">{title}</h3>
+              <button aria-label={msg('FE_ADMIN_KIT_CLOSE_DIALOG', "Close dialog")} onClick={onClose} className="p-2 -mr-2 rounded-xl hover:bg-secondary active:scale-95 transition">
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>
             </div>
@@ -177,10 +181,13 @@ export function Modal({ open, onClose, title, children, wide = false }: {
 }
 
 export function Field({ label, children, hint }: { label?: ReactNode; children?: ReactNode; hint?: ReactNode }) {
+  const id = React.useId();
+  const inputs = React.Children.map(children, (child, index) => React.isValidElement(child) && child.type !== React.Fragment
+    ? React.cloneElement(child as React.ReactElement<{ id?: string }>, { id: index === 0 ? id : `${id}-${index}` }) : child);
   return (
     <div>
-      <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">{label}</label>
-      {children}
+      <label htmlFor={id} className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">{label}</label>
+      {inputs}
       {hint && <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>}
     </div>
   );
@@ -195,10 +202,11 @@ export function TextInput(props: React.ComponentProps<'input'>) {
   );
 }
 
-export function Toggle({ checked, onChange, disabled }: { checked?: boolean; onChange: (next: boolean) => void; disabled?: boolean }) {
+export function Toggle({ checked, onChange, disabled, label = 'Toggle' }: { checked?: boolean; onChange: (next: boolean) => void; disabled?: boolean; label?: string }) {
   return (
     <button
       type="button"
+      role="switch" aria-checked={!!checked} aria-label={label}
       onClick={() => onChange(!checked)}
       disabled={disabled}
       className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 disabled:opacity-50 ${checked ? 'bg-gradient-cta' : 'bg-secondary border border-border'}`}

@@ -75,7 +75,8 @@ export const CampusProvider = ({ children }) => {
   // NO campus — which is what asked them to pick one and silently unscoped
   // every storefront/kitchen read.
   const userCampusId = user?.campus_id || user?.profile?.campus_id || null;
-  const campusId = userCampusId || guestCampusId || null;
+  const validGuestCampusId = campuses.some((c) => c.id === guestCampusId) ? guestCampusId : null;
+  const campusId = userCampusId || validGuestCampusId;
   const campus = campuses.find((c) => c.id === campusId) || null;
   const adminCampus = campuses.find((c) => c.id === adminCampusId) || null;
 
@@ -105,6 +106,17 @@ export const CampusProvider = ({ children }) => {
 
   useEffect(() => { loadCampuses(); }, [loadCampuses]);
 
+  useEffect(() => {
+    if (!campusesLoading && !campusesError && guestCampusId && !validGuestCampusId) {
+      localStore.removeItem(CAMPUS_KEY);
+      setGuestCampusId(null);
+    }
+  }, [campusesLoading, campusesError, guestCampusId, validGuestCampusId]);
+
+  useEffect(() => {
+    if (user) closeGate();
+  }, [user, closeGate]);
+
   // Guests get a dismissible campus prompt once on the homepage — it must
   // never block browsing the storefront. Campus-scoped routes open the
   // non-cancelable gate via requireCampus. Once dismissed, the prompt stays
@@ -120,10 +132,10 @@ export const CampusProvider = ({ children }) => {
     // the tracking box. Campus-scoped pages still open the blocking gate.
     if (isLoading || campusesLoading) return;
     if (gateOpenRef.current) return;
-    if (!user && !guestCampusId && campuses.length > 0 && !gateDismissed && !location.pathname.startsWith('/track-orders')) {
+    if (!user && !validGuestCampusId && campuses.length > 0 && !gateDismissed && !location.pathname.startsWith('/track-orders') && location.pathname === '/') {
       openGate('continue', 'prompt');
     }
-  }, [isLoading, campusesLoading, user, guestCampusId, campuses, gateDismissed, location.pathname, openGate]);
+  }, [isLoading, campusesLoading, user, validGuestCampusId, campuses, gateDismissed, location.pathname, openGate]);
 
   // The dismissible homepage prompt can follow a guest onto the tracking page
   // (the effect above only runs on mount). Close it whenever the guest reaches
@@ -136,10 +148,12 @@ export const CampusProvider = ({ children }) => {
   }, [location.pathname, gateOpen, gateMode]);
 
   const selectCampus = useCallback((id) => {
+    if (id && !campuses.some((c) => c.id === id)) return;
     if (id) localStore.setItem(CAMPUS_KEY, id); else localStore.removeItem(CAMPUS_KEY);
     setGuestCampusId(id);
     closeGate();
-  }, [closeGate]);
+    window.dispatchEvent(new Event('hg:scope-changed'));
+  }, [closeGate, campuses]);
 
   // Super-admin campus switch — persists across admin sessions and is sent
   // as X-Campus-ID by apiClient for all authenticated admin requests.
@@ -156,6 +170,7 @@ export const CampusProvider = ({ children }) => {
       localStore.setItem(ADMIN_ALL_KEY, '1');
     }
     setAdminCampusId(id);
+    window.dispatchEvent(new Event('hg:scope-changed'));
   }, []);
 
   const clearAdminCampus = useCallback(() => {
@@ -173,10 +188,10 @@ export const CampusProvider = ({ children }) => {
     if (isLoading) return true;
     // Logged-in users (a real `user` object) are scoped server-side by their own
     // campus_id — never gate them. Guests who already chose a campus pass through.
-    if (user || userCampusId || guestCampusId) return true;
+    if (user || userCampusId || validGuestCampusId) return true;
     openGate(action, 'blocking');
     return false;
-  }, [isLoading, user, userCampusId, guestCampusId, openGate]);
+  }, [isLoading, user, userCampusId, validGuestCampusId, openGate]);
 
   // Called when a campus-scoped page unmounts (navigating away, or the back
   // button). This used to only DOWNGRADE blocking -> prompt and leave the gate

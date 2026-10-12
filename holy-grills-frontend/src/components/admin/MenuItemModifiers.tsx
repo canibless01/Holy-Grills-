@@ -3,7 +3,8 @@ import { Plus, Trash2, Save } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Field, TextInput } from './AdminShared';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
+import { modifierEditorPayload } from '@/lib/modifierEditor';
 
 // Per-item variations & add-ons editor, embedded inside the menu item modal.
 // Two distinct modifier kinds, each fully CRUD via the live per-item endpoints:
@@ -13,29 +14,33 @@ import { msg } from '@/lib/messages';
 //     "Choose up to 3 sides"). Each add-on has its own flat ₦ price.
 // For unsaved (new) items we show a "save first" note — modifiers need an item id.
 
-const parseOpts = (text) => text.split('\n').map((s) => s.trim()).filter(Boolean).map((line, i) => {
-  const [name, delta = '0'] = line.split(':').map((x) => x.trim());
-  return { id: `opt_${Date.now()}_${i}`, name, price_delta: Number(delta) || 0 };
-});
 const optsToText = (opts = []) => opts.map((o) => `${o.name}:${o.price_delta}`).join('\n');
 
 export default function MenuItemModifiers({ itemId }) {
+  useMessages();
   const [varGroups, setVarGroups] = useState([]);
   const [addonGroups, setAddonGroups] = useState([]);
   const [loading, setLoading] = useState(!!itemId);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  const loadModifiers = async () => {
+    const [detail, addons] = await Promise.all([mockApi.menu.getItem(itemId), mockApi.menu.getAddons(itemId)]);
+    setVarGroups((detail?.variation_groups || []).map(g => ({ ...g, optionsText: optsToText(g.options || []) })));
+    setAddonGroups((addons?.addon_groups || []).map(g => ({ ...g, addonsText: (g.addons || []).map(a => `${a.name}:${a.price}`).join('\n') })));
+  };
 
   useEffect(() => {
     if (!itemId) { setVarGroups([]); setAddonGroups([]); return; }
     let alive = true;
     const load = async () => {
-      setLoading(true);
+      setLoading(true); setLoadError(false);
       try {
         const [detail, addons] = await Promise.all([mockApi.menu.getItem(itemId), mockApi.menu.getAddons(itemId)]);
         if (!alive) return;
         setVarGroups((detail?.variation_groups || []).map((g) => ({ ...g, optionsText: optsToText(g.options || g.variations || []) })));
         setAddonGroups((addons?.addon_groups || []).map((g) => ({ ...g, addonsText: (g.addons || []).map((a) => `${a.name}:${a.price}`).join('\n') })));
-      } catch { if (alive) { setVarGroups([]); setAddonGroups([]); } }
+      } catch { if (alive) setLoadError(true); }
       if (alive) setLoading(false);
     };
     load();
@@ -49,6 +54,7 @@ export default function MenuItemModifiers({ itemId }) {
       </div>
     );
   }
+  if (loadError) return <div role="alert" className="text-sm text-destructive">{msg('FE_MENU_ITEM_MODIFIERS_MODIFIERS_COULD_NOT_BE_LOADED_CLOSE_AND_REOPEN_T', "Modifiers could not be loaded. Close and reopen this item to retry.")}</div>;
   if (loading) return <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">Loading modifiers…</div>;
 
   const addVarGroup = () => setVarGroups((gs) => [...gs, { id: `vg_${Date.now()}`, name: '', is_required: true, optionsText: '' }]);
@@ -56,10 +62,10 @@ export default function MenuItemModifiers({ itemId }) {
 
   const save = async () => {
     setSaving(true);
-    const variation_groups = varGroups.map((g) => ({ id: g.id, name: g.name, is_required: !!g.is_required, options: parseOpts(g.optionsText) }));
-    const addon_groups = addonGroups.map((g) => ({ id: g.id, name: g.name, is_required: !!g.is_required, min_select: g.min_select || 0, max_select: g.max_select || 3, addons: parseOpts(g.addonsText).map((a) => ({ id: a.id, name: a.name, price: a.price_delta })) }));
     try {
-      await mockApi.admin.saveItemModifiers(itemId, { variation_groups, addon_groups });
+      const payload = modifierEditorPayload(varGroups, addonGroups);
+      await mockApi.admin.saveItemModifiers(itemId, payload);
+      await loadModifiers();
       toast({ title: msg('FE_MENU_ITEM_MODIFIERS_MODIFIERS_SAVED', '✅ Modifiers saved') });
     } catch (e) { toast({ title: msg('FE_MENU_ITEM_MODIFIERS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
@@ -72,7 +78,7 @@ export default function MenuItemModifiers({ itemId }) {
       </div>
 
       {/* Variation groups */}
-      <div className="flex items-center justify-between"><span className="text-[11px] font-bold text-muted-foreground uppercase">Variation Groups</span><button onClick={addVarGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Group</button></div>
+      <div className="flex items-center justify-between"><span className="text-[11px] font-bold text-muted-foreground uppercase">{msg('FE_MENU_ITEM_MODIFIERS_VARIATION_GROUPS', "Variation Groups")}</span><button aria-label={msg('FE_MENU_ITEM_MODIFIERS_ADD_VARIATION_GROUP', "Add variation group")} onClick={addVarGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_MENU_ITEM_MODIFIERS_GROUP', "Group")}</button></div>
       <p className="text-[11px] text-muted-foreground -mt-1">Combo choices that change the base price (e.g. "Choose your protein"). Each option adds its price delta to the item price.</p>
       {varGroups.map((g, gi) => (
         <div key={g.id} className="rounded-xl bg-white border border-border p-2.5 space-y-2">
@@ -85,7 +91,7 @@ export default function MenuItemModifiers({ itemId }) {
               Required (customer must pick one)
             </label>
             <div className="ml-auto">
-              <button onClick={() => setVarGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button aria-label={`Remove variation group ${g.name || gi + 1}`} onClick={() => setVarGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
             </div>
           </div>
           <Field label="Options (one per line)" hint="Format: OptionName:PriceDelta — the delta is added to the item price. e.g. Chicken:0, Beef:200, Fish:150">
@@ -95,7 +101,7 @@ export default function MenuItemModifiers({ itemId }) {
       ))}
 
       {/* Addon groups */}
-      <div className="flex items-center justify-between pt-1"><span className="text-[11px] font-bold text-muted-foreground uppercase">Add-on Groups</span><button onClick={addAddonGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Group</button></div>
+      <div className="flex items-center justify-between pt-1"><span className="text-[11px] font-bold text-muted-foreground uppercase">{msg('FE_MENU_ITEM_MODIFIERS_ADD_ON_GROUPS', "Add-on Groups")}</span><button aria-label={msg('FE_MENU_ITEM_MODIFIERS_ADD_ADD_ON_GROUP', "Add add-on group")} onClick={addAddonGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_MENU_ITEM_MODIFIERS_GROUP', "Group")}</button></div>
       <p className="text-[11px] text-muted-foreground -mt-1">Optional extras with a selection range (e.g. "Choose up to 3 sides"). Each add-on has its own flat price.</p>
       {addonGroups.map((g, gi) => (
         <div key={g.id} className="rounded-xl bg-white border border-border p-2.5 space-y-2">
@@ -105,7 +111,7 @@ export default function MenuItemModifiers({ itemId }) {
                 <TextInput value={g.name} onChange={(e) => setAddonGroups((gs) => gs.map((x, i) => i === gi ? { ...x, name: e.target.value } : x))} placeholder="e.g. Choose your sides" />
               </Field>
             </div>
-            <button onClick={() => setAddonGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:bg-red-50 mt-6"><Trash2 className="w-4 h-4 text-red-500" /></button>
+            <button aria-label={`Remove add-on group ${g.name || gi + 1}`} onClick={() => setAddonGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:bg-red-50 mt-6"><Trash2 className="w-4 h-4 text-red-500" /></button>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Min selections" hint="Fewest add-ons a customer must pick (0 = optional)">

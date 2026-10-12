@@ -129,6 +129,7 @@ export interface CreateOrderItem {
  * `items` and `payment_method` are always present.
  */
 export interface CreateOrderPayload {
+  idempotency_key?: string;
   items: CreateOrderItem[];
   payment_method: PaymentMethod;
   /** 'website' | 'pwa' | … — mirrored from sessionStorage. */

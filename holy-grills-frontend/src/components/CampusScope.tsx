@@ -68,10 +68,6 @@ export default function CampusScope() {
   if (user) return <Outlet />;
   if (campusId) return <Outlet />;
 
-  // No campuses to choose (single-campus / no public list endpoint) — let the
-  // backend fall back to global/unscoped data rather than trapping the guest.
-  if (!campusesLoading && campuses.length === 0) return <Outlet />;
-
   // Deliberately the same markup while the campus list is still loading: the
   // build-time pre-render runs no API calls, so this branch is what writes real
   // indexable content into /menu, /events and /marketplace. A loading-only

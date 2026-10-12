@@ -180,6 +180,14 @@ def _banner_fields(data):
     Returns (dict, error_response|None).
     """
     out = {}
+    if "metadata" in data:
+        if not isinstance(data["metadata"], dict):
+            return None, _bad_request()
+        out["metadata"] = dict(data["metadata"])
+    if "eyebrow" in data:
+        if not isinstance(data["eyebrow"], str) or len(data["eyebrow"]) > 240:
+            return None, _bad_request()
+        out.setdefault("metadata", {})["eyebrow"] = data["eyebrow"].strip()
     for k in ("title", "subtitle", "image_url", "mobile_image_url", "action_url", "action_label", "placement"):
         if k in data:
             out[k] = data[k]
@@ -209,7 +217,20 @@ def _banner_fields(data):
 
 
 # ───────────────────────────── public config ─────────────────────────────
+@storefront_bp.route("/feature-flags", methods=["GET"])
+@optional_auth
+def public_feature_flags():
+    campus_id = _get_campus_id()
+    rows = get_db().table("feature_flags").select("feature_name,is_active,campus_id").execute() or []
+    flags = {}
+    for row in sorted(rows, key=lambda r: r.get("campus_id") is not None):
+        if row.get("campus_id") is None or (campus_id and row.get("campus_id") == campus_id):
+            flags[row["feature_name"]] = bool(row["is_active"])
+    return jsonify([{"feature_name": name, "is_active": active} for name, active in sorted(flags.items())]), 200
+
+
 @storefront_bp.route("/config/public", methods=["GET"])
+@optional_auth
 def get_public_config():
     """
     Get public system settings and configs.
@@ -276,6 +297,7 @@ def get_public_config():
 
 # ───────────────────────────── sections ─────────────────────────────
 @storefront_bp.route("/sections", methods=["GET"])
+@optional_auth
 def list_sections():
     """
     Get active storefront CMS sections (homepage, banners, etc).
@@ -758,6 +780,7 @@ def validate_promo():
 
 # ───────────────────────────── early supporters ─────────────────────────────
 @storefront_bp.route("/early-supporters", methods=["GET"])
+@optional_auth
 def list_early_supporters():
     """
     Get the public-facing Early Supporters list (storefront_sections with section_type='early_supporter').
@@ -953,6 +976,7 @@ def update_early_supporter_photo(section_id):
 
 # ───────────────────────────── banners ─────────────────────────────
 @storefront_bp.route("/banners", methods=["GET"])
+@optional_auth
 def list_banners():
     """
     Get active promotional banners for the storefront homepage.

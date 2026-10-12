@@ -1,10 +1,14 @@
+import { msg, useMessages } from '@/lib/messages';
 import React from 'react';
 import { X } from 'lucide-react';
 
-export function Toggle({ checked, onChange, disabled }: { checked?: boolean; onChange: (next: boolean) => void; disabled?: boolean }) {
+export function Toggle({ checked, onChange, disabled, label = 'Toggle' }: { checked?: boolean; onChange: (next: boolean) => void; disabled?: boolean; label?: string }) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={!!checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
       disabled={disabled}
       className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 disabled:opacity-50 ${checked ? 'bg-gradient-cta' : 'bg-secondary'}`}
@@ -15,13 +19,15 @@ export function Toggle({ checked, onChange, disabled }: { checked?: boolean; onC
 }
 
 export function Modal({ open, onClose, title, children }: { open?: boolean; onClose?: () => void; title?: React.ReactNode; children?: React.ReactNode }) {
+  useMessages();
+  const titleId = React.useId();
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={onClose}>
-      <div className="w-full sm:max-w-lg bg-white rounded-3xl shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full sm:max-w-lg bg-white rounded-3xl shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } }}>
         <div className="sticky top-0 bg-white px-5 py-4 border-b border-border flex items-center justify-between z-10">
-          <h3 className="font-heading font-extrabold text-base text-foreground">{title}</h3>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-secondary">
+          <h3 id={titleId} className="font-heading font-extrabold text-base text-foreground">{title}</h3>
+          <button aria-label={msg('FE_ADMIN_SHARED_CLOSE_DIALOG', "Close dialog")} onClick={onClose} className="p-2 rounded-lg hover:bg-secondary">
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -32,10 +38,13 @@ export function Modal({ open, onClose, title, children }: { open?: boolean; onCl
 }
 
 export function Field({ label, children, hint }: { label?: React.ReactNode; children?: React.ReactNode; hint?: React.ReactNode }) {
+  const id = React.useId();
+  const inputs = React.Children.map(children, (child, index) => React.isValidElement(child) && child.type !== React.Fragment
+    ? React.cloneElement(child as React.ReactElement<{ id?: string }>, { id: index === 0 ? id : `${id}-${index}` }) : child);
   return (
     <div>
-      <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">{label}</label>
-      {children}
+      <label htmlFor={id} className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">{label}</label>
+      {inputs}
       {hint && <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>}
     </div>
   );

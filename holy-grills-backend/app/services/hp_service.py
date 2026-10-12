@@ -156,6 +156,9 @@ def _get_hp_multiplier(campus_id: str = None) -> float:
     silently ignored while the broadcast told users it was live. The expiry is read at the same scope
     as the multiplier row that won. Returns 1.0 if disabled, expired, or invalid.
     """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("hp_multiplier", campus_id):
+        return 1.0
     try:
         db = get_db()
         scope, raw = None, None

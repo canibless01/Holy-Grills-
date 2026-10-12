@@ -1,7 +1,9 @@
+import { msg, useMessages } from '@/lib/messages';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin } from 'lucide-react';
 import APP_CONFIG from '@/config/app.config';
 import BrandLogo from '@/components/BrandLogo';
+import { useContactDetails } from '@/lib/useContactDetails';
 
 /**
  * Marketing footer — desktop only (hidden on mobile, where the app works
@@ -11,7 +13,9 @@ import BrandLogo from '@/components/BrandLogo';
  * accent-yellow icons.
  */
 export default function Footer() {
+  useMessages();
   const year = new Date().getFullYear();
+  const contact = useContactDetails();
 
   return (
     <footer className="hidden md:block bg-gradient-dark text-beige-soft">
@@ -45,20 +49,21 @@ export default function Footer() {
         <div className="md:col-span-4">
           <h4 className="font-heading font-bold text-white text-xs mb-4 uppercase tracking-[0.14em]">Get in touch</h4>
           <ul className="space-y-3.5 text-sm text-beige-soft">
-            <li className="flex items-center gap-2.5">
+            {contact.email && <li className="flex items-center gap-2.5">
               <Mail className="w-4 h-4 text-accent shrink-0" />
-              <a href="mailto:grillthevibe@gmail.com" className="hover:text-accent transition-colors">grillthevibe@gmail.com</a>
-            </li>
-            <li className="flex items-center gap-2.5">
+              <a href={`mailto:${contact.email}`} className="hover:text-accent transition-colors">{contact.email}</a>
+            </li>}
+            {contact.phone && <li className="flex items-center gap-2.5">
               <Phone className="w-4 h-4 text-accent shrink-0" />
-              <a href="tel:07053263931" className="hover:text-accent transition-colors">07053263931</a>
-            </li>
-            <li className="flex items-start gap-2.5">
+              <a href={`tel:${contact.phone.replace(/[^+\d]/g, '')}`} className="hover:text-accent transition-colors">{contact.phone}</a>
+            </li>}
+            {contact.address && <li className="flex items-start gap-2.5">
               <MapPin className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-              <span>FUTA Campus, Akure, Ondo State</span>
-            </li>
+              <span>{contact.address}</span>
+            </li>}
+            <li><Link to="/contact" className="hover:text-accent transition-colors">{msg('FE_FOOTER_CONTACT_US', "Contact us")}</Link></li>
           </ul>
-          <p className="text-xs text-beige/70 mt-4">Instagram and TikTok: @grillthevibe</p>
+          {contact.social && <p className="text-xs text-beige/70 mt-4">{contact.social}</p>}
         </div>
       </div>
 

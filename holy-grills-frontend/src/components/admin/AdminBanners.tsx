@@ -5,7 +5,7 @@ import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 
 // Dedicated carousel-banner manager (POST/PATCH/DELETE /storefront/banners,
 // POST /storefront/banners/:id/image). Each banner holds an `images` array —
@@ -19,16 +19,19 @@ import { msg } from '@/lib/messages';
 //   'menu'   → menu page banners
 //   'checkout' → checkout banners
 export default function AdminBanners({ placement = 'home' }) {
+  useMessages();
   const [banners, setBanners] = useState([]);
   const [busy, setBusy] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [draft, setDraft] = useState<{ title: string; subtitle: string; cta_text: string; cta_url: string; placement: string; sort_order: number | string; image_url: string }>({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '' });
+  const [draft, setDraft] = useState<{ title: string; eyebrow: string; subtitle: string; cta_text: string; cta_url: string; placement: string; sort_order: number | string; image_url: string }>({ title: '', eyebrow: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '' });
 
   const load = useCallback(async () => {
     try {
       const all = await liveApi.admin.getBanners();
-      const arr = (Array.isArray(all) ? all : []).filter((b) => (b.placement || 'home') === placement);
+      const arr = (Array.isArray(all) ? all : [])
+        .filter((b) => (b.placement || 'home') === placement)
+        .map((b) => ({ ...b, cta_text: b.action_label ?? b.cta_text ?? '', cta_url: b.action_url ?? b.cta_url ?? '' }));
       arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
       setBanners(arr);
     } catch {
@@ -45,7 +48,7 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(b.id);
     try {
       await liveApi.admin.updateBanner(b.id, {
-        title: b.title, subtitle: b.subtitle, cta_text: b.cta_text,
+        title: b.title, eyebrow: b.eyebrow ?? b.metadata?.eyebrow ?? '', metadata: b.metadata || {}, subtitle: b.subtitle, cta_text: b.cta_text,
         cta_url: b.cta_url, is_active: b.is_active, sort_order: Number(b.sort_order) || 0,
       });
       toast({ title: msg('FE_ADMIN_BANNERS_BANNER_SAVED', '✅ Banner saved') });
@@ -141,7 +144,7 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(null);
   };
 
-  const blankDraft = () => ({ title: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '' });
+  const blankDraft = () => ({ title: '', eyebrow: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '' });
 
   const create = async () => {
     // POST /storefront/banners requires BOTH `title` and `image_url` as
@@ -160,7 +163,7 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy('create');
     try {
       await liveApi.admin.createBanner({
-        placement, title: draft.title.trim(), subtitle: draft.subtitle || undefined,
+        placement, title: draft.title.trim(), eyebrow: draft.eyebrow, subtitle: draft.subtitle || undefined,
         cta_text: draft.cta_text || undefined, cta_url: draft.cta_url || undefined,
         // Same URL seeds both the legacy single-image column and the carousel
         // array, so the banner renders whether the storefront reads image_url
@@ -272,6 +275,7 @@ export default function AdminBanners({ placement = 'home' }) {
             </div>
 
             {/* Text + CTA */}
+            {placement === 'hero' && <input value={b.eyebrow ?? b.metadata?.eyebrow ?? ''} onChange={(e) => upd(b.id, { eyebrow: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm" placeholder={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', "Eyebrow text")} maxLength={240} />}
             <input value={b.title || ''} onChange={(e) => upd(b.id, { title: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm font-bold" placeholder="Overlay title" />
             <input value={b.subtitle || ''} onChange={(e) => upd(b.id, { subtitle: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm" placeholder="Overlay subtitle" />
             <div className="grid grid-cols-2 gap-2">
@@ -297,6 +301,7 @@ export default function AdminBanners({ placement = 'home' }) {
           <Field label="Main image (required)">
             <ImageUploader value={draft.image_url} onChange={(url) => setDraft({ ...draft, image_url: url })} folder={`banners/${placement}`} label="main image" />
           </Field>
+          {placement === 'hero' && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', "Eyebrow text")}><TextInput value={draft.eyebrow} onChange={(e) => setDraft({ ...draft, eyebrow: e.target.value })} placeholder={msg('FE_ADMIN_BANNERS_FRESH_FROM_YOUR_CAMPUS_GRILL', "Fresh from your campus grill")} maxLength={240} /></Field>}
           <Field label="Overlay subtitle"><TextInput value={draft.subtitle} onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })} placeholder="Order fresh meals in minutes" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="CTA text"><TextInput value={draft.cta_text} onChange={(e) => setDraft({ ...draft, cta_text: e.target.value })} placeholder="Order now" /></Field>

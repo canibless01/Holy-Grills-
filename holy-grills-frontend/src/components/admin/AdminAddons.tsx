@@ -5,21 +5,20 @@ import { formatNaira } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Field, TextInput, Card } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
+import { modifierEditorPayload } from '@/lib/modifierEditor';
 
-const parseOpts = (text) => text.split('\n').map((s) => s.trim()).filter(Boolean).map((line, i) => {
-  const [name, delta = '0'] = line.split(':').map((x) => x.trim());
-  return { id: `opt_${Date.now()}_${i}`, name, price_delta: Number(delta) || 0 };
-});
 const optsToText = (opts = []) => opts.map((o) => `${o.name}:${o.price_delta}`).join('\n');
 
 export default function AdminAddons() {
+  useMessages();
   const [config, setConfig] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [itemId, setItemId] = useState('');
   const [varGroups, setVarGroups] = useState([]);
   const [addonGroups, setAddonGroups] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(null); // global add-on being edited inline
 
   const load = async (id = itemId) => {
@@ -30,11 +29,12 @@ export default function AdminAddons() {
       try { const mi = await mockApi.admin.getMenuItems(); setMenuItems(mi || []); if (mi?.length && !id) { id = mi[0].id; setItemId(id); } } catch { /* ignore */ }
     }
     if (!id) { setVarGroups([]); setAddonGroups([]); return; }
+    setLoadError(false);
     try {
       const [detail, addons] = await Promise.all([mockApi.menu.getItem(id), mockApi.menu.getAddons(id)]);
       setVarGroups((detail?.variation_groups || []).map((g) => ({ ...g, optionsText: optsToText(g.options || g.variations || []) })));
       setAddonGroups((addons?.addon_groups || []).map((g) => ({ ...g, addonsText: (g.addons || []).map((a) => `${a.name}:${a.price}`).join('\n') })));
-    } catch { setVarGroups([]); setAddonGroups([]); }
+    } catch { setLoadError(true); }
   };
   useEffect(() => { load(); }, [itemId]);
 
@@ -56,12 +56,11 @@ export default function AdminAddons() {
   const addAddonGroup = () => setAddonGroups((gs) => [...gs, { id: `ag_${Date.now()}`, name: '', is_required: false, min_select: 0, max_select: 3, addonsText: '' }]);
 
   const save = async () => {
-    if (!itemId) return;
+    if (!itemId || loadError) return;
     setSaving(true);
-    const variation_groups = varGroups.map((g) => ({ id: g.id, name: g.name, is_required: !!g.is_required, options: parseOpts(g.optionsText) }));
-    const addon_groups = addonGroups.map((g) => ({ id: g.id, name: g.name, is_required: !!g.is_required, min_select: g.min_select || 0, max_select: g.max_select || 3, addons: parseOpts(g.addonsText).map((a) => ({ id: a.id, name: a.name, price: a.price_delta })) }));
     try {
-      await mockApi.admin.saveItemModifiers(itemId, { variation_groups, addon_groups });
+      const payload = modifierEditorPayload(varGroups, addonGroups);
+      await mockApi.admin.saveItemModifiers(itemId, payload);
       toast({ title: msg('FE_ADMIN_ADDONS_MODIFIERS_SAVED', '✅ Modifiers saved') });
       await load(itemId);
     } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
@@ -110,13 +109,14 @@ export default function AdminAddons() {
       <div>
         <h3 className="font-bold text-sm text-foreground mb-1">Per-Item Modifiers</h3>
         <p className="text-[11px] text-muted-foreground mb-2">Variation groups (combo choices with price deltas) and add-on groups (optional extras with a min/max) scoped to a single menu item.</p>
-        <select value={itemId} onChange={(e) => setItemId(e.target.value)} className="w-full p-2.5 rounded-xl border border-border text-sm mb-3">
+        <select aria-label={msg('FE_ADMIN_ADDONS_MENU_ITEM_FOR_MODIFIERS', "Menu item for modifiers")} value={itemId} onChange={(e) => setItemId(e.target.value)} className="w-full p-2.5 rounded-xl border border-border text-sm mb-3">
           <option value="" disabled>Select a menu item</option>
           {menuItems.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
 
+        {loadError && <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_ADDONS_MODIFIERS_COULD_NOT_BE_LOADED_SELECT_THE_ITEM_AG', "Modifiers could not be loaded. Select the item again before saving.")}</p>}
         <div className="space-y-3">
-          <div className="flex items-center justify-between"><span className="text-xs font-bold text-muted-foreground uppercase">Variation Groups</span><button onClick={addVarGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Group</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs font-bold text-muted-foreground uppercase">{msg('FE_ADMIN_ADDONS_VARIATION_GROUPS', "Variation Groups")}</span><button aria-label={msg('FE_ADMIN_ADDONS_ADD_VARIATION_GROUP', "Add variation group")} onClick={addVarGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_ADMIN_ADDONS_GROUP', "Group")}</button></div>
           {varGroups.map((g, gi) => (
             <Card key={g.id}>
               <div className="space-y-2">
@@ -125,11 +125,12 @@ export default function AdminAddons() {
                 <Field label="Options (one per line)" hint="Format: OptionName:PriceDelta — delta adds to the item price. e.g. Chicken:0, Beef:200, Fish:150">
                   <textarea value={g.optionsText} onChange={(e) => setVarGroups((gs) => gs.map((x, i) => i === gi ? { ...x, optionsText: e.target.value } : x))} placeholder={'Chicken:0\nBeef:200\nFish:150'} rows={3} className="w-full mt-1 p-2 rounded-lg border border-border text-xs font-mono" />
                 </Field>
+                <button aria-label={`Remove variation group ${g.name || gi + 1}`} onClick={() => setVarGroups(gs => gs.filter((_, i) => i !== gi))} className="text-xs text-destructive">{msg('FE_ADMIN_ADDONS_REMOVE_GROUP', "Remove group")}</button>
               </div>
             </Card>
           ))}
 
-          <div className="flex items-center justify-between"><span className="text-xs font-bold text-muted-foreground uppercase">Add-on Groups</span><button onClick={addAddonGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Group</button></div>
+          <div className="flex items-center justify-between"><span className="text-xs font-bold text-muted-foreground uppercase">{msg('FE_ADMIN_ADDONS_ADD_ON_GROUPS', "Add-on Groups")}</span><button aria-label={msg('FE_ADMIN_ADDONS_ADD_ADD_ON_GROUP', "Add add-on group")} onClick={addAddonGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_ADMIN_ADDONS_GROUP', "Group")}</button></div>
           {addonGroups.map((g, gi) => (
             <Card key={g.id}>
               <div className="space-y-2">
@@ -141,12 +142,13 @@ export default function AdminAddons() {
                 <Field label="Add-on options (one per line)" hint="Format: AddonName:Price — flat ₦ price. e.g. Extra Cheese:200, Bacon:400, Coleslaw:150">
                   <textarea value={g.addonsText} onChange={(e) => setAddonGroups((gs) => gs.map((x, i) => i === gi ? { ...x, addonsText: e.target.value } : x))} placeholder={'Extra Cheese:200\nBacon:400\nColeslaw:150'} rows={3} className="w-full mt-1 p-2 rounded-lg border border-border text-xs font-mono" />
                 </Field>
+                <button aria-label={`Remove add-on group ${g.name || gi + 1}`} onClick={() => setAddonGroups(gs => gs.filter((_, i) => i !== gi))} className="text-xs text-destructive">{msg('FE_ADMIN_ADDONS_REMOVE_GROUP', "Remove group")}</button>
               </div>
             </Card>
           ))}
         </div>
 
-        <button onClick={save} disabled={saving || !itemId} className="mt-4 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> Save Modifiers</button>
+        <button onClick={save} disabled={saving || loadError || !itemId} className="mt-4 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> {msg('FE_ADMIN_ADDONS_SAVE_MODIFIERS', "Save Modifiers")}</button>
       </div>
     </div>
   );

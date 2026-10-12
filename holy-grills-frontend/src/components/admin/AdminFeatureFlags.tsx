@@ -9,6 +9,8 @@ import { msg } from '@/lib/messages';
 // Flag metadata — admin guidance only. On/off values come from the backend's
 // feature_flags table (is_active column), never from this map.
 const FLAG_META = {
+  hp_multiplier: { label: 'HP multiplier events', flipWhen: 'When the launch team is ready', impact: 'Enables timed event multipliers; per-item multipliers remain independent' },
+  flash_redemptions: { label: 'Flash reward events', flipWhen: 'When reward fulfilment is ready', impact: 'Enables flash reward availability and flash redemption' },
   leaderboard_prizes: { label: 'Leaderboard Prizes', flipWhen: 'After first month of data', impact: 'Shows/hides prize indicators on the leaderboard' },
   free_side_credits: { label: 'Free Side Credits', flipWhen: 'After first month of data', impact: 'Shows/hides free side UI in rewards' },
   exclusive_spin: { label: 'Exclusive Spin', flipWhen: 'After first month of data', impact: 'Shows/hides exclusive spin wheel for top earners' },
@@ -17,7 +19,7 @@ const FLAG_META = {
   spin_and_win: { label: 'Spin & Win', flipWhen: '200+ active users', impact: 'Shows/hides the daily spin wheel' },
   marketplace_general: { label: 'Marketplace', flipWhen: '500+ active users', impact: 'Shows/hides the marketplace' },
   hp_transfer: { label: 'HP Transfer', flipWhen: 'Phase 3', impact: 'Shows/hides HP transfer between users' },
-  squad_order_enabled: { label: 'Squad Orders', flipWhen: 'Once live-verified', impact: 'Backend flag for squad ordering' },
+  squad_orders: { label: 'Squad Orders', flipWhen: 'Once live-verified', impact: 'Backend flag for squad ordering' },
   // whatsapp_support_enabled is deliberately NOT here. The support button is a
   // per-campus system setting (system_settings.whatsapp_support_number /
   // .whatsapp_support_enabled), so each campus can run its own number. A second
@@ -131,7 +133,7 @@ export default function AdminFeatureFlags() {
               <motion.div key={name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2), duration: 0.25 }}>
                 <Card className="p-4">
                   <div className="flex items-start gap-3">
-                    <Toggle checked={isActive} onChange={() => toggle(name, isActive)} disabled={busy === name} />
+                    <Toggle label={`${meta.label} feature flag`} checked={isActive} onChange={() => toggle(name, isActive)} disabled={busy === name} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="font-bold text-sm text-foreground">{meta.label}</span>

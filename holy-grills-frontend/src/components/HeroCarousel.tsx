@@ -5,6 +5,8 @@ import { liveApi } from '@/lib/liveApi';
 import { openCmsDestination } from '@/lib/safeNavigation';
 
 interface HeroSlide {
+  eyebrow?: string;
+  mobileImage?: string;
   image: string;
   tag: string;
   sub: string;
@@ -12,11 +14,6 @@ interface HeroSlide {
   cta_url?: string;
 }
 
-const DEFAULT_SLIDES: HeroSlide[] = [
-  { tag: 'Grilled with Faith. Served with Love.', sub: 'Every plate is made with open flame and genuine care. Not a shortcut in sight — just the Holy Flame Method, every time.', cta: 'Feel the Difference', image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80' },
-  { tag: 'Real chicken. Real fire.', sub: 'Real flame, real flavour — never a flat top, never a reheat.', cta: 'See the Menu', image: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800&q=80' },
-  { tag: 'Every order fuels your flame.', sub: 'Stack Holy Points, climb the leaderboard, unlock rewards.', cta: 'Start Earning', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80' },
-];
 
 // Build swipeable carousel slides from dedicated banners (placement='hero').
 function buildSlidesFromBanners(banners: unknown): HeroSlide[] | null {
@@ -26,13 +23,15 @@ function buildSlidesFromBanners(banners: unknown): HeroSlide[] | null {
   const active = banners.filter((b) => b.is_active !== false && (!b.placement || b.placement === 'hero'));
   const slides: HeroSlide[] = [];
   for (const b of active) {
-    const imgs = Array.isArray(b.images) ? b.images : [];
+    const imgs = Array.isArray(b.images) && b.images.length ? b.images : [b.image_url].filter(Boolean);
     if (!imgs.length) continue;
     for (const img of imgs) {
       const url = typeof img === 'string' ? img : img.url;
       if (!url) continue;
       slides.push({
         image: url,
+        mobileImage: b.mobile_image_url || undefined,
+        eyebrow: b.metadata?.eyebrow || '',
         // Banner columns are action_label/action_url (storefront.py `_banner_fields`
         // accepts the legacy cta_text/cta_url names but STORES them under action_*).
         // Reading b.cta_text here meant the admin's CTA never reached the hero.
@@ -51,10 +50,11 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
   // Defensive: the backend ignores the section_type filter and returns ALL
   // storefront sections — keep only hero sections so share templates, promos,
   // etc. never leak into the hero carousel.
-  const active = sections.filter((s) => s.is_active !== false && s.section_type === 'hero');
+  const active = sections.filter((s) => s.is_active !== false && s.section_type === 'hero' && (s.content?.image_url || s.content?.image || s.image_url));
   if (!active.length) return null;
   return active.map((s) => ({
-    image: s.content?.image_url || s.content?.image || s.image_url || 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80',
+    image: s.content?.image_url || s.content?.image || s.image_url,
+    eyebrow: s.content?.eyebrow || '',
     tag: s.content?.headline || s.content?.title || s.title || '',
     // Section rows keep subtitle/cta_* inside `content` (the columns are key,
     // section_type, title, content, is_active, sort_order) — read them there.
@@ -66,7 +66,7 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
 
 export default function HeroCarousel({ onCta }) {
   const navigate = useNavigate();
-  const [slides, setSlides] = useState<HeroSlide[]>(DEFAULT_SLIDES);
+  const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [i, setI] = useState(0);
   const scrollRef = useRef(null);
   const autoTimer = useRef(null);
@@ -83,9 +83,9 @@ export default function HeroCarousel({ onCta }) {
         const sections = await liveApi.storefront.getSections({ section_type: 'hero' });
         if (!cancelled) {
           const fromSections = buildSlidesFromSections(sections);
-          if (fromSections) setSlides(fromSections);
+          setSlides(fromSections || []);
         }
-      } catch { /* keep defaults */ }
+      } catch { if (!cancelled) setSlides([]); }
     };
     loadHero();
     return () => { cancelled = true; };
@@ -119,6 +119,7 @@ export default function HeroCarousel({ onCta }) {
     if (idx !== i) setI(idx);
   }, [slides.length, i]);
 
+  if (!slides.length) return null;
   const s = slides[i % slides.length];
   const go = () => {
     const dest = s.cta_url || '/menu';
@@ -139,6 +140,8 @@ export default function HeroCarousel({ onCta }) {
       >
         {slides.map((slide, idx) => (
           <div key={idx} className="relative shrink-0 w-full h-full snap-center overflow-hidden" style={{ scrollSnapAlign: 'center' }}>
+            <picture>
+            {slide.mobileImage && <source media="(max-width: 767px)" srcSet={slide.mobileImage} />}
             <img
               src={slide.image}
               alt={slide.tag || 'Holy Grill'}
@@ -147,6 +150,7 @@ export default function HeroCarousel({ onCta }) {
               {...({ fetchpriority: idx === 0 ? 'high' : 'auto' } as { fetchpriority: string })}
               className={`absolute inset-0 w-full h-full object-cover ${idx === i ? 'animate-ken-burns' : ''}`}
             />
+            </picture>
             {/* Legibility scrim only — a plain dark gradient, never a blur or
                 frosted glass over the hero image. */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
@@ -159,9 +163,7 @@ export default function HeroCarousel({ onCta }) {
         {/* The one glass surface on the hero — the eyebrow pill. Fully
             transparent with a light backdrop blur + hairline border: no
             colour fill, only the hero image shows through it. */}
-        <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">
-          🔥 FUTA's Only Flame Grill
-        </span>
+        {s.eyebrow && <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">{s.eyebrow}</span>}
         <AnimatePresence mode="wait">
           <motion.div
             key={i}

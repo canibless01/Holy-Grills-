@@ -1,3 +1,4 @@
+import { msg, useMessages } from '@/lib/messages';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -20,6 +21,7 @@ const to12h = (t) => {
 };
 
 export default function OrderConfirmation() {
+  useMessages();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,7 +29,10 @@ export default function OrderConfirmation() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [shareOpen, setShareOpen] = useState(false);
-  const claimToken = location.state?.claim_token;
+  const claimToken = location.state?.claim_token || (() => {
+    try { return JSON.parse(localStorage.getItem('hg_guest_orders') || '[]').find(saved => saved.id === id)?.claim_token; }
+    catch { return undefined; }
+  })();
   // "Today is full" reschedule — the order landed on the next available day.
   const isScheduled = order?.is_scheduled || location.state?.is_scheduled;
   const scheduledFor = order?.scheduled_for || location.state?.scheduled_for;
@@ -89,11 +94,15 @@ export default function OrderConfirmation() {
           </div>
           <FlameMark className="absolute -top-2 -right-2 w-8 h-8 animate-flame-flicker" />
         </div>
-        <h1 className="font-heading font-extrabold text-2xl text-foreground mt-4">{isScheduled ? 'Order Scheduled!' : 'Order Confirmed!'}</h1>
+        <h1 className="font-heading font-extrabold text-2xl text-foreground mt-4">{isScheduled ? msg('FE_CONFIRMATION_SCHEDULED_TITLE', 'Order Scheduled!') : msg('FE_CONFIRMATION_CONFIRMED_TITLE', 'Order Confirmed!')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {isScheduled
-            ? `Today's orders were full. You're scheduled for ${scheduledFor ? new Date(scheduledFor).toLocaleDateString('en-NG', { weekday: 'long', month: 'long', day: 'numeric' }) : 'the next available day'}${winStart ? `, delivery between ${to12h(winStart)}–${to12h(winEnd)}` : ''}.`
-            : 'Your flame grilled order is being prepared.'}
+            ? msg('FE_CONFIRMATION_SCHEDULED_BODY', "You're scheduled for {date}{window}.", {
+                date: scheduledFor ? new Date(scheduledFor).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'long', day: 'numeric' }) : msg('FE_CONFIRMATION_NEXT_DAY', 'the next available day'),
+                window: winStart ? msg('FE_CONFIRMATION_DELIVERY_WINDOW', ', delivery between {start}–{end}', { start: to12h(winStart), end: to12h(winEnd) }) : '',
+              })
+            : order.payment_status !== 'paid' ? msg('FE_CONFIRMATION_AWAITING_PAYMENT', 'Your order is awaiting payment.')
+            : order.status === 'preparing' ? msg('FE_CONFIRMATION_PREPARING', 'Your flame grilled order is being prepared.') : msg('FE_CONFIRMATION_RECEIVED', 'Your order has been received by the kitchen.')}
         </p>
         <div className="inline-block mt-2 px-4 py-1.5 rounded-full bg-muted text-xs font-bold text-muted-foreground">
           Order #{(order.order_number || order.id || '').toUpperCase()}
@@ -161,7 +170,7 @@ export default function OrderConfirmation() {
             </div>
           )}
           <div className="flex justify-between font-bold">
-            <span className="text-foreground">Total Paid</span>
+            <span className="text-foreground">{order.payment_status === 'paid' ? msg('FE_CONFIRMATION_TOTAL_PAID', 'Total Paid') : msg('FE_CONFIRMATION_ORDER_TOTAL', 'Order Total')}</span>
             <span className="text-foreground">{formatNaira(order.total_amount)}</span>
           </div>
         </div>

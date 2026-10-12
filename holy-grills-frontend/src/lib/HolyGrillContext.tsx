@@ -4,7 +4,8 @@ import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
 import { loadSystemSettings, loadFeatureFlags, getSetting, getStringSetting, getBoolSetting } from './featureConfig';
 import { loadTiers } from './hgUtils';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
+import { toast } from '@/components/ui/use-toast';
 
 // Holy Grills app context — real JWT auth against the live backend.
 // No demo auto-login. Authenticated users hit the server-side cart; guests
@@ -15,10 +16,16 @@ import { msg } from '@/lib/messages';
 const HolyGrillContext = createContext<any>(undefined);
 const GUEST_CART_KEY = 'hg_guest_cart';
 
-const readGuestCart = () => {
-  try { return JSON.parse(localStore.getItem(GUEST_CART_KEY) || '[]'); } catch { return []; }
+const readAllGuestItems = () => {
+  try { const items = JSON.parse(localStore.getItem(GUEST_CART_KEY) || '[]'); return Array.isArray(items) ? items : []; } catch { return []; }
 };
-const writeGuestCart = (items) => localStore.setItem(GUEST_CART_KEY, JSON.stringify(items));
+const guestCartScope = item => item.guest_campus_id || item.menu_items?.campus_id || localStore.getItem('hg_campus_id');
+const readGuestCart = () => readAllGuestItems().filter(item => guestCartScope(item) === localStore.getItem('hg_campus_id'));
+const writeGuestCart = (items) => {
+  const campus = localStore.getItem('hg_campus_id');
+  const otherCampuses = readAllGuestItems().filter(item => guestCartScope(item) !== campus);
+  localStore.setItem(GUEST_CART_KEY, JSON.stringify([...otherCampuses, ...items.map(item => ({ ...item, guest_campus_id: campus }))]));
+};
 
 const computeCart = (items) => ({
   items,
@@ -113,8 +120,11 @@ const warmPostLoginChunks = (role) => {
 };
 
 export const HolyGrillProvider = ({ children }) => {
+  useMessages();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [sessionAttempt, setSessionAttempt] = useState(0);
   const [cart, setCart] = useState(EMPTY_CART);
   const [cartCount, setCartCount] = useState(0);
   const [hpBalance, setHpBalance] = useState(null);
@@ -150,6 +160,8 @@ export const HolyGrillProvider = ({ children }) => {
           notes: ci.options?.notes || ci.notes || '',
           selected_variations: ci.selected_variations || [],
           selected_addons: ci.selected_addons || [],
+          modifier_summary: ci.modifier_summary || [],
+          selection_error: ci.selection_error,
           menu_items: mi,
           is_unavailable: ci.is_unavailable || mi.is_available === false,
         };
@@ -238,6 +250,7 @@ export const HolyGrillProvider = ({ children }) => {
   // Restore session on load — real token → fetch profile; no token → guest cart.
   useEffect(() => {
     const init = async () => {
+      setSessionError(null);
       // Promo-flyer popup session marker — survives refresh (same sessionStore),
       // re-shows the flyer after a fresh login (login/register regenerate it).
       if (!sessionStore.getItem('hg_login_session')) sessionStore.setItem('hg_login_session', String(Date.now()));
@@ -267,24 +280,36 @@ export const HolyGrillProvider = ({ children }) => {
             loadTiers().catch(() => {}),
           ]);
         } catch (e) {
-          clearTokens();
-          setAuthed(false);
-          loadGuestCart();
+          if (e.status === 401 || e.status === 403) {
+            clearTokens();
+            setAuthed(false);
+            loadGuestCart();
+          } else {
+            setSessionError(e.message || msg('FE_SESSION_LOAD_FAILED', 'Your account could not be loaded. Please try again.'));
+          }
           setIsLoading(false);
         }
       } else {
         loadGuestCart();
         setIsLoading(false);
-        // Guests still need public system settings (WhatsApp number, streak
-        // rewards, etc.) — load them in the background so the floating WhatsApp
-        // button and other config-driven UI read the admin-configured values.
+        // Guests read public campus configuration for contact and feature UI.
         loadSystemSettings().then(setSystemSettings).catch(() => {});
         loadFeatureFlags().catch(() => {});
         loadTiers().catch(() => {});
       }
     };
     init();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const reloadScope = () => {
+      if (!isAuthenticated()) loadGuestCart();
+      loadSystemSettings().then(setSystemSettings).catch(() => {});
+      loadFeatureFlags().catch(() => {});
+    };
+    window.addEventListener('hg:scope-changed', reloadScope);
+    return () => window.removeEventListener('hg:scope-changed', reloadScope);
+  }, [loadGuestCart]);
 
   const login = async (email, password) => {
     const data = await liveApi.auth.login({ email, password });
@@ -298,8 +323,12 @@ export const HolyGrillProvider = ({ children }) => {
     // Migrate any guest cart items into the now-authenticated server cart.
     const guestItems = readGuestCart();
     if (guestItems.length) {
-      await Promise.all(guestItems.map((ci) => liveApi.cart.add({ menu_item_id: ci.menu_item_id, quantity: ci.quantity, notes: ci.notes }))).catch(() => {});
-      writeGuestCart([]);
+      const transfers = await Promise.allSettled(guestItems.map((ci) => liveApi.cart.add({ menu_item_id: ci.menu_item_id, quantity: ci.quantity, notes: ci.notes,
+        selected_variations: ci.selected_variations || [], selected_addons: ci.selected_addons || [] })));
+      const retained = guestItems.filter((_, index) => transfers[index].status === 'rejected');
+      writeGuestCart(retained);
+      if (retained.length) toast({ title: msg('FE_HOLY_GRILL_CONTEXT_SOME_GUEST_CART_ITEMS_COULD_NOT_BE_ADDED', 'Some guest cart items could not be added'),
+        description: msg('FE_HOLY_GRILL_CONTEXT_YOUR_SAVED_GUEST_ITEMS_ARE_KEPT_ON_THIS', 'Your saved guest items are kept on this device. Check availability and your account campus before adding them again.'), variant: 'destructive' });
     }
     // Fire background refreshes in parallel — don't block the login redirect
     // on slow/cold backend calls. The user gets to their dashboard instantly.
@@ -348,14 +377,23 @@ export const HolyGrillProvider = ({ children }) => {
       await refreshCart();
     } else {
       const items = readGuestCart();
-      let snap = { name: 'Item', price: 0, hp_earn_value: 0, is_available: true };
-      try {
-        const it = await liveApi.menu.getItem(body.menu_item_id);
-        snap = { name: it.name, price: it.price, hp_earn_value: it.hp_earn_value, is_available: it.is_available !== false };
-      } catch { /* ignore */ }
-      const existing = items.find((ci) => ci.menu_item_id === body.menu_item_id);
+      const it = await liveApi.menu.getItem(body.menu_item_id);
+      const addons = await liveApi.menu.getAddons(body.menu_item_id);
+      const variations = (body.selected_variations || []).map((v) => v.option_id || v.id || v);
+      const selectedAddons = body.selected_addons || [];
+      const variationPrice = (it.variation_groups || []).flatMap((g) => g.options || [])
+        .filter((option) => variations.includes(option.id)).reduce((sum, option) => sum + Number(option.price_delta || 0), 0);
+      const addonPrice = (addons.addon_groups || []).flatMap((g) => g.addons || g.options || [])
+        .reduce((sum, addon) => sum + selectedAddons.filter((a) => (a.addon_id || a.id || a) === addon.id)
+          .reduce((subtotal, a) => subtotal + Number(addon.price_delta || addon.price || 0) * Number(a.quantity || 1), 0), 0);
+      const snap = { ...it, price: Number(it.price) + variationPrice + addonPrice, is_available: it.is_available !== false };
+      const signature = (entry) => JSON.stringify({
+        variations: (entry.selected_variations || []).map((v) => v.option_id || v.id || v).sort(),
+        addons: (entry.selected_addons || []).map((a) => `${a.addon_id || a.id || a}:${a.quantity || 1}`).sort(), notes: entry.notes || '',
+      });
+      const existing = items.find((ci) => ci.menu_item_id === body.menu_item_id && signature(ci) === signature(body));
       if (existing) existing.quantity += body.quantity || 1;
-      else items.push({ id: `gci_${Date.now()}`, menu_item_id: body.menu_item_id, quantity: body.quantity || 1, notes: body.notes || '', selected_variations: body.selected_variations || [], selected_addons: body.selected_addons || [], menu_items: snap });
+      else items.push({ id: `gci_${crypto.randomUUID()}`, menu_item_id: body.menu_item_id, quantity: body.quantity || 1, notes: body.notes || '', selected_variations: body.selected_variations || [], selected_addons: body.selected_addons || [], menu_items: snap });
       writeGuestCart(items);
       loadGuestCart();
     }
@@ -406,7 +444,11 @@ export const HolyGrillProvider = ({ children }) => {
       toggleSavedItem, removeSavedItem, moveSavedToCart, isSavedItem,
       markNotificationRead, markAllNotificationsRead,
     }}>
-      {children}
+      {sessionError ? <div role="alert" className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4 bg-background">
+        <h1 className="font-heading font-bold text-xl">{msg('FE_HOLY_GRILL_CONTEXT_YOUR_ACCOUNT_IS_TEMPORARILY_UNAVAILABLE', "Your account is temporarily unavailable")}</h1>
+        <p className="text-sm text-muted-foreground max-w-sm">{msg('FE_HOLY_GRILL_CONTEXT_YOUR_SIGN_IN_IS_SAVED_TRY_LOADING_YOUR_ACCOUNT_A', "Your sign-in is saved. Try loading your account again.")}</p>
+        <button onClick={() => { setIsLoading(true); setSessionAttempt(attempt => attempt + 1); }} className="px-5 py-3 rounded-full bg-primary text-white font-bold">{msg('FE_HOLY_GRILL_CONTEXT_RETRY_ACCOUNT', "Retry account")}</button>
+      </div> : children}
     </HolyGrillContext.Provider>
   );
 };

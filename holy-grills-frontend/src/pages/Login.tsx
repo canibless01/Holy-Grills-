@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Check, Eye, EyeOff } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -37,7 +37,6 @@ export default function Login() {
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const formRef = useRef(null);
-  const autoKickedRef = useRef(false);
 
   const doLogin = async (emailVal, passwordVal) => {
     setLoading(true);
@@ -107,28 +106,6 @@ export default function Login() {
     }
   };
 
-  // Auto-kickstart: if the browser autofilled both fields (without the user
-  // typing), submit immediately instead of waiting for the Sign In press.
-  // Autofill doesn't fire React onChange, so we poll the DOM values via refs.
-  useEffect(() => {
-    const poll = setInterval(() => {
-      const eVal = emailRef.current?.value || '';
-      const pVal = passwordRef.current?.value || '';
-      if (eVal && pVal && !autoKickedRef.current) {
-        autoKickedRef.current = true;
-        setEmail(eVal);
-        setPassword(pVal);
-        clearInterval(poll);
-        // requestSubmit() (not doLogin directly) so this counts as a real form
-        // submission: it is what lets the browser's password manager see the
-        // sign-in and offer to remember the password for next time.
-        if (formRef.current?.requestSubmit) formRef.current.requestSubmit();
-        else handleSubmit(null);
-      }
-    }, 250);
-    const stop = setTimeout(() => clearInterval(poll), 3000);
-    return () => { clearInterval(poll); clearTimeout(stop); };
-  }, [remember]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AuthShell>

@@ -450,7 +450,9 @@ def live_queue():
     q = (
         db.table("orders")
         .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
-        .in_("status", ["received", "preparing"])
+        .in_("status", ["received", "paid", "preparing"])
+        .eq("payment_status", "paid")
+        .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -538,7 +540,7 @@ def scheduled_orders():
             "order_items(name_snapshot,quantity,price_snapshot)"
         )
         .eq("is_scheduled", "true")
-        .eq("status", "received")
+        .in_("status", ["received", "paid"])
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -650,7 +652,7 @@ def batch_summary(window_id):
         db.table("orders")
         .select("id,status,order_items(name_snapshot,quantity)")
         .eq("delivery_window_id", window_id)
-        .in_("status", ["received", "preparing", "ready"])
+        .in_("status", ["received", "paid", "preparing", "ready"])
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -726,6 +728,7 @@ def batch_advance(batch_id):
         return jsonify({"error": "No advanceable orders found in this batch", "batch_id": batch_id}), 404
 
     NEXT_STATUS = {
+        "paid": "preparing",
         "received": "preparing",
         "preparing": "ready",
         "ready": "assigned",

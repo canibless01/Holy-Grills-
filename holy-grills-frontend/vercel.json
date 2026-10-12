@@ -70,6 +70,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/contact",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/contact/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/dashboard",
       "dest": "/app-shell.html"
     },

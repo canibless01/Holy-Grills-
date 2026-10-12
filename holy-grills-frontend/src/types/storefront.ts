@@ -124,6 +124,8 @@ export interface StorefrontSectionPayload {
 }
 
 export interface StorefrontBannerPayload {
+  eyebrow?: string;
+  metadata?: Record<string, unknown>;
   title?: string;
   subtitle?: string;
   image_url?: string;

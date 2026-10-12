@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ICONS, ICON_SIZES } from '@/config/icons';
 import FlameMark from '@/components/FlameMark';
 import { formatNaira } from '@/lib/hgUtils';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 
 const { X, ArrowRight, Clock, Check, AlertCircle } = ICONS;
 
@@ -44,6 +44,7 @@ const to12h = (t) => {
  *  onClose    — dismiss
  */
 export default function CheckoutKitchenClosedPopup({ status, open, busy = false, onSchedule, onClose }) {
+  useMessages();
   const [placed, setPlaced] = useState(null);
 
   // A new closed episode starts from the offer, not from a stale confirmation.
@@ -102,7 +103,7 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
                 </div>
               )}
               {placed.total != null && (
-                <p className="mt-3 text-xs text-muted-foreground">Total {formatNaira(placed.total)} · pay when the kitchen starts your order.</p>
+                <p className="mt-3 text-xs text-muted-foreground">{msg('FE_CHECKOUT_KITCHEN_CLOSED_POPUP_TOTAL', "Total")}{formatNaira(placed.total)} {msg('FE_CHECKOUT_KITCHEN_CLOSED_POPUP_YOUR_SELECTED_PAYMENT_METHOD_APPLIES_AT_CHECKOUT', "· your selected payment method applies at checkout.")}</p>
               )}
               <button
                 onClick={onClose}
@@ -170,8 +171,7 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
             </div>
 
             <p className="mt-3 text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
-              <AlertCircle className="w-3 h-3 shrink-0" /> Nothing is charged until the kitchen accepts it.
-            </p>
+              <AlertCircle className="w-3 h-3 shrink-0" /> {msg('FE_CHECKOUT_KITCHEN_CLOSED_POPUP_WALLET_PAYMENTS_ARE_CHARGED_AT_CHECKOUT_CARD_PAY', "Wallet payments are charged at checkout. Card payments are completed on the confirmation page.")}</p>
           </div>
         </motion.div>
       </motion.div>

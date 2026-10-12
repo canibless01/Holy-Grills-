@@ -9,6 +9,7 @@ import { HolyGrillProvider } from '@/lib/HolyGrillContext';
 import { CampusProvider } from '@/lib/campusContext';
 import Layout from '@/components/Layout';
 import CampusScope from '@/components/CampusScope';
+import Contact from '@/pages/Contact';
 import InstallPrompt from '@/components/InstallPrompt';
 import CookieConsent from '@/components/CookieConsent';
 import RequireAuth from '@/components/RequireAuth';
@@ -92,6 +93,7 @@ const AppRoutes = () => {
         <Route path="/orders/:id" element={<OrderDetail />} />
         <Route path="/track-orders" element={<TrackOrders />} />
         <Route path="/faq" element={<FAQ />} />
+        <Route path="/contact" element={<Contact />} />
         <Route path="/terms" element={<TermsPrivacy />} />
         <Route path="/our-story" element={<OurStory />} />
         {/* Authenticated student routes */}

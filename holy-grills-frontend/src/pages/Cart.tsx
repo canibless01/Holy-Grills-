@@ -7,7 +7,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -187,6 +187,8 @@ export default function Cart() {
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-sm text-foreground">{ci.menu_items?.name}</h3>
                       {ci.notes && <p className="text-xs text-muted-foreground mt-0.5">📝 {ci.notes}</p>}
+                      {ci.modifier_summary?.length > 0 && <p className="text-xs text-muted-foreground mt-0.5">{ci.modifier_summary.join(', ')}</p>}
+                      {ci.selection_error && <p role="alert" className="text-xs text-destructive mt-0.5">{ci.selection_error} <Link to={`/menu/${ci.menu_item_id}`} className="underline">{msg('FE_CART_CHOOSE_AGAIN', "Choose again")}</Link></p>}
                       {ci.is_unavailable && <p className="text-xs text-destructive mt-0.5">⚠️ No longer available</p>}
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-1 bg-muted rounded-lg p-1">

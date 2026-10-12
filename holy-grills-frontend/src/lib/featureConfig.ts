@@ -10,6 +10,7 @@
 import { liveApi } from './liveApi';
 import { localStore } from './storage';
 import { mergeAdminSettings } from './settingsMerge';
+import { getToken } from './apiClient';
 
 export { mergeAdminSettings };
 
@@ -17,7 +18,6 @@ export { mergeAdminSettings };
 // importing getStoredCampusId(), because campusContext -> HolyGrillContext ->
 // featureConfig is a cycle: the binding can be undefined at the moment this
 // module evaluates. storage.ts imports nothing that leads back here.
-const CAMPUS_STORAGE_KEY = 'hg_campus_id';
 
 let settingsMap = {};
 let flagsMap = {};
@@ -67,7 +67,7 @@ export const FEATURE_FLAGS = {
   scheduled_orders: true,
   daily_checkin: true,
   event_ticket_tiers: true,
-  hp_multiplier: true,
+  hp_multiplier: false,
   free_side_credits: true,
   exclusive_spin: true,
   marketplace_general: false,
@@ -84,7 +84,7 @@ export const FEATURE_FLAGS = {
 // defaultValue so the app keeps working with sensible built-in defaults.
 export async function loadFeatureFlags() {
   try {
-    const flags = await liveApi.admin.getFeatureFlags();
+    const flags = await liveApi.storefront.getFeatureFlags();
     flagsMap = {};
     (flags || []).forEach((f) => {
       const name = f.feature_name || f.name;
@@ -115,9 +115,14 @@ export async function loadSystemSettings() {
       if (value !== null && value !== undefined) settingsMap[key] = value;
     });
   } catch (e) { /* public endpoint unavailable — try admin below */ }
+  const role = getToken() ? localStore.getItem('hg_user_role') : null;
+  if (role !== 'admin' && role !== 'super_admin') return settingsMap;
   try {
     const adminSettings = await liveApi.admin.getSystemSettings();
-    mergeAdminSettings(settingsMap, adminSettings, localStore.getItem(CAMPUS_STORAGE_KEY) || null);
+    const scope = role === 'super_admin'
+      ? (localStore.getItem('hg_admin_scope_all') === '1' ? null : localStore.getItem('hg_admin_campus_id'))
+      : localStore.getItem('hg_user_campus_id');
+    mergeAdminSettings(settingsMap, adminSettings, scope);
   } catch (e) { /* admin endpoint not accessible — keep public/defaults */ }
   return settingsMap;
 }

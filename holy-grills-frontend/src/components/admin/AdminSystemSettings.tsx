@@ -7,7 +7,7 @@ import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } fro
 import EmailDeliverySettings from './EmailDeliverySettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 
 // Documented settings from the backend reference (system_settings table) —
 // used only to enrich rows with default + purpose when the backend row has no
@@ -42,8 +42,11 @@ const KNOWN_SETTINGS = {
   first_order_gift_enabled: { default: true, purpose: 'Welcome gift toggle' },
   monthly_pending_cap: { default: 1000, purpose: 'Monthly cap on pending HP unlock' },
   graduation_min_level: { default: 400, purpose: 'Minimum academic level for graduation eligibility' },
-  whatsapp_support_number: { default: '2348000000000', purpose: 'Support contact number' },
-  whatsapp_support_enabled: { default: true, purpose: 'Toggle support button in app' },
+  whatsapp_support_number: { default: '', purpose: 'WhatsApp number on the campus contact page' },
+  support_email: { default: '', purpose: 'Campus contact email' },
+  support_phone: { default: '', purpose: 'Campus contact phone' },
+  support_address: { default: '', purpose: 'Campus contact address' },
+  support_social: { default: '', purpose: 'Campus social contact details' },
   whatsapp_support_message: { default: 'Hello, I need help with my order', purpose: 'Prefilled text in the support chat' },
 };
 
@@ -210,26 +213,22 @@ export default function AdminSystemSettings() {
       {settings != null && (() => {
         const viewerCampus = adminCampusId || null;
         const num = resolvePublicValue(settings, 'whatsapp_support_number', viewerCampus);
-        const enabled = resolvePublicValue(settings, 'whatsapp_support_enabled', viewerCampus);
         const digits = String(num.value ?? '').replace(/\D/g, '');
         return (
           <Card className={`p-4 ${digits ? '' : 'border-amber-400/60 bg-amber-50/60'}`}>
             <div className="flex items-start gap-2">
               <MessageCircle className={`w-4 h-4 shrink-0 mt-0.5 ${digits ? 'text-primary' : 'text-amber-600'}`} />
               <div className="min-w-0 w-full">
-                <p className="text-sm font-bold text-foreground">Floating support button</p>
+                <p className="text-sm font-bold text-foreground">{msg('FE_ADMIN_SYSTEM_SETTINGS_CONTACT_PAGE_WHATSAPP_LINK', "Contact page WhatsApp link")}</p>
                 {digits ? (
                   <p className="text-[11px] text-muted-foreground mt-1 break-words">
                     Opens <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer"
                       className="font-mono font-bold text-primary hover:underline">wa.me/{digits}</a>
                     {' '}· from the <strong>{num.reason === 'campus' ? 'campus' : 'global'}</strong> row
-                    {enabled.value === false ? ' · currently hidden (whatsapp_support_enabled is false)' : ''}
                   </p>
                 ) : (
                   <p className="text-[11px] text-amber-800 mt-1 break-words">
-                    No public <span className="font-mono">whatsapp_support_number</span> reaches this campus, so the
-                    app falls back to the built-in default <strong>2348000000000</strong> — which is why the button
-                    opens WhatsApp's generic invite page. A row only reaches visitors when it is{' '}
+                    No public <span className="font-mono">whatsapp_support_number</span> {msg('FE_ADMIN_SYSTEM_SETTINGS_REACHES_THIS_CAMPUS_SO_THE_CONTACT_PAGE_HIDES_IT', "reaches this campus, so the contact page hides its WhatsApp link. A row only reaches visitors when it is")}{' '}
                     <strong>Public</strong> and either global or scoped to this campus.
                   </p>
                 )}

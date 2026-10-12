@@ -13,3 +13,8 @@ def is_trusted_upload_url(url, folder_prefix=None):
     if not parsed.path.startswith(f"/{cloud_name}/"):
         return False
     return not folder_prefix or f"/{folder_prefix}/" in parsed.path
+
+
+def is_cms_image_url(url):
+    """CMS images use the application's Cloudinary cloud, like profile images."""
+    return is_trusted_upload_url(url)

@@ -3,6 +3,7 @@ Order service — order creation, status transitions, delivery rewards, payment 
 """
 
 import uuid
+import hashlib
 from datetime import datetime, timezone, timedelta
 
 # Stable machine-readable codes for the two ways ordering can be refused. The
@@ -224,13 +225,17 @@ def _resolve_item_variations(db, menu_item: dict, selected_variations: list) -> 
             .eq("menu_item_id", menu_item_id)
             .execute()
         ) or []
-    except Exception:
-        groups = []
+    except Exception as exc:
         logger.error("menu_item_variation_groups query failed for item %s", menu_item_id)
+        raise ValueError(MSG.ORDER_CHOICES_LOOKUP_FAILED) from exc
 
     group_ids = {g["id"] for g in groups}
     selected_variations = selected_variations or []
+    if not isinstance(selected_variations, list) or any(not isinstance(sel, dict) for sel in selected_variations):
+        raise ValueError(MSG.ORDER_VARIATIONS_LIST_REQUIRED)
     selected_ids = [sel.get("option_id") for sel in selected_variations if sel.get("option_id")]
+    if len(selected_ids) != len(set(selected_ids)):
+        raise ValueError(MSG.ORDER_VARIATION_DUPLICATE)
 
     resolved_options_by_id = {}
     if selected_ids:
@@ -256,7 +261,7 @@ def _resolve_item_variations(db, menu_item: dict, selected_variations: list) -> 
             raise ValueError(f"Variation option {opt_id} not found")
         if not option.get("is_available", True) or option.get("is_archived", False):
             raise ValueError(MSG.ORDER_VARIATION_UNAVAILABLE.format(name=option.get("name", "")))
-        if group_ids and option.get("variation_group_id") not in group_ids:
+        if option.get("variation_group_id") not in group_ids:
             raise ValueError(f"Option '{option.get('name')}' does not belong to '{menu_item['name']}'")
 
         vgroup_id = option.get("variation_group_id")
@@ -276,6 +281,8 @@ def _resolve_item_variations(db, menu_item: dict, selected_variations: list) -> 
         if min_select is None:
             min_select = 1 if group.get("is_required") else 0
         min_select = int(min_select)
+        if group.get("is_required"):
+            min_select = max(1, min_select)
 
         max_select = group.get("max_selections")
         if max_select is None:
@@ -309,7 +316,11 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
     ) or []
 
     selected_addons = selected_addons or []
+    if not isinstance(selected_addons, list) or any(not isinstance(sel, dict) for sel in selected_addons):
+        raise ValueError(MSG.ORDER_ADDONS_LIST_REQUIRED)
     selected_ids = [sel.get("addon_id") for sel in selected_addons if sel.get("addon_id")]
+    if len(selected_ids) != len(set(selected_ids)):
+        raise ValueError(MSG.ORDER_ADDON_DUPLICATE)
 
     resolved_addons_by_id = {}
     if selected_ids:
@@ -335,7 +346,13 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
         if addon.get("group_id") not in {g["id"] for g in groups}:
             raise ValueError(MSG.ORDER_ADDON_WRONG_ITEM.format(name=addon["name"], item_name=menu_item["name"]))
 
-        qty = max(1, int(sel.get("quantity", 1)))
+        raw_qty = sel.get("quantity", 1)
+        try:
+            qty = int(raw_qty)
+            if isinstance(raw_qty, bool) or float(raw_qty) != qty or not 1 <= qty <= 50:
+                raise ValueError()
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(MSG.ORDER_ADDON_QUANTITY_RANGE)
         counts_by_group[addon["group_id"]] = counts_by_group.get(addon["group_id"], 0) + qty
         price_delta = float(addon.get("price", 0))
         price_delta_total += price_delta * qty
@@ -351,6 +368,8 @@ def _resolve_item_addons(db, menu_item: dict, selected_addons: list) -> tuple[fl
     for group in groups:
         count = counts_by_group.get(group["id"], 0)
         min_select = int(group.get("min_select", 0))
+        if group.get("is_required"):
+            min_select = max(1, min_select)
         max_select = int(group.get("max_select", 1))
         if (group.get("is_required") or min_select > 0) and count < min_select:
             raise ValueError(MSG.ORDER_ADDON_GROUP_REQUIRED.format(
@@ -446,6 +465,12 @@ def _consume_free_sides(db, user_id: str, campus_id, order_id: str) -> dict:
 # the whole order when the reward cannot be spent. Its message wording is the
 # database's; translate the known cases so the customer gets a stable 400.
 _RPC_ERROR_MAP = (
+    ("kitchen capacity reached for this date", MSG.ORDER_ADMISSION_CAPACITY),
+    ("menu item daily limit reached", MSG.ORDER_ADMISSION_STOCK),
+    ("menu item is unavailable for this campus", MSG.ORDER_ADMISSION_UNAVAILABLE),
+    ("checkout intent is not available", MSG.ORDER_ADMISSION_INTENT_UNAVAILABLE),
+    ("ordering window is at capacity", MSG.ORDER_ADMISSION_WINDOW_CAPACITY),
+
     ("reward redemption is not available", MSG.REWARD_REDEMPTION_UNAVAILABLE),
     ("redemption is not available", MSG.REWARD_REDEMPTION_UNAVAILABLE),
     ("reward redemption is not yours", MSG.REWARD_REDEMPTION_UNAVAILABLE),
@@ -462,6 +487,24 @@ def _normalize_rpc_error(message: str) -> str:
     return text
 
 
+def _order_for_intent(key: str, user_id: str | None, payload: dict, campus_id: str):
+    """Resolve a committed checkout before any mutable stock/balance validation.
+
+    Service reads are limited to the exact intent and verified identity. Guest
+    keys remain secret and must also match the checkout email and phone.
+    """
+    order = get_db().table("orders").select("*").eq("idempotency_key", key).single().execute()
+    if not order or order.get("campus_id") != campus_id or order.get("user_id") != user_id:
+        return None
+    if user_id is None:
+        if str(order.get("guest_email") or "").strip().lower() != str(payload.get("guest_email") or "").strip().lower():
+            return None
+        if str(order.get("guest_phone") or "").strip() != str(payload.get("guest_phone") or "").strip():
+            return None
+    order["idempotent"] = True
+    return order
+
+
 def create_order(user_id: str | None, payload: dict) -> dict:
     """
     Create a new order. Supports authenticated and guest checkout.
@@ -472,8 +515,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
       items[].selected_variations  — list of {variation_group_id, option_id}
       addons                       — list of {addon_id, quantity}
     """
-    idempotency_key = payload.get("idempotency_key") or str(uuid.uuid4())   # frontend resends the same
-    # key on a retry so the DB's unique constraint on it catches a genuine double-submit
+    raw_key = payload.get("idempotency_key") or str(uuid.uuid4())
+    if not isinstance(raw_key, str) or not raw_key.strip() or len(raw_key) > 200:
+        raise ValueError(MSG.ORDER_INTENT_INVALID)
 
     db = get_user_client()
     from flask import has_request_context, g
@@ -487,8 +531,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if not campus_id:
         raise ValueError("campus_id could not be resolved for this order")
 
-    # Reject if kitchen is already at daily capacity
-    _check_kitchen_capacity(db)
+    actor = f"user:{user_id}" if user_id else f"guest:{str(payload.get('guest_email') or '').strip().lower()}:{str(payload.get('guest_phone') or '').strip()}"
+    idempotency_key = "v2:" + hashlib.sha256(f"{actor}:{campus_id}:{raw_key}".encode()).hexdigest()
+    for key in (idempotency_key, raw_key):
+        existing = _order_for_intent(key, user_id, payload, campus_id)
+        if existing:
+            return existing
 
     is_scheduled = bool(payload.get("is_scheduled", False))
     ordering_window_id = None
@@ -503,9 +551,26 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if not is_feature_enabled("scheduled_orders"):
             raise ValueError("Scheduled ordering is not available right now")
 
+    if is_scheduled:
+        from datetime import date as _date
+        requested_date = str(payload.get("scheduled_date") or payload.get("scheduled_for") or "")[:10]
+        start_date = _date.fromisoformat(requested_date) if requested_date else today_wat()
+        if start_date < today_wat() or start_date > today_wat() + timedelta(days=14):
+            raise ValueError(MSG.ORDER_SCHEDULE_DATE_RANGE)
+        slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=start_date)
+        if not slot or (requested_date and slot.get("date") != requested_date and not payload.get("accept_next_available_date")):
+            raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
+        ordering_window_id = slot.get("window_id")
+        scheduled_for = f"{slot['date']}T{slot.get('opens_at') or '08:00:00'}+01:00"
+        if datetime.fromisoformat(scheduled_for) < datetime.now(timezone.utc):
+            scheduled_for = datetime.now(timezone.utc).isoformat()
+        if ordering_window_id:
+            win = get_db().table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute() or {}
+            linked_delivery_window_id = win.get("linked_delivery_window_id")
+
     if not is_scheduled:
         try:
-            _win = resolve_ordering_window(db, campus_id)
+            _win = resolve_ordering_window(get_db(), campus_id)
             ordering_window_id = _win.get("id")
             linked_delivery_window_id = _win.get("linked_delivery_window_id")
         except OrderingWindowUnavailable:
@@ -516,18 +581,20 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             # skips a window that has already closed, so after closing time this
             # still lands on the next open day.
             now_wat = datetime.now(timezone.utc) + timedelta(hours=1)
-            next_slot = find_next_available_ordering_slot(db, campus_id, start_date=now_wat.date())
+            next_slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=now_wat.date())
             if not next_slot or not next_slot.get("date"):
                 raise
             is_scheduled = True
             ordering_window_id = next_slot.get("window_id")
-            scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}"
+            scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}+01:00"
             if ordering_window_id:
                 ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
                 if ow_row:
                     linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
 
     window_id = linked_delivery_window_id
+    if not is_scheduled:
+        _check_kitchen_capacity(get_db())
 
     raw_items = payload.get("items", [])
     if not raw_items:
@@ -535,7 +602,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     # Pre-fetch today's active order IDs once for daily-limit checks (excludes cancelled/refunded)
     today_orders = (
-        db.table("orders")
+        get_db().table("orders")
         .select("id")
         .gte("created_at", _today_start_iso())
         .eq("campus_id", campus_id)
@@ -593,11 +660,14 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if not is_item_available or menu_item.get("deleted_at"):
             raise ValueError(MSG.ORDER_MENU_ITEM_UNAVAILABLE.format(name=menu_item["name"]))
 
-        qty = max(1, int(item.get("quantity", 1)))
+        raw_qty = item.get("quantity", 1)
+        if isinstance(raw_qty, bool) or str(raw_qty).strip() != str(int(raw_qty)) or int(raw_qty) < 1:
+            raise ValueError(MSG.ORDER_POSITIVE_QUANTITY_REQUIRED)
+        qty = int(raw_qty)
 
-        daily_limit = availability.get("daily_limit") if availability else menu_item.get("daily_limit")
+        daily_limit = availability.get("daily_limit") if availability and availability.get("daily_limit") is not None else menu_item.get("daily_limit")
         if daily_limit is not None:
-            count_today = _count_item_today(db, menu_item["id"], today_order_ids)
+            count_today = 0 if is_scheduled else _count_item_today(get_db(), menu_item["id"], today_order_ids)
             remaining = max(0, int(daily_limit) - count_today)
             if qty > remaining:
                 raise ValueError(MSG.ORDER_MENU_ITEM_SOLD_OUT_TODAY.format(name=menu_item["name"], remaining=remaining))
@@ -1020,7 +1090,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         result = {}
 
     if result.get("error"):
+        if result["error"] in (ORDERING_WINDOW_CLOSED, ORDERING_WINDOW_AT_CAPACITY):
+            code = result["error"]
+            raise OrderingWindowUnavailable(
+                MSG.ORDERING_WINDOW_AT_CAPACITY if code == ORDERING_WINDOW_AT_CAPACITY else MSG.ORDER_OUTSIDE_ORDERING_HOURS,
+                code=code, next_slot_resolver=lambda: find_next_available_ordering_slot(get_db(), campus_id, today_wat()))
         raise ValueError(_normalize_rpc_error(result["error"]))
+
+    if result.get("idempotent"):
+        replay = _order_for_intent(idempotency_key, user_id, payload, campus_id)
+        if replay:
+            return replay
+        raise ValueError(MSG.ORDER_RETRY_UNRESOLVED)
 
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
 
@@ -1089,7 +1170,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         if snapshot:
             get_db().table("orders").eq("id", order_id).update({"squad_member_snapshot": snapshot}).execute()
 
-    order = db.table("orders").select("*").eq("id", result["order_id"]).single().execute()
+    order = get_db().table("orders").select("*").eq("id", result["order_id"]).single().execute()
     order_source = payload.get("order_source") or payload.get("source") or "website"
     if order_source not in ("website", "whatsapp", "instagram", "referral", "sms", "other"):
         order_source = "other"          # the orders.order_source CHECK only allows these six values
@@ -1180,7 +1261,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         except Exception as _pe:
             logger.warning("create_order: order_placed notify failed: %s", _pe)
 
-    if isinstance(order, dict) and order.get("payment_status") == "paid":
+    if not result.get("idempotent") and isinstance(order, dict) and order.get("payment_status") == "paid":
         try:
             _on_order_paid(order)
         except Exception as _pe:
@@ -1476,6 +1557,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 raise OrderForbiddenError(MSG.ORDER_ADMIN_CAMPUS_MISMATCH)
 
     current_status = order["status"]
+    if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") != "paid":
+        raise OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if new_status == current_status:
         return {**order, "unchanged": True}                       # repeat of the same action (double tap / retry): nothing to do
     allowed = VALID_TRANSITIONS.get(current_status, [])
@@ -1509,7 +1592,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     # goes through (customer, admin, kitchen), so it fires exactly once — a retry hits
     # the `new_status == current_status` no-op above and cannot credit twice. Cancels
     # from later states keep their HP/reward: the kitchen has already spent real money.
-    if new_status == "cancelled" and current_status == "received":
+    if new_status == "cancelled" and current_status in ("received", "paid"):
         _restore_order_consumables(order)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery

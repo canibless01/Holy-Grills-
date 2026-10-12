@@ -7,6 +7,7 @@ import { getOrderCustomer } from './hgUtils';
 import { hpTierName } from './valueText';
 import type { MyChallengesEnvelope } from '@/types/challenges';
 import type { SelectFreeSidePayload } from '@/types/free-sides';
+import { msg } from '@/lib/messages';
 
 // Many list endpoints wrap the array in a keyed object (e.g. { hostels: [...] },
 // { departments: [...] }, { levels: [...] }). This pulls the array out so every
@@ -90,7 +91,7 @@ const menu = {
   async getItems(params = {}) { return apiClient.get('/menu/items', params); },
   async getItem(id) { return apiClient.get(`/menu/items/${id}`); },
   async getAddons(id) { return apiClient.get(`/menu/items/${id}/addons`); },
-  async getCategories() { return apiClient.get('/menu/categories'); },
+  async getCategories(params = {}) { return apiClient.get('/menu/categories', params); },
   async getGlobalAddons() { return apiClient.get('/menu/addons'); },
   async getKitchenCapacity() { return apiClient.get('/menu/kitchen-capacity'); },
 };
@@ -845,24 +846,28 @@ const admin = {
   async deleteCategory(id) { return apiClient.delete(`/menu/categories/${id}`); },
 
   // --- Menu Items (verified: /menu/items, /menu/items/:id, archive, bulk-availability, kitchen-capacity) ---
-  async getMenuItems(params = {}) { return unwrap(await apiClient.get('/menu/items', params), 'items'); },
+  async getMenuItems(params = {}) { return unwrap(await apiClient.get('/menu/items', { available_only: 'false', include_secret: '1', ...params }), 'items'); },
   async createMenuItem(body) { return apiClient.post('/menu/items', body); },
   async updateMenuItem(id, body) { return apiClient.patch(`/menu/items/${id}`, body); },
   async toggleMenuItemAvailability(id) {
-    const items = unwrap(await apiClient.get('/menu/items'), 'items');
+    const items = await admin.getMenuItems();
     const item = items.find(i => i.id === id);
     if (!item) throw new ApiError(404, 'Item not found');
-    return apiClient.patch(`/menu/items/${id}`, { is_available: !item.is_available, is_sold_out: !!item.is_available });
+    return apiClient.patch(`/menu/items/${id}${item.campus_id ? '' : '/availability'}`, { is_available: !item.is_available });
   },
   async deleteMenuItem(id) { return apiClient.post(`/menu/items/${id}/archive`); },
   async bulkToggleMenuItemAvailability(ids, is_available) {
-    return apiClient.patch('/menu/items/bulk-availability', { item_ids: ids, is_available });
+    const result = await apiClient.patch('/menu/items/bulk-availability', { item_ids: ids, is_available });
+    if (result.failed_count) throw new Error(msg('FE_LIVE_API_FAILED_COUNT_ITEM_S_COULD_NOT_BE', '{failed_count} item(s) could not be updated. Refresh the menu to see the saved changes.', { failed_count: result.failed_count }));
+    return result;
   },
   async updateMenuItemHpMultiplier(id, body) {
     return apiClient.patch(`/menu/items/${id}`, { hp_multiplier: body.multiplier });
   },
   async bulkUpdateMenuItemHpMultiplier(ids, multiplier) {
     const results = await Promise.allSettled(ids.map(id => apiClient.patch(`/menu/items/${id}`, { hp_multiplier: multiplier })));
+    const failed = results.filter(r => r.status === 'rejected');
+    if (failed.length) throw new Error(msg('FE_LIVE_API_COUNT_ITEM_S_COULD_NOT_BE_UPDATED', '{count} item(s) could not be updated. Refresh the menu to see which changes were saved.', { count: failed.length }));
     return { updated_count: results.filter(r => r.status === 'fulfilled').length };
   },
   async getMenuCapacitySettings() { return apiClient.get('/menu/kitchen-capacity'); },
@@ -879,20 +884,16 @@ const admin = {
   // Per-item variation groups + addon groups with their individual options/addons.
   // The group create/update routes do NOT accept nested `options`/`addons` arrays,
   // so each option and addon must be CRUD'd through its own endpoint. For existing
-  // groups the old options are deleted before recreating from the editor text —
-  // the text-area editor loses option IDs, so a full replace is the only correct
-  // strategy. Removed groups are deleted entirely.
+  // groups, matching option names retain their IDs. Removed groups are deleted.
+  // Every failed request propagates so a partial save cannot report success.
   async saveItemModifiers(itemId, body) {
     const results = { variation_groups: [], addon_groups: [] };
 
     // Fetch current state so we can delete removed groups and stale options.
-    let existingDetail = null, existingAddons = null;
-    try {
-      [existingDetail, existingAddons] = await Promise.all([
+    const [existingDetail, existingAddons] = await Promise.all([
         apiClient.get(`/menu/items/${itemId}`),
         apiClient.get(`/menu/items/${itemId}/addons`),
       ]);
-    } catch (e) { /* proceed without delete capability */ }
 
     const existingVarGroups = existingDetail?.variation_groups || [];
     const existingAddonGroups = existingAddons?.addon_groups || [];
@@ -904,12 +905,12 @@ const admin = {
     // Delete variation groups no longer in the editor.
     await Promise.all(existingVarGroups
       .filter((g) => !keptVarIds.has(g.id))
-      .map((g) => apiClient.delete(`/menu/items/${itemId}/variation-groups/${g.id}`).catch(() => {})));
+      .map((g) => apiClient.delete(`/menu/items/${itemId}/variation-groups/${g.id}`)));
 
     // Delete addon groups no longer in the editor.
     await Promise.all(existingAddonGroups
       .filter((g) => !keptAddonIds.has(g.id))
-      .map((g) => apiClient.delete(`/menu/items/${itemId}/addon-groups/${g.id}`).catch(() => {})));
+      .map((g) => apiClient.delete(`/menu/items/${itemId}/addon-groups/${g.id}`)));
 
     // ── Variation groups + their options ──
     for (const vg of (body.variation_groups || [])) {
@@ -946,12 +947,12 @@ const admin = {
           sort_order: opt.sort_order ?? i,
         };
         const match = oldOpts.find((o) => o.name === opt.name && !keptOptIds.has(o.id));
-        if (match) { keptOptIds.add(match.id); return apiClient.patch(`/menu/items/${itemId}/variation-groups/${groupId}/options/${match.id}`, payload).catch(() => {}); }
-        return apiClient.post(`/menu/items/${itemId}/variation-groups/${groupId}/options`, payload).catch(() => {});
+        if (match) { keptOptIds.add(match.id); return apiClient.patch(`/menu/items/${itemId}/variation-groups/${groupId}/options/${match.id}`, payload); }
+        return apiClient.post(`/menu/items/${itemId}/variation-groups/${groupId}/options`, payload);
       }));
       await Promise.all(oldOpts
         .filter((o) => !keptOptIds.has(o.id))
-        .map((o) => apiClient.delete(`/menu/items/${itemId}/variation-groups/${groupId}/options/${o.id}`).catch(() => {})));
+        .map((o) => apiClient.delete(`/menu/items/${itemId}/variation-groups/${groupId}/options/${o.id}`)));
       results.variation_groups.push({ id: groupId, ...groupPayload });
     }
 
@@ -960,8 +961,8 @@ const admin = {
       const groupPayload = {
         name: ag.name,
         is_required: !!ag.is_required,
-        min_select: ag.min_select || 0,
-        max_select: ag.max_select || 1,
+        min_select: ag.min_select ?? 0,
+        max_select: ag.max_select ?? 1,
         sort_order: ag.sort_order ?? 0,
       };
       let groupId = ag.id;
@@ -986,12 +987,12 @@ const admin = {
           sort_order: addon.sort_order ?? i,
         };
         const match = oldAddons.find((a) => a.name === addon.name && !keptAddonIds.has(a.id));
-        if (match) { keptAddonIds.add(match.id); return apiClient.patch(`/menu/addons/${match.id}`, payload).catch(() => {}); }
-        return apiClient.post('/menu/addons', payload).catch(() => {});
+        if (match) { keptAddonIds.add(match.id); return apiClient.patch(`/menu/addons/${match.id}`, payload); }
+        return apiClient.post('/menu/addons', payload);
       }));
       await Promise.all(oldAddons
         .filter((a) => !keptAddonIds.has(a.id))
-        .map((a) => apiClient.post(`/menu/addons/${a.id}/archive`).catch(() => {})));
+        .map((a) => apiClient.post(`/menu/addons/${a.id}/archive`)));
       results.addon_groups.push({ id: groupId, ...groupPayload });
     }
 
@@ -1441,6 +1442,7 @@ const graduation = {
 // admin-uploaded base template (section_type='share_template') and by the
 // homepage for banners / early-supporter content.
 const storefront = {
+  async getFeatureFlags() { return apiClient.get('/storefront/feature-flags'); },
   async getSections(params = {}) { return unwrap(await apiClient.get('/storefront/sections', params), 'sections'); },
   // Public carousel banners (storefront.py) — each banner has an `images` array
   // rendered as a swipeable carousel on the homepage. Optional placement filter.

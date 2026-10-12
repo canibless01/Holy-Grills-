@@ -19,6 +19,7 @@ import { useScrollNav } from '@/hooks/useScrollNav';
  * floating tab bar, so nothing in it is ever hidden behind the navigation.
  */
 const NAV_LINKS = [
+  { to: '/contact', label: 'Contact us' },
   { to: '/', label: 'Home' },
   { to: '/menu', label: 'Menu' },
   { to: '/dashboard', label: 'Dashboard' },

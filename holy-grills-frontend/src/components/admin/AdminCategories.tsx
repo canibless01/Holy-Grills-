@@ -3,22 +3,24 @@ import { Plus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Modal, Field, TextInput, Toggle, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 
 // Full CRUD for menu categories (POST/PATCH/DELETE /menu/categories). The list
 // reuses the public GET /menu/categories so admins see exactly what students see.
 // "Delete" is a soft-deactivate (backend sets is_active=false); reactivating an
 // inactive category flips it back on.
 export default function AdminCategories({ open, onClose, onChanged }) {
+  useMessages();
   const [cats, setCats] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', slug: '', description: '', sort_order: 0, is_active: true });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const c = await liveApi.menu.getCategories();
+      const c = await liveApi.menu.getCategories({ include_inactive: '1' });
       setCats(Array.isArray(c) ? c : (c?.categories || []));
     } catch { setCats([]); }
     setLoading(false);
@@ -31,15 +33,18 @@ export default function AdminCategories({ open, onClose, onChanged }) {
     if (!form.name.trim()) { toast({ title: msg('FE_ADMIN_CATEGORIES_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
     setSaving(true);
     try {
-      await liveApi.admin.createCategory({
+      const body = {
         name: form.name.trim(),
         slug: slugify(form.slug || form.name),
         description: form.description,
         sort_order: Number(form.sort_order) || 0,
         is_active: form.is_active !== false,
-      });
+      };
+      if (editingId) await liveApi.admin.updateCategory(editingId, body);
+      else await liveApi.admin.createCategory(body);
       toast({ title: msg('FE_ADMIN_CATEGORIES_CATEGORY_CREATED', '✅ Category created') });
       setForm({ name: '', slug: '', description: '', sort_order: 0, is_active: true });
+      setEditingId(null);
       await load(); onChanged?.();
     } catch (e) { toast({ title: msg('FE_ADMIN_CATEGORIES_FAILED_TO_CREATE_CATEGORY', 'Failed to create category'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
@@ -66,20 +71,22 @@ export default function AdminCategories({ open, onClose, onChanged }) {
                 <div className="text-[11px] text-muted-foreground truncate">{c.slug} · order {c.sort_order ?? 0}</div>
               </div>
               <Pill tone={c.is_active ? 'green' : 'cocoa'}>{c.is_active ? 'Active' : 'Hidden'}</Pill>
+              <button aria-label={`Edit category ${c.name}`} onClick={() => { setEditingId(c.id); setForm({ name: c.name, slug: c.slug, description: c.description || '', sort_order: c.sort_order || 0, is_active: c.is_active }); }} className="text-xs font-bold text-primary">{msg('FE_ADMIN_CATEGORIES_EDIT', "Edit")}</button>
               <button onClick={() => toggleActive(c)} className={`px-2.5 py-1.5 rounded-full text-xs font-bold shrink-0 ${c.is_active ? 'bg-red-50 text-red-600' : 'bg-green-600 text-white'}`}>{c.is_active ? 'Deactivate' : 'Activate'}</button>
             </div>
           ))}
         </div>
         <div className="pt-2 border-t border-border space-y-2">
-          <div className="text-xs font-bold text-foreground uppercase">New category</div>
+          <div className="text-xs font-bold text-foreground uppercase">{editingId ? 'Edit category' : 'New category'}</div>
           <Field label="Name"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Breakfast" /></Field>
           <Field label="Slug" hint="Leave blank to generate from the name."><TextInput value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="breakfast" /></Field>
           <Field label="Description"><TextInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
           <div className="grid grid-cols-2 gap-2 items-end">
             <Field label="Sort order"><TextInput type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })} /></Field>
-            <label className="flex items-center gap-2 text-sm text-foreground font-semibold pb-2.5"><Toggle checked={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} /> Active</label>
+            <label className="flex items-center gap-2 text-sm text-foreground font-semibold pb-2.5"><Toggle label={msg('FE_ADMIN_CATEGORIES_CATEGORY_ACTIVE', "Category active")} checked={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} /> {msg('FE_ADMIN_CATEGORIES_ACTIVE', "Active")}</label>
           </div>
-          <button onClick={create} disabled={saving} className="w-full py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"><Plus className="w-4 h-4" /> Create category</button>
+          <button onClick={create} disabled={saving} className="w-full py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"><Plus className="w-4 h-4" /> {editingId ? 'Save category' : 'Create category'}</button>
+          {editingId && <button onClick={() => { setEditingId(null); setForm({ name: '', slug: '', description: '', sort_order: 0, is_active: true }); }} className="text-xs font-bold text-muted-foreground">{msg('FE_ADMIN_CATEGORIES_CANCEL_EDIT', "Cancel edit")}</button>}
         </div>
       </div>
     </Modal>
