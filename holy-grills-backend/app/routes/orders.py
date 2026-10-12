@@ -649,12 +649,78 @@ def claim_guest_order(order_id):
         return jsonify({"error": str(e)}), 400
 
 
+def _atomic_refund_response(order_id, customer_cancel=False, scheduled_only=False):
+    """Keep money, refund counters and terminal state in one database transaction."""
+    from decimal import Decimal, InvalidOperation
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    reason = data.get('reason') or (MSG.ORDER_CUSTOMER_CANCEL_REASON if customer_cancel else '')
+    if not isinstance(reason, str) or not reason.strip():
+        return jsonify({'error': MSG.ORDER_REFUND_REASON_REQUIRED}), 400
+    reason = reason.strip()
+    request_key = 'customer-cancel' if customer_cancel else data.get('idempotency_key')
+    if not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 200:
+        return jsonify({'error': MSG.ORDER_INTENT_INVALID}), 400
+    amount = None
+    if not customer_cancel and data.get('refund_amount') is not None:
+        try:
+            value = Decimal(str(data['refund_amount']))
+            if isinstance(data['refund_amount'], bool) or not value.is_finite() or value <= 0:
+                raise InvalidOperation()
+            amount = float(value.quantize(Decimal('0.01')))
+        except (InvalidOperation, ValueError, OverflowError):
+            return jsonify({'error': MSG.REFUND_AMOUNT_INVALID}), 400
+    before = get_user_client().table('orders').select('id,user_id,is_scheduled,status').eq('id', order_id).single().execute()
+    if not before:
+        return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+    if customer_cancel and before.get('user_id') != g.user_id:
+        return jsonify({'error': MSG.ORDER_CANCEL_NOT_OWNER}), 403
+    if scheduled_only and not before.get('is_scheduled'):
+        return jsonify({'error': MSG.ORDER_NOT_SCHEDULED_PENDING}), 409
+    try:
+        result = get_db().rpc('hg_refund_order_atomic', {
+            'p_order_id': order_id, 'p_actor_id': g.user_id, 'p_request_key': request_key,
+            'p_requested_amount': amount, 'p_reason': reason, 'p_customer_cancel': customer_cancel,
+        })
+    except Exception:
+        logger.exception('Atomic order refund unavailable for %s', order_id)
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+    failures = {
+        'forbidden': (MSG.ORDER_ACCESS_DENIED, 403),
+        'order_not_found': (MSG.ORDER_NOT_FOUND, 404),
+        'cannot_cancel': (MSG.ORDER_CANCEL_WRONG_STATUS, 409),
+        'invalid_intent': (MSG.ORDER_INTENT_INVALID, 400),
+        'invalid_amount': (MSG.REFUND_AMOUNT_INVALID, 400),
+        'guest_refund_manual_required': (MSG.GUEST_REFUND_MANUAL_REQUIRED, 400),
+        'refund_conservation': (MSG.REFUND_ALREADY_FULL, 409),
+    }
+    if not isinstance(result, dict) or not result.get('success'):
+        code = result.get('error') if isinstance(result, dict) else 'refund_failed'
+        logger.warning('Atomic refund refused for %s: %s', order_id, code)
+        message, status = failures.get(code, (MSG.SERVICE_UNAVAILABLE, 503))
+        return jsonify({'error': message, 'code': code}), status
+    result['message'] = MSG.ORDER_CANCELLED_OK if customer_cancel else MSG.ORDER_REFUND_SUCCESS
+    result['refund_errors'] = []
+    if not result.get('idempotent'):
+        try:
+            from app.services.notification_service import send_notification
+            send_notification(user_id=before['user_id'], notif_type='order_refunded',
+                title=MSG.ORDER_REFUND_TITLE,
+                body=MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{result.get('refund_amount', 0):.0f}", reason=reason),
+                reference_id=order_id, reference_type='order', channels=['push','in_app','email'])
+        except Exception:
+            logger.exception('Refund notification unavailable for order %s', order_id)
+    return jsonify(result), 200
+
+
 @orders_bp.route("/<order_id>/refund", methods=["POST"])
 @require_role("admin")
 def refund_order(order_id):
     """
     Initiate a refund for an order (admin only).
-    Transitions the order to 'refunded' status and credits the entire refund amount to wallet.
+    Credits collected payments to the customer wallet atomically. Partial refunds retain
+    preparation status; full refunds close the order. Retry with the same request key.
     ---
     tags: [Orders]
     parameters:
@@ -666,8 +732,9 @@ def refund_order(order_id):
         name: body
         required: true
         schema:
-          required: [reason]
+          required: [reason, idempotency_key]
           properties:
+            idempotency_key: {type: string, description: "Stable key for this refund intent and its retries"}
             reason: {type: string, description: "Reason for the refund"}
             refund_amount: {type: number, description: "Partial refund amount in Naira. Defaults to remaining refundable amount."}
     responses:
@@ -678,119 +745,7 @@ def refund_order(order_id):
       404:
         description: Order not found
     """
-    data = request.get_json(force=True) or {}
-    reason = data.get("reason", "").strip()
-    if not reason:
-        return jsonify({"error": MSG.ORDER_REFUND_REASON_REQUIRED}), 400
-
-    db = get_user_client()
-    order = db.table("orders").select("id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-
-    # Pre-checks for final canceled / unrefundable states
-    if order.get("status") == "cancelled" and order.get("payment_status") != "paid":
-        return jsonify({"error": MSG.REFUND_UNPAID_CANCELLED}), 400
-
-    wallet_amount_used = float(order.get("wallet_amount_used") or 0)
-    card_amount_used = float(order.get("card_amount_used") or 0)
-    refund_amount = float(data.get("refund_amount") or (wallet_amount_used + card_amount_used))
-    if refund_amount <= 0:
-        return jsonify({"error": MSG.REFUND_AMOUNT_INVALID}), 400
-
-    try:
-        reservation = db.rpc("hg_reserve_order_refund", {
-            "p_order_id": order_id,
-            "p_requested_amount": refund_amount,
-        })
-    except Exception as exc:
-        logger.error("refund_order: hg_reserve_order_refund failed for %s: %s", order_id, exc)
-        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
-
-    if not isinstance(reservation, dict) or "success" not in reservation:
-        logger.error("refund_order: hg_reserve_order_refund returned unexpected response for %s: %r", order_id, reservation)
-        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
-    elif not reservation.get("success"):
-        if reservation.get("error") == "invalid_amount":
-            refundable = reservation.get("refundable_total", 0)
-            if refundable <= 0:
-                return jsonify({"error": "This order has already been fully refunded."}), 400
-            return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable}"}), 400
-        return jsonify({"error": reservation.get("error", "Could not reserve refund")}), 400
-
-    wallet_refund_allocation = reservation["wallet_allocation"]
-    card_refund_allocation = reservation["card_allocation"]
-    total_wallet_credit = wallet_refund_allocation + card_refund_allocation
-
-    if not order.get("user_id") and total_wallet_credit > 0:
-        return jsonify({"error": MSG.GUEST_REFUND_MANUAL_REQUIRED}), 400
-
-    wallet_credited = False
-    if total_wallet_credit > 0 and order.get("user_id"):
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=order["user_id"],
-                amount=total_wallet_credit,
-                payment_reference=f"REFUND-{order_id[:8].upper()}",
-                reference_id=order_id,
-                reference_type="refund",
-                notes=f"Refund for order #{order_id[:8].upper()}: {reason}",
-            )
-            wallet_credited = True
-        except Exception as exc:
-            return jsonify({"error": f"Wallet credit failed: {str(exc)}"}), 400
-
-    # State transition for order
-    from app.services import order_service
-    try:
-        order_service.update_order_status(
-            order_id=order_id,
-            new_status="refunded",
-            changed_by=g.user_id,
-            notes=f"Refund: {reason}",
-        )
-    except ValueError as e:
-        # Ignore transition error if already refunded (allows multiple partial refunds)
-        if order.get("status") != "refunded":
-            return jsonify({"error": str(e)}), 400
-
-    # Construct rich notes snapshot for history tracking
-    new_notes = f"[REFUNDED by {g.user_id[:8]}] {reason}"
-    if card_refund_allocation > 0:
-        new_notes += f" [CARD_PORTION_TO_WALLET: {card_refund_allocation}]"
-
-    updated_notes = (order.get("notes") or "") + " | " + new_notes
-
-    db.table("orders").eq("id", order_id).update({
-        "notes": updated_notes,
-        "refunded_at": datetime.now(timezone.utc).isoformat(),
-    })
-
-    from app.services.notification_service import send_notification
-    if order.get("user_id"):
-        try:
-            send_notification(
-                user_id=order["user_id"],
-                notif_type="order_refunded",
-                title=MSG.ORDER_REFUND_TITLE,
-                body=MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{refund_amount:.0f}", reason=reason),
-                reference_id=order_id,
-                reference_type="order",
-                channels=["push", "in_app", "email"],
-            )
-        except Exception:
-            pass
-
-    return jsonify({
-        "message": MSG.ORDER_REFUND_SUCCESS,
-        "order_id": order_id,
-        "status": "refunded",
-        "refund_amount": refund_amount,
-        "reason": reason,
-        "wallet_credited": wallet_credited,
-        "card_refunded": False,
-    }), 200
+    return _atomic_refund_response(order_id)
 
 
 @orders_bp.route("/scheduled", methods=["GET"])
@@ -869,89 +824,7 @@ def cancel_scheduled_order(order_id):
       404:
         description: Order not found
     """
-    db = get_user_client()
-    order = (
-        db.table("orders")
-        .select("id,user_id,status,is_scheduled,total_amount,wallet_amount_used,card_amount_used,hp_redeemed,payment_status")
-        .eq("id", order_id)
-        .single()
-        .execute()
-    )
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-    if order.get("user_id") != g.user_id:
-        return jsonify({"error": MSG.ORDER_CANCEL_NOT_OWNER}), 403
-    is_scheduled = order.get("is_scheduled") in (True, "true", "t")
-    if not is_scheduled or order.get("status") not in ("received", "paid"):
-        return jsonify({"error": MSG.ORDER_NOT_SCHEDULED_PENDING}), 409
-
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Scheduled order cancelled by customer")
-
-    try:
-        order_service.update_order_status(order_id, "cancelled", g.user_id, reason)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    wallet_refunded = 0.0
-    wallet_amount_used = float(order.get("wallet_amount_used") or 0)
-    if wallet_amount_used > 0:
-        from app.services.wallet_service import credit_wallet
-        credit_wallet(
-            user_id=g.user_id,
-            amount=wallet_amount_used,
-            payment_reference=f"order-refund-wallet-{order_id}",
-            reference_id=order_id,
-            reference_type="refund",
-            notes=f"Refund for cancelled scheduled order #{order_id[:8].upper()}",
-        )
-        wallet_refunded = wallet_amount_used
-
-    # The card half is only real money once the webhook confirms it — every order is
-    # created payment_status='pending' with card_amount_used already set — so refunding it
-    # here refunded money that was never collected, repeatably. Same bug the plain cancel
-    # path had. The wallet half above is always refunded: it is debited at creation.
-    card_amount_used = float(order.get("card_amount_used") or 0)
-    if card_amount_used > 0 and str(order.get("payment_status") or "").lower() != "paid":
-        logger.warning(
-            "cancel_scheduled_order: order %s cancelled with payment_status=%r — the card "
-            "half (%s) was never collected and is not refunded",
-            order_id, order.get("payment_status"), card_amount_used)
-        card_amount_used = 0.0
-    if card_amount_used > 0:
-        from app.services.wallet_service import credit_wallet
-        credit_wallet(
-            user_id=g.user_id, amount=card_amount_used,
-            payment_reference=f"order-refund-card-{order_id}",
-            reference_id=order_id, reference_type="refund",
-            notes=f"Card-portion refund for cancelled scheduled order #{order_id[:8].upper()}",
-        )
-        wallet_refunded += card_amount_used
-
-    # HP and a claimed reward are restored by update_order_status() on the
-    # received->cancelled transition, above in this same request: one implementation for
-    # every cancel path, fired exactly once. Doing it here too would credit HP twice.
-
-    # Restore order lock if one was used
-    try:
-        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
-        if lock:
-            get_db().table("order_locks").eq("id", lock["id"]).update({
-                "status": "active",
-                "order_id": None,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-    except Exception as exc:
-        # The lock stays consumed and the customer loses what they paid for it. This must
-        # be visible to whoever investigates, and is reversible by hand.
-        logger.error("cancel_scheduled_order: order lock not restored for order %s: %s", order_id, exc)
-
-    return jsonify({
-        "message": MSG.ORDER_CANCELLED_OK,
-        "order_id": order_id,
-        "status": "cancelled",
-        "wallet_refunded": wallet_refunded,
-    }), 200
+    return _atomic_refund_response(order_id, customer_cancel=True, scheduled_only=True)
 
 
 @orders_bp.route("/active", methods=["GET"])
@@ -1161,146 +1034,7 @@ def cancel_order(order_id):
       404:
         description: Order not found
     """
-    db = get_user_client()
-    order = (
-        db.table("orders")
-        .select("id,user_id,status,total_amount,wallet_amount_used,card_amount_used,hp_redeemed,payment_status")
-        .eq("id", order_id)
-        .single()
-        .execute()
-    )
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-    if order.get("user_id") != g.user_id:
-        return jsonify({"error": MSG.ORDER_CANCEL_NOT_OWNER}), 403
-    # Only "received" orders can be cancelled by the customer (kitchen hasn't started yet).
-    # "received" means no kitchen work has begun, so cancellation is always safe regardless
-    # of time-of-day — the ordering-window check has been intentionally removed here.
-    if order.get("status") not in ("received", "paid"):
-        return jsonify({"error": MSG.ORDER_CANCEL_WRONG_STATUS}), 409
-
-    data = request.get_json(force=True, silent=True) or {}
-    reason = data.get("reason", "Cancelled by customer")
-
-    try:
-        order_service.update_order_status(order_id, "cancelled", g.user_id, reason)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    # ── Refund: wallet→wallet, card→wallet ────────────────────────────────────
-    # ONLY money that actually left the account is refundable. A card order is created
-    # with payment_status='pending' and card_amount_used already set, so refunding
-    # before the webhook confirmed the charge credited the customer for a payment that
-    # never happened — repeatable, i.e. free money. The admin refund route
-    # (POST /<id>/refund) already refuses this case with REFUND_UNPAID_CANCELLED;
-    # this is the same guard on the customer path.
-    wallet_refunded = 0.0
-    wallet_amount = float(order.get("wallet_amount_used") or 0)
-    card_amount = float(order.get("card_amount_used") or 0)
-    paid = str(order.get("payment_status") or "").lower() == "paid"
-
-    # CONFIRMED against the live database: hg_create_order_atomic debits the wallet half
-    # at creation, in the same transaction, through debit_wallet_atomic; the card half
-    # only arrives later, by webhook. So on a pending split order the wallet half is
-    # already gone and must come back — while the card half, never collected, must not.
-    # The refund is capped at wallet_amount_used, which is exactly the amount debited.
-    refund_wallet_when_unpaid = True
-
-    refund_errors = []
-    if not paid:
-        # The card half was never collected. The wallet half was, at creation.
-        logger.warning(
-            "cancel_order: order %s cancelled with payment_status=%r — refunding the wallet "
-            "half (%s) only; the card half (%s) was never collected.",
-            order_id, order.get("payment_status"), wallet_amount, card_amount)
-        if not refund_wallet_when_unpaid:
-            wallet_amount = 0.0
-        card_amount = 0.0
-
-    if wallet_amount > 0:
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=g.user_id,
-                amount=wallet_amount,
-                payment_reference=f"order-refund-wallet-{order_id}",
-                reference_id=order_id,
-                reference_type="refund",
-                notes=f"Refund for cancelled order #{order_id[:8].upper()}",
-            )
-            wallet_refunded += wallet_amount
-        except Exception as exc:
-            logger.error("cancel_order: wallet refund failed for %s: %s", order_id, exc)
-            refund_errors.append("wallet")
-
-    if card_amount > 0:
-        # Card payments refund to wallet
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=g.user_id,
-                amount=card_amount,
-                payment_reference=f"order-refund-card-{order_id}",
-                reference_id=order_id,
-                reference_type="refund",
-                notes=f"Card refund to wallet for cancelled order #{order_id[:8].upper()}",
-            )
-            wallet_refunded += card_amount
-        except Exception as exc:
-            logger.error("cancel_order: card-portion refund failed for %s: %s", order_id, exc)
-            refund_errors.append("card")
-
-    # Restore order lock if one was used
-    try:
-        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
-        if lock:
-            get_db().table("order_locks").eq("id", lock["id"]).update({
-                "status": "active",
-                "order_id": None,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-    except Exception as exc:
-        # Same as cancel_scheduled_order: the customer paid for this lock and it stays
-        # consumed if the restore fails. Log it — it is fixable by hand.
-        logger.error("cancel_order: order lock not restored for order %s: %s", order_id, exc)
-
-    from app.services.notification_service import send_notification
-    try:
-        send_notification(
-            user_id=g.user_id,
-            notif_type="order_refunded",
-            title=MSG.ORDER_REFUND_TITLE,
-            body=MSG.ORDER_REFUND_BODY_WALLET.format(
-                amount=f"{wallet_refunded:.0f}", reason=reason
-            ) if wallet_refunded > 0 else MSG.ORDER_CANCELLED_BODY,
-            reference_id=order_id,
-            reference_type="order",
-            channels=["push", "in_app", "email"],
-        )
-    except Exception:
-        pass
-
-    response = {
-        "message": MSG.ORDER_CANCELLED_OK,
-        "order_id": order_id,
-        "status": "cancelled",
-        "wallet_refunded": wallet_refunded,
-        "refund_errors": refund_errors,
-    }
-    if not paid:
-        # Say what actually happened: a split order's wallet half was debited at checkout
-        # and is being returned, while a card-only order had nothing collected at all.
-        # Without this the client cannot tell "refunded ₦0" from "the refund failed".
-        response["payment_status"] = order.get("payment_status")
-        response["refunded_reason"] = (
-            "the wallet half was debited at checkout and has been returned; "
-            "the card half was never collected"
-            if wallet_refunded > 0 else
-            "nothing was charged on this order"
-        )
-        if refund_errors:
-            response["refund_errors"] = refund_errors
-    return jsonify(response), 200
+    return _atomic_refund_response(order_id, customer_cancel=True)
 
 
 @orders_bp.route("/<order_id>/reorder", methods=["POST"])

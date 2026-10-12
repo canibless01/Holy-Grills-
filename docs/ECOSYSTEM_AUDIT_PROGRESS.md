@@ -1,6 +1,6 @@
 # Ecosystem audit and fixes — progress
 
-Project: Supabase **Test Two**. Status: **in progress**. This report describes the first published batch; it is not a full ecosystem sign-off.
+Project: Supabase **Test Two**. Status: **in progress**. This report describes verified batches so far; it is not a full ecosystem sign-off.
 
 ## Verified closed loops in this batch
 
@@ -14,24 +14,26 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes t
 - Floating WhatsApp code is removed. Contact page and footer use campus settings, with global fallback. There is no floating contact control.
 - Concurrent duplicate checkout intents resolve to one order and one wallet debit. Distinct intents competing for the last delivery-window slot or stock unit admit one order. A retry after spending the exact wallet balance returns the original order.
 - A simulated account-profile outage preserves sign-in credentials and provides a working recovery button.
+- Actual scheduled checkout survives a lost committed response: retry resolves to the same order, one wallet debit, confirmation/share and confirmation reload.
+- Refund and wallet-credit concurrency, independent equal-value intents, full-refund closure, cross-role denials and admin UI response-loss retries pass. See [migration/access verification](MIGRATION_ACCESS_VERIFICATION.md).
 
 ## Implemented changes that require further end-to-end verification
 
-- Scheduling consent is retained, saved auto-scheduling uses backend window resolution, successful schedules navigate to confirmation, and copy reflects payment and preparation state. Browser response-loss and multi-tab checkout testing remains open.
-- Preparation state is independent of payment state. Kitchen preparation requires paid orders; future scheduled orders are excluded until due. Cancellation routes share refund references. Full cancellation/refund, kitchen/batch/rider/delivery and reward side-effect loops remain open.
+- Scheduling consent is retained, saved auto-scheduling uses backend window resolution, successful schedules navigate to confirmation, and copy reflects payment and preparation state. Browser response-loss passes; multi-tab UI checkout testing remains open.
+- Preparation state is independent of payment state. Kitchen preparation requires paid orders; future scheduled orders are excluded until due. Cancellation and refund routes now use one atomic ledger/state transaction. Historical test-refund counters reconcile from real credits, partial refunds preserve preparation status, and retries do not repeat money. Kitchen/batch/rider/delivery and complete reward side-effect loops remain open.
 - HP multiplier and flash reward release gates are off. Flash redemption enforces the release flag and campus in its database transaction. Automatic random event planning and advance notices remain to be completed and tested.
 - Hero eyebrow is editable using existing banner metadata. The full storefront field, image, publication and customer-rendering matrix remains open.
 
 ## Validation
 
-- Backend unit suite: **107 passed**, including actual modifier resolver security regressions.
+- Backend unit suite: **113 passed**, including modifier security and atomic refund-route regressions.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.
 
 ## Image architecture
 
-Uploads remain **Cloudinary only**. The temporary Supabase Storage fallback is removed; its audit-only image and empty bucket were deleted. Cloudinary API key/secret are missing from the current audit runtime. The owner is configuring them; actual upload/display/replace/delete loops will be rerun afterward.
+Uploads remain **Cloudinary only**. The temporary Supabase Storage fallback is removed; its audit-only image and empty bucket were deleted. Cloudinary API key/secret are missing from the current audit runtime. The owner stored them in the personal vault; runtime binding and Cloudinary network access are still required; actual upload/display/replace/delete loops will be rerun afterward.
 
 ## Remaining full audit scope
 

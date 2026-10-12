@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, getOrderCustomer } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import { Modal, Field, TextInput, Card, Pill, Toggle } from './AdminShared';
-import { msg } from '@/lib/messages';
+import { Modal, Field, TextInput, Card, Pill } from './AdminShared';
+import { msg, useMessages } from '@/lib/messages';
 
 const OVERRIDE_STATUSES = ['received', 'preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'];
 // Valid walk targets — terminal states (cancelled/refunded) can't be advanced.
 const WALK_TARGETS = ['preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered'];
 
 export default function AdminOrders() {
+  useMessages();
+  const refundBusy = useRef(false);
   const [tab, setTab] = useState('orders');
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,16 +56,32 @@ export default function AdminOrders() {
   };
 
   const doRefund = async () => {
-    if (!refundOrder) return;
+    if (!refundOrder || refundBusy.current) return;
+    const amount = Number(refundOrder.refund_amount);
+    if (!Number.isFinite(amount) || amount <= 0 || !refundOrder.reason.trim()) {
+      toast({ title: msg('FE_REFUND_FIELDS_REQUIRED', 'Enter a positive refund amount and a reason.'), variant: 'destructive' });
+      return;
+    }
+    refundBusy.current = true;
     setBusy(refundOrder.id);
-    await mockApi.orders.refund(refundOrder.id, { reason: refundOrder.reason, refund_amount: Number(refundOrder.refund_amount) || refundOrder.total_amount, refund_to_wallet: !!refundOrder.refund_to_wallet });
-    setBusy(null);
-    const rid = refundOrder.id;
-    setRefundOrder(null);
-    await load();
-    if (expanded === rid) {
-      const h = await mockApi.orders.getHistory(rid);
-      setHistory((s) => ({ ...s, [rid]: h }));
+    try {
+      await mockApi.orders.refund(refundOrder.id, {
+        reason: refundOrder.reason, refund_amount: amount,
+        idempotency_key: refundOrder.idempotency_key,
+      });
+      const rid = refundOrder.id;
+      setRefundOrder(null);
+      toast({ title: msg('FE_REFUND_PROCESSED', 'Refund processed') });
+      await load();
+      if (expanded === rid) {
+        const h = await mockApi.orders.getHistory(rid);
+        setHistory((s) => ({ ...s, [rid]: h }));
+      }
+    } catch (error) {
+      toast({ title: msg('FE_REFUND_REQUEST_FAILED', 'Unable to complete the refund request'), description: error.message, variant: 'destructive' });
+    } finally {
+      refundBusy.current = false;
+      setBusy(null);
     }
   };
 
@@ -209,8 +227,8 @@ export default function AdminOrders() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 text-xs font-bold">
                         <AlertTriangle className="w-3.5 h-3.5" /> Override Status
                       </button>
-                      {!isTerminal && (
-                        <button onClick={() => setRefundOrder({ id: o.id, total_amount: o.total_amount, reason: '', refund_amount: o.total_amount, refund_to_wallet: true })}
+                      {o.user_id && !['cancelled', 'refunded'].includes(o.status) && (
+                        <button onClick={() => setRefundOrder({ id: o.id, total_amount: o.total_amount, reason: '', refund_amount: Math.max(0, Number(o.wallet_amount_used || 0) + (['paid', 'partially_refunded', 'refunded'].includes(o.payment_status) ? Number(o.card_amount_used || 0) : 0) - Number(o.wallet_refund_total || 0) - Number(o.card_refund_total || 0)), idempotency_key: crypto.randomUUID() })}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold">
                           <RotateCcw className="w-3.5 h-3.5" /> Refund
                         </button>
@@ -225,14 +243,13 @@ export default function AdminOrders() {
       )}
 
       {refundOrder && (
-        <Modal open onClose={() => setRefundOrder(null)} title={`Refund #${refundOrder.id.toUpperCase()}`}>
+        <Modal open onClose={() => { if (!refundBusy.current) setRefundOrder(null); }} title={msg('FE_REFUND_ORDER_TITLE', 'Refund #{id}', { id: refundOrder.id.toUpperCase() })}>
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Order total: <span className="font-bold text-foreground">{formatNaira(refundOrder.total_amount)}</span>. Refunding moves the order to <span className="font-bold text-red-500">refunded</span> and credits the wallet portion back.</p>
-            <Field label="Refund amount (₦)"><TextInput type="number" value={refundOrder.refund_amount} onChange={(e) => setRefundOrder({ ...refundOrder, refund_amount: e.target.value })} /></Field>
-            <Field label="Reason"><TextInput value={refundOrder.reason} onChange={(e) => setRefundOrder({ ...refundOrder, reason: e.target.value })} placeholder="Customer complaint / duplicate / …" /></Field>
-            <div className="flex items-center gap-2"><Toggle checked={!!refundOrder.refund_to_wallet} onChange={(v) => setRefundOrder({ ...refundOrder, refund_to_wallet: v })} /><span className="text-sm text-foreground font-semibold">Credit refund to user wallet</span></div>
+            <p className="text-xs text-muted-foreground">{msg('FE_REFUND_WALLET_EXPLANATION', 'Collected payments are returned to the customer wallet. A partial refund keeps the current order status; a full refund closes the order.')}</p>
+            <Field label={msg('FE_REFUND_AMOUNT_LABEL', 'Refund amount (₦)')}><TextInput type="number" min="0.01" step="0.01" disabled={busy === refundOrder.id} value={refundOrder.refund_amount} onChange={(e) => setRefundOrder({ ...refundOrder, refund_amount: e.target.value })} /></Field>
+            <Field label={msg('FE_REFUND_REASON_LABEL', 'Reason')}><TextInput disabled={busy === refundOrder.id} value={refundOrder.reason} onChange={(e) => setRefundOrder({ ...refundOrder, reason: e.target.value })} /></Field>
             <button onClick={doRefund} disabled={busy === refundOrder.id} className="w-full py-3 rounded-full bg-red-600 text-white font-bold disabled:opacity-50">
-              {busy === refundOrder.id ? 'Processing...' : 'Confirm Refund'}
+              {busy === refundOrder.id ? msg('FE_REFUND_PROCESSING', 'Processing…') : msg('FE_REFUND_CONFIRM', 'Confirm Refund')}
             </button>
           </div>
         </Modal>

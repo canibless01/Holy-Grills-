@@ -451,7 +451,7 @@ def live_queue():
         db.table("orders")
         .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
         .in_("status", ["received", "paid", "preparing"])
-        .eq("payment_status", "paid")
+        .in_("payment_status", ["paid", "partially_refunded"])
         .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
     if campus_id:

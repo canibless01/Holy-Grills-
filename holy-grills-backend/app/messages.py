@@ -2004,6 +2004,18 @@ class MSG:
     ORDER_ADMISSION_INTENT_UNAVAILABLE = "Checkout intent is not available"
     ORDER_ADMISSION_WINDOW_CAPACITY = "Ordering window is at capacity"
 
+    ORDER_CUSTOMER_CANCEL_REASON = "Cancelled by customer"
+
+    FE_REFUND_FIELDS_REQUIRED = "Enter a positive refund amount and a reason."
+    FE_REFUND_PROCESSED = "Refund processed"
+    FE_REFUND_REQUEST_FAILED = "Unable to complete the refund request"
+    FE_REFUND_ORDER_TITLE = "Refund #{id}"
+    FE_REFUND_WALLET_EXPLANATION = "Collected payments are returned to the customer wallet. A partial refund keeps the current order status; a full refund closes the order."
+    FE_REFUND_AMOUNT_LABEL = "Refund amount (₦)"
+    FE_REFUND_REASON_LABEL = "Reason"
+    FE_REFUND_PROCESSING = "Processing…"
+    FE_REFUND_CONFIRM = "Confirm Refund"
+
 # Short alias
 M = MSG
 

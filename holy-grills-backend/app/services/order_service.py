@@ -1413,7 +1413,7 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         raise ValueError(MSG.RIDER_ORDER_NOT_FOUND)
 
     current_pay_status = order.get("payment_status")
-    if current_pay_status == "paid":
+    if current_pay_status in ("paid", "partially_refunded"):
         return order  # idempotent
 
     # Enforce strict transition policies
@@ -1557,7 +1557,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 raise OrderForbiddenError(MSG.ORDER_ADMIN_CAMPUS_MISMATCH)
 
     current_status = order["status"]
-    if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") != "paid":
+    if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") not in ("paid", "partially_refunded"):
         raise OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if new_status == current_status:
         return {**order, "unchanged": True}                       # repeat of the same action (double tap / retry): nothing to do
