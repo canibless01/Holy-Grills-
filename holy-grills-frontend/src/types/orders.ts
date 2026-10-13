@@ -130,6 +130,7 @@ export interface CreateOrderItem {
  */
 export interface CreateOrderPayload {
   idempotency_key?: string;
+  expected_total?: number;
   items: CreateOrderItem[];
   payment_method: PaymentMethod;
   /** 'website' | 'pwa' | … — mirrored from sessionStorage. */

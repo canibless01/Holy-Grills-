@@ -1,0 +1,94 @@
+"""Exercise the real checkout calculator without allowing any database writes."""
+import copy
+import unittest
+from unittest.mock import patch
+from flask import Flask, g
+from app.services import order_service as service
+from app.utils.tz import today_wat
+
+CAMPUS='11111111-1111-4111-8111-111111111111'
+MEAL='22222222-2222-4222-8222-222222222222'
+HOSTEL='33333333-3333-4333-8333-333333333333'
+
+class Query:
+    def __init__(self,db,table):self.db,self.table,self.filters,self.one=db,table,[],False
+    @property
+    def not_(self):return self
+    def select(self,*a):return self
+    def eq(self,key,value):self.filters.append((key,value));return self
+    def gte(self,*a):return self
+    def in_(self,*a):return self
+    def or_(self,*a):return self
+    def is_(self,key,value):self.filters.append((key,None if value=='null' else value));return self
+    def single(self):self.one=True;return self
+    def execute(self):
+        if self.table in self.db.fail:raise RuntimeError('database unavailable')
+        rows=[copy.deepcopy(row) for row in self.db.rows.get(self.table,[]) if all(row.get(k)==v for k,v in self.filters)]
+        return (rows[0] if rows else None) if self.one else rows
+    def insert(self,*a):raise AssertionError('Quote attempted an insert')
+    def update(self,*a):raise AssertionError('Quote attempted an update')
+    def delete(self,*a):raise AssertionError('Quote attempted a deletion')
+class Db:
+    def __init__(self):
+        self.fail=set()
+        self.rows={'menu_items':[{'id':MEAL,'campus_id':CAMPUS,'name':'Meal','price':2050,'hp_multiplier':0.5,'is_available':True}],
+                   'hostels':[{'id':HOSTEL,'campus_id':CAMPUS,'delivery_fee':250,'is_active':'true'}],
+                   'order_locks':[{'id':'lock','user_id':'student','campus_id':CAMPUS,'status':'active','locked_date':today_wat().isoformat(),'reward_type':'discount','discount_pct':10}]}
+    def table(self,name):return Query(self,name)
+    def rpc(self,*a):raise AssertionError('Quote called a mutating RPC')
+
+class CheckoutQuoteTests(unittest.TestCase):
+    def setUp(self):
+        self.app=Flask(__name__);self.app.config.update(HP_PER_NAIRA_FOOD=0.1,SQUAD_ORDER_ENABLED=False)
+        self.db=Db();self.payload={'items':[{'menu_item_id':MEAL,'quantity':1}],'payment_method':'card','delivery_type':'on_campus','delivery_location_id':HOSTEL}
+    def calculate(self,guest=False,quote_only=True,payload=None):
+        with self.app.test_request_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service,'get_user_client',return_value=self.db),patch.object(service.hp_service,'get_user_tier',return_value={'tier':{'slug':'ember'}}),patch.object(service.hp_service,'calculate_delivery_hp',return_value=102):
+            g.campus_id=CAMPUS
+            return service.create_order(None if guest else 'student',payload or self.payload,quote_only=quote_only)
+    def test_quote_applies_lock_once_and_never_writes(self):
+        q=self.calculate();self.assertEqual((q['subtotal'],q['discount_amount'],q['total_amount']),(2050,205,2095));self.assertEqual(q['hp_preview']['total_hp'],102)
+    def test_guest_quote_has_no_user_lock_or_hp_promise(self):
+        q=self.calculate(guest=True);self.assertEqual(q['total_amount'],2300);self.assertEqual(q['hp_preview']['total_hp'],0)
+    def test_promotions_cannot_discount_delivery_or_waste_lock(self):
+        with patch.object(service,'_apply_promo',return_value={'discount':3000,'promo_code_id':'promo'}):
+            body={**self.payload,'promo_code':'PROMO'};q=self.calculate(payload=body)
+        self.assertEqual((q['discount_amount'],q['order_lock_discount'],q['total_amount']),(2050,0,250))
+    def test_unknown_or_other_campus_hostel_is_rejected(self):
+        for campus in [None,'other-campus']:
+            if campus is None:self.db.rows['hostels']=[]
+            else:self.db.rows['hostels']=[{'id':HOSTEL,'campus_id':campus,'delivery_fee':1,'is_active':'true'}]
+            with self.subTest(campus=campus),self.assertRaises(ValueError):self.calculate(guest=True)
+    def test_fee_or_availability_outage_does_not_become_free(self):
+        for table in ['hostels','menu_item_availability','user_addresses']:
+            self.db.fail={table}
+            with self.subTest(table=table),self.assertRaisesRegex(ValueError,'could not be verified'):self.calculate(payload={**self.payload,'delivery_address_id':HOSTEL} if table=='user_addresses' else None)
+    def test_malformed_quantities_and_payment_methods_are_validation_errors(self):
+        for quantity in [None,True,0,-1,1.5,{},[],'Infinity']:
+            body=copy.deepcopy(self.payload);body['items'][0]['quantity']=quantity
+            with self.subTest(quantity=quantity),self.assertRaises(ValueError):self.calculate(payload=body)
+        for payment in [None,True,{},'free']:
+            with self.subTest(payment=payment),self.assertRaises(ValueError):self.calculate(payload={**self.payload,'payment_method':payment})
+    def test_missing_delivery_type_cannot_remove_delivery_fee(self):
+        body=copy.deepcopy(self.payload);body.pop('delivery_type')
+        with self.assertRaises(ValueError):self.calculate(payload=body)
+    def test_changed_price_is_reported_before_stale_wallet_balance(self):
+        self.db.fail={'wallets'}
+        with patch.object(service,'_order_for_intent',return_value=None),patch.object(service,'resolve_ordering_window',return_value={}),patch.object(service,'_check_kitchen_capacity'):
+            with self.assertRaises(service.OrderPriceChanged) as raised:
+                self.calculate(quote_only=False,payload={**self.payload,'payment_method':'wallet','expected_total':2300})
+        self.assertEqual(raised.exception.quote['total_amount'],2095)
+    def test_lock_claim_race_returns_fresh_price_without_another_charge(self):
+        self.db.rows['wallets']=[{'user_id':'student','balance':5000}]
+        def lost_lock(*args):
+            self.db.rows['order_locks'][0]['status']='cancelled'
+            return {'error':'ORDER_LOCK_UNAVAILABLE'}
+        with patch.object(service,'_order_for_intent',return_value=None),patch.object(service,'resolve_ordering_window',return_value={}),patch.object(service,'_check_kitchen_capacity'),patch.object(self.db,'rpc',side_effect=lost_lock) as rpc:
+            with self.assertRaises(service.OrderPriceChanged) as raised:
+                self.calculate(quote_only=False,payload={**self.payload,'payment_method':'wallet','expected_total':2095})
+        self.assertEqual(raised.exception.quote['total_amount'],2300);self.assertEqual(rpc.call_count,1);self.assertEqual(self.db.rows['wallets'][0]['balance'],5000)
+    def test_committed_intent_replays_before_repricing_or_balance_checks(self):
+        order={'id':'committed','total_amount':2095}
+        with patch.object(service,'_order_for_intent',return_value=order):
+            self.assertEqual(self.calculate(quote_only=False,payload={**self.payload,'expected_total':2300,'payment_method':'wallet'}),order)
+
+if __name__=='__main__':unittest.main()

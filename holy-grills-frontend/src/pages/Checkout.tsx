@@ -152,22 +152,24 @@ export default function Checkout() {
     return () => { live = false; };
   }, [isAuthenticated]);
 
-  const subtotal = cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0);
-  const promoDiscount = promoResult?.calculated_discount || 0;
+  const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
+  const [quoteRetry, setQuoteRetry] = useState(0);
+  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds });
+  const quote = quoteState?.key === quoteKey ? quoteState.data : null;
+  const quoteReady = !!quote;
+  const quoteError = quoteState?.key === quoteKey ? quoteState.error : null;
+  const subtotal = quote?.subtotal ?? (cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0));
+  const promoDiscount = quote?.promo_discount ?? (promoResult?.calculated_discount || 0);
   const squadSubPct = squadSelection?.squad_id && squadOrderDiscountEnabled() ? squadOrderDiscountPct() : 0;
   const squadDelEnabled = squadSelection?.squad_id && squadDeliveryDiscountEnabled();
   const squadDeliveryPct = squadDelEnabled ? squadDeliveryDiscountPct() : 0;
-  const squadDiscount = squadSubPct > 0 ? subtotal * (squadSubPct / 100) : 0;
+  const squadDiscount = quote?.squad_discount ?? (squadSubPct > 0 ? subtotal * (squadSubPct / 100) : 0);
   const squadItemCount = (cart?.items || []).reduce((s, ci) => s + (ci.quantity || 1), 0);
   const selectedGlobalAddons = globalAddons.filter((a) => selectedGlobalAddonIds.includes(a.id));
   const globalAddonsTotal = selectedGlobalAddons.reduce((s, a) => s + (Number(a.price) || 0), 0);
-  const effectiveDeliveryFee = Math.round(deliveryFee * (1 - squadDeliveryPct / 100));
-  const total = Math.max(0, subtotal - promoDiscount - squadDiscount) + effectiveDeliveryFee + globalAddonsTotal;
-  // FIX: HP fields live on ci.menu_items, not on the cart item itself.
-  const hpPreview = (cart?.items || []).reduce(
-    (s, ci) => s + Math.round((Number(ci.menu_items?.hp_earn_value) || 0) * (Number(ci.menu_items?.hp_multiplier) || 1) * (ci.quantity || 1)),
-    0
-  );
+  const effectiveDeliveryFee = quote?.delivery_fee ?? Math.round(deliveryFee * (1 - squadDeliveryPct / 100));
+  const total = quote?.total_amount ?? (Math.max(0, subtotal - promoDiscount - squadDiscount) + effectiveDeliveryFee + globalAddonsTotal);
+  const hpPreview = quote?.hp_preview?.total_hp || 0;
 
   const effectivePayment = isAuthenticated ? paymentMethod : 'card';
 
@@ -332,6 +334,24 @@ export default function Checkout() {
     };
   };
 
+  useEffect(() => {
+    let active = true;
+    const hasLocation = deliveryType === 'on_campus' ? !!hostelId : deliveryType === 'off_campus' && (!!gateId || deliveryPin?.lat != null);
+    if (!campus?.id || !cart?.items?.length || !hasLocation || addressNeedsReselect) return;
+    const timer = setTimeout(async () => {
+      try {
+        // Quoting never reserves stock, claims rewards, or authorizes a payment.
+        const payload = { ...buildPayload(), payment_method: 'card' as PaymentMethod };
+        delete payload.wallet_amount;
+        const data = await mockApi.orders.quote(payload);
+        if (active) setQuoteState({ key: quoteKey, data });
+      } catch (e) {
+        if (active) setQuoteState({ key: quoteKey, error: e.message || msg('FE_CHECKOUT_QUOTE_FAILED', 'We could not verify your total. Please retry.') });
+      }
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [quoteKey, quoteRetry, addressNeedsReselect]);
+
   const validateCheckout = () => {
     setError(null);
     // The backend is the source of truth for whether ordering is allowed —
@@ -355,10 +375,9 @@ export default function Checkout() {
     }
     if (effectivePayment === 'split' && isAuthenticated) {
       if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return false; }
-      if (walletAmount > (wallet?.balance || 0)) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_BALANCE', 'Wallet amount can\'t exceed your balance.')); return false; }
-      if (walletAmount > total) { setError(msg('FE_CHECKOUT_SPLIT_EXCEEDS_TOTAL', 'Wallet amount can\'t exceed the order total.')); return false; }
     }
 
+    if (!quoteReady) { setError(msg('FE_CHECKOUT_QUOTE_REQUIRED', 'Verify your order total before placing your order.')); return false; }
     return true;
   };
 
@@ -372,6 +391,10 @@ export default function Checkout() {
       // Read the backend's stable code — never its message text.
       const detail = e.detail || {};
       const code = detail.code || e.code;
+      if (code === 'PRICE_CHANGED') {
+        setQuoteState({ key: quoteKey, data: detail.quote });
+        setError(e.message); setPlacing(false); return;
+      }
       // "Today's orders are full" — ORDERING_WINDOW_AT_CAPACITY carries a
       // next_available_date. Offer exactly one reschedule, never a loop.
       if (code === 'ORDERING_WINDOW_AT_CAPACITY' && detail.next_available_date && !payload.accept_next_available_date) {
@@ -418,6 +441,7 @@ export default function Checkout() {
       await submitOrder({ ...buildPayload(), accept_next_available_date: true });
     } catch (e) {
       setShowClosedPopup(false);
+      if (e.detail?.code === 'PRICE_CHANGED') setQuoteState({ key: quoteKey, data: e.detail.quote });
       setError(e.message || msg('FE_CHECKOUT_SCHEDULE_FAILED_BODY', "We couldn't schedule your order. Please try again."));
     }
     setScheduling(false);
@@ -432,11 +456,12 @@ export default function Checkout() {
         delete base.accept_next_available_date;
         delete base.is_scheduled;
         delete base.delivery_window_id;
+        delete base.expected_total;
         const idempotency_key = await checkoutIntent({
           actor: user?.id || 'guest', campus: campus?.id,
           cartRows: (cart?.items || []).map((item) => item.id), payload: base,
         });
-        return mockApi.orders.create({ ...payload, idempotency_key });
+        return mockApi.orders.create({ ...payload, expected_total: quote.total_amount, idempotency_key });
       })();
     }
     let result;
@@ -788,11 +813,13 @@ export default function Checkout() {
         <div className="font-heading font-bold text-base text-foreground mb-2">Order Summary</div>
         <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold text-foreground">{formatNaira(subtotal)}</span></div>
         {promoDiscount > 0 && <div className="flex justify-between text-success"><span>Promo ({promoResult?.code})</span><span>-{formatNaira(promoDiscount)}</span></div>}
-        {squadDiscount > 0 && <div className="flex justify-between text-success"><span>Squad ({squadSubPct}%)</span><span>-{formatNaira(squadDiscount)}</span></div>}
+        {squadDiscount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DISCOUNT', 'Squad discount')}</span><span>-{formatNaira(squadDiscount)}</span></div>}
+        {quote?.order_lock_hp_reward > 0 && <div className="flex justify-between text-accent-foreground"><span>{msg('FE_CHECKOUT_LOCK_HP_DELIVERY', 'Lock reward after delivery')}</span><span>+{quote.order_lock_hp_reward} HP</span></div>}
+        {quote?.order_lock_discount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_LOCK_DISCOUNT', 'Order lock discount')}</span><span>-{formatNaira(quote.order_lock_discount)}</span></div>}
         {freeSideChoice && <div className="flex justify-between text-success"><span>🏆 Reward · {freeSideChoice.name}</span><span>₦0</span></div>}
         <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{effectiveDeliveryFee > 0 ? formatNaira(effectiveDeliveryFee) : <span className="text-success">FREE</span>}</span></div>
         {squadDeliveryPct > 0 && deliveryFee > 0 && <div className="flex justify-between text-success"><span>Squad delivery ({squadDeliveryPct}%)</span><span>-{formatNaira(deliveryFee - effectiveDeliveryFee)}</span></div>}
-        {globalAddonsTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-semibold">{formatNaira(globalAddonsTotal)}</span></div>}
+        {!quote && globalAddonsTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-semibold">{formatNaira(globalAddonsTotal)}</span></div>}
         {hpPreview > 0 && <div className="flex justify-between text-accent-foreground"><span className="flex items-center gap-1"><Flame className="w-3.5 h-3.5 text-primary" /> You'll earn</span><span className="font-semibold">+{hpPreview} HP</span></div>}
         <div className="border-t border-border pt-1.5 flex justify-between"><span className="font-semibold text-foreground">Total</span><span className="font-heading font-bold text-lg text-foreground">{formatNaira(total)}</span></div>
       </div>
@@ -817,7 +844,10 @@ export default function Checkout() {
         </div>
       )}
 
-      <motion.button whileTap={{ scale: 0.97 }} onClick={handlePlaceOrder} disabled={placing} className="w-full py-4 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-50 transition-opacity">
+      {quoteError && <div role="alert" className="p-3 rounded-xl bg-destructive/10 text-sm text-destructive">{quoteError} <button onClick={() => { setQuoteState(null); setQuoteRetry((value) => value + 1); }} className="font-bold underline">{msg('FE_CHECKOUT_QUOTE_RETRY', 'Retry total')}</button></div>}
+      {!quoteReady && !quoteError && deliveryType && <p role="status" className="text-sm text-muted-foreground">{msg('FE_CHECKOUT_QUOTE_PENDING', 'Your total will be verified after selecting your delivery location.')}</p>}
+
+      <motion.button whileTap={{ scale: 0.97 }} onClick={handlePlaceOrder} disabled={placing || !quoteReady} className="w-full py-4 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-50 transition-opacity">
         {placing ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Placing order...</span> : `Place Order · ${formatNaira(total)}`}
       </motion.button>
 

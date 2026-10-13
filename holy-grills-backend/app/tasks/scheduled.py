@@ -1353,11 +1353,10 @@ def check_order_locks(self):
                 days_until = (locked_date - today).days
 
                 if days_until < 0:
-                    db.table("order_locks").eq("id", lock["id"]).update({
-                        "status": "expired",
-                        "updated_at": now.isoformat(),
+                    changed = db.table('order_locks').eq('id', lock['id']).eq('status', 'active').eq('locked_date', lock['locked_date']).update({
+                        'status': 'expired', 'updated_at': now.isoformat(),
                     })
-                    expired += 1
+                    expired += len(changed or [])
                     continue
 
                 user_id = lock.get("user_id")

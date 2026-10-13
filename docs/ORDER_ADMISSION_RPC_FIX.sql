@@ -78,6 +78,17 @@ BEGIN
         RETURN jsonb_build_object('success', true, 'order_id', v_existing->>'id',
                                   'total_amount', v_existing->'total_amount', 'idempotent', true);
     END IF;
+    -- The server has already priced the basket. A payment split must cover
+    -- exactly that price; an unknown payment method cannot create paid food.
+    IF p_subtotal IS NULL OR p_delivery_fee IS NULL OR p_discount_amount IS NULL OR p_total_amount IS NULL
+       OR p_wallet_amount_used IS NULL OR p_card_amount_used IS NULL
+       OR EXISTS(SELECT 1 FROM unnest(ARRAY[p_subtotal,p_delivery_fee,p_discount_amount,p_total_amount,p_wallet_amount_used,p_card_amount_used]) amount
+                 WHERE amount<0 OR amount::text IN ('NaN','Infinity','-Infinity'))
+       OR p_discount_amount>p_subtotal
+       OR p_total_amount<>p_subtotal-p_discount_amount+p_delivery_fee
+       OR p_wallet_amount_used+p_card_amount_used<>p_total_amount THEN
+        RETURN jsonb_build_object('error','ORDER_PAYMENT_CONSERVATION');
+    END IF;
     IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_items) i
                WHERE (i->>'quantity')::integer IS NULL OR (i->>'quantity')::integer < 1) THEN
         RETURN jsonb_build_object('error', 'Item quantity must be a positive whole number');
@@ -231,10 +242,12 @@ BEGIN
 
     IF p_order_lock_id IS NOT NULL THEN
         UPDATE order_locks SET status = 'used', order_id = v_order_id, updated_at = NOW()
-        WHERE id = p_order_lock_id AND user_id = p_user_id AND status = 'active';
+        WHERE id = p_order_lock_id AND user_id = p_user_id AND status = 'active'
+          AND locked_date=(now() AT TIME ZONE 'Africa/Lagos')::date
+          AND (campus_id=p_campus_id OR campus_id IS NULL);
         GET DIAGNOSTICS v_lock_updated = ROW_COUNT;
         IF v_lock_updated = 0 THEN
-            RAISE EXCEPTION 'Order lock is no longer available (already used, expired, or cancelled)';
+            RAISE EXCEPTION 'ORDER_LOCK_UNAVAILABLE';
         END IF;
 
         SELECT reward_type, discount_pct, reward_hp_amount
@@ -242,19 +255,17 @@ BEGIN
         FROM order_locks WHERE id = p_order_lock_id;
 
         IF v_lock_reward_type = 'discount' AND v_lock_discount_pct IS NOT NULL THEN
-            v_lock_discount_applied := ROUND(p_subtotal * v_lock_discount_pct / 100.0, 2);
-            v_final_total_amount := GREATEST(p_total_amount - v_lock_discount_applied, 0);
-            UPDATE orders
-            SET discount_amount = discount_amount + v_lock_discount_applied,
-                total_amount = v_final_total_amount
-            WHERE id = v_order_id;
-        ELSIF v_lock_reward_type = 'hp' AND v_lock_hp_amount IS NOT NULL AND p_user_id IS NOT NULL THEN
-            -- ### FIX (audit A3): pass campus context through ###
-            PERFORM public.hg_add_hp_transaction(
-                p_user_id, 'earn', v_lock_hp_amount, 'order_lock_reward',
-                'order_lock', p_order_lock_id, NULL,
-                jsonb_build_object('order_id', v_order_id), NULL, p_campus_id
-            );
+            -- Python prices the reward once, capped after other food discounts.
+            -- Preserve its price rather than subtracting the lock a second time.
+            v_lock_discount_applied := coalesce((p_items->0->>'_order_lock_discount_applied')::numeric,
+                                                ROUND(p_subtotal*v_lock_discount_pct/100.0,2));
+            IF v_lock_discount_pct NOT BETWEEN 1 AND 50 OR v_lock_discount_applied<0
+               OR v_lock_discount_applied>ROUND(p_subtotal*v_lock_discount_pct/100.0,2)
+               OR v_lock_discount_applied>p_discount_amount THEN
+                RAISE EXCEPTION 'ORDER_LOCK_PRICING_MISMATCH';
+            END IF;
+        -- HP locks are reserved here; the existing order-update trigger credits
+        -- their bonus atomically at delivery. Cancellation earns no spendable HP.
         END IF;
     END IF;
 
@@ -273,7 +284,7 @@ BEGIN
 
     IF p_promo_code_id IS NOT NULL THEN
         INSERT INTO promo_code_uses (promo_code_id, user_id, order_id, discount_amount, created_at)
-        VALUES (p_promo_code_id, p_user_id, v_order_id, p_discount_amount, NOW());
+        VALUES (p_promo_code_id, p_user_id, v_order_id, greatest(0,p_discount_amount-coalesce(p_squad_discount_amount,0)-v_lock_discount_applied), NOW());
         UPDATE promo_codes SET used_count = used_count + 1 WHERE id = p_promo_code_id;
     END IF;
 
@@ -298,5 +309,8 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RETURN jsonb_build_object('error', SQLERRM, 'detail', SQLSTATE);
 END;
-$function$
+$function$;
 
+-- Preserve the verified private execution boundary when replaying this definition.
+REVOKE ALL ON FUNCTION public.hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid) TO service_role;

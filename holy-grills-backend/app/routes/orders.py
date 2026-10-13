@@ -48,7 +48,9 @@ def _assigned_rider_contact(db, order: dict) -> dict | None:
 @optional_auth
 @rate_limit("RATE_LIMIT_ORDERS_REQUESTS", "RATE_LIMIT_ORDERS_WINDOW")
 def create_order():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error":MSG.JSON_OBJECT_REQUIRED}),400
 
     # Authenticated vs guest order identity override checks (Secure from client-supplied manipulation)
     user_id = g.user_id
@@ -141,7 +143,7 @@ def create_order():
     if is_guest:
         for field in ["guest_name", "guest_phone", "guest_email"]:
             if not data.get(field):
-                return jsonify({"error": f"'{field}' required for guest checkout"}), 400
+                return jsonify({"error": MSG.GUEST_DETAILS_REQUIRED}), 400
         if data.get("payment_method") in ("wallet", "split"):
             return jsonify({"error": MSG.ORDER_WALLET_LOGIN_REQUIRED}), 400
     from app.services.order_service import OrderingWindowUnavailable
@@ -150,6 +152,8 @@ def create_order():
         if isinstance(order, dict):
             order["message"] = MSG.ORDER_PLACED
         return jsonify(order), 201
+    except order_service.OrderPriceChanged as e:
+        return jsonify({"error":str(e),"code":"PRICE_CHANGED","quote":e.quote}),409
     except OrderingWindowUnavailable as e:
         # Stable machine-readable code — the client decides "offer to schedule"
         # from this, never from the message text. next_available_date/next_opens_at
@@ -165,6 +169,21 @@ def create_order():
     except Exception as e:
         logger.error("create_order failed: %s", e)
         return jsonify({"error": MSG.ORDER_CREATE_FAILED}), 500
+
+
+@orders_bp.route('/quote', methods=['POST'])
+@optional_auth
+def quote_order():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error':MSG.JSON_OBJECT_REQUIRED}),400
+    try:
+        return jsonify(order_service.create_order(g.user_id, data, quote_only=True)),200
+    except ValueError as e:
+        return jsonify({'error':str(e)}),400
+    except Exception:
+        logger.exception('Checkout quote unavailable')
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503
 
 
 @orders_bp.route("", methods=["GET"])

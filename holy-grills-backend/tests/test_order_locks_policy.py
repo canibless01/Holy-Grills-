@@ -1,64 +1,35 @@
+"""Pin actual lock policy and exercise writes against changing lock state."""
+import copy
 import unittest
-from datetime import date, timedelta, datetime, timezone
+from datetime import date,timedelta
+from unittest.mock import patch
+from app.routes.order_locks import _validate_lock_date,reschedule_lock_write,cancel_lock_write
 
-WAT_OFFSET = timedelta(hours=1)
+class Query:
+    def __init__(self,db):self.db=db;self.filters=[]
+    def eq(self,k,v):self.filters.append((k,v));return self
+    def update(self,body):
+        if any(self.db.row.get(k)!=v for k,v in self.filters):return []
+        self.db.row.update(body);return [copy.deepcopy(self.db.row)]
+class Db:
+    def __init__(self,status='active',count=0):self.row={'id':'lock','user_id':'student','status':status,'reschedule_count':count,'locked_date':'2026-10-14'}
+    def table(self,name):return Query(self)
 
-def today_wat() -> date:
-    return (datetime.now(timezone.utc) + WAT_OFFSET).date()
-
-def validate_lock_date(locked_date: date):
-    today = today_wat()
-    tomorrow = today + timedelta(days=1)
-    max_date = today + timedelta(days=7)
-    if locked_date < tomorrow:
-        return False
-    if locked_date > max_date:
-        return False
-    return True
-
-
-class TestOrderLockPolicy(unittest.TestCase):
-    def test_same_day_disallowed(self):
-        today = today_wat()
-        self.assertFalse(validate_lock_date(today))
-
-    def test_yesterday_disallowed(self):
-        today = today_wat()
-        yesterday = today - timedelta(days=1)
-        self.assertFalse(validate_lock_date(yesterday))
-
-    def test_tomorrow_allowed(self):
-        today = today_wat()
-        tomorrow = today + timedelta(days=1)
-        self.assertTrue(validate_lock_date(tomorrow))
-
-    def test_day_plus_7_allowed(self):
-        today = today_wat()
-        day7 = today + timedelta(days=7)
-        self.assertTrue(validate_lock_date(day7))
-
-    def test_day_plus_8_disallowed(self):
-        today = today_wat()
-        day8 = today + timedelta(days=8)
-        self.assertFalse(validate_lock_date(day8))
-
-    def test_future_far_disallowed(self):
-        today = today_wat()
-        far = today + timedelta(days=30)
-        self.assertFalse(validate_lock_date(far))
-
-    def test_boundaries_inclusive(self):
-        today = today_wat()
-        for i in range(1, 8):
-            d = today + timedelta(days=i)
-            self.assertTrue(validate_lock_date(d), f"day+{i} should be allowed")
-
-    def test_reschedule_same_policy(self):
-        # Reschedule uses same validation
-        today = today_wat()
-        self.assertFalse(validate_lock_date(today))
-        self.assertTrue(validate_lock_date(today + timedelta(days=3)))
-
-
-if __name__ == "__main__":
-    unittest.main()
+class OrderLockPolicyTests(unittest.TestCase):
+    def test_actual_policy_uses_wat_tomorrow_through_seven_days(self):
+        today=date(2026,10,13)
+        with patch('app.routes.order_locks.today_wat',return_value=today):
+            for offset in [-1,0,1,2,3,4,5,6,7,8,30]:
+                with self.subTest(offset=offset):self.assertEqual(_validate_lock_date(today+timedelta(days=offset))[0],1<=offset<=7)
+    def test_stale_or_foreign_reschedule_preserves_current_row(self):
+        for status,owner,count in [('used','student',0),('active','other',0),('active','student',1)]:
+            db=Db(status,count);before=copy.deepcopy(db.row)
+            self.assertEqual(reschedule_lock_write(db,'lock',owner,0,{'locked_date':'2026-10-20','reschedule_count':1}),[])
+            self.assertEqual(db.row,before)
+    def test_valid_reschedule_can_only_spend_the_count_once(self):
+        db=Db();body={'locked_date':'2026-10-20','reschedule_count':1}
+        self.assertTrue(reschedule_lock_write(db,'lock','student',0,body));self.assertFalse(reschedule_lock_write(db,'lock','student',0,body));self.assertEqual(db.row['reschedule_count'],1)
+    def test_cancel_cannot_overwrite_used_or_foreign_lock(self):
+        for status,owner in [('used','student'),('active','other')]:
+            db=Db(status);before=copy.deepcopy(db.row);self.assertFalse(cancel_lock_write(db,'lock',owner));self.assertEqual(db.row,before)
+        db=Db();self.assertTrue(cancel_lock_write(db,'lock','student'));self.assertFalse(cancel_lock_write(db,'lock','student'));self.assertEqual(db.row['status'],'cancelled')

@@ -7,8 +7,26 @@ AS $function$
 declare
   staff_cols text[] := array['status','notes','updated_at','received_at','paid_at','preparing_at','ready_at','assigned_at','out_for_delivery_at','delivered_at','cancelled_at','refunded_at','delivery_attempted_at','unclaimed_at','batch_id'];
   owner_cols text[] := array['status','notes','updated_at','cancelled_at','batch_id'];
-  owner_only boolean; allowed text[]; k text;
+  owner_only boolean; allowed text[]; k text; lock_row record; lock_credit jsonb;
 begin
+  -- The bonus belongs to fulfilled food. A single ledger business key also
+  -- recognizes legacy credits, so those orders cannot receive a second bonus.
+  if new.status::text='delivered' and new.status is distinct from old.status and new.user_id is not null then
+    if new.payment_status::text not in ('paid','partially_refunded') then
+      raise exception 'payment_required_for_delivery' using errcode='42501';
+    end if;
+    for lock_row in select id,reward_hp_amount,campus_id from public.order_locks
+      where order_id=new.id and user_id=new.user_id and status='used' and reward_type='hp'
+        and (campus_id=new.campus_id or campus_id is null) and reward_hp_amount>0
+    loop
+      lock_credit := public.record_hp_transaction_atomic(new.user_id,lock_row.reward_hp_amount,
+        'earn','active','order_lock_reward','order_lock',lock_row.id,NULL,
+        'Fulfilled locked-date order',new.campus_id);
+      if not coalesce((lock_credit->>'success')::boolean,false) or lock_credit ? 'error' then
+        raise exception 'order_lock_hp_credit_failed';
+      end if;
+    end loop;
+  end if;
   if auth.role() = 'service_role' then return new; end if;
   if new.status is distinct from old.status then
     if new.status::text in ('preparing','ready','assigned','out_for_delivery','delivered') and new.payment_status::text not in ('paid','partially_refunded') then
@@ -49,7 +67,7 @@ begin
     end if;
   end if;
   return new;
-end $function$
+end $function$;
 
 -- This is a trigger function, not a client RPC. Existing table triggers invoke
 -- it; public callers do not need EXECUTE permission on the function itself.

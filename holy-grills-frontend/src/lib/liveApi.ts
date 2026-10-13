@@ -137,6 +137,7 @@ const orders = {
   async walk(id, body) { return apiClient.post(`/orders/${id}/walk`, body); },
   async cancel(id, body) { return apiClient.post(`/orders/${id}/cancel`, body); },
   async review(id, body) { return apiClient.post(`/orders/${id}/review`, body); },
+  async quote(body) { return apiClient.post('/orders/quote', body); },
   async validatePromo(body) { return apiClient.post('/orders/validate-promo', body); },
   async getDeliveryWindows() { return apiClient.get('/orders/delivery-windows'); },
   async getDeliveryWindowStatus(campusId?: string) {

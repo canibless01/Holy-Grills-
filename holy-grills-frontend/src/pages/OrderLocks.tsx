@@ -7,7 +7,8 @@ import { orderLockMaxReschedules } from '@/lib/appConfig';
 import { toast } from '@/components/ui/use-toast';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import MascotStandee from '@/components/mascot/MascotStandee';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
+import { watDateKey, watCalendarDay, watDaysUntil } from '@/lib/watCalendar';
 
 const LOCK_STATUS_LABELS = {
   active: 'Active',
@@ -25,6 +26,7 @@ const LOCK_STATUS_COLORS = {
 };
 
 export default function OrderLocks() {
+  useMessages();
   const navigate = useNavigate();
   const [locks, setLocks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,11 +50,10 @@ export default function OrderLocks() {
 
   const handleCreate = async () => {
     if (!form.locked_date) { toast({ title: msg('FE_ORDER_LOCKS_PICK_A_DATE', 'Pick a date'), description: msg('FE_ORDER_LOCKS_CHOOSE_A_FUTURE_DATE_TO_LOCK', 'Choose a future date to lock.') }); return; }
-    if (new Date(form.locked_date) <= new Date(new Date().toDateString())) {
+    if (form.locked_date <= watDateKey()) {
       toast({ title: msg('FE_ORDER_LOCKS_MUST_BE_A_FUTURE_DATE', 'Must be a future date'), description: msg('FE_ORDER_LOCKS_THE_LOCK_DATE_HAS_TO_BE_AFTER_TODAY', 'The lock date has to be after today.') }); return;
     }
-    const maxCreate = new Date(); maxCreate.setDate(maxCreate.getDate() + 7);
-    if (new Date(form.locked_date) > maxCreate) {
+    if (form.locked_date > watCalendarDay(7)) {
       toast({ title: msg('FE_ORDER_LOCKS_TOO_FAR_AHEAD', 'Too far ahead'), description: msg('FE_ORDER_LOCKS_YOU_CAN_ONLY_LOCK_A_DATE_WITHIN_THE', 'You can only lock a date within the next 7 days.') }); return;
     }
     setCreating(true);
@@ -70,16 +71,15 @@ export default function OrderLocks() {
   };
 
   const handleCancel = async (id) => {
-    if (!confirm('Cancel this order lock? You will lose the locked reward.')) return;
+    if (!confirm(msg('FE_ORDER_LOCKS_CANCEL_CONFIRM', 'Cancel this order lock? You will lose the locked reward.'))) return;
     try { await liveApi.orderLocks.cancel(id); load(); } catch (e) { toast({ title: msg('FE_ORDER_LOCKS_CANCEL_FAILED', 'Cancel failed'), description: e.message, variant: 'destructive' }); }
   };
 
   const handleReschedule = async () => {
     if (!rescheduleLock || !rescheduleDate) return;
-    if (new Date(rescheduleDate) <= new Date(new Date().toDateString())) { toast({ title: msg('FE_ORDER_LOCKS_MUST_BE_A_FUTURE_DATE', 'Must be a future date') }); return; }
-    const maxReschedule = new Date(); maxReschedule.setDate(maxReschedule.getDate() + 3);
-    if (new Date(rescheduleDate) > maxReschedule) {
-      toast({ title: msg('FE_ORDER_LOCKS_TOO_FAR_AHEAD', 'Too far ahead'), description: msg('FE_ORDER_LOCKS_RESCHEDULE_MUST_BE_WITHIN_THE_NEXT_3', 'Reschedule must be within the next 3 days.') }); return;
+    if (rescheduleDate <= watDateKey()) { toast({ title: msg('FE_ORDER_LOCKS_MUST_BE_A_FUTURE_DATE', 'Must be a future date') }); return; }
+    if (rescheduleDate > watCalendarDay(7)) {
+      toast({ title: msg('FE_ORDER_LOCKS_TOO_FAR_AHEAD', 'Too far ahead'), description: msg('FE_ORDER_LOCKS_RESCHEDULE_RANGE', 'Reschedule must be within the next 7 days.') }); return;
     }
     setRescheduling(true);
     try {
@@ -118,14 +118,10 @@ export default function OrderLocks() {
     );
   }
 
-  const dateOptions = (days) => Array.from({ length: days }).map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() + i + 1); return d.toISOString().split('T')[0];
-  });
-  // Same-day locks are not allowed. A lock can be scheduled for the next 7 days,
-  // and rescheduled once within another 3 days — a 10-day max lifespan.
-  const tomorrow = dateOptions(1)[0];
-  const maxCreate = dateOptions(7)[6];
-  const maxReschedule = dateOptions(3)[2];
+  const dateOptions = (days) => Array.from({ length: days }, (_, i) => watCalendarDay(i + 1));
+  const tomorrow = watCalendarDay(1);
+  const maxCreate = watCalendarDay(7);
+  const maxReschedule = watCalendarDay(7);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -149,7 +145,7 @@ export default function OrderLocks() {
           <span className="font-bold text-sm text-foreground">How Order Locks work</span>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Pick a day and a reward. Order that day and it applies. After lock, you can reschedule once.
+          {msg('FE_ORDER_LOCKS_RULES', 'Pick a day and a reward. Order that day and it applies. You can reschedule up to {count} times.', { count: orderLockMaxReschedules() })}
         </p>
       </div>
 
@@ -166,7 +162,7 @@ export default function OrderLocks() {
         <motion.div variants={staggerContainer(0.05)} initial="hidden" animate="show" className="space-y-3">
           {locks.map((lock) => {
             const lockedDate = lock.locked_date ? new Date(lock.locked_date) : null;
-            const daysToLock = lockedDate ? Math.ceil((lockedDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+            const daysToLock = lockedDate ? watDaysUntil(lock.locked_date) : null;
             const isHp = (lock.reward_type || lock.reward) === 'hp';
             const status = lock.status || (lock.consumed_at ? 'used' : 'active');
             const isActive = status === 'active';
@@ -185,7 +181,7 @@ export default function OrderLocks() {
                   </div>
                   <div className="text-right">
                     <div className="flex items-center gap-1 text-xs font-bold text-primary">
-                      {isHp ? <><Gift className="w-3.5 h-3.5" />{lock.reward_hp_amount || 0} HP</> : <><Flame className="w-3 h-3" />{lock.discount_pct || 0}% off</>}
+                      {isHp ? <><Gift className="w-3.5 h-3.5" />{msg('FE_ORDER_LOCKS_HP_AFTER_DELIVERY', '{amount} HP after delivery', { amount: lock.reward_hp_amount || 0 })}</> : <><Flame className="w-3 h-3" />{lock.discount_pct || 0}% off</>}
                     </div>
                   </div>
                 </div>
@@ -199,7 +195,7 @@ export default function OrderLocks() {
                       </span>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => navigate('/menu')} className="flex-1 py-2.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shadow-glow">Order to claim</button>
+                      <button onClick={() => navigate('/menu')} className="flex-1 py-2.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shadow-glow">{daysToLock === 0 ? msg('FE_ORDER_LOCKS_ORDER_TO_CLAIM', 'Order to claim') : msg('FE_ORDER_LOCKS_BROWSE_MENU', 'Browse menu')}</button>
                       <button
                         onClick={() => { setRescheduleLock(lock); setRescheduleDate(dateOptions(3)[0]); }}
                         disabled={!canReschedule}
@@ -228,7 +224,7 @@ export default function OrderLocks() {
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Lock date (future)</label>
-                <input type="date" min={tomorrow} max={maxCreate} value={form.locked_date} onChange={(e) => setForm({ ...form, locked_date: e.target.value })} className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+                <input aria-label={msg('FE_ORDER_LOCKS_LOCK_DATE', 'Lock date')} type="date" min={tomorrow} max={maxCreate} value={form.locked_date} onChange={(e) => setForm({ ...form, locked_date: e.target.value })} className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => setForm({ ...form, reward_kind: 'discount' })} className={`p-3 rounded-xl border-2 text-center transition-all ${form.reward_kind === 'discount' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}>
@@ -242,8 +238,8 @@ export default function OrderLocks() {
               </div>
               <div className="rounded-xl bg-muted/60 border border-border p-3 text-[11px] text-muted-foreground leading-relaxed">
                 {form.reward_kind === 'discount'
-                  ? 'Lock in a discount. It applies on your lock date.'
-                  : "Lock in an HP reward. It lands on your lock date."}
+                  ? msg('FE_ORDER_LOCKS_DISCOUNT_EXPLAIN', 'Place an order on your lock date to use the discount.')
+                  : msg('FE_ORDER_LOCKS_HP_EXPLAIN', 'Place an order on your lock date. Your HP reward is credited when it is delivered.')}
               </div>
               <button onClick={handleCreate} disabled={creating} className="w-full py-3.5 rounded-xl bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 shadow-glow">
                 {creating ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Creating...</> : 'Create lock'}
@@ -261,8 +257,8 @@ export default function OrderLocks() {
               <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Calendar className="w-5 h-5 text-primary" /> Reschedule Lock</h3>
               <button onClick={() => setRescheduleLock(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
-            <p className="text-xs text-muted-foreground mb-3">Move this lock to a new future date within the next 3 days. You can only reschedule once.</p>
-            <input type="date" min={tomorrow} max={maxReschedule} value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} className="w-full p-3 rounded-xl border border-border text-sm mb-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+            <p className="text-xs text-muted-foreground mb-3">{msg('FE_ORDER_LOCKS_RESCHEDULE_RULES', 'Choose a date within the next 7 days. Reschedules remaining: {count}.', { count: Math.max(0, orderLockMaxReschedules() - (rescheduleLock.reschedule_count || 0)) })}</p>
+            <input aria-label={msg('FE_ORDER_LOCKS_NEW_DATE', 'New lock date')} type="date" min={tomorrow} max={maxReschedule} value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} className="w-full p-3 rounded-xl border border-border text-sm mb-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
             <button onClick={handleReschedule} disabled={rescheduling} className="w-full py-3.5 rounded-xl bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 shadow-glow">
               {rescheduling ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Rescheduling...</> : `Move to ${rescheduleDate ? new Date(rescheduleDate).toLocaleDateString() : '—'}`}
             </button>

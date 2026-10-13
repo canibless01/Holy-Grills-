@@ -91,6 +91,12 @@ class OrderConflictError(OrderStatusError):
     http_status = 409
 
 
+class OrderPriceChanged(OrderConflictError):
+    def __init__(self, quote):
+        super().__init__(MSG.ORDER_PRICE_CHANGED)
+        self.quote = quote
+
+
 def _effective_rider_id(order: dict):
     """Rider who may act on `order` — the same rule as the database function hg_effective_rider:
     an explicit delivery_assignments row wins, otherwise the batch's rider."""
@@ -471,6 +477,9 @@ def _consume_free_sides(db, user_id: str, campus_id, order_id: str) -> dict:
 # the whole order when the reward cannot be spent. Its message wording is the
 # database's; translate the known cases so the customer gets a stable 400.
 _RPC_ERROR_MAP = (
+    ("order_lock_unavailable", MSG.ORDER_LOCK_NOT_ACTIVE),
+    ("order_lock_pricing_mismatch", MSG.ORDER_PRICE_CHANGED),
+    ("order_payment_conservation", MSG.ORDER_TOTAL_INVALID),
     ("kitchen capacity reached for this date", MSG.ORDER_ADMISSION_CAPACITY),
     ("menu item daily limit reached", MSG.ORDER_ADMISSION_STOCK),
     ("menu item is unavailable for this campus", MSG.ORDER_ADMISSION_UNAVAILABLE),
@@ -511,7 +520,7 @@ def _order_for_intent(key: str, user_id: str | None, payload: dict, campus_id: s
     return order
 
 
-def create_order(user_id: str | None, payload: dict) -> dict:
+def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -> dict:
     """
     Create a new order. Supports authenticated and guest checkout.
     Validates kitchen capacity, daily item limits, window, resolves items,
@@ -521,6 +530,11 @@ def create_order(user_id: str | None, payload: dict) -> dict:
       items[].selected_variations  — list of {variation_group_id, option_id}
       addons                       — list of {addon_id, quantity}
     """
+    if not isinstance(payload, dict):
+        raise ValueError(MSG.JSON_OBJECT_REQUIRED)
+    payment_method = payload.get('payment_method', 'card')
+    if not isinstance(payment_method, str) or payment_method not in ('wallet','card','split'):
+        raise ValueError(MSG.ORDER_PAYMENT_METHOD_INVALID)
     raw_key = payload.get("idempotency_key") or str(uuid.uuid4())
     if not isinstance(raw_key, str) or not raw_key.strip() or len(raw_key) > 200:
         raise ValueError(MSG.ORDER_INTENT_INVALID)
@@ -535,76 +549,87 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         except Exception as exc:
             logger.debug("create_order: campus resolution from the request context failed: %s", exc)
     if not campus_id:
-        raise ValueError("campus_id could not be resolved for this order")
+        raise ValueError(MSG.CAMPUS_REQUIRED)
 
     actor = f"user:{user_id}" if user_id else f"guest:{str(payload.get('guest_email') or '').strip().lower()}:{str(payload.get('guest_phone') or '').strip()}"
     idempotency_key = "v2:" + hashlib.sha256(f"{actor}:{campus_id}:{raw_key}".encode()).hexdigest()
-    for key in (idempotency_key, raw_key):
-        existing = _order_for_intent(key, user_id, payload, campus_id)
-        if existing:
-            return existing
+    if not quote_only:
+        for key in (idempotency_key, raw_key):
+            existing = _order_for_intent(key, user_id, payload, campus_id)
+            if existing:
+                return existing
 
-    is_scheduled = bool(payload.get("is_scheduled", False))
-    ordering_window_id = None
-    linked_delivery_window_id = None
-    scheduled_for = payload.get("scheduled_for") if is_scheduled else None
+    is_scheduled = False
+    ordering_window_id = linked_delivery_window_id = scheduled_for = window_id = None
+    if not quote_only:
+        is_scheduled = bool(payload.get("is_scheduled", False))
+        ordering_window_id = None
+        linked_delivery_window_id = None
+        scheduled_for = payload.get("scheduled_for") if is_scheduled else None
 
-    # scheduled_orders is a global switch (feature_flags rows carry no campus_id in this project),
-    # so one check covers both ways an order can end up scheduled: an explicit request, and the
-    # automatic next-available-slot fallback below.
-    if is_scheduled or payload.get("accept_next_available_date"):
-        from app.services.feature_flags import is_feature_enabled
-        if not is_feature_enabled("scheduled_orders"):
-            raise ValueError("Scheduled ordering is not available right now")
+        # scheduled_orders is a global switch (feature_flags rows carry no campus_id in this project),
+        # so one check covers both ways an order can end up scheduled: an explicit request, and the
+        # automatic next-available-slot fallback below.
+        if is_scheduled or payload.get("accept_next_available_date"):
+            from app.services.feature_flags import is_feature_enabled
+            if not is_feature_enabled("scheduled_orders"):
+                raise ValueError("Scheduled ordering is not available right now")
 
-    if is_scheduled:
-        from datetime import date as _date
-        requested_date = str(payload.get("scheduled_date") or payload.get("scheduled_for") or "")[:10]
-        start_date = _date.fromisoformat(requested_date) if requested_date else today_wat()
-        if start_date < today_wat() or start_date > today_wat() + timedelta(days=14):
-            raise ValueError(MSG.ORDER_SCHEDULE_DATE_RANGE)
-        slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=start_date)
-        if not slot or (requested_date and slot.get("date") != requested_date and not payload.get("accept_next_available_date")):
-            raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
-        ordering_window_id = slot.get("window_id")
-        scheduled_for = f"{slot['date']}T{slot.get('opens_at') or '08:00:00'}+01:00"
-        if datetime.fromisoformat(scheduled_for) < datetime.now(timezone.utc):
-            scheduled_for = datetime.now(timezone.utc).isoformat()
-        if ordering_window_id:
-            win = get_db().table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute() or {}
-            linked_delivery_window_id = win.get("linked_delivery_window_id")
-
-    if not is_scheduled:
-        try:
-            _win = resolve_ordering_window(get_db(), campus_id)
-            ordering_window_id = _win.get("id")
-            linked_delivery_window_id = _win.get("linked_delivery_window_id")
-        except OrderingWindowUnavailable:
-            if not payload.get("accept_next_available_date"):
-                raise
-            # Search from TODAY, not tomorrow: before the kitchen opens, today's
-            # window is still the next available one. `find_next_available_ordering_slot`
-            # skips a window that has already closed, so after closing time this
-            # still lands on the next open day.
-            now_wat = datetime.now(timezone.utc) + timedelta(hours=1)
-            next_slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=now_wat.date())
-            if not next_slot or not next_slot.get("date"):
-                raise
-            is_scheduled = True
-            ordering_window_id = next_slot.get("window_id")
-            scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}+01:00"
+        if is_scheduled:
+            from datetime import date as _date
+            requested_date = str(payload.get("scheduled_date") or payload.get("scheduled_for") or "")[:10]
+            start_date = _date.fromisoformat(requested_date) if requested_date else today_wat()
+            if start_date < today_wat() or start_date > today_wat() + timedelta(days=14):
+                raise ValueError(MSG.ORDER_SCHEDULE_DATE_RANGE)
+            slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=start_date)
+            if not slot or (requested_date and slot.get("date") != requested_date and not payload.get("accept_next_available_date")):
+                raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
+            ordering_window_id = slot.get("window_id")
+            scheduled_for = f"{slot['date']}T{slot.get('opens_at') or '08:00:00'}+01:00"
+            if datetime.fromisoformat(scheduled_for) < datetime.now(timezone.utc):
+                scheduled_for = datetime.now(timezone.utc).isoformat()
             if ordering_window_id:
-                ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
-                if ow_row:
-                    linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
+                win = get_db().table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute() or {}
+                linked_delivery_window_id = win.get("linked_delivery_window_id")
 
-    window_id = linked_delivery_window_id
-    if not is_scheduled:
-        _check_kitchen_capacity(get_db())
+        if not is_scheduled:
+            try:
+                _win = resolve_ordering_window(get_db(), campus_id)
+                ordering_window_id = _win.get("id")
+                linked_delivery_window_id = _win.get("linked_delivery_window_id")
+            except OrderingWindowUnavailable:
+                if not payload.get("accept_next_available_date"):
+                    raise
+                # Search from TODAY, not tomorrow: before the kitchen opens, today's
+                # window is still the next available one. `find_next_available_ordering_slot`
+                # skips a window that has already closed, so after closing time this
+                # still lands on the next open day.
+                now_wat = datetime.now(timezone.utc) + timedelta(hours=1)
+                next_slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=now_wat.date())
+                if not next_slot or not next_slot.get("date"):
+                    raise
+                is_scheduled = True
+                ordering_window_id = next_slot.get("window_id")
+                scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}+01:00"
+                if ordering_window_id:
+                    ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
+                    if ow_row:
+                        linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
+
+        window_id = linked_delivery_window_id
+        if not is_scheduled:
+            _check_kitchen_capacity(get_db())
 
     raw_items = payload.get("items", [])
-    if not raw_items:
+    if not isinstance(raw_items, list) or not raw_items:
         raise ValueError(MSG.ORDER_ITEMS_EMPTY)
+    from app.utils.validators import validate_uuid
+    if any(not isinstance(item, dict) or not validate_uuid(item.get('menu_item_id')) for item in raw_items):
+        raise ValueError(MSG.ORDER_ITEMS_INVALID)
+    # Anonymous catalogue access is mediated by the validated campus. Service
+    # reads below are explicitly restricted to that campus or global parents.
+    if user_id is None:
+        db = get_db()
 
     # Pre-fetch today's active order IDs once for daily-limit checks (excludes cancelled/refunded)
     today_orders = (
@@ -623,7 +648,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         try:
             menu_item = (
                 db.table("menu_items")
-                .select("id,name,price,hp_earn_value,hp_earn,hp_multiplier,is_available,deleted_at,daily_limit")
+                .select("id,campus_id,name,price,hp_earn_value,hp_earn,hp_multiplier,is_available,deleted_at,daily_limit")
                 .eq("id", item["menu_item_id"])
                 .single()
                 .execute()
@@ -633,12 +658,12 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 raise
             menu_item = (
                 db.table("menu_items")
-                .select("id,name,price,hp_earn_value,hp_earn,is_available,deleted_at,daily_limit")
+                .select("id,campus_id,name,price,hp_earn_value,hp_earn,is_available,deleted_at,daily_limit")
                 .eq("id", item["menu_item_id"])
                 .single()
                 .execute()
             )
-        if not menu_item:
+        if not menu_item or menu_item.get("campus_id") not in (None, campus_id):
             raise ValueError(MSG.ORDER_MENU_ITEM_NOT_FOUND.format(id=item["menu_item_id"]))
 
         availability = None
@@ -653,7 +678,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             )
         except Exception as av_exc:
             logger.warning("create_order: availability lookup failed for %s: %s", menu_item["id"], av_exc)
-            availability = None
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from av_exc
 
         is_item_available = bool(menu_item.get("is_available"))
         if availability:
@@ -667,15 +692,18 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             raise ValueError(MSG.ORDER_MENU_ITEM_UNAVAILABLE.format(name=menu_item["name"]))
 
         raw_qty = item.get("quantity", 1)
-        if isinstance(raw_qty, bool) or str(raw_qty).strip() != str(int(raw_qty)) or int(raw_qty) < 1:
+        try:
+            qty = int(raw_qty)
+            if isinstance(raw_qty, bool) or str(raw_qty).strip() != str(qty) or qty < 1:
+                raise ValueError()
+        except (TypeError, ValueError, OverflowError):
             raise ValueError(MSG.ORDER_POSITIVE_QUANTITY_REQUIRED)
-        qty = int(raw_qty)
 
         daily_limit = availability.get("daily_limit") if availability and availability.get("daily_limit") is not None else menu_item.get("daily_limit")
         if daily_limit is not None:
             count_today = 0 if is_scheduled else _count_item_today(get_db(), menu_item["id"], today_order_ids)
             remaining = max(0, int(daily_limit) - count_today)
-            if qty > remaining:
+            if not quote_only and qty > remaining:
                 raise ValueError(MSG.ORDER_MENU_ITEM_SOLD_OUT_TODAY.format(name=menu_item["name"], remaining=remaining))
 
         base_price = availability.get("price_override") if (availability and availability.get("price_override") is not None) else menu_item["price"]
@@ -721,19 +749,30 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         subtotal += float(line_total)
 
     # Resolve order-level add-ons (group_id IS NULL flat add-ons)
-    for addon_entry in payload.get("addons", []):
+    global_addons = payload.get('addons', [])
+    if not isinstance(global_addons, list) or any(not isinstance(entry, dict) or not validate_uuid(entry.get('addon_id')) for entry in global_addons):
+        raise ValueError(MSG.ORDER_GLOBAL_ADDON_UNAVAILABLE)
+    if len({entry['addon_id'] for entry in global_addons}) != len(global_addons):
+        raise ValueError(MSG.ORDER_GLOBAL_ADDON_UNAVAILABLE)
+    for addon_entry in global_addons:
         addon = (
             db.table("menu_addons")
-            .select("id,name,price,is_available,is_archived")
+            .select("id,campus_id,group_id,name,price,is_available,is_archived")
             .eq("id", addon_entry.get("addon_id"))
             .single()
             .execute()
         )
-        if not addon:
-            raise ValueError(f"Add-on {addon_entry.get('addon_id')} not found")
+        if not addon or addon.get("group_id") is not None or addon.get("campus_id") not in (None, campus_id):
+            raise ValueError(MSG.ORDER_GLOBAL_ADDON_UNAVAILABLE)
         if not addon.get("is_available") or addon.get("is_archived"):
-            raise ValueError(f"Add-on '{addon['name']}' is not currently available")
-        addon_qty = max(1, int(addon_entry.get("quantity", 1)))
+            raise ValueError(MSG.ORDER_ADDON_UNAVAILABLE.format(name=addon['name']))
+        raw_addon_qty = addon_entry.get('quantity', 1)
+        try:
+            addon_qty = int(raw_addon_qty)
+            if isinstance(raw_addon_qty, bool) or str(raw_addon_qty).strip() != str(addon_qty) or not 1 <= addon_qty <= 50:
+                raise ValueError()
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(MSG.ORDER_POSITIVE_QUANTITY_REQUIRED)
         addon_price = Decimal(str(addon["price"]))
         line_total = (addon_price * Decimal(str(addon_qty))).quantize(Decimal("0.01"))
         order_items.append({
@@ -764,6 +803,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                 .eq("user_id", user_id)
                 .eq("status", "active")
                 .eq("locked_date", today_date)
+                .or_(f"campus_id.eq.{campus_id},campus_id.is.null")
                 .execute()
             ) or []
             if _lock_rows:
@@ -773,7 +813,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
                     order_lock_discount = round(subtotal * _lock_pct / 100.0, 2)
         except Exception as _le:
             logger.warning("create_order: order lock check failed for user %s: %s", user_id, _le)
-            order_lock = None
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from _le
 
     # ── Squad Order discount ──────────────────────────────────────────────────
     config = current_app.config
@@ -822,7 +862,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
     # ── Delivery location fee resolution ──────────────────────────────────────
     delivery_type = payload.get("delivery_type")  # "on_campus" | "off_campus" | None
-    if delivery_type is not None and delivery_type not in ("on_campus", "off_campus"):
+    if delivery_type not in ("on_campus", "off_campus"):
         raise ValueError(MSG.DELIVERY_TYPE_VALUE_INVALID)
 
     delivery_location_id = payload.get("delivery_location_id")
@@ -834,8 +874,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if delivery_address_id and user_id:
         try:
             addr = db.table("user_addresses").eq("id", delivery_address_id).single().execute()
+            if not addr:
+                raise ValueError(MSG.ADDRESS_ACCESS_UNAUTHORIZED)
             if addr:
-                if addr.get("user_id") != user_id:
+                if addr.get("user_id") != user_id or addr.get('campus_id') not in (None, campus_id):
                     raise ValueError(MSG.ADDRESS_ACCESS_UNAUTHORIZED)
                 if addr.get("latitude") is not None and addr.get("longitude") is not None:
                     delivery_location_lat = float(addr["latitude"])
@@ -847,8 +889,8 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         except ValueError:
             raise
         except Exception as exc:
-            logger.debug("create_order: saved-address lookup failed — using the payload's delivery fields: %s",
-                          exc)
+            logger.warning('create_order: saved-address lookup failed: %s', exc)
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
 
     from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
@@ -870,42 +912,29 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             if nearest_gate:
                 delivery_location_id = nearest_gate["id"]
 
-    if delivery_type == "on_campus" and delivery_location_id:
+    if delivery_type == 'on_campus':
+        if not delivery_location_id:
+            raise ValueError(MSG.ADDRESS_DELIVERY_LOCATION_INVALID)
         try:
-            hostel = (
-                db.table("hostels")
-                .select("delivery_fee")
-                .eq("id", delivery_location_id)
-                .eq("is_active", "true")
-                .single()
-                .execute()
-            )
-            if hostel:
-                delivery_fee = float(hostel.get("delivery_fee") or 0)
+            hostel = db.table('hostels').select('campus_id,delivery_fee').eq('id', delivery_location_id).eq('is_active', 'true').single().execute()
         except Exception as exc:
-            logger.warning("create_order: hostel delivery_fee unreadable — the order charges ₦0 delivery: %s",
-                            exc)
-    elif delivery_type == "off_campus" and delivery_location_id:
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
+        if not hostel or hostel.get('campus_id') not in (campus_id, None):
+            raise ValueError(MSG.ADDRESS_DELIVERY_LOCATION_INVALID)
+        delivery_fee = float(hostel.get('delivery_fee') or 0)
+    elif delivery_type == 'off_campus' and delivery_location_id:
         try:
-            gate = (
-                db.table("gates")
-                .select("*")
-                .eq("id", delivery_location_id)
-                .eq("is_active", "true")
-                .single()
-                .execute()
-            )
-            if gate:
-                from app.routes.delivery import calculate_off_campus_fee
-                delivery_fee, _ = calculate_off_campus_fee(
-                    gate,
-                    delivery_location_lat,
-                    delivery_location_lon,
-                )
-        except Exception as e:
-            if "Coordinate" in str(e):
-                raise ValueError(str(e))
-            pass  # Table may not exist yet — fee stays 0
+            gate = db.table('gates').select('*').eq('id', delivery_location_id).eq('is_active', 'true').single().execute()
+            if not gate or gate.get('campus_id') not in (campus_id, None):
+                raise ValueError(MSG.ADDRESS_DELIVERY_LOCATION_INVALID)
+            from app.routes.delivery import calculate_off_campus_fee
+            delivery_fee, _ = calculate_off_campus_fee(gate, delivery_location_lat, delivery_location_lon)
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
+    elif delivery_type == 'off_campus':
+        raise ValueError(MSG.ADDRESS_DELIVERY_LOCATION_INVALID)
 
     # Apply squad delivery-fee discount
     delivery_fee_dec = Decimal(str(delivery_fee))
@@ -937,8 +966,16 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     squad_discount_dec = Decimal(str(squad_discount))
     order_lock_discount_dec = Decimal(str(order_lock_discount))
 
-    total_dec = subtotal_dec - promo_discount_dec - squad_discount_dec - order_lock_discount_dec + delivery_fee_dec
-    total_dec = max(Decimal("0.0"), total_dec.quantize(Decimal("0.01")))
+    # Food discounts cannot consume an unrelated delivery fee. Apply each
+    # contribution once, in promo → squad → lock order, capped at food spend.
+    promo_discount_dec = min(subtotal_dec, max(Decimal('0'), promo_discount_dec))
+    squad_discount_dec = min(max(Decimal('0'), subtotal_dec-promo_discount_dec), max(Decimal('0'), squad_discount_dec))
+    order_lock_discount_dec = min(max(Decimal('0'), subtotal_dec-promo_discount_dec-squad_discount_dec), max(Decimal('0'), order_lock_discount_dec))
+    promo_discount, squad_discount, order_lock_discount = map(float, (promo_discount_dec, squad_discount_dec, order_lock_discount_dec))
+    if order_lock and order_lock.get('reward_type') == 'discount' and order_lock_discount_dec == 0:
+        order_lock = None
+    total_discount_dec = promo_discount_dec + squad_discount_dec + order_lock_discount_dec
+    total_dec = (subtotal_dec-total_discount_dec+delivery_fee_dec).quantize(Decimal('0.01'))
     total = total_amount = float(total_dec)
 
     payment_method = payload.get("payment_method", "card")
@@ -950,7 +987,13 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     elif payment_method == "card":
         card_amount_used_dec = total_dec
     elif payment_method == "split":
-        wallet_amount_used_dec = min(Decimal(str(payload.get("wallet_amount", 0))), total_dec)
+        try:
+            requested_wallet = Decimal(str(payload.get('wallet_amount', 0)))
+            if isinstance(payload.get('wallet_amount'), bool) or not requested_wallet.is_finite() or requested_wallet <= 0:
+                raise ValueError()
+            wallet_amount_used_dec = min(requested_wallet.quantize(Decimal('0.01')), total_dec)
+        except (ValueError, ArithmeticError):
+            raise ValueError(MSG.ORDER_SPLIT_AMOUNT_INVALID)
         card_amount_used_dec = (total_dec - wallet_amount_used_dec).quantize(Decimal("0.01"))
 
     wallet_amount_used = float(wallet_amount_used_dec)
@@ -959,14 +1002,9 @@ def create_order(user_id: str | None, payload: dict) -> dict:
     if user_id is None:
         if payment_method in ("wallet", "split") and wallet_amount_used > 0:
             raise ValueError(MSG.GUEST_NO_WALLET_PAYMENTS)
-        if not payload.get("guest_name") or not payload.get("guest_phone") or not payload.get("guest_email"):
+        if not quote_only and (not payload.get("guest_name") or not payload.get("guest_phone") or not payload.get("guest_email")):
             raise ValueError(MSG.GUEST_DETAILS_REQUIRED)
 
-    # Pre-check wallet balance before inserting order (for both wallet and split payment methods)
-    if payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
-        wallet = db.table("wallets").select("balance").eq("user_id", user_id).single().execute()
-        if not wallet or float(wallet.get("balance", 0)) < wallet_amount_used:
-            raise ValueError(MSG.ORDER_WALLET_INSUFFICIENT.format(need=wallet_amount_used))
 
     is_guest = user_id is None
     claim_token = str(uuid.uuid4()) if is_guest else None
@@ -1044,6 +1082,36 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         "items": hp_preview_items,
     }
 
+    price_quote = {
+        'subtotal':subtotal,'delivery_fee':delivery_fee,'discount_amount':total_discount,
+        'promo_discount':promo_discount,'squad_discount':squad_discount,
+        'order_lock_discount':order_lock_discount,'total_amount':total,
+        'order_lock_hp_reward':int(order_lock.get('reward_hp_amount') or 0) if order_lock and order_lock.get('reward_type') == 'hp' else 0,
+        'hp_preview':hp_preview if user_id else {**hp_preview, 'total_hp':0},
+        'is_squad_order':is_squad_order,'squad_item_count':squad_item_count,
+    }
+    if quote_only:
+        return price_quote
+    expected_total = payload.get('expected_total')
+    if expected_total is not None:
+        try:
+            expected = Decimal(str(expected_total))
+            if isinstance(expected_total, bool) or not expected.is_finite() or expected < 0:
+                raise ValueError()
+        except (ValueError, ArithmeticError):
+            raise ValueError(MSG.ORDER_TOTAL_INVALID)
+        if expected.quantize(Decimal('0.01')) != total_dec:
+            raise OrderPriceChanged(price_quote)
+    if order_lock and order_items:
+        order_items[0]['_order_lock_discount_applied'] = order_lock_discount
+
+    # Pre-check wallet balance before inserting order (for both wallet and split payment methods)
+    if not quote_only and payment_method in ("wallet", "split") and user_id and wallet_amount_used > 0:
+        wallet = db.table("wallets").select("balance").eq("user_id", user_id).single().execute()
+        if not wallet or float(wallet.get("balance", 0)) < wallet_amount_used:
+            raise ValueError(MSG.ORDER_WALLET_INSUFFICIENT.format(need=wallet_amount_used))
+
+
     # A reward may ride exactly one order. Check before anything is charged; the
     # authoritative claim happens after the order exists (see below).
     redemption_id = payload.get("redemption_id")
@@ -1101,6 +1169,11 @@ def create_order(user_id: str | None, payload: dict) -> dict:
         result = {}
 
     if result.get("error"):
+        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch')):
+            # The lock changed after pricing but before its transaction claim.
+            # Return a fresh, read-only quote rather than repeating stale totals.
+            refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
+            raise OrderPriceChanged(refreshed)
         if result["error"] in (ORDERING_WINDOW_CLOSED, ORDERING_WINDOW_AT_CAPACITY):
             code = result["error"]
             raise OrderingWindowUnavailable(

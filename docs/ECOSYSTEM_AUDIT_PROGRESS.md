@@ -30,7 +30,7 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 
 ## Validation
 
-- Backend unit suite: **122 passed**, including modifier security and atomic refund-route regressions.
+- Backend unit suite: **130 passed**, including modifier security and atomic refund-route regressions.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.
@@ -41,6 +41,17 @@ Uploads remain **Cloudinary only**. The temporary Supabase Storage fallback is r
 
 ## Remaining full audit scope
 
-Thirty-four ecosystem families and thirty-two admin sidebar sections have been inventoried. Discovery is separate from verification. Remaining work includes complete storefront/banner/media fields, promos and notifications, funding/provider boundaries, rewards/spins/fulfilment, order locks, kitchen/batches/riders/delivery, guests and tracking/QR, reviews, events/tickets, catering, marketplace, retention jobs, all feature flag consumers and role-specific UI gaps. Each needs UI input, stored values, cross-role results, failure/retry/concurrency and cleanup evidence.
+Thirty-four ecosystem families and thirty-two admin sidebar sections have been inventoried. Discovery is separate from verification. Remaining work includes complete storefront/banner/media fields, promos and notifications, funding/provider boundaries, rewards/spins/fulfilment, lock reminders and broader fulfilment/recovery cases, guests and tracking/QR, reviews, events/tickets, catering, marketplace, retention jobs, all feature flag consumers and role-specific UI gaps. Each needs UI input, stored values, cross-role results, failure/retry/concurrency and cleanup evidence.
 
 The SQL definitions in this batch have already been applied to Test Two. Other environments must apply equivalent migrations together with the corresponding backend update. Publishing code to GitHub is separate from confirming a deployment is running it.
+
+## Checkout pricing and order-lock follow-up
+
+- A lock discount was being applied twice: a 2,095-naira debit accompanied a 1,890-naira stored total. The corrected transaction applies the 205-naira discount once. The server quote drives checkout total, discounts and food HP; a price change requires review before submission. Invalid quantities, payment methods and unknown delivery locations are rejected. Unreadable delivery fees or saved addresses cannot silently become free delivery.
+- Actual Playwright quote failure blocks checkout; Retry total restores the verified 2,300-naira total and 102 food HP. Guest quotes report no earned HP. Quote API tests leave order count and wallet balance unchanged.
+- Actual discounted checkout loses its committed response, then retries the same intent. It records one 2,095-naira debit, a 205-naira discount and a 2,095-naira stored total. Confirmation/share survive reload. Customer UI cancellation records one equal refund and restores the lock. The temporary audit lock date is restored.
+- Customer UI exercises discount and HP selection, seven-day rescheduling and cancellation; admin date/status filters display the stored target date and reward. Six concurrent creates admit one lock; six reschedule retries spend one reschedule; concurrent cancellations are idempotent. Foreign-owner operations fail and campus admin/super-admin reads have the expected scopes. Own expired locks stop blocking creation even when the worker is offline.
+- Direct authenticated lock date/counter editing was reproduced and is now denied. Validated backend writes condition on owner and active state, plus the expected reschedule counter. Calendar limits use the Lagos business day. Worker expiry cannot overwrite a concurrently used or rescheduled lock.
+- A rollback-only transaction reproduced a refunded/cancelled HP lock leaving 100 spendable HP. HP locks now reserve their bonus at checkout and credit it in the existing order-update transaction at delivery. Rollback-only tests verify zero bonus after cancellation and one 100-HP ledger row after the valid preparation/assignment/delivery sequence, including a repeated delivered-order update. Legacy credited locks replay their existing ledger business key. A real browser HP-lock delivery, reminder/provider delivery and other reward recovery cases remain open.
+
+These changes replace existing function signatures and reuse existing tables and indexes. See the access verification document for grants, migration counts and the remaining advisor notices. The full ecosystem audit is still in progress.
