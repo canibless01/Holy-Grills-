@@ -2016,6 +2016,8 @@ class MSG:
     FE_REFUND_PROCESSING = "Processing…"
     FE_REFUND_CONFIRM = "Confirm Refund"
 
+    ORDER_ITEM_NOTES_INVALID = "Preparation notes must be text of at most 500 characters."
+
 # Short alias
 M = MSG
 

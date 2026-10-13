@@ -1,3 +1,4 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState, useEffect, useRef } from 'react';
 import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -205,6 +206,7 @@ export default function AdminOrders() {
 
                 {isOpen && (
                   <div className="mt-3 pt-3 border-t border-border space-y-3">
+                    {o.order_items.map((item, i) => <div key={i} className="text-sm"><span className="font-semibold">{item.quantity}× {item.name_snapshot}</span><OrderItemCustomizations item={item} /></div>)}
                     <div>
                       <div className="text-[11px] font-bold text-muted-foreground uppercase mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" /> Status Timeline</div>
                       {(history[o.id] || []).map((h, i) => (

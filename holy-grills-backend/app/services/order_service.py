@@ -695,6 +695,10 @@ def create_order(user_id: str | None, payload: dict) -> dict:
 
         line_total = (effective_unit_price * Decimal(str(qty))).quantize(Decimal("0.01"))
 
+        preparation_notes = item.get("notes") or ""
+        if not isinstance(preparation_notes, str) or len(preparation_notes) > 500:
+            raise ValueError(MSG.ORDER_ITEM_NOTES_INVALID)
+
         order_items.append({
             "menu_item_id": menu_item["id"],
             "name_snapshot": menu_item["name"],
@@ -704,6 +708,7 @@ def create_order(user_id: str | None, payload: dict) -> dict:
             "hp_multiplier_snapshot": hp_multiplier,
             "line_total": float(line_total),
             "selected_variations": resolved_variations,
+            "options_snapshot": {"notes": preparation_notes.strip()} if preparation_notes.strip() else {},
             "is_addon": False,
             "_addon_selections": resolved_addon_selections,
         })

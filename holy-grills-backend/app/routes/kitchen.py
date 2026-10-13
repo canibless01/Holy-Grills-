@@ -16,6 +16,19 @@ units_bp = Blueprint("measurement_units", __name__)
 stock_bp = Blueprint("stock_items", __name__)
 
 
+def _attach_kitchen_customer_names(orders):
+    # Only names belonging to already-authorized order rows are fetched. Kitchen
+    # tickets do not need customer phone numbers, email or profile financials.
+    user_ids = list({o['user_id'] for o in orders if o.get('user_id')})
+    names = {}
+    for offset in range(0, len(user_ids), 100):
+        rows = get_db().table('profiles').select('id,full_name').in_('id', user_ids[offset:offset+100]).execute() or []
+        names.update({row['id']: row.get('full_name') for row in rows})
+    for order in orders:
+        order['customer_name'] = names.get(order.get('user_id')) or order.get('guest_name')
+    return orders
+
+
 def _today_start_iso():
     """WAT midnight today, expressed as the equivalent UTC instant — used to bound
     kitchen_metrics to today's orders instead of the entire order history."""
@@ -449,8 +462,8 @@ def live_queue():
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
-        .in_("status", ["received", "paid", "preparing"])
+        .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        .in_("status", ["received", "paid", "preparing", "ready"])
         .in_("payment_status", ["paid", "partially_refunded"])
         .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
@@ -461,7 +474,7 @@ def live_queue():
     if window_id:
         q = q.eq("delivery_window_id", window_id)
 
-    orders = q.execute()
+    orders = _attach_kitchen_customer_names(q.execute() or [])
     return jsonify(orders), 200
 
 
@@ -535,9 +548,9 @@ def scheduled_orders():
     q = (
         db.table("orders")
         .select(
-            "id,status,notes,scheduled_for,is_scheduled,received_at,created_at,"
+            "id,user_id,guest_name,status,notes,scheduled_for,is_scheduled,received_at,created_at,"
             "delivery_windows(id,label,starts_at,ends_at),"
-            "order_items(name_snapshot,quantity,price_snapshot)"
+            "order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         )
         .eq("is_scheduled", "true")
         .in_("status", ["received", "paid"])
@@ -549,7 +562,7 @@ def scheduled_orders():
     if window_id:
         q = q.eq("delivery_window_id", window_id)
 
-    orders = q.execute() or []
+    orders = _attach_kitchen_customer_names(q.execute() or [])
     return jsonify({"scheduled_orders": orders, "count": len(orders)}), 200
 
 
@@ -650,7 +663,7 @@ def batch_summary(window_id):
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,status,order_items(name_snapshot,quantity)")
+        .select("id,status,order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "paid", "preparing", "ready"])
     )

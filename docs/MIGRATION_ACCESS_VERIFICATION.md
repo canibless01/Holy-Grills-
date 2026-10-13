@@ -39,3 +39,9 @@ No audit Storage bucket remains. Image ownership remains with Cloudinary.
 Supabase advisors still identify historical SECURITY DEFINER functions callable by anon/authenticated, `pg_net` in public, newsletter-delivery RLS with no policies, and disabled leaked-password protection. These were not introduced by this batch and remain part of the full ecosystem security audit. The authenticated flash-redemption advisory is intentional and backed by ownership/release checks; the wallet, order creation and refund functions do not appear in the public-execute findings.
 
 Advisor reference: [SECURITY DEFINER execute access](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable).
+
+## Order-ticket access follow-up (2026-10-13)
+
+`restrict_order_ticket_choices_to_visible_parents_and_server_writes` replaces the old ALL policy on the existing `order_addon_selections` table with one SELECT policy tied to a visible parent item and order. Anon has no table access; authenticated has SELECT only; service_role retains SELECT/INSERT/UPDATE/DELETE. No table or function is added.
+
+Actual account tests reproduced kitchen insertion of a forged saved-choice snapshot (201) and customer inability to read their own three sides. After the migration, kitchen insertion returns 403, the owner/admin/kitchen read the three sides, foreign-campus actors read zero rows, and an unassigned rider reads zero rows. Every forged fixture is deleted by its exact ID. Rider access after assignment remains to be tested in the delivery loop.

@@ -192,7 +192,7 @@ def list_all_orders():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = resolve_scoped_campus_id(requested_campus)
     try:
-        q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
+        q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         if status:
@@ -235,7 +235,7 @@ def user_order_history(user_id):
             return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
         assert_can_modify(profile.get("campus_id"))  # RLS already blocks this; app-level backup (NULL-campus = super_admin accounts, off-limits to campus admins)
         q = (
-            db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
+            db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
             .eq("user_id", user_id)
         )
         if status:
@@ -1131,7 +1131,7 @@ def get_batch(batch_id):
         orders = db.table("orders").select(
             "id,status,delivery_address_snapshot,total_amount,created_at,"
             "delivery_location_lat,delivery_location_lon,"
-            "order_items(name_snapshot,quantity)"
+            "order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         ).eq("batch_id", batch_id).execute() or []
         gate = None
         if batch.get("gate_id"):
@@ -1411,7 +1411,7 @@ def list_batch_orders(batch_id):
         assert_can_modify(batch.get("campus_id"))  # RLS already scopes this; app-level backup
         orders = db.table("orders").select(
             "id,status,delivery_address_snapshot,total_amount,created_at,"
-            "order_items(name_snapshot,quantity)"
+            "order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         ).eq("batch_id", batch_id).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_batch_orders")

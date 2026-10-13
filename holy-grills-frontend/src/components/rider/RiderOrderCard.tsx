@@ -1,3 +1,4 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState } from 'react';
 import { Navigation, Phone, MapPin, Check, Clock, AlertCircle, Flag } from 'lucide-react';
 import { formatNaira, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
@@ -81,7 +82,7 @@ export default function RiderOrderCard({ order, onAction, onCall, onNavigate, ac
             {(order.items || []).map((item, i) => (
               <div key={i} className="text-xs text-foreground flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-foreground">{item.quantity}×</span>
-                <span>{item.name_snapshot}</span>
+                <div>{item.name_snapshot}<OrderItemCustomizations item={item} /></div>
                 {(item.is_hof_reward || item.is_hall_of_fame_reward || item.reward_type === 'hall_of_fame') && (
                   <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-accent/30 text-accent-foreground">
                     🏅 Hall of Fame

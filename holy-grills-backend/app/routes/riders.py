@@ -253,8 +253,8 @@ def my_batch():
             logger.warning("my_batch: customer names unavailable for rider %s", g.user_id, exc_info=True)
     items_by_order = {}
     try:
-        for it in _select_in(db, "order_items", "order_id,name_snapshot,quantity", "order_id", [o["id"] for o in all_orders]):
-            items_by_order.setdefault(it["order_id"], []).append({"name_snapshot": it.get("name_snapshot"), "quantity": it.get("quantity")})
+        for it in _select_in(db, "order_items", "order_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity)", "order_id", [o["id"] for o in all_orders]):
+            items_by_order.setdefault(it["order_id"], []).append(it)
     except SupabaseError:
         logger.warning("my_batch: order items unavailable for rider %s", g.user_id, exc_info=True)
 

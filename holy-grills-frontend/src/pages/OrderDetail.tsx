@@ -1,3 +1,4 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -231,6 +232,7 @@ export default function OrderDetail() {
             <div key={i} className="flex items-center justify-between text-sm">
               <div className="min-w-0">
                 <span className="font-medium text-foreground">{item.quantity}× {item.name_snapshot}</span>
+                <OrderItemCustomizations item={item} />
                 {order.notes && <p className="text-xs text-muted-foreground mt-0.5">📝 {order.notes}</p>}
               </div>
               <span className="font-semibold text-foreground shrink-0 ml-2">{formatNaira(item.line_total)}</span>

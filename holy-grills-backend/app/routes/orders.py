@@ -192,7 +192,7 @@ def list_orders():
         description: Order list
     """
     db = get_user_client()
-    q = db.table("orders").select("*,order_items(*)").eq("user_id", g.user_id)
+    q = db.table("orders").select("*,order_items(*,order_addon_selections(name_snapshot,quantity))").eq("user_id", g.user_id)
 
     status = request.args.get("status")
     if status:
@@ -243,7 +243,7 @@ def get_order(order_id):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     claim_token = request.args.get("claim_token")
-    _select = "*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)"
+    _select = "*,order_items(*,order_addon_selections(name_snapshot,quantity)),delivery_windows(*),delivery_batches(rider_id,zone,status)"
 
     db = get_user_client()
     order = None
@@ -780,7 +780,7 @@ def list_scheduled_orders():
         return jsonify({"error": MSG.PAGINATION_PARAMS_INVALID}), 400
     orders = (
         db.table("orders")
-        .select("*,order_items(name_snapshot,quantity,price_snapshot,line_total),"
+        .select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity)),"
                 "delivery_windows(label,starts_at,ends_at)")
         .eq("user_id", g.user_id)
         .eq("is_scheduled", "true")
@@ -842,7 +842,7 @@ def active_order():
     TERMINAL = ["delivered", "cancelled", "refunded"]
     rows = (
         db.table("orders")
-        .select("*,order_items(id,menu_item_id,name_snapshot,quantity,price_snapshot,line_total)")
+        .select("*,order_items(id,menu_item_id,name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .eq("user_id", g.user_id)
         .not_.in_("status", TERMINAL)
         .order("created_at", ascending=False)

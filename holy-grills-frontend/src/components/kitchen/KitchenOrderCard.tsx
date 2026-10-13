@@ -1,3 +1,4 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState } from 'react';
 import { Check, Users, Trophy, MapPin, Ban, RotateCcw } from 'lucide-react';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
@@ -87,7 +88,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
           return (
             <div key={i} className="flex items-center gap-1.5 text-sm text-foreground">
               <span className="font-bold shrink-0">{item.quantity}×</span>
-              <span className={`flex-1 min-w-0 ${isOut ? 'line-through text-muted-foreground' : ''}`}>{item.name_snapshot}</span>
+              <div className={`flex-1 min-w-0 ${isOut ? 'line-through text-muted-foreground' : ''}`}>{item.name_snapshot}<OrderItemCustomizations item={item} /></div>
               {item.is_free_side && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-600 shrink-0">🏆</span>
               )}

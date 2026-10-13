@@ -1,3 +1,4 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { msg, useMessages } from '@/lib/messages';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -157,7 +158,7 @@ export default function OrderConfirmation() {
         <div className="space-y-2">
           {(order.order_items || []).map((item, i) => (
             <div key={i} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{item.quantity}× {item.name_snapshot}</span>
+              <div><span className="text-muted-foreground">{item.quantity}× {item.name_snapshot}</span><OrderItemCustomizations item={item} /></div>
               <span className="font-semibold text-foreground">{formatNaira(item.line_total)}</span>
             </div>
           ))}

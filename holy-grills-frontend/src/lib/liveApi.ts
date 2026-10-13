@@ -428,6 +428,7 @@ const normKitchenOrder = (o) => {
   const c = getOrderCustomer(o);
   return {
     ...o,
+    is_squad: o.is_squad_order ?? o.is_squad,
     order_items: (o.order_items || o.items || []).map((it) => ({ ...it, name_snapshot: it.name_snapshot || it.name, quantity: it.quantity || 1 })),
     received_at: o.received_at || o.created_at,
     delivery_windows: o.delivery_windows || o.delivery_window,
@@ -438,12 +439,8 @@ const normKitchenOrder = (o) => {
 
 // ========== KITCHEN ==========
 const kitchen = {
-  // /kitchen/queue may return a flat array, a {received, preparing, ready} status
-  // map, or an explicit wrapper ({orders|queue|data|items: [...]}). Flatten all
-  // of them to a plain array. As a safety net we also pull /orders/active and
-  // merge any kitchen-relevant orders (received/preparing/ready) that the queue
-  // endpoint missed — this is the fix for the bug where a freshly placed order
-  // showed on Admin but never reached the Kitchen queue.
+  // The campus-scoped queue is authoritative. An outage must remain visible
+  // instead of looking like an empty kitchen or falling back to customer orders.
   async getQueue(params = {}) {
     let arr = [];
     try {
@@ -460,20 +457,7 @@ const kitchen = {
           }
         }
       }
-    } catch (e) { arr = []; }
-
-    // Fallback merge — active orders the queue endpoint may have missed.
-    const kitchenStatuses = ['received', 'preparing', 'ready'];
-    try {
-      let active = await apiClient.get('/orders/active');
-      if (active && !Array.isArray(active)) active = active.orders || active.active_orders || [];
-      active = (active || []).filter((o) => kitchenStatuses.includes(o.status));
-      // Kitchen queue wins on conflicts; active fills any gaps.
-      const byId = new Map();
-      for (const o of active) byId.set(o.id, o);
-      for (const o of arr) byId.set(o.id, o);
-      arr = Array.from(byId.values());
-    } catch (e) { /* active endpoint unavailable — keep queue result */ }
+    } catch (e) { throw e; }
 
     const rank = { received: 0, preparing: 1, ready: 2 };
     arr.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || Number(new Date(a.received_at || a.created_at)) - Number(new Date(b.received_at || b.created_at)));

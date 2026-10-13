@@ -1,3 +1,4 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Calendar, Package, Zap, Check, ChefHat } from 'lucide-react';
@@ -152,7 +153,7 @@ export default function Kitchen() {
                 </div>
                 <div className="space-y-1 mb-2">
                   {(order.order_items || []).map((item, i) => (
-                    <div key={i} className="text-sm text-foreground"><span className="font-bold">{item.quantity}×</span> {item.name_snapshot}</div>
+                    <div key={i} className="text-sm text-foreground"><span className="font-bold">{item.quantity}×</span> {item.name_snapshot}<OrderItemCustomizations item={item} /></div>
                   ))}
                 </div>
                 <div className="text-xs text-muted-foreground mb-2.5">Window: {order.delivery_windows?.label || '—'}</div>
