@@ -371,7 +371,7 @@ def update_status(order_id):
         )
         return jsonify(result), 200
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), getattr(e, "http_status", 400)
 
 
 @orders_bp.route("/<order_id>/walk", methods=["POST"])
@@ -431,7 +431,7 @@ def walk_order_status(order_id):
         )
         return jsonify(result), 200
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), getattr(e, "http_status", 400)
 
 
 @orders_bp.route("/<order_id>/review/images", methods=["POST"])

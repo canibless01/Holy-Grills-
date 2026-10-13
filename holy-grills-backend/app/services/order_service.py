@@ -107,6 +107,12 @@ def _effective_rider_id(order: dict):
 def _map_db_error(exc):
     """Errors raised by the orders triggers (state machine / rider scoping) -> typed errors."""
     text = str(exc)
+    if "payment_required_for_preparation" in text:
+        return OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
+    if "kitchen_preparation_only" in text:
+        return OrderForbiddenError(MSG.ORDER_KITCHEN_PREPARATION_ONLY)
+    if "financial_exit_rpc_only" in text:
+        return OrderConflictError(MSG.ORDER_FINANCIAL_EXIT_USE_ENDPOINT)
     if "Riders can only" in text:
         return OrderForbiddenError(MSG.RIDER_NOT_ASSIGNED_TO_ORDER)
     if "Invalid order status transition" in text:
@@ -1326,10 +1332,12 @@ def walk_order_to_status(
         {"steps": ["preparing", "ready", ...], "final": <order dict>}
     """
     from flask import has_app_context, g
+    if target_status in ("cancelled", "refunded"):
+        raise OrderConflictError(MSG.ORDER_FINANCIAL_EXIT_USE_ENDPOINT)
     db = get_user_client()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
-        raise ValueError("Order not found")
+        raise OrderNotFoundError(MSG.ORDER_NOT_FOUND)
 
     if changed_by:
         caller_role = None
@@ -1344,15 +1352,19 @@ def walk_order_to_status(
                     caller_role = c_prof.get("role")
                     caller_campus = c_prof.get("campus_id")
             except Exception as exc:
-                logger.error("walk_order_to_status: could not resolve the role of %s — the rider/kitchen/admin checks are SKIPPED for this call: %s",
+                logger.error("walk_order_to_status: could not resolve the role of %s: %s",
                               changed_by, exc)
 
+        if caller_role not in ("rider", "kitchen", "admin", "super_admin"):
+            raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
         if caller_role == "rider":
-            effective_rider = db.rpc("hg_effective_rider", {"p_order_id": order_id}).execute()
+            effective_rider = _effective_rider_id(order)
             if not effective_rider or str(effective_rider) != str(changed_by):
                 raise ValueError("Unauthorized: Rider is not assigned to this order")
 
         elif caller_role == "kitchen":
+            if target_status not in ("preparing", "ready"):
+                raise OrderForbiddenError(MSG.ORDER_KITCHEN_PREPARATION_ONLY)
             if order.get("campus_id") != caller_campus:
                 raise ValueError("Unauthorized: Kitchen staff is scoped to a different campus")
         elif caller_role == "admin":
@@ -1528,8 +1540,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     """
     import threading as _threading
     from flask import current_app as _app, has_app_context, g
-    if new_status == "refunded":
-        raise OrderStatusError(MSG.REFUND_USE_DEDICATED_ENDPOINT)
+    if new_status in ("cancelled", "refunded"):
+        raise OrderConflictError(MSG.ORDER_FINANCIAL_EXIT_USE_ENDPOINT)
     db = get_user_client()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
@@ -1548,13 +1560,17 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                     caller_role = c_prof.get("role")
                     caller_campus = c_prof.get("campus_id")
             except Exception as exc:
-                logger.error("update_order_status: could not resolve the role of %s — the rider/kitchen/admin checks are SKIPPED for this call: %s",
+                logger.error("update_order_status: could not resolve the role of %s: %s",
                               changed_by, exc)
 
+        if caller_role not in ("rider", "kitchen", "admin", "super_admin"):
+            raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
         if caller_role == "rider":
             if _effective_rider_id(order) != changed_by:
                 raise OrderForbiddenError(MSG.RIDER_NOT_ASSIGNED_TO_ORDER)
         elif caller_role == "kitchen":
+            if new_status not in ("preparing", "ready"):
+                raise OrderForbiddenError(MSG.ORDER_KITCHEN_PREPARATION_ONLY)
             if order.get("campus_id") != caller_campus:
                 raise OrderForbiddenError(MSG.ORDER_KITCHEN_CAMPUS_MISMATCH)
         elif caller_role == "admin":
@@ -1565,7 +1581,13 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") not in ("paid", "partially_refunded"):
         raise OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if new_status == current_status:
-        return {**order, "unchanged": True}                       # repeat of the same action (double tap / retry): nothing to do
+        if new_status == "delivered" and order.get("user_id") and not order.get("hp_credited_at"):
+            try:
+                _handle_delivery_rewards(order)
+            except Exception:
+                logger.exception("Delivery HP recovery remains pending for %s", order_id)
+                return {**order, "unchanged": True, "rewards_pending": True}
+        return {**order, "unchanged": True}
     allowed = VALID_TRANSITIONS.get(current_status, [])
     if new_status not in allowed:
         raise OrderConflictError(MSG.ORDER_INVALID_TRANSITION.format(current=current_status, new=new_status))
@@ -1747,9 +1769,9 @@ def _handle_delivery_rewards(order: dict):
 
     if result.get("already_credited"):
         return
-    if result.get("error"):
-        logger.error(f"Failed to credit HP for order {order_id}: {result['error']}")
-        return
+    if not result or result.get("error"):
+        logger.error("Failed to credit HP for order %s", order_id)
+        raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
     try:
         hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=subtotal)

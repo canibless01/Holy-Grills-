@@ -721,14 +721,23 @@ def batch_advance(batch_id):
     if err:
         return err
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     from_status_filter = data.get("from_status")
-    notes = data.get("notes", f"Batch advance by kitchen ({batch_id[:8]})")
+    notes = data.get("notes") or MSG.ORDER_KITCHEN_BATCH_NOTE
+    if from_status_filter and from_status_filter not in ("received", "paid", "preparing"):
+        return jsonify({"error": MSG.ORDER_KITCHEN_PREPARATION_ONLY}), 400
+    if not isinstance(notes, str) or len(notes) > 500:
+        return jsonify({"error": MSG.ORDER_ITEM_NOTES_INVALID}), 400
 
     q = (
         db.table("orders")
         .select("id,status")
         .eq("delivery_window_id", batch_id)
+        .in_("status", ["received", "paid", "preparing"])
+        .in_("payment_status", ["paid", "partially_refunded"])
+        .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -738,15 +747,12 @@ def batch_advance(batch_id):
 
     orders = q.execute() or []
     if not orders:
-        return jsonify({"error": "No advanceable orders found in this batch", "batch_id": batch_id}), 404
+        return jsonify({"error": MSG.ORDER_KITCHEN_BATCH_EMPTY, "batch_id": batch_id}), 404
 
     NEXT_STATUS = {
         "paid": "preparing",
         "received": "preparing",
         "preparing": "ready",
-        "ready": "assigned",
-        "assigned": "out_for_delivery",
-        "out_for_delivery": "delivered",
     }
 
     advanced = []

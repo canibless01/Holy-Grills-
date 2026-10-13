@@ -14,6 +14,8 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 - Floating WhatsApp code is removed. Contact page and footer use campus settings, with global fallback. There is no floating contact control.
 - Concurrent duplicate checkout intents resolve to one order and one wallet debit. Distinct intents competing for the last delivery-window slot or stock unit admit one order. A retry after spending the exact wallet balance returns the original order.
 - A new actual two-meal checkout saves preparation notes, beef and three side selections. Confirmation, customer detail, admin and kitchen tickets render them; side quantities reflect the meal quantity. The database records one 4,350-naira wallet debit. Customers can read their own selections and kitchen cannot forge selection snapshots. Actual kitchen buttons advance this order from received to preparing to ready; its ready ticket and choices survive reload.
+- Admin creates a delivery batch and assigns the ready test order through the UI. The assigned rider reads its choices, confirms pickup and delivery; the batch completes. The HP ledger records 205 food HP and 50 welcome HP, with no pending primary delivery award.
+- Kitchen delivery/assignment bypasses are rejected in both API and direct database writes. Direct preparation of an unpaid order is rejected. Financial exits require the atomic cancellation/refund action. Bulk kitchen advancement is limited to paid, due preparation work.
 - A simulated account-profile outage preserves sign-in credentials and provides a working recovery button.
 - Actual scheduled checkout survives a lost committed response: retry resolves to the same order, one wallet debit, confirmation/share and confirmation reload.
 - Refund and wallet-credit concurrency, independent equal-value intents, full-refund closure, cross-role denials and admin UI response-loss retries pass. See [migration/access verification](MIGRATION_ACCESS_VERIFICATION.md).
@@ -27,7 +29,7 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 
 ## Validation
 
-- Backend unit suite: **113 passed**, including modifier security and atomic refund-route regressions.
+- Backend unit suite: **118 passed**, including modifier security and atomic refund-route regressions.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.

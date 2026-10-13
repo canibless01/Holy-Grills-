@@ -8,7 +8,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { Modal, Field, TextInput, Card, Pill } from './AdminShared';
 import { msg, useMessages } from '@/lib/messages';
 
-const OVERRIDE_STATUSES = ['received', 'preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'];
+const OVERRIDE_STATUSES = ['received', 'preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered'];
 // Valid walk targets — terminal states (cancelled/refunded) can't be advanced.
 const WALK_TARGETS = ['preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered'];
 

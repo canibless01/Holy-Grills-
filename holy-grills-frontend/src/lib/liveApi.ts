@@ -497,10 +497,10 @@ const kitchen = {
 const riders = {
   async getMyBatch() {
     const res = await apiClient.get('/riders/my-batch');
+    if (!res || (res.batch === null && !(res.orders || []).length)) return null;
     // Already panel shape { batch, orders, ... } — preserve any extra keys the
     // backend added (other_batches, sequencing_mode) so the rider UI can surface
     // upcoming batches and the sequencing policy.
-    if (res && res.batch) return res;
     // Flat live shape: { batch_id, zone, status, delivery_window, orders, ... }
     const orders = (res && res.orders ? res.orders : []).map((o) => {
       const cust = getOrderCustomer(o);
@@ -519,6 +519,7 @@ const riders = {
       delivery_hint: o.delivery_hint || o.notes || '',
       };
     });
+    if (res && res.batch) return { ...res, orders, batches: (res.batches || []).map(b => ({ ...b, orders: (b.orders || []).map(o => orders.find(normalized => normalized.id === o.id) || o) })) };
     return {
       batch: {
         id: (res && (res.batch_id || res.id)) || '',

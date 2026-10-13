@@ -1,3 +1,4 @@
+import { msg, useMessages } from '@/lib/messages';
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -22,6 +23,7 @@ const TABS = [
 ];
 
 export default function Rider() {
+  useMessages();
   const [tab, setTab] = useState('batch');
   const {
     authed, loading, error, batch, earnings, stats, history, online, period,
@@ -133,6 +135,14 @@ export default function Rider() {
                 <p className="text-xs text-muted-foreground mt-1">New orders will appear here automatically.</p>
               </div>
             )}
+          </div>
+        )}
+
+        {tab === 'batch' && !batch && !loading && (
+          <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border">
+            <Bike className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground font-medium">{msg('FE_RIDER_NO_ACTIVE_BATCH', 'No active delivery batch.')}</p>
+            <p className="text-xs text-muted-foreground mt-1">{msg('FE_RIDER_ASSIGNMENTS_APPEAR', 'New assignments will appear here automatically.')}</p>
           </div>
         )}
 

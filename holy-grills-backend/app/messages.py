@@ -2018,6 +2018,22 @@ class MSG:
 
     ORDER_ITEM_NOTES_INVALID = "Preparation notes must be text of at most 500 characters."
 
+    ORDER_KITCHEN_PREPARATION_ONLY = "Kitchen staff can only prepare orders and mark them ready. Rider assignment and delivery use the delivery workflow."
+    ORDER_FINANCIAL_EXIT_USE_ENDPOINT = "Use the cancellation or refund action so collected payments and reusable rewards are returned safely."
+    ORDER_KITCHEN_BATCH_NOTE = "Kitchen preparation batch update"
+    ORDER_KITCHEN_BATCH_EMPTY = "No paid, due orders are waiting for preparation in this delivery window."
+
+    ORDER_DELIVERY_HP_PENDING = "Delivery is saved, but customer HP still needs to be processed. Retry the delivery action safely."
+    FE_RIDER_CUSTOMER_UNREACHABLE = "Customer not reachable at delivery"
+    FE_RIDER_PICKUP_CONFIRMED = "Pickup confirmed"
+    FE_RIDER_DELIVERY_COMPLETED = "Delivery completed"
+    FE_RIDER_DELIVERY_ATTEMPTED = "Delivery attempted"
+    FE_RIDER_REWARDS_PENDING = "Delivery is saved. Customer rewards still need to be processed."
+    FE_RIDER_DELIVERY_CONFIRMATION = "Confirm that the customer received the order. Eligible rewards are processed after delivery."
+
+    FE_RIDER_NO_ACTIVE_BATCH = "No active delivery batch."
+    FE_RIDER_ASSIGNMENTS_APPEAR = "New assignments will appear here automatically."
+
 # Short alias
 M = MSG
 

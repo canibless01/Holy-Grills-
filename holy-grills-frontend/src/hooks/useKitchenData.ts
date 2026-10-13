@@ -161,11 +161,10 @@ export function useKitchenData() {
     }
   };
 
-  const batchIdFor = (winId) => windows.find((w) => w.id === winId)?.batch_id || winId;
   const handleBatchAdvance = async (winId, body, label) => {
     setBatchBusy(true);
     try {
-      const res = await liveApi.kitchen.batchAdvanceStatus(batchIdFor(winId), body);
+      const res = await liveApi.kitchen.batchAdvanceStatus(winId, body);
       const advanced = res?.advanced_count ?? res?.advanced?.length ?? 0;
       const skipped = res?.skipped_count ?? 0;
       const skippedReasons: Record<string, number> = {};

@@ -119,10 +119,14 @@ export function useRiderData() {
   const handleAction = async (orderId, action) => {
     setActionLoading(orderId);
     try {
-      if (action === 'pickup') await liveApi.riders.pickup(orderId);
-      else if (action === 'deliver') await liveApi.riders.deliver(orderId);
-      else if (action === 'attempt') await liveApi.riders.attempt(orderId, { notes: 'Customer not reachable at delivery' });
-      toast({ title: action === 'pickup' ? 'Pickup confirmed' : action === 'deliver' ? 'Delivery completed — HP awarded to customer' : 'Delivery attempted' });
+      let result;
+      if (action === 'pickup') result = await liveApi.riders.pickup(orderId);
+      else if (action === 'deliver') result = await liveApi.riders.deliver(orderId);
+      else if (action === 'attempt') result = await liveApi.riders.attempt(orderId, { notes: msg('FE_RIDER_CUSTOMER_UNREACHABLE', 'Customer not reachable at delivery') });
+      toast({
+        title: action === 'pickup' ? msg('FE_RIDER_PICKUP_CONFIRMED', 'Pickup confirmed') : action === 'deliver' ? msg('FE_RIDER_DELIVERY_COMPLETED', 'Delivery completed') : msg('FE_RIDER_DELIVERY_ATTEMPTED', 'Delivery attempted'),
+        description: result?.rewards_pending ? msg('FE_RIDER_REWARDS_PENDING', 'Delivery is saved. Customer rewards still need to be processed.') : undefined,
+      });
       await loadBatch();
     } catch (e) {
       toast({ title: msg('FE_USE_RIDER_DATA_ACTION_FAILED', 'Action failed'), description: e.message, variant: 'destructive' });

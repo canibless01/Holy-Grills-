@@ -133,6 +133,8 @@ def _rider_order_view(order):
     """
     order = order or {}
     view = {k: order.get(k) for k in ("id", "status", "out_for_delivery_at", "delivered_at", "delivery_attempted_at")}
+    if order.get("rewards_pending"):
+        view["rewards_pending"] = True
     if order.get("unchanged"):
         view["unchanged"] = True          # a repeated tap: nothing was done twice
     return view

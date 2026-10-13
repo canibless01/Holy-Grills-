@@ -1,3 +1,4 @@
+import { msg, useMessages } from '@/lib/messages';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState } from 'react';
 import { Navigation, Phone, MapPin, Check, Clock, AlertCircle, Flag } from 'lucide-react';
@@ -21,6 +22,7 @@ const STATUS_STYLES = {
 // Phone numbers are NEVER shown raw — the Call button fetches a secure
 // tel: link from /riders/call/<order_id>.
 export default function RiderOrderCard({ order, onAction, onCall, onNavigate, actionLoading, calling }) {
+  useMessages();
   const [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
   const isLoading = actionLoading === order.id;
   const isCalling = calling === order.id;
@@ -178,7 +180,7 @@ export default function RiderOrderCard({ order, onAction, onCall, onNavigate, ac
           <AlertDialogHeader>
             <AlertDialogTitle>Complete this delivery?</AlertDialogTitle>
             <AlertDialogDescription>
-              'Confirm the customer received the order. HP will be awarded automatically.'
+              {msg('FE_RIDER_DELIVERY_CONFIRMATION', 'Confirm that the customer received the order. Eligible rewards are processed after delivery.')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
