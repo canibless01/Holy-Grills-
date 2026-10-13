@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
 import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
-import { loadSystemSettings, loadFeatureFlags, getSetting, getStringSetting, getBoolSetting } from './featureConfig';
+import { loadSystemSettings, loadFeatureFlags, useFeatureFlags, getSetting, getStringSetting, getBoolSetting } from './featureConfig';
 import { loadTiers } from './hgUtils';
 import { msg, useMessages } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
@@ -120,6 +120,7 @@ const warmPostLoginChunks = (role) => {
 };
 
 export const HolyGrillProvider = ({ children }) => {
+  const featureVersion = useFeatureFlags();
   useMessages();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -437,7 +438,7 @@ export const HolyGrillProvider = ({ children }) => {
 
   return (
     <HolyGrillContext.Provider value={{
-      user, isLoading, cart, cartCount, hpBalance, wallet, notifications, unreadCount, streak, systemSettings, getSetting, getStringSetting, getBoolSetting,
+      featureVersion, user, isLoading, cart, cartCount, hpBalance, wallet, notifications, unreadCount, streak, systemSettings, getSetting, getStringSetting, getBoolSetting,
       savedItems, isAuthenticated: authed,
       login, register, logout, refreshUser, refreshStreak, refreshCart, refreshHp, refreshWallet, refreshNotifications, refreshSavedItems,
       addToCart, updateCartItem, removeFromCart, clearCart,

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Crown, Flame, Users, ArrowUp, ArrowDown, Minus, Clock, Info, X, ChevronRight } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { isFeatureEnabled } from '@/lib/featureConfig';
+import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import LeaderboardSkeleton from '@/components/skeletons/LeaderboardSkeleton';
 import SpinWheel from '@/components/SpinWheel';
 import LeaderboardPrizeBadge from '@/components/LeaderboardPrizeBadge';
@@ -46,6 +46,7 @@ function RankChange({ change }) {
 }
 
 export default function Leaderboard() {
+  useFeatureFlags();
   const { hpBalance, user } = useHolyGrill();
   const [view, setView] = useState('user');
   const [period, setPeriod] = useState('monthly');
@@ -57,6 +58,9 @@ export default function Leaderboard() {
   const [countdown, setCountdown] = useState(getWeeklyCountdown());
   const [showSpinModal, setShowSpinModal] = useState(false);
   const [hasSpun, setHasSpun] = useState(false);
+  const [spinStatus, setSpinStatus] = useState(null);
+  const spinReleased = isFeatureEnabled('exclusive_spin');
+  const hallReleased = isFeatureEnabled('hall_of_fame');
   const [showPrizesModal, setShowPrizesModal] = useState(false);
   const [error, setError] = useState(null);
   const [hpTiers, setHpTiers] = useState([]);
@@ -91,6 +95,13 @@ export default function Leaderboard() {
     load();
   }, [period]);
 
+  useEffect(() => {
+    let active = true;
+    if (!user?.id || !spinReleased) { setSpinStatus(null); return; }
+    liveApi.hp.getExclusiveSpinStatus().then((status) => { if (active) setSpinStatus(status); }).catch(() => { if (active) setSpinStatus(null); });
+    return () => { active = false; };
+  }, [user?.id, spinReleased]);
+
   // Tier marks are backend-driven — TierIcon resolves the admin-uploaded art
   // for a tier slug, falling back to the tier's emoji.
   const findTier = (tierSlug) =>
@@ -108,7 +119,8 @@ export default function Leaderboard() {
 
   const ahead = myRank ? rankings.find((r) => r.rank === myRank.rank - 1) : null;
   const diff = ahead && myRank ? ahead.hp_total - myRank.hp_total : 0;
-  const spinEarned = myRank && myRank.rank <= 10;
+  const spinCount = spinStatus?.total_spins || 0;
+  const spinEarned = spinCount > 0;
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -180,7 +192,7 @@ export default function Leaderboard() {
         <motion.div key={view + period} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
           {view === 'user' && (
             <>
-              {hallOfFame.length > 0 && (
+              {hallReleased && hallOfFame.length > 0 && (
                 <Link to="/hall-of-fame" className="block mb-4 group">
                   <div className="relative rounded-2xl bg-accent/10 border border-accent/30 p-4 overflow-hidden shadow-glow transition-transform group-hover:scale-[1.01]">
                     <Crown className="absolute -right-3 -top-3 w-16 h-16 text-accent/20" />
@@ -212,23 +224,23 @@ export default function Leaderboard() {
               )}
 
               {/* Spin card */}
-              <div className={`rounded-2xl border p-4 mb-4 shadow-card ${spinEarned && !hasSpun ? 'bg-accent/15 border-accent/30' : 'bg-white border-border'}`}>
+              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 shadow-card ${spinEarned ? 'bg-accent/15 border-accent/30' : 'bg-white border-border'}`}>
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned && !hasSpun ? 'bg-primary' : 'bg-secondary'}`}>🎡</div>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-primary' : 'bg-secondary'}`}>🎡</div>
                   <div className="flex-1">
-                    {spinEarned && !hasSpun ? (
-                      <><div className="font-heading font-bold text-sm text-foreground">Free Spin Earned! 🎉</div><div className="text-xs text-muted-foreground">Spin to win bonus HP.</div></>
-                    ) : spinEarned && hasSpun ? (
+                    {spinEarned ? (
+                      <><div className="font-heading font-bold text-sm text-foreground">{msg('FE_LEADERBOARD_SPINS_AVAILABLE', '{count} spins available', { count: spinCount })}</div><div className="text-xs text-muted-foreground">Spin to win bonus HP.</div></>
+                    ) : hasSpun ? (
                       <><div className="font-heading font-bold text-sm text-foreground">Spin Used</div><div className="text-xs text-muted-foreground">Come back next month for another shot.</div></>
                     ) : (
                       <><div className="font-heading font-bold text-sm text-muted-foreground">Spin Locked</div><div className="text-xs text-muted-foreground">Climb the ranks.</div></>
                     )}
                   </div>
-                  <button onClick={() => spinEarned && !hasSpun && setShowSpinModal(true)} disabled={!spinEarned || hasSpun} className={`px-4 py-2 rounded-full text-xs font-bold transition-all shrink-0 ${spinEarned && !hasSpun ? 'bg-gradient-cta text-white active:scale-95' : 'bg-secondary text-muted-foreground cursor-not-allowed'}`}>
-                    {hasSpun ? 'Used' : 'Spin'}
+                  <button onClick={() => spinEarned && setShowSpinModal(true)} disabled={!spinEarned} className={`px-4 py-2 rounded-full text-xs font-bold transition-all shrink-0 ${spinEarned ? 'bg-gradient-cta text-white active:scale-95' : 'bg-secondary text-muted-foreground cursor-not-allowed'}`}>
+                    {spinEarned ? msg('FE_LEADERBOARD_SPIN', 'Spin') : hasSpun ? msg('FE_LEADERBOARD_SPIN_USED', 'Used') : msg('FE_LEADERBOARD_SPIN', 'Spin')}
                   </button>
                 </div>
-              </div>
+              </div>}
 
               <div className="space-y-2">
                 {rankings.length === 0 && (
@@ -308,7 +320,7 @@ export default function Leaderboard() {
         </motion.div>
       </AnimatePresence>
 
-      <SpinWheel open={showSpinModal} onClose={() => setShowSpinModal(false)} onResult={() => setHasSpun(true)} canSpin={spinEarned && !hasSpun} />
+      <SpinWheel open={showSpinModal && spinReleased} onClose={() => setShowSpinModal(false)} onResult={() => { setHasSpun(true); liveApi.hp.getExclusiveSpinStatus().then(setSpinStatus).catch(() => setSpinStatus(null)); }} canSpin={spinEarned} />
 
       {/* How Prizes Work modal — portalled to <body> so its dimmed backdrop
           covers the whole viewport. Inside the animated page wrapper, `fixed`

@@ -1,3 +1,4 @@
+import { useFeatureFlags, isFeatureEnabled } from '@/lib/featureConfig';
 import { useLocation } from 'react-router-dom';
 import {
   Flame, Wallet, Gift, CalendarCheck, Users, Store, Ticket, UserCog, BellRing,
@@ -55,6 +56,7 @@ export default function ProfileMenuContent({
   /** Optional: the mobile drawer passes it, the desktop dropdown does not. */
   onClose?: () => void;
 }) {
+  useFeatureFlags();
   const location = useLocation();
 
   const isActive = (item) =>
@@ -108,7 +110,7 @@ export default function ProfileMenuContent({
 
       {/* ── Navigation list ── */}
       <nav className="px-2 py-2">
-        {ITEMS.map((item) => {
+        {ITEMS.filter((item) => item.to !== '/marketplace' || isFeatureEnabled('marketplace_general')).filter((item) => item.to !== '/squads' || isFeatureEnabled('squad_orders')).map((item) => {
           const Icon = item.icon;
           const active = isActive(item);
           return (

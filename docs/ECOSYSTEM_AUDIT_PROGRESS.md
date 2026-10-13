@@ -30,7 +30,7 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 
 ## Validation
 
-- Backend unit suite: **130 passed**, including modifier security and atomic refund-route regressions.
+- Backend unit suite: **137 passed**, including modifier security, atomic refund-route regressions, feature-gate errors and safe flag creation/retries.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.
@@ -55,3 +55,15 @@ The SQL definitions in this batch have already been applied to Test Two. Other e
 - A rollback-only transaction reproduced a refunded/cancelled HP lock leaving 100 spendable HP. HP locks now reserve their bonus at checkout and credit it in the existing order-update transaction at delivery. Rollback-only tests verify zero bonus after cancellation and one 100-HP ledger row after the valid preparation/assignment/delivery sequence, including a repeated delivered-order update. Legacy credited locks replay their existing ledger business key. A real browser HP-lock delivery, reminder/provider delivery and other reward recovery cases remain open.
 
 These changes replace existing function signatures and reuse existing tables and indexes. See the access verification document for grants, migration counts and the remaining advisor notices. The full ecosystem audit is still in progress.
+
+## Feature-flag controls and recovery follow-up
+
+- Campus admins can read global flags; only active super admins can change them. Admin read failures show an error and working Retry rather than an empty catalogue. Descriptions entered in the create form are displayed from the stored row.
+- Canonical release gates fail closed when their read fails. Changes refresh already-open user screens on focus and at a shared polling interval. Legacy UI aliases cannot override an off backend release flag. Marketplace navigation and trade controls, HP transfer, free sides, exclusive spin and Hall of Fame respond to their respective gates.
+- Actual browser toggles hide/re-enable the HP transfer control and the three reward sections without reloading the page. Their write/read APIs return 403 while disabled. Tests restore all flags to their original values. HP multiplier and flash reward release flags remain off.
+- A lost committed flag-create response is retried successfully in the actual admin UI. Six concurrent matching retries return the same record without changing its timestamp. A conflicting create returns 409 without overwriting it; invalid typed fields and a campus-specific flag request are rejected. Exact audit flag rows are removed.
+- A deactivated super admin's existing JWT could previously update the flags table. The existing policy now uses the active-profile helper. A rolled-back database test returns zero updated rows for that actor and a campus admin, and one for an active super admin. Public flag reads remain available; authenticated TRUNCATE and anonymous writes are denied.
+- The leaderboard now uses actual unexpired spin credits instead of promising a spin merely because today's displayed rank is in the top ten. A browser test with rank one and zero actual credits displays no earned spin. Spin award/fulfilment transactions and other feature consumers remain under audit.
+- Two identical historical profile-protection triggers were found. The redundant one is removed, retaining the canonical enabled guard. Rolled-back authenticated writes still allow a normal own-profile edit and reject HP balance, wallet balance and super-admin role forgery. No function definition or role grants change in this cleanup.
+
+New editor and error copy lives in `app/messages.py`. These migrations add no tables, columns or function overloads. This verifies the listed controls and boundaries; the full audit scope above remains open.

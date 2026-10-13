@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Share2, Award } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
-import { isFeatureEnabled } from '@/lib/featureConfig';
+import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import HallOfFameSkeleton from '@/components/skeletons/HallOfFameSkeleton';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import ShareSheet from '@/components/ShareSheet';
 import { msg } from '@/lib/messages';
 
 export default function HallOfFame() {
+  useFeatureFlags();
   const [inductees, setInductees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

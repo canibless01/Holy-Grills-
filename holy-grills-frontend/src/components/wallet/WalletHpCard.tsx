@@ -1,7 +1,8 @@
 import { Send, Lock } from 'lucide-react';
+import { msg } from '@/lib/messages';
 import CountUp from '@/components/CountUp';
 
-export default function WalletHpCard({ hpBalance, onSend, transferEnabled, deliveredCount }) {
+export default function WalletHpCard({ hpBalance, onSend, transferEnabled, deliveredCount, transferVisible = true, minimumOrders = 3 }) {
   const active = hpBalance?.active || 0;
   const pending = hpBalance?.pending || 0;
 
@@ -16,7 +17,7 @@ export default function WalletHpCard({ hpBalance, onSend, transferEnabled, deliv
         {pending > 0 && (
           <div className="text-[11px] text-white/50 mt-1">{pending} HP pending</div>
         )}
-        <button
+        {transferVisible && <button
           onClick={onSend}
           disabled={!transferEnabled}
           className={`w-full mt-4 flex items-center justify-center gap-1.5 py-3 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] ${
@@ -26,10 +27,10 @@ export default function WalletHpCard({ hpBalance, onSend, transferEnabled, deliv
           }`}
         >
           {transferEnabled ? <><Send className="w-4 h-4" /> Send HP</> : <><Lock className="w-3.5 h-3.5" /> HP Transfer Locked</>}
-        </button>
-        {!transferEnabled && (
+        </button>}
+        {transferVisible && !transferEnabled && (
           <div className="text-[10px] font-semibold text-white/50 mt-2 text-center">
-            {deliveredCount != null ? `${Math.min(deliveredCount, 3)}/3 delivered orders to unlock` : 'Unlocks after 3 delivered orders'}
+            {deliveredCount != null ? msg('FE_WALLET_TRANSFER_PROGRESS', '{count}/{minimum} delivered orders to unlock', { count: Math.min(deliveredCount, minimumOrders), minimum: minimumOrders }) : msg('FE_WALLET_TRANSFER_MINIMUM', 'Unlocks after {minimum} delivered orders', { minimum: minimumOrders })}
           </div>
         )}
       </div>

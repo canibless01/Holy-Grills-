@@ -14,6 +14,7 @@ import SellItemModal from '@/components/marketplace/SellItemModal';
 import MarketplacePurchasesPanel from '@/components/marketplace/MarketplacePurchasesPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { msg } from '@/lib/messages';
+import { useFeatureFlags, showMarketplaceUI } from '@/lib/featureConfig';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -31,6 +32,7 @@ const unwrapList = (res) => {
 };
 
 export default function Marketplace() {
+  useFeatureFlags();
   const navigate = useNavigate();
   const { isAuthenticated } = useHolyGrill();
   const [loading, setLoading] = useState(true);
@@ -72,6 +74,7 @@ export default function Marketplace() {
     return true;
   });
 
+  if (!showMarketplaceUI()) return <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">{msg('FE_MARKETPLACE_RELEASE_CLOSED', 'The marketplace is not available yet. Please check back later.')}</div>;
   if (loading) return <MarketplaceSkeleton />;
 
   return (

@@ -1,3 +1,4 @@
+import { useEffect, useSyncExternalStore } from 'react';
 // src/lib/featureConfig.js
 // Reads system settings from the backend so feature values (squad discount %,
 // streak cycle days, referral HP, etc.) are configurable by admins via the
@@ -22,13 +23,43 @@ export { mergeAdminSettings };
 let settingsMap = {};
 let flagsMap = {};
 let flagsLoaded = false;
+let flagsVersion = 0;
+let flagsRequest = 0;
+const flagListeners = new Set<() => void>();
+const emitFlags = () => { flagsVersion += 1; flagListeners.forEach((listener) => listener()); };
+const subscribeFlags = (listener: () => void) => { flagListeners.add(listener); return () => { flagListeners.delete(listener); }; };
+const flagsSnapshot = () => flagsVersion;
+let flagWatchers = 0;
+let flagTimer: number | undefined;
+const refreshVisibleFlags = () => { if (!document.hidden) void loadFeatureFlags(); };
+export function useFeatureFlags() {
+  const version = useSyncExternalStore(subscribeFlags, flagsSnapshot, flagsSnapshot);
+  useEffect(() => {
+    flagWatchers += 1;
+    if (flagWatchers === 1) {
+      refreshVisibleFlags();
+      window.addEventListener('focus', refreshVisibleFlags);
+      document.addEventListener('visibilitychange', refreshVisibleFlags);
+      flagTimer = window.setInterval(refreshVisibleFlags, 30000);
+    }
+    return () => {
+      flagWatchers -= 1;
+      if (flagWatchers === 0) {
+        clearInterval(flagTimer);
+        window.removeEventListener('focus', refreshVisibleFlags);
+        document.removeEventListener('visibilitychange', refreshVisibleFlags);
+      }
+    };
+  }, []);
+  return version;
+}
+const CANONICAL_FLAGS = new Set(['hp_multiplier', 'flash_redemptions', 'leaderboard_prizes', 'free_side_credits', 'exclusive_spin', 'hall_of_fame', 'badge_system', 'spin_and_win', 'marketplace_general', 'hp_transfer', 'squad_orders', 'scheduled_orders', 'referral_milestones', 'hp_expiry_warnings', 'birthday_hp', 'subscription_codes', 'abandoned_cart_nudge']);
+const FLAG_ALIASES: Record<string, string> = { show_leaderboard_prizes_ui: 'leaderboard_prizes', show_hall_of_fame_ui: 'hall_of_fame', show_badge_ui: 'badge_system', show_spin_ui: 'spin_and_win', show_marketplace_ui: 'marketplace_general', show_hp_transfer_ui: 'hp_transfer' };
 
 // ── Central Feature Flag Registry (Spec §1.5) ────────────────────────────
 // Every UI feature flag lives here. When a flag is OFF the UI element is
-// HIDDEN completely (not disabled). All flags are flipped ON for now; the
-// backend (/admin/feature-flags) can override any flag at runtime, and when
-// the flags list cannot be loaded we fall back to these built-in defaults so
-// the app always works. TODO env/localStorage overrides can layer on top later.
+// hidden when disabled. Canonical release capabilities require a live enabled
+// backend flag; these defaults apply only to ungated presentation preferences.
 export const FEATURE_FLAGS = {
   // ── Spec §1.5 UI surface flags ──
   show_leaderboard_prizes_ui: true,
@@ -77,23 +108,29 @@ export const FEATURE_FLAGS = {
   abandoned_cart_nudge: false,
 };
 
-// Load the feature-flag list from /admin/feature-flags. Students read this to
-// decide which features to show (spin & win, HP transfer, marketplace, etc.).
-// The endpoint is the same one admins toggle; non-admins may lack access — in
-// that case the fetch silently fails and isFeatureEnabled falls back to its
-// defaultValue so the app keeps working with sensible built-in defaults.
+// Public campus configuration is shared by guests, customers and staff. A newer
+// scope request supersedes an older response; canonical release gates fail closed.
 export async function loadFeatureFlags() {
+  const request = ++flagsRequest;
   try {
     const flags = await liveApi.storefront.getFeatureFlags();
+    if (request !== flagsRequest) return flagsMap;
+    const previous = JSON.stringify(flagsMap);
+    const previouslyLoaded = flagsLoaded;
     flagsMap = {};
     (flags || []).forEach((f) => {
       const name = f.feature_name || f.name;
       if (name) flagsMap[name] = f.is_active ?? f.enabled ?? false;
     });
     flagsLoaded = true;
+    if (!previouslyLoaded || previous !== JSON.stringify(flagsMap)) emitFlags();
     return flagsMap;
   } catch (e) {
-    flagsLoaded = false;
+    if (request === flagsRequest) {
+      const changed = flagsLoaded || Object.keys(flagsMap).length > 0;
+      flagsLoaded = false; flagsMap = {};
+      if (changed) emitFlags();
+    }
     return {};
   }
 }
@@ -175,15 +212,14 @@ export function getStringSetting(key, defaultValue = '') {
   return defaultValue;
 }
 
-// Feature flags — read from /admin/feature-flags (loadFeatureFlags) so toggling
-// a flag in the admin panel immediately hides/shows the feature for students.
-// Keys include: leaderboard_prizes, hall_of_fame, exclusive_spin,
-// free_side_credits, badge_system, spin_and_win, marketplace_general,
-// hp_transfer, flash_redemptions, daily_checkin, event_ticket_tiers.
-// If the flags list loaded successfully we honour its value (including false).
-// If it could not be loaded (non-admin / endpoint unavailable) we fall back to
-// the caller's defaultValue so the app keeps working with built-in defaults.
-export function isFeatureEnabled(key, defaultValue) {
+// UI aliases cannot override a canonical release gate. Ungated presentation
+// settings retain their existing defaults; backend capabilities require a live flag.
+export function isFeatureEnabled(key, defaultValue = undefined) {
+  const canonical = FLAG_ALIASES[key] || key;
+  if (CANONICAL_FLAGS.has(canonical)) {
+    const active = flagsLoaded && flagsMap[canonical] === true;
+    return active && (key === canonical || !(key in flagsMap) || flagsMap[key] === true);
+  }
   if (flagsLoaded && key in flagsMap) return flagsMap[key];
   // Legacy fallback: some flags are still stored as system settings.
   const setting = getSetting(key, undefined);
@@ -238,7 +274,7 @@ export function getFirstOrderGiftItemName() {
   return getSetting('first_order_gift_item_name', 'Hot Dog');
 }
 
-// HP multiplier feature flag — controls whether menu item HP multipliers are shown.
+// Timed HP events have their own release gate; per-item multipliers are independent.
 export function isHpMultiplierEnabled() {
   return isFeatureEnabled('hp_multiplier', true);
 }

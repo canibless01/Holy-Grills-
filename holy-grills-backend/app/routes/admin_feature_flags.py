@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 
 admin_flags_bp = Blueprint("admin_feature_flags", __name__)
 
-_FLAG_NAME_RE = re.compile(r"^[a-z0-9_]{1,64}$")
+_FLAG_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 _PRIZE_STATUSES = ("pending", "fulfilled", "cancelled")
 _HOF_STATUSES = ("pending", "box_prepared", "fulfilled", "cancelled")
 _CLOSED_STATUSES = ("fulfilled", "cancelled")
@@ -92,14 +92,23 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
     can view flags but never reaches this function). campus_id is never accepted from the request
     and is always written as NULL, so feature_name alone stays a genuine unique key and a plain
     .eq("feature_name", ...).single() is always safe — no per-campus lookup complexity needed."""
+    if data.get('campus_id') is not None:
+        return jsonify({'error': MSG.FEATURE_FLAG_CAMPUS_INVALID}), 400
     if "is_active" in data and not isinstance(data["is_active"], bool):
         return jsonify({"error": MSG.FEATURE_FLAG_ACTIVE_INVALID}), 400
     if "description" in data and data["description"] is not None and (not isinstance(data["description"], str) or len(data["description"]) > 500):
         return jsonify({"error": MSG.FEATURE_FLAG_DESCRIPTION_INVALID}), 400
 
+    if not _FLAG_NAME_RE.fullmatch(flag_name):
+        return jsonify({'error': MSG.FEATURE_FLAG_NAME_INVALID}), 400
     db = get_user_client()
     existing = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    def _repeat_create(current):
+        if current.get('campus_id') is None and current.get('is_active') == data.get('is_active', False) and (current.get('description') or None) == (data.get('description') or None):
+            return jsonify({'message': MSG.FEATURE_FLAG_READY, 'flag': current, 'idempotent': True}), 200
+        return jsonify({'error': MSG.FEATURE_FLAG_ALREADY_EXISTS}), 409
 
     def _update_existing(current):
         safe = {k: v for k, v in data.items() if k in {"is_active", "description"}}
@@ -120,6 +129,8 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         return jsonify({"message": MSG.FEATURE_FLAG_UPDATED, "flag": updated}), 200
 
     if existing:
+        if create_status == 201:
+            return _repeat_create(existing)
         return _update_existing(existing)
 
     if not _FLAG_NAME_RE.match(flag_name):
@@ -136,9 +147,11 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         result = db.table("feature_flags").insert(payload)
     except SupabaseError as e:
         code = str((e.details or {}).get("code", "")) if isinstance(e.details, dict) else ""
-        if code == "23505":   # two super_admins created the same flag at the same moment: the second becomes an update
+        if code == "23505":   # concurrent creates replay matching data, otherwise conflict
             again = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
             if again:
+                if create_status == 201:
+                    return _repeat_create(again)
                 return _update_existing(again)
         if e.status_code in (401, 403) or code == "42501":
             return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
@@ -146,7 +159,7 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         return jsonify({"error": MSG.FEATURE_FLAG_NAME_INVALID}), 400
     created = result[0] if isinstance(result, list) else result
     _audit_admin("feature_flags", flag_name, "create_feature_flag", after=payload)
-    return jsonify({"message": MSG.FEATURE_FLAG_UPDATED, "flag": created}), create_status
+    return jsonify({'message': MSG.FEATURE_FLAG_CREATED if create_status == 201 else MSG.FEATURE_FLAG_UPDATED, 'flag': created}), create_status
 
 
 @admin_flags_bp.route("/feature-flags", methods=["POST"])
@@ -158,7 +171,10 @@ def create_feature_flag():
     data = _json_body()
     if data is None:
         return jsonify({"error": MSG.ADMIN_REQUEST_BODY_INVALID}), 400
-    flag_name = (data.get("feature_name") or "").strip()
+    raw_name = data.get('feature_name')
+    if raw_name is not None and not isinstance(raw_name, str):
+        return jsonify({'error': MSG.FEATURE_FLAG_NAME_INVALID}), 400
+    flag_name = (raw_name or '').strip()
     if not flag_name:
         return jsonify({"error": MSG.FEATURE_FLAG_NAME_REQUIRED}), 400
     return _upsert_feature_flag(flag_name, data, create_status=201)

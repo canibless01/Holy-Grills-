@@ -5,7 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { getTierProgress, getTierProgressGradient, getTierOverallProgress } from '@/lib/hgUtils';
 import TierIcon from '@/components/TierIcon';
-import { getStreakRewardHp } from '@/lib/featureConfig';
+import { getStreakRewardHp, isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import { graduationHp, lowCodeInventoryThreshold, freeSideCreditsValidityDays } from '@/lib/appConfig';
 import { expiryLabel } from '@/lib/rewardUtils';
 import { toast } from '@/components/ui/use-toast';
@@ -52,6 +52,11 @@ const formatCountdown = (endsAt) => {
 // envelope itself is the endpoint's documented shape (types/challenges.ts).
 
 export default function Rewards() {
+  useFeatureFlags();
+  const freeSidesReleased = isFeatureEnabled('free_side_credits');
+  const spinReleased = isFeatureEnabled('exclusive_spin');
+  const hallReleased = isFeatureEnabled('hall_of_fame');
+  const flashReleased = isFeatureEnabled('flash_redemptions');
   const { hpBalance, refreshHp, streak, user } = useHolyGrill();
   const navigate = useNavigate();
   const [tab, setTab] = useState('redeem');
@@ -328,7 +333,7 @@ export default function Rewards() {
       {/* Dashboard tab */}
       {tab === 'dashboard' && (
         <div className="space-y-3">
-          <div className="rounded-2xl bg-white border border-border p-4 shadow-card">
+          {freeSidesReleased && <div className="rounded-2xl bg-white border border-border p-4 shadow-card">
             <div className="flex items-center gap-2 mb-1">
               <Gift className="w-4 h-4 text-primary" />
               <h3 className="font-bold text-sm text-foreground">Free Sides on Us</h3>
@@ -341,16 +346,16 @@ export default function Rewards() {
               <span className="text-2xl">🏆</span>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">Use one at checkout.</p>
-          </div>
+          </div>}
 
           {/* Exclusive Spin — with actual spin button */}
-          <div className={`rounded-2xl border p-4 shadow-card ${spinCount > 0 && !hasSpun ? 'bg-gradient-gold border-primary/30' : 'bg-white border-border'}`}>
+          {spinReleased && <div className={`rounded-2xl border p-4 shadow-card ${spinCount > 0 ? 'bg-gradient-gold border-primary/30' : 'bg-white border-border'}`}>
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinCount > 0 && !hasSpun ? 'bg-primary' : 'bg-secondary'}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinCount > 0 ? 'bg-primary' : 'bg-secondary'}`}>
                 🎡
               </div>
               <div className="flex-1">
-                {spinCount > 0 && !hasSpun ? (
+                {spinCount > 0 ? (
                   <>
                     <div className="font-heading font-bold text-sm text-foreground">Spin available! 🎉</div>
                     <div className="text-xs text-muted-foreground">You have {spinCount} spin{spinCount !== 1 ? 's' : ''}. Spin to win bonus HP or free items.</div>
@@ -368,20 +373,20 @@ export default function Rewards() {
                 )}
               </div>
               <button
-                onClick={() => spinCount > 0 && !hasSpun && setShowSpinModal(true)}
-                disabled={spinCount === 0 || hasSpun}
+                onClick={() => spinCount > 0 && setShowSpinModal(true)}
+                disabled={spinCount === 0}
                 className={`px-4 py-2 rounded-full text-xs font-bold transition-all shrink-0 ${
-                  spinCount > 0 && !hasSpun
+                  spinCount > 0
                     ? 'bg-gradient-cta text-white active:scale-95'
                     : 'bg-secondary text-muted-foreground cursor-not-allowed'
                 }`}
               >
-                {hasSpun ? 'Used' : spinCount > 0 ? `Spin (${spinCount})` : 'Spin'}
+                {spinCount > 0 ? `Spin (${spinCount})` : hasSpun ? 'Used' : 'Spin'}
               </button>
             </div>
-          </div>
+          </div>}
 
-          <Link to="/hall-of-fame" className="block rounded-2xl bg-accent/10 border border-accent/20 p-4 active:scale-[0.99] transition-transform shadow-card">
+          {hallReleased && <Link to="/hall-of-fame" className="block rounded-2xl bg-accent/10 border border-accent/20 p-4 active:scale-[0.99] transition-transform shadow-card">
             <div className="flex items-center gap-3">
               <Crown className="w-5 h-5 text-accent shrink-0" />
               <div className="flex-1">
@@ -390,7 +395,7 @@ export default function Rewards() {
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
-          </Link>
+          </Link>}
         </div>
       )}
 
@@ -404,8 +409,8 @@ export default function Rewards() {
               <p className="text-sm text-muted-foreground">Nothing here yet.</p>
             </div>
           )}
-          {[...rewards].sort((a, b) => (normFlash(b) ? 1 : 0) - (normFlash(a) ? 1 : 0)).map((reward) => {
-            const flash = normFlash(reward);
+          {[...rewards].sort((a, b) => (flashReleased && normFlash(b) ? 1 : 0) - (flashReleased && normFlash(a) ? 1 : 0)).map((reward) => {
+            const flash = flashReleased ? normFlash(reward) : null;
             const tierList = hpTiers;
             const tierIndex = tierList.findIndex((t) => t.id === reward.min_tier_id);
             const currentTierIndex = tierInfo ? tierList.findIndex((t) => t.id === tierInfo.current.id || t.slug === tierInfo.current.slug) : 0;
@@ -700,11 +705,11 @@ export default function Rewards() {
 
       {/* Spin wheel modal */}
       <SpinWheel
-        open={showSpinModal}
+        open={showSpinModal && spinReleased}
         prizes={exclusiveStatus?.prizes}
         onClose={() => setShowSpinModal(false)}
         onResult={() => { setHasSpun(true); refreshHp(); triggerMascotCelebration('cheering'); liveApi.hp.getExclusiveSpinStatus().then(setExclusiveStatus).catch(() => {}); }}
-        canSpin={spinCount > 0 && !hasSpun}
+        canSpin={spinCount > 0}
       />
 
       <RewardDeliveryModal

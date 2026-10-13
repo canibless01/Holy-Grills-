@@ -1,3 +1,4 @@
+import { useFeatureFlags, showMarketplaceUI } from '@/lib/featureConfig';
 import { msg, useMessages } from '@/lib/messages';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin } from 'lucide-react';
@@ -14,6 +15,7 @@ import { useContactDetails } from '@/lib/useContactDetails';
  */
 export default function Footer() {
   useMessages();
+  useFeatureFlags();
   const year = new Date().getFullYear();
   const contact = useContactDetails();
 
@@ -39,7 +41,7 @@ export default function Footer() {
           <ul className="space-y-3 text-sm">
             <li><Link to="/menu" className="text-beige-soft hover:text-accent transition-colors">Menu</Link></li>
             <li><Link to="/events" className="text-beige-soft hover:text-accent transition-colors">Events</Link></li>
-            <li><Link to="/marketplace" className="text-beige-soft hover:text-accent transition-colors">Marketplace</Link></li>
+            {showMarketplaceUI() && <li><Link to="/marketplace" className="text-beige-soft hover:text-accent transition-colors">Marketplace</Link></li>}
             <li><Link to="/leaderboard" className="text-beige-soft hover:text-accent transition-colors">Leaderboard</Link></li>
             <li><Link to="/rewards" className="text-beige-soft hover:text-accent transition-colors">Rewards</Link></li>
           </ul>
