@@ -38,7 +38,9 @@ try {
 
 /** key → text for every single-line FE_ constant in the Python registry. */
 const registryKeys = new Map();
+const duplicateRegistryKeys = new Set();
 for (const match of registry.matchAll(/^\s{4}(FE_[A-Z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/gm)) {
+  if (registryKeys.has(match[1])) duplicateRegistryKeys.add(match[1]);
   registryKeys.set(match[1], unescapePython(match[2]));
 }
 
@@ -70,11 +72,17 @@ function unescapeJs(text) {
   return text.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\n/g, '\n');
 }
 
-const missing = callSites.filter((site) => !registryKeys.has(site.key));
+// Multiple call sites for one key must generate one registry definition.
+const missing = [...new Map(callSites.filter((site) => !registryKeys.has(site.key))
+  .map((site) => [site.key, site])).values()];
 const drifted = callSites.filter((site) => registryKeys.has(site.key) && registryKeys.get(site.key) !== site.fallback);
 const unused = [...registryKeys.keys()].filter((key) => !callSites.some((site) => site.key === key));
 
 console.log(`\n[messages] ${callSites.length} frontend call site(s) · ${registryKeys.size} FE_ key(s) in the registry`);
+if (duplicateRegistryKeys.size) {
+  console.error(`[messages] FAIL — duplicate registry definitions: ${[...duplicateRegistryKeys].join(', ')}`);
+  process.exit(1);
+}
 
 for (const site of drifted) {
   console.log(`  drift  ${site.where}  ${site.key}`);

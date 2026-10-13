@@ -296,7 +296,7 @@ const hp = {
       ?? (list ? list.filter((x) => !x?.used_at && !x?.is_used).length : 0);
     return { ...s, total_spins: Number(count) || 0 };
   },
-  async exclusiveSpin() { return apiClient.post('/exclusive-spin/spin'); },
+  async exclusiveSpin(body: { intent_key: string }) { return apiClient.post('/exclusive-spin/spin', body); },
 };
 
 // ========== REWARDS ==========
@@ -1303,10 +1303,10 @@ const admin = {
   // CRUD, not deploy-time config. Prizes can be global (campus_id null) or
   // campus-scoped — the admin UI must distinguish the two.
   async getExclusiveSpinTemplate() { return unwrap(await apiClient.get('/admin/exclusive-spin-pool'), 'items', 'prizes', 'pool', 'template_items'); },
+  async getExclusiveSpinConfiguration() { return apiClient.get('/admin/exclusive-spin-pool'); },
   async updateExclusiveSpinTemplateItem(id, body) { return apiClient.patch(`/admin/exclusive-spin-pool/${id}`, body); },
   async createExclusiveSpinTemplateItem(body) { return apiClient.post('/admin/exclusive-spin-pool', body); },
   async deleteExclusiveSpinTemplateItem(id) { return apiClient.delete(`/admin/exclusive-spin-pool/${id}`); },
-  async updateExclusiveSpinExtraCost(body) { return apiClient.patch('/admin/settings/exclusive_spin_extra_cost', body); },
   async updateExclusiveSpinValidityDays(body) { return apiClient.patch('/admin/settings/exclusive_spin_validity_days', body); },
   // F5 GAP (reported): GET /admin/exclusive-spin/history has no backend route
   // (admin.py serves the prize pool, the grant and the fulfilment list). The phantom

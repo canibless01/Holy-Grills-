@@ -1238,8 +1238,9 @@ def search_users():
     if not campus_id and getattr(g, "user_role", None) != "super_admin":
         return jsonify({"results": []}), 200      # fail closed: never search without a campus boundary
 
-    # strip every character that is special inside a PostgREST or=() filter (incl. , . : ) and cap length
-    q_clean = re.sub(r"[%*(),.:\\\"']", "", q_raw).strip()[:50]
+    # Commas, brackets, quotes and wildcard characters can change the filter.
+    # Dots/colons are ordinary characters in its value (and in email addresses).
+    q_clean = re.sub(r"[%*(),\\\"']", "", q_raw).strip()[:100]
     if not q_clean:
         return jsonify({"results": []}), 200
 

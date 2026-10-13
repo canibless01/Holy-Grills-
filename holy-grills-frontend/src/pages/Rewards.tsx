@@ -17,7 +17,8 @@ import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { triggerMascotCelebration } from '@/lib/mascots';
 import type { MyChallengesEnvelope } from '@/types/challenges';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
+import { localStore } from '@/lib/storage';
 
 const CATEGORY_LABELS = { food: 'Food', discount: 'Wallet', experience: 'Experience' };
 
@@ -53,6 +54,7 @@ const formatCountdown = (endsAt) => {
 
 export default function Rewards() {
   useFeatureFlags();
+  useMessages();
   const freeSidesReleased = isFeatureEnabled('free_side_credits');
   const spinReleased = isFeatureEnabled('exclusive_spin');
   const hallReleased = isFeatureEnabled('hall_of_fame');
@@ -198,6 +200,7 @@ export default function Rewards() {
   const hpPending = hpBalance?.pending || 0;
   const tierInfo = hpBalance ? getTierProgress(hpBalance.hp_earned_120day) : null;
   const spinCount = exclusiveStatus?.total_spins ?? exclusiveStatus?.spins_available ?? 0;
+  const recoverSpin = !!(user?.id && localStore.getItem(`hg_exclusive_spin_intent:${user.id}`));
   // Same bar language as the dashboard: continuous fill + the tier gradient.
   const tierGradient = getTierProgressGradient(hpBalance?.hp_earned_120day ?? 0);
   const tierOverall = getTierOverallProgress(hpBalance?.hp_earned_120day ?? 0);
@@ -373,18 +376,26 @@ export default function Rewards() {
                 )}
               </div>
               <button
-                onClick={() => spinCount > 0 && setShowSpinModal(true)}
-                disabled={spinCount === 0}
+                onClick={() => (spinCount > 0 || recoverSpin) && setShowSpinModal(true)}
+                disabled={spinCount === 0 && !recoverSpin}
                 className={`px-4 py-2 rounded-full text-xs font-bold transition-all shrink-0 ${
                   spinCount > 0
                     ? 'bg-gradient-cta text-white active:scale-95'
                     : 'bg-secondary text-muted-foreground cursor-not-allowed'
                 }`}
               >
-                {spinCount > 0 ? `Spin (${spinCount})` : hasSpun ? 'Used' : 'Spin'}
+                {recoverSpin ? msg('FE_SPIN_RECOVER', 'Recover spin result') : spinCount > 0 ? `Spin (${spinCount})` : hasSpun ? 'Used' : 'Spin'}
               </button>
             </div>
           </div>}
+
+          {spinReleased && exclusiveStatus?.history?.length > 0 && <section className="rounded-2xl border border-border bg-white p-4 shadow-card" aria-label={msg('FE_SPIN_HISTORY_TITLE', 'Exclusive spin prizes')}>
+            <h3 className="font-bold text-sm mb-2">{msg('FE_SPIN_HISTORY_TITLE', 'Exclusive spin prizes')}</h3>
+            <div className="space-y-2">{exclusiveStatus.history.map((receipt) => <div key={receipt.id} className="rounded-xl bg-secondary/40 p-3 flex items-center justify-between gap-2">
+              <div><p className="font-semibold text-sm">{receipt.prize_name}</p><p className="text-xs text-muted-foreground">{new Date(receipt.created_at).toLocaleDateString()}</p></div>
+              <span className="text-xs font-semibold">{receipt.status==='pending' ? msg('FE_SPIN_PENDING', 'Awaiting campus fulfilment') : receipt.status==='fulfilled' ? msg('FE_SPIN_FULFILLED', 'Fulfilled') : msg('FE_SPIN_CANCELLED', 'Cancelled')}</span>
+            </div>)}</div>
+          </section>}
 
           {hallReleased && <Link to="/hall-of-fame" className="block rounded-2xl bg-accent/10 border border-accent/20 p-4 active:scale-[0.99] transition-transform shadow-card">
             <div className="flex items-center gap-3">
@@ -708,7 +719,7 @@ export default function Rewards() {
         open={showSpinModal && spinReleased}
         prizes={exclusiveStatus?.prizes}
         onClose={() => setShowSpinModal(false)}
-        onResult={() => { setHasSpun(true); refreshHp(); triggerMascotCelebration('cheering'); liveApi.hp.getExclusiveSpinStatus().then(setExclusiveStatus).catch(() => {}); }}
+        onResult={(result) => { if (result) setHasSpun(true); refreshHp(); triggerMascotCelebration('cheering'); liveApi.hp.getExclusiveSpinStatus().then(setExclusiveStatus).catch(() => {}); }}
         canSpin={spinCount > 0}
       />
 

@@ -7,6 +7,8 @@ import type { IsoDateTime, MutationResult, Uuid } from './common';
 /** A prize-pool entry (odds template item). */
 export interface ExclusiveSpinPrize {
   id: Uuid;
+  name?: string;
+  reward_config?: { kind: 'hp' | 'physical' | 'free_delivery' | 'hp_multiplier'; amount?: number; cap?: number; multiplier?: number };
   label?: string;
   prize_type?: string;
   weight?: number;
@@ -28,7 +30,12 @@ export interface ExclusiveSpinStatus {
 
 /** POST /api/exclusive-spin/spin response. */
 export interface ExclusiveSpinResult extends MutationResult {
-  prize?: ExclusiveSpinPrize | null;
+  prize?: string | ExclusiveSpinPrize | null;
+  prize_id?: Uuid;
+  prize_type?: string;
+  fulfillment_id?: Uuid;
+  fulfillment_status?: string;
+  idempotent?: boolean;
   hp_won?: number;
   spins_remaining?: number;
 }

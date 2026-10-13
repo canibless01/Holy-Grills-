@@ -30,6 +30,7 @@ from app.utils.validators import (
     validate_choice, validate_datetime_order, validate_uuid, validate_hp_amount,
 )
 from app.services.order_service import _order_capacity_weight
+from app.services.exclusive_spin_service import validate_spin_prize
 from app.constants import VALID_ROLES
 
 logger = get_logger(__name__)
@@ -2422,6 +2423,12 @@ def list_reviews():
 # admin_bp blueprint block. The doc explicitly scopes their fix to 3 small patches
 # (B-34/B-35/B-36), not a full rewrite, so the rest of each handler is left as it was.
 
+def _exclusive_spin_validity_days():
+    row = (get_db().table('system_settings').select('value')
+           .eq('key', 'exclusive_spin_validity_days').is_('campus_id', 'null').single().execute())
+    raw = row.get('value') if row and row.get('value') is not None else current_app.config['EXCLUSIVE_SPIN_VALIDITY_DAYS']
+    return as_int(raw, 1, 365)
+
 @admin_bp.route("/exclusive-spin-pool", methods=["GET"])
 @require_role("admin")
 def list_spin_pool():
@@ -2433,7 +2440,12 @@ def list_spin_pool():
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     prizes = q.execute() or []
-    return jsonify({"prizes": prizes}), 200
+    try:
+        validity_days = _exclusive_spin_validity_days()
+    except Exception:
+        logger.exception('list_spin_pool: credit validity unavailable')
+        return jsonify({'error': MSG.SPIN_GRANT_SERVICE_UNAVAILABLE}), 503
+    return jsonify({"prizes": prizes, 'credit_validity_days': validity_days}), 200
 
 
 @admin_bp.route("/exclusive-spin-pool", methods=["POST"])
@@ -2441,27 +2453,21 @@ def list_spin_pool():
 def create_spin_pool_prize():
     """Create a new exclusive spin prize-pool entry."""
     db = get_user_client()
-    data = request.get_json(force=True) or {}
-
-    if not data.get("name"):
-        return jsonify({"error": MSG.SPIN_POOL_NAME_REQUIRED}), 400
-
-    weight = data.get("weight", 1)
-    if not isinstance(weight, int) or weight <= 0:
-        return jsonify({"error": MSG.SPIN_POOL_WEIGHT_INVALID}), 400
-
-    # B-35: a super_admin's own campus_id is None, so before this fix every prize they
-    # created was global regardless of intent — let them name a specific campus instead.
-    if getattr(g, "user_role", None) == "super_admin" and data.get("campus_id"):
-        campus_id = as_campus_id(data.get("campus_id"))
+    data = get_json_object()
+    try:
+        safe = validate_spin_prize(data)
+        requested = as_campus_id(data.get('campus_id'))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    if getattr(g, 'user_role', None) == 'super_admin':
+        campus_id = requested  # Explicit NULL means global even with a selected header.
     else:
-        campus_id = getattr(g, "campus_id", None)
-    result = db.table("exclusive_spin_prizes").insert({
-        "name": data["name"],
-        "weight": weight,
-        "is_active": bool(data.get("is_active", True)),
-        "campus_id": campus_id,
-    }).execute()
+        if requested and requested != getattr(g, 'campus_id', None):
+            return jsonify({'error': MSG.RESOURCE_ACCESS_DENIED}), 403
+        campus_id = getattr(g, 'campus_id', None)
+    if campus_id and not get_db().table('campuses').select('id').eq('id', campus_id).eq('is_active', True).single().execute():
+        return jsonify({'error': MSG.CAMPUS_NOT_FOUND}), 400
+    result = db.table('exclusive_spin_prizes').insert({**safe, 'is_active': safe.get('is_active', True), 'campus_id': campus_id}).execute()
 
     row = result[0] if isinstance(result, list) else result
     return jsonify(row), 201
@@ -2506,11 +2512,9 @@ def grant_exclusive_spins():
     if not user_id:
         return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="user_id")}), 400
     try:
-        spins = int(data.get("spins", 1))
-    except (TypeError, ValueError):
-        return jsonify({"error": "spins must be a whole number"}), 400
-    if not 1 <= spins <= 10:
-        return jsonify({"error": "spins must be between 1 and 10"}), 400
+        spins = as_int(data.get('spins', 1), 1, 10)
+    except ValueError:
+        return jsonify({'error': MSG.SPIN_GRANT_COUNT_INVALID}), 400
 
     target, err = fetch_or_403(db, "profiles", user_id, select="id,campus_id",
                                not_found_msg=MSG.RESOURCE_NOT_FOUND)
@@ -2520,53 +2524,51 @@ def grant_exclusive_spins():
     validity_days = data.get("validity_days")
     if validity_days is None:
         try:
-            row = db.table("system_settings").select("value").eq("key", "exclusive_spin_validity_days").is_("campus_id", "null").single().execute()
-            validity_days = int((row or {}).get("value") or 60)
-        except Exception:                                    # noqa: BLE001 - a setting, not a guard
-            validity_days = 60
+            validity_days = _exclusive_spin_validity_days()
+        except Exception:
+            logger.exception('grant_exclusive_spins: credit validity unavailable')
+            return jsonify({'error': MSG.SPIN_GRANT_SERVICE_UNAVAILABLE}), 503
     try:
-        validity_days = int(validity_days)
-    except (TypeError, ValueError):
-        return jsonify({"error": "validity_days must be a whole number"}), 400
-    if not 1 <= validity_days <= 365:
-        return jsonify({"error": "validity_days must be between 1 and 365"}), 400
-
-    reason = as_text(data.get("reason"), 200) or "Admin grant"
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
-
-    # source='admin_grant' is accepted on read (see SPIN_GRANT_SOURCES in
-    # app/routes/exclusive_spin.py) — without that entry this row would be invisible.
-    result = db.table("exclusive_spins").insert({
-        "user_id": user_id,
-        "spin_count": spins,
-        "source": "admin_grant",
-        "month": month,
-        "expires_at": expires_at,
-        "campus_id": target.get("campus_id") or getattr(g, "campus_id", None),
-    }).execute()
-    row = result[0] if isinstance(result, list) else result
-
-    _audit(g.user_id, "exclusive_spins", (row or {}).get("id"), "grant",
-           after_data={"user_id": user_id, "spins": spins, "expires_at": expires_at, "reason": reason},
-           target_campus_id=target.get("campus_id"))
+        validity_days = as_int(validity_days, 1, 365)
+    except ValueError:
+        return jsonify({'error': MSG.SPIN_GRANT_VALIDITY_INVALID}), 400
     try:
-        send_notification(
-            user_id=user_id,
-            notif_type="exclusive_spin_granted",
-            template_data={"spins": spins, "expires_at": expires_at[:10]},
-            campus_id=target.get("campus_id") or getattr(g, "campus_id", None),
-        )
-    except Exception as exc:                                 # noqa: BLE001 - the grant already happened
-        logger.warning("grant_exclusive_spins: notify failed for %s: %s", user_id, exc)
+        reason = as_text(data.get('reason'), 200) if data.get('reason') is not None else None
+    except ValueError:
+        return jsonify({'error': MSG.ADMIN_REQUEST_BODY_INVALID}), 400
 
-    return jsonify({
-        "message": "Exclusive spins granted",
-        "spin_id": (row or {}).get("id"),
-        "user_id": user_id,
-        "spins": spins,
-        "expires_at": expires_at,
-    }), 201
+    try:
+        intent = as_uuid(data.get('intent_key'))
+    except ValueError:
+        intent = None
+    if not intent:
+        return jsonify({'error': MSG.SPIN_INTENT_REQUIRED}), 400
+    try:
+        result = get_db().rpc('hg_grant_exclusive_spins_atomic', {
+            'p_actor_id': g.user_id, 'p_user_id': user_id, 'p_intent_key': intent,
+            'p_spins': spins, 'p_validity_days': validity_days, 'p_reason': reason,
+        })
+    except Exception:
+        logger.exception('grant_exclusive_spins: atomic grant unavailable')
+        return jsonify({'error': MSG.SPIN_GRANT_SERVICE_UNAVAILABLE}), 503
+    if result.get('error'):
+        messages = {'forbidden': (MSG.RESOURCE_ACCESS_DENIED, 403),
+                    'target_unavailable': (MSG.RESOURCE_NOT_FOUND, 404),
+                    'invalid_grant': (MSG.ADMIN_REQUEST_BODY_INVALID, 400),
+                    'intent_conflict': (MSG.SPIN_GRANT_INTENT_CONFLICT, 409)}
+        message, status = messages.get(result['error'], (MSG.SPIN_GRANT_SERVICE_UNAVAILABLE, 503))
+        return jsonify({'error': message}), status
+    if not result.get('idempotent'):
+        _audit(g.user_id, 'exclusive_spins', result['spin_id'], 'grant',
+               after_data={'user_id': user_id, 'spins': spins, 'expires_at': result['expires_at'], 'reason': reason},
+               target_campus_id=target.get('campus_id'))
+        try:
+            send_notification(user_id=user_id, notif_type='exclusive_spin_granted',
+                              template_data={'spins': spins, 'expires_at': result['expires_at'][:10]},
+                              campus_id=target.get('campus_id'))
+        except Exception:
+            logger.exception('grant_exclusive_spins: grant saved but notification failed')
+    return jsonify({**result, 'message': MSG.SPIN_GRANTED}), 200 if result.get('idempotent') else 201
 
 
 @admin_bp.route("/exclusive-spin-pool/<prize_id>", methods=["PATCH"])
@@ -2574,25 +2576,22 @@ def grant_exclusive_spins():
 def update_spin_pool_prize(prize_id):
     """Update an exclusive spin prize-pool entry."""
     db = get_user_client()
-    data = request.get_json(force=True) or {}
-
-    # B-34: the pre-check had no campus filter, so a campus admin was told a prize
-    # "exists" even when it belonged to another campus (the write was still RLS-blocked,
-    # but the response was a misleading "found, then update failed" instead of not-found).
-    campus_id = getattr(g, "campus_id", None)
-    existing_q = db.table("exclusive_spin_prizes").select("id")
-    if campus_id:
-        existing_q = existing_q.eq("campus_id", campus_id)
-    existing = existing_q.eq("id", prize_id).single().execute()
+    data = get_json_object()
+    try:
+        safe = validate_spin_prize(data, partial=True)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    existing = db.table('exclusive_spin_prizes').select('id,campus_id').eq('id', prize_id).single().execute()
     if not existing:
-        return jsonify({"error": MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
-
-    allowed = {"name", "weight", "is_active"}
-    safe = {k: v for k, v in data.items() if k in allowed}
-    if "weight" in safe and (not isinstance(safe["weight"], int) or safe["weight"] <= 0):
-        return jsonify({"error": MSG.SPIN_POOL_WEIGHT_INVALID}), 400
-    if not safe:
-        return jsonify({"error": MSG.SPIN_POOL_NO_VALID_FIELDS}), 400
+        return jsonify({'error': MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
+    assert_can_modify(existing.get('campus_id'))
+    if 'campus_id' in data:
+        try:
+            requested = as_campus_id(data['campus_id'])
+        except ValueError:
+            return jsonify({'error': MSG.CAMPUS_NOT_FOUND}), 400
+        if requested != existing.get('campus_id'):
+            return jsonify({'error': MSG.SPIN_POOL_SCOPE_IMMUTABLE}), 400
 
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = db.table("exclusive_spin_prizes").eq("id", prize_id).update(safe).execute()
@@ -2609,14 +2608,10 @@ def delete_spin_pool_prize(prize_id):
     """Soft-delete (deactivate) an exclusive spin prize-pool entry."""
     db = get_user_client()
 
-    # B-34 (see update_spin_pool_prize above for the same fix, applied here too)
-    campus_id = getattr(g, "campus_id", None)
-    existing_q = db.table("exclusive_spin_prizes").select("id")
-    if campus_id:
-        existing_q = existing_q.eq("campus_id", campus_id)
-    existing = existing_q.eq("id", prize_id).single().execute()
+    existing = db.table('exclusive_spin_prizes').select('id,campus_id').eq('id', prize_id).single().execute()
     if not existing:
-        return jsonify({"error": MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
+        return jsonify({'error': MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
+    assert_can_modify(existing.get('campus_id'))
 
     result = db.table("exclusive_spin_prizes").eq("id", prize_id).update({
         "is_active": False,
@@ -2625,7 +2620,7 @@ def delete_spin_pool_prize(prize_id):
     if not result:
         return jsonify({"error": MSG.SPIN_POOL_DEACTIVATION_FAILED}), 404
 
-    return jsonify({"message": "Prize deactivated"}), 200
+    return jsonify({"message": MSG.SPIN_POOL_DEACTIVATED}), 200
 
 
 # ---------------------------------------------------------------------------

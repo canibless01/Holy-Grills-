@@ -11,7 +11,9 @@ from app.routes import hp,exclusive_spin,free_sides,leaderboard
 class FeatureGateMessageTests(unittest.TestCase):
     def test_disabled_routes_return_403_before_business_queries(self):
         app=Flask(__name__)
-        cases=[(hp,hp.transfer_hp,()),(hp,hp.flash_redeem,('reward',)),(exclusive_spin,exclusive_spin.my_spins,()),(exclusive_spin,exclusive_spin.do_spin,()),(free_sides,free_sides.my_free_sides,()),(free_sides,free_sides.select_free_side,()),(leaderboard,leaderboard.hall_of_fame,()),(leaderboard,leaderboard.hall_of_fame_inductees,())]
+        # Spin mutations check the release flag inside their atomic transaction,
+        # after recovering an already committed intent (covered separately).
+        cases=[(hp,hp.transfer_hp,()),(hp,hp.flash_redeem,('reward',)),(exclusive_spin,exclusive_spin.my_spins,()),(free_sides,free_sides.my_free_sides,()),(free_sides,free_sides.select_free_side,()),(leaderboard,leaderboard.hall_of_fame,()),(leaderboard,leaderboard.hall_of_fame_inductees,())]
         for module,handler,args in cases:
             db=MagicMock()
             with self.subTest(handler=handler.__name__),app.test_request_context(method='POST',json={}),patch('app.services.feature_flags.is_feature_enabled',return_value=False),patch.object(module,'get_user_client',return_value=db):

@@ -30,7 +30,7 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 
 ## Validation
 
-- Backend unit suite: **137 passed**, including modifier security, atomic refund-route regressions, feature-gate errors and safe flag creation/retries.
+- Backend unit suite: **147 passed**, including modifier security, atomic refunds, feature gates, spin contracts and campus-scoped email search.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.
@@ -67,3 +67,17 @@ These changes replace existing function signatures and reuse existing tables and
 - Two identical historical profile-protection triggers were found. The redundant one is removed, retaining the canonical enabled guard. Rolled-back authenticated writes still allow a normal own-profile edit and reject HP balance, wallet balance and super-admin role forgery. No function definition or role grants change in this cleanup.
 
 New editor and error copy lives in `app/messages.py`. These migrations add no tables, columns or function overloads. This verifies the listed controls and boundaries; the full audit scope above remains open.
+
+## Exclusive-spin award and fulfilment follow-up
+
+- Controlled failures reproduced a consumed spin credit with a success response after the prize grant failed, and a physical prize saved without its campus. Credit consumption and prize issuance now commit in one service-only database transaction. A forced HP-ledger failure rolls back the credit, receipt and balance together.
+- Admin prizes have explicit categories: HP, physical fulfilment, delivery-fee credit and next-delivery food-HP multiplier. Category values determine the effect; the label can change independently. Winning results snapshot the configured name, category and value, so a later pool edit cannot alter a saved result. Empty or unreadable pools supply no mock prizes.
+- Actual admin create/edit touches name, relative weight, campus scope, availability and category/value fields. Campus admins cannot edit global prizes; super admin can create a global prize without a campus. Admin read failures have a recovery control. The obsolete extra-spin-cost control and unused static prize fallback are removed.
+- Actual customer UI loses a committed HP-spin response, retries its persisted request ID, and shows the original 43-HP award. Six replays after changing the pool return that same result. One HP ledger row is recorded. Customer My Rewards shows saved prize status; actual campus-admin fulfilment of physical prizes reflects after customer reload.
+- Six independent requests compete for one final credit: one succeeds and five return no-credit errors. A separate last-credit browser test loses the committed response, closes the wheel, reloads with zero credits and recovers the same saved result. Collecting it clears the pending request identity.
+- Admin credit grants also save their request identity. Lost-response UI retry and six concurrent matching grant requests create one credit row. Repeating a grant after its credits are spent does not replenish them. Cross-campus admin grants are rejected. Global credit validity is now read from the same authoritative setting by the editor and the grant route; a temporary 36-day UI change produces a 36-day grant and is then restored.
+- Email search had removed dots from addresses, preventing the grant form from finding a customer. Dots now survive the filter; actual and unit tests still enforce active-student and campus restrictions. Foreign-campus searches return zero results.
+- Actual authenticated SQL cannot call the private spin function, replenish credits, forge a result snapshot or insert a fake prize receipt. Staff fulfilment retains column-limited updates and campus RLS. A committed receipt remains recoverable while the release flag is off; a new spin is rejected. Prize fulfilment retries preserve the first fulfilment timestamp and avoid repeating status notices.
+- Rollback tests verify that delivery-fee and next-order-multiplier categories save their profile effects. Their later checkout consumption, cancellations, stacking and reward recovery still require the wider fulfilment audit. Physical prizes currently use the campus team's manual fulfilment pathway; automatic food attachment and delivery-choice integration remain open.
+
+The spin migration reuses existing prize, credit, fulfilment, HP-ledger and monthly-tracker tables. It adds four used columns, one receipt business-key index and two private transaction functions; it adds no table. See the access verification document. Full ecosystem verification, external notifications and the deferred visual redesign remain in progress.

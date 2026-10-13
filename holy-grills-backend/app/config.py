@@ -288,28 +288,8 @@ class Config:
     FREE_SIDE_CREDITS_VALIDITY_DAYS = int(os.environ.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", "60"))
 
     # ── Exclusive Spin ────────────────────────────────────────────────────────
-    # Credits are leaderboard rewards only; there is no HP purchase path.
+    # Credits come from leaderboard/tier perks or staff grants; there is no HP purchase path.
     EXCLUSIVE_SPIN_VALIDITY_DAYS = int(os.environ.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", "30"))
-
-    # Exclusive spin prize template — configurable without deploy.
-    # This is only used when the `exclusive_spin_prizes` DB table is empty; the table itself is the
-    # real admin-configurable source of weights (weight column, editable without a deploy). Weights
-    # below are a reasonable placeholder distribution, not a spec value — the rewards doc names the
-    # 7 outcomes but doesn't give exact weights, so adjust via the DB table rather than here.
-    _exc_spin_default = '[{"name":"+300 HP","weight":25},{"name":"+750 HP","weight":8},{"name":"Free Sausage","weight":15},{"name":"Free Gizzard \u00d72","weight":12},{"name":"Free Side of Choice","weight":15},{"name":"Free Chicken Kebab","weight":15},{"name":"Free Delivery","weight":10}]'
-    try:
-        import json as _json
-        EXCLUSIVE_SPIN_TEMPLATE_ITEMS = _json.loads(os.environ.get("EXCLUSIVE_SPIN_TEMPLATE_ITEMS", _exc_spin_default))
-    except Exception:
-        EXCLUSIVE_SPIN_TEMPLATE_ITEMS = [
-            {"name": "+300 HP",              "weight": 25},
-            {"name": "+750 HP",              "weight": 8},
-            {"name": "Free Sausage",         "weight": 15},
-            {"name": "Free Gizzard ×2",      "weight": 12},
-            {"name": "Free Side of Choice",  "weight": 15},
-            {"name": "Free Chicken Kebab",   "weight": 15},
-            {"name": "Free Delivery",        "weight": 10},
-        ]
 
     # Free side options (admin-configurable via system_settings.free_side_options)
     _free_sides_default = '["Fries","Coleslaw","Plantain","Gizzard"]'

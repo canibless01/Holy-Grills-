@@ -315,9 +315,18 @@ def _fulfil(table, record_id, allowed, not_found_msg, done_msg, label_fn):
         return err
     if "status" in patch and record.get("status") in _CLOSED_STATUSES and patch["status"] != record.get("status"):
         return jsonify({"error": MSG.PRIZE_ALREADY_CLOSED}), 409
-    result, err = update_or_403(db, table, record_id, patch)
-    if err:
-        return err
+    if patch.get('status') == record.get('status') and 'notes' not in patch:
+        return jsonify({'message': done_msg if patch['status'] == 'fulfilled' else MSG.PRIZE_UPDATED,
+                        'record': record, 'idempotent': True}), 200
+    # A second staff click cannot overwrite the first fulfilment timestamp or
+    # announce the same status change twice after a stale pre-read.
+    result = db.table(table).eq('id', record_id).eq('status', record.get('status')).update(patch)
+    if not result:
+        current = db.table(table).select('*').eq('id', record_id).single().execute()
+        if current and patch.get('status') == current.get('status') and 'notes' not in patch:
+            return jsonify({'message': done_msg if patch['status'] == 'fulfilled' else MSG.PRIZE_UPDATED,
+                            'record': current, 'idempotent': True}), 200
+        return jsonify({'error': MSG.PRIZE_ALREADY_CLOSED}), 409
     updated = result[0] if isinstance(result, list) else result
 
     changed_status = "status" in patch and patch["status"] != record.get("status")

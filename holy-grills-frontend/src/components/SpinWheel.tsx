@@ -5,39 +5,23 @@ import { liveApi } from '@/lib/liveApi';
 import { playSound } from '@/lib/soundManager';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
-import { EXCLUSIVE_SPIN_PRIZES, getExclusivePrize } from '@/lib/rewardUtils';
+import { localStore } from '@/lib/storage';
 import ModalPortal from '@/components/ModalPortal';
 import type { ExclusiveSpinPrize, ExclusiveSpinResult } from '@/types/exclusive-spin';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 
 const RADIUS = 130;
 const CENTER = 150;
 
-// Fallback colours for backend prizes not present in the static prize table.
+// Brand colours for the configured prize segments.
 const FALLBACK_COLORS = ['#F72B13', '#FFC251', '#FF6B1A', '#FFDD9F', '#D4200C', '#ECA829', '#FF7070', '#C4A57D', '#F2542D', '#FFB347'];
 
-// Default segments — the static prize set. Used until the backend prize list
-// loads (or when the backend returns none), so the wheel never renders empty.
-const DEFAULT_SEGMENTS = EXCLUSIVE_SPIN_PRIZES.map((p) => ({
-  label: p.label, icon: p.icon, color: p.color, id: p.id,
-}));
-
-// Build wheel segments from the backend-provided prize list (GET /exclusive-spin
-// → prizes[]). Each backend prize is matched onto the static prize table for its
-// icon/colour; unknown names get a rotating fallback colour so every segment
-// is distinct and the wheel reflects the admin-configured pool, not a hardcode.
+// Visuals follow the stored category; an unavailable pool has no mock prizes.
 const buildSegments = (backendPrizes) => {
-  if (!Array.isArray(backendPrizes) || backendPrizes.length === 0) return DEFAULT_SEGMENTS;
-  return backendPrizes.map((p, i) => {
-    const label = p.name || p.label || p.prize_name || 'Prize';
-    const match = EXCLUSIVE_SPIN_PRIZES.find((sp) => sp.label === label || sp.token === label || sp.id === p.id);
-    return {
-      id: p.id || (match && match.id) || `prize_${i}`,
-      label,
-      icon: match?.icon || '🎁',
-      color: match?.color || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
-    };
-  });
+  if (!Array.isArray(backendPrizes)) return [];
+  const icons = { hp: '⚡', free_delivery: '🚚', hp_multiplier: '🔥', physical: '🎁' };
+  return backendPrizes.map((p, i) => ({ id: p.id, label: p.name,
+    icon: icons[p.reward_config?.kind] || '🎁', color: FALLBACK_COLORS[i % FALLBACK_COLORS.length] }));
 };
 
 const polarToCartesian = (angleDeg, r) => {
@@ -62,17 +46,14 @@ const easeSpin = (t) => {
   return 0.04 + 0.96 * (1 - Math.pow(1 - tt, 4));
 };
 
-// Reveal copy per prize effect.
-const revealCopy = (prize) => {
-  if (!prize) return { emoji: '🎁', title: 'Prize won!', body: 'Check your rewards.' };
-  switch (prize.type) {
-    case 'hp':
-      return { emoji: prize.icon || '⚡', title: `+${prize.hp} HP!`, body: 'Holy Points added to your balance.' };
-    case 'status':
-      return { emoji: prize.icon || '🔥', title: `${prize.label}!`, body: 'Earn double HP on your next order.' };
-    case 'next_order':
-    default:
-      return { emoji: prize.icon || '🎁', title: `${prize.label} won!`, body: `Enjoy a free ${prize.label.replace('Free ', '')} on your next order.` };
+// Display the committed receipt, including the actual credited amount.
+const revealCopy = (result) => {
+  const title = msg('FE_SPIN_PRIZE_WON', '{prize} won!', { prize: result.prize });
+  switch (result.prize_type) {
+    case 'hp': return { emoji: '⚡', title: msg('FE_SPIN_HP_WON', '+{amount} HP!', { amount: result.hp_won }), body: msg('FE_SPIN_HP_CREDITED', 'Holy Points added to your balance.') };
+    case 'free_delivery': return { emoji: '🚚', title, body: msg('FE_SPIN_DELIVERY_GRANTED', 'Up to ₦{amount} in delivery fees covered on your next order.', { amount: result.delivery_cap }) };
+    case 'hp_multiplier': return { emoji: '🔥', title, body: msg('FE_SPIN_MULTIPLIER_GRANTED', 'Earn {multiplier}× food HP on your next delivered order.', { multiplier: result.hp_multiplier }) };
+    default: return { emoji: '🎁', title, body: msg('FE_SPIN_PHYSICAL_PENDING', 'Your campus team has your prize for fulfilment. Track its status in My Rewards.') };
   }
 };
 
@@ -86,7 +67,17 @@ interface SpinWheelProps {
 }
 
 export default function SpinWheel({ open, onClose, onResult, canSpin = true, prizes }: SpinWheelProps) {
-  const { refreshHp } = useHolyGrill();
+  useMessages();
+  const { refreshHp, user } = useHolyGrill();
+  const intentStorageKey = user?.id ? `hg_exclusive_spin_intent:${user.id}` : null;
+  const busyRef = useRef(false);
+  const openRef = useRef(open);
+  openRef.current = open;
+  const hasPendingIntent = !!(intentStorageKey && localStore.getItem(intentStorageKey));
+  const close = () => {
+    if (prize && intentStorageKey) localStore.removeItem(intentStorageKey);
+    onClose();
+  };
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [prize, setPrize] = useState(null);
@@ -113,7 +104,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
         const status = await liveApi.hp.getExclusiveSpinStatus();
         const list = Array.isArray(status?.prizes) ? status.prizes : null;
         if (!cancelled && list) setSegments(buildSegments(list));
-      } catch { /* keep default segments */ }
+      } catch { if (!cancelled) setSegments([]); }
     })();
     return () => { cancelled = true; };
   }, [open, prizes]);
@@ -121,7 +112,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
   // Idle slow rotation — only when the user can actually spin. When unusable
   // the wheel stays static so it's not misleading.
   useEffect(() => {
-    if (!open || spinning || prize || !canSpin) return;
+    if (!open || spinning || prize || !canSpin || !segments.length) return;
     let lastTime = performance.now();
     const idle = (time) => {
       const dt = (time - lastTime) / 1000;
@@ -132,7 +123,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
     };
     rafRef.current = requestAnimationFrame(idle);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [open, spinning, prize, canSpin]);
+  }, [open, spinning, prize, canSpin, segments.length]);
 
   // Reset on close
   useEffect(() => {
@@ -146,7 +137,8 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
   }, [open]);
 
   const handleSpin = async () => {
-    if (spinning) return;
+    if (busyRef.current || (!canSpin && !hasPendingIntent) || (!segments.length && !hasPendingIntent) || !intentStorageKey) return;
+    busyRef.current = true;
     setSpinning(true);
     setPrize(null);
     setFlashing(false);
@@ -156,17 +148,28 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
 
     let apiResult;
     try {
-      apiResult = await liveApi.hp.exclusiveSpin();
+      let intentKey = localStore.getItem(intentStorageKey);
+      if (!intentKey) { intentKey = crypto.randomUUID(); localStore.setItem(intentStorageKey, intentKey); }
+      apiResult = await liveApi.hp.exclusiveSpin({ intent_key: intentKey });
     } catch (e) {
+      busyRef.current = false;
       setSpinning(false);
+      // A definitive admission rejection spent no credit. Uncertain network
+      // failures retain the request identity so the committed result can replay.
+      if (e.status === 400 || e.status === 409) localStore.removeItem(intentStorageKey);
+      onResult?.();
       toast({ title: msg('FE_SPIN_WHEEL_SPIN_FAILED', 'Spin failed'), description: e.message, variant: 'destructive' });
       return;
     }
 
-    // Map API result to a prize, then to a wheel segment.
-    const resolved = getExclusivePrize(apiResult?.prize || apiResult);
-    let segIndex = resolved ? segments.findIndex((s) => s.id === resolved.id) : -1;
-    if (segIndex < 0) segIndex = 0;
+    if (!openRef.current) { busyRef.current = false; setSpinning(false); return; }
+    const resolved = apiResult;
+    const segIndex = segments.findIndex((s) => s.id === apiResult.prize_id);
+    // A pool edit after the wheel loaded cannot make it announce another segment.
+    if (segIndex < 0) {
+      busyRef.current = false; setSpinning(false); setPrize(resolved);
+      refreshHp().catch(() => {}); onResult?.(apiResult); return;
+    }
 
     // Calculate landing rotation: 5 full turns + offset to target segment.
     const targetCenter = segIndex * SEG_ANGLE + SEG_ANGLE / 2;
@@ -191,6 +194,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
         rafRef.current = requestAnimationFrame(animate);
       } else {
         // Landed — flash winning segment, then confetti + fanfare + reveal.
+        busyRef.current = false;
         setSpinning(false);
         setWinningIndex(segIndex);
         setPrize(resolved);
@@ -219,11 +223,11 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
 
   return (
     <ModalPortal>
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={close}>
       <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-heading font-bold text-lg text-foreground">🎡 Exclusive Spin</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+          <h3 className="font-heading font-bold text-lg text-foreground">{msg('FE_SPIN_TITLE', '🎡 Exclusive Spin')}</h3>
+          <button onClick={close} aria-label={msg('FE_SPIN_CLOSE', 'Close spin wheel')}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
 
         {/* Wheel */}
@@ -237,7 +241,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
               return (
                 <g key={i}>
                   <path
-                    d={describeSegment(i, SEG_ANGLE)}
+                    d={SEG_COUNT === 1 ? `M ${CENTER-RADIUS} ${CENTER} a ${RADIUS} ${RADIUS} 0 1 0 ${2*RADIUS} 0 a ${RADIUS} ${RADIUS} 0 1 0 ${-2*RADIUS} 0` : describeSegment(i, SEG_ANGLE)}
                     fill={seg.color}
                     stroke="#fff"
                     strokeWidth="2"
@@ -261,23 +265,25 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
           </svg>
         </div>
 
+        {!segments.length && !prize && <p role="status" className="text-xs text-center text-muted-foreground mb-3">{msg('FE_SPIN_NO_POOL', 'Spin prizes are unavailable. Your credits are safe.')}</p>}
+        {segments.length > 0 && <ul className="grid grid-cols-2 gap-1 text-[10px] text-muted-foreground mb-3">{segments.map((s) => <li key={s.id}>{s.icon} {s.label}</li>)}</ul>}
         {/* Result or Spin button */}
         {prize && reveal ? (
           <div className="text-center">
             <div className="text-4xl mb-1">{reveal.emoji}</div>
             <div className="text-2xl font-heading font-extrabold text-foreground">{reveal.title}</div>
             <p className="text-xs text-muted-foreground mt-1">{reveal.body}</p>
-            <button onClick={onClose} className="mt-4 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">
-              Collect & Close
+            <button onClick={close} className="mt-4 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">
+              {msg('FE_SPIN_COLLECT_CLOSE', 'Collect & Close')}
             </button>
           </div>
         ) : (
           <button
             onClick={handleSpin}
-            disabled={spinning}
+            disabled={spinning || (!canSpin && !hasPendingIntent) || (!segments.length && !hasPendingIntent)}
             className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {spinning ? 'Spinning...' : 'Spin Now 🎡'}
+            {spinning ? msg('FE_SPIN_SPINNING', 'Spinning...') : hasPendingIntent ? msg('FE_SPIN_RECOVER', 'Recover spin result') : msg('FE_SPIN_NOW', 'Spin Now 🎡')}
           </button>
         )}
       </div>

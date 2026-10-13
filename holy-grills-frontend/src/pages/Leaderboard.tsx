@@ -13,7 +13,8 @@ import MascotStandee from '@/components/mascot/MascotStandee';
 import ModalPortal from '@/components/ModalPortal';
 import TierIcon from '@/components/TierIcon';
 import { triggerMascotCelebration } from '@/lib/mascots';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
+import { localStore } from '@/lib/storage';
 
 const VIEWS = [{ id: 'user', label: 'Solo' }, { id: 'squad', label: 'Squad' }];
 const PERIODS = [
@@ -47,6 +48,7 @@ function RankChange({ change }) {
 
 export default function Leaderboard() {
   useFeatureFlags();
+  useMessages();
   const { hpBalance, user } = useHolyGrill();
   const [view, setView] = useState('user');
   const [period, setPeriod] = useState('monthly');
@@ -120,7 +122,8 @@ export default function Leaderboard() {
   const ahead = myRank ? rankings.find((r) => r.rank === myRank.rank - 1) : null;
   const diff = ahead && myRank ? ahead.hp_total - myRank.hp_total : 0;
   const spinCount = spinStatus?.total_spins || 0;
-  const spinEarned = spinCount > 0;
+  const recoverSpin = !!(user?.id && localStore.getItem(`hg_exclusive_spin_intent:${user.id}`));
+  const spinEarned = spinCount > 0 || recoverSpin;
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -320,7 +323,7 @@ export default function Leaderboard() {
         </motion.div>
       </AnimatePresence>
 
-      <SpinWheel open={showSpinModal && spinReleased} onClose={() => setShowSpinModal(false)} onResult={() => { setHasSpun(true); liveApi.hp.getExclusiveSpinStatus().then(setSpinStatus).catch(() => setSpinStatus(null)); }} canSpin={spinEarned} />
+      <SpinWheel open={showSpinModal && spinReleased} onClose={() => setShowSpinModal(false)} onResult={(result) => { if (result) setHasSpun(true); liveApi.hp.getExclusiveSpinStatus().then(setSpinStatus).catch(() => setSpinStatus(null)); }} canSpin={spinEarned} />
 
       {/* How Prizes Work modal — portalled to <body> so its dimmed backdrop
           covers the whole viewport. Inside the animated page wrapper, `fixed`
