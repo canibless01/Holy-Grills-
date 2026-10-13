@@ -1,6 +1,6 @@
 # Audit migrations: duplicate and access verification
 
-Verified against Supabase **Test Two** on 2026-10-12. This covers the migrations introduced during this ecosystem audit, not a claim that every historical database object is clean.
+Verified against Supabase **Test Two** through 2026-10-13. This covers the migrations introduced during this ecosystem audit, not a claim that every historical database object is clean.
 
 ## Objects and grants
 
@@ -51,3 +51,11 @@ Actual account tests reproduced kitchen insertion of a forged saved-choice snaps
 The preparation-boundary migrations replace the existing `hg_protect_order_columns()` trigger function at its existing zero-argument signature. They add no trigger, table or overload. The trigger checks direct authenticated writes in addition to API checks: kitchen can only move to preparing/ready; preparation and delivery require collected payment; cancellation/refund state changes require the service-backed atomic actions. Existing rider ownership and state-machine triggers remain in effect.
 
 Rollback-only SQL reproduced kitchen walking a ready, unassigned order all the way to delivered. After the fix, the first assignment transition returns `42501:kitchen_preparation_only` and the order remains ready. Another rollback-only test returns `42501:payment_required_for_preparation` for an unpaid order. Actual API tests reject kitchen assignment/walking to delivery, bulk advancement from ready, and admin cancellation through a plain status PATCH, without changing the owned ready order. Actual admin batching and assigned-rider pickup/delivery still succeed.
+
+## Atomic review follow-up
+
+`hg_submit_order_review_atomic(uuid,uuid,integer,integer,integer,text,integer,integer,text[])` has exactly one live definition, pins its search path, and allows only service_role execution. It reuses `order_reviews`, `monthly_hp_tracker` and `record_hp_transaction_atomic`; no table, index or column is added. Revision history retains the final retry/image comparison update without creating an overload.
+
+Actual UI response-loss retry saves one review and one 20-HP pending transaction, renders all sub-ratings in admin and the menu rating/count, and remains saved after reload. Six simultaneous API replays leave the HP ledger and monthly tracker unchanged. A rollback-only capped-allowance test awards five HP when five remain; a deliberately rejected HP insert leaves zero reviews and the monthly total unchanged.
+
+Public EXECUTE on the existing order column-guard trigger function was also revoked. Both anon and authenticated now lack direct function execution, service_role retains it, and a real authenticated kitchen identity can still make a permitted preparation update through the table trigger (verified in a rolled-back transaction).

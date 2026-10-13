@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth
 from app.middleware.rate_limit import rate_limit
 from app.services import order_service
-from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.tz import today_wat, WAT_OFFSET
@@ -291,6 +290,9 @@ def get_order(order_id):
             {**m, "display_name": names.get(m.get("user_id"), m["email"])} for m in members
         ]
 
+    if g.user_id and order.get("user_id") == g.user_id:
+        reviews = db.table("order_reviews").select("id,rating,kitchen_rating,rider_rating,comment,hp_awarded,image_urls").eq("order_id", order_id).eq("user_id", g.user_id).limit(1).execute() or []
+        order["review"] = reviews[0] if reviews else None
     return jsonify(order), 200
 
 
@@ -497,84 +499,63 @@ def submit_review(order_id):
       400:
         description: Already reviewed or order not yet delivered
     """
-    db = get_user_client()
-    data = request.get_json(force=True) or {}
-
-    order = db.table("orders").select("user_id,status,campus_id").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-    if order.get("user_id") != g.user_id:
-        return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
-    if order.get("status") != "delivered":
-        return jsonify({"error": MSG.ORDER_REVIEW_DELIVERED_ONLY}), 400
-
-    existing_review = (
-        db.table("order_reviews")
-        .select("id")
-        .eq("order_id", order_id)
-        .eq("user_id", g.user_id)
-        .execute()
-    )
-    if existing_review:
-        return jsonify({"error": MSG.ORDER_ALREADY_REVIEWED}), 400
-
-    def _clamp_rating(val):
-        """Parse and clamp a rating value to 1–5, or return None if not provided."""
-        if val is None:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+    def rating(key, optional=False):
+        value = data.get(key)
+        if value is None and optional:
             return None
-        try:
-            return max(1, min(5, int(val)))
-        except (TypeError, ValueError):
-            return None
-
-    # Build review payload — kitchen_rating and rider_rating are optional columns
-    # added in migration 16. Included only when the caller provides them so that
-    # a missing column never causes an insert failure before the migration runs.
-    from app.db import SupabaseError as _SupabaseError
-    review_payload = {
-        "order_id": order_id,
-        "user_id": g.user_id,
-        "rating": max(1, min(5, int(data.get("rating", 5)))),
-        "comment": data.get("comment", ""),
-        "hp_awarded": 0,
-        "campus_id": order.get("campus_id"),
-        "kitchen_rating": _clamp_rating(data.get("kitchen_rating")),
-        "rider_rating":   _clamp_rating(data.get("rider_rating")),
-    }
-
+        if isinstance(value, bool) or value is None:
+            raise ValueError()
+        number = int(value)
+        if str(number) != str(value).strip() or number not in range(1, 6):
+            raise ValueError()
+        return number
     try:
-        review = db.table("order_reviews").insert(review_payload)
-    except _SupabaseError as e:
-        err_text = (str(e) + str(getattr(e, "details", ""))).lower()
-        if "unique" in err_text or "duplicate" in err_text:
-            # A second concurrent submit landed between our own existence check and this insert
-            return jsonify({"error": MSG.ORDER_ALREADY_REVIEWED}), 400
-        # Only fall back if the error is specifically about missing columns.
-        # Re-raise anything else so real DB errors are not silently swallowed.
-        if "column" not in err_text or "does not exist" not in err_text:
-            raise
-        fallback = {k: v for k, v in review_payload.items()
-                    if k not in ("kitchen_rating", "rider_rating")}
-        review = db.table("order_reviews").insert(fallback)
-
-    review_row = review[0] if isinstance(review, list) else review
-    review_id = review_row["id"]
-
+        overall, kitchen, rider = rating('rating'), rating('kitchen_rating', True), rating('rider_rating', True)
+        comment = data.get('comment') or ''
+        images = data.get('image_urls') or []
+        from app.utils.upload_urls import is_trusted_upload_url
+        if not isinstance(comment, str) or len(comment) > 2000:
+            raise ValueError()
+        if not isinstance(images, list) or len(images) > 3 or not all(is_trusted_upload_url(u) for u in images):
+            raise ValueError()
+    except (ValueError, TypeError, OverflowError):
+        return jsonify({"error": MSG.ORDER_REVIEW_INVALID}), 400
+    # The existing shared multiplier is a timed release-gated setting. The
+    # transaction enforces the monthly allowance and records its actual award.
+    from app.services.hp_service import _get_hp_multiplier
     try:
-        _row = db.table("system_settings").select("value").eq("key", "review_hp").is_("campus_id", "null").single().execute()
-        hp_amount = int(_row["value"]) if _row and _row.get("value") is not None else current_app.config["REVIEW_HP"]
+        db = get_db()
+        settings = db.table('system_settings').select('key,value').in_('key', ['review_hp','monthly_pending_cap']).is_('campus_id', 'null').execute() or []
+        values = {row['key']:row['value'] for row in settings}
+        hp = int(values.get('review_hp', current_app.config['REVIEW_HP']))
+        cap = int(values.get('monthly_pending_cap', 1000))
+        hp = round(hp * _get_hp_multiplier(getattr(g, 'campus_id', None)))
+        if hp<0 or cap<0:
+            raise ValueError('Invalid review HP configuration')
+        result = db.rpc('hg_submit_order_review_atomic', {
+            'p_user_id':g.user_id,'p_order_id':order_id,'p_rating':overall,
+            'p_kitchen_rating':kitchen,'p_rider_rating':rider,'p_comment':comment,
+            'p_hp_amount':hp,'p_monthly_cap':cap,'p_image_urls':images,
+        })
     except Exception:
-        hp_amount = current_app.config["REVIEW_HP"]
-    earn_pending_hp(
-        user_id=g.user_id,
-        amount=hp_amount,
-        source_type="review",
-        reference_id=review_id,
-        notes="HP for leaving a review",
-    )
-    get_db().table("order_reviews").eq("id", review_id).update({"hp_awarded": hp_amount})
-
-    return jsonify({"review": review_row, "hp_awarded": hp_amount, "message": MSG.REVIEW_SUBMITTED}), 201
+        logger.exception('Atomic review submission unavailable for %s', order_id)
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}), 503
+    errors = {
+        'forbidden':(MSG.ORDER_ACCESS_DENIED,403),
+        'order_not_found':(MSG.ORDER_NOT_FOUND,404),
+        'not_delivered':(MSG.ORDER_REVIEW_DELIVERED_ONLY,400),
+        'already_reviewed':(MSG.ORDER_ALREADY_REVIEWED,409),
+        'invalid_review':(MSG.ORDER_REVIEW_INVALID,400),
+    }
+    if not isinstance(result, dict) or not result.get('success'):
+        code = result.get('error') if isinstance(result, dict) else 'review_failed'
+        message,status=errors.get(code,(MSG.SERVICE_UNAVAILABLE,503))
+        return jsonify({'error':message,'code':code}),status
+    result['message']=MSG.REVIEW_SUBMITTED
+    return jsonify(result),201
 
 
 @orders_bp.route("/<order_id>/claim", methods=["POST"])

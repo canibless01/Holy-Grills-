@@ -50,3 +50,8 @@ begin
   end if;
   return new;
 end $function$
+
+-- This is a trigger function, not a client RPC. Existing table triggers invoke
+-- it; public callers do not need EXECUTE permission on the function itself.
+REVOKE ALL ON FUNCTION public.hg_protect_order_columns() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.hg_protect_order_columns() TO service_role;

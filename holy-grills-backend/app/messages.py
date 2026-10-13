@@ -2034,6 +2034,19 @@ class MSG:
     FE_RIDER_NO_ACTIVE_BATCH = "No active delivery batch."
     FE_RIDER_ASSIGNMENTS_APPEAR = "New assignments will appear here automatically."
 
+    ORDER_REVIEW_INVALID = "Use whole-number ratings from 1 to 5, a comment of at most 2,000 characters and up to three uploaded images."
+
+    FE_REVIEW_RETRY = "Please try again in a moment."
+    FE_REVIEW_HP_AWARDED = "You earned {hp} HP (pending)"
+    FE_REVIEW_NO_HP = "No HP was awarded for this review."
+    FE_REVIEW_DIALOG = "Rate Your Order"
+    FE_REVIEW_CLOSE = "Close review"
+    FE_REVIEW_RATING_STARS = "Overall rating: {stars} stars"
+    FE_REVIEW_KITCHEN_RATING_STARS = "Kitchen rating: {stars} stars"
+    FE_REVIEW_RIDER_RATING_STARS = "Rider rating: {stars} stars"
+    FE_REVIEW_SUBMITTING = "Submitting…"
+    FE_REVIEW_SUBMIT = "Submit Review"
+
 # Short alias
 M = MSG
 

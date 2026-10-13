@@ -1,5 +1,5 @@
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, MapPin, Clock, CreditCard, Flame, Star, RefreshCw, Share2, X, Check, Package, Bike, Phone, User, Gift } from 'lucide-react';
@@ -9,7 +9,6 @@ import { safeCallHref } from '@/lib/safeNavigation';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer } from '@/lib/hgUtils';
-import { reviewHp } from '@/lib/appConfig';
 import ShareSheet from '@/components/ShareSheet';
 import SquadMembersPanel from '@/components/SquadMembersPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -17,7 +16,7 @@ import ImageUploader from '@/components/admin/ImageUploader';
 import ModalPortal from '@/components/ModalPortal';
 import { toast } from '@/components/ui/use-toast';
 import APP_CONFIG from '@/config/app.config';
-import { msg } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 
 // Google review handoff — deep-links into the Business Profile review form when
 // a Place ID is configured, otherwise falls back to a Google search for the brand.
@@ -29,6 +28,10 @@ const googleReviewUrl = () => {
 };
 
 export default function OrderDetail() {
+  useMessages();
+  const reviewBusyRef = useRef(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewAward, setReviewAward] = useState(0);
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,6 +69,8 @@ export default function OrderDetail() {
         const token = resolveClaimToken();
         const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
         setOrder(o);
+        setReviewSubmitted(Boolean(o.review));
+        if (o.review) setReviewAward(Number(o.review.hp_awarded) || 0);
       } catch (e) { console.error(e); }
       setLoading(false);
     };
@@ -122,22 +127,24 @@ export default function OrderDetail() {
   };
 
   const handleReview = async () => {
+    if (reviewBusyRef.current) return;
+    reviewBusyRef.current = true;
+    setReviewBusy(true);
     try {
-      const result = await mockApi.orders.review(id, review);
-      if (reviewImages.length) {
-        try { await mockApi.orders.addReviewImages(id, { image_urls: reviewImages }); } catch { /* non-fatal */ }
-      }
-      await refreshUser();
-      play('review_submitted');
-      // Response shape: { review: { rating, kitchen_rating, rider_rating, ... }, hp_awarded }
+      const result = await mockApi.orders.review(id, { ...review, image_urls: reviewImages });
       const submittedRating = result?.review?.rating ?? review.rating;
+      setReviewAward(Number(result?.hp_awarded) || 0);
       setGooglePrompt(Number(submittedRating) >= 4);
       setReviewSubmitted(true);
       setShowReview(false);
       setReviewImages([]);
+      play('review_submitted');
+      try { await refreshUser(); } catch { /* The stored review remains successful. */ }
     } catch (e) {
-      // Surface the failure — a silent catch made the review button feel dead.
-      toast({ title: msg('FE_ORDER_DETAIL_REVIEW_FAILED', 'Review failed'), description: e.message || 'Please try again in a moment.', variant: 'destructive' });
+      toast({ title: msg('FE_ORDER_DETAIL_REVIEW_FAILED', 'Review failed'), description: e.message || msg('FE_REVIEW_RETRY', 'Please try again in a moment.'), variant: 'destructive' });
+    } finally {
+      reviewBusyRef.current = false;
+      setReviewBusy(false);
     }
   };
 
@@ -382,7 +389,7 @@ export default function OrderDetail() {
           <Check className="w-5 h-5 text-success shrink-0" />
           <div>
             <div className="font-bold text-sm text-success">Review submitted!</div>
-            <div className="text-xs text-success">You earned {reviewHp()} HP (pending)</div>
+            <div className="text-xs text-success">{reviewAward > 0 ? msg('FE_REVIEW_HP_AWARDED', 'You earned {hp} HP (pending)', { hp: reviewAward }) : msg('FE_REVIEW_NO_HP', 'No HP was awarded for this review.')}</div>
           </div>
         </motion.div>
       )}
@@ -416,18 +423,18 @@ export default function OrderDetail() {
       {/* Review Modal */}
       {showReview && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => setShowReview(false)}>
-          <div className="bg-card rounded-3xl p-6 w-full max-w-md animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}>
+          <div role="dialog" aria-modal="true" aria-label={msg('FE_REVIEW_DIALOG', 'Rate Your Order')} className="bg-card rounded-3xl p-6 w-full max-w-md animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-heading font-bold text-lg text-foreground">Rate Your Order</h3>
-              <button onClick={() => setShowReview(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <h3 className="font-heading font-bold text-lg text-foreground">{msg('FE_REVIEW_DIALOG', 'Rate Your Order')}</h3>
+              <button aria-label={msg('FE_REVIEW_CLOSE', 'Close review')} disabled={reviewBusy} onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Overall Rating</label>
                 <div className="flex gap-1 mt-2">
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <button key={s} onClick={() => setReview({ ...review, rating: s })}>
+                    <button key={s} disabled={reviewBusy} aria-label={msg('FE_REVIEW_RATING_STARS', 'Overall rating: {stars} stars', { stars: s })} aria-pressed={review.rating === s} onClick={() => setReview({ ...review, rating: s })}>
                       <Star className={`w-8 h-8 transition-transform ${s <= review.rating ? 'fill-accent text-accent scale-110' : 'text-muted-foreground'}`} />
                     </button>
                   ))}
@@ -437,7 +444,7 @@ export default function OrderDetail() {
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Kitchen Rating</label>
                 <div className="flex gap-1 mt-2">
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <button key={s} onClick={() => setReview({ ...review, kitchen_rating: s })}>
+                    <button key={s} disabled={reviewBusy} aria-label={msg('FE_REVIEW_KITCHEN_RATING_STARS', 'Kitchen rating: {stars} stars', { stars: s })} aria-pressed={review.kitchen_rating === s} onClick={() => setReview({ ...review, kitchen_rating: s })}>
                       <Star className={`w-6 h-6 ${s <= review.kitchen_rating ? 'fill-accent text-accent' : 'text-muted-foreground'}`} />
                     </button>
                   ))}
@@ -447,13 +454,15 @@ export default function OrderDetail() {
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Rider Rating</label>
                 <div className="flex gap-1 mt-2">
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <button key={s} onClick={() => setReview({ ...review, rider_rating: s })}>
+                    <button key={s} disabled={reviewBusy} aria-label={msg('FE_REVIEW_RIDER_RATING_STARS', 'Rider rating: {stars} stars', { stars: s })} aria-pressed={review.rider_rating === s} onClick={() => setReview({ ...review, rider_rating: s })}>
                       <Star className={`w-6 h-6 ${s <= review.rider_rating ? 'fill-accent text-accent' : 'text-muted-foreground'}`} />
                     </button>
                   ))}
                 </div>
               </div>
               <textarea
+                disabled={reviewBusy}
+                maxLength={2000}
                 value={review.comment}
                 onChange={(e) => setReview({ ...review, comment: e.target.value })}
                 placeholder="Tell us about your experience..."
@@ -478,8 +487,8 @@ export default function OrderDetail() {
                   </div>
                 )}
               </div>
-              <button onClick={handleReview} className="w-full py-3.5 rounded-xl bg-gradient-cta text-white font-bold shadow-glow">
-                Submit Review (+{reviewHp()} HP)
+              <button onClick={handleReview} disabled={reviewBusy} className="w-full py-3.5 disabled:opacity-50 rounded-xl bg-gradient-cta text-white font-bold shadow-glow">
+                {reviewBusy ? msg('FE_REVIEW_SUBMITTING', 'Submitting…') : msg('FE_REVIEW_SUBMIT', 'Submit Review')}
               </button>
             </div>
           </div>
