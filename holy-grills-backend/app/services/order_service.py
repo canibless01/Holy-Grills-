@@ -4,6 +4,7 @@ Order service — order creation, status transitions, delivery rewards, payment 
 
 import uuid
 import hashlib
+import math
 from datetime import datetime, timezone, timedelta
 
 # Stable machine-readable codes for the two ways ordering can be refused. The
@@ -1787,63 +1788,51 @@ def _handle_delivery_rewards(order: dict):
                 .execute()
             ) or []
 
-    # Step 1: Calculate HP in Python (business logic) — may be zero
-    hp_amount = hp_service.calculate_delivery_hp(
-        order_total=subtotal,
-        tier_slug=tier_slug,
-        order_items=order_items,
-        user_id=user_id,
-        campus_id=order.get("campus_id"),
+    # Price/tier rules determine the award; the payout transaction validates
+    # and consumes the same multiplier with the ledger and idempotency marker.
+    base_hp_amount = hp_service.calculate_delivery_hp(
+        order_total=subtotal, tier_slug=tier_slug, order_items=order_items,
+        user_id=user_id, campus_id=order.get('campus_id'),
     )
-
-    # Apply next_order_hp_multiplier bonus if present, then reset to 1
-    try:
-        prof = db.table("profiles").select("next_order_hp_multiplier").eq("id", user_id).single().execute()
-        mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
-        if mult > 1:
-            hp_amount = round(hp_amount * mult)
-            db.table("profiles").eq("id", user_id).update({"next_order_hp_multiplier": 1}).execute()
-    except Exception as me:
-        logger.warning("_handle_delivery_rewards: next_order_hp_multiplier check failed: %s", me)
-
-    # B-8: Compute squad share plan BEFORE credit — true split
-    # If squad members exist, owner gets only owner_share, not full hp_amount
+    result = None
     has_squad_members = False
-    owner_share_for_credit = hp_amount
+    owner_share_for_credit = 0
     squad_plan = None
-    try:
-        # Quick check if squad members exist
-        sm_check = db.table("squad_members").select("id").eq("order_id", order_id).limit(1).execute()
-        has_squad_members = bool(sm_check)
-        if has_squad_members and hp_amount > 0:
-            from app.services.squad_service import squad_share_plan
-            squad_plan = squad_share_plan(order_id, hp_amount, user_id, campus_id=order.get("campus_id"))
-            owner_share_for_credit = squad_plan.get("owner_share", hp_amount)
-    except Exception as e:
-        logger.warning("_handle_delivery_rewards: squad_share_plan failed for order %s, falling back to full HP: %s", order_id, e)
-        owner_share_for_credit = hp_amount
-
-    # Step 2: Atomically credit via Supabase RPC — call for EVERY eligible
-    # delivery, zero-HP included, so the idempotency marker always gets set
-    # B-8: use owner_share when squad exists, but hp_earned column stays full amount
-    try:
-        result = db.rpc("hg_credit_delivery_hp_atomic", {
-            "p_order_id": order_id,
-            "p_user_id": user_id,
-            "p_hp_amount": owner_share_for_credit,
-            "p_tier_name": tier_slug,
-            "p_source_type": "food_order"
-        })
-    except Exception as exc:
-        result = {"error": str(exc)}
-
-    if result is None:
-        result = {}
-
-    if result.get("already_credited"):
+    for attempt in range(3):
+        try:
+            prof = db.table('profiles').select('next_order_hp_multiplier').eq('id', user_id).single().execute()
+            if not prof:
+                raise ValueError('profile unavailable')
+            raw_mult = float(prof.get('next_order_hp_multiplier') or 1)
+            if not math.isfinite(raw_mult):
+                raise ValueError('multiplier unavailable')
+            mult = max(1.0, raw_mult)
+            hp_amount = round(base_hp_amount * mult)
+            sm_check = db.table('squad_members').select('id').eq('order_id', order_id).limit(1).execute()
+            has_squad_members = bool(sm_check)
+            owner_share_for_credit = hp_amount
+            if has_squad_members:
+                from app.services.squad_service import squad_share_plan
+                squad_plan = squad_share_plan(order_id, hp_amount, user_id, campus_id=order.get('campus_id'))
+                owner_share_for_credit = squad_plan.get('owner_share', hp_amount)
+            result = db.rpc('hg_credit_delivery_hp_atomic', {
+                'p_order_id': order_id, 'p_user_id': user_id,
+                'p_hp_amount': owner_share_for_credit, 'p_tier_name': tier_slug,
+                'p_source_type': 'food_order', 'p_expected_multiplier': mult,
+                'p_total_hp_amount': hp_amount,
+            })
+        except Exception:
+            logger.exception('_handle_delivery_rewards: award preparation/transaction unavailable')
+            raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
+        if isinstance(result, dict) and result.get('error') == 'multiplier_changed':
+            # Another order consumed the bonus, or a new perk was issued. Read
+            # its current value and recalculate rather than paying a stale quote.
+            continue
+        break
+    if isinstance(result, dict) and result.get('already_credited'):
         return
-    if not result or result.get("error"):
-        logger.error("Failed to credit HP for order %s", order_id)
+    if not isinstance(result, dict) or not result.get('success'):
+        logger.error('Failed to credit HP for order %s', order_id)
         raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
     try:
@@ -1855,15 +1844,8 @@ def _handle_delivery_rewards(order: dict):
 
     tier_change = hp_service.recalculate_tier(user_id)
 
-    order_updates = {
-        "hp_earned": hp_amount,
-        "hp_credited_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    try:
-        db.table("orders").eq("id", order_id).update(order_updates).execute()
-    except Exception as e:
-        logger.warning("_handle_delivery_rewards: order hp_earned update failed for %s: %s", order_id, e)
+    # The primary transaction already saved the full squad award and timestamp;
+    # an auxiliary hook failure cannot leave a second, incomplete marker update.
 
     # All HP/tier/referral logic above is synchronous so callers see updated
     # balances immediately. Notifications are fire-and-forget — queue them as

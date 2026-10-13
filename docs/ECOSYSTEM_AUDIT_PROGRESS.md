@@ -30,7 +30,7 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 
 ## Validation
 
-- Backend unit suite: **147 passed**, including modifier security, atomic refunds, feature gates, spin contracts and campus-scoped email search.
+- Backend unit suite: **152 passed**, including modifier security, atomic refunds, feature gates, spin contracts, campus-scoped email search and delivery-multiplier recovery.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.
@@ -81,3 +81,13 @@ New editor and error copy lives in `app/messages.py`. These migrations add no ta
 - Rollback tests verify that delivery-fee and next-order-multiplier categories save their profile effects. Their later checkout consumption, cancellations, stacking and reward recovery still require the wider fulfilment audit. Physical prizes currently use the campus team's manual fulfilment pathway; automatic food attachment and delivery-choice integration remain open.
 
 The spin migration reuses existing prize, credit, fulfilment, HP-ledger and monthly-tracker tables. It adds four used columns, one receipt business-key index and two private transaction functions; it adds no table. See the access verification document. Full ecosystem verification, external notifications and the deferred visual redesign remain in progress.
+
+## Delivery HP multiplier failure/retry follow-up
+
+- An isolated actual-profile test reproduced the pending multiplier changing from 2 to 1 when the primary payout RPC failed, with no HP award and no order created. The test restored the original profile value. The multiplier is now consumed inside the primary HP transaction, after the ledger award succeeds.
+- The payout compares the multiplier used by the server's calculation with the locked profile value. A stale calculation returns a conflict without an award; the backend rereads it and recalculates. This prevents two simultaneous deliveries from both applying one bonus. An unavailable profile or payout leaves rewards pending instead of guessing away the bonus.
+- Rolled-back database tests force the HP insert to fail and verify unchanged balance, multiplier and order marker. Subsequent success/replay produces one award. A second order's stale 2× calculation is rejected, then its recalculated 1× award succeeds. The two ledger awards total 306 HP and the monthly counter rises by the same amount. Replaying the first award preserves a newly granted 3× multiplier.
+- The complete order HP amount, including the server's squad calculation, is saved in the payout transaction instead of a later separate update. Owner food HP also updates the existing monthly tracker atomically. Zero-food deliveries do not consume a food-earning multiplier.
+- One private payout definition remains. The old five-argument definition is removed, and the seven-argument definition has defaults for the two added fields. Actual service-client calls using both legacy and current argument sets replay an already credited audit order successfully. No table, column or index is added.
+
+These verify the primary payout and retry boundary. Real spin-multiplier-to-new-order browser delivery, auxiliary reward recovery, partial-refund HP rules, benefit stacking and delivery-credit checkout consumption remain under audit.
