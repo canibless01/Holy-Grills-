@@ -113,6 +113,7 @@ export default function Referrals() {
         templateKey="referral_share"
         payload={{
           headline: 'Join Holy Grill',
+          code,
           value: code,
           caption: `Use my code ${code} and I earn ${referralHp()} HP when you place your first order! 🔥`,
           link,

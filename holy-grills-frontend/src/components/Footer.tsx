@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin } from 'lucide-react';
 import APP_CONFIG from '@/config/app.config';
 import BrandLogo from '@/components/BrandLogo';
+import ContactActions from '@/components/ContactActions';
 import { useContactDetails } from '@/lib/useContactDetails';
 
 /**
@@ -63,7 +64,7 @@ export default function Footer() {
               <MapPin className="w-4 h-4 text-accent shrink-0 mt-0.5" />
               <span>{contact.address}</span>
             </li>}
-            <li><Link to="/contact" className="hover:text-accent transition-colors">{msg('FE_FOOTER_CONTACT_US', "Contact us")}</Link></li>
+            <li><ContactActions /></li>
           </ul>
           {contact.social && <p className="text-xs text-beige/70 mt-4">{contact.social}</p>}
         </div>

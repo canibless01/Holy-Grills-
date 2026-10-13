@@ -1,3 +1,4 @@
+import ContactActions from '@/components/ContactActions';
 import { useFeatureFlags, isFeatureEnabled } from '@/lib/featureConfig';
 import { useLocation } from 'react-router-dom';
 import {
@@ -127,6 +128,7 @@ export default function ProfileMenuContent({
             </button>
           );
         })}
+        <div className="px-4 py-3"><ContactActions /></div>
       </nav>
 
       <div className="px-2 pb-2">

@@ -1,28 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { openCmsDestination } from '@/lib/safeNavigation';
 import { motion } from 'framer-motion';
 import { Flame, ChevronRight } from 'lucide-react';
 import EarlySupportersSlider from '@/components/storefront/EarlySupportersSlider';
 import TestimonialSlider from '@/components/TestimonialSlider';
 import SEO from '@/components/SEO';
 import { metaForPath } from '@/seo/routeMeta';
-import { liveApi } from '@/lib/liveApi';
+import { useCampus } from '@/lib/campusContext';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 
 /** Head data for /our-story — same object the pre-render writes (src/seo/routeMeta.ts). */
 const META = metaForPath('/our-story');
-
-// Last-resort artwork only — the real image comes from the admin panel's
-// storefront section of type `our_story`.
-const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200&q=80';
-
-// Real student reviews reused from the homepage marketing set — static
-// content, not invented data.
-const FALLBACK_REVIEWS = [
-  { text: "It was wonderful 😭 I was even so full I couldn't finish my chips. I enjoyed the sausage so much with the sauce.", name: 'Omoayena A' },
-  { text: "The fries were honestly the best I've had this year. The chicken was so well seasoned and well grilled.", name: 'Owoeye I.B' },
-  { text: "Best grill on campus, hands down. The HP rewards make it even sweeter.", name: 'Adewale T' },
-];
 
 const STORY_CARDS = [
   { title: 'Done properly', body: 'Marinated deep, grilled on real flame, basted again and again. Nothing boiled first.' },
@@ -52,11 +41,15 @@ const fade = (delay = 0) => ({
 });
 
 export default function OurStory() {
-  const [hero, setHero] = useState({ image: FALLBACK_IMAGE, title: 'The Holy Flame Method', caption: 'Real fire. Real time. Real flavour.' });
-  const [testimonials, setTestimonials] = useState(FALLBACK_REVIEWS);
+  const { campusId } = useCampus();
+  const navigate = useNavigate();
+  const [hero, setHero] = useState<{ image: string; title: string; caption: string; cta: string; destination: string } | null>(null);
+  const [testimonials, setTestimonials] = useState([]);
 
   useEffect(() => {
     let live = true;
+    setHero(null);
+    setTestimonials([]);
     // Reviews pull from the same storefront 'testimonial' source the homepage
     // uses, so both pages show identical, admin-managed reviews.
     getStorefrontSections('testimonial')
@@ -65,12 +58,13 @@ export default function OurStory() {
         if (Array.isArray(list) && list.length) {
           setTestimonials(list.map((s) => ({
             text: s.content?.review || s.subtitle || s.title || '',
-            name: s.content?.name || s.title || 'Student',
+            name: s.content?.name || s.title || '',
+            rating: s.content?.rating,
           })));
         }
       })
-      .catch(() => { /* keep fallback reviews */ });
-    liveApi.storefront.getSections({ section_type: 'our_story' })
+      .catch(() => { /* Leave missing reviews empty. */ });
+    getStorefrontSections('our_story')
       .then((list) => {
         if (!live) return;
         const s = (Array.isArray(list) ? list : [])
@@ -78,14 +72,16 @@ export default function OurStory() {
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0];
         if (!s) return;
         setHero({
-          image: s.image_url || s.content?.image_url || FALLBACK_IMAGE,
-          title: s.title || s.content?.title || 'The Holy Flame Method',
-          caption: s.subtitle || s.content?.line || s.content?.subtitle || 'Real fire. Real time. Real flavour.',
+          image: s.image_url || s.content?.image_url || '',
+          title: s.title || s.content?.title || '',
+          caption: s.subtitle || s.content?.line || s.content?.subtitle || '',
+          cta: s.content?.cta_text || '',
+          destination: s.content?.cta_url || s.content?.cta_link || '',
         });
       })
-      .catch(() => { /* keep the fallback artwork */ });
+      .catch(() => { /* Leave unpublished artwork empty. */ });
     return () => { live = false; };
-  }, []);
+  }, [campusId]);
 
   return (
     <div className="animate-fade-in">
@@ -103,18 +99,19 @@ export default function OurStory() {
       </div>
 
       {/* Hero image with caption chip */}
-      <motion.div {...fade()} className="relative rounded-3xl overflow-hidden aspect-[16/9] bg-secondary shadow-card mt-5">
-        <img
+      {hero && <motion.div {...fade()} className="relative rounded-3xl overflow-hidden aspect-[16/9] bg-secondary shadow-card mt-5">
+        {hero.image && <img
           src={hero.image}
           alt="Holy Grills flame-grilled food"
           className="w-full h-full object-cover"
-        />
+        />}
         <div className="absolute inset-0 bg-gradient-to-t from-foreground/85 via-foreground/20 to-transparent" />
         <div className="absolute bottom-4 left-4 right-4 text-white">
           <div className="font-heading font-extrabold text-lg">{hero.title}</div>
           {hero.caption && <div className="text-xs text-white/70">{hero.caption}</div>}
+          {hero.cta && hero.destination && <button onClick={() => openCmsDestination(hero.destination, navigate)} className="mt-3 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold">{hero.cta}</button>}
         </div>
-      </motion.div>
+      </motion.div>}
 
       {/* The story card */}
       <motion.div

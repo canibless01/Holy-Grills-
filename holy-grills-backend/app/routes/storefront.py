@@ -21,6 +21,7 @@ from app.utils.logger import get_logger
 from app.utils.tz import today_wat
 from app.utils.schedule import override_window, resolve_date_override
 from app.utils.validators import validate_email
+from app.utils.upload_urls import is_cms_image_url
 
 logger = get_logger(__name__)                                                    # D17-B09: module had no logging at all
 
@@ -42,6 +43,14 @@ _SECTION_FLAT_KEYS = _SECTION_CONTENT_FIELDS + ("placement",)    # D17-B02: flat
 # ───────────────────────────── helpers ─────────────────────────────
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _storefront_read_query(table, campus_id, columns="*"):
+    """Guest reads use only a validated campus scope, never an unbounded service read."""
+    if getattr(g, "user_id", None):
+        return get_user_client().table(table).select(columns)
+    q = get_db().table(table).select(columns)
+    return q.or_(f"campus_id.is.null,campus_id.eq.{campus_id}") if campus_id else q.eq("campus_id", None)
 
 
 def _section_content(data, base=None):
@@ -94,6 +103,39 @@ def _row(result):
     return result or None
 
 
+def _insert_cms(db, table, payload, data):
+    """Use the existing row UUID for response-loss recovery; no new intent table."""
+    if "request_id" not in data:
+        try:
+            return jsonify(_row(db.table(table).insert(payload))), 201
+        except SupabaseError as exc:
+            if exc.details.get("code") == "23505":
+                return jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
+            raise
+    try:
+        if not isinstance(data["request_id"], str):
+            return _bad_request()
+        intent = str(uuid.UUID(data["request_id"]))
+    except (ValueError, TypeError, AttributeError):
+        return _bad_request()
+    payload = dict(payload, id=intent, created_by=g.user_id)
+    payload.setdefault("campus_id", None)
+    try:
+        return jsonify(_row(db.table(table).insert(payload))), 201
+    except SupabaseError as exc:
+        if exc.details.get("code") != "23505":
+            raise
+    existing = db.table(table).select("*").eq("id", intent).single().execute()
+    def same(key, value):
+        saved = existing.get(key)
+        if key in ("starts_at", "ends_at") and saved and value:
+            return datetime.fromisoformat(saved.replace("Z", "+00:00")) == datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return saved == value
+    if existing and all(same(key, value) for key, value in payload.items()):
+        return jsonify(existing), 200
+    return jsonify({"error": MSG.STOREFRONT_CREATE_CONFLICT}), 409
+
+
 def _write_denied():
     return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
 
@@ -113,7 +155,24 @@ def _parse_bool(v):
 def _parse_int(v):
     if isinstance(v, bool) or v is None:
         raise ValueError("not an int")
+    if isinstance(v, float) and (not math.isfinite(v) or not v.is_integer()):
+        raise ValueError("not an int")
     return int(v)
+
+
+def _section_validation(content, section_type):
+    for field in ("image_url", "base_image_url", "photo_url"):
+        if content.get(field) and not is_cms_image_url(content[field]):
+            return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
+    if section_type == "testimonial" and "rating" in content:
+        try:
+            rating = _parse_int(content["rating"])
+            if not 1 <= rating <= 5:
+                raise ValueError("out of range")
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({"error": MSG.STOREFRONT_RATING_INVALID}), 400
+        content["rating"] = rating
+    return None
 
 
 def _valid_time(v):
@@ -173,6 +232,15 @@ def _images_error(images):
     return None
 
 
+def _banner_window_error(data):
+    if data.get("starts_at") and data.get("ends_at"):
+        start = datetime.fromisoformat(data["starts_at"].replace("Z", "+00:00"))
+        end = datetime.fromisoformat(data["ends_at"].replace("Z", "+00:00"))
+        if end <= start:
+            return jsonify({"error": MSG.STOREFRONT_BANNER_WINDOW_INVALID}), 400
+    return None
+
+
 def _banner_fields(data):
     """
     Whitelisted, schema-valid banner columns from a request body (D17-B02).
@@ -184,6 +252,30 @@ def _banner_fields(data):
         if not isinstance(data["metadata"], dict):
             return None, _bad_request()
         out["metadata"] = dict(data["metadata"])
+    if "slides" in out.get("metadata", {}):
+        slides = out["metadata"]["slides"]
+        if not isinstance(slides, list) or len(slides) > 50:
+            return None, _bad_request()
+        clean = []
+        fields = ("image_url", "mobile_image_url", "eyebrow", "title", "subtitle", "cta_text", "cta_url")
+        for slide in slides:
+            if not isinstance(slide, dict):
+                return None, _bad_request()
+            if any(not isinstance(slide.get(k, ""), str) for k in fields):
+                return None, _bad_request()
+            row = {k: slide.get(k, "").strip() for k in fields}
+            if not row["title"] or not row["image_url"] or len(row["eyebrow"]) > 240:
+                return None, _bad_request()
+            if any(row[k] and not is_cms_image_url(row[k]) for k in ("image_url", "mobile_image_url")):
+                return None, (jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400)
+            if bool(row["cta_text"]) != bool(row["cta_url"]):
+                return None, (jsonify({"error": MSG.FE_CMS_CTA_PAIR}), 400)
+            # A destination must be an app path or an explicit web URL.
+            dest = row["cta_url"]
+            if dest and not ((dest.startswith("/") and not dest.startswith("//") and "\\" not in dest) or dest.startswith(("https://", "http://"))):
+                return None, _bad_request()
+            clean.append(row)
+        out["metadata"]["slides"] = clean
     if "eyebrow" in data:
         if not isinstance(data["eyebrow"], str) or len(data["eyebrow"]) > 240:
             return None, _bad_request()
@@ -202,8 +294,10 @@ def _banner_fields(data):
             out["sort_order"] = _parse_int(data["sort_order"])
         for k in ("starts_at", "ends_at"):
             if data.get(k) is not None:
-                datetime.fromisoformat(str(data[k]).replace("Z", "+00:00"))
-                out[k] = data[k]
+                when = datetime.fromisoformat(str(data[k]).replace("Z", "+00:00"))
+                if when.tzinfo is None:
+                    return None, _bad_request()
+                out[k] = when.astimezone(timezone.utc).isoformat()
             elif k in data:
                 out[k] = None
     except (TypeError, ValueError):
@@ -213,6 +307,20 @@ def _banner_fields(data):
         if err:
             return None, err
         out["images"] = data["images"]
+    for field in ("image_url", "mobile_image_url"):
+        if out.get(field) and not is_cms_image_url(out[field]):
+            return None, (jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400)
+    if any(not is_cms_image_url(url) for url in out.get("images", [])):
+        return None, (jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400)
+    if "slides" in out.get("metadata", {}):
+        slides = out["metadata"]["slides"]
+        first = slides[0] if slides else {}
+        # One authoritative slide set, mirrored to existing legacy columns.
+        out.update(images=[row["image_url"] for row in slides],
+                   image_url=first.get("image_url", ""), mobile_image_url=first.get("mobile_image_url", ""),
+                   title=first.get("title", ""), subtitle=first.get("subtitle", ""),
+                   action_label=first.get("cta_text", ""), action_url=first.get("cta_url", ""))
+        out["metadata"]["eyebrow"] = first.get("eyebrow", "")
     return out, None
 
 
@@ -252,6 +360,7 @@ def get_public_config():
         else:                                                                        # no campus chosen: global settings only, never an arbitrary campus's
             settings = [s for s in settings if s.get("campus_id") is None]
         config_dict = {}
+        global_email = next((r.get("value") for r in settings if r.get("key") == "support_email" and r.get("campus_id") is None), "")
         # global rows first, campus rows last -> campus value wins for the same key (D17-B08)
         for row in sorted(settings, key=lambda r: r.get("campus_id") is not None):
             if row.get("key"):
@@ -281,14 +390,15 @@ def get_public_config():
         except Exception:
             logger.warning("get_public_config: campus coordinates unreadable for %s", campus_id, exc_info=True)
 
+    config_dict["global_support_email"] = global_email
     config_dict["max_delivery_radius_km"] = max_radius
     config_dict["campus_lat"] = c_lat
     config_dict["campus_lon"] = c_lon
-    # Support contact. Per-campus DB value wins; the server env is the fallback
-    # when the table has no row at all (D17-B22). The DB row must be
-    # is_public = TRUE to be visible here — the floating chat button is the
-    # only consumer, and it reads this and nothing else.
-    if not config_dict.get("whatsapp_support_number"):
+    # Guests may use global contact details before choosing a campus. Once a
+    # campus is resolved, WhatsApp must come from that campus's public row.
+    if campus_id:
+        config_dict["whatsapp_support_number"] = next((r.get("value") for r in settings if r.get("key") == "whatsapp_support_number" and r.get("campus_id") == campus_id), "")
+    elif not config_dict.get("whatsapp_support_number"):
         config_dict["whatsapp_support_number"] = (os.environ.get("WHATSAPP_SUPPORT_NUMBER") or "").strip() or None
     if not config_dict.get("whatsapp_support_message"):
         config_dict["whatsapp_support_message"] = (os.environ.get("WHATSAPP_SUPPORT_MESSAGE") or "").strip() or None
@@ -308,17 +418,22 @@ def list_sections():
       200:
         description: Storefront sections
     """
-    db = get_user_client()
     campus_id = _get_campus_id()
-    q = db.table("storefront_sections").select("*")
+    q = _storefront_read_query("storefront_sections", campus_id)
     # Public callers get the active rows only. An admin needs to see the rows
     # they switched off too — otherwise flipping is_active off makes a section
     # vanish from the CMS list with no way to turn it back on.
     include_inactive = str(request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
-    if not (include_inactive and getattr(g, "user_role", None) in ADMIN_ROLES):
+    management_read = include_inactive and getattr(g, "user_role", None) in ADMIN_ROLES
+    if not management_read:
         q = q.eq("is_active", "true")
+    section_type = request.args.get("section_type")
+    if section_type:
+        q = q.eq("section_type", section_type)
     sections = q.order("sort_order").execute() or []
-    return jsonify(_scoped(sections, campus_id)), 200
+    if include_inactive and getattr(g, "user_role", None) == "super_admin" and not campus_id:
+        return jsonify(sections), 200
+    return jsonify(_scoped(sections, campus_id, key_fn=None if management_read else lambda row: (row.get("section_type"), row.get("key")))), 200
 
 
 @storefront_bp.route("/sections/<section_id>", methods=["PATCH"])
@@ -359,11 +474,15 @@ def update_section(section_id):
     data = _json_body()
     if data is None:
         return _bad_request()
-    existing = db.table("storefront_sections").select("id,content").eq("id", section_id).single().execute()
+    existing = db.table("storefront_sections").select("id,content,section_type").eq("id", section_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.SECTION_NOT_FOUND}), 404
 
     update = {}
+    if "key" in data:
+        if not isinstance(data["key"], str) or not data["key"].strip():
+            return _field_required("key")
+        update["key"] = data["key"].strip()
     try:
         if "title" in data:
             update["title"] = data["title"]
@@ -378,12 +497,20 @@ def update_section(section_id):
     if content is None:
         return _bad_request()                                                       # D17-B13 (content: null -> NOT NULL 500)
     if _section_content_touched(data):
+        err = _section_validation(content, existing.get("section_type"))
+        if err:
+            return err
         update["content"] = content
     if not update:
         return jsonify({"error": MSG.STOREFRONT_NOTHING_TO_UPDATE}), 400
 
     update["updated_at"] = _now_iso()
-    updated = _row(db.table("storefront_sections").eq("id", section_id).update(update))
+    try:
+        updated = _row(db.table("storefront_sections").eq("id", section_id).update(update))
+    except SupabaseError as exc:
+        if exc.details.get("code") == "23505":
+            return jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
+        raise
     if updated is None:
         return _write_denied()
     return jsonify(updated), 200
@@ -432,6 +559,9 @@ def create_section():
     content = _section_content(data)
     if content is None:
         return _bad_request()                                                       # D17-B13 (content: null -> NOT NULL 500)
+    err = _section_validation(content, data["section_type"].strip())
+    if err:
+        return err
     try:
         safe = {
             "key": data["key"].strip(),
@@ -446,8 +576,7 @@ def create_section():
     campus_id = _write_campus_id(data.get("campus_id"))
     if campus_id:
         safe["campus_id"] = campus_id
-    row = _row(db.table("storefront_sections").insert(safe))
-    return jsonify(row), 201
+    return _insert_cms(db, "storefront_sections", safe, data)
 
 
 @storefront_bp.route("/sections/<section_id>", methods=["DELETE"])
@@ -490,6 +619,8 @@ def update_section_image(section_id):
     image_url = data.get("image_url")
     if not isinstance(image_url, str) or not image_url.strip():
         return jsonify({"error": MSG.STOREFRONT_IMAGE_URL_REQUIRED}), 400
+    if not is_cms_image_url(image_url):
+        return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
     content = dict(section.get("content") or {})
     content["image_url"] = image_url
     updated = _row(db.table("storefront_sections").eq("id", section_id).update({"content": content, "updated_at": _now_iso()}))
@@ -791,17 +922,17 @@ def list_early_supporters():
       200:
         description: List of early supporters (ordered by sort_order)
     """
-    db = get_user_client()
     campus_id = _get_campus_id()
-    rows = (
-        db.table("storefront_sections")
-        .select("id,title,content,sort_order,created_at,campus_id")
+    q = (
+        _storefront_read_query("storefront_sections", campus_id, "id,title,content,sort_order,created_at,campus_id,is_active")
         .eq("section_type", "early_supporter")
-        .eq("is_active", "true")
-        .order("sort_order", ascending=True)
-        .execute()
-    ) or []
-    rows = _scoped(rows, campus_id)                                                  # D17-B07: was the only public list with no campus filter
+    )
+    management_read = str(request.args.get("include_inactive") or "").lower() in ("1", "true", "yes") and getattr(g, "user_role", None) in ADMIN_ROLES
+    if not management_read:
+        q = q.eq("is_active", "true")
+    rows = q.order("sort_order", ascending=True).execute() or []
+    if not (management_read and getattr(g, "user_role", None) == "super_admin" and not campus_id):
+        rows = _scoped(rows, campus_id)
     supporters = []
     for row in rows:
         content = row.get("content") if isinstance(row.get("content"), dict) else {}
@@ -812,6 +943,8 @@ def list_early_supporters():
             "social_links": content.get("social_links") or {},
             "note": content.get("note"),
             "sort_order": row.get("sort_order", 0),
+            "is_active": row.get("is_active", True),
+            "campus_id": row.get("campus_id"),
         })
     return jsonify(supporters), 200
 
@@ -851,6 +984,8 @@ def create_early_supporter():
     social_links = data.get("social_links") or {}
     if not isinstance(social_links, dict):
         return _bad_request()
+    if data.get("photo_url") and not is_cms_image_url(data["photo_url"]):
+        return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
     try:
         sort_order = _parse_int(data.get("sort_order", 0))
     except (TypeError, ValueError):
@@ -869,6 +1004,11 @@ def create_early_supporter():
     if campus_id:
         payload["campus_id"] = campus_id
 
+    if "request_id" in data:
+        response, status = _insert_cms(db, "storefront_sections", payload, data)
+        if status in (200, 201):
+            return jsonify({"message": MSG.STOREFRONT_SUPPORTER_ADDED, "supporter": response.get_json()}), status
+        return response, status
     try:
         result = db.table("storefront_sections").insert(payload)
     except SupabaseError as e:
@@ -922,6 +1062,8 @@ def update_early_supporter(section_id):
     if not any(k in data for k in ("name", "photo_url", "note", "social_links", "sort_order", "is_active")):
         return jsonify({"error": MSG.STOREFRONT_NOTHING_TO_UPDATE}), 400
 
+    if "photo_url" in data and content.get("photo_url") and not is_cms_image_url(content["photo_url"]):
+        return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
     update_payload["content"] = content
     update_payload["updated_at"] = _now_iso()
     updated = _row(db.table("storefront_sections").eq("id", section_id).update(update_payload))
@@ -959,6 +1101,8 @@ def update_early_supporter_photo(section_id):
     photo_url = data.get("photo_url")
     if not isinstance(photo_url, str) or not photo_url.strip():
         return jsonify({"error": MSG.STOREFRONT_PHOTO_URL_REQUIRED}), 400
+    if not is_cms_image_url(photo_url):
+        return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
     db = get_user_client()
     section = (
         db.table("storefront_sections").select("content")
@@ -991,21 +1135,41 @@ def list_banners():
       200:
         description: Active banners ordered by sort_order
     """
-    db = get_user_client()
-    q = db.table("banners").select("*")
+    campus_id = _get_campus_id()
+    q = _storefront_read_query("banners", campus_id)
     # The public list only ever served is_active rows, so an admin could not
     # see — let alone repair or re-enable — a banner that had been switched
     # off; it simply vanished from the panel. `include_inactive=1` is honoured
     # for admin callers only (a public caller asking for it gets the active
     # set, never the hidden rows).
     include_inactive = str(request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
-    if not (include_inactive and getattr(g, "user_role", None) in ADMIN_ROLES):
+    management_read = include_inactive and getattr(g, "user_role", None) in ADMIN_ROLES
+    if not management_read:
         q = q.eq("is_active", "true")
     placement = request.args.get("placement")
     if placement:
         q = q.eq("placement", placement)
     banners = q.order("sort_order").execute() or []
-    return jsonify(_scoped(banners, _get_campus_id())), 200
+    if not management_read:
+        now = datetime.now(timezone.utc)
+        def visible(banner):
+            try:
+                for field, is_start in (("starts_at", True), ("ends_at", False)):
+                    value = banner.get(field)
+                    if not value:
+                        continue
+                    when = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    if when.tzinfo is None:
+                        when = when.replace(tzinfo=timezone.utc)
+                    if (is_start and when > now) or (not is_start and when < now):
+                        return False
+                return True
+            except (TypeError, ValueError):
+                return False
+        banners = [banner for banner in banners if visible(banner)]
+    if management_read and getattr(g, "user_role", None) == "super_admin" and not campus_id:
+        return jsonify(banners), 200
+    return jsonify(_scoped(banners, campus_id)), 200
 
 
 @storefront_bp.route("/banners", methods=["POST"])
@@ -1053,12 +1217,15 @@ def create_banner():
     safe, err = _banner_fields(data)
     if err:
         return err
+    err = _banner_window_error(safe)
+    if err:
+        return err
     safe.setdefault("is_active", True)
     safe.setdefault("sort_order", 0)
     campus_id = _write_campus_id(data.get("campus_id"))
     if campus_id:
         safe["campus_id"] = campus_id
-    return jsonify(_row(db.table("banners").insert(safe))), 201
+    return _insert_cms(db, "banners", safe, data)
 
 
 @storefront_bp.route("/banners/<banner_id>", methods=["DELETE"])
@@ -1116,14 +1283,55 @@ def update_banner(banner_id):
     update, err = _banner_fields(data)
     if err:
         return err
-    existing = db.table("banners").select("id").eq("id", banner_id).single().execute()
+    existing = db.table("banners").select("id,image_url,images,metadata,updated_at,starts_at,ends_at").eq("id", banner_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.STOREFRONT_BANNER_NOT_FOUND}), 404
+    if "expected_updated_at" in data and data["expected_updated_at"] != existing.get("updated_at"):
+        return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
+    if "starts_at" in update or "ends_at" in update:
+        err = _banner_window_error(dict(existing, **update))
+        if err:
+            return err
     if not update:
         return jsonify({"error": MSG.STOREFRONT_NOTHING_TO_UPDATE}), 400            # D17-B02 (all keys dropped silently before)
+    # The renderer prefers the carousel array. Replacing its main image must
+    # replace that same image in the array, or the old picture stays visible.
+    if "image_url" in update and "images" not in update and existing.get("images"):
+        update["images"] = list(dict.fromkeys(
+            update["image_url"] if url == existing.get("image_url") else url
+            for url in existing["images"]
+            if url != existing.get("image_url") or update["image_url"]
+        ))
+    if "slides" not in update.get("metadata", {}) and isinstance((existing.get("metadata") or {}).get("slides"), list):
+        slides = [dict(row) for row in existing["metadata"]["slides"]]
+        if "image_url" in update:
+            for row in slides:
+                if row.get("image_url") == existing.get("image_url"):
+                    row["image_url"] = update["image_url"]
+        if "images" in update:
+            slides = [row for row in slides if row.get("image_url") in update["images"]]
+        if "mobile_image_url" in update and slides:
+            slides[0]["mobile_image_url"] = update["mobile_image_url"] or ""
+        copy_fields = {"title": "title", "subtitle": "subtitle", "action_label": "cta_text", "action_url": "cta_url"}
+        if slides:
+            for column, field in copy_fields.items():
+                if column in update:
+                    slides[0][field] = update[column] or ""
+            if "eyebrow" in data:
+                slides[0]["eyebrow"] = data["eyebrow"].strip()
+        if any(field in update for field in ("images", "mobile_image_url", "metadata", *copy_fields)):
+            update["metadata"] = dict(existing.get("metadata") or {}, **update.get("metadata", {}), slides=slides)
+    if "images" in data and not update.get("images"):
+        update["image_url"] = ""
     update["updated_at"] = _now_iso()
-    updated = _row(db.table("banners").eq("id", banner_id).update(update))
+    # Do not overwrite slides added after the editor's read.
+    q = db.table("banners").eq("id", banner_id)
+    if "images" in update or "metadata" in update or "expected_updated_at" in data:
+        q = q.eq("updated_at", existing.get("updated_at"))
+    updated = _row(q.update(update))
     if updated is None:
+        if "images" in update or "metadata" in update or "expected_updated_at" in data:
+            return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
         return _write_denied()
     return jsonify(updated), 200
 
@@ -1131,22 +1339,37 @@ def update_banner(banner_id):
 @storefront_bp.route("/banners/<banner_id>/image", methods=["POST"])
 @require_role("admin")
 def update_banner_image(banner_id):
-    """Update banner image with Cloudinary URL."""
+    """Append a Cloudinary carousel slide; retries never duplicate the image."""
     db = get_user_client()
-    existing = db.table("banners").select("id").eq("id", banner_id).single().execute()
-    if not existing:
-        return jsonify({"error": MSG.STOREFRONT_BANNER_NOT_FOUND}), 404
     data = _json_body() or {}
     image_url = data.get("image_url")
     if not isinstance(image_url, str) or not image_url.strip():
         return jsonify({"error": MSG.STOREFRONT_IMAGE_URL_REQUIRED}), 400
-    update_data = {"image_url": image_url, "updated_at": _now_iso()}
-    if data.get("mobile_image_url") is not None:
-        update_data["mobile_image_url"] = data["mobile_image_url"]
-    updated = _row(db.table("banners").eq("id", banner_id).update(update_data))
-    if updated is None:
-        return _write_denied()
-    return jsonify({"image_url": image_url}), 200
+    if not is_cms_image_url(image_url):
+        return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
+    for attempt in range(6):
+        existing = db.table("banners").select("id,image_url,images,metadata,title,subtitle,action_label,action_url,updated_at,campus_id").eq("id", banner_id).single().execute()
+        if not existing:
+            return jsonify({"error": MSG.STOREFRONT_BANNER_NOT_FOUND}), 404
+        if getattr(g, "user_role", None) != "super_admin" and existing.get("campus_id") != getattr(g, "campus_id", None):
+            return _write_denied()
+        images = existing.get("images") or [existing.get("image_url")]
+        images = list(dict.fromkeys(url for url in images if url))
+        if image_url in images:
+            return jsonify({"image_url": image_url, "images": images}), 200
+        images.append(image_url)
+        update = {"images": images, "updated_at": _now_iso()}
+        metadata = existing.get("metadata") or {}
+        if isinstance(metadata.get("slides"), list):
+            # Compatibility for old clients: preserve the configured slides.
+            update["metadata"] = dict(metadata, slides=metadata["slides"] + [{
+                "image_url": image_url, "mobile_image_url": "", "eyebrow": "",
+                "title": existing.get("title") or "", "subtitle": existing.get("subtitle") or "",
+                "cta_text": existing.get("action_label") or "", "cta_url": existing.get("action_url") or ""}])
+        updated = _row(db.table("banners").eq("id", banner_id).eq("updated_at", existing.get("updated_at")).update(update))
+        if updated:
+            return jsonify({"image_url": image_url, "images": images}), 200
+    return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
 
 
 # ───────────────────────────── newsletter ─────────────────────────────
@@ -1304,6 +1527,29 @@ def newsletter_list():
         q = q.eq("campus_id", request.args["campus_id"].strip())
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(rows), 200
+
+
+@storefront_bp.route("/newsletter/admin-unsubscribe", methods=["POST"])
+@require_role("admin")
+def admin_newsletter_unsubscribe():
+    """The admin button uses staff authorization; public links require signed tokens."""
+    data = _json_body()
+    if data is None:
+        return _bad_request()
+    email, err = _clean_email(data)
+    if err:
+        return err
+    db = get_user_client()
+    campus_id = _get_campus_id()
+    q = db.table("newsletter_subscriptions").select("id,unsubscribed_at").eq("email", email)
+    if campus_id:
+        q = q.eq("campus_id", campus_id)
+    row = _row(q.limit(1).execute())
+    if not row:
+        return jsonify({"error": MSG.STOREFRONT_SUBSCRIBER_NOT_FOUND}), 404
+    if not row.get("unsubscribed_at"):
+        db.table("newsletter_subscriptions").eq("id", row["id"]).is_("unsubscribed_at", "null").update({"unsubscribed_at": _now_iso()})
+    return jsonify({"message": MSG.STOREFRONT_UNSUBSCRIBED}), 200
 
 
 # ───────────────────────────── newsletter campaigns (admin sends to their campus) ─────────────────────────────

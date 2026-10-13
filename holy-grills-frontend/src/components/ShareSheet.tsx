@@ -1,3 +1,5 @@
+import { resolveShareTemplate, resolveShareCaption } from '@/lib/shareTemplates';
+import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Share2, Copy, Check, Loader2 } from 'lucide-react';
@@ -52,30 +54,42 @@ export default function ShareSheet({
   templateKey?: string | null;
   payload?: SharePayload;
 }) {
-  const { refreshHp } = useHolyGrill();
+  const { refreshHp, user, hpBalance } = useHolyGrill();
+  const { campusId } = useCampus();
+  const defaultHp = hpBalance?.total_visible ?? hpBalance?.active ?? 0;
+  const defaultName = user?.profile?.full_name || user?.full_name || '';
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
   const [busy, setBusy] = useState(true);
+  const [templateCaption, setTemplateCaption] = useState<string | null>(null);
+  const [composeError, setComposeError] = useState(false);
+  const generation = useRef(0);
   [canvasRef, imgRef]; // satisfy linter refs usage
   const [dataUrl, setDataUrl] = useState(null);
   const [blob, setBlob] = useState(null);
   const [copied, setCopied] = useState(false);
   const [recorded, setRecorded] = useState(false);
 
-  const caption = payload.caption || '';
+  const caption = templateCaption ?? payload.caption ?? '';
   const link = payload.link || (typeof window !== 'undefined' ? window.location.origin : '');
   const shareText = `${payload.headline ? payload.headline + ' · ' : ''}${caption}`;
 
   // Compose the shareable image onto a canvas: draw the base template, then
   // overlay the dynamic headline / value / caption in the brand palette.
   const compose = useCallback(async () => {
+    const current = ++generation.current;
     setBusy(true);
+    setDataUrl(null);
+    setBlob(null);
+    setComposeError(false);
     try {
-      const sections = await mockApi.storefront.getSections({ section_type: 'share_template' }).catch(() => []);
+      const sections = await mockApi.storefront.getSections({ section_type: 'share_template' });
       // Each share surface (order confirmation, Hall of Fame, …) has its own
       // template, distinguished by the section's `key` — same API, own upload.
-      const list = Array.isArray(sections) ? sections : [];
-      const tpl = (templateKey && list.find((s) => (s.key || s.content?.key) === templateKey)) || list[0] || null;
+      if (current !== generation.current) return;
+      const tpl = resolveShareTemplate(sections, templateKey);
+      const resolvedCaption = resolveShareCaption(tpl, payload, { hp: defaultHp, name: defaultName });
+      setTemplateCaption(resolvedCaption);
       const baseImg = tpl?.image_url || tpl?.content?.image_url || tpl?.content?.base_image_url || tpl?.content?.image || '';
       const canvas = document.createElement('canvas');
       const W = 1080, H = 1080;
@@ -101,7 +115,7 @@ export default function ShareSheet({
           ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
           // darken for text legibility
           ctx.fillStyle = 'rgba(20,5,0,0.45)'; ctx.fillRect(0, 0, W, H);
-        } catch { /* image failed → keep gradient base */ }
+        } catch { throw new Error('share image unavailable'); }
       }
 
       // Dynamic text overlay.
@@ -117,8 +131,8 @@ export default function ShareSheet({
       // caption — wrap into lines lower on the canvas
       ctx.fillStyle = '#FFF3DA';
       ctx.font = '36px Georgia, serif';
-      if (caption) {
-        const words = caption.split(' ');
+      if (resolvedCaption) {
+        const words = resolvedCaption.split(' ');
         const maxW = W - 160;
         let line = '', y = 720;
         for (let i = 0; i < words.length; i++) {
@@ -136,19 +150,21 @@ export default function ShareSheet({
       ctx.fillText('Holy Grills 🔥', W / 2, H - 60);
 
       canvas.toBlob((b) => {
+        if (current !== generation.current) return;
         if (b) { setBlob(b); setDataUrl(URL.createObjectURL(b)); }
         else setDataUrl(canvas.toDataURL('image/png'));
         setBusy(false);
       }, 'image/png');
     } catch (e) {
-      console.error(e);
-      setBusy(false);
+      if (current === generation.current) { setComposeError(true); setBusy(false); }
     }
-  }, [payload.headline, payload.value, caption, templateKey]);
+  }, [payload.headline, payload.value, payload.caption, payload.hp, payload.name, payload.code, payload.link, templateKey, campusId, defaultHp, defaultName]);
 
   useEffect(() => {
-    if (open) { setRecorded(false); compose(); }
+    if (open) { setRecorded(false); setTemplateCaption(null); compose(); }
+    return () => { generation.current++; };
   }, [open, compose]);
+  useEffect(() => () => { if (dataUrl?.startsWith('blob:')) URL.revokeObjectURL(dataUrl); }, [dataUrl]);
 
   // Record an order share once so the 25 HP (pending) is awarded.
   const recordOrderShare = useCallback(async (platform) => {
@@ -213,6 +229,10 @@ export default function ShareSheet({
               ) : null}
             </div>
 
+            {composeError && <div className="rounded-xl border border-destructive/30 p-3 mb-3">
+              <p role="alert" className="text-xs text-destructive">{msg('FE_SHARE_TEMPLATE_FAILED', 'The share image could not be loaded. Please try again.')}</p>
+              <button onClick={compose} className="text-xs text-primary font-bold mt-2">{msg('FE_SHARE_TEMPLATE_RETRY', 'Retry share image')}</button>
+            </div>}
             {/* Caption + link (editable in most platforms) */}
             <div className="rounded-xl bg-muted border border-border p-3 mb-3">
               {payload.headline && <div className="font-heading font-bold text-sm text-foreground">{payload.headline}{payload.value ? ` · ${payload.value}` : ''}</div>}
@@ -223,7 +243,7 @@ export default function ShareSheet({
             {/* Native share (image) */}
             <button
               onClick={nativeShare}
-              disabled={busy}
+              disabled={busy || !blob}
               className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 mb-3 disabled:opacity-50"
             >
               <Share2 className="w-4 h-4" /> Share Image via…

@@ -1,3 +1,5 @@
+import { useCampus } from '@/lib/campusContext';
+import { msg } from '@/lib/messages';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -16,41 +18,47 @@ import { openCmsDestination } from '@/lib/safeNavigation';
  *
  * Content (flyer image + cta_text + destination) comes from an admin-uploaded
  * storefront section of section_type='popup'. Data flows through the live API
- * (getStorefrontSections calls liveApi.storefront.getSections first; mock data
- * is only a last-resort fallback when the backend list is empty).
+ * (getStorefrontSections calls liveApi.storefront.getSections first; no fallback content
+ * is fabricated when the backend list is empty).
  */
 export default function PromoFlyerPopup() {
   const navigate = useNavigate();
+  const { campusId } = useCampus();
   const [section, setSection] = useState(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const list = await getStorefrontSections('popup');
-      if (cancelled) return;
-      const active = (Array.isArray(list) ? list : [])
-        .filter((s) => s.is_active !== false)
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0];
-      if (!active) return;
-      const sessionId = sessionStorage.getItem('hg_login_session');
-      if (!sessionId) return;
-      if (sessionStorage.getItem(`hg_popup_seen_${sessionId}_${active.id}`)) return;
-      setSection(active);
-      // Brief delay so it lands after the hero, not on top of a blank paint.
-      const t = setTimeout(() => setOpen(true), 600);
-      return () => clearTimeout(t);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const dismiss = () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setOpen(false);
-    if (section) {
-      const sessionId = sessionStorage.getItem('hg_login_session');
-      if (sessionId) sessionStorage.setItem(`hg_popup_seen_${sessionId}_${section.id}`, '1');
-    }
-  };
+    setSection(null);
+    if (!campusId) return;
+    (async () => {
+      try {
+        const list = await getStorefrontSections('popup');
+        if (cancelled) return;
+        const active = list.filter((s) => s.is_active !== false)
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0];
+        if (!active) return;
+        let sessionId = sessionStorage.getItem('hg_login_session') || sessionStorage.getItem('hg_storefront_visit');
+        if (!sessionId) {
+          sessionId = crypto.randomUUID();
+          sessionStorage.setItem('hg_storefront_visit', sessionId);
+        }
+        const seenKey = `hg_popup_seen_${sessionId}_${campusId}_${active.id}`;
+        if (sessionStorage.getItem(seenKey)) return;
+        setSection(active);
+        timer = setTimeout(() => {
+          if (cancelled) return;
+          sessionStorage.setItem(seenKey, '1');
+          setOpen(true);
+        }, 600);
+      } catch { /* Unavailable content does not create a popup. */ }
+    })();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [campusId]);
+
+  const dismiss = () => setOpen(false);
 
   const go = () => {
     const dest = section?.content?.cta_url || section?.content?.cta_link || section?.cta_url || section?.content?.destination;
@@ -79,13 +87,13 @@ export default function PromoFlyerPopup() {
             {/* The flyer — the whole rectangle is the image, and it IS the CTA. */}
             <button
               onClick={go}
-              aria-label={section.title || 'Promo'}
-              className="block w-full rounded-3xl overflow-hidden bg-card shadow-glow focus:outline-none active:scale-[0.98] transition-transform"
+              aria-label={section.title || msg('FE_STOREFRONT_PROMO', 'Promo')}
+              className="relative block w-full rounded-3xl overflow-hidden bg-card shadow-glow focus:outline-none active:scale-[0.98] transition-transform"
             >
               {(section.content?.image_url || section.image_url) ? (
                 <img
                   src={section.content?.image_url || section.image_url}
-                  alt={section.title || 'Promo'}
+                  alt={section.title || msg('FE_STOREFRONT_PROMO', 'Promo')}
                   className="w-full object-cover"
                   style={{ aspectRatio: '4 / 5' }}
                 />
@@ -95,6 +103,10 @@ export default function PromoFlyerPopup() {
                   {(section.content?.subtitle || section.subtitle) && <p className="text-xs text-muted-foreground mt-2">{section.content?.subtitle || section.subtitle}</p>}
                 </div>
               )}
+              {(section.content?.image_url || section.image_url) && <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent px-4 pb-4 pt-10 text-white text-left">
+                <h3 className="font-heading font-extrabold text-lg">{section.title}</h3>
+                {(section.content?.subtitle || section.subtitle) && <p className="text-xs text-white/80 mt-1">{section.content?.subtitle || section.subtitle}</p>}
+              </div>}
             </button>
 
             {/* CTA button — a small overlay box floating on top of the flyer,
@@ -112,7 +124,7 @@ export default function PromoFlyerPopup() {
           {/* Close icon — circular, centred beneath the modal */}
           <button
             onClick={dismiss}
-            aria-label="Close"
+            aria-label={msg('FE_STOREFRONT_CLOSE_POPUP', 'Close promotion')}
             className="mt-8 w-10 h-10 rounded-full border-2 border-white/40 text-white flex items-center justify-center hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />

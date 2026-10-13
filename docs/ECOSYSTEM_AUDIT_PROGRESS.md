@@ -11,7 +11,7 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 - Super admin creates a global category and meal without a campus. Students in both audit campuses can view and add it to a cart. Campus admin cannot edit the global catalogue. Campus-specific price, limit and availability times have an editor, remain isolated, reject invalid input and can return to catalogue defaults.
 - Direct Supabase attacks using audit accounts reproduced cross-campus catalogue reads, foreign-campus cart insertion and modifier attachment. The corrected policies reject the writes with 403 and hide foreign-campus records. Test rows are removed by exact IDs.
 - Mobile guests cannot bypass menu campus selection. Invalid or missing campus API requests fail. Campus categories load, modifiers are priced correctly, campus contact settings switch correctly, and guest carts remain separate and retained across campus changes.
-- Floating WhatsApp code is removed. Contact page and footer use campus settings, with global fallback. There is no floating contact control.
+- Floating WhatsApp code and the permanent mobile contact strip are removed. Desktop navigation has no Contact Us item. Inline contact buttons in the account menu, FAQ and footer reveal campus WhatsApp and the global support email; legacy /contact URLs still work.
 - Concurrent duplicate checkout intents resolve to one order and one wallet debit. Distinct intents competing for the last delivery-window slot or stock unit admit one order. A retry after spending the exact wallet balance returns the original order.
 - A new actual two-meal checkout saves preparation notes, beef and three side selections. Confirmation, customer detail, admin and kitchen tickets render them; side quantities reflect the meal quantity. The database records one 4,350-naira wallet debit. Customers can read their own selections and kitchen cannot forge selection snapshots. Actual kitchen buttons advance this order from received to preparing to ready; its ready ticket and choices survive reload.
 - Admin creates a delivery batch and assigns the ready test order through the UI. The assigned rider reads its choices, confirms pickup and delivery; the batch completes. The HP ledger records 205 food HP and 50 welcome HP, with no pending primary delivery award.
@@ -26,18 +26,18 @@ Project: Supabase **Test Two**. Status: **in progress**. This report describes v
 - Scheduling consent is retained, saved auto-scheduling uses backend window resolution, successful schedules navigate to confirmation, and copy reflects payment and preparation state. Browser response-loss passes; multi-tab UI checkout testing remains open.
 - Preparation state is independent of payment state. Kitchen preparation requires paid orders; future scheduled orders are excluded until due. Cancellation and refund routes now use one atomic ledger/state transaction. Historical test-refund counters reconcile from real credits, partial refunds preserve preparation status, and retries do not repeat money. Kitchen/batch/rider/delivery and complete reward side-effect loops remain open.
 - HP multiplier and flash reward release gates are off. Flash redemption enforces the release flag and campus in its database transaction. Automatic random event planning and advance notices remain to be completed and tested.
-- Hero eyebrow is editable using existing banner metadata. The full storefront field, image, publication and customer-rendering matrix remains open.
+- Storefront text, slide, placement and publication loops below pass. Actual Cloudinary upload, decoded images and successful image-share export remain open because the attached runtime blocks Cloudinary outbound hosts.
 
 ## Validation
 
-- Backend unit suite: **152 passed**, including modifier security, atomic refunds, feature gates, spin contracts, campus-scoped email search and delivery-multiplier recovery.
+- Backend unit suite: **172 passed**, including modifier security, atomic refunds, feature gates, spin contracts, delivery-multiplier recovery, independent carousel configuration, contact scope and newsletter contracts.
 - Frontend typecheck and complete build pass, including routes, central message registry checks, value-text/settings checks, client/SSR builds and prerendering.
 - Browser and direct API/database evidence is kept in the audit workspace. Private fixture passwords, sessions and funding manifests are excluded from this repository.
 - New messages use the central `app/messages.py` registry and frontend `msg()` helper.
 
 ## Image architecture
 
-Uploads remain **Cloudinary only**. The temporary Supabase Storage fallback is removed; its audit-only image and empty bucket were deleted. Cloudinary API key/secret are missing from the current audit runtime. The owner stored them in the personal vault; runtime binding and Cloudinary network access are still required; actual upload/display/replace/delete loops will be rerun afterward.
+Uploads remain **Cloudinary only**. The temporary Supabase Storage fallback is removed; its audit-only image and empty bucket were deleted. Cloudinary credentials are configured privately for the audit backend; no credential fallback is committed. Its upload status and signer are checked, and pasted URLs must be images in the configured Cloudinary account. The running cloud environment still omits `api.cloudinary.com` and `res.cloudinary.com` from its enforced allowlist. Successful upload, decoded-image display, asset replacement/deletion and successful image-share export remain unverified until that policy is applied.
 
 ## Remaining full audit scope
 
@@ -91,3 +91,30 @@ The spin migration reuses existing prize, credit, fulfilment, HP-ledger and mont
 - One private payout definition remains. The old five-argument definition is removed, and the seven-argument definition has defaults for the two added fields. Actual service-client calls using both legacy and current argument sets replay an already credited audit order successfully. No table, column or index is added.
 
 These verify the primary payout and retry boundary. Real spin-multiplier-to-new-order browser delivery, auxiliary reward recovery, partial-refund HP rules, benefit stacking and delivery-credit checkout consumption remain under audit.
+
+
+## Storefront, carousel and contact follow-up
+
+The carousel editor now groups each slide's image, optional phone crop, eyebrow, title, subtitle and CTA label/destination together. Adding, editing, reordering and removing slides saves one versioned configuration in the existing `banners.metadata` JSON. The first slide is mirrored into legacy columns; older records retain their existing copy until edited. No new table or column is needed.
+
+| Admin surface | Verified loop | Remaining limit |
+| --- | --- | --- |
+| Hero / homepage banners | Three independently configured images, eyebrows, titles, subtitles and CTA destinations; live dot navigation matches image position and copy; CTA opens the configured page; reorder/remove persist together | Actual Cloudinary image decode/upload blocked |
+| Menu / checkout banners | Dedicated admin tabs; three independently configured slides appear only at their destination, with working navigation | Same media limit |
+| What's Inside / How It's Made | Native image URL, title, subtitle, badge, CTA and individual eyebrow fields read back and render in their cards; dimensions allow clicks; public CTA destinations work for guests | Same media limit |
+| Promos | Home, menu and checkout placements render their configured image URL and copy in the intended channel | Provider media bytes unverified |
+| Testimonials / Our Story | Rating, name, review, image URL, story title/caption and CTA propagate; stored ratings are displayed; fabricated default reviews and images are removed | CMS testimonials are labelled feedback, without claiming verified orders |
+| Tier Icons | All four native slot inputs save; campus-specific icons refresh their consumers and preserve global inheritance | Decoded artwork blocked |
+| Early Supporters | Native name, note, social URL, order, activity and photo clearing persist; inactive entries remain manageable; customer visibility responds | Uploaded photo bytes blocked |
+| Popup Flyer | Guest and signed-in campus copy/image URL/CTA; dismiss; once per visit and reset after login | Same media limit |
+| Share Templates | All four slot editors save image URL and caption; resolver uses the intended slot then general fallback; actual order/referral share captions use real HP/code values | Image download failure offers Retry; successful rendered-image export blocked |
+| Newsletter | Guest campus subscription → admin list → scoped staff unsubscribe; campaign subject/body → queue/view/cancel; signed public unsubscribe page requires an explicit click and supports replay | Provider preview now returns recoverable 503 instead of crashing; email delivery and worker execution remain unverified |
+| Contact | Logged-in accounts from both test campuses hard-reload without campus selection and receive their own WhatsApp link plus global Gmail; guest inline options work; desktop header and fixed strip have no contact control | Outbound WhatsApp/email delivery is outside the local UI-link check |
+
+Further failure checks verify a lost committed banner-create response recovers the same UUID and record, six simultaneous matching create requests return one 201 and five 200 responses, and conflicting intents return 409. Scheduled dates entered in Lagos time store UTC and remain hidden before publication. Stale image/copy edits return 409. Failed CMS reads show a working Retry and block editing instead of presenting an empty catalogue.
+
+The carousel text animation no longer waits indefinitely on the outgoing title, and automatic advancement pauses during manual selection. Contact controls on static pages retain their open state while the authenticated campus finishes loading. Seed/example actions are removed from every storefront tab; empty sections remain empty. New editor/error messages use the central registry.
+
+The existing FAQ Gmail address is now stored once in the global public `support_email` setting. WhatsApp for a resolved campus comes from that campus's configured public number; an absent campus number does not silently choose a different campus or global number.
+
+Direct role checks and migration duplication/grants are recorded in [migration/access verification](MIGRATION_ACCESS_VERIFICATION.md). Temporary carousel and inactive global permission-probe rows are deleted by exact ID. Other synthetic CMS fixtures remain confined to the audit campus. This batch does not close the wider ecosystem families listed above.

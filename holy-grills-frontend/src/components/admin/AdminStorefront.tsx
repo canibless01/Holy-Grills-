@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
+import React, { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Trash2, Image, Mail, Flame, Tag, Quote, Share2, Heart, Sparkles, Clock, Pencil, Utensils, Award, BookOpen, Send, XCircle, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDate } from '@/lib/hgUtils';
@@ -50,6 +51,8 @@ const TAB_GROUPS: Array<{ label: string; tabs: StorefrontTab[] }> = [
     tabs: [
       { id: 'hero', label: 'Hero', icon: Flame, kind: 'banners_api', placement: 'hero', desc: 'Homepage hero carousel — swipeable images with overlay text + CTA.' },
       { id: 'home_banners', label: 'Banners', icon: Image, kind: 'banners_api', placement: 'home', desc: 'Homepage mid-page carousel banners — swipeable multi-image.' },
+      { id: 'menu_banners', label: msg('FE_CMS_MENU_BANNERS', 'Menu Banners'), icon: Image, kind: 'banners_api', placement: 'menu' },
+      { id: 'checkout_banners', label: msg('FE_CMS_CHECKOUT_BANNERS', 'Checkout Banners'), icon: Image, kind: 'banners_api', placement: 'checkout' },
     ],
   },
   {
@@ -105,15 +108,6 @@ const keyFor = (s) => s.key || s.content?.key || (s.section_type === 'share_temp
   ? 'share_template'
   : (slugify(s.title) || `${s.section_type}-${String(s.id).slice(0, 8)}`));
 
-// Real sample content the admin can seed into the live backend (POST /storefront/sections)
-// so each segment has data to view and edit — not mock, persisted via the API.
-const SAMPLE_SECTIONS = [
-  { section_type: 'promo', title: 'Squad Feast — Save Together', subtitle: 'Order with your squad and unlock group discounts on platters.', image_url: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=80', cta_text: 'Start a squad', cta_url: '/events', placement: 'home', sort_order: 0 },
-  { section_type: 'testimonial', content: { name: 'Omoayena A.', review: 'It was wonderful 😭 I was even so full and it came right to my hostel. The HP rewards keep me coming back!', rating: 5 } },
-  { section_type: 'share_template', title: 'Share Template', content: { base_image_url: 'https://images.unsplash.com/photo-1513104890-87103ece8d46?w=1200&q=80', caption_template: 'I just earned {hp} Holy Points at Holy Grills 🔥' } },
-  { section_type: 'popup', title: 'Welcome to Holy Grills 🔥', subtitle: 'Your first order comes with a free Holy Fries.', image_url: 'https://images.unsplash.com/photo-1567620832903-9fc6debc209f?w=1200&q=80', cta_text: 'Order now', cta_url: '/menu', placement: 'home', sort_order: 0 },
-];
-
 type SectionDraft = {
   section_type: string;
   title: string;
@@ -128,6 +122,7 @@ type SectionDraft = {
   testimonial_rating: number | string;
   caption_template: string;
   badge: string;
+  eyebrow: string;
   share_key: string;
 };
 
@@ -158,22 +153,24 @@ const sectionPatch = (s: any, name: string, value: any) => {
   return { [name]: value, content };
 };
 
-const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', share_key: 'share_template' });
+const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', eyebrow: '', share_key: 'share_template' });
 
 export default function AdminStorefront() {
+  const sectionIntent = useCmsCreateIntent();
+  const supporterIntent = useCmsCreateIntent();
   const [tab, setTab] = useState('hero');
   const [sections, setSections] = useState([]);
   const [supporters, setSupporters] = useState([]);
   const [subscribers, setSubscribers] = useState([]);
   // Newsletter campaigns (storefront.py) — the send side of the newsletter tab.
-  const { campuses } = useCampus();
+  const { campuses, campusId, adminCampusId } = useCampus();
+  const loadGeneration = useRef(0);
   const isSuperAdmin = useIsSuperAdmin();
   const [campaigns, setCampaigns] = useState([]);
   const [campaignForm, setCampaignForm] = useState(null); // { subject, body, campusId, allCampuses }
   const [campaignBusy, setCampaignBusy] = useState(null);
   const [campaignView, setCampaignView] = useState(null); // detail row (body + counts)
   const [busy, setBusy] = useState(null);
-  const [seeding, setSeeding] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [supporterName, setSupporterName] = useState('');
   const [supporterPhoto, setSupporterPhoto] = useState('');
@@ -183,22 +180,26 @@ export default function AdminStorefront() {
   const [editSupporter, setEditSupporter] = useState(null); // supporter being edited
   const [newSection, setNewSection] = useState(blankSection('hero'));
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
+    const current = ++loadGeneration.current;
     try {
       const [b, s, n, c] = await Promise.all([
         mockApi.admin.getStorefrontSections(),
         mockApi.admin.getEarlySupporters(),
         mockApi.admin.getNewsletterSubscribers(),
-        mockApi.storefront.getNewsletterCampaigns().catch(() => []),
+        mockApi.storefront.getNewsletterCampaigns(),
       ]);
+      if (current !== loadGeneration.current) return;
       setSections(Array.isArray(b) ? [...b].sort((a, c) => (a.sort_order ?? 0) - (c.sort_order ?? 0)) : []);
       setSupporters(Array.isArray(s) ? s : []); setSubscribers(Array.isArray(n) ? n : []);
       setCampaigns(Array.isArray(c) ? c : []);
-    } catch { setSections([]); }
+      setLoadError(false);
+    } catch { if (current !== loadGeneration.current) return; setLoadError(true); }
     setLoaded(true);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { setLoaded(false); load(); return () => { loadGeneration.current++; }; }, [campusId, adminCampusId]);
 
   const activeTab = ALL_TABS.find((t) => t.id === tab);
   const isSectionType = SECTION_TAB_IDS.includes(tab);
@@ -231,7 +232,7 @@ export default function AdminStorefront() {
     setBusy(null); await load();
   };
   const move = async (s, dir) => {
-    const sameType = sections.filter((x) => x.section_type === s.section_type).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    const sameType = sections.filter((x) => x.section_type === s.section_type && x.campus_id === s.campus_id).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     const i = sameType.findIndex((x) => x.id === s.id); const j = i + dir; if (j < 0 || j >= sameType.length) return;
     const other = sameType[j];
     setBusy(`mv-${s.id}`);
@@ -241,21 +242,6 @@ export default function AdminStorefront() {
   };
   const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
   const del = async (id) => { if (!confirm('Delete this storefront section? It will be removed from the live homepage.')) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
-
-  const seedSamples = async () => {
-    setSeeding(true); let ok = 0;
-    for (const sample of SAMPLE_SECTIONS) {
-      try {
-        const body: SectionBody = { ...sample, is_active: true };
-        if (sample.section_type === 'share_template') body.key = 'share_template';
-        else body.key = slugify(sample.title || sample.content?.name) || `${sample.section_type}-${Date.now().toString(36)}`;
-        if (sample.section_type === 'testimonial') body.title = sample.content.name;
-        await mockApi.admin.createStorefrontSection(body); ok++;
-      } catch (e) { /* skip duplicates / failures */ }
-    }
-    toast({ title: msg('FE_ADMIN_STOREFRONT_SEEDED_OK_SAMPLE_SECTION_S', 'Seeded {ok} sample section(s)', { ok: ok }), description: msg('FE_ADMIN_STOREFRONT_EDIT_THEM_BELOW_TO_SEE_HOW_EACH_TYPE', 'Edit them below to see how each type renders.') });
-    setSeeding(false); await load();
-  };
 
   const create = async () => {
     const t = newSection.section_type;
@@ -269,10 +255,11 @@ export default function AdminStorefront() {
       body.key = t === 'share_template'
         ? (newSection.share_key || 'share_template')
         : (slugify(newSection.title || newSection.testimonial_name) || `${t}-${Date.now().toString(36)}`);
-      if (t === 'testimonial') { body.title = newSection.testimonial_name; body.content = { name: newSection.testimonial_name, review: newSection.testimonial_review, rating: Number(newSection.testimonial_rating) || 5 }; }
+      if (t === 'testimonial') { body.title = newSection.testimonial_name; body.content = { name: newSection.testimonial_name, review: newSection.testimonial_review, rating: Number(newSection.testimonial_rating) }; }
       else if (t === 'share_template') { body.title = newSection.title || 'Share Template'; body.key = newSection.share_key || 'share_template'; body.content = { base_image_url: newSection.image_url, caption_template: newSection.caption_template || '', key: newSection.share_key || 'share_template' }; }
-      else { body.title = newSection.title; body.subtitle = newSection.subtitle; body.image_url = newSection.image_url; body.cta_text = newSection.cta_text; body.cta_url = newSection.cta_url; if (SLIDER_TAB_IDS.includes(t) && newSection.badge) body.content = { ...(body.content || {}), badge: newSection.badge }; }
-      await mockApi.admin.createStorefrontSection(body);
+      else { body.title = newSection.title; body.subtitle = newSection.subtitle; body.image_url = newSection.image_url; body.cta_text = newSection.cta_text; body.cta_url = newSection.cta_url; if (SLIDER_TAB_IDS.includes(t)) body.content = { ...(body.content || {}), badge: newSection.badge, eyebrow: newSection.eyebrow }; }
+      await mockApi.admin.createStorefrontSection(sectionIntent.body(body));
+      sectionIntent.clear();
       setAddOpen(false); setNewSection(blankSection(t)); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED_TO_CREATE', 'Failed to create'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
@@ -283,7 +270,8 @@ export default function AdminStorefront() {
   const addSupporter = async () => {
     if (!supporterName) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
     try {
-      await mockApi.admin.addEarlySupporter({ name: supporterName, photo_url: supporterPhoto || undefined, note: supporterNote || undefined, social_links: supporterSocial || undefined, sort_order: Number(supporterOrder) || 0 });
+      await mockApi.admin.addEarlySupporter(supporterIntent.body({ name: supporterName, photo_url: supporterPhoto || undefined, note: supporterNote || undefined, social_links: supporterSocial ? { url: supporterSocial.trim() } : {}, sort_order: Number(supporterOrder) || 0 }));
+      supporterIntent.clear();
       setSupporterName(''); setSupporterPhoto(''); setSupporterNote(''); setSupporterSocial(''); setSupporterOrder(0);
       setAddOpen(false); await load();
       toast({ title: msg('FE_ADMIN_STOREFRONT_EARLY_SUPPORTER_ADDED', '✅ Early supporter added') });
@@ -293,12 +281,9 @@ export default function AdminStorefront() {
     if (!editSupporter) return;
     setBusy(`sup-${editSupporter.id}`);
     try {
-      const body: { name: string; note?: string; social_links?: unknown; sort_order: number; is_active?: boolean } = { name: editSupporter.name, note: editSupporter.note || undefined, social_links: editSupporter.social_links || undefined, sort_order: Number(editSupporter.sort_order) || 0 };
+      const body = { name: editSupporter.name, note: editSupporter.note || '', photo_url: editSupporter.photo_url || null, social_links: editSupporter.social_links ? { url: editSupporter.social_links.trim() } : {}, sort_order: Number(editSupporter.sort_order) || 0, is_active: editSupporter.is_active };
       if (editSupporter.is_active !== undefined) body.is_active = editSupporter.is_active;
       await mockApi.admin.updateEarlySupporter(editSupporter.id, body);
-      if (editSupporter.photo_url && editSupporter.photo_url !== editSupporter._origPhoto) {
-        await mockApi.admin.updateEarlySupporterPhoto(editSupporter.id, { photo_url: editSupporter.photo_url });
-      }
       setEditSupporter(null);
       toast({ title: msg('FE_ADMIN_STOREFRONT_SUPPORTER_UPDATED', '✅ Supporter updated') });
       await load();
@@ -359,6 +344,10 @@ export default function AdminStorefront() {
   const CAMPAIGN_TONES = { queued: 'blue', sending: 'amber', sent: 'green', cancelled: 'cocoa', failed: 'red' };
 
   if (!loaded) return <LoadingSpinner label="Loading..." />;
+  if (loadError) return <Card>
+    <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
+    <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>
+  </Card>;
 
   return (
     <div className="space-y-4">
@@ -397,16 +386,18 @@ export default function AdminStorefront() {
           <div className="flex justify-between items-center">
             <p className="text-[11px] text-muted-foreground capitalize">{tab.replace(/_/g, ' ')} sections — render on the live homepage in sort order.</p>
             <div className="flex gap-2">
-              {visible.length === 0 && <button onClick={seedSamples} disabled={seeding} className="flex items-center gap-1 px-3 py-2 rounded-full bg-foreground text-white text-xs font-bold disabled:opacity-50"><Sparkles className="w-3.5 h-3.5" /> {seeding ? 'Seeding...' : 'Seed samples'}</button>}
               <button onClick={() => { setNewSection(blankSection(tab)); setAddOpen(true); }} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add</button>
             </div>
           </div>
           {visible.length === 0 ? (
-            <Card><p className="text-xs text-muted-foreground text-center py-6">No {tab.replace(/_/g, ' ')} sections yet. Click "Seed samples" to insert real example sections you can edit, or "Add" to create your own.</p></Card>
+            <Card><p className="text-xs text-muted-foreground text-center py-6">{msg('FE_ADMIN_STOREFRONT_NO_SECTIONS', 'No published content here yet. Add a section to configure this surface.')}</p></Card>
           ) : visible.map((s) => (
             <Card key={s.id}>
+              {!isSuperAdmin && !s.campus_id && <p className="text-xs text-muted-foreground mb-2">{msg('FE_ADMIN_STOREFRONT_GLOBAL_READ_ONLY', 'Global content is managed by super admins.')}</p>}
+              <fieldset disabled={!isSuperAdmin && !s.campus_id}>
               <div className="flex items-center gap-2 mb-2">
                 <Pill tone="blue">{(s.section_type || 'banner').toUpperCase()}</Pill>
+                <span className="text-[10px] text-muted-foreground">{s.campus_id ? (campuses.find((campus) => campus.id === s.campus_id)?.name || msg('FE_ADMIN_STOREFRONT_CAMPUS_CONTENT', 'Campus content')) : msg('FE_ADMIN_STOREFRONT_GLOBAL_CONTENT', 'Global content')}</span>
                 {placementOf(s) && <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{placementOf(s)}</span>}
                 <div className="ml-auto flex items-center gap-1.5">
                   <button type="button" onClick={() => move(s, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move up">↑</button>
@@ -436,6 +427,7 @@ export default function AdminStorefront() {
               ) : (
                 <>
                   <input value={s.title || ''} onChange={(e) => upd(s.id, { title: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm font-bold" placeholder="Title" />
+                  {SLIDER_TAB_IDS.includes(s.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={s.content?.eyebrow || ''} onChange={(e) => upd(s.id, { content: { ...s.content, eyebrow: e.target.value } })} /></Field>}
                   <input value={sectionField(s, 'subtitle')} onChange={(e) => upd(s.id, sectionPatch(s, 'subtitle', e.target.value))} className="w-full mb-2 p-2 rounded-lg border border-border text-sm" placeholder="Subtitle" />
                   <ImageUploader value={sectionField(s, 'image_url')} onChange={(url) => upd(s.id, sectionPatch(s, 'image_url', url))} folder="banners" />
                   {SLIDER_TAB_IDS.includes(s.section_type) && (
@@ -451,6 +443,7 @@ export default function AdminStorefront() {
                 <button onClick={() => save(s)} disabled={busy === s.id} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50"><Save className="w-3.5 h-3.5" /> Save</button>
                 <button onClick={() => del(s.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
               </div>
+              </fieldset>
             </Card>
           ))}
         </div>
@@ -471,8 +464,8 @@ export default function AdminStorefront() {
                 <div className="text-xs text-muted-foreground truncate">{s.note || 'No note'}</div>
               </div>
               <span className="text-[10px] text-muted-foreground">#{s.sort_order ?? 0}</span>
-              <button onClick={() => setEditSupporter({ ...s, _origPhoto: s.photo_url })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-              <button onClick={() => removeSupporter(s.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button aria-label={msg('FE_ADMIN_STOREFRONT_EDIT_SUPPORTER', 'Edit supporter {name}', { name: s.name })} disabled={!isSuperAdmin && !s.campus_id} onClick={() => setEditSupporter({ ...s, social_links: typeof s.social_links === 'string' ? s.social_links : (s.social_links?.url || s.social_links?.link || '') })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+              <button aria-label={msg('FE_ADMIN_STOREFRONT_REMOVE_SUPPORTER', 'Remove supporter {name}', { name: s.name })} disabled={!isSuperAdmin && !s.campus_id} onClick={() => removeSupporter(s.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
             </Card>
           ))}
         </div>
@@ -577,6 +570,7 @@ export default function AdminStorefront() {
             </>
           ) : newSection.section_type === 'share_template' ? (
             <>
+              <Field label={msg('FE_ADMIN_STOREFRONT_SHARE_TITLE', 'Title')}><TextInput value={newSection.title} onChange={(e) => setNewSection({ ...newSection, title: e.target.value })} /></Field>
               <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">Students' share cards overlay their name and HP on the base image.</div>
               <Field label="Base share image (required)"><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="share_templates" /></Field>
               <Field label="Caption template"><textarea value={newSection.caption_template} onChange={(e) => setNewSection({ ...newSection, caption_template: e.target.value })} rows={2} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" placeholder="I just earned {hp} HP at Holy Grills 🔥" /></Field>
@@ -589,6 +583,7 @@ export default function AdminStorefront() {
           ) : (
             <>
               <Field label="Title (required)"><TextInput value={newSection.title} onChange={(e) => setNewSection({ ...newSection, title: e.target.value })} /></Field>
+              {SLIDER_TAB_IDS.includes(newSection.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={newSection.eyebrow} onChange={(e) => setNewSection({ ...newSection, eyebrow: e.target.value })} /></Field>}
               <Field label="Subtitle"><TextInput value={newSection.subtitle} onChange={(e) => setNewSection({ ...newSection, subtitle: e.target.value })} /></Field>
               <Field label="Image (required)"><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && (
@@ -601,7 +596,7 @@ export default function AdminStorefront() {
             </>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Placement"><select value={newSection.placement} onChange={(e) => setNewSection({ ...newSection, placement: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm"><option value="home">Home</option><option value="menu">Menu</option><option value="checkout">Checkout</option></select></Field>
+            {newSection.section_type === 'promo' && <Field label="Placement"><select value={newSection.placement} onChange={(e) => setNewSection({ ...newSection, placement: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm"><option value="home">Home</option><option value="menu">Menu</option><option value="checkout">Checkout</option></select></Field>}
             <Field label="Sort order"><TextInput type="number" value={newSection.sort_order} onChange={(e) => setNewSection({ ...newSection, sort_order: e.target.value })} /></Field>
           </div>
           <button onClick={create} disabled={busy === 'create'} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">{busy === 'create' ? 'Creating...' : 'Create Section'}</button>

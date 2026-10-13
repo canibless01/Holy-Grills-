@@ -56,6 +56,8 @@ export default function HallOfFame() {
     const finishes = w.top4_finish_count || inductee?.top4_finish_count || w.streak_count || w.top4_finishes || 3;
     setSharePayload({
       headline: name,
+      name,
+      hp: w.hp_earned ?? inductee?.hp_earned ?? 0,
       value: `${finishes} Top 4 finishes`,
       caption: `${name} just got inducted into the Holy Grills Hall of Fame! 🔥`,
       link: typeof window !== 'undefined' ? window.location.origin : '',

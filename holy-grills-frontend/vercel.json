@@ -166,6 +166,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/newsletter",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/newsletter/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/notification-preferences",
       "dest": "/app-shell.html"
     },

@@ -93,3 +93,24 @@ Actual browser/API concurrency and response-loss tests record one grant, one HP 
 `consume_delivery_hp_multiplier_with_atomic_payout` appears once. The prior five-argument `hg_credit_delivery_hp_atomic` definition is explicitly removed, leaving one seven-argument definition with defaults for `p_expected_multiplier` and `p_total_hp_amount`. Actual Data API calls with either five or seven named arguments replay the same already credited audit delivery. No overlapping overload, table, column, index or trigger is created.
 
 The current function pins `search_path=public`, denies PUBLIC/anon/authenticated EXECUTE and grants service_role. It validates a paid, delivered order and its owner, locks the profile, checks the calculated multiplier, then commits the existing HP ledger, monthly tracker, multiplier reset and complete order HP marker together. A zero-food delivery retains the food multiplier. A stale multiplier returns without mutations. Forced insert failure rolls back all affected state. Replays do not consume a subsequently granted bonus. Security advisors retain the historical findings above.
+
+
+## Storefront campus and guest-grant follow-up
+
+`enforce_storefront_campus_reads_and_restrict_cms_grants` and `restrict_anonymous_cms_writes` each occur once in migration history. The former adds one restrictive SELECT policy on each existing CMS table; the latter removes anonymous INSERT/UPDATE/DELETE grants. Neither adds a table, column, index, function or trigger. Canonical SQL is in [STOREFRONT_CAMPUS_SCOPE_FIX.sql](STOREFRONT_CAMPUS_SCOPE_FIX.sql).
+
+On `banners` and `storefront_sections`, anon retains SELECT only. Authenticated retains staff SELECT/INSERT/UPDATE/DELETE, constrained by existing campus RLS; TRUNCATE/REFERENCES/TRIGGER are revoked for both public client roles. Service-role privileges are preserved. Policy comparison reports zero duplicate groups. The existing section key/campus uniqueness constraint is reused for intent conflicts and overrides.
+
+Before the read guard, an anonymous caller and a foreign-campus student could read fifteen active audit-campus CMS rows directly. After the guard they read zero. Bounded backend guest reads still supply the validated selected campus's public content. An actual rolled-back authenticated role test against an owned CMS row returns:
+
+| Actor | Read rows | Update rows |
+| --- | ---: | ---: |
+| Own-campus student | 1 | 0 |
+| Own-campus admin | 1 | 1 |
+| Foreign-campus student/admin | 0 | 0 |
+| Own-campus kitchen/rider | 1 | 0 |
+| Active super admin | 1 | 1 |
+
+Actual browser sessions also verify super admin can create and edit an inactive global section without selecting a campus; a campus admin's edit is rejected with 404. The exact global probe is deleted. Per-slide configuration reuses existing JSON, so it introduces no migration object or grants. The general support email reuses one existing-setting key and has exactly one global row.
+
+Security advisors were rerun after the grant change. Historical SECURITY DEFINER exposure, `pg_net` location, newsletter-delivery policy and password-protection notices remain under the wider security audit; this batch is not a database-wide clean bill of health.

@@ -1,6 +1,9 @@
+import { bannerSlides } from '@/lib/bannerSlides';
+import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { liveApi } from '@/lib/liveApi';
 import { openCmsDestination } from '@/lib/safeNavigation';
 
@@ -16,30 +19,18 @@ interface HeroSlide {
 
 
 // Build swipeable carousel slides from dedicated banners (placement='hero').
-function buildSlidesFromBanners(banners: unknown): HeroSlide[] | null {
+function buildSlidesFromBanners(banners: unknown, placement = 'hero'): HeroSlide[] | null {
   if (!Array.isArray(banners) || !banners.length) return null;
   // Defensive: the backend can ignore the placement filter and return every
   // banner — keep only hero ones so other surfaces never leak into the hero.
-  const active = banners.filter((b) => b.is_active !== false && (!b.placement || b.placement === 'hero'));
+  const active = banners.filter((b) => b.is_active !== false && (b.placement || 'hero') === placement);
   const slides: HeroSlide[] = [];
   for (const b of active) {
-    const imgs = Array.isArray(b.images) && b.images.length ? b.images : [b.image_url].filter(Boolean);
-    if (!imgs.length) continue;
-    for (const img of imgs) {
-      const url = typeof img === 'string' ? img : img.url;
-      if (!url) continue;
-      slides.push({
-        image: url,
-        mobileImage: b.mobile_image_url || undefined,
-        eyebrow: b.metadata?.eyebrow || '',
-        // Banner columns are action_label/action_url (storefront.py `_banner_fields`
-        // accepts the legacy cta_text/cta_url names but STORES them under action_*).
-        // Reading b.cta_text here meant the admin's CTA never reached the hero.
-        tag: b.content?.headline || b.title || '',
-        sub: b.content?.sub || b.content?.body || b.subtitle || '',
-        cta: b.action_label || b.cta_text || 'Order Now',
-        cta_url: b.action_url || b.cta_url || '/menu',
-      });
+    for (const slide of bannerSlides(b)) {
+      if (!slide.image_url) continue;
+      slides.push({ image: slide.image_url, mobileImage: slide.mobile_image_url || undefined,
+        eyebrow: slide.eyebrow, tag: slide.title, sub: slide.subtitle,
+        cta: slide.cta_text, cta_url: slide.cta_url });
     }
   }
   return slides.length ? slides : null;
@@ -59,27 +50,33 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
     // Section rows keep subtitle/cta_* inside `content` (the columns are key,
     // section_type, title, content, is_active, sort_order) — read them there.
     sub: s.content?.sub || s.content?.body || s.subtitle || s.content?.subtitle || '',
-    cta: s.content?.cta || s.content?.cta_text || s.cta_text || 'Order Now',
+    cta: s.content?.cta || s.content?.cta_text || s.cta_text || msg('FE_STOREFRONT_ORDER_NOW', 'Order Now'),
     cta_url: s.content?.cta_url || s.content?.cta_link || s.cta_url || '/menu',
   }));
 }
 
-export default function HeroCarousel({ onCta }) {
+export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) {
   const navigate = useNavigate();
+  const SlideHeading = placement === 'hero' ? 'h1' : 'h2';
+  const { campusId } = useCampus();
   const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [i, setI] = useState(0);
+  const [paused, setPaused] = useState(false);
   const scrollRef = useRef(null);
   const autoTimer = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
+    setSlides([]);
+    setI(0);
     const loadHero = async () => {
       try {
-        const banners = await liveApi.storefront.getBanners({ placement: 'hero' });
+        const banners = await liveApi.storefront.getBanners({ placement });
         if (!cancelled) {
-          const fromBanners = buildSlidesFromBanners(banners);
+          const fromBanners = buildSlidesFromBanners(banners, placement);
           if (fromBanners) { setSlides(fromBanners); return; }
         }
+        if (placement !== 'hero') { if (!cancelled) setSlides([]); return; }
         const sections = await liveApi.storefront.getSections({ section_type: 'hero' });
         if (!cancelled) {
           const fromSections = buildSlidesFromSections(sections);
@@ -89,28 +86,29 @@ export default function HeroCarousel({ onCta }) {
     };
     loadHero();
     return () => { cancelled = true; };
-  }, []);
+  }, [campusId, placement]);
 
   const scrollToSlide = useCallback((idx) => {
     const el = scrollRef.current;
     if (!el) return;
     const slide = el.children[idx];
-    if (slide) el.scrollTo({ left: slide.offsetLeft, behavior: 'smooth' });
+    setPaused(true);
+    if (slide) el.scrollTo({ left: slide.offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: 'instant' });
     setI(idx);
   }, []);
 
   useEffect(() => {
-    if (slides.length <= 1) return;
+    if (slides.length <= 1 || paused) return;
     autoTimer.current = setInterval(() => {
       setI((p) => {
         const next = (p + 1) % slides.length;
         const el = scrollRef.current;
-        if (el && el.children[next]) el.scrollTo({ left: el.children[next].offsetLeft, behavior: 'smooth' });
+        if (el && el.children[next]) el.scrollTo({ left: el.children[next].offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: 'instant' });
         return next;
       });
     }, 5000);
     return () => clearInterval(autoTimer.current);
-  }, [slides.length]);
+  }, [slides.length, paused]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -129,12 +127,14 @@ export default function HeroCarousel({ onCta }) {
   };
 
   return (
-    <div className="relative bg-foreground -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[78vh] min-h-[480px] overflow-hidden">
+    <div className={placement === 'hero' ? 'relative bg-foreground -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[78vh] min-h-[480px] overflow-hidden' : 'relative bg-foreground rounded-2xl h-72 sm:h-80 overflow-hidden'}>
       {/* Swipeable image carousel — CSS scroll-snap for native touch swipe */}
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        onTouchStart={() => autoTimer.current && clearInterval(autoTimer.current)}
+        onTouchStart={() => setPaused(true)}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
         className="flex h-full w-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
         style={{ scrollSnapType: 'x mandatory' }}
       >
@@ -164,24 +164,23 @@ export default function HeroCarousel({ onCta }) {
             transparent with a light backdrop blur + hairline border: no
             colour fill, only the hero image shows through it. */}
         {s.eyebrow && <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">{s.eyebrow}</span>}
-        <AnimatePresence mode="wait">
+        <>
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           >
-            <h1 className="font-heading font-extrabold text-4xl sm:text-5xl text-white leading-[1.05] mb-2 text-balance">{s.tag}</h1>
+            <SlideHeading className="font-heading font-extrabold text-4xl sm:text-5xl text-white leading-[1.05] mb-2 text-balance">{s.tag}</SlideHeading>
             <p className="text-base text-white/85 mb-5 max-w-md">{s.sub}</p>
           </motion.div>
-        </AnimatePresence>
-        <button
+        </>
+        {s.cta && s.cta_url && <button
           onClick={go}
           className="self-start px-5 py-2.5 rounded-full bg-gradient-cta text-white font-bold text-sm shadow-lg hover:scale-105 transition-transform pointer-events-auto"
         >
           {s.cta} →
-        </button>
+        </button>}
 
         {/* Dot indicators — horizontal, directly below the hero content */}
         {slides.length > 1 && (
@@ -190,7 +189,7 @@ export default function HeroCarousel({ onCta }) {
               <button
                 key={idx}
                 onClick={() => scrollToSlide(idx)}
-                aria-label={`Go to slide ${idx + 1}`}
+                aria-label={msg('FE_CMS_GO_TO_SLIDE', 'Go to slide {number}', { number: idx + 1 })}
                 className={`rounded-full transition-all ${idx === i ? 'bg-primary w-6 h-1.5' : 'bg-white/50 w-1.5 h-1.5'}`}
               />
             ))}

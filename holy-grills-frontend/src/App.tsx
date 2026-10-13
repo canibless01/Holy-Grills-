@@ -59,6 +59,7 @@ const HallOfFame = lazy(() => import('@/pages/HallOfFame'));
 const FAQ = lazy(() => import('@/pages/FAQ'));
 const TermsPrivacy = lazy(() => import('@/pages/TermsPrivacy'));
 const OurStory = lazy(() => import('@/pages/OurStory'));
+const NewsletterUnsubscribe = lazy(() => import('@/pages/NewsletterUnsubscribe'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 
@@ -96,6 +97,7 @@ const AppRoutes = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/terms" element={<TermsPrivacy />} />
         <Route path="/our-story" element={<OurStory />} />
+        <Route path="/newsletter/unsubscribe" element={<NewsletterUnsubscribe />} />
         {/* Authenticated student routes */}
         <Route element={<RequireAuth />}>
           <Route path="/dashboard" element={<Dashboard />} />

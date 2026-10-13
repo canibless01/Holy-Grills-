@@ -1190,11 +1190,11 @@ const admin = {
   async getBanners(params = {}) { return unwrap(await apiClient.get('/storefront/banners', { include_inactive: '1', ...params }), 'banners'); },
   async updateBanner(id, body) { return apiClient.patch(`/storefront/banners/${id}`, body); },
   async createBanner(body) { return apiClient.post('/storefront/banners', body); },
-  async getEarlySupporters() { return unwrap(await apiClient.get('/storefront/early-supporters'), 'early_supporters', 'sections'); },
+  async getEarlySupporters() { return unwrap(await apiClient.get('/storefront/early-supporters', { include_inactive: '1' }), 'early_supporters', 'sections'); },
   async addEarlySupporter(body) { return apiClient.post('/storefront/early-supporters', body); },
   async removeEarlySupporter(id) { return apiClient.delete(`/storefront/early-supporters/${id}`); },
   async getNewsletterSubscribers() { return unwrap(await apiClient.get('/storefront/newsletter'), 'subscribers', 'newsletter'); },
-  async unsubscribeNewsletter(body) { return apiClient.post('/storefront/newsletter/unsubscribe', body); },
+  async unsubscribeNewsletter(body) { return apiClient.post('/storefront/newsletter/admin-unsubscribe', body); },
 
   // --- Operating Hours (storefront.py: GET public, PATCH admin, POST override admin) ---
   // GET /storefront/operating-hours → { schedule, today_override, is_open }.

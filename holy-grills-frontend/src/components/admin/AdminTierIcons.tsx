@@ -1,4 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
+import LoadingSpinner from '@/components/LoadingSpinner';
+import { useCampus } from '@/lib/campusContext';
+import { useIsSuperAdmin } from './SuperAdminGate';
+import { useState, useEffect, useRef } from 'react';
 import { Save, Award } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Card, Pill, Toggle } from './AdminShared';
@@ -19,21 +23,36 @@ const TIER_SLOTS = [
 ];
 
 export default function AdminTierIcons() {
+  const createIntent = useCmsCreateIntent();
+  const { campusId, adminCampusId } = useCampus();
+  const isSuperAdmin = useIsSuperAdmin();
+  const targetScope = isSuperAdmin ? (adminCampusId || null) : campusId;
+  const [loadError, setLoadError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [rows, setRows] = useState({});
+  const loadGeneration = useRef(0);
   const [busy, setBusy] = useState(null);
 
   const load = async () => {
+    const current = ++loadGeneration.current;
     try {
       const list = await liveApi.admin.getStorefrontSections({ section_type: 'tier_icon' });
       const map = {};
       (Array.isArray(list) ? list : []).forEach((s) => {
         const slug = s.content?.tier_slug || s.content?.slug;
-        if (slug) map[String(slug).toLowerCase()] = s;
+        if (!slug || (s.campus_id !== null && s.campus_id !== targetScope)) return;
+        const key = String(slug).toLowerCase();
+        if (!map[key] || s.campus_id === targetScope) {
+          map[key] = s.campus_id === targetScope ? s : { ...s, id: undefined };
+        }
       });
+      if (current !== loadGeneration.current) return;
       setRows(map);
-    } catch { setRows({}); }
+      setLoadError(false);
+    } catch { if (current !== loadGeneration.current) return; setLoadError(true); }
+    setLoaded(true);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { setRows({}); setLoaded(false); load(); return () => { loadGeneration.current++; }; }, [targetScope]);
 
   const setRow = (slug, patch) => setRows((r) => ({ ...r, [slug]: { ...(r[slug] || {}), ...patch } }));
 
@@ -53,13 +72,20 @@ export default function AdminTierIcons() {
         sort_order: TIER_SLOTS.findIndex((s) => s.slug === slot.slug),
       };
       if (row.id) await liveApi.admin.updateStorefrontSection(row.id, body);
-      else await liveApi.admin.createStorefrontSection({ ...body, key: `tier_icon_${slot.slug}` });
+      else await liveApi.admin.createStorefrontSection(createIntent.body({ ...body, key: `tier_icon_${slot.slug}` }));
+      createIntent.clear();
       clearTierIconsCache();
       toast({ title: msg('FE_ADMIN_TIER_ICONS_NAME_ICON_SAVED', '✅ {name} icon saved', { name: slot.name }), description: msg('FE_ADMIN_TIER_ICONS_LIVE_EVERYWHERE_A_TIER_IS_SHOWN', 'Live everywhere a tier is shown.') });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_TIER_ICONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
+
+  if (!loaded) return <LoadingSpinner label={msg('FE_ADMIN_TIER_ICONS_LOADING', 'Loading tier icons…')} />;
+  if (loadError) return <Card>
+    <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
+    <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>
+  </Card>;
 
   return (
     <div className="space-y-3">

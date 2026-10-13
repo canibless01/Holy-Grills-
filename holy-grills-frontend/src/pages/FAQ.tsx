@@ -1,9 +1,10 @@
+import ContactActions from '@/components/ContactActions';
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import SEO from '@/components/SEO';
 import { metaForPath } from '@/seo/routeMeta';
-import { Plus, Flame, Search, Mail, Phone } from 'lucide-react';
+import { Plus, Flame, Search } from 'lucide-react';
 
 /** Head data for /faq — same object the pre-render writes (src/seo/routeMeta.ts). */
 const META = metaForPath('/faq');
@@ -228,12 +229,7 @@ export default function FAQ() {
         <h3 className="font-heading font-extrabold text-lg mb-1">Still not seeing it?</h3>
         <p className="text-sm text-white/70 mb-4">Talk to us. We reply.</p>
         <div className="flex flex-wrap items-center justify-center gap-2.5 text-sm">
-          <a href="mailto:grillthevibe@gmail.com" className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white/10 border border-white/15 hover:bg-white/15 transition-colors font-semibold">
-            <Mail className="w-4 h-4" /> Email us
-          </a>
-          <a href="tel:07053263931" className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white/10 border border-white/15 hover:bg-white/15 transition-colors font-semibold">
-            <Phone className="w-4 h-4" /> Call us
-          </a>
+          <ContactActions />
           <Link to="/menu" className="px-5 py-2.5 rounded-full bg-gradient-cta font-bold active:scale-95 transition">Order now →</Link>
         </div>
       </div>

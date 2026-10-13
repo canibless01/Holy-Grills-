@@ -1,3 +1,5 @@
+import HeroCarousel from '@/components/HeroCarousel';
+import StorefrontSlider from '@/components/storefront/StorefrontSlider';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Gift, Users, ChevronRight } from 'lucide-react';
@@ -116,6 +118,9 @@ export default function Menu() {
         <h1 className="font-heading font-bold text-xl text-foreground mt-0.5 flex items-center gap-1.5">Fresh Off the Grill 🔥</h1>
         <p className="text-sm text-muted-foreground mt-1">Order for your table.</p>
       </div>
+
+      <HeroCarousel placement="menu" />
+      <StorefrontSlider sectionType="promo" variant="poster" placement="menu" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
 
       {/* Kitchen status — compact one-line radar so menu items stay near the top */}
       <KitchenStatusBox compact />

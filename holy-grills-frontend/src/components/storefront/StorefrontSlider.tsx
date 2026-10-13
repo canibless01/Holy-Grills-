@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
-import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
+import { msg } from '@/lib/messages';
 import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
 
@@ -33,9 +34,9 @@ const VARIANTS = {
   },
 };
 
-export default function StorefrontSlider({ sectionType, variant = 'portrait', eyebrow, headline, subline, loggedInOnly = false }) {
+export default function StorefrontSlider({ sectionType, variant = 'portrait', eyebrow = '', headline = '', subline = '', placement = 'home' }) {
   const navigate = useNavigate();
-  const { isAuthenticated } = useHolyGrill();
+  const { campusId } = useCampus();
   const [slides, setSlides] = useState(null);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -45,17 +46,19 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
 
   useEffect(() => {
     let live = true;
+    setSlides(null);
+    setActive(0);
     getStorefrontSections(sectionType)
       .then((list) => {
         if (!live) return;
         const arr = (Array.isArray(list) ? list : [])
-          .filter((s) => s.is_active !== false)
+          .filter((s) => s.is_active !== false && (!s.content?.placement || s.content.placement === placement))
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
         setSlides(arr);
       })
       .catch(() => { if (live) setSlides([]); });
     return () => { live = false; };
-  }, [sectionType]);
+  }, [sectionType, campusId, placement]);
 
   const reducedMotion = typeof window !== 'undefined' && window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -65,7 +68,7 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
     const el = scrollRef.current;
     if (!el) return;
     const card = el.children[idx];
-    if (card) el.scrollTo({ left: card.offsetLeft, behavior: 'smooth' });
+    if (card) el.scrollTo({ left: card.offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: 'smooth' });
     setActive(idx);
   }, []);
 
@@ -77,7 +80,7 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
       setActive((p) => {
         const next = (p + 1) % slides.length;
         const el = scrollRef.current;
-        if (el && el.children[next]) el.scrollTo({ left: el.children[next].offsetLeft, behavior: 'smooth' });
+        if (el && el.children[next]) el.scrollTo({ left: el.children[next].offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: 'smooth' });
         return next;
       });
     }, 4500);
@@ -95,12 +98,8 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
     // Section rows keep cta_url inside `content` (aliased to cta_link); the
     // legacy `destination` key is still honoured last.
     const dest = slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination || '/menu';
-    if (loggedInOnly && !isAuthenticated) {
-      navigate(`/login?returnTo=${encodeURIComponent(dest)}`);
-    } else {
-      // S8 — external links open in a new tab, internal ones route.
-      openCmsDestination(dest, navigate);
-    }
+    // Route guards enforce authentication only where the destination needs it.
+    openCmsDestination(dest, navigate);
   };
 
   if (!slides) {
@@ -140,7 +139,7 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
               key={s.id || i}
               onClick={() => handleTap(s)}
               className={`relative shrink-0 snap-start overflow-hidden rounded-2xl text-left group ${v.cardClass} ${v.textBelow ? 'flex flex-col bg-card border border-border' : 'bg-foreground'}`}
-              style={{ maxWidth: v.maxW, scrollSnapAlign: 'start' }}
+              style={{ maxWidth: v.maxW, aspectRatio: v.textBelow ? undefined : v.aspect, scrollSnapAlign: 'start' }}
             >
               {v.textBelow ? (
                 <>
@@ -148,10 +147,11 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
                     {img && <img src={img} alt={title} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />}
                   </div>
                   <div className="p-3 flex-1">
+                    {s.content?.eyebrow && <span className="block text-xs font-bold mb-1">{s.content.eyebrow}</span>}
                     {badge && <span className="inline-block mb-1 px-2 py-0.5 rounded-full bg-accent/20 text-accent-foreground text-[9px] font-extrabold uppercase tracking-wide">{badge}</span>}
                     {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight line-clamp-2">{title}</h3>}
                     {line && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{line}</p>}
-                    <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold text-primary">Explore <ChevronRight className="w-3.5 h-3.5" /></span>
+                    <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold text-primary">{s.content?.cta_text || s.cta_text || msg('FE_STOREFRONT_EXPLORE', 'Explore')} <ChevronRight className="w-3.5 h-3.5" /></span>
                   </div>
                 </>
               ) : (
@@ -159,12 +159,13 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
                   {img && <img src={img} alt={title} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
                   <div className="absolute inset-0 p-4 flex flex-col justify-end">
+                    {s.content?.eyebrow && <span className="block text-xs font-bold mb-1">{s.content.eyebrow}</span>}
                     {badge && <span className="self-start mb-2 px-2.5 py-1 rounded-full bg-accent text-accent-foreground text-[10px] font-extrabold uppercase tracking-wide">{badge}</span>}
                     <motion.div key={i} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4 }}>
                       {title && <h3 className="font-heading font-extrabold text-base sm:text-lg text-white leading-tight line-clamp-2">{title}</h3>}
                       {line && <p className="text-xs text-white/80 mt-0.5 line-clamp-2">{line}</p>}
                     </motion.div>
-                    <span className="inline-flex items-center gap-1 mt-2 text-[11px] font-bold text-accent">Explore <ChevronRight className="w-3.5 h-3.5" /></span>
+                    <span className="inline-flex items-center gap-1 mt-2 text-[11px] font-bold text-accent">{s.content?.cta_text || s.cta_text || msg('FE_STOREFRONT_EXPLORE', 'Explore')} <ChevronRight className="w-3.5 h-3.5" /></span>
                   </div>
                 </>
               )}

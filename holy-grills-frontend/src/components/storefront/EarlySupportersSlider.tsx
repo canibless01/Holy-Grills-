@@ -1,3 +1,4 @@
+import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
 import { getEarlySupporters } from '@/lib/storefrontMockData';
@@ -6,6 +7,7 @@ import { getEarlySupporters } from '@/lib/storefrontMockData';
 // link below in a clean bordered card. No gradient overlays; cards are small
 // enough that multiple fit on screen without dominating the page.
 export default function EarlySupportersSlider({ eyebrow = 'Since day one', headline = 'The First Believers 💛', subline = 'They ordered before anyone else did.' }) {
+  const { campusId } = useCampus();
   const [supporters, setSupporters] = useState(null);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -13,11 +15,13 @@ export default function EarlySupportersSlider({ eyebrow = 'Since day one', headl
 
   useEffect(() => {
     let live = true;
+    setSupporters(null);
+    setActive(0);
     getEarlySupporters()
       .then((list) => { if (live) setSupporters(Array.isArray(list) ? list : []); })
       .catch(() => { if (live) setSupporters([]); });
     return () => { live = false; };
-  }, []);
+  }, [campusId]);
 
   const reducedMotion = typeof window !== 'undefined' && window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches

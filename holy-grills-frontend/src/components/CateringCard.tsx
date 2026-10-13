@@ -1,3 +1,6 @@
+import { useNavigate } from 'react-router-dom';
+import { openCmsDestination } from '@/lib/safeNavigation';
+import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect } from 'react';
 import { Utensils, ChevronRight, X, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -17,6 +20,8 @@ import { msg } from '@/lib/messages';
  */
 export default function CateringCard() {
   const { isAuthenticated } = useHolyGrill();
+  const { campusId } = useCampus();
+  const navigate = useNavigate();
   const [section, setSection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -25,6 +30,8 @@ export default function CateringCard() {
 
   useEffect(() => {
     let cancelled = false;
+    setSection(null);
+    setLoading(true);
     (async () => {
       try {
         const sections = await getStorefrontSections('catering');
@@ -35,7 +42,7 @@ export default function CateringCard() {
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [campusId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,7 +66,7 @@ export default function CateringCard() {
     setSubmitting(false);
   };
 
-  if (loading) return null;
+  if (loading || !section) return null;
 
   const content = section?.content || section?.data || {};
   const image = content.image_url || content.image || section?.image_url;
@@ -87,7 +94,7 @@ export default function CateringCard() {
           <h3 className="font-heading font-bold text-base text-foreground">{title}</h3>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{description}</p>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => { const destination = content.cta_url || content.cta_link || section?.cta_url; if (destination) openCmsDestination(destination, navigate); else setShowForm(true); }}
             className="mt-3 w-full py-2.5 rounded-full bg-gradient-cta text-white text-xs font-bold flex items-center justify-center gap-1.5"
           >
             {cta} <ChevronRight className="w-4 h-4" />

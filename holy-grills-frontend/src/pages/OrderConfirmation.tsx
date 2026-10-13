@@ -268,6 +268,8 @@ export default function OrderConfirmation() {
         templateKey="order_share"
         payload={{
           orderId: order.id,
+          hp: order.hp_earned || 0,
+          name: order.customer_name || undefined,
           headline: 'Order Confirmed',
           value: order.hp_earned > 0 ? `+${order.hp_earned} HP` : '',
           caption: 'I just ordered real flame-grilled goodness from Holy Grills 🔥',

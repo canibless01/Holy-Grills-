@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { ChevronRight, TrendingUp, Gift, Mail, Check, Trophy, Zap, Loader2, Flame } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
 import { getLaunchWindowEndDate, getFirstOrderGiftItemName } from '@/lib/featureConfig';
 import { toast } from '@/components/ui/use-toast';
 import MenuItemCard from '@/components/MenuItemCard';
@@ -37,6 +38,7 @@ const HOLY_POINTS_FEATURES = [
 
 export default function Home() {
   const navigate = useNavigate();
+  const { campusId } = useCampus();
   const { hpBalance, addToCart, isAuthenticated, streak } = useHolyGrill();
   const [kitchenStatus, setKitchenStatus] = useState<KitchenStatus | null>(null);
   const [featuredItems, setFeaturedItems] = useState([]);
@@ -60,9 +62,14 @@ export default function Home() {
   const myRankValue = typeof rankNo === 'number' && rankNo > 0 ? rankNo : null;
 
   useEffect(() => {
+    let live = true;
+    setFeaturedItems([]);
+    setMyRank(null);
+    setLoading(true);
     const load = async () => {
       try {
         const items = await liveApi.menu.getItems({});
+        if (!live) return;
         // Filter for featured items client-side, fallback to any available
         // items so the carousel always has content.
         const all = items.items || [];
@@ -70,26 +77,31 @@ export default function Home() {
         if (!featured.length) featured = all.filter((i) => i.is_available !== false).slice(0, 8);
         setFeaturedItems(featured);
         if (isAuthenticated) {
-          try { setMyRank(await liveApi.leaderboard.getMyRank()); } catch { /* ignore */ }
+          try { const rank = await liveApi.leaderboard.getMyRank(); if (live) setMyRank(rank); } catch { /* ignore */ }
         }
-        try {
-          const sections = await getStorefrontSections('testimonial');
-          if (Array.isArray(sections)) {
-            setTestimonials(sections.map((s) => ({
-              text: s.content?.review || s.subtitle || s.title || '',
-              name: s.content?.name || s.title || 'Student',
-            })));
-          }
-        } catch { /* empty testimonials — backend unavailable */ }
+
       } catch (e) { console.error(e); }
-      setLoading(false);
+      if (live) setLoading(false);
     };
     load();
     // Safety net — the storefront must never be trapped behind the spinner if
     // a backend call is slow or unresponsive.
     const deadline = setTimeout(() => setLoading(false), 6000);
-    return () => clearTimeout(deadline);
-  }, []);
+    return () => { live = false; clearTimeout(deadline); };
+  }, [campusId, isAuthenticated]);
+
+  useEffect(() => {
+    let live = true;
+    setTestimonials([]);
+    getStorefrontSections('testimonial').then((sections) => {
+      if (live) setTestimonials(sections.map((s) => ({
+        text: s.content?.review || s.subtitle || s.title || '',
+        name: s.content?.name || s.title || '',
+        rating: s.content?.rating,
+      })));
+    }).catch(() => { /* An unavailable CMS does not supply testimonials. */ });
+    return () => { live = false; };
+  }, [campusId]);
 
   const handleQuickAdd = async (item) => {
     const detail = await liveApi.menu.getItem(item.id);
@@ -183,6 +195,9 @@ export default function Home() {
         </div>
       )}
 
+      <HeroCarousel placement="home" />
+      <StorefrontSlider sectionType="promo" variant="poster" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
+
       {/* 4. Squad Orders — right after the menu */}
       <SquadOrderEducation />
 
@@ -235,7 +250,7 @@ export default function Home() {
 
       {/* 7. What's inside — logged-out feature slider only */}
       {!isAuthenticated && (
-        <StorefrontSlider sectionType="whats_inside" variant="portrait" loggedInOnly eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
+        <StorefrontSlider sectionType="whats_inside" variant="portrait" eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
       )}
 
       {/* 8. The First Believers — early supporters slider */}

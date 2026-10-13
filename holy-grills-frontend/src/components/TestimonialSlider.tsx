@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Star, ChevronLeft, ChevronRight } from 'lucide-react';
+import { msg } from '@/lib/messages';
 
 /**
  * TestimonialSlider — an auto-rotating testimonial carousel that supports
@@ -12,12 +13,12 @@ import { Star, ChevronLeft, ChevronRight } from 'lucide-react';
  * one on mobile, so it never has to stretch a single card across the page.
  *
  *   - `compact`      (default false): smaller padding + text, for item-level reviews
- *   - `subtext`      (default 'Verified Student Order'): small caption shown under the name
+ *   - `subtext`: small caption shown under the name
  *   - `testimonials`: array of `{ text, name, rating? }`. When `rating` (1–5)
  *                    is included the rendered stars reflect it, otherwise the slide
- *                    shows a fixed five-star block.
+ *                    omits the rating until one is supplied.
  */
-export default function TestimonialSlider({ testimonials = [], intervalMs = 5500, compact = false, subtext = 'Verified Student Order' }) {
+export default function TestimonialSlider({ testimonials = [], intervalMs = 5500, compact = false, subtext = msg('FE_STOREFRONT_FEEDBACK', 'Customer feedback') }) {
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
   const [perView, setPerView] = useState(1);
@@ -87,15 +88,15 @@ export default function TestimonialSlider({ testimonials = [], intervalMs = 5500
       >
         <div className={`grid gap-4 ${visible.length > 1 ? 'md:grid-cols-2' : ''}`}>
           {visible.map((vm, idx) => {
-            const rating = typeof vm.rating === 'number' ? vm.rating : 5;
+            const rating = typeof vm.rating === 'number' && Number.isInteger(vm.rating) && vm.rating >= 1 && vm.rating <= 5 ? vm.rating : null;
             return (
               <div key={`${vm.name}-${idx}`} className={cardClass}>
                 {/* Star rating — gold per brand (Stars / Ratings = #FFC251) */}
-                <div className="flex gap-0.5 mb-2">
+                {rating !== null && <div className="flex gap-0.5 mb-2" role="img" aria-label={msg('FE_STOREFRONT_RATING', 'Rated {stars} out of 5 stars', { stars: rating })}>
                   {[1, 2, 3, 4, 5].map((s) => (
                     <Star key={s} className={`${starSize} ${s <= rating ? 'fill-accent text-accent' : 'text-muted'}`} />
                   ))}
-                </div>
+                </div>}
                 <p className={textClass}>"{vm.text}"</p>
                 <div className={userWrapClass}>
                   <div className={`rounded-full bg-gradient-cta text-white font-bold flex items-center justify-center shrink-0 ${avatarClass}`}>
@@ -113,7 +114,7 @@ export default function TestimonialSlider({ testimonials = [], intervalMs = 5500
       </motion.div>
 
       <div className="flex items-center justify-center gap-4 mt-4">
-        <button onClick={prev} aria-label="Previous testimonial" className="w-9 h-9 rounded-lg bg-card border border-border hover:border-primary/30 hover:text-primary text-muted-foreground flex items-center justify-center transition-colors">
+        <button onClick={prev} aria-label={msg('FE_STOREFRONT_PREVIOUS_REVIEW', 'Previous testimonial')} className="w-9 h-9 rounded-lg bg-card border border-border hover:border-primary/30 hover:text-primary text-muted-foreground flex items-center justify-center transition-colors">
           <ChevronLeft className="w-4 h-4" />
         </button>
         <div className="flex items-center gap-1.5">
@@ -121,12 +122,12 @@ export default function TestimonialSlider({ testimonials = [], intervalMs = 5500
             <button
               key={idx}
               onClick={() => setI(idx)}
-              aria-label={`Go to ${idx + 1}`}
+              aria-label={msg('FE_STOREFRONT_REVIEW_NUMBER', 'Go to testimonial {number}', { number: idx + 1 })}
               className={`h-2 rounded-full transition-all ${idx === i ? 'bg-primary w-5' : 'bg-muted w-2 hover:bg-muted-foreground/40'}`}
             />
           ))}
         </div>
-        <button onClick={next} aria-label="Next testimonial" className="w-9 h-9 rounded-lg bg-card border border-border hover:border-primary/30 hover:text-primary text-muted-foreground flex items-center justify-center transition-colors">
+        <button onClick={next} aria-label={msg('FE_STOREFRONT_NEXT_REVIEW', 'Next testimonial')} className="w-9 h-9 rounded-lg bg-card border border-border hover:border-primary/30 hover:text-primary text-muted-foreground flex items-center justify-center transition-colors">
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

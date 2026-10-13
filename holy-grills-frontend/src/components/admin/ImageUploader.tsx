@@ -34,14 +34,14 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
   // this the only way to learn Cloudinary is unconfigured was to pick a file,
   // wait for the round trip, and read a failure toast — which is exactly what
   // made every image field look like a broken button.
-  const [status, setStatus] = useState<{ configured: boolean; missing?: string[] } | null>(null);
+  const [status, setStatus] = useState<{ configured: boolean; missing?: string[]; cloud_name?: string } | null>(null);
   useEffect(() => {
     let alive = true;
     apiClient
       .get('/upload/status')
       .then((r: any) => {
         if (!alive || !r) return;
-        setStatus({ configured: r.configured !== false, missing: r.missing || [] });
+        setStatus({ configured: r.configured !== false, missing: r.missing || [], cloud_name: r.cloud_name || undefined });
         if (r.configured === false && !value) setUrlMode(true);
       })
       .catch(() => { if (alive) setStatus({ configured: true, missing: [] }); });
@@ -138,8 +138,16 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
   const applyUrl = () => {
     const url = urlDraft.trim();
     if (!url) return;
-    if (!/^https?:\/\/\S+$/i.test(url)) {
-      setError({ text: msg('FE_IMAGE_UPLOADER_ENTER_A_FULL_IMAGE_URL', 'Enter a full image URL starting with http:// or https://') });
+    try {
+      const parsed = new URL(url);
+      const path = decodeURIComponent(parsed.pathname);
+      if (parsed.protocol !== 'https:' || parsed.hostname !== 'res.cloudinary.com'
+          || parsed.username || parsed.password || (parsed.port && parsed.port !== '443')
+          || (status?.cloud_name && !path.startsWith(`/${status.cloud_name}/image/upload/`))
+          || !/^\/[^/]+\/image\/upload\//.test(path)
+          || path.split('/').some((part) => part === '.' || part === '..')) throw new Error();
+    } catch {
+      setError({ text: msg('FE_IMAGE_UPLOADER_CLOUDINARY_URL', "Use an HTTPS image URL from this site's Cloudinary cloud.") });
       return;
     }
     setError(null);

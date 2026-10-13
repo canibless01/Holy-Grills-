@@ -1,3 +1,5 @@
+import HeroCarousel from '@/components/HeroCarousel';
+import StorefrontSlider from '@/components/storefront/StorefrontSlider';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -516,7 +518,10 @@ export default function Checkout() {
       </button>
       <div>
         <span className="hg-eyebrow">Almost there</span>
-        <h1 className="font-heading font-bold text-xl text-foreground mt-0.5">Checkout</h1>
+        <HeroCarousel placement="checkout" />
+      <StorefrontSlider sectionType="promo" variant="poster" placement="checkout" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
+
+      <h1 className="font-heading font-bold text-xl text-foreground mt-0.5">Checkout</h1>
         <p className="text-sm text-muted-foreground mt-1">One step to the table.</p>
       </div>
 

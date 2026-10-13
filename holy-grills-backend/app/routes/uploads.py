@@ -5,6 +5,7 @@ Admin-only direct-upload helpers.
 """
 
 import hashlib
+import re
 import time
 
 from flask import Blueprint, current_app, jsonify, request, g
@@ -67,21 +68,20 @@ def upload_signature():
         return jsonify({
             "error": MSG.UPLOAD_NOT_CONFIGURED,
             "missing": missing,
-            "hint": (
-                "Image upload needs Cloudinary credentials on the server. Set "
-                + ", ".join(missing)
-                + " in the backend environment (see .env.example → "
-                  "\"Cloudinary direct uploads\") and restart the service. "
-                  "Until then, paste an image URL instead of uploading a file."
-            ),
+            "hint": MSG.UPLOAD_CONFIGURATION_HINT.format(missing=", ".join(missing)),
         }), 503
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.ERR_BAD_REQUEST}), 400
     caller_role = getattr(g, "user_role", None)
 
     if caller_role in ADMIN_ROLES:
-        folder = str(data.get("folder") or "general").strip()
-        if not folder or len(folder) > 255 or folder.startswith("/") or ".." in folder:
+        folder = data.get("folder", "general")
+        if not isinstance(folder, str):
+            return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
+        folder = folder.strip()
+        if len(folder) > 255 or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", folder):
             return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
     else:
         folder = f"profile_photos/{g.user_id}"
