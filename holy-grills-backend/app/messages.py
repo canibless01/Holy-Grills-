@@ -2526,6 +2526,27 @@ class MSG:
     FE_ADMIN_FREE_SIDE_SELECT_USER          = "Select"
     FE_ADMIN_FREE_SIDE_DAYS_COUNT           = "{count} days"
 
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_PREF_PUSH                            = "Push notifications"
+    FE_PREF_PUSH_HELP                       = "Receive alerts on your device"
+    FE_PREF_EMAIL                           = "Email notifications"
+    FE_PREF_EMAIL_HELP                      = "Receive updates via email"
+    FE_PREF_ORDER                           = "Order updates"
+    FE_PREF_ORDER_HELP                      = "Status changes, confirmations"
+    FE_PREF_DELIVERY                        = "Delivery updates"
+    FE_PREF_DELIVERY_HELP                   = "Rider assigned, out for delivery"
+    FE_PREF_HP                              = "HP updates"
+    FE_PREF_HP_HELP                         = "HP earned, tiers, unlocks"
+    FE_PREF_PROMOTIONS                      = "Promotions"
+    FE_PREF_PROMOTIONS_HELP                 = "Flash redeems, offers, events"
+    FE_PREF_BACK                            = "Back to profile"
+    FE_PREF_TITLE                           = "Preferences"
+    FE_PREF_RECEIVE                         = "What you receive"
+    FE_PREF_POLICY                          = "Your channel and category choices control alerts. Account and wallet receipts are separate from promotional preferences. Promotional alerts follow the platform rate limits."
+
 # Short alias
 M = MSG
 

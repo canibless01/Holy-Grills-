@@ -1,15 +1,17 @@
 """
 Notification Service — dispatches in-app, email, and push notifications.
 All notification records written to the notifications table.
-Throttling via notification_log (daily cap + 6-hour same-type gap for non-critical types).
+Throttling via notification_log (configured daily cap and same-type gap).
 Email and push dispatch via OneSignal (fire-and-forget, never raises).
 """
 
 import os
 import threading
+import uuid
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
-from app.db import get_db, get_user_client
+from app.db import get_db, get_user_client, SupabaseError
+from app.services.notification_preferences import effective_preferences, permitted_channels, REQUEST_TYPES
 from flask import current_app
 from app.utils.logger import get_logger
 from app.utils.retry import with_retry
@@ -51,6 +53,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "membership_anniversary", "order_lock_redeemed",
     "flash_sale_redeemed", "exclusive_spin_won",
     "free_side_credits_granted", "exclusive_spin_granted",
+    "catering_request", "marketplace_request", "admin_catering_request", "admin_vendor_request", "vendor_request_submitted",
     # Milestones / badges: several can be awarded in one go (e.g. referral 5 and 10), each must arrive
     "milestone_achieved",
     # Streaks
@@ -230,6 +233,10 @@ def _fetch_user_name(user_id: str) -> str:
 # (an order) is listed before `squad_` (the squad page), and `order_streak` /
 # `order_lock*` before `order_`.
 _ACTION_URL_PREFIXES = (
+    ("catering_request", "/admin?section=catering"),
+    ("admin_catering_request", "/admin?section=catering"),
+    ("marketplace_request", "/admin?section=marketplace"),
+    ("admin_vendor_request", "/admin?section=marketplace"),
     ("rider_", "/rider"),
     ("kitchen_", "/kitchen"),
     ("squad_order", "/orders/{order_id}"),
@@ -392,28 +399,17 @@ def send_notification(
 
     db = get_db()
 
-    # One profile read serves both the user's channel switches and the campus default below.
-    _profile = {}
-    if notif_type not in _CRITICAL_NOTIF_TYPES or campus_id is None:
-        try:
-            _profile = (
-                db.table("profiles")
-                .select("campus_id,push_enabled,email_notifications")
-                .eq("id", user_id)
-                .single()
-                .execute()
-            ) or {}
-        except Exception as e:
-            logger.warning("send_notification: profile lookup failed for %s: %s", user_id, e)
-
-    # User channel switches (Settings). Critical / security types always go through.
-    if notif_type not in _CRITICAL_NOTIF_TYPES:
-        if _profile.get("push_enabled") is False:
-            channels = [c for c in channels if c != "push"]
-        if _profile.get("email_notifications") is False:
-            channels = [c for c in channels if c != "email"]
-        if not channels:
-            return []
+    # Read both persisted controls for every category, including transactional
+    # types. A read outage must not turn an opt-out into an external send.
+    try:
+        _profile = db.table("profiles").select("campus_id,push_enabled,email_notifications").eq("id",user_id).single().execute() or {}
+        prefs = effective_preferences(db,user_id,_profile)
+        channels = permitted_channels(notif_type,channels,prefs)
+    except Exception:
+        logger.exception("Notification preferences unavailable for %s; dispatch skipped",user_id)
+        return []
+    if not channels:
+        return []
 
     # ── Throttle check (non-critical types only, fails open) ──────────────────
     if _is_throttled(db, user_id, notif_type):
@@ -424,6 +420,7 @@ def send_notification(
         return []
 
     records = []
+    created_records = 0
 
     # Build merged metadata: internal fields + any caller-supplied extras
     merged_meta = {
@@ -455,10 +452,16 @@ def send_notification(
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
+        if notif_type in REQUEST_TYPES and reference_id:
+            # Existing primary-key uniqueness serializes retries per recipient,
+            # request and channel, without another ledger/index/table.
+            record["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                f"holy-grills:request-notification:{user_id}:{notif_type}:{reference_type}:{reference_id}:{channel}"))
         try:
             result = db.table("notifications").insert(record)
             saved = result[0] if isinstance(result, list) else result
             records.append(saved)
+            created_records += 1
 
             if channel == "email":
                 t = threading.Thread(
@@ -475,11 +478,16 @@ def send_notification(
                 )
                 t.start()
         except Exception as e:
+            if record.get('id') and isinstance(e,SupabaseError) and str(e.details.get('code'))=='23505':
+                existing=db.table('notifications').select('*').eq('id',record['id']).eq('user_id',user_id).single().execute()
+                if existing:
+                    records.append(existing)
+                    continue  # Saved receipt replay never dispatches externally again.
             logger.error("Error saving %s notification for %s: %s", channel, user_id, e)
 
     # Log to notification_log for throttle tracking (one entry per send call,
     # regardless of how many channels were used).
-    if records:
+    if created_records:
         _log_notification(db, user_id, notif_type)
 
     return records

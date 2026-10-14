@@ -157,3 +157,9 @@ See [Workstream B evidence matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [selecte
 
 
 B continuation (14 October): free subscription retry/concurrency and last-code competition verified on a second isolated campus using campus-only gates; sold-out receipt retry and cross-listing intent conflict fixed and verified. Calendar consumer/browser save/reload verified; analytics read-failure interfaces and browser CSV escaping fixed. 212 backend tests, typecheck and complete build pass. Second exact fixture batch and campus overrides cleaned. No new live migration. See [matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [requests to A](WORKSTREAM_A_DEPENDENCIES_FROM_B.md). B remains incomplete.
+
+## Notification preference reconciliation
+
+`reconcile_notification_channel_and_category_preferences` appears once, with one `hg_update_notification_preferences_atomic(uuid,jsonb)` definition. It validates allowed boolean keys, locks the fresh active profile, preserves existing unspecified preferences and updates legacy channel switches in the same transaction. Canonical SQL: [NOTIFICATION_PREFERENCES_ATOMIC_FIX.sql](NOTIFICATION_PREFERENCES_ATOMIC_FIX.sql).
+
+The function pins `search_path=public`, revokes PUBLIC/anon/authenticated execution and permits service_role. The authenticated endpoint binds the user from its verified session. No table, column, index, policy, trigger or overload is added; existing table grants/RLS are retained. Operational receipt deduplication reuses the existing notification primary key. Four rolled-back live assertions and actual concurrent API updates verify the behavior. Security advisor categories/counts remain unchanged: the existing exposed-helper, newsletter-policy, extension-location and password-protection findings are not marked closed.

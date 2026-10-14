@@ -95,12 +95,12 @@ class PlatformBoundaryTests(unittest.TestCase):
                 with self.assertRaises(Forbidden): events.generate_event_qr.__wrapped__(EVENT)
     def test_preferences_patch_preserves_other_opt_outs(self):
         db=MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value={'email_enabled':False,'promotions':False,'push_enabled':False}
-        with self.app.test_request_context(method='PATCH',json={'push_enabled':False}),patch.object(notifications,'get_user_client',return_value=db):
+        db.rpc.return_value={'email_enabled':False,'promotions':False,'push_enabled':False}
+        with self.app.test_request_context(method='PATCH',json={'push_enabled':False}),patch.object(notifications,'get_db',return_value=db):
             self.identity()
             _,status=notifications.update_preferences.__wrapped__()
             self.assertEqual(status,200)
-            payload=db.table.return_value.upsert.call_args.args[0]
+            payload=db.rpc.call_args.args[1]['p_preferences']
             self.assertNotIn('email_enabled',payload)
             self.assertNotIn('promotions',payload)
     def test_preferences_reject_coercion(self):
@@ -108,8 +108,8 @@ class PlatformBoundaryTests(unittest.TestCase):
             with self.app.test_request_context(method='PATCH',json=body),patch.object(notifications,'get_user_client',return_value=MagicMock()):
                 self.identity(); _,status=notifications.update_preferences.__wrapped__(); self.assertEqual(status,400)
     def test_preference_write_failure_is_not_success(self):
-        db=MagicMock(); db.table.return_value.upsert.side_effect=RuntimeError('relation missing')
-        with self.app.test_request_context(method='PATCH',json={'push_enabled':False}),patch.object(notifications,'get_user_client',return_value=db):
+        db=MagicMock(); db.rpc.side_effect=RuntimeError('relation missing')
+        with self.app.test_request_context(method='PATCH',json={'push_enabled':False}),patch.object(notifications,'get_db',return_value=db):
             self.identity(); _,status=notifications.update_preferences.__wrapped__(); self.assertEqual(status,503)
     def test_campus_blast_cannot_override_recipient_campus(self):
         for key in ('campus','campus_id'):

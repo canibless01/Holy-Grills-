@@ -240,27 +240,12 @@ def get_preferences():
       200:
         description: Notification preference settings
     """
-    db = get_user_client()
-    prefs = (
-        db.table("notification_preferences")
-        .select("*")
-        .eq("user_id", g.user_id)
-        .single()
-        .execute()
-    )
-
-    if not prefs:
-        prefs = {
-            "user_id": g.user_id,
-            "push_enabled": True,
-            "email_enabled": True,
-            "order_updates": True,
-            "promotions": True,
-            "hp_updates": True,
-            "delivery_updates": True,
-        }
-
-    return jsonify(prefs), 200
+    from app.services.notification_preferences import effective_preferences
+    try:
+        return jsonify(effective_preferences(get_db(),g.user_id)), 200
+    except Exception:
+        logger.exception("Notification preferences unavailable for %s",g.user_id)
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @notifications_bp.route("/preferences", methods=["PATCH"])
@@ -294,20 +279,8 @@ def update_preferences():
     if not update:
         return jsonify({"error": MSG.NOTIF_NO_VALID_PREFS}), 400
 
-    update["updated_at"] = datetime.now(timezone.utc).isoformat()
-
     try:
-        # Database defaults initialize a new row; PATCH must not reset any
-        # existing opt-out that this request did not mention.
-        db.table("notification_preferences").upsert({"user_id": g.user_id, **update}, on_conflict="user_id").execute()
-
-        result = (
-            db.table("notification_preferences")
-            .select("*")
-            .eq("user_id", g.user_id)
-            .single()
-            .execute()
-        )
+        result = get_db().rpc('hg_update_notification_preferences_atomic',{'p_user_id':g.user_id,'p_preferences':update})
         if isinstance(result, dict):
             result["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
         return jsonify(result), 200
