@@ -62,6 +62,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/catering",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/catering/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/checkout",
       "dest": "/app-shell.html"
     },

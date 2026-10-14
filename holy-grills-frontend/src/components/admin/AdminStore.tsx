@@ -3,6 +3,7 @@ import { Boxes, Plus, Minus, AlertTriangle, History, PackagePlus, PackageMinus }
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import {
   Card,
   Skeleton,
@@ -25,6 +26,7 @@ export default function AdminStore() {
   const [items, setItems] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [purchaseModal, setPurchaseModal] = useState(null); // item or null
   const [usageModal, setUsageModal] = useState(null);
   const [addModal, setAddModal] = useState(false);
@@ -37,16 +39,17 @@ export default function AdminStore() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [stockRes, unitRes] = await Promise.all([
         liveApi.admin.getStockItems(),
-        liveApi.admin.getMeasurementUnits().catch(() => []),
+        liveApi.admin.getMeasurementUnits(),
       ]);
       // unwrap() already extracted the rows (or returned []).
       setItems(stockRes);
       setUnits(Array.isArray(unitRes) ? unitRes : []);
     } catch {
-      setItems([]);
+      setLoadError(true);
     }
     setLoading(false);
   }, []);
@@ -54,6 +57,7 @@ export default function AdminStore() {
   useEffect(() => { load(); }, [load]);
 
   const lowCount = items.filter((i) => i.is_low_stock).length;
+  if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   if (loading) {
     return (
@@ -193,6 +197,7 @@ function StockCard({ item, unitName, onPurchase, onUsage, onLedger }) {
 
 // ── Purchase modal ──
 function PurchaseModal({ item, unitName, onClose, onDone }) {
+  const intent = useCmsCreateIntent();
   const [qty, setQty] = useState('');
   const [cost, setCost] = useState('');
   const [notes, setNotes] = useState('');
@@ -205,11 +210,12 @@ function PurchaseModal({ item, unitName, onClose, onDone }) {
     if (!quantity || quantity <= 0) { setErr('Enter a valid quantity'); return; }
     setSaving(true); setErr('');
     try {
-      await liveApi.admin.logStockPurchase(item.id, {
+      await liveApi.admin.logStockPurchase(item.id, intent.body({
         quantity,
         cost: cost ? parseFloat(cost) : 0,
         notes: notes.trim() || undefined,
-      });
+      }));
+      intent.clear();
       toast({ title: msg('FE_ADMIN_STORE_PURCHASE_LOGGED', '✓ Purchase logged'), description: msg('FE_ADMIN_STORE_QUANTITY_PURCHASE_UNIT_NAME_ADDED_TO', '{quantity} {purchase_unit_name} added to {name}', { quantity: quantity, purchase_unit_name: purchaseUnitName, name: item.name }) });
       onDone();
     } catch (e) { setErr(e.message || 'Failed to log purchase'); }
@@ -239,6 +245,7 @@ function PurchaseModal({ item, unitName, onClose, onDone }) {
 
 // ── Usage modal ──
 function UsageModal({ item, unitName, onClose, onDone }) {
+  const intent = useCmsCreateIntent();
   const [qty, setQty] = useState('');
   const [type, setType] = useState('usage');
   const [notes, setNotes] = useState('');
@@ -250,11 +257,12 @@ function UsageModal({ item, unitName, onClose, onDone }) {
     if (!quantity || quantity <= 0) { setErr('Enter a valid quantity'); return; }
     setSaving(true); setErr('');
     try {
-      await liveApi.admin.logStockUsage(item.id, {
+      await liveApi.admin.logStockUsage(item.id, intent.body({
         quantity,
         type,
         notes: notes.trim() || undefined,
-      });
+      }));
+      intent.clear();
       toast({
         title: msg('FE_ADMIN_STORE_USAGE_LOGGED', '✓ Usage logged'),
         description: msg('FE_ADMIN_STORE_USAGE_LOGGED_BODY', '{quantity} {unit} of {name}', {
@@ -329,10 +337,10 @@ function AddItemModal({ onClose, onDone }: {
     try {
       await liveApi.admin.createStockItem({
         name: name.trim(),
-        purchase_unit_id: purchaseUnitId || undefined,
+        purchase_unit_id: purchaseUnitId || usageUnitId,
         usage_unit_id: usageUnitId,
-        conversion_factor: conversionFactor ? parseFloat(conversionFactor) : undefined,
-        low_stock_threshold: threshold ? parseFloat(threshold) : undefined,
+        conversion_factor: conversionFactor ? parseFloat(conversionFactor) : 1,
+        low_stock_threshold: threshold ? parseFloat(threshold) : 0,
       });
       toast({ title: msg('FE_ADMIN_STORE_ITEM_ADDED', '✓ Item added'), description: msg('FE_ADMIN_STORE_NAME_IS_NOW_TRACKED', '{name} is now tracked', { name: name.trim() }) });
       onDone();

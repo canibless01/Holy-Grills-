@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { X, Send, CalendarHeart } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
 import { msg } from '@/lib/messages';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 
 const EMPTY = {
   organizer_name: '', email: '', phone: '', organization: '',
@@ -14,9 +16,11 @@ const EMPTY = {
 
 export default function CateringRequestModal({ open, onClose }) {
   const { campusId } = useCampus();
+  const intent = useCmsCreateIntent();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [requestId, setRequestId] = useState(null);
 
   useEffect(() => { if (open) { setForm(EMPTY); setDone(false); } }, [open]);
   if (!open) return null;
@@ -28,14 +32,17 @@ export default function CateringRequestModal({ open, onClose }) {
     parseInt(form.expected_guests, 10) >= 1;
 
   const handleSubmit = async () => {
+    if (submitting || !valid) return;
     setSubmitting(true);
     try {
-      await liveApi.events.cateringRequest({
+      const saved = await liveApi.events.cateringRequest(intent.body({
         ...form,
         campus_id: campusId,
         expected_guests: parseInt(form.expected_guests, 10),
         budget: form.budget ? Number(form.budget) : undefined,
-      });
+      }));
+      setRequestId(saved.id);
+      intent.clear();
       setDone(true);
       toast({ title: msg('FE_CATERING_REQUEST_MODAL_REQUEST_SUBMITTED', '✅ Request submitted!'), description: msg('FE_CATERING_REQUEST_MODAL_OUR_TEAM_WILL_CONTACT_YOU_SHORTLY', "Our team will contact you shortly.") });
     } catch (e) {
@@ -56,6 +63,7 @@ export default function CateringRequestModal({ open, onClose }) {
               <h3 className="font-heading font-bold text-lg text-foreground">Request Received!</h3>
               <p className="text-sm text-muted-foreground mt-1">We'll be in touch within 24 hours to discuss your event.</p>
               <button onClick={onClose} className="mt-5 px-6 py-3 rounded-2xl bg-gradient-cta text-white font-bold text-sm">Done</button>
+              {requestId && <Link onClick={onClose} to={`/catering/${requestId}`} state={{ email: form.email }} className="block mt-3 text-primary font-bold">{msg('FE_CATERING_TRACK', 'Track request')}</Link>}
             </div>
           ) : (
             <>

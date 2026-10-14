@@ -9,6 +9,8 @@ from app.db import get_db, get_user_client
 from app.messages import MSG
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
+from app.utils.admin_helpers import as_number, as_text, as_bool, as_uuid
+from app.utils.campus_scope import resolve_write_campus, assert_can_modify
 
 logger = get_logger(__name__)
 
@@ -18,6 +20,26 @@ delivery_bp = Blueprint("delivery", __name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _location_fields(data, money_fields):
+    if not isinstance(data, dict):
+        raise ValueError
+    result = dict(data)
+    if "name" in result:
+        result["name"] = as_text(result["name"], 200)
+    if "is_active" in result:
+        if not isinstance(result["is_active"], bool):
+            raise ValueError
+    for field in money_fields:
+        if field in result:
+            result[field] = as_number(result[field], minimum=0)
+    if "gate_id" in result:
+        result["gate_id"] = as_uuid(result["gate_id"])
+    return result
+
+
+def _valid_hostel_gate(db, gate_id, campus_id):
+    return not gate_id or bool(db.table("gates").select("id").eq("id", gate_id).eq("campus_id", campus_id).eq("is_active", True).single().execute())
 
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
     """Return the great-circle distance in kilometres between two lat/lon points."""
@@ -394,19 +416,19 @@ def admin_create_hostel():
         description: Missing required field
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("delivery_fee",))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     for f in ["name", "delivery_fee"]:
         if data.get(f) is None:
             return jsonify({"error": f"'{f}' is required"}), 400
 
-    if getattr(g, 'user_role', None) == "super_admin":
-        campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "campus_id is required for super_admin"}), 400
-    else:
-        campus_id = getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    campus_id = resolve_write_campus(data.get("campus_id"))
+    if not campus_id:
+        return jsonify({"error": MSG.CAMPUS_ID_REQUIRED}), 400
+    if not _valid_hostel_gate(db, data.get("gate_id"), campus_id):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     record = {
         "name": data["name"],
         "delivery_fee": float(data["delivery_fee"]),
@@ -442,7 +464,16 @@ def admin_update_hostel(hostel_id):
         description: Hostel not found
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("delivery_fee",))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    existing = db.table("hostels").select("id,campus_id").eq("id", hostel_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    assert_can_modify(existing.get("campus_id"))
+    if not _valid_hostel_gate(db, data.get("gate_id"), existing.get("campus_id")):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     allowed = {"name", "gate_id", "delivery_fee", "is_active"}
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
@@ -557,18 +588,16 @@ def admin_create_gate():
         description: Missing required field
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("base_fee", "rate_per_km", "min_fee"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     if not data.get("name"):
         return jsonify({"error": "'name' is required"}), 400
 
-    if getattr(g, 'user_role', None) == "super_admin":
-        campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "campus_id is required for super_admin"}), 400
-    else:
-        campus_id = getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    campus_id = resolve_write_campus(data.get('campus_id'))
+    if not campus_id:
+        return jsonify({'error': MSG.CAMPUS_ID_REQUIRED}), 400
     try:
         lat, lon = _gate_coordinates(data.get("lat"), data.get("lon"))
     except ValueError as e:
@@ -611,7 +640,10 @@ def admin_update_gate(gate_id):
         description: Gate not found
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("base_fee", "rate_per_km", "min_fee"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     allowed = {"name", "lat", "lon", "base_fee", "rate_per_km", "min_fee", "is_active"}
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:

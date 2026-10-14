@@ -8,6 +8,7 @@ import {
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import { Card, Skeleton, StatTile, EmptyState, SectionTitle, Pill, body } from './ui/AdminKit';
+import { msg } from '@/lib/messages';
 
 const FLAME = ['#E70E0E', '#F2B84B', '#FF9500', '#6A1F00', '#A8301A', '#C47B3A'];
 const STATUS_COLORS = ['#94a3b8', '#E70E0E', '#F2B84B', '#3b82f6', '#06b6d4', '#22c55e'];
@@ -29,6 +30,7 @@ export default function AdminDashboard() {
   const [capacity, setCapacity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
     const range = { from_date: daysAgoStr(30), to_date: todayStr() };
@@ -40,6 +42,7 @@ export default function AdminDashboard() {
       liveApi.analytics.items(range),
       liveApi.menu.getKitchenCapacity(),
     ]);
+    setLoadError([d, s, u, h, it, cap].some(result => result.status === 'rejected'));
     setData(d.status === 'fulfilled' ? body(d.value) : null);
     setSales(s.status === 'fulfilled' ? body(s.value) : null);
     setUsers(u.status === 'fulfilled' ? body(u.value) : null);
@@ -74,16 +77,15 @@ export default function AdminDashboard() {
     );
   }
 
-  if (!data && !sales && !users && !hp && items.length === 0 && !capacity) {
+  if (loadError || (!data && !sales && !users && !hp && items.length === 0 && !capacity)) {
     return (
       <Card>
         <EmptyState
           icon={AlertCircle}
-          title="Analytics unavailable right now"
-          body="The dashboard endpoints didn't respond. Check your session and retry."
+          title={msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}
           action={
             <button onClick={load} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold active:scale-95 transition">
-              <RefreshCw className="w-3.5 h-3.5" /> Retry
+              <RefreshCw className="w-3.5 h-3.5" /> {msg('FE_PLATFORM_RETRY', 'Retry')}
             </button>
           }
         />

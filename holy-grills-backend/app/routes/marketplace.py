@@ -228,7 +228,9 @@ def purchase(listing_id):
     Purchase a marketplace listing. Uses atomic hg_purchase_marketplace_item RPC.
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or ("use_hp" in data and not isinstance(data["use_hp"], bool)) or data.get("payment_method", "wallet") not in ("wallet", "card", "split"):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     buyer_campus_id = getattr(g, "campus_id", None)
     if not is_feature_enabled("marketplace_general", buyer_campus_id):
         return jsonify({"error": MSG.MARKETPLACE_NOT_OPEN}), 403
@@ -871,6 +873,8 @@ def admin_create_listing():
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
     for int_field in ("hp_price", "inventory_count", "low_inventory_threshold"):
         if safe.get(int_field) is not None:
+            if not float(safe[int_field]).is_integer():
+                return jsonify({"error": MSG.FIELD_MUST_BE_INTEGER.format(field=int_field)}), 400
             safe[int_field] = int(float(safe[int_field]))
     safe["campus_id"] = resolve_scoped_campus_id(data.get("campus_id"))
     safe.setdefault("status", "active")
@@ -1017,6 +1021,8 @@ def admin_update_listing(listing_id):
             return jsonify({"error": MSG.LISTING_INVALID_NUMBER.format(field=numeric_field)}), 400
     for int_field in ("hp_price", "inventory_count", "low_inventory_threshold"):
         if safe.get(int_field) is not None:
+            if not float(safe[int_field]).is_integer():
+                return jsonify({"error": MSG.FIELD_MUST_BE_INTEGER.format(field=int_field)}), 400
             safe[int_field] = int(float(safe[int_field]))
     for bool_field in ("is_featured", "is_out_of_stock"):
         if bool_field in safe and not isinstance(safe[bool_field], bool):
@@ -1299,9 +1305,11 @@ def upload_codes(listing_id):
         cleaned = raw.strip()
         if cleaned not in codes:
             codes.append(cleaned)
-    listing = db.table("marketplace_listings").select("id,listing_type").eq("id", listing_id).single().execute()
+    listing = db.table("marketplace_listings").select("id,listing_type,campus_id").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
+    from app.utils.campus_scope import assert_can_modify
+    assert_can_modify(listing.get("campus_id"))
     if listing.get("listing_type") not in CODE_LISTING_TYPES:
         return jsonify({"error": MSG.LISTING_NOT_CODE_TYPE}), 400
     existing_codes = set()
@@ -1318,7 +1326,7 @@ def upload_codes(listing_id):
     new_codes = [c for c in codes if c not in existing_codes]
     skipped_codes = [c for c in codes if c in existing_codes]
     if not new_codes:
-        return jsonify({"error": MSG.LISTING_CODES_ALL_EXIST, "skipped": skipped_codes}), 400
+        return jsonify({"uploaded": 0, "skipped_duplicates": skipped_codes, "already_uploaded": True}), 200
     records = [{"listing_id": listing_id, "code": c, "status": "available"} for c in new_codes]
     try:
         db.table("marketplace_access_codes").insert(records).execute()

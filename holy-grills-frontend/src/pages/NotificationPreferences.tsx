@@ -23,9 +23,11 @@ export default function NotificationPreferences() {
   const [prefs, setPrefs] = useState(null);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const result = await liveApi.notifications.getPreferences();
       const data = result && result.data ? result.data : result || {};
@@ -41,6 +43,7 @@ export default function NotificationPreferences() {
       });
     } catch (e) {
       console.error(e);
+      setLoadError(true);
     }
     setLoading(false);
   }, []);
@@ -48,6 +51,7 @@ export default function NotificationPreferences() {
   useEffect(() => { load(); }, [load]);
 
   const toggle = async (key, next) => {
+    if (savingKey) return;
     const prev = prefs;
     const updated = { ...prefs, [key]: next };
     setPrefs(updated);
@@ -61,6 +65,8 @@ export default function NotificationPreferences() {
     }
     setSavingKey(null);
   };
+
+  if (loadError) return <div className="text-center py-16 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   if (loading || !prefs) {
     return (
@@ -97,7 +103,7 @@ export default function NotificationPreferences() {
               desc={t.desc}
               enabled={!!prefs[t.key]}
               onToggle={(next) => toggle(t.key, next)}
-              disabled={savingKey === t.key}
+              disabled={!!savingKey}
             />
           );
         })}

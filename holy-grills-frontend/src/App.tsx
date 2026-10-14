@@ -60,6 +60,7 @@ const FAQ = lazy(() => import('@/pages/FAQ'));
 const TermsPrivacy = lazy(() => import('@/pages/TermsPrivacy'));
 const OurStory = lazy(() => import('@/pages/OurStory'));
 const NewsletterUnsubscribe = lazy(() => import('@/pages/NewsletterUnsubscribe'));
+const CateringStatus = lazy(() => import('@/pages/CateringStatus'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 
@@ -86,6 +87,7 @@ const AppRoutes = () => {
           <Route path="/events" element={<Events />} />
           <Route path="/events/tiers/:tierId" element={<TierDetail />} />
           <Route path="/events/:id" element={<EventDetail />} />
+          <Route path="/catering/:requestId" element={<CateringStatus />} />
           <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/marketplace/:id" element={<MarketplaceDetail />} />
         </Route>

@@ -1,0 +1,4753 @@
+{
+  "tables": [
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_categories",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 24,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-frontend/src/types/menu.ts",
+        "holy-grills-frontend/src/components/admin/AdminHpMultipliers.tsx",
+        "holy-grills-frontend/src/components/admin/AdminMenu.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_addons",
+      "schema": "public",
+      "policy_count": 5,
+      "dependent_count": 32,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_addon_groups",
+      "schema": "public",
+      "policy_count": 5,
+      "dependent_count": 36,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_item_variation_groups",
+      "schema": "public",
+      "policy_count": 5,
+      "dependent_count": 29,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/types/menu.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "saved_for_later",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 20,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/saved_for_later.py",
+        "holy-grills-frontend/src/types/saved.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "promo_codes",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 38,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/components/admin/AdminPromos.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "promo_code_uses",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 24,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-frontend/src/components/admin/AdminPromos.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_items",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 35,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/components/ScheduledOrders.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Dashboard.tsx",
+        "holy-grills-frontend/src/pages/Kitchen.tsx",
+        "holy-grills-frontend/src/pages/OrderConfirmation.tsx",
+        "holy-grills-frontend/src/pages/OrderDetail.tsx",
+        "holy-grills-frontend/src/pages/Orders.tsx",
+        "holy-grills-frontend/src/pages/TrackOrders.tsx",
+        "holy-grills-frontend/src/types/orders.ts",
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOrders.tsx",
+        "holy-grills-frontend/src/components/admin/AdminUsers.tsx",
+        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "event_checkins",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 27,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-frontend/src/components/admin/AdminChallenges.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_items",
+      "schema": "public",
+      "policy_count": 5,
+      "dependent_count": 67,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/cart.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/saved_for_later.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/pages/Cart.tsx",
+        "holy-grills-frontend/src/types/cart.ts",
+        "holy-grills-frontend/src/types/menu.ts",
+        "holy-grills-frontend/src/components/admin/AdminMenu.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "delivery_zones",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 22,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "delivery_assignments",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 19,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_access_codes",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/marketplace.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_code_batches",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 15,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_requests",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/marketplace.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "storefront_sections",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 22,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-frontend/src/types/storefront.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "push_subscriptions",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 20,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/challenges.py",
+        "holy-grills-backend/app/routes/notifications.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/webPush.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "operating_hours",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 13,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "operating_hour_overrides",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 14,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/utils/schedule.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "notification_deliveries",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 19,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "newsletter_subscriptions",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 16,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/newsletter_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "notifications",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 32,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/notifications.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/App.tsx",
+        "holy-grills-frontend/src/components/InlineNotificationBell.tsx",
+        "holy-grills-frontend/src/components/NotificationBell.tsx",
+        "holy-grills-frontend/src/components/TopNav.tsx",
+        "holy-grills-frontend/src/config/app.config.ts",
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/cookieConsent.ts",
+        "holy-grills-frontend/src/lib/cronJobs.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/onesignal.ts",
+        "holy-grills-frontend/src/lib/webPush.ts",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Login.tsx",
+        "holy-grills-frontend/src/pages/NotificationPreferences.tsx",
+        "holy-grills-frontend/src/pages/Notifications.tsx",
+        "holy-grills-frontend/src/pages/Register.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/notifications.ts",
+        "holy-grills-frontend/src/components/admin/AdminNotifications.tsx",
+        "holy-grills-frontend/src/components/notifications/PushPermissionBanner.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "notification_blasts",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 25,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/notifications.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "scheduled_notifications",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 21,
+      "source_mentions": [
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "leaderboard_entries",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 22,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "leaderboard_snapshots",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 16,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "login_streaks",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/streak_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_streaks",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 19,
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/streak_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_streak_rewards",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 12,
+      "source_mentions": [
+        "holy-grills-backend/app/services/streak_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hp_tiers",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 32,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/tier_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/valueText.ts",
+        "holy-grills-frontend/src/components/admin/AdminUsers.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "user_tiers",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 21,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hp_expiry_log",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 22,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "wallet_topups",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 21,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hp_transactions",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 60,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/hp.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "wallet_transactions",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 30,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/wallet.py",
+        "holy-grills-backend/app/services/wallet_service.py",
+        "holy-grills-frontend/src/types/wallet.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
+        "holy-grills-frontend/src/components/admin/AdminUsers.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hp_bundles",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 15,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "referrals",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/referrals.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/notification_templates.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/App.tsx",
+        "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Dashboard.tsx",
+        "holy-grills-frontend/src/pages/HpEducation.tsx",
+        "holy-grills-frontend/src/pages/Login.tsx",
+        "holy-grills-frontend/src/pages/Profile.tsx",
+        "holy-grills-frontend/src/pages/Referrals.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/types/analytics.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/referrals.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
+        "holy-grills-frontend/src/components/referrals/ReferralMilestones.tsx",
+        "holy-grills-frontend/src/components/referrals/ReferralStats.tsx",
+        "holy-grills-frontend/src/components/referrals/ReferredFriends.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "referral_codes",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 14,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "payments",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 32,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-frontend/src/components/CheckoutKitchenClosedPopup.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/EventDetail.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/components/admin/AdminDashboard.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOrders.tsx",
+        "holy-grills-frontend/src/components/admin/AdminRiders.tsx",
+        "holy-grills-frontend/src/components/events/RegisterModal.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "user_addresses",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 31,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/pages/Addresses.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "event_door_tokens",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 5,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "system_settings",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 24,
+      "source_mentions": [
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/admin_gifts.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/routes/graduation.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/economics_service.py",
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-backend/app/services/tier_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-backend/app/utils/settings.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/settingsMerge.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/storefront.ts",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "device_fingerprints",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 15,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "tier_monthly_perk_usage",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 13,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/delivery.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "delivery_windows",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 62,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/components/ScheduledOrders.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Kitchen.tsx",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "challenges",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 29,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/routes/challenges.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/webPush.ts",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/pages/HpEducation.tsx",
+        "holy-grills-frontend/src/pages/Rewards.tsx",
+        "holy-grills-frontend/src/pages/Streak.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/types/challenges.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/components/admin/AdminChallenges.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/challenges/InstallPushBonuses.tsx",
+        "holy-grills-frontend/src/components/challenges/SocialFollowChallenge.tsx",
+        "holy-grills-frontend/src/components/streak/StreakMilestones.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "event_tickets",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 56,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "ordering_windows",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 36,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/utils/schedule.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "catering_requests",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 23,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/events.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_item_variation_options",
+      "schema": "public",
+      "policy_count": 5,
+      "dependent_count": 25,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/types/menu.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "squads",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 25,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/db.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/squads.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/App.tsx",
+        "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Leaderboard.tsx",
+        "holy-grills-frontend/src/pages/Menu.tsx",
+        "holy-grills-frontend/src/pages/OurStory.tsx",
+        "holy-grills-frontend/src/pages/Profile.tsx",
+        "holy-grills-frontend/src/pages/Squads.tsx",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/squads.ts",
+        "holy-grills-frontend/src/components/checkout/SquadOrderSection.tsx",
+        "holy-grills-frontend/src/components/squads/CreateSquadModal.tsx",
+        "holy-grills-frontend/src/components/squads/SquadDetail.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "squad_roster",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 23,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/squads.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "pending_squad_hp",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 12,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "free_side_items",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 14,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "cart_free_side_selections",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 10,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Checkout.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "rewards",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 38,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/economics_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-backend/app/utils/email.py",
+        "holy-grills-frontend/src/App.tsx",
+        "holy-grills-frontend/src/components/BottomNav.tsx",
+        "holy-grills-frontend/src/components/Footer.tsx",
+        "holy-grills-frontend/src/components/MenuItemCard.tsx",
+        "holy-grills-frontend/src/components/RewardDeliveryModal.tsx",
+        "holy-grills-frontend/src/components/SquadOrderEducation.tsx",
+        "holy-grills-frontend/src/components/TierIcon.tsx",
+        "holy-grills-frontend/src/components/TopNav.tsx",
+        "holy-grills-frontend/src/config/app.config.ts",
+        "holy-grills-frontend/src/hooks/useRiderData.ts",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/pages/Home.tsx",
+        "holy-grills-frontend/src/pages/HpEducation.tsx",
+        "holy-grills-frontend/src/pages/Leaderboard.tsx",
+        "holy-grills-frontend/src/pages/Login.tsx",
+        "holy-grills-frontend/src/pages/Menu.tsx",
+        "holy-grills-frontend/src/pages/OurStory.tsx",
+        "holy-grills-frontend/src/pages/Profile.tsx",
+        "holy-grills-frontend/src/pages/Rewards.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/rewards.ts",
+        "holy-grills-frontend/src/components/admin/AdminExclusiveSpin.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminLeaderboard.tsx",
+        "holy-grills-frontend/src/components/admin/AdminRewards.tsx",
+        "holy-grills-frontend/src/components/events/CateringRequestModal.tsx",
+        "holy-grills-frontend/src/components/referrals/ReferralMilestones.tsx",
+        "holy-grills-frontend/src/components/rider/RiderOrderCard.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "abandoned_carts",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "reward_redemptions",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 29,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "exclusive_spin_prizes",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 20,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/exclusive_spin.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "kitchen_settings",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 13,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/components/admin/AdminDeliveryArea.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "email_templates",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 7,
+      "source_mentions": [
+        "holy-grills-backend/app/utils/email.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "cart_items",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 30,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/cart.py",
+        "holy-grills-backend/app/routes/saved_for_later.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/pages/OrderDetail.tsx",
+        "holy-grills-frontend/src/types/cart.ts",
+        "holy-grills-frontend/src/components/admin/AdminAbandonedCarts.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "banners",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 29,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-frontend/src/components/HeroCarousel.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/storefront.ts",
+        "holy-grills-frontend/src/components/admin/AdminBanners.tsx",
+        "holy-grills-frontend/src/components/admin/AdminStorefront.tsx",
+        "holy-grills-frontend/src/components/admin/ImageUploader.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "scheduled_notification_sends",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 10,
+      "source_mentions": [
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "device_tokens",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 17,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/auth.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "redemption_cost_log",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 18,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/economics_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "newsletter_campaigns",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 25,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/newsletter_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "newsletter_deliveries",
+      "schema": "public",
+      "policy_count": 0,
+      "dependent_count": 13,
+      "source_mentions": [
+        "holy-grills-backend/app/services/newsletter_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "cron_locks",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 5,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "flash_redemptions",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 19,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/pages/Rewards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminRewards.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "gates",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 21,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/components/CampusGate.tsx",
+        "holy-grills-frontend/src/components/OffCampusMap.tsx",
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/cookieConsent.ts",
+        "holy-grills-frontend/src/lib/deliveryUtils.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Addresses.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/types/delivery.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hostels",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 19,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Addresses.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/types/delivery.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hp_bundle_purchases",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 15,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-backend/app/services/hp_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "orders",
+      "schema": "public",
+      "policy_count": 10,
+      "dependent_count": 176,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/admin_gifts.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/routes/squads.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-backend/app/utils/schedule.py",
+        "holy-grills-frontend/src/App.tsx",
+        "holy-grills-frontend/src/components/ActiveOrderCard.tsx",
+        "holy-grills-frontend/src/components/BottomNav.tsx",
+        "holy-grills-frontend/src/components/CheckoutKitchenClosedPopup.tsx",
+        "holy-grills-frontend/src/components/DeliveryZonesInfo.tsx",
+        "holy-grills-frontend/src/components/KitchenStatusBox.tsx",
+        "holy-grills-frontend/src/components/OrderSuggestionCard.tsx",
+        "holy-grills-frontend/src/components/ScheduleOrderPanel.tsx",
+        "holy-grills-frontend/src/components/ScheduledOrders.tsx",
+        "holy-grills-frontend/src/components/ShareSheet.tsx",
+        "holy-grills-frontend/src/components/Skeleton.tsx",
+        "holy-grills-frontend/src/components/SquadMembersPanel.tsx",
+        "holy-grills-frontend/src/components/TopNav.tsx",
+        "holy-grills-frontend/src/hooks/useKitchenData.ts",
+        "holy-grills-frontend/src/hooks/useRiderData.ts",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/campusContext.tsx",
+        "holy-grills-frontend/src/lib/cronJobs.ts",
+        "holy-grills-frontend/src/lib/kitchenSchedule.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/safeNavigation.ts",
+        "holy-grills-frontend/src/pages/Addresses.tsx",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Cart.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/pages/Dashboard.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/pages/Home.tsx",
+        "holy-grills-frontend/src/pages/Kitchen.tsx",
+        "holy-grills-frontend/src/pages/Leaderboard.tsx",
+        "holy-grills-frontend/src/pages/Login.tsx",
+        "holy-grills-frontend/src/pages/Menu.tsx",
+        "holy-grills-frontend/src/pages/OrderConfirmation.tsx",
+        "holy-grills-frontend/src/pages/OrderDetail.tsx",
+        "holy-grills-frontend/src/pages/Orders.tsx",
+        "holy-grills-frontend/src/pages/Rider.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/pages/TrackOrders.tsx",
+        "holy-grills-frontend/src/pages/Wallet.tsx",
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/analytics.ts",
+        "holy-grills-frontend/src/types/common.ts",
+        "holy-grills-frontend/src/types/events.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/kitchen.ts",
+        "holy-grills-frontend/src/types/marketplace.ts",
+        "holy-grills-frontend/src/types/orders.ts",
+        "holy-grills-frontend/src/types/riders.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminChallenges.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDashboard.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
+        "holy-grills-frontend/src/components/admin/AdminGlobalSearch.tsx",
+        "holy-grills-frontend/src/components/admin/AdminMenu.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOnboarding.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOrders.tsx",
+        "holy-grills-frontend/src/components/admin/AdminRiders.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystem.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx",
+        "holy-grills-frontend/src/components/admin/AdminUsers.tsx",
+        "holy-grills-frontend/src/components/admin/OrderingWindowsTab.tsx",
+        "holy-grills-frontend/src/components/checkout/SquadOrderButton.tsx",
+        "holy-grills-frontend/src/components/events/RegisterModal.tsx",
+        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx",
+        "holy-grills-frontend/src/components/marketplace/PurchaseModal.tsx",
+        "holy-grills-frontend/src/components/notifications/PushPermissionBanner.tsx",
+        "holy-grills-frontend/src/components/skeletons/DashboardSkeleton.tsx",
+        "holy-grills-frontend/src/components/squads/SquadDetail.tsx",
+        "holy-grills-frontend/src/components/wallet/WalletHpCard.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_purchases",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 44,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-frontend/src/types/marketplace.ts",
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "measurement_units",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 11,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_purchase_reports",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 30,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/marketplace.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "referral_milestones",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 14,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/referrals.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "membership_rewards",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 12,
+      "source_mentions": [
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "milestones",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 27,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/challenges.py",
+        "holy-grills-backend/app/routes/referrals.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/cronJobs.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/referrals.ts",
+        "holy-grills-frontend/src/components/admin/AdminChallenges.tsx",
+        "holy-grills-frontend/src/components/referrals/ReferralMilestones.tsx",
+        "holy-grills-frontend/src/components/skeletons/ReferralsSkeleton.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "stock_items",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 18,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/kitchen.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "user_milestones",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "stock_ledger",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 15,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/kitchen.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "notification_log",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 16,
+      "source_mentions": [
+        "holy-grills-backend/app/services/notification_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "login_streak_rewards",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 12,
+      "source_mentions": [
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hall_of_fame_inductees",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 13,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "menu_item_availability",
+      "schema": "public",
+      "policy_count": 5,
+      "dependent_count": 23,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "delivery_batches",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 43,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "academic_calendar",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 30,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/academic_calendar.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/academic-calendar.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "departments",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 35,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/departments.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/utils/reference_data.py",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Profile.tsx",
+        "holy-grills-frontend/src/pages/Register.tsx",
+        "holy-grills-frontend/src/types/departments.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDepartments.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "brand_partnership_requests",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 13,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_listing_availability",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 16,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/marketplace.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "academic_levels",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 22,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/academic_levels.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/utils/reference_data.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/academic-levels.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "events",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 45,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/routes/academic_calendar.py",
+        "holy-grills-backend/app/routes/academic_levels.py",
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/challenges.py",
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/App.tsx",
+        "holy-grills-frontend/src/components/BottomNav.tsx",
+        "holy-grills-frontend/src/components/CampusGate.tsx",
+        "holy-grills-frontend/src/components/CampusScope.tsx",
+        "holy-grills-frontend/src/components/CateringCard.tsx",
+        "holy-grills-frontend/src/components/ClientOnly.tsx",
+        "holy-grills-frontend/src/components/CookieConsent.tsx",
+        "holy-grills-frontend/src/components/EventCheckInScanner.tsx",
+        "holy-grills-frontend/src/components/Footer.tsx",
+        "holy-grills-frontend/src/components/HeroCarousel.tsx",
+        "holy-grills-frontend/src/components/OffCampusMap.tsx",
+        "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/campusContext.tsx",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Dashboard.tsx",
+        "holy-grills-frontend/src/pages/EventDetail.tsx",
+        "holy-grills-frontend/src/pages/Events.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/pages/HpEducation.tsx",
+        "holy-grills-frontend/src/pages/Login.tsx",
+        "holy-grills-frontend/src/pages/NotificationPreferences.tsx",
+        "holy-grills-frontend/src/pages/Profile.tsx",
+        "holy-grills-frontend/src/pages/Register.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/pages/TierDetail.tsx",
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/events.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/components/admin/AdminCatering.tsx",
+        "holy-grills-frontend/src/components/admin/AdminEvents.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminWebhooks.tsx",
+        "holy-grills-frontend/src/components/admin/ImageUploader.tsx",
+        "holy-grills-frontend/src/components/auth/AuthField.tsx",
+        "holy-grills-frontend/src/components/auth/AuthShell.tsx",
+        "holy-grills-frontend/src/components/checkout/SquadOrderSection.tsx",
+        "holy-grills-frontend/src/components/events/CateringRequestModal.tsx",
+        "holy-grills-frontend/src/components/events/MyEvents.tsx",
+        "holy-grills-frontend/src/components/events/RegisterModal.tsx",
+        "holy-grills-frontend/src/components/mascot/MascotCelebrationOverlay.tsx",
+        "holy-grills-frontend/src/components/mascot/MascotConfetti.tsx",
+        "holy-grills-frontend/src/components/mascot/MascotStandee.tsx",
+        "holy-grills-frontend/src/components/referrals/ReferralCodeCard.tsx",
+        "holy-grills-frontend/src/components/ui/button.tsx",
+        "holy-grills-frontend/src/components/ui/command.tsx",
+        "holy-grills-frontend/src/components/ui/context-menu.tsx",
+        "holy-grills-frontend/src/components/ui/dialog.tsx",
+        "holy-grills-frontend/src/components/ui/dropdown-menu.tsx",
+        "holy-grills-frontend/src/components/ui/input-otp.tsx",
+        "holy-grills-frontend/src/components/ui/menubar.tsx",
+        "holy-grills-frontend/src/components/ui/navigation-menu.tsx",
+        "holy-grills-frontend/src/components/ui/select.tsx",
+        "holy-grills-frontend/src/components/ui/sheet.tsx",
+        "holy-grills-frontend/src/components/ui/sidebar.tsx",
+        "holy-grills-frontend/src/components/ui/slider.tsx",
+        "holy-grills-frontend/src/components/ui/switch.tsx",
+        "holy-grills-frontend/src/components/ui/tabs.tsx",
+        "holy-grills-frontend/src/components/ui/toast.tsx",
+        "holy-grills-frontend/src/components/ui/toggle.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_motivations",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 13,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "exclusive_spins",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 25,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/exclusive_spin.py",
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "leaderboard_reward_fulfillments",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 30,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "daily_checkins",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 18,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "hall_of_fame_rewards",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 21,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "free_side_credits",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 22,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/pages/Rewards.tsx",
+        "holy-grills-frontend/src/types/free-sides.ts",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "campuses",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 129,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/middleware/auth.py",
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/campuses.py",
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/routes/wallet.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/components/CampusGate.tsx",
+        "holy-grills-frontend/src/components/CampusScope.tsx",
+        "holy-grills-frontend/src/lib/campusContext.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/settingsMerge.ts",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/pages/Register.tsx",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/campuses.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/components/admin/AdminAcademicCalendar.tsx",
+        "holy-grills-frontend/src/components/admin/AdminBanners.tsx",
+        "holy-grills-frontend/src/components/admin/AdminCampusSelector.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDeliveryArea.tsx",
+        "holy-grills-frontend/src/components/admin/AdminExclusiveSpin.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
+        "holy-grills-frontend/src/components/admin/AdminStorefront.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "event_ticket_tiers",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 31,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "feature_flags",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 14,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/routes/exclusive_spin.py",
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-backend/app/routes/referrals.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/routes/squads.py",
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-backend/app/services/feature_flags.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "marketplace_listings",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 50,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-frontend/src/types/marketplace.ts",
+        "holy-grills-frontend/src/components/marketplace/MarketplacePurchasesPanel.tsx",
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplacePurchases.tsx",
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": false,
+      "kind": "v",
+      "name": "payment_reconciliation_summary",
+      "schema": "public",
+      "policy_count": 0,
+      "dependent_count": 2,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": false,
+      "kind": "v",
+      "name": "rls_enforcement_status",
+      "schema": "public",
+      "policy_count": 0,
+      "dependent_count": 2,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": false,
+      "kind": "v",
+      "name": "security_advisory_summary",
+      "schema": "public",
+      "policy_count": 0,
+      "dependent_count": 2,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "exclusive_spin_fulfillments",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 31,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/routes/exclusive_spin.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": false,
+      "kind": "v",
+      "name": "schema_contract",
+      "schema": "public",
+      "policy_count": 0,
+      "dependent_count": 2,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "challenge_completions",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 19,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "admin_audit_logs",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 15,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/components/admin/AdminSystem.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "batch_orders",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 18,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_addon_selections",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 18,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-frontend/src/components/OrderItemCustomizations.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "first_order_gifts",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 21,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_gifts.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "monthly_hp_tracker",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 20,
+      "source_mentions": [
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/cronJobs.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "notification_preferences",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 18,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/notifications.py",
+        "holy-grills-frontend/src/pages/NotificationPreferences.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_locks",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 33,
+      "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/order_locks.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/order-locks.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_reviews",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 39,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_share_events",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 26,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/services/notification_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "profiles",
+      "schema": "public",
+      "policy_count": 4,
+      "dependent_count": 191,
+      "source_mentions": [
+        "holy-grills-backend/app/middleware/auth.py",
+        "holy-grills-backend/app/routes/academic_levels.py",
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/routes/admin_gifts.py",
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/routes/challenges.py",
+        "holy-grills-backend/app/routes/departments.py",
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/routes/graduation.py",
+        "holy-grills-backend/app/routes/health.py",
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-backend/app/routes/kitchen.py",
+        "holy-grills-backend/app/routes/leaderboard.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/routes/order_locks.py",
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/referrals.py",
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/routes/squads.py",
+        "holy-grills-backend/app/routes/wallet.py",
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-backend/app/services/tier_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-backend/app/utils/email.py",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/auth.ts",
+        "holy-grills-frontend/src/components/admin/AdminAbandonedCarts.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOnboarding.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOrderLocks.tsx",
+        "holy-grills-frontend/src/components/admin/AdminOrders.tsx",
+        "holy-grills-frontend/src/components/admin/AdminReviews.tsx",
+        "holy-grills-frontend/src/components/admin/AdminRewards.tsx",
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplacePurchases.tsx",
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "order_status_logs",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 17,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "rider_profiles",
+      "schema": "public",
+      "policy_count": 1,
+      "dependent_count": 20,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/riders.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "squad_members",
+      "schema": "public",
+      "policy_count": 7,
+      "dependent_count": 37,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/routes/squads.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "virtual_accounts",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 22,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/wallet.py",
+        "holy-grills-backend/app/routes/webhooks.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "wallets",
+      "schema": "public",
+      "policy_count": 3,
+      "dependent_count": 24,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/auth.py",
+        "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/wallet_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "webhook_events",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 21,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "rls": true,
+      "kind": "r",
+      "name": "wallet_withdrawals",
+      "schema": "public",
+      "policy_count": 2,
+      "dependent_count": 21,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    }
+  ],
+  "settings_keys": [
+    {
+      "key": "birthday_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/tier_service.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "currency_code",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "currency_symbol",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "daily_checkin_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "decay_onset_days",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "decay_rate_monthly",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "email_provider_blast_default",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/components/admin/EmailDeliverySettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "email_provider_transactional_default",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/components/admin/EmailDeliverySettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "event_checkin_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "event_max_discount_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "exclusive_spin_free_delivery_cap",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "exclusive_spin_prizes",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/exclusive_spin.py",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "exclusive_spin_validity_days",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "first_order_gift_enabled",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/components/admin/AdminOnboarding.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "flash_discount_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/types/rewards.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "flash_max_qty",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/pages/Rewards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminRewards.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "free_delivery_threshold",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "free_side_credits_validity_days",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "free_side_options",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/config.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "graduation_min_level",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/graduation.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hof_induction_threshold",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "hp_bundle_min_purchase",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_bundle_price_per_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_bundles",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_currency_name",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_liability_value",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py",
+        "holy-grills-backend/app/services/economics_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_multiplier",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_gifts.py",
+        "holy-grills-backend/app/routes/cart.py",
+        "holy-grills-backend/app/routes/menu.py",
+        "holy-grills-backend/app/services/exclusive_spin_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/components/MenuItemCard.tsx",
+        "holy-grills-frontend/src/components/SpinWheel.tsx",
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/pages/Cart.tsx",
+        "holy-grills-frontend/src/pages/ItemDetail.tsx",
+        "holy-grills-frontend/src/pages/OrderConfirmation.tsx",
+        "holy-grills-frontend/src/types/exclusive-spin.ts",
+        "holy-grills-frontend/src/types/hp.ts",
+        "holy-grills-frontend/src/types/menu.ts",
+        "holy-grills-frontend/src/components/admin/AdminExclusiveSpin.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminHpMultipliers.tsx",
+        "holy-grills-frontend/src/components/admin/AdminMenu.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_per_naira_food",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_redeem_rate",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "hp_rounding",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/economics_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_transfer_min_amount",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/components/HpTransferModal.tsx",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_transfer_min_orders",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/hp.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "hp_unlock_ceiling_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "hp_unlock_rate_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "launch_window_end_date",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/gift_service.py",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/components/admin/AdminOnboarding.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "leaderboard_prize_rank1_sides",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "leaderboard_prize_rank2_sides",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "leaderboard_prize_rank3_sides",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "login_streak_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "login_streak_rewards",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "low_code_inventory_threshold",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/analytics.py",
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "marketplace_purchase_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/marketplace.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "membership_rewards",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "menu_hp_multiplier",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "min_hp_redeem",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "min_topup_amount",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "min_withdrawal_amount",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "monthly_hp_cap",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "monthly_pending_cap",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "multiplier_expires_at",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "notification_channels_critical",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "notification_channels_default",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "notification_daily_cap",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "notification_gap_minutes",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "order_lock_default_discount_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/order_locks.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "order_lock_max_discount",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "order_lock_max_reschedules",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/order_locks.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "order_streak_hp_rewards",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "paystack_preferred_bank",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "platform_name",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "programme_cost_target_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/economics_dashboard_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "push_subscribe_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-frontend/src/components/streak/StreakPwaBonus.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "pwa_install_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-frontend/src/components/streak/StreakPwaBonus.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "pwa_push_bonus_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-frontend/src/components/streak/StreakPwaBonus.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "referral_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "referral_milestones",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/referrals.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "review_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "reward_margin_share_food",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/economics_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "reward_margin_share_merch",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/economics_service.py"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "share_prompt_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "signup_bonus_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "social_share_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "squad_delivery_discount_enabled",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "squad_delivery_discount_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "squad_hp_bonus_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin_gifts.py",
+        "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "squad_order_discount_enabled",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "squad_order_discount_pct",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "squad_order_max_items",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "squad_order_min_items",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "supabase_project_url",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "key": "support_address",
+      "row_count": 2,
+      "campus_rows": 2,
+      "global_rows": 0,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/useContactDetails.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "support_email",
+      "row_count": 3,
+      "campus_rows": 2,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "support_phone",
+      "row_count": 2,
+      "campus_rows": 2,
+      "global_rows": 0,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/useContactDetails.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "wallet_min_card_topup",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/wallet.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "wallet_ref_prefix",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "wallet_topup_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/wallet_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "wallet_topup_min",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "welcome_bonus_hp",
+      "row_count": 1,
+      "campus_rows": 0,
+      "global_rows": 1,
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-frontend/src/lib/appConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "whatsapp_support_enabled",
+      "row_count": 2,
+      "campus_rows": 2,
+      "global_rows": 0,
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "whatsapp_support_message",
+      "row_count": 2,
+      "campus_rows": 2,
+      "global_rows": 0,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-frontend/src/lib/useContactDetails.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    },
+    {
+      "key": "whatsapp_support_number",
+      "row_count": 4,
+      "campus_rows": 4,
+      "global_rows": 0,
+      "source_mentions": [
+        "holy-grills-backend/app/routes/storefront.py",
+        "holy-grills-frontend/src/lib/useContactDetails.ts",
+        "holy-grills-frontend/src/types/storefront.ts",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+      ],
+      "classification": "referenced"
+    }
+  ],
+  "security_definers": [
+    {
+      "name": "hg_is_squad_roster_member",
+      "arguments": "p_squad_id uuid",
+      "return_type": "boolean",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "unlock_pending_hp_fifo_atomic",
+      "arguments": "p_user_id uuid, p_order_id uuid, p_amount_to_unlock integer, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_verify_promo_use_limit",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_guard_squad_member_insert",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_auto_assign_order_to_batch",
+      "arguments": "p_order_id uuid",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_link_guest_tickets_to_user",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_guard_order_review_insert",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_guard_share_event_insert",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "register_for_event_guest_paid",
+      "arguments": "p_event_id uuid, p_guest_email citext, p_guest_name text, p_guest_phone text, p_tier_id uuid, p_promo_code_id uuid, p_metadata jsonb",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_verify_graduation_claim",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_profile_delete",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_profile_photo_update",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_order_review_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_set_code_campus_from_listing",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_cascade_academic_level_value",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_cascade_department_copy",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_mark_abandoned_cart_recovered",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "release_cron_lock",
+      "arguments": "p_job_name text",
+      "return_type": "void",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_complete_referral_atomic",
+      "arguments": "p_referred_user_id uuid, p_trigger_order_id uuid, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_current_user_role",
+      "arguments": "",
+      "return_type": "user_role",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 2,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "get_menu_item_review_stats",
+      "arguments": "p_item_ids uuid[]",
+      "return_type": "record",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_leaderboard_reward_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_squad_member_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_add_wallet_transaction",
+      "arguments": "p_user_id uuid, p_type text, p_amount numeric, p_reason text, p_reference_type text, p_reference_id uuid, p_provider text, p_provider_reference text, p_issued_by_admin_id uuid, p_metadata jsonb, p_campus_id uuid",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_is_campus_admin",
+      "arguments": "p_row_campus_id uuid",
+      "return_type": "boolean",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 203,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "checkin_event_atomic",
+      "arguments": "p_event_id uuid, p_qr_token text, p_user_id uuid, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_expire_stale_event_tickets",
+      "arguments": "",
+      "return_type": "integer",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_verify_refund_conservation",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_handle_new_auth_user",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_is_campus_staff",
+      "arguments": "p_row_campus_id uuid",
+      "return_type": "boolean",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 4,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_campus_visible",
+      "arguments": "p_row_campus_id uuid",
+      "return_type": "boolean",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 10,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_log_order_status_change",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "rls_auto_enable",
+      "arguments": "",
+      "return_type": "void",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_sync_hp_balance_from_ledger",
+      "arguments": "p_user_id uuid",
+      "return_type": "integer",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_is_admin",
+      "arguments": "",
+      "return_type": "boolean",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 6,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_set_profile_tier_from_balance",
+      "arguments": "p_user_id uuid",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_update_listing_stock_flag",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_hp_transaction_insert",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_hp_transaction_reconcile",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_sync_review_hp_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_notification_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_auto_referral_code",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_menu_item_delete",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_reactivate_user",
+      "arguments": "target_user_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_run_hp_expiry_check",
+      "arguments": "p_expiry_days integer",
+      "return_type": "integer",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_run_tier_maintenance_check",
+      "arguments": "p_user_id uuid",
+      "return_type": "integer",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_deactivate_user",
+      "arguments": "target_user_id uuid, reason text",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_banner_delete",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_event_delete",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_on_reward_delete",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_guard_access_code_assignment",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_reset_next_order_multiplier",
+      "arguments": "p_user_id uuid",
+      "return_type": "void",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_sync_wallet_balance_to_profile",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_create_wallet_on_profile",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_sync_referral_code_table",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_decrement_promo_used_count",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_increment_promo_used_count",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_enforce_single_default_address",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_generate_referral_code",
+      "arguments": "",
+      "return_type": "text",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_user_campus_id",
+      "arguments": "",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": true,
+      "dependent_count": 19,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "claim_guest_order",
+      "arguments": "p_order_id uuid, p_claim_token uuid, p_user_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_add_hp_transaction",
+      "arguments": "p_user_id uuid, p_type text, p_amount integer, p_source text, p_reference_type text, p_reference_id uuid, p_issued_by_admin_id uuid, p_metadata jsonb, p_expires_at timestamp with time zone, p_campus_id uuid",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "increment_monthly_hp_tracker",
+      "arguments": "p_user_id uuid, p_month text, p_amount integer",
+      "return_type": "integer",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_release_order_refund_reservation",
+      "arguments": "p_order_id uuid, p_card_amount numeric",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "debit_wallet_atomic",
+      "arguments": "p_user_id uuid, p_amount numeric, p_reason text, p_reference_type text, p_reference_id uuid, p_metadata jsonb, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_verify_referral_integrity",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "checkin_event_guest",
+      "arguments": "p_event_id uuid, p_guest_email citext, p_qr_code text, p_checked_in_by uuid, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_effective_rider",
+      "arguments": "p_order_id uuid",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 3,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_enforce_pending_hp_ceiling",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "record_hp_transaction_atomic",
+      "arguments": "p_user_id uuid, p_amount integer, p_type text, p_status text, p_source text, p_reference_type text, p_reference_id uuid, p_issued_by_admin_id uuid, p_notes text, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_check_ordering_window_delivery_link",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_redeem_flash_reward_atomic",
+      "arguments": "p_user_id uuid, p_reward_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_mark_event_ticket_paid",
+      "arguments": "p_ticket_id uuid, p_provider text, p_provider_reference text, p_amount numeric, p_metadata jsonb",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_claim_tier_monthly_perk",
+      "arguments": "p_user_id uuid, p_perk_key text, p_month text, p_order_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_link_guest_orders_to_user",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_verify_rider_delivery_assignment",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_anonymize_user",
+      "arguments": "p_user_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_purchase_marketplace_item",
+      "arguments": "p_user_id uuid, p_listing_id uuid, p_quantity integer, p_pay_with_hp boolean, p_wallet_amount numeric, p_payment_reference text, p_expected_card_amount numeric",
+      "return_type": "marketplace_purchases",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_consume_hp_buckets",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_progress_delivery_batch",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_release_order_refund_reservation",
+      "arguments": "p_order_id uuid, p_wallet_amount numeric, p_card_amount numeric",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_redeem_reward",
+      "arguments": "p_user_id uuid, p_reward_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_claim_daily_share_atomic",
+      "arguments": "p_user_id uuid, p_order_id uuid, p_platform text, p_hp_amount integer, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "get_hp_program_report_summary",
+      "arguments": "p_today_date date",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_reserve_order_refund",
+      "arguments": "p_order_id uuid, p_requested_amount numeric",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "register_event_guest",
+      "arguments": "p_event_id uuid, p_guest_email citext, p_guest_name text, p_guest_phone text, p_metadata jsonb, p_tier_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "register_for_event_atomic",
+      "arguments": "p_event_id uuid, p_user_id uuid, p_tier_id uuid, p_metadata jsonb, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_hp_grant_segment",
+      "arguments": "p_campus uuid, p_tier uuid, p_last_order_before timestamp with time zone, p_last_order_after timestamp with time zone, p_exclude uuid, p_limit integer",
+      "return_type": "record",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_transfer_hp_atomic",
+      "arguments": "p_sender_id uuid, p_recipient_id uuid, p_amount integer, p_notes text, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_profile_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_consume_free_sides_atomic",
+      "arguments": "p_user_id uuid, p_order_id uuid, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public, pg_temp"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_refund_order_atomic",
+      "arguments": "p_order_id uuid, p_actor_id uuid, p_request_key text, p_requested_amount numeric, p_reason text, p_customer_cancel boolean",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_claim_reward_redemption_for_order",
+      "arguments": "p_redemption_id uuid, p_user_id uuid, p_order_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public, pg_temp"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "get_pending_squad_hp_report",
+      "arguments": "p_stale_days integer",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": true,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "credit_wallet_atomic",
+      "arguments": "p_user_id uuid, p_amount numeric, p_reason text, p_reference_type text, p_reference_id uuid, p_provider text, p_provider_reference text, p_metadata jsonb, p_campus_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_grant_exclusive_spins_atomic",
+      "arguments": "p_actor_id uuid, p_user_id uuid, p_intent_key uuid, p_spins integer, p_validity_days integer, p_reason text",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_submit_order_review_atomic",
+      "arguments": "p_user_id uuid, p_order_id uuid, p_rating integer, p_kitchen_rating integer, p_rider_rating integer, p_comment text, p_hp_amount integer, p_monthly_cap integer, p_image_urls text[]",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_order_locks_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_spin_exclusive_atomic",
+      "arguments": "p_user_id uuid, p_intent_key uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_keep_event_door_token_private",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 2,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_protect_order_columns",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_credit_delivery_hp_atomic",
+      "arguments": "p_order_id uuid, p_user_id uuid, p_hp_amount integer, p_tier_name text, p_source_type text, p_expected_multiplier numeric, p_total_hp_amount integer",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "register_for_event_paid",
+      "arguments": "p_event_id uuid, p_user_id uuid, p_tier_id uuid, p_use_hp boolean, p_wallet_amount numeric, p_promo_code_id uuid, p_metadata jsonb",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_create_order_atomic",
+      "arguments": "p_user_id uuid, p_guest_name text, p_guest_email citext, p_guest_phone text, p_claim_token uuid, p_subtotal numeric, p_delivery_fee numeric, p_discount_amount numeric, p_total_amount numeric, p_delivery_type text, p_delivery_location_id uuid, p_delivery_location_lat double precision, p_delivery_location_lon double precision, p_delivery_address_snapshot jsonb, p_delivery_window_id uuid, p_squad_name text, p_notes text, p_idempotency_key text, p_promo_code_id uuid, p_items jsonb, p_status order_status, p_payment_status payment_status, p_wallet_amount_used numeric, p_card_amount_used numeric, p_hp_redeemed integer, p_is_scheduled boolean, p_scheduled_for timestamp with time zone, p_is_squad_order boolean, p_squad_discount_amount numeric, p_squad_item_count integer, p_gift_included boolean, p_order_lock_id uuid, p_campus_id uuid, p_squad_id uuid, p_ordering_window_id uuid, p_capacity_deferred boolean, p_originally_requested_date date, p_redemption_id uuid",
+      "return_type": "jsonb",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_adjust_stock_balance",
+      "arguments": "p_stock_item_id uuid, p_type text, p_quantity_entered numeric, p_delta_usage_units numeric, p_unit_id uuid, p_cost numeric, p_notes text, p_logged_by uuid, p_request_id uuid",
+      "return_type": "record",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_mark_order_paid",
+      "arguments": "p_order_id uuid, p_provider text, p_provider_reference text, p_amount numeric, p_metadata jsonb",
+      "return_type": "uuid",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 0,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    },
+    {
+      "name": "hg_verify_order_status_transition",
+      "arguments": "",
+      "return_type": "trigger",
+      "search_path": [
+        "search_path=public"
+      ],
+      "anon_execute": false,
+      "dependent_count": 1,
+      "service_execute": true,
+      "authenticated_execute": false,
+      "source_mentions": [],
+      "classification": "unproven-unused-candidate"
+    }
+  ],
+  "limitations": "Source references and pg_depend counts support review, not proof of disuse. No historical objects removed.",
+  "snapshot_date": "2026-10-14",
+  "removals": []
+}
