@@ -17,6 +17,10 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_REVIEWS_PAGE = "Showing {start}–{end} of {total} reviews"
+    FE_REVIEWS_SEARCH_PAGE = "Search this page…"
+    FE_REVIEWS_PREVIOUS = "Previous"
+    FE_REVIEWS_NEXT = "Next"
     FE_CALENDAR_OWN_CAMPUS = "Your campus"
     MARKETPLACE_INTENT_CONFLICT = "This purchase request was already used for a different listing. Start a new purchase."
     EVENT_TIER_REQUIRED = "Choose a ticket tier for this event."

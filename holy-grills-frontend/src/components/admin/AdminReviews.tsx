@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Star, Search, RefreshCw, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
@@ -38,21 +38,36 @@ export default function AdminReviews() {
   const [flaggedFilter, setFlaggedFilter] = useState('all');
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [loadError, setLoadError] = useState(false);
+  const latest = useRef(0);
+  const limit = 25;
 
   const load = async () => {
+    const intent = ++latest.current;
     setLoading(true);
+    setLoadError(false);
     try {
-      const params: Record<string, unknown> = {};
+      const params: Record<string, unknown> = { limit, offset };
       if (ratingFilter !== 'all') params.rating = Number(ratingFilter);
       if (flaggedFilter !== 'all') params.is_flagged = flaggedFilter === 'flagged';
-      setReviews(await liveApi.admin.getReviews(params));
+      const result = await liveApi.admin.getReviewsPage(params);
+      if (intent !== latest.current) return;
+      if (offset && offset >= (result.total || 0)) {
+        setOffset(result.total ? Math.floor((result.total - 1) / limit) * limit : 0);
+        return;
+      }
+      setReviews(result.reviews || []);
+      setTotal(result.total || 0);
     } catch (e) {
+      if (intent !== latest.current) return;
       toast({ title: msg('FE_ADMIN_REVIEWS_FAILED_TO_LOAD_REVIEWS', 'Failed to load reviews'), description: e.message, variant: 'destructive' });
-      setReviews([]);
+      setLoadError(true);
     }
     setLoading(false);
   };
-  useEffect(() => { load(); }, [ratingFilter, flaggedFilter]);
+  useEffect(() => { load(); return () => { latest.current++; }; }, [ratingFilter, flaggedFilter, offset]);
 
   const filtered = reviews.filter((r) => {
     const text = (r.review_text || r.comment || '').toLowerCase();
@@ -67,6 +82,7 @@ export default function AdminReviews() {
   // storefront sections, so promotion needs a backend route before it can come back.
 
   if (loading) return <LoadingSpinner label="Loading reviews..." />;
+  if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
 
@@ -81,9 +97,9 @@ export default function AdminReviews() {
         </div>
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search reviews..." className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={msg('FE_REVIEWS_SEARCH_PAGE', 'Search this page…')} className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
         </div>
-        <select value={ratingFilter} onChange={(e) => setRatingFilter(e.target.value)} className="p-2 rounded-xl border border-border text-sm">
+        <select value={ratingFilter} onChange={(e) => { setOffset(0); setRatingFilter(e.target.value); }} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All ratings</option>
           <option value="5">5 ★</option>
           <option value="4">4 ★</option>
@@ -91,12 +107,17 @@ export default function AdminReviews() {
           <option value="2">2 ★</option>
           <option value="1">1 ★</option>
         </select>
-        <select value={flaggedFilter} onChange={(e) => setFlaggedFilter(e.target.value)} className="p-2 rounded-xl border border-border text-sm">
+        <select value={flaggedFilter} onChange={(e) => { setOffset(0); setFlaggedFilter(e.target.value); }} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All reviews</option>
           <option value="flagged">🚩 Flagged only</option>
           <option value="unflagged">Unflagged</option>
         </select>
         <button onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span>{msg('FE_REVIEWS_PAGE', 'Showing {start}–{end} of {total} reviews', { start: total ? offset + 1 : 0, end: Math.min(offset + reviews.length, total), total })}</span>
+        <div className="flex gap-3"><button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - limit))} className="font-bold disabled:opacity-40">{msg('FE_REVIEWS_PREVIOUS', 'Previous')}</button><button disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)} className="font-bold disabled:opacity-40">{msg('FE_REVIEWS_NEXT', 'Next')}</button></div>
       </div>
 
       {filtered.length === 0 ? (
