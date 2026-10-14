@@ -179,3 +179,5 @@ See [Workstream B evidence matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [selecte
 
 
 B continuation (14 October): free subscription retry/concurrency and last-code competition verified on a second isolated campus using campus-only gates; sold-out receipt retry and cross-listing intent conflict fixed and verified. Calendar consumer/browser save/reload verified; analytics read-failure interfaces and browser CSV escaping fixed. 212 backend tests, typecheck and complete build pass. Second exact fixture batch and campus overrides cleaned. No new live migration. See [matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [requests to A](WORKSTREAM_A_DEPENDENCIES_FROM_B.md). B remains incomplete.
+
+Integration with Workstream B's merged PR #66 preserves both registries and all platform routes/UI. The combined backend has **222 passing tests**; frontend typecheck and complete build pass. B's evidence remains scoped to its [evidence matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md), and its shared transport/HP/payment dependencies remain tracked in [WORKSTREAM_A_DEPENDENCIES_FROM_B.md](WORKSTREAM_A_DEPENDENCIES_FROM_B.md).
