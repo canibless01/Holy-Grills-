@@ -81,3 +81,24 @@ Final continuation verification: **212 backend tests pass**, including 17 platfo
 
 
 Review administration continuation (14 October): fetched main; it remains `723825e`, so no A dependency was newly resolved. Added 25-row pagination with backend total, filter resets, stale-response protection and error/retry. Search explicitly applies to this page. Intercepted Playwright responses verify outage/retry, pages 1–3, final-page disable and rating-filter reset. This is client-only evidence, not new live review creation/moderation/database sign-off. No accounts, live fixtures, settings or migrations changed. Final typecheck and complete production build pass, including message/route/CSV/QR checks.
+
+## Completion pass in progress — 14 October 2026
+
+PR #66 merged as `0635b21`. The continuation branch is `audit/platform-ecosystem-b-completion-20261014`; it normally merged main through `5015267`. This checkpoint is not whole-domain completion.
+
+| Area | Evidence / change | Current status / remaining work |
+|---|---|---|
+| Positive event HP | Real committed scan with injected award outage; retry creates one active grant; subsequent scan denied with unchanged balance. Uses existing idempotent award primitive. | Verified targeted recovery; event expiry/config-change and broader concurrent cases remain open. |
+| Event card setup | Stable per-ticket provider reference and pending-registration resume; focused unit regressions. | Fixed, live provider journey unverified; cancellations/refunds under review. |
+| Catering | Previous real customer → admin quote/assignment → kitchen start/complete → customer reload. Two independent operational requests and replay receipts verified; A canonical transport now retained. | Downloaded registrant CSV, host provider receipt and remaining reporting/error/race controls still open. |
+| Identity | Recovery fragment parser, correct own-session logout endpoint, truthful revoke result, login profile-read fail closed, campus-dependent reference loads and stable graduation reference. Four backend regressions and six parser cases. | Browser verification in progress; actual Auth email/recovery, signup partial-write and graduation claim-before-award gaps remain open. |
+| Profile photos | Actual signed Cloudinary upload, decoded image, save/reload, removal/save/reload. Header accepts profile photo field. Exact provider asset deleted. | Targeted path verified; no Storage fallback. |
+| User roles | Real super-admin promotion and demotion with required campus selection; reload reflects original student role. | Verified targeted UI/API/persistence/reload; full role matrix still required. |
+| Campus setup | Super-admin create/edit/retire → public discovery/hide → reload; student/campus-admin/guest writes denied; authenticated direct insert denied by existing RLS. Stale timestamp update409 preserves current values. | Targeted live paths verified; default-campus guard has no live production mutation. |
+| Inventory | New stock opens at zero; opening units require existing ledger adjustment. Mixed-unit summary counts stocked ingredients instead of summing unlike units. | Unit-verified; broader native UI/retry/ledger reconciliation remains open. |
+| Onboarding settings | Intercepted read503/retry; enabled toggle saves intended value; sequential field saves; reload. | Client verified only; no global settings changed. |
+| Blasts | Owned real API interruption after first recipient; failed retry completes; repeat adds no receipt; foreign retry denied; active lease409 and stale lease recovery; deep link persisted. Controlled campus-only Celery task processes due campaign and leaves future schedule unchanged. | Targeted verified before latest main integration; integrated live rerun pending. Actual scheduler cadence and external provider delivery remain unverified. |
+| Notification preferences | Main's canonical category/channel policy and atomic legacy reconciliation retained; B duplicate policy removed. | Integrated backend suite251 passes; real email/push provider receipts blocked by missing configured keys. |
+| Historical security / unused schema | Dependency inventory and advisor follow-up delegated to read-only review. | Open; no object is declared unused or removed merely because source search found no caller. |
+
+No additional B migration has been applied in this completion pass. Third isolated fixture batch remains active for verification; cleanup has not yet completed. Work scripts and credentials are excluded from Git. No new continuation PR or merge-to-main is claimed at this checkpoint.
