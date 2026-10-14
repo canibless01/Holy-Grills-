@@ -28,7 +28,6 @@ class MSG:
     FREE_SIDE_GRANT_INVALID = 'Choose 1–20 whole credits and a validity of 1–365 whole days.'
     FREE_SIDE_GRANTED = 'Free-side credits granted'
     FREE_SIDE_ITEM_NAME_REQUIRED = 'A free-side item name is required.'
-    FREE_SIDE_ITEM_NOT_FOUND = 'Free-side item not found.'
     FREE_SIDE_SELECTION_REQUIRED = 'Choose a free-side item.'
     FREE_SIDE_GRANT_REASON = 'Admin grant'
 
