@@ -114,3 +114,14 @@ Before the read guard, an anonymous caller and a foreign-campus student could re
 Actual browser sessions also verify super admin can create and edit an inactive global section without selecting a campus; a campus admin's edit is rejected with 404. The exact global probe is deleted. Per-slide configuration reuses existing JSON, so it introduces no migration object or grants. The general support email reuses one existing-setting key and has exactly one global row.
 
 Security advisors were rerun after the grant change. Historical SECURITY DEFINER exposure, `pg_net` location, newsletter-delivery policy and password-protection notices remain under the wider security audit; this batch is not a database-wide clean bill of health.
+
+
+## Delivery-benefit admission and restoration
+
+`claim_delivery_benefits_with_atomic_checkout` appears once in migration history. It reuses the existing spin receipts, monthly-perk claims and order status logs. One `exclusive_spin_fulfillments.applied_order_id` foreign-key column and one partial pending-delivery index are added. There is no new table or function overload. The three canonical transaction definitions in [DELIVERY_BENEFIT_ATOMIC_FIX.sql](DELIVERY_BENEFIT_ATOMIC_FIX.sql) match their live definitions.
+
+`hg_create_order_atomic`, `hg_spin_exclusive_atomic`, `hg_refund_order_atomic` and `hg_prize_status_guard` each have one definition, a pinned search path, no anon/authenticated EXECUTE and service-role execution. The guard's public execution privilege is removed while installed triggers remain functional. One restrictive authenticated UPDATE policy limits staff fulfilment to physical or legacy untyped receipts. Direct authenticated attempts to mark an automatic delivery credit fulfilled affect zero rows; the staff API rejects the same operation with 409.
+
+Checkout claims the server-quoted monthly benefit, legacy cap or exact pending receipt in the same transaction as admission and payment. Wallet/profile locks and immutable receipt snapshots prevent concurrent use of one credit. A failed debit rolls back the claim and order; idempotent replay returns the original admission. Existing pre-preparation cancellation rules restore the exact receipt or monthly claim, once. Later-preparation and partial-refund benefit policies remain under audit.
+
+Rolled-back transaction proofs cover legacy caps, separate queued receipts, monthly precedence, stale admission, replay, cancellation restoration, insufficient-wallet rollback, changed prize configuration and denied staff mutation. Security advisors were rerun: the exposed SECURITY DEFINER counts are now 13 anonymous and 24 authenticated, with the existing newsletter-policy, extension-location and password-protection findings still open. This is not database-wide security sign-off.

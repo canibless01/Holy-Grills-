@@ -17,6 +17,7 @@ Rules for editing this file:
 """
 
 class MSG:
+    SPIN_AUTOMATIC_FULFILLMENT = 'This reward is applied automatically through checkout and cannot be manually fulfilled.'
 
     # ── API / Health ──────────────────────────────────────────────────────────
     API_VERSION              = "1.0.0"
@@ -2351,6 +2352,21 @@ class MSG:
     FE_CMS_BANNER_SORT_ORDER                    = "Sort order"
     FE_CMS_CREATING_BANNER                      = "Creating..."
     FE_CMS_CREATE_BANNER                        = "Create banner"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CHECKOUT_MONTHLY_DELIVERY            = "Monthly free-delivery perk"
+    FE_CHECKOUT_SPIN_DELIVERY               = "Spin delivery credit"
+    FE_SPIN_DELIVERY_READY                  = "Up to {cap} off your next delivery fee"
+    FE_SPIN_DELIVERY_APPLIED                = "Applied to order {order}"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CHECKOUT_SQUAD_DELIVERY_DISCOUNT     = "Squad delivery discount"
 
 # Short alias
 M = MSG

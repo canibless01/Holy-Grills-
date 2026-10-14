@@ -938,7 +938,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         raise ValueError(MSG.ADDRESS_DELIVERY_LOCATION_INVALID)
 
     # Apply squad delivery-fee discount
-    delivery_fee_dec = Decimal(str(delivery_fee))
+    delivery_fee_dec = Decimal(str(delivery_fee)).quantize(Decimal('0.01'), rounding='ROUND_HALF_UP')
+    delivery_fee_original = float(delivery_fee_dec)
+    squad_delivery_discount_dec = Decimal('0')
     if is_squad_order and setting_bool(
         db, "squad_delivery_discount_enabled", config.get("SQUAD_DELIVERY_DISCOUNT_ENABLED", True)
     ):
@@ -949,6 +951,14 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         squad_delivery_discount_dec = (delivery_fee_dec * pct / Decimal("100.0")).quantize(Decimal("0.01"))
         delivery_fee_dec = max(Decimal("0.0"), delivery_fee_dec - squad_delivery_discount_dec)
         delivery_fee = float(delivery_fee_dec)
+
+    from app.services.delivery_benefits import quote_delivery_benefit
+    try:
+        delivery_benefit = quote_delivery_benefit(user_id, campus_id, delivery_fee_dec, is_squad_order, db=get_db())
+    except Exception as exc:
+        raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
+    delivery_fee_dec = max(Decimal('0'), delivery_fee_dec - Decimal(str(delivery_benefit['discount'])))
+    delivery_fee = float(delivery_fee_dec)
 
     # Apply squad subtotal discount
     subtotal_dec = Decimal(str(subtotal))
@@ -1085,6 +1095,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     price_quote = {
         'subtotal':subtotal,'delivery_fee':delivery_fee,'discount_amount':total_discount,
+        'delivery_benefit':delivery_benefit,
+        'delivery_fee_original':delivery_fee_original,
+        'squad_delivery_discount_amount':float(squad_delivery_discount_dec),
         'promo_discount':promo_discount,'squad_discount':squad_discount,
         'order_lock_discount':order_lock_discount,'total_amount':total,
         'order_lock_hp_reward':int(order_lock.get('reward_hp_amount') or 0) if order_lock and order_lock.get('reward_type') == 'hp' else 0,
@@ -1118,6 +1131,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     redemption_id = payload.get("redemption_id")
     if redemption_id:
         _assert_redemption_claimable(get_db(), redemption_id, user_id)
+
+    if order_items:
+        # Internal server-priced contract, never copied from client item fields.
+        order_items[0]['_delivery_benefit'] = delivery_benefit
 
     rpc_payload = {
         "p_user_id": user_id,
@@ -1170,7 +1187,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         result = {}
 
     if result.get("error"):
-        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch')):
+        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed')):
             # The lock changed after pricing but before its transaction claim.
             # Return a fresh, read-only quote rather than repeating stale totals.
             refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
@@ -1294,15 +1311,6 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                                 linked_delivery_window_id, exc)
         order["delivery_window_start"] = delivery_start or "18:00"
         order["delivery_window_end"] = delivery_end or "19:00"
-
-        if user_id and not is_squad_order:
-            try:
-                from app.services.tier_service import try_claim_monthly_free_delivery
-                if try_claim_monthly_free_delivery(user_id, order_id=result["order_id"]):
-                    get_db().table("orders").eq("id", result["order_id"]).update({"delivery_fee": 0.0}).execute()
-                    order["delivery_fee"] = 0.0
-            except Exception as _fe:
-                logger.warning("create_order: monthly free delivery perk claim failed: %s", _fe)
 
         if is_scheduled and payload.get("accept_next_available_date") and user_id:
             try:
@@ -2073,6 +2081,20 @@ def _order_capacity_weight(order_row: dict) -> int:
     return 1
 
 
+def _window_capacity_orders(db, campus_id, window_id, date_iso):
+    """Match admission's Lagos business date, including orders booked earlier."""
+    from datetime import date
+    day = date.fromisoformat(str(date_iso))
+    start = f"{day.isoformat()}T00:00:00+01:00"
+    end = f"{(day + timedelta(days=1)).isoformat()}T00:00:00+01:00"
+    return (db.table("orders").select("id,is_squad_order,squad_item_count")
+            .eq("campus_id", campus_id).eq("ordering_window_id", window_id)
+            .not_.in_("status", ["cancelled", "refunded"])
+            .or_(f"and(is_scheduled.is.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),"
+                 f"and(or(is_scheduled.is.false,is_scheduled.is.null),created_at.gte.{start},created_at.lt.{end})")
+            .execute()) or []
+
+
 def resolve_ordering_window(db, campus_id):
     """
     Raises OrderingWindowUnavailable(ORDERING_WINDOW_CLOSED) or
@@ -2123,15 +2145,7 @@ def resolve_ordering_window(db, campus_id):
             continue
         any_time_eligible = True
         if row.get("capacity") is not None:
-            _rows = (
-                db.table("orders")
-                .select("id,is_squad_order,squad_item_count")
-                .eq("ordering_window_id", row["id"])
-                .gte("created_at", _today_start_iso())
-                .not_.in_("status", ["cancelled", "refunded"])
-                .limit(1000)
-                .execute()
-            ) or []
+            _rows = _window_capacity_orders(db, campus_id, row["id"], _today_iso)
             if sum(_order_capacity_weight(o) for o in _rows) >= int(row["capacity"]):
                 continue
         return row
@@ -2214,15 +2228,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
         is_full = False
         remaining = None
         if row.get("capacity") is not None:
-            _rows = (
-                db.table("orders")
-                .select("id,is_squad_order,squad_item_count")
-                .eq("ordering_window_id", row["id"])
-                .gte("created_at", f"{_today_iso}T00:00:00")
-                .not_.in_("status", ["cancelled", "refunded"])
-                .limit(1000)
-                .execute()
-            ) or []
+            _rows = _window_capacity_orders(db, campus_id, row["id"], _today_iso)
             used = sum(_order_capacity_weight(o) for o in _rows)
             remaining = max(0, int(row["capacity"]) - used)
             is_full = used >= int(row["capacity"])

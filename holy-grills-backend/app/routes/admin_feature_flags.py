@@ -259,6 +259,8 @@ def _list_prizes(table, order_col, profile_fields, allow_month=False):
     db = get_user_client()
     limit, offset = _page()
     q = db.table(table).select("*").order(order_col, ascending=False)
+    if table == 'exclusive_spin_fulfillments':
+        q = q.or_('result_snapshot->>prize_type.is.null,result_snapshot->>prize_type.eq.physical')
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -313,6 +315,8 @@ def _fulfil(table, record_id, allowed, not_found_msg, done_msg, label_fn):
     record, err = fetch_or_403(db, table, record_id, "*", not_found_msg)   # 404 unknown / malformed id, 403 another campus
     if err:
         return err
+    if table == 'exclusive_spin_fulfillments' and (record.get('result_snapshot') or {}).get('prize_type', 'physical') != 'physical':
+        return jsonify({'error': MSG.SPIN_AUTOMATIC_FULFILLMENT}), 409
     if "status" in patch and record.get("status") in _CLOSED_STATUSES and patch["status"] != record.get("status"):
         return jsonify({"error": MSG.PRIZE_ALREADY_CLOSED}), 409
     if patch.get('status') == record.get('status') and 'notes' not in patch:
