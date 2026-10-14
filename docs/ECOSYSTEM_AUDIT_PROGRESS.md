@@ -152,3 +152,8 @@ The full backend suite passes **195 tests**; frontend typecheck and complete bui
 All financial fixtures are synthetic audit actors. Test orders are cancelled; the guest's simulated receipt is explicitly voided without claiming a real provider refund. Simulated card funding returned to the audit wallet during test refunds is offset by a labelled cleanup debit, restoring its original 190,500 balance. No real provider charge was made.
 
 Real Paystack authorization, provider webhook delivery, Cloudinary upload/decoded media and email/worker checks remain unverified. Their exact actions and expected results are listed separately in [PROVIDER_VERIFICATION_BLOCKERS.md](PROVIDER_VERIFICATION_BLOCKERS.md). [ADMIN_AUDIT_COVERAGE_STATUS.md](ADMIN_AUDIT_COVERAGE_STATUS.md) distinguishes inventory from verification and assigns every admin family to a workstream. Known functional gaps are kept separate from credential blockers; the full audit is not complete.
+
+
+## Workstream B draft integration checkpoint — 14 October 2026
+
+See [Workstream B evidence matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [selected test traces](WORKSTREAM_B_TEST_EVIDENCE.json). B is not complete. Six owned-domain migrations are live once each on Test Two; the matrix lists canonical SQL, checked grants/signatures and deployment dependencies. All exact owned synthetic fixture rows and eight Auth accounts were removed after deactivation/logout. No global release settings changed. Main at `723825e` was merged normally. Integrated backend regression: 209 tests pass; frontend typecheck/build checks recorded in matrix. Provider delivery, marketplace gated purchases, paid event recovery/refunds, broad onboarding/admin/reporting coverage and historical advisory closure remain open.

@@ -47,7 +47,7 @@ export default function Profile() {
       phone: user.profile?.phone || '',
       leaderboard_show_full_name: user.profile?.leaderboard_show_full_name ?? false,
       department_id: user.profile?.department_id || '',
-      academic_level_id: user.profile?.academic_level_id || level?.id || '',
+      academic_level_id: user.profile?.academic_level_id || level?.id || (savedLevel ? '__saved__' : ''),
       avatar_url: user.avatar_url || user.profile?.photo_url || user.profile?.avatar_url || '',
     });
   }, [user, academicLevels, editing]);
@@ -81,8 +81,8 @@ export default function Profile() {
         nickname: form.nickname.trim(),
         phone: form.phone.trim() || null,
         leaderboard_show_full_name: form.leaderboard_show_full_name,
-        department: dept ? dept.name : '',
-        academic_level: level ? level.value : '',
+        department: dept ? dept.name : (form.department_id ? user.profile?.department : ''),
+        academic_level: level ? level.value : (form.academic_level_id ? user.profile?.academic_level || user.academic_level : ''),
       };
       // Avatar goes through the dedicated photo route — update_profile does not
       // accept photo_url, so bundling it there silently drops the upload.
@@ -195,6 +195,7 @@ export default function Profile() {
                 className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
               >
                 <option value="" className="text-foreground">Department</option>
+                {form.department_id && !departments.some(d => d.id === form.department_id) && <option value={form.department_id} className="text-foreground">{user.profile?.department}</option>}
                 {departments.map((d) => (
                   <option key={d.id} value={d.id} className="text-foreground">{d.name}</option>
                 ))}
@@ -205,6 +206,7 @@ export default function Profile() {
                 className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
               >
                 <option value="" className="text-foreground">Level</option>
+                {form.academic_level_id && !academicLevels.some(l => l.id === form.academic_level_id) && <option value={form.academic_level_id} className="text-foreground">{user.profile?.academic_level || user.academic_level}</option>}
                 {academicLevels.map((l) => (
                   <option key={l.id} value={l.id} className="text-foreground">{l.name || l.label || l.level}</option>
                 ))}

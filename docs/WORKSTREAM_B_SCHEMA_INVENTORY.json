@@ -9,9 +9,9 @@
       "dependent_count": 24,
       "source_mentions": [
         "holy-grills-backend/app/routes/menu.py",
-        "holy-grills-frontend/src/types/menu.ts",
         "holy-grills-frontend/src/components/admin/AdminHpMultipliers.tsx",
-        "holy-grills-frontend/src/components/admin/AdminMenu.tsx"
+        "holy-grills-frontend/src/components/admin/AdminMenu.tsx",
+        "holy-grills-frontend/src/types/menu.ts"
       ],
       "classification": "referenced"
     },
@@ -82,9 +82,9 @@
         "holy-grills-backend/app/routes/orders.py",
         "holy-grills-backend/app/routes/storefront.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/components/admin/AdminPromos.tsx",
         "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/components/admin/AdminPromos.tsx"
+        "holy-grills-frontend/src/types/admin.ts"
       ],
       "classification": "referenced"
     },
@@ -119,19 +119,20 @@
         "holy-grills-backend/app/services/gift_service.py",
         "holy-grills-backend/app/services/hp_service.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/utils/validators.py",
         "holy-grills-frontend/src/components/ScheduledOrders.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Dashboard.tsx",
         "holy-grills-frontend/src/pages/Kitchen.tsx",
         "holy-grills-frontend/src/pages/OrderConfirmation.tsx",
         "holy-grills-frontend/src/pages/OrderDetail.tsx",
         "holy-grills-frontend/src/pages/Orders.tsx",
         "holy-grills-frontend/src/pages/TrackOrders.tsx",
-        "holy-grills-frontend/src/types/orders.ts",
         "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
         "holy-grills-frontend/src/components/admin/AdminOrders.tsx",
         "holy-grills-frontend/src/components/admin/AdminUsers.tsx",
-        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx"
+        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/orders.ts"
       ],
       "classification": "referenced"
     },
@@ -166,9 +167,9 @@
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
         "holy-grills-frontend/src/pages/Cart.tsx",
+        "holy-grills-frontend/src/components/admin/AdminMenu.tsx",
         "holy-grills-frontend/src/types/cart.ts",
-        "holy-grills-frontend/src/types/menu.ts",
-        "holy-grills-frontend/src/components/admin/AdminMenu.tsx"
+        "holy-grills-frontend/src/types/menu.ts"
       ],
       "classification": "referenced"
     },
@@ -317,10 +318,13 @@
       "dependent_count": 32,
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/auth.py",
         "holy-grills-backend/app/routes/hp.py",
         "holy-grills-backend/app/routes/notifications.py",
         "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/auth_service.py",
         "holy-grills-backend/app/services/notification_service.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-backend/app/services/squad_service.py",
@@ -330,8 +334,16 @@
         "holy-grills-frontend/src/components/InlineNotificationBell.tsx",
         "holy-grills-frontend/src/components/NotificationBell.tsx",
         "holy-grills-frontend/src/components/TopNav.tsx",
-        "holy-grills-frontend/src/config/app.config.ts",
         "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/pages/Admin.tsx",
+        "holy-grills-frontend/src/pages/Login.tsx",
+        "holy-grills-frontend/src/pages/NotificationPreferences.tsx",
+        "holy-grills-frontend/src/pages/Notifications.tsx",
+        "holy-grills-frontend/src/pages/Register.tsx",
+        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/components/admin/AdminNotifications.tsx",
+        "holy-grills-frontend/src/components/notifications/PushPermissionBanner.tsx",
+        "holy-grills-frontend/src/config/app.config.ts",
         "holy-grills-frontend/src/lib/adminSections.ts",
         "holy-grills-frontend/src/lib/appConfig.ts",
         "holy-grills-frontend/src/lib/cookieConsent.ts",
@@ -339,16 +351,9 @@
         "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/lib/onesignal.ts",
         "holy-grills-frontend/src/lib/webPush.ts",
-        "holy-grills-frontend/src/pages/Admin.tsx",
-        "holy-grills-frontend/src/pages/Login.tsx",
-        "holy-grills-frontend/src/pages/NotificationPreferences.tsx",
-        "holy-grills-frontend/src/pages/Notifications.tsx",
-        "holy-grills-frontend/src/pages/Register.tsx",
-        "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
+        "holy-grills-frontend/src/types/auth.ts",
         "holy-grills-frontend/src/types/index.ts",
-        "holy-grills-frontend/src/types/notifications.ts",
-        "holy-grills-frontend/src/components/admin/AdminNotifications.tsx",
-        "holy-grills-frontend/src/components/notifications/PushPermissionBanner.tsx"
+        "holy-grills-frontend/src/types/notifications.ts"
       ],
       "classification": "referenced"
     },
@@ -375,6 +380,7 @@
       "policy_count": 1,
       "dependent_count": 21,
       "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/services/notification_service.py",
         "holy-grills-backend/app/tasks/scheduled.py"
       ],
@@ -460,8 +466,8 @@
         "holy-grills-backend/app/services/notification_service.py",
         "holy-grills-backend/app/services/tier_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
-        "holy-grills-frontend/src/lib/valueText.ts",
-        "holy-grills-frontend/src/components/admin/AdminUsers.tsx"
+        "holy-grills-frontend/src/components/admin/AdminUsers.tsx",
+        "holy-grills-frontend/src/lib/valueText.ts"
       ],
       "classification": "referenced"
     },
@@ -506,6 +512,7 @@
       "policy_count": 2,
       "dependent_count": 60,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/analytics.py",
         "holy-grills-backend/app/routes/hp.py",
@@ -519,9 +526,9 @@
         "holy-grills-backend/app/services/squad_service.py",
         "holy-grills-backend/app/services/streak_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
         "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/types/hp.ts",
-        "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx"
+        "holy-grills-frontend/src/types/hp.ts"
       ],
       "classification": "referenced"
     },
@@ -533,12 +540,14 @@
       "policy_count": 3,
       "dependent_count": 30,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
+        "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/analytics.py",
         "holy-grills-backend/app/routes/wallet.py",
         "holy-grills-backend/app/services/wallet_service.py",
-        "holy-grills-frontend/src/types/wallet.ts",
         "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
-        "holy-grills-frontend/src/components/admin/AdminUsers.tsx"
+        "holy-grills-frontend/src/components/admin/AdminUsers.tsx",
+        "holy-grills-frontend/src/types/wallet.ts"
       ],
       "classification": "referenced"
     },
@@ -550,6 +559,8 @@
       "policy_count": 2,
       "dependent_count": 15,
       "source_mentions": [
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/routes/hp.py",
         "holy-grills-frontend/src/lib/appConfig.ts"
       ],
       "classification": "referenced"
@@ -572,21 +583,21 @@
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-frontend/src/App.tsx",
         "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Dashboard.tsx",
         "holy-grills-frontend/src/pages/HpEducation.tsx",
         "holy-grills-frontend/src/pages/Login.tsx",
         "holy-grills-frontend/src/pages/Profile.tsx",
         "holy-grills-frontend/src/pages/Referrals.tsx",
         "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
-        "holy-grills-frontend/src/types/analytics.ts",
-        "holy-grills-frontend/src/types/index.ts",
-        "holy-grills-frontend/src/types/referrals.ts",
         "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
         "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
         "holy-grills-frontend/src/components/referrals/ReferralMilestones.tsx",
         "holy-grills-frontend/src/components/referrals/ReferralStats.tsx",
-        "holy-grills-frontend/src/components/referrals/ReferredFriends.tsx"
+        "holy-grills-frontend/src/components/referrals/ReferredFriends.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/analytics.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/referrals.ts"
       ],
       "classification": "referenced"
     },
@@ -608,19 +619,22 @@
       "policy_count": 2,
       "dependent_count": 32,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/events.py",
         "holy-grills-backend/app/routes/orders.py",
         "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/order_payments.py",
         "holy-grills-frontend/src/components/CheckoutKitchenClosedPopup.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/EventDetail.tsx",
         "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
-        "holy-grills-frontend/src/seo/routeMeta.ts",
-        "holy-grills-frontend/src/types/admin.ts",
         "holy-grills-frontend/src/components/admin/AdminDashboard.tsx",
         "holy-grills-frontend/src/components/admin/AdminOrders.tsx",
         "holy-grills-frontend/src/components/admin/AdminRiders.tsx",
-        "holy-grills-frontend/src/components/events/RegisterModal.tsx"
+        "holy-grills-frontend/src/components/events/RegisterModal.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/admin.ts"
       ],
       "classification": "referenced"
     },
@@ -678,13 +692,13 @@
         "holy-grills-backend/app/services/tier_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-backend/app/utils/settings.py",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx",
         "holy-grills-frontend/src/lib/appConfig.ts",
         "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/lib/settingsMerge.ts",
         "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/types/storefront.ts",
-        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
-        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+        "holy-grills-frontend/src/types/storefront.ts"
       ],
       "classification": "referenced"
     },
@@ -706,7 +720,8 @@
       "policy_count": 2,
       "dependent_count": 13,
       "source_mentions": [
-        "holy-grills-backend/app/routes/delivery.py"
+        "holy-grills-backend/app/routes/delivery.py",
+        "holy-grills-backend/app/services/delivery_benefits.py"
       ],
       "classification": "referenced"
     },
@@ -725,10 +740,10 @@
         "holy-grills-backend/app/routes/riders.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-frontend/src/components/ScheduledOrders.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Kitchen.tsx",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx"
+        "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts"
       ],
       "classification": "referenced"
     },
@@ -742,12 +757,10 @@
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
         "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/challenges.py",
         "holy-grills-backend/app/services/milestone_service.py",
         "holy-grills-backend/app/services/streak_service.py",
-        "holy-grills-frontend/src/lib/adminSections.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/lib/webPush.ts",
         "holy-grills-frontend/src/pages/Admin.tsx",
         "holy-grills-frontend/src/pages/Checkout.tsx",
         "holy-grills-frontend/src/pages/FAQ.tsx",
@@ -755,13 +768,16 @@
         "holy-grills-frontend/src/pages/Rewards.tsx",
         "holy-grills-frontend/src/pages/Streak.tsx",
         "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
-        "holy-grills-frontend/src/types/challenges.ts",
-        "holy-grills-frontend/src/types/index.ts",
         "holy-grills-frontend/src/components/admin/AdminChallenges.tsx",
         "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
         "holy-grills-frontend/src/components/challenges/InstallPushBonuses.tsx",
         "holy-grills-frontend/src/components/challenges/SocialFollowChallenge.tsx",
-        "holy-grills-frontend/src/components/streak/StreakMilestones.tsx"
+        "holy-grills-frontend/src/components/streak/StreakMilestones.tsx",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/webPush.ts",
+        "holy-grills-frontend/src/types/challenges.ts",
+        "holy-grills-frontend/src/types/index.ts"
       ],
       "classification": "referenced"
     },
@@ -776,7 +792,8 @@
         "holy-grills-backend/app/routes/events.py",
         "holy-grills-backend/app/routes/webhooks.py",
         "holy-grills-backend/app/services/milestone_service.py",
-        "holy-grills-backend/app/services/notification_service.py"
+        "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/utils/email.py"
       ],
       "classification": "referenced"
     },
@@ -840,17 +857,18 @@
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-frontend/src/App.tsx",
         "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Leaderboard.tsx",
         "holy-grills-frontend/src/pages/Menu.tsx",
         "holy-grills-frontend/src/pages/OurStory.tsx",
         "holy-grills-frontend/src/pages/Profile.tsx",
         "holy-grills-frontend/src/pages/Squads.tsx",
-        "holy-grills-frontend/src/types/index.ts",
-        "holy-grills-frontend/src/types/squads.ts",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
         "holy-grills-frontend/src/components/checkout/SquadOrderSection.tsx",
         "holy-grills-frontend/src/components/squads/CreateSquadModal.tsx",
-        "holy-grills-frontend/src/components/squads/SquadDetail.tsx"
+        "holy-grills-frontend/src/components/squads/SquadDetail.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/squads.ts"
       ],
       "classification": "referenced"
     },
@@ -894,8 +912,8 @@
       "dependent_count": 14,
       "source_mentions": [
         "holy-grills-backend/app/routes/free_sides.py",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx"
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts"
       ],
       "classification": "referenced"
     },
@@ -908,8 +926,8 @@
       "dependent_count": 10,
       "source_mentions": [
         "holy-grills-backend/app/routes/free_sides.py",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/pages/Checkout.tsx"
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts"
       ],
       "classification": "referenced"
     },
@@ -922,12 +940,18 @@
       "dependent_count": 38,
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/admin_feature_flags.py",
+        "holy-grills-backend/app/routes/orders.py",
         "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/routes/riders.py",
+        "holy-grills-backend/app/services/auth_service.py",
         "holy-grills-backend/app/services/economics_dashboard_service.py",
         "holy-grills-backend/app/services/economics_service.py",
         "holy-grills-backend/app/services/notification_service.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/squad_service.py",
         "holy-grills-backend/app/services/streak_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-backend/app/utils/email.py",
@@ -939,12 +963,6 @@
         "holy-grills-frontend/src/components/SquadOrderEducation.tsx",
         "holy-grills-frontend/src/components/TierIcon.tsx",
         "holy-grills-frontend/src/components/TopNav.tsx",
-        "holy-grills-frontend/src/config/app.config.ts",
-        "holy-grills-frontend/src/hooks/useRiderData.ts",
-        "holy-grills-frontend/src/lib/adminSections.ts",
-        "holy-grills-frontend/src/lib/appConfig.ts",
-        "holy-grills-frontend/src/lib/featureConfig.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Admin.tsx",
         "holy-grills-frontend/src/pages/Checkout.tsx",
         "holy-grills-frontend/src/pages/FAQ.tsx",
@@ -957,16 +975,22 @@
         "holy-grills-frontend/src/pages/Profile.tsx",
         "holy-grills-frontend/src/pages/Rewards.tsx",
         "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/types/index.ts",
-        "holy-grills-frontend/src/types/rewards.ts",
         "holy-grills-frontend/src/components/admin/AdminExclusiveSpin.tsx",
         "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
         "holy-grills-frontend/src/components/admin/AdminLeaderboard.tsx",
         "holy-grills-frontend/src/components/admin/AdminRewards.tsx",
         "holy-grills-frontend/src/components/events/CateringRequestModal.tsx",
         "holy-grills-frontend/src/components/referrals/ReferralMilestones.tsx",
-        "holy-grills-frontend/src/components/rider/RiderOrderCard.tsx"
+        "holy-grills-frontend/src/components/rider/RiderOrderCard.tsx",
+        "holy-grills-frontend/src/config/app.config.ts",
+        "holy-grills-frontend/src/hooks/useRiderData.ts",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/rewards.ts"
       ],
       "classification": "referenced"
     },
@@ -981,6 +1005,7 @@
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/analytics.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-frontend/src/lib/liveApi.ts"
       ],
@@ -1008,6 +1033,7 @@
       "dependent_count": 20,
       "source_mentions": [
         "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/admin_feature_flags.py",
         "holy-grills-backend/app/routes/exclusive_spin.py",
         "holy-grills-frontend/src/lib/liveApi.ts"
       ],
@@ -1021,15 +1047,16 @@
       "policy_count": 1,
       "dependent_count": 13,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/delivery.py",
         "holy-grills-backend/app/routes/kitchen.py",
         "holy-grills-backend/app/routes/menu.py",
         "holy-grills-backend/app/routes/storefront.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-frontend/src/components/admin/AdminDeliveryArea.tsx",
         "holy-grills-frontend/src/lib/appConfig.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/components/admin/AdminDeliveryArea.tsx"
+        "holy-grills-frontend/src/lib/liveApi.ts"
       ],
       "classification": "referenced"
     },
@@ -1059,8 +1086,8 @@
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
         "holy-grills-frontend/src/pages/OrderDetail.tsx",
-        "holy-grills-frontend/src/types/cart.ts",
-        "holy-grills-frontend/src/components/admin/AdminAbandonedCarts.tsx"
+        "holy-grills-frontend/src/components/admin/AdminAbandonedCarts.tsx",
+        "holy-grills-frontend/src/types/cart.ts"
       ],
       "classification": "referenced"
     },
@@ -1072,13 +1099,14 @@
       "policy_count": 3,
       "dependent_count": 29,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/storefront.py",
         "holy-grills-frontend/src/components/HeroCarousel.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/types/storefront.ts",
         "holy-grills-frontend/src/components/admin/AdminBanners.tsx",
         "holy-grills-frontend/src/components/admin/AdminStorefront.tsx",
-        "holy-grills-frontend/src/components/admin/ImageUploader.tsx"
+        "holy-grills-frontend/src/components/admin/ImageUploader.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/storefront.ts"
       ],
       "classification": "referenced"
     },
@@ -1130,7 +1158,11 @@
       "dependent_count": 25,
       "source_mentions": [
         "holy-grills-backend/app/routes/storefront.py",
-        "holy-grills-backend/app/services/newsletter_service.py"
+        "holy-grills-backend/app/services/newsletter_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
+        "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/components/admin/AdminStorefront.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts"
       ],
       "classification": "referenced"
     },
@@ -1166,11 +1198,11 @@
       "source_mentions": [
         "holy-grills-backend/app/routes/hp.py",
         "holy-grills-backend/app/routes/rewards.py",
-        "holy-grills-frontend/src/lib/appConfig.ts",
-        "holy-grills-frontend/src/lib/featureConfig.ts",
         "holy-grills-frontend/src/pages/Rewards.tsx",
         "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
-        "holy-grills-frontend/src/components/admin/AdminRewards.tsx"
+        "holy-grills-frontend/src/components/admin/AdminRewards.tsx",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
       ],
       "classification": "referenced"
     },
@@ -1182,6 +1214,7 @@
       "policy_count": 3,
       "dependent_count": 21,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/analytics.py",
         "holy-grills-backend/app/routes/auth.py",
@@ -1189,21 +1222,26 @@
         "holy-grills-backend/app/routes/leaderboard.py",
         "holy-grills-backend/app/routes/riders.py",
         "holy-grills-backend/app/services/auth_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/utils/retry.py",
         "holy-grills-frontend/src/components/CampusGate.tsx",
         "holy-grills-frontend/src/components/OffCampusMap.tsx",
         "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/pages/Addresses.tsx",
+        "holy-grills-frontend/src/pages/Checkout.tsx",
+        "holy-grills-frontend/src/pages/FAQ.tsx",
+        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
+        "holy-grills-frontend/src/components/notifications/NotificationItem.tsx",
+        "holy-grills-frontend/src/components/storefront/PromoFlyerPopup.tsx",
         "holy-grills-frontend/src/lib/adminSections.ts",
         "holy-grills-frontend/src/lib/cookieConsent.ts",
         "holy-grills-frontend/src/lib/deliveryUtils.ts",
         "holy-grills-frontend/src/lib/featureConfig.ts",
         "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/pages/Addresses.tsx",
-        "holy-grills-frontend/src/pages/Checkout.tsx",
-        "holy-grills-frontend/src/pages/FAQ.tsx",
-        "holy-grills-frontend/src/types/delivery.ts",
-        "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
-        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx"
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/delivery.ts"
       ],
       "classification": "referenced"
     },
@@ -1222,13 +1260,13 @@
         "holy-grills-backend/app/services/auth_service.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Addresses.tsx",
         "holy-grills-frontend/src/pages/Checkout.tsx",
         "holy-grills-frontend/src/pages/FAQ.tsx",
-        "holy-grills-frontend/src/types/delivery.ts",
         "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
-        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx"
+        "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/delivery.ts"
       ],
       "classification": "referenced"
     },
@@ -1255,6 +1293,7 @@
       "dependent_count": 176,
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/admin_gifts.py",
         "holy-grills-backend/app/routes/analytics.py",
@@ -1277,6 +1316,7 @@
         "holy-grills-backend/app/services/notification_service.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-backend/app/services/squad_service.py",
+        "holy-grills-backend/app/services/order_payments.py",
         "holy-grills-backend/app/tasks/celery_app.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-backend/app/utils/schedule.py",
@@ -1287,20 +1327,15 @@
         "holy-grills-frontend/src/components/DeliveryZonesInfo.tsx",
         "holy-grills-frontend/src/components/KitchenStatusBox.tsx",
         "holy-grills-frontend/src/components/OrderSuggestionCard.tsx",
+        "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
         "holy-grills-frontend/src/components/ScheduleOrderPanel.tsx",
         "holy-grills-frontend/src/components/ScheduledOrders.tsx",
         "holy-grills-frontend/src/components/ShareSheet.tsx",
         "holy-grills-frontend/src/components/Skeleton.tsx",
         "holy-grills-frontend/src/components/SquadMembersPanel.tsx",
         "holy-grills-frontend/src/components/TopNav.tsx",
-        "holy-grills-frontend/src/hooks/useKitchenData.ts",
-        "holy-grills-frontend/src/hooks/useRiderData.ts",
-        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/components/OrderPaymentActions.tsx",
         "holy-grills-frontend/src/lib/campusContext.tsx",
-        "holy-grills-frontend/src/lib/cronJobs.ts",
-        "holy-grills-frontend/src/lib/kitchenSchedule.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/lib/safeNavigation.ts",
         "holy-grills-frontend/src/pages/Addresses.tsx",
         "holy-grills-frontend/src/pages/Admin.tsx",
         "holy-grills-frontend/src/pages/Cart.tsx",
@@ -1319,20 +1354,12 @@
         "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
         "holy-grills-frontend/src/pages/TrackOrders.tsx",
         "holy-grills-frontend/src/pages/Wallet.tsx",
-        "holy-grills-frontend/src/seo/routeMeta.ts",
-        "holy-grills-frontend/src/types/analytics.ts",
-        "holy-grills-frontend/src/types/common.ts",
-        "holy-grills-frontend/src/types/events.ts",
-        "holy-grills-frontend/src/types/index.ts",
-        "holy-grills-frontend/src/types/kitchen.ts",
-        "holy-grills-frontend/src/types/marketplace.ts",
-        "holy-grills-frontend/src/types/orders.ts",
-        "holy-grills-frontend/src/types/riders.ts",
         "holy-grills-frontend/src/components/admin/AdminAnalytics.tsx",
         "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
         "holy-grills-frontend/src/components/admin/AdminChallenges.tsx",
         "holy-grills-frontend/src/components/admin/AdminDashboard.tsx",
         "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
         "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
         "holy-grills-frontend/src/components/admin/AdminGlobalSearch.tsx",
         "holy-grills-frontend/src/components/admin/AdminMenu.tsx",
@@ -1345,12 +1372,34 @@
         "holy-grills-frontend/src/components/admin/OrderingWindowsTab.tsx",
         "holy-grills-frontend/src/components/checkout/SquadOrderButton.tsx",
         "holy-grills-frontend/src/components/events/RegisterModal.tsx",
+        "holy-grills-frontend/src/components/kitchen/KitchenHeader.tsx",
         "holy-grills-frontend/src/components/kitchen/KitchenOrderCard.tsx",
+        "holy-grills-frontend/src/components/kitchen/KitchenSettings.tsx",
         "holy-grills-frontend/src/components/marketplace/PurchaseModal.tsx",
         "holy-grills-frontend/src/components/notifications/PushPermissionBanner.tsx",
         "holy-grills-frontend/src/components/skeletons/DashboardSkeleton.tsx",
         "holy-grills-frontend/src/components/squads/SquadDetail.tsx",
-        "holy-grills-frontend/src/components/wallet/WalletHpCard.tsx"
+        "holy-grills-frontend/src/components/wallet/WalletHpCard.tsx",
+        "holy-grills-frontend/src/hooks/useKitchenData.ts",
+        "holy-grills-frontend/src/hooks/useRiderData.ts",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/cronJobs.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/kitchenSchedule.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/safeNavigation.ts",
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/analytics.ts",
+        "holy-grills-frontend/src/types/common.ts",
+        "holy-grills-frontend/src/types/events.ts",
+        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/types/kitchen.ts",
+        "holy-grills-frontend/src/types/marketplace.ts",
+        "holy-grills-frontend/src/types/menu.ts",
+        "holy-grills-frontend/src/types/orders.ts",
+        "holy-grills-frontend/src/types/riders.ts"
       ],
       "classification": "referenced"
     },
@@ -1364,8 +1413,8 @@
       "source_mentions": [
         "holy-grills-backend/app/routes/analytics.py",
         "holy-grills-backend/app/routes/marketplace.py",
-        "holy-grills-frontend/src/types/marketplace.ts",
-        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx"
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx",
+        "holy-grills-frontend/src/types/marketplace.ts"
       ],
       "classification": "referenced"
     },
@@ -1433,12 +1482,15 @@
         "holy-grills-backend/app/services/milestone_service.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
-        "holy-grills-frontend/src/lib/cronJobs.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/types/referrals.ts",
         "holy-grills-frontend/src/components/admin/AdminChallenges.tsx",
         "holy-grills-frontend/src/components/referrals/ReferralMilestones.tsx",
-        "holy-grills-frontend/src/components/skeletons/ReferralsSkeleton.tsx"
+        "holy-grills-frontend/src/components/skeletons/ReferralsSkeleton.tsx",
+        "holy-grills-frontend/src/lib/appConfig.ts",
+        "holy-grills-frontend/src/lib/cronJobs.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/challenges.ts",
+        "holy-grills-frontend/src/types/referrals.ts"
       ],
       "classification": "referenced"
     },
@@ -1464,7 +1516,10 @@
       "policy_count": 2,
       "dependent_count": 26,
       "source_mentions": [
-        "holy-grills-backend/app/services/milestone_service.py"
+        "holy-grills-backend/app/routes/challenges.py",
+        "holy-grills-backend/app/services/milestone_service.py",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/challenges.ts"
       ],
       "classification": "referenced"
     },
@@ -1582,15 +1637,15 @@
         "holy-grills-backend/app/routes/departments.py",
         "holy-grills-backend/app/services/auth_service.py",
         "holy-grills-backend/app/utils/reference_data.py",
-        "holy-grills-frontend/src/lib/adminSections.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Admin.tsx",
         "holy-grills-frontend/src/pages/Profile.tsx",
         "holy-grills-frontend/src/pages/Register.tsx",
-        "holy-grills-frontend/src/types/departments.ts",
-        "holy-grills-frontend/src/types/index.ts",
         "holy-grills-frontend/src/components/admin/AdminAnalyticsDashboards.tsx",
-        "holy-grills-frontend/src/components/admin/AdminDepartments.tsx"
+        "holy-grills-frontend/src/components/admin/AdminDepartments.tsx",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/departments.ts",
+        "holy-grills-frontend/src/types/index.ts"
       ],
       "classification": "referenced"
     },
@@ -1645,6 +1700,7 @@
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
         "holy-grills-backend/app/config.py",
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/routes/academic_calendar.py",
         "holy-grills-backend/app/routes/academic_levels.py",
         "holy-grills-backend/app/routes/admin.py",
@@ -1662,6 +1718,7 @@
         "holy-grills-backend/app/routes/webhooks.py",
         "holy-grills-backend/app/services/milestone_service.py",
         "holy-grills-backend/app/services/notification_service.py",
+        "holy-grills-backend/app/services/notification_templates.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-frontend/src/App.tsx",
         "holy-grills-frontend/src/components/BottomNav.tsx",
@@ -1675,10 +1732,7 @@
         "holy-grills-frontend/src/components/HeroCarousel.tsx",
         "holy-grills-frontend/src/components/OffCampusMap.tsx",
         "holy-grills-frontend/src/components/ProfileMenuContent.tsx",
-        "holy-grills-frontend/src/lib/adminSections.ts",
         "holy-grills-frontend/src/lib/campusContext.tsx",
-        "holy-grills-frontend/src/lib/featureConfig.ts",
-        "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/pages/Admin.tsx",
         "holy-grills-frontend/src/pages/Dashboard.tsx",
         "holy-grills-frontend/src/pages/EventDetail.tsx",
@@ -1691,10 +1745,7 @@
         "holy-grills-frontend/src/pages/Register.tsx",
         "holy-grills-frontend/src/pages/TermsPrivacy.tsx",
         "holy-grills-frontend/src/pages/TierDetail.tsx",
-        "holy-grills-frontend/src/seo/routeMeta.ts",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/types/events.ts",
-        "holy-grills-frontend/src/types/index.ts",
+        "holy-grills-frontend/src/pages/CateringStatus.tsx",
         "holy-grills-frontend/src/components/admin/AdminCatering.tsx",
         "holy-grills-frontend/src/components/admin/AdminEvents.tsx",
         "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
@@ -1704,6 +1755,7 @@
         "holy-grills-frontend/src/components/auth/AuthShell.tsx",
         "holy-grills-frontend/src/components/checkout/SquadOrderSection.tsx",
         "holy-grills-frontend/src/components/events/CateringRequestModal.tsx",
+        "holy-grills-frontend/src/components/events/EventCard.tsx",
         "holy-grills-frontend/src/components/events/MyEvents.tsx",
         "holy-grills-frontend/src/components/events/RegisterModal.tsx",
         "holy-grills-frontend/src/components/mascot/MascotCelebrationOverlay.tsx",
@@ -1725,7 +1777,15 @@
         "holy-grills-frontend/src/components/ui/switch.tsx",
         "holy-grills-frontend/src/components/ui/tabs.tsx",
         "holy-grills-frontend/src/components/ui/toast.tsx",
-        "holy-grills-frontend/src/components/ui/toggle.tsx"
+        "holy-grills-frontend/src/components/ui/toggle.tsx",
+        "holy-grills-frontend/src/config/icons.ts",
+        "holy-grills-frontend/src/lib/adminSections.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/seo/routeMeta.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/events.ts",
+        "holy-grills-frontend/src/types/index.ts"
       ],
       "classification": "referenced"
     },
@@ -1750,6 +1810,7 @@
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/exclusive_spin.py",
         "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/services/tier_service.py",
         "holy-grills-backend/app/tasks/scheduled.py"
       ],
       "classification": "referenced"
@@ -1801,12 +1862,15 @@
       "source_mentions": [
         "holy-grills-backend/app/routes/free_sides.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/services/tier_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/pages/Rewards.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
+        "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
         "holy-grills-frontend/src/lib/appConfig.ts",
         "holy-grills-frontend/src/lib/featureConfig.ts",
-        "holy-grills-frontend/src/pages/Rewards.tsx",
-        "holy-grills-frontend/src/types/free-sides.ts",
-        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx"
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/types/free-sides.ts"
       ],
       "classification": "referenced"
     },
@@ -1819,6 +1883,7 @@
       "dependent_count": 129,
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/middleware/auth.py",
         "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/auth.py",
@@ -1834,14 +1899,9 @@
         "holy-grills-frontend/src/components/CampusGate.tsx",
         "holy-grills-frontend/src/components/CampusScope.tsx",
         "holy-grills-frontend/src/lib/campusContext.tsx",
-        "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/lib/settingsMerge.ts",
         "holy-grills-frontend/src/pages/Admin.tsx",
         "holy-grills-frontend/src/pages/FAQ.tsx",
         "holy-grills-frontend/src/pages/Register.tsx",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/types/campuses.ts",
-        "holy-grills-frontend/src/types/index.ts",
         "holy-grills-frontend/src/components/admin/AdminAcademicCalendar.tsx",
         "holy-grills-frontend/src/components/admin/AdminBanners.tsx",
         "holy-grills-frontend/src/components/admin/AdminCampusSelector.tsx",
@@ -1850,7 +1910,12 @@
         "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
         "holy-grills-frontend/src/components/admin/AdminFreeCredits.tsx",
         "holy-grills-frontend/src/components/admin/AdminStorefront.tsx",
-        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx"
+        "holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx",
+        "holy-grills-frontend/src/lib/liveApi.ts",
+        "holy-grills-frontend/src/lib/settingsMerge.ts",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/campuses.ts",
+        "holy-grills-frontend/src/types/index.ts"
       ],
       "classification": "referenced"
     },
@@ -1876,6 +1941,7 @@
       "policy_count": 2,
       "dependent_count": 14,
       "source_mentions": [
+        "holy-grills-backend/app/__init__.py",
         "holy-grills-backend/app/routes/admin_feature_flags.py",
         "holy-grills-backend/app/routes/exclusive_spin.py",
         "holy-grills-backend/app/routes/free_sides.py",
@@ -1890,10 +1956,10 @@
         "holy-grills-backend/app/services/hp_service.py",
         "holy-grills-backend/app/services/order_service.py",
         "holy-grills-backend/app/tasks/scheduled.py",
+        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
         "holy-grills-frontend/src/lib/appConfig.ts",
         "holy-grills-frontend/src/lib/liveApi.ts",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx"
+        "holy-grills-frontend/src/types/admin.ts"
       ],
       "classification": "referenced"
     },
@@ -1907,10 +1973,10 @@
       "source_mentions": [
         "holy-grills-backend/app/routes/analytics.py",
         "holy-grills-backend/app/routes/marketplace.py",
-        "holy-grills-frontend/src/types/marketplace.ts",
         "holy-grills-frontend/src/components/marketplace/MarketplacePurchasesPanel.tsx",
         "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplacePurchases.tsx",
-        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx"
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx",
+        "holy-grills-frontend/src/types/marketplace.ts"
       ],
       "classification": "referenced"
     },
@@ -1953,7 +2019,8 @@
       "dependent_count": 31,
       "source_mentions": [
         "holy-grills-backend/app/routes/admin_feature_flags.py",
-        "holy-grills-backend/app/routes/exclusive_spin.py"
+        "holy-grills-backend/app/routes/exclusive_spin.py",
+        "holy-grills-backend/app/services/delivery_benefits.py"
       ],
       "classification": "referenced"
     },
@@ -2003,8 +2070,10 @@
       "schema": "public",
       "policy_count": 2,
       "dependent_count": 18,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py"
+      ],
+      "classification": "referenced"
     },
     {
       "rls": true,
@@ -2047,7 +2116,10 @@
       "policy_count": 2,
       "dependent_count": 20,
       "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/services/hp_service.py",
         "holy-grills-backend/app/services/streak_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-frontend/src/lib/cronJobs.ts"
       ],
@@ -2075,8 +2147,10 @@
       "dependent_count": 33,
       "source_mentions": [
         "holy-grills-backend/app/__init__.py",
+        "holy-grills-backend/app/routes/admin.py",
         "holy-grills-backend/app/routes/order_locks.py",
         "holy-grills-backend/app/services/order_service.py",
+        "holy-grills-backend/app/tasks/celery_app.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-frontend/src/lib/liveApi.ts",
         "holy-grills-frontend/src/types/order-locks.ts"
@@ -2121,6 +2195,7 @@
       "policy_count": 4,
       "dependent_count": 191,
       "source_mentions": [
+        "holy-grills-backend/app/messages.py",
         "holy-grills-backend/app/middleware/auth.py",
         "holy-grills-backend/app/routes/academic_levels.py",
         "holy-grills-backend/app/routes/admin.py",
@@ -2157,10 +2232,10 @@
         "holy-grills-backend/app/services/squad_service.py",
         "holy-grills-backend/app/services/streak_service.py",
         "holy-grills-backend/app/services/tier_service.py",
+        "holy-grills-backend/app/services/order_payments.py",
+        "holy-grills-backend/app/services/delivery_benefits.py",
         "holy-grills-backend/app/tasks/scheduled.py",
         "holy-grills-backend/app/utils/email.py",
-        "holy-grills-frontend/src/types/admin.ts",
-        "holy-grills-frontend/src/types/auth.ts",
         "holy-grills-frontend/src/components/admin/AdminAbandonedCarts.tsx",
         "holy-grills-frontend/src/components/admin/AdminDelivery.tsx",
         "holy-grills-frontend/src/components/admin/AdminFeatureFlags.tsx",
@@ -2170,7 +2245,9 @@
         "holy-grills-frontend/src/components/admin/AdminReviews.tsx",
         "holy-grills-frontend/src/components/admin/AdminRewards.tsx",
         "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplacePurchases.tsx",
-        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx"
+        "holy-grills-frontend/src/components/admin/marketplace/AdminMarketplaceReports.tsx",
+        "holy-grills-frontend/src/types/admin.ts",
+        "holy-grills-frontend/src/types/auth.ts"
       ],
       "classification": "referenced"
     },
@@ -3273,8 +3350,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_verify_promo_use_limit",
@@ -3371,8 +3450,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_verify_graduation_claim",
@@ -3497,8 +3578,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/tasks/scheduled.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_complete_referral_atomic",
@@ -3511,8 +3594,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/referrals.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_current_user_role",
@@ -3539,8 +3624,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/menu.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_protect_leaderboard_reward_columns",
@@ -3595,8 +3682,10 @@
       "dependent_count": 203,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/milestone_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "checkin_event_atomic",
@@ -4057,8 +4146,10 @@
       "dependent_count": 1,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/auth.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_generate_referral_code",
@@ -4085,8 +4176,12 @@
       "dependent_count": 19,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-frontend/src/lib/HolyGrillContext.tsx",
+        "holy-grills-frontend/src/lib/apiClient.ts",
+        "holy-grills-frontend/src/lib/featureConfig.ts"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "claim_guest_order",
@@ -4099,8 +4194,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_add_hp_transaction",
@@ -4127,8 +4224,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/hp_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_release_order_refund_reservation",
@@ -4155,8 +4254,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/wallet_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_verify_referral_integrity",
@@ -4197,8 +4298,10 @@
       "dependent_count": 3,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_enforce_pending_hp_ceiling",
@@ -4225,8 +4328,12 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/economics_dashboard_service.py",
+        "holy-grills-backend/app/services/hp_service.py",
+        "holy-grills-backend/app/services/streak_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_check_ordering_window_delivery_link",
@@ -4253,8 +4360,11 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/rewards.py",
+        "holy-grills-backend/app/services/hp_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_mark_event_ticket_paid",
@@ -4267,8 +4377,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_claim_tier_monthly_perk",
@@ -4323,8 +4435,11 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/routes/auth.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_purchase_marketplace_item",
@@ -4337,8 +4452,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/marketplace.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_consume_hp_buckets",
@@ -4393,8 +4510,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/rewards.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_claim_daily_share_atomic",
@@ -4421,8 +4540,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_reserve_order_refund",
@@ -4477,8 +4598,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_transfer_hp_atomic",
@@ -4491,8 +4614,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/hp.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_protect_profile_columns",
@@ -4519,8 +4644,11 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/free_sides.py",
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_refund_order_atomic",
@@ -4533,8 +4661,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_claim_reward_redemption_for_order",
@@ -4547,8 +4677,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "get_pending_squad_hp_report",
@@ -4561,8 +4693,11 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": true,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py",
+        "holy-grills-backend/app/services/squad_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "credit_wallet_atomic",
@@ -4575,8 +4710,11 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/webhooks.py",
+        "holy-grills-backend/app/services/wallet_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_grant_exclusive_spins_atomic",
@@ -4589,8 +4727,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/admin.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_submit_order_review_atomic",
@@ -4603,8 +4743,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/orders.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_protect_order_locks_columns",
@@ -4631,8 +4773,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/exclusive_spin.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_keep_event_door_token_private",
@@ -4673,8 +4817,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "register_for_event_paid",
@@ -4687,8 +4833,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/events.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_create_order_atomic",
@@ -4701,8 +4849,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_adjust_stock_balance",
@@ -4715,8 +4865,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/routes/kitchen.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_mark_order_paid",
@@ -4729,8 +4881,10 @@
       "dependent_count": 0,
       "service_execute": true,
       "authenticated_execute": false,
-      "source_mentions": [],
-      "classification": "unproven-unused-candidate"
+      "source_mentions": [
+        "holy-grills-backend/app/services/order_service.py"
+      ],
+      "classification": "referenced"
     },
     {
       "name": "hg_verify_order_status_transition",
