@@ -1,10 +1,15 @@
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.services.notification_service import send_blast
-from app.db import get_user_client
+from app.services.notification_service import send_blast, resolve_segment_user_ids
+from app.db import get_user_client, SupabaseError
+from app.utils.validators import validate_uuid
+from app.utils.campus_scope import assert_can_modify
+from app.db import get_db
 from app.messages import MSG
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
+from app.utils.campus_scope import resolve_write_campus
+from app.utils.admin_helpers import as_instant
 
 logger = get_logger(__name__)
 
@@ -281,26 +286,20 @@ def update_preferences():
         description: Preferences updated
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
     allowed = {"push_enabled", "email_enabled", "order_updates", "promotions", "hp_updates", "delivery_updates"}
-    update = {k: bool(v) for k, v in data.items() if k in allowed}
+    if not isinstance(data, dict) or any(not isinstance(v, bool) for k, v in data.items() if k in allowed):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         return jsonify({"error": MSG.NOTIF_NO_VALID_PREFS}), 400
 
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     try:
-        defaults = {
-            "user_id": g.user_id,
-            "push_enabled": True,
-            "email_enabled": True,
-            "order_updates": True,
-            "promotions": True,
-            "hp_updates": True,
-            "delivery_updates": True,
-        }
-        defaults.update(update)
-        db.table("notification_preferences").upsert(defaults, on_conflict="user_id").execute()
+        # Database defaults initialize a new row; PATCH must not reset any
+        # existing opt-out that this request did not mention.
+        db.table("notification_preferences").upsert({"user_id": g.user_id, **update}, on_conflict="user_id").execute()
 
         result = (
             db.table("notification_preferences")
@@ -313,21 +312,8 @@ def update_preferences():
             result["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
         return jsonify(result), 200
     except Exception as exc:
-        err = str(exc)
-        if "does not exist" in err or "schema cache" in err or "relation" in err:
-            merged = {
-                "user_id": g.user_id,
-                "push_enabled": True,
-                "email_enabled": True,
-                "order_updates": True,
-                "promotions": True,
-                "hp_updates": True,
-                "delivery_updates": True,
-            }
-            merged.update({k: v for k, v in update.items() if k != "updated_at"})
-            merged["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
-            return jsonify(merged), 200
-        raise
+        logger.exception("Notification preference save failed for %s", g.user_id)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @notifications_bp.route("/blasts", methods=["GET"])
@@ -426,20 +412,48 @@ def create_blast():
         description: Blast created and sent
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     required = ["title", "body", "channels"]
     for f in required:
         if not data.get(f):
             return jsonify({"error": f"'{f}' is required"}), 400
 
-    data["created_by"] = g.user_id
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id and "campus_id" not in data:
-        data["campus_id"] = campus_id
-    if "target_segment" in data:
-        data["segment"] = data.pop("target_segment")
-    if "send_at" in data:
-        data["scheduled_at"] = data.pop("send_at")
+    if (not isinstance(data["title"], str) or not data["title"].strip() or len(data["title"]) > 200
+            or not isinstance(data["body"], str) or not data["body"].strip() or len(data["body"]) > 10000
+            or not isinstance(data["channels"], list) or not data["channels"]
+            or any(c not in ("in_app", "email", "push") for c in data["channels"])):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    campus_id = resolve_write_campus(data.get("campus_id"))
+    segment = data.get("target_segment", data.get("segment", {}))
+    if not isinstance(segment, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if campus_id:
+        if any(segment.get(k) not in (None, "", campus_id) for k in ("campus", "campus_id")):
+            return jsonify({"error": MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}), 403
+        segment = {**segment, "campus_id": campus_id}
+    scheduled_at = data.get("send_at", data.get("scheduled_at"))
+    request_id = data.get("request_id")
+    if request_id is not None and (not isinstance(request_id, str) or not validate_uuid(request_id)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    email_provider = data.get("email_provider")
+    if email_provider not in (None, "resend", "onesignal"):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if scheduled_at:
+        try:
+            scheduled_at = as_instant(scheduled_at)
+            if datetime.fromisoformat(scheduled_at) <= datetime.now(timezone.utc):
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+    # Never let clients supply receipts, recipient counts or worker status.
+    data = {"title": data["title"].strip(), "body": data["body"].strip(),
+            "channels": list(dict.fromkeys(data["channels"])), "segment": segment,
+            "campus_id": campus_id, "created_by": g.user_id, "scheduled_at": scheduled_at,
+            "email_provider": email_provider}
+    if request_id:
+        data["id"] = request_id
 
     if data.get("scheduled_at"):
         data["status"] = "scheduled"
@@ -448,6 +462,14 @@ def create_blast():
 
     try:
         blast = db.table("notification_blasts").insert(data).execute()
+    except SupabaseError as exc:
+        if request_id and str((exc.details or {}).get("code")) == "23505":
+            existing = db.table("notification_blasts").select("*").eq("id", request_id).single().execute()
+            if existing and all(existing.get(k) == v for k, v in data.items() if k != "status"):
+                return jsonify({"blast": existing, "already_created": True}), 200
+            return jsonify({"error": MSG.INVALID_INPUT}), 409
+        logger.exception("create_blast failed")
+        return jsonify({"error": MSG.NOTIFICATION_BLAST_CREATE_FAILED}), 503
     except Exception as e:
         err_msg = str(getattr(e, "details", {}).get("message", "")) if hasattr(e, "details") and e.details else str(e)
         if "policy" in err_msg.lower() or "permission" in err_msg.lower() or "rls" in err_msg.lower():
@@ -461,3 +483,42 @@ def create_blast():
         return jsonify({"blast": blast_row, "sent_to": result["sent_to"]}), 201
 
     return jsonify({"blast": blast_row, "message": "Blast scheduled"}), 201
+
+
+@notifications_bp.route("/blasts/<blast_id>/cancel", methods=["POST"])
+@require_role("admin")
+def cancel_blast(blast_id):
+    db = get_user_client()
+    row = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    if not row:
+        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
+    assert_can_modify(row.get("campus_id"))
+    if row.get("status") == "cancelled":
+        return jsonify(row), 200
+    if row.get("status") not in ("scheduled", "pending"):
+        return jsonify({"error": MSG.BLAST_CANCELLATION_TOO_LATE}), 409
+    updated = db.table("notification_blasts").eq("id", blast_id).eq("status", row["status"]).update({"status": "cancelled"})
+    if not updated:
+        return jsonify({"error": MSG.BLAST_CANCELLATION_TOO_LATE}), 409
+    return jsonify(updated[0] if isinstance(updated, list) else updated), 200
+
+
+@notifications_bp.route("/blasts/preview", methods=["POST"])
+@require_role("admin")
+def preview_blast():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    campus = resolve_write_campus(data.get("campus_id"))
+    segment = data.get("target_segment", data.get("segment", {}))
+    if not isinstance(segment, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if campus and any(segment.get(k) not in (None, "", campus) for k in ("campus", "campus_id")):
+        return jsonify({"error": MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}), 403
+    try:
+        target_campus = campus or segment.get("campus_id") or segment.get("campus")
+        ids = resolve_segment_user_ids(segment, campus_id=target_campus, db=get_db())
+    except Exception:
+        logger.exception("Blast audience preview failed")
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+    return jsonify({"recipient_count": len(ids)}), 200

@@ -1,4 +1,8 @@
 from flask import Blueprint, request, jsonify, g
+import math
+from app.utils.campus_scope import assert_can_modify, resolve_write_campus
+from app.utils.validators import validate_uuid
+from app.middleware.auth import resolve_scoped_campus_id
 from app.middleware.auth import require_role, fetch_or_403
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
@@ -14,6 +18,20 @@ logger = get_logger(__name__)
 kitchen_bp = Blueprint("kitchen", __name__)
 units_bp = Blueprint("measurement_units", __name__)
 stock_bp = Blueprint("stock_items", __name__)
+
+def _stock_adjustment(db, params, request_id):
+    if request_id is not None:
+        if not isinstance(request_id, str) or not validate_uuid(request_id):
+            return None, (jsonify({"error": MSG.INVALID_INPUT}), 400)
+        params["p_request_id"] = request_id
+    try:
+        return db.rpc("hg_adjust_stock_balance", params), None
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get("code"))
+        status = {"23514": 400, "23505": 409, "42501": 403, "P0002": 404}.get(code, 503)
+        message = {"23514": MSG.STOCK_ADJUSTMENT_REJECTED, "23505": MSG.STOCK_INTENT_CONFLICT,
+                   "42501": MSG.RESOURCE_ACCESS_DENIED, "P0002": MSG.STOCK_ITEM_NOT_FOUND}.get(code, MSG.SERVICE_UNAVAILABLE)
+        return None, (jsonify({"error": message}), status)
 
 
 def _attach_kitchen_customer_names(orders):
@@ -117,12 +135,12 @@ def create_stock_item():
         current_balance = float(data.get("current_balance", 0))
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
+    if any(isinstance(data.get(k), bool) for k in ("conversion_factor", "low_stock_threshold", "current_balance")) or not all(math.isfinite(v) for v in (conversion_factor, low_stock_threshold, current_balance)) or low_stock_threshold < 0 or current_balance < 0:
+        return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
     if conversion_factor <= 0:
         return jsonify({"error": MSG.STOCK_CONVERSION_FACTOR_INVALID}), 400
 
-    campus_id = getattr(g, "campus_id", None)
-    if getattr(g, "user_role", None) == "super_admin" and data.get("campus_id"):
-        campus_id = data["campus_id"]
+    campus_id = resolve_write_campus(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
 
@@ -159,7 +177,7 @@ def list_stock_items():
     """
     db = get_user_client()
     q = db.table("stock_items").select("*")
-    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -205,20 +223,24 @@ def log_stock_purchase(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="*", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
     item = existing
+    assert_can_modify(item.get("campus_id"))
 
     try:
         qty_entered = float(data["quantity"])
         cost = float(data.get("cost", 0)) if data.get("cost") is not None else None
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
+    if isinstance(data["quantity"], bool) or isinstance(data.get("cost"), bool) or not math.isfinite(qty_entered) or qty_entered <= 0 or (cost is not None and (not math.isfinite(cost) or cost < 0)):
+        return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
     conv_factor = float(item.get("conversion_factor") or 1.0)
     usage_qty = qty_entered * conv_factor
 
-    result = db.rpc("hg_adjust_stock_balance", {
+    result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": "purchase", "p_quantity_entered": qty_entered,
         "p_delta_usage_units": usage_qty, "p_unit_id": item.get("purchase_unit_id"),
         "p_cost": cost, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
-    })
+    }, data.get("request_id"))
+    if error: return error
     row = result[0] if isinstance(result, list) else result
 
     return jsonify({
@@ -266,17 +288,21 @@ def log_stock_usage(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="*", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
     item = existing
+    assert_can_modify(item.get("campus_id"))
 
     try:
         qty_entered = float(data["quantity"])
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
+    if isinstance(data["quantity"], bool) or not math.isfinite(qty_entered) or (entry_type != "correction" and qty_entered <= 0):
+        return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
 
-    result = db.rpc("hg_adjust_stock_balance", {
+    result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": entry_type, "p_quantity_entered": qty_entered,
         "p_delta_usage_units": -qty_entered, "p_unit_id": item.get("usage_unit_id"),
         "p_cost": None, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
-    })
+    }, data.get("request_id"))
+    if error: return error
     row = result[0] if isinstance(result, list) else result
     if row["is_low_stock"]:
         _alert_admin_low_stock(item, row["new_balance"])

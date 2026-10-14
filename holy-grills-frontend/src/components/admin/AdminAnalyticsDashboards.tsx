@@ -81,7 +81,11 @@ function useDashboard(fetcher, deps = []) {
     setLoading(false);
   }, deps);
   useEffect(() => { load(); }, [load]);
-  return { data, loading, error };
+  return { data, loading, error, retry: load };
+}
+
+function DashboardError({ retry }) {
+  return <Card className="p-5 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={retry} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
 }
 
 function DashLoader() {
@@ -99,8 +103,9 @@ function DashLoader() {
 // 1. ORDER TIMING — bar (by day), line (by hour), line (30-day trend), KPIs
 // ════════════════════════════════════════════════════════
 export function OrderTimingDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.orderTiming());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.orderTiming());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const byDay = data?.by_day || data?.orders_by_day || [];
   const byHour = data?.by_hour || data?.orders_by_hour || [];
   const trend = data?.trend || data?.daily_trend || [];
@@ -165,8 +170,9 @@ export function OrderTimingDashboard() {
 // 2. ADD-ON ACCEPTANCE — KPIs, horizontal bar (popularity), pie (revenue split)
 // ════════════════════════════════════════════════════════
 export function AddonAcceptanceDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.addonAcceptance());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.addonAcceptance());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const rate = data?.acceptance_rate ?? data?.acceptance_pct ?? 0;
   const avgAddons = data?.avg_addons_per_order ?? data?.average_addons ?? 0;
   const popularity = data?.popularity || data?.top_addons || [];
@@ -196,8 +202,9 @@ export function AddonAcceptanceDashboard() {
 // 3. DELIVERY LOCATION — pie (on/off campus), bars (top hostels/gates), KPI
 // ════════════════════════════════════════════════════════
 export function DeliveryLocationDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.deliveryLocations());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.deliveryLocations());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const onOff = data?.on_off_campus || data?.split || [];
   const pieData = onOff.map((d) => ({ name: d.label || d.type, value: d.count || d.value || 0 }));
   const hostels = data?.top_hostels || [];
@@ -230,8 +237,9 @@ export function DeliveryLocationDashboard() {
 // 4. SQUAD ORDERS — pie, KPI, line, table, KPI
 // ════════════════════════════════════════════════════════
 export function SquadOrdersDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.squadOrders());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.squadOrders());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const split = data?.squad_vs_individual || data?.split || [];
   const pieData = split.map((d) => ({ name: d.label || d.type, value: d.count || d.value || 0 }));
   const avgSize = data?.avg_squad_size ?? data?.average_squad_size ?? 0;
@@ -295,8 +303,9 @@ export function SquadOrdersDashboard() {
 // 5. DEMOGRAPHICS — bars (dept, faculty), stacked bar (level), pie, KPI
 // ════════════════════════════════════════════════════════
 export function DemographicsDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.demographics());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.demographics());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const byDept = data?.by_department || data?.departments || [];
   const byFaculty = data?.by_faculty || data?.faculties || [];
   const byLevel = data?.by_academic_level || data?.by_level || [];
@@ -344,8 +353,9 @@ export function DemographicsDashboard() {
 // 6. STUDENT ENGAGEMENT — histogram, lines, table, bar
 // ════════════════════════════════════════════════════════
 export function EngagementDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.engagement());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.engagement());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const tiers = data?.engagement_tiers || data?.tiers || [];
   const hpTrend = data?.hp_earned_trend || data?.hp_trend || [];
   const checkinTrend = data?.checkins_trend || data?.checkin_trend || [];
@@ -444,8 +454,9 @@ const PAYMENT_META = {
 };
 
 export function PaymentMethodDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.paymentMethods());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.paymentMethods());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   // Accepts either an array of {method, count} entries or a keyed object
   // {wallet, card, split, hp_or_free} — normalize both to fixed slices.
   const raw = data?.split || data?.payment_methods || [];
@@ -503,8 +514,9 @@ export function PaymentMethodDashboard() {
 // 8. REVENUE — line (daily), stacked bar (by payment), KPIs, bar (day of week)
 // ════════════════════════════════════════════════════════
 export function RevenueDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.revenue());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.revenue());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const daily = data?.daily_revenue || data?.daily || [];
   const byMethod = data?.by_payment_method || data?.revenue_by_method || [];
   const aov = data?.aov ?? data?.average_order_value ?? 0;
@@ -573,8 +585,9 @@ export function RevenueDashboard() {
 // HP ECOSYSTEM — enhanced with 4-tier pie (Ember/Flame/Blaze/Holy)
 // ════════════════════════════════════════════════════════
 export function HpEcosystemDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.admin.getAnalyticsHp());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.admin.getAnalyticsHp());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const inCirc = data?.hp_in_circulation ?? 0;
   const earned = data?.hp_earned_active ?? 0;
   const spent = data?.hp_spent ?? 0;
@@ -636,8 +649,9 @@ export function HpEcosystemDashboard() {
 // B1. ACADEMIC CALENDAR — order volume during exam/semester periods vs normal days
 // ════════════════════════════════════════════════════════
 export function AcademicCalendarDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.academicCalendar());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.academicCalendar());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const periods = data?.academic_periods || [];
   const baseline = data?.normal_day_baseline || {};
   return (
@@ -686,8 +700,9 @@ export function AcademicCalendarDashboard() {
 // B2. ORDER SOURCES — breakdown by channel (website, whatsapp, instagram, etc.)
 // ════════════════════════════════════════════════════════
 export function OrderSourcesDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.orderSources());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.orderSources());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const sources = data?.order_sources || [];
   const total = data?.total_orders ?? 0;
   const pieData = sources.map((s) => ({ name: s.order_source || 'unspecified', value: s.count || 0 }));
@@ -716,8 +731,9 @@ export function OrderSourcesDashboard() {
 // A9. REFERRAL NETWORK — top referrers driving new signups
 // ════════════════════════════════════════════════════════
 export function ReferralNetworkDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.referralNetwork());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.referralNetwork());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const total = data?.total_referrals ?? 0;
   const completed = data?.completed_referrals ?? 0;
   const topReferrers = data?.top_referrers || [];
@@ -762,8 +778,9 @@ export function ReferralNetworkDashboard() {
 // A8. RETENTION & LTV — repeat order rate and customer lifetime value
 // ════════════════════════════════════════════════════════
 export function RetentionLtvDashboard() {
-  const { data, loading } = useDashboard(() => liveApi.analytics.retentionLtv());
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.retentionLtv());
   if (loading) return <DashLoader />;
+  if (error) return <DashboardError retry={retry} />;
   const totalStudents = data?.total_students ?? 0;
   const orderingCustomers = data?.ordering_customers ?? 0;
   const repeatCustomers = data?.repeat_customers ?? 0;

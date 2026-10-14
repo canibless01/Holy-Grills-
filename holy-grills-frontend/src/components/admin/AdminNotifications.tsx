@@ -8,6 +8,8 @@ import { Pill } from './ui/AdminKit';
 import { toast } from '@/components/ui/use-toast';
 import type { NotificationBlastPayload } from '@/types/notifications';
 import { msg } from '@/lib/messages';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
+import { apiClient } from '@/lib/apiClient';
 
 const ROLES = [
   { id: 'all', label: 'All roles' },
@@ -45,16 +47,28 @@ export default function AdminNotifications() {
   const [tier, setTier] = useState('all');
   const [sendAt, setSendAt] = useState(''); // datetime-local string, '' = immediate
   const [emailProvider, setEmailProvider] = useState('default');
-  const [notifyNewMatchesOnly, setNotifyNewMatchesOnly] = useState(false);
   const [sending, setSending] = useState(false);
   const [blasts, setBlasts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const intent = useCmsCreateIntent();
+  const [previewCount, setPreviewCount] = useState(null);
+  const preview = async () => {
+    try { const result = await apiClient.post('/notifications/blasts/preview', buildPayload()); setPreviewCount(result.recipient_count); }
+    catch { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), variant: 'destructive' }); }
+  };
+  const cancelCampaign = async (id) => {
+    try { await apiClient.post(`/notifications/blasts/${id}/cancel`, {}); await load(); }
+    catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
+  };
+  useEffect(() => { setPreviewCount(null); }, [role, tier]);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
     try { setBlasts(await mockApi.admin.getNotificationBlasts()); }
-    catch { setBlasts([]); }
+    catch { setLoadError(true); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -66,12 +80,11 @@ export default function AdminNotifications() {
   const buildPayload = () => {
     const payload: NotificationBlastPayload = { title: title.trim(), body: body.trim(), channels };
     // Segment builder — always send target_segment; "all" means no filtering.
-    const segment = { role, tier, campus_id: 'all' };
+    const segment = { role, tier };
     payload.target_segment = segment;
+    if (emailProvider !== 'default') payload.email_provider = emailProvider;
     // Keep legacy `segment` key for backward compat with the existing backend.
     if (role !== 'all' || tier !== 'all') payload.segment = segment;
-    if (emailProvider !== 'default') payload.email_provider = emailProvider;
-    payload.notify_new_matches_only = notifyNewMatchesOnly;
     // Only include send_at when a date/time is set — omitting it means "now".
     if (sendAt) {
       const d = new Date(sendAt);
@@ -83,12 +96,13 @@ export default function AdminNotifications() {
   const doSend = async () => {
     setSending(true);
     try {
-      const res = await mockApi.admin.sendNotificationBlast(buildPayload());
+      const res = await mockApi.admin.sendNotificationBlast(intent.body(buildPayload()));
+      intent.clear();
       if (isScheduled) {
         toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SCHEDULED', '📅 Campaign scheduled'), description: msg('FE_ADMIN_NOTIFICATIONS_WILL_SEND_ON_DATE', 'Will send on {date}', { date: new Date(sendAt).toLocaleString() }) });
       } else {
         const sentTo = res?.sent_to ?? res?.recipients ?? res?.recipient_count;
-        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SENT', '🔔 Campaign sent'), description: sentTo != null ? `Delivered to ${sentTo} recipients` : 'Blast sent successfully' });
+        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SENT', '🔔 Campaign sent'), description: sentTo != null ? msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: sentTo }) : undefined });
       }
       setTitle(''); setBody(''); setSendAt(''); setRole('all'); setTier('all');
       setConfirmOpen(false);
@@ -165,23 +179,11 @@ export default function AdminNotifications() {
             </div>
           </Field>
 
-          <Field label="Email provider (optional)" hint="Most admins never touch this — the default follows your admin settings.">
-            <select value={emailProvider} onChange={(e) => setEmailProvider(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card">
-              <option value="default">Use default</option>
-              <option value="resend">Resend</option>
-              <option value="onesignal">OneSignal</option>
+          <Field label={msg('FE_BLAST_EMAIL_PROVIDER', 'Email provider')}>
+            <select value={emailProvider} onChange={e => setEmailProvider(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card">
+              <option value="default">{msg('FE_BLAST_USE_DEFAULT', 'Use default')}</option><option value="resend">Resend</option><option value="onesignal">OneSignal</option>
             </select>
           </Field>
-
-          {(role !== 'all' || tier !== 'all') && (
-            <div className="rounded-2xl border border-border p-3 bg-muted/50 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span className="text-sm font-bold text-foreground">Only notify new matches</span>
-                <p className="text-[11px] text-muted-foreground mt-1">Won't re-notify someone who already got this campaign — ideal for recurring segment sends.</p>
-              </div>
-              <Toggle checked={notifyNewMatchesOnly} onChange={setNotifyNewMatchesOnly} />
-            </div>
-          )}
 
           <button
             onClick={handleSubmit}
@@ -191,13 +193,15 @@ export default function AdminNotifications() {
             <Send className="w-4 h-4" />
             {sending ? 'Sending...' : isScheduled ? 'Schedule Campaign' : 'Send Blast Now'}
           </button>
+          <button onClick={preview} className="text-primary font-bold text-sm">{msg('FE_BLAST_PREVIEW', 'Preview recipients')}</button>
+          {previewCount !== null && <p className="text-sm">{msg('FE_BLAST_AUDIENCE_COUNT', '{count} recipients in this audience.', { count: previewCount })}</p>}
         </div>
       </Card>
 
       {/* Recent blasts */}
       <div>
         <h3 className="font-bold text-sm text-foreground mb-2">Recent Campaigns</h3>
-        {loading ? <LoadingSpinner label="Loading..." /> : blasts.length === 0 ? (
+        {loading ? <LoadingSpinner label="Loading..." /> : loadError ? <div className="space-y-2"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div> : blasts.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-6">No campaigns sent yet.</p>
         ) : (
           <div className="space-y-2">
@@ -212,6 +216,7 @@ export default function AdminNotifications() {
                     <Pill tone={st.tone}><StIcon className="w-2.5 h-2.5" /> {st.label}</Pill>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{b.body}</p>
+                  {['pending', 'scheduled'].includes(b.status) && <button onClick={() => cancelCampaign(b.id)} className="text-destructive font-bold text-xs">{msg('FE_BLAST_CANCEL', 'Cancel campaign')}</button>}
                   <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground font-bold flex-wrap">
                     {(b.scheduled_at || b.send_at) && <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {new Date(b.scheduled_at || b.send_at).toLocaleString()}</span>}
                     <span>{Array.isArray(b.channels) ? b.channels.join(', ') : '—'}</span>

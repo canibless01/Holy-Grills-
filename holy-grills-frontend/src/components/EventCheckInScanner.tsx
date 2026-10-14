@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, X, AlertCircle, Keyboard } from 'lucide-react';
 import ModalPortal from '@/components/ModalPortal';
 import { msg } from '@/lib/messages';
+import { eventQrPayload } from '@/lib/eventQr';
 
 /**
  * EventCheckInScanner — opens the device camera and reads the venue's QR code
@@ -65,19 +66,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
 
   // Parse `HG-EVT-{event_id}-{token}` → validate event → emit token.
   const handleRaw = (raw) => {
-    const parts = raw.split('-'); // ['HG','EVT',eventId, ...tokenParts]
-    if (parts.length < 4 || parts[0] !== 'HG' || parts[1] !== 'EVT') {
-      setError(msg('FE_EVENT_CHECK_IN_SCANNER_THAT_QR_CODE_IS_NOT_A_HOLY_GRILL_EVENT', 'That QR code is not a Holy Grill event code.'));
-      stopCamera();
-      return;
-    }
-    const scannedEventId = parts.slice(2, -1).join('-') || parts[2];
-    const token = parts[parts.length - 1];
-    if (scannedEventId !== eventId) {
-      setError(msg('FE_EVENT_CHECK_IN_SCANNER_THIS_QR_CODE_IS_FOR_A_DIFFERENT_EVENT', 'This QR code is for a different event.'));
-      stopCamera();
-      return;
-    }
+    const token = eventQrPayload(raw, eventId);
     if (!token) { setError(msg('FE_EVENT_CHECK_IN_SCANNER_INVALID_QR_CODE', 'Invalid QR code.')); stopCamera(); return; }
     setScanning(false);
     stopCamera();
@@ -87,7 +76,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
   const submitManual = () => {
     const raw = manualToken.trim();
     if (!raw) return;
-    handleRaw(raw.startsWith('HG-EVT-') ? raw : `HG-EVT-${eventId}-${raw}`);
+    handleRaw(raw);
   };
 
   return (
@@ -104,7 +93,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
 
         {manual ? (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Enter the token shown on the venue's QR code (the part after <code>HG-EVT-{eventId}-</code>).</p>
+            <p className="text-xs text-muted-foreground">{msg('FE_EVENT_DOOR_QR_HELP', 'Paste the event door QR payload or its token.')}</p>
             <input
               value={manualToken}
               onChange={(e) => setManualToken(e.target.value)}

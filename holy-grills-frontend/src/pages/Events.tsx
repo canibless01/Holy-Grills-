@@ -10,6 +10,7 @@ import MyEvents from '@/components/events/MyEvents';
 import CateringRequestModal from '@/components/events/CateringRequestModal';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { msg } from '@/lib/messages';
 
 /** Head data for /events — the same object the pre-render writes. */
 const META = metaForPath('/events');
@@ -74,7 +75,7 @@ export default function Events() {
           onClick={() => setShowCatering(true)}
           className="flex items-center gap-1 px-3 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold transition-all active:scale-95"
         >
-          <Plus className="w-3.5 h-3.5" /> Catering
+          <Plus className="w-3.5 h-3.5" /> {msg('FE_CATERING_REQUEST_ACTION', 'Request catering')}
         </button>
       </div>
 

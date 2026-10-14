@@ -7,10 +7,13 @@ import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { msg } from '@/lib/messages';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
-const BLANK = { title: '', description: '', location: '', starts_at: '', ends_at: '', hp_reward: 30, hp_per_attendee: 30, max_attendees: 100, ticket_price_wallet: 0, ticket_price_hp: 0, funding_source: 'hg_funded', is_paid: false, is_featured: false, image_url: '' };
+const BLANK = { title: '', description: '', location: '', starts_at: '', ends_at: '', hp_reward: 30, hp_per_attendee: 30, max_attendees: 100, funding_source: 'hg_funded', is_paid: false, is_featured: false, image_url: '' };
 
 export default function AdminEvents() {
+  const { user } = useHolyGrill();
+  const canManage = (event) => user?.role === 'super_admin' || !!event.campus_id;
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
@@ -19,22 +22,17 @@ export default function AdminEvents() {
   const [tiersModal, setTiersModal] = useState(null);
   const [salesModal, setSalesModal] = useState(null);
   const [emailModal, setEmailModal] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
-  const load = async () => { setLoading(true); setEvents(await mockApi.admin.getEvents()); setLoading(false); };
+  const load = async () => { setLoading(true); setLoadError(false); try { setEvents(await mockApi.admin.getEvents()); } catch { setLoadError(true); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
 
   const save = async () => {
-    const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_per_attendee), max_attendees: Number(modal.item.max_attendees), ticket_price_wallet: Number(modal.item.ticket_price_wallet), ticket_price_hp: Number(modal.item.ticket_price_hp), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
+    const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_reward), max_attendees: Number(modal.item.max_attendees), capacity: Number(modal.item.max_attendees), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
     try {
       let savedEvent = null;
       if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_ADMIN_EVENTS_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) }); }
       else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
-      // image_url is not an accepted column on create/update event — push it
-      // through the dedicated POST /events/<id>/image route or the upload is
-      // silently dropped by the backend.
-      if (body.image_url && savedEvent?.id) {
-        try { await mockApi.admin.updateEventImage(savedEvent.id, { image_url: body.image_url }); } catch { /* image save best-effort */ }
-      }
       setModal(null); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
   };
@@ -95,6 +93,7 @@ export default function AdminEvents() {
   };
 
   if (loading) return <LoadingSpinner label="Loading events..." />;
+  if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   const filteredRegs = regs ? regs.data.filter(r => {
     if (regs.tierFilter && (r.tier_name || r.tier || '') !== regs.tierFilter) return false;
@@ -120,13 +119,13 @@ export default function AdminEvents() {
             </div>
             <div className="text-xs text-muted-foreground">{e.location} · {e.checkin_count}/{e.max_attendees} checked in · {e.hp_reward ?? e.hp_per_attendee} HP</div>
           </div>
-          <Toggle checked={e.is_published} onChange={() => togglePub(e.id)} />
-          <button onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
+          {canManage(e) && <Toggle checked={e.is_published} onChange={() => togglePub(e.id)} />}
+          <button disabled={!canManage(e)} onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
           <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-green-500" /></button>
-          <button onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
-          <button onClick={() => genQR(e.id)} title="QR" className="p-2 rounded-lg hover:bg-muted"><QrCode className="w-4 h-4 text-muted-foreground" /></button>
-          <button onClick={() => setModal({ item: { ...e }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-          <button onClick={() => remove(e.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+          <button disabled={!canManage(e)} onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
+          <button disabled={!canManage(e)} onClick={() => genQR(e.id)} title="QR" className="p-2 rounded-lg hover:bg-muted"><QrCode className="w-4 h-4 text-muted-foreground" /></button>
+          <button disabled={!canManage(e)} onClick={() => setModal({ item: { ...e }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+          <button disabled={!canManage(e)} onClick={() => remove(e.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
         </div>
       ))}
 
@@ -150,10 +149,7 @@ export default function AdminEvents() {
                 <option value="host_funded">Host Funded</option>
               </select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Ticket price (₦)"><TextInput type="number" value={modal.item.ticket_price_wallet} onChange={(e) => setModal({ item: { ...modal.item, ticket_price_wallet: e.target.value }, isNew: modal.isNew })} /></Field>
-              <Field label="Ticket price (HP)"><TextInput type="number" value={modal.item.ticket_price_hp} onChange={(e) => setModal({ item: { ...modal.item, ticket_price_hp: e.target.value }, isNew: modal.isNew })} /></Field>
-            </div>
+            <p className="text-xs text-muted-foreground">{msg('FE_EVENT_PRICING_TIERS', 'Set ticket prices and HP discounts in Ticket Tiers after saving the event.')}</p>
             <Field label="Image"><ImageUploader value={modal.item.image_url} onChange={(url) => setModal({ item: { ...modal.item, image_url: url }, isNew: modal.isNew })} folder="events" /></Field>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_featured} onChange={(v) => setModal({ item: { ...modal.item, is_featured: v }, isNew: modal.isNew })} /><span className="text-sm text-foreground font-semibold">Featured</span></div>
@@ -268,18 +264,16 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
   const [tiers, setTiers] = useState(initialTiers || []);
   const [adding, setAdding] = useState(false);
   const [editTier, setEditTier] = useState(null);
-  const [newTier, setNewTier] = useState<{ name: string; price_wallet: number | string; price_hp: number | string; quantity_available: number | string; description: string }>({ name: '', price_wallet: 0, price_hp: 0, quantity_available: 50, description: '' });
+  const [newTier, setNewTier] = useState<{ name: string; price_wallet: number | string; price_hp: number | string; price_full: number | string; quantity_available: number | string; description: string }>({ name: '', price_wallet: 0, price_hp: 0, price_full: '', quantity_available: 50, description: '' });
   const [busy, setBusy] = useState(null);
 
   const addTier = async () => {
     setBusy('add');
     try {
-      const body: { name: string; price_naira: number; price_hp: number; capacity?: number } = { name: newTier.name, price_naira: Number(newTier.price_wallet) || 0, price_hp: Number(newTier.price_hp) || 0 };
-      const cap = Number(newTier.quantity_available);
-      if (cap > 0) body.capacity = cap;
+      const body = { name: newTier.name, price_naira: Number(newTier.price_wallet), price_naira_full: newTier.price_full === '' ? null : Number(newTier.price_full), price_hp: Number(newTier.price_hp), capacity: newTier.quantity_available === '' ? null : Number(newTier.quantity_available), description: newTier.description };
       const created = await mockApi.admin.createEventTicketTier(eventId, body);
       setTiers([...tiers, created]);
-      setNewTier({ name: '', price_wallet: 0, price_hp: 0, quantity_available: 50, description: '' });
+      setNewTier({ name: '', price_wallet: 0, price_hp: 0, price_full: '', quantity_available: 50, description: '' });
       setAdding(false);
       toast({ title: msg('FE_ADMIN_EVENTS_TIER_ADDED', '✅ Tier added'), description: `"${body.name}" tier created.` });
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
@@ -289,9 +283,7 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
   const saveEditTier = async () => {
     setBusy(editTier.id);
     try {
-      const body: { name: string; price_naira: number; price_hp: number; capacity?: number } = { name: editTier.name, price_naira: Number(editTier.price_wallet) || 0, price_hp: Number(editTier.price_hp) || 0 };
-      const cap = Number(editTier.quantity_available);
-      if (cap > 0) body.capacity = cap;
+      const body = { name: editTier.name, price_naira: Number(editTier.price_wallet), price_naira_full: editTier.price_full === '' ? null : Number(editTier.price_full), price_hp: Number(editTier.price_hp), capacity: editTier.quantity_available === '' ? null : Number(editTier.quantity_available), description: editTier.description || '' };
       const updated = await mockApi.admin.updateEventTicketTier(eventId, editTier.id, body);
       setTiers(tiers.map(t => t.id === editTier.id ? (updated || { ...t, ...body }) : t));
       setEditTier(null);
@@ -321,6 +313,8 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
                   <Field label="Wallet Price (₦)"><TextInput type="number" value={editTier.price_wallet} onChange={(e) => setEditTier({ ...editTier, price_wallet: e.target.value })} /></Field>
                   <Field label="HP Price"><TextInput type="number" value={editTier.price_hp} onChange={(e) => setEditTier({ ...editTier, price_hp: e.target.value })} /></Field>
                 </div>
+                <Field label={msg('FE_TIER_FACE_PRICE', 'Full ticket price (₦)')}><TextInput type="number" value={editTier.price_full} onChange={(e) => setEditTier({ ...editTier, price_full: e.target.value })} /></Field>
+                <Field label="Description"><TextInput value={editTier.description || ''} onChange={(e) => setEditTier({ ...editTier, description: e.target.value })} /></Field>
                 <Field label="Quantity Available"><TextInput type="number" value={editTier.quantity_available} onChange={(e) => setEditTier({ ...editTier, quantity_available: e.target.value })} /></Field>
                 <div className="flex gap-2">
                   <button onClick={saveEditTier} disabled={busy === t.id} className="flex-1 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">Save</button>
@@ -332,7 +326,7 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-sm text-foreground">{t.name}</span>
                   <div className="flex gap-1">
-                    <button onClick={() => setEditTier({ ...t })} className="p-1 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                    <button onClick={() => setEditTier({ ...t, price_wallet: t.price_naira ?? 0, price_full: t.price_naira_full ?? '', quantity_available: t.capacity ?? '' })} className="p-1 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                     <button onClick={() => deleteTier(t.id, t.name)} disabled={busy === t.id} className="p-1 rounded-lg hover:bg-red-50"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
                   </div>
                 </div>
@@ -352,7 +346,9 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
               <Field label="Wallet Price (₦)"><TextInput type="number" value={newTier.price_wallet} onChange={(e) => setNewTier({ ...newTier, price_wallet: e.target.value })} /></Field>
               <Field label="HP Price"><TextInput type="number" value={newTier.price_hp} onChange={(e) => setNewTier({ ...newTier, price_hp: e.target.value })} /></Field>
             </div>
-            <Field label="Quantity Available"><TextInput type="number" value={newTier.quantity_available} onChange={(e) => setNewTier({ ...newTier, quantity_available: e.target.value })} /></Field>
+            <Field label={msg('FE_TIER_FACE_PRICE', 'Full ticket price (₦)')}><TextInput type="number" value={newTier.price_full} onChange={(e) => setNewTier({ ...newTier, price_full: e.target.value })} /></Field>
+                <Field label="Description"><TextInput value={newTier.description || ''} onChange={(e) => setNewTier({ ...newTier, description: e.target.value })} /></Field>
+                <Field label="Quantity Available"><TextInput type="number" value={newTier.quantity_available} onChange={(e) => setNewTier({ ...newTier, quantity_available: e.target.value })} /></Field>
             <div className="flex gap-2">
               <button onClick={addTier} disabled={!newTier.name || busy === 'add'} className="flex-1 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">Add Tier</button>
               <button onClick={() => setAdding(false)} className="px-4 py-2 rounded-full bg-secondary text-muted-foreground text-xs font-bold">Cancel</button>

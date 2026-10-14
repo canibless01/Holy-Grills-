@@ -166,7 +166,9 @@ def list_settings():
 @require_role("admin")
 def update_setting(key):
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or ("is_public" in data and not isinstance(data["is_public"], bool)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = data.get("campus_id")
     auth_err = require_settings_write_permission(g, jsonify, campus_id)
     if auth_err:
@@ -209,7 +211,7 @@ def update_setting(key):
     # available to a signed-out visitor, and it filters on this flag. The admin
     # screen shows a Public/Private badge per row and toggles it here.
     if "is_public" in data:
-        update_payload["is_public"] = bool(data["is_public"])
+        update_payload["is_public"] = data["is_public"]
 
     q = db.table("system_settings").eq("key", key)
     q = q.is_("campus_id", "null") if not campus_id else q.eq("campus_id", campus_id)
@@ -270,7 +272,9 @@ def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
 @require_role("admin")
 def create_setting():
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("key"), str) or ("is_public" in data and not isinstance(data["is_public"], bool)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     key = (data.get("key") or "").strip()
     value = data.get("value")
     campus_id = data.get("campus_id")

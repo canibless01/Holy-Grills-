@@ -171,3 +171,11 @@ Eleven native browser/API cases pass: failed admin read/Retry; campus item creat
 Cloudinary URL mapping is not proof of uploaded/decoded media; those bytes remain blocked by the applied runtime host list. Scheduled leaderboard/tier credit grants, queued HP multipliers, physical reward delivery choices and broader Workstream A families remain open. This batch does not mark the full ecosystem complete.
 
 Seven additional actual browser/API permission assertions pass: native super-admin global item creation without a campus, campus-admin global read-only behavior, denied foreign-admin grant, denied student admin write, denied direct authenticated inserts into both credit and selection tables, and denied direct private-RPC execution. The exact global probe is deleted afterward.
+
+
+## Workstream B draft integration checkpoint — 14 October 2026
+
+See [Workstream B evidence matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [selected test traces](WORKSTREAM_B_TEST_EVIDENCE.json). B is not complete. Six owned-domain migrations are live once each on Test Two; the matrix lists canonical SQL, checked grants/signatures and deployment dependencies. All exact owned synthetic fixture rows and eight Auth accounts were removed after deactivation/logout. No global release settings changed. Main at `723825e` was merged normally. Integrated backend regression: 209 tests pass; frontend typecheck/build checks recorded in matrix. Provider delivery, marketplace gated purchases, paid event recovery/refunds, broad onboarding/admin/reporting coverage and historical advisory closure remain open.
+
+
+B continuation (14 October): free subscription retry/concurrency and last-code competition verified on a second isolated campus using campus-only gates; sold-out receipt retry and cross-listing intent conflict fixed and verified. Calendar consumer/browser save/reload verified; analytics read-failure interfaces and browser CSV escaping fixed. 212 backend tests, typecheck and complete build pass. Second exact fixture batch and campus overrides cleaned. No new live migration. See [matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [requests to A](WORKSTREAM_A_DEPENDENCIES_FROM_B.md). B remains incomplete.

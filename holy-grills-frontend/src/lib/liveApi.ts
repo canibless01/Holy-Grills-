@@ -1126,6 +1126,7 @@ const admin = {
   // removed instead of 404-ing on click. Homepage testimonials come from storefront
   // sections, so promotion needs a backend route that writes one.
   async getReviews(params = {}) { return unwrap(await apiClient.get('/admin/reviews', params), 'reviews'); },
+  async getReviewsPage(params = {}) { return apiClient.get('/admin/reviews', params); },
 
   // --- Catering Requests (GET/POST /events/catering-requests, PATCH /:id) ---
   async getCateringRequests(params = {}) { return unwrap(await apiClient.get('/events/catering-requests', params), 'requests', 'catering_requests'); },
