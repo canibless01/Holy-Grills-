@@ -6,6 +6,7 @@ import { formatDate } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 const PERIOD_TYPES = [
   { value: 'semester', label: 'Semester' },
@@ -23,14 +24,17 @@ export default function AdminAcademicCalendar() {
   const [campuses, setCampuses] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
+    setLoadError(false);
+    setPeriods(null);
     try {
       const list = await liveApi.admin.getAcademicCalendar();
       setPeriods([...(list || [])].sort((a, b) => new Date(sortEntry(b)).getTime() - new Date(sortEntry(a)).getTime()));
     } catch (e) {
       toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_COULDN_T_LOAD_ACADEMIC_CALENDAR', "Couldn't load academic calendar"), description: e.message, variant: 'destructive' });
-      setPeriods([]);
+      setLoadError(true);
     }
   };
 
@@ -50,7 +54,9 @@ export default function AdminAcademicCalendar() {
         </button>
       </div>
 
-      {periods == null ? (
+      {loadError ? (
+        <Card className="p-5 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>
+      ) : periods == null ? (
         <div className="space-y-2.5">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}</div>
       ) : periods.length === 0 ? (
         <Card>
@@ -132,6 +138,7 @@ function CalendarModal({
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;
 }) {
+  const { user } = useHolyGrill();
   const [form, setForm] = useState(period ? {
     period_type: period.period_type || 'semester',
     name: period.name || '',
@@ -157,8 +164,7 @@ function CalendarModal({
         end_date: form.end_date,
         academic_year: form.academic_year.trim() || null,
         description: form.description.trim() || null,
-        // All Campuses = omit campus_id entirely (platform-wide period).
-        ...(form.campus_id ? { campus_id: form.campus_id } : {}),
+        campus_id: form.campus_id || null,
       };
       if (period) {
         await liveApi.admin.updateAcademicCalendar(period.id, { ...payload, is_active: form.is_active });
@@ -185,8 +191,8 @@ function CalendarModal({
           </Field>
           <Field label="Campus">
             <select value={form.campus_id} onChange={(e) => setForm({ ...form, campus_id: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40">
-              <option value="">All Campuses</option>
-              {campuses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="">{user?.role === 'super_admin' ? 'All Campuses' : msg('FE_CALENDAR_OWN_CAMPUS', 'Your campus')}</option>
+              {campuses.filter(c => user?.role === 'super_admin' || c.id === user?.campus_id).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
         </div>

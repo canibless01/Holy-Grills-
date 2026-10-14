@@ -234,6 +234,22 @@ def purchase(listing_id):
     buyer_campus_id = getattr(g, "campus_id", None)
     if not is_feature_enabled("marketplace_general", buyer_campus_id):
         return jsonify({"error": MSG.MARKETPLACE_NOT_OPEN}), 403
+    idempotency_key = str(data.get("idempotency_key") or "").strip()[:100] or None
+    if idempotency_key:
+        existing = db.table("marketplace_purchases").select("*").eq("user_id", g.user_id).eq("payment_reference", idempotency_key).limit(1).execute() or []
+        if existing:
+            receipt = existing[0]
+            if receipt.get("listing_id") != listing_id:
+                return jsonify({"error": MSG.MARKETPLACE_INTENT_CONFLICT}), 409
+            return jsonify({
+                "purchase": receipt,
+                "code": (receipt.get("metadata") or {}).get("code"),
+                "hp_earned": 0,
+                "paid_with_hp": bool(receipt.get("pay_with_hp")),
+                "cash_charged": float(receipt.get("wallet_amount") or 0) + float(receipt.get("card_amount") or 0),
+                "already_purchased": True,
+                "message": MSG.MARKETPLACE_PURCHASE_SUCCESS,
+            }), 200
     listing = db.table("marketplace_listings").select("*").eq("id", listing_id).eq("status", "active").single().execute()
     if not listing:
         hidden = (
@@ -315,7 +331,6 @@ def purchase(listing_id):
             "paid_with_hp": use_hp,
             "hp_fallback": hp_fallback,
         }), 200
-    idempotency_key = str(data.get("idempotency_key") or "").strip()[:100] or None
     try:
         purchase_row, code_value, marketplace_hp = _complete_marketplace_purchase(
             user_id=g.user_id,
@@ -328,6 +343,8 @@ def purchase(listing_id):
         )
     except Exception as exc:
         err = str(exc).lower()
+        if "purchase intent conflict" in err:
+            return jsonify({"error": MSG.MARKETPLACE_INTENT_CONFLICT}), 409
         if "no_codes" in err:
             get_db().table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True}).execute()
             return jsonify({"error": MSG.LISTING_NO_CODES}), 400
@@ -1475,6 +1492,8 @@ def _complete_marketplace_purchase(
             .eq("user_id", user_id).eq("payment_reference", payment_reference).limit(1).execute()
         )
         if existing:
+            if existing[0].get("listing_id") != listing_id:
+                raise ValueError("purchase intent conflict")
             return existing[0], (existing[0].get("metadata") or {}).get("code"), 0
     purchase_row = db.rpc("hg_purchase_marketplace_item", {
         "p_user_id": user_id,

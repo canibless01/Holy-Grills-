@@ -5,7 +5,7 @@ from flask import Flask, g
 from werkzeug.exceptions import Forbidden
 from app.routes import events, notifications, marketplace, kitchen, delivery
 from app.middleware.auth import require_role
-from app.routes import departments, academic_levels
+from app.routes import departments, academic_levels, academic_calendar
 
 A = 'bbbb0000-0000-4000-8000-000000000001'
 B = 'bbbb0000-0000-4000-8000-000000000002'
@@ -37,6 +37,35 @@ class PlatformBoundaryTests(unittest.TestCase):
         self.app.config['PHONE_REGEX_PATTERN'] = r'^(\+?234|0)[789]\d{9}$'
     def identity(self, role='student', campus=A):
         g.user_id, g.user_role, g.campus_id = USER, role, campus
+    def test_calendar_explicit_global_selection_beats_super_admin_header_only(self):
+        payload = {'name': 'Audit term', 'period_type': 'semester', 'academic_year': '2026/2027', 'start_date': '2026-10-14', 'end_date': '2026-10-15', 'campus_id': None}
+        for role, expected in [('super_admin', None), ('admin', A)]:
+            db = DB({})
+            with self.app.test_request_context(method='POST', json=payload, headers={'X-Campus-ID': A}), patch.object(academic_calendar, 'get_user_client', return_value=db):
+                self.identity(role)
+                _, status = academic_calendar.create_academic_calendar_entry.__wrapped__()
+                self.assertEqual(status, 201)
+                self.assertEqual(db.writes[0][1]['campus_id'], expected)
+    def test_sold_out_purchase_retry_returns_owned_receipt_before_stock_or_reward_calls(self):
+        receipt = {'id': TICKET, 'user_id': USER, 'listing_id': EVENT,
+                   'payment_reference': 'owned-intent', 'wallet_amount': 25,
+                   'card_amount': 5, 'pay_with_hp': True, 'metadata': {'code': 'owned-code'}}
+        db = DB({'marketplace_purchases': [receipt]})
+        with self.app.test_request_context(method='POST', json={'idempotency_key': 'owned-intent'}), patch.object(marketplace, 'get_user_client', return_value=db), patch.object(marketplace, 'is_feature_enabled', return_value=True), patch.object(marketplace, '_complete_marketplace_purchase') as complete:
+            self.identity()
+            response, status = marketplace.purchase.__wrapped__(EVENT)
+            self.assertEqual(status, 200)
+            self.assertEqual(response.json['purchase']['id'], TICKET)
+            self.assertEqual(response.json['cash_charged'], 30)
+            self.assertTrue(response.json['paid_with_hp'])
+            complete.assert_not_called()
+    def test_purchase_intent_cannot_return_a_different_listing_receipt(self):
+        db = DB({'marketplace_purchases': [{'id': TICKET, 'user_id': USER, 'listing_id': B, 'payment_reference': 'owned-intent'}]})
+        with self.app.test_request_context(method='POST', json={'idempotency_key': 'owned-intent'}), patch.object(marketplace, 'get_user_client', return_value=db), patch.object(marketplace, 'is_feature_enabled', return_value=True), patch.object(marketplace, '_complete_marketplace_purchase') as complete:
+            self.identity()
+            _, status = marketplace.purchase.__wrapped__(EVENT)
+            self.assertEqual(status, 409)
+            complete.assert_not_called()
     def test_registrants_url_is_bound_to_the_handler(self):
         self.app.register_blueprint(events.events_bp, url_prefix='/events')
         endpoint, _ = self.app.url_map.bind('localhost').match('/events/'+EVENT+'/registrants')

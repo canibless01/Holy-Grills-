@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { UtensilsCrossed, RefreshCw, Search, Calendar, Users, Phone, Mail, DollarSign, StickyNote, X } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { safeText } from '@/lib/valueText';
+import { csvCell } from '@/lib/csvCell';
 import { formatNaira, formatDate } from '@/lib/hgUtils';
 
 // A joined row here would render as an object and take the panel down.
@@ -276,7 +277,7 @@ function EventCateringTab({ events }) {
       r.checked_in ? 'Yes' : 'No',
       r.catering_notes || r.notes || '',
     ]);
-    const csv = [headers, ...rows].map((row) => row.map((c) => `"${(c || '').toString().replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = [headers, ...rows].map((row) => row.map((c) => `"${csvCell(c)}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

@@ -815,5 +815,160 @@
     "settings_restored": "No global/production settings changed; exact owned campus setting removed.",
     "sessions": "Owned actors deactivated, logout requested before deletion; fresh-profile authorization blocks residual JWTs."
   },
-  "limitations": "Selected run traces, not full page/button coverage. Initial door scanner succeeded; final browser rerun checked existing receipt only. Provider sends suppressed. See evidence matrix."
+  "limitations": "Selected run traces, not full page/button coverage. Initial door scanner succeeded; final browser rerun checked existing receipt only. Provider sends suppressed. See evidence matrix.",
+  "continuation_20261014": {
+    "platform-continuation-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/admin/academic-calendar",
+        "status": 201
+      },
+      {
+        "actor": "foreign_admin",
+        "method": "PATCH",
+        "path": "/admin/academic-calendar/1ec97807-643d-4965-af35-adbf334ea13f",
+        "status": 403
+      },
+      {
+        "actor": "admin",
+        "method": "PATCH",
+        "path": "/admin/academic-calendar/1ec97807-643d-4965-af35-adbf334ea13f",
+        "status": 400
+      },
+      {
+        "actor": "student",
+        "method": "GET",
+        "path": "/academic-calendar/current?campus_id=dab4700b-4c69-4281-a1f0-51ebebb95e43",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "GET",
+        "path": "/analytics/academic-calendar",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/marketplace/admin/listings",
+        "status": 201
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/marketplace/admin/listings/d20babee-f1f7-4f1e-87bc-e22923099436/codes",
+        "status": 404
+      }
+    ],
+    "platform-marketplace-concurrency-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/marketplace/admin/codes/d20babee-f1f7-4f1e-87bc-e22923099436",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "GET",
+        "path": "/marketplace/purchases",
+        "status": 200
+      },
+      {
+        "actor": "foreign_student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 403
+      }
+    ],
+    "platform-marketplace-competition-evidence": [
+      {
+        "actor": "student2",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 400
+      },
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 400
+      }
+    ],
+    "platform-marketplace-replay-evidence": [
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 200
+      },
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/ca495a21-730b-4c87-b028-e8de9fa9a771/purchase",
+        "status": 409
+      }
+    ],
+    "platform-calendar-browser-evidence": {
+      "readFailureRetry": "intercepted 503 then real backend read",
+      "calendarEditAndReload": true
+    },
+    "platform-cleanup-evidence": {
+      "status": "verified",
+      "tables": {
+        "academic_calendar": 1,
+        "admin_audit_logs": 2,
+        "feature_flags": 2,
+        "marketplace_access_codes": 2,
+        "marketplace_purchases": 2,
+        "monthly_hp_tracker": 2,
+        "notification_log": 4,
+        "notifications": 4,
+        "referral_codes": 8,
+        "wallets": 8,
+        "hp_transactions": 2,
+        "marketplace_listings": 1,
+        "profiles": 8,
+        "campuses": 2
+      },
+      "auth_accounts": 8,
+      "settings_restored": "No global/production settings changed; exact owned campus setting removed.",
+      "sessions": "Owned actors deactivated, logout requested before deletion; fresh-profile authorization blocks residual JWTs."
+    },
+    "bonus_ledger_check": {
+      "purchase_count": 2,
+      "bonus_transaction_count": 2,
+      "scope": "owned actors only"
+    }
+  }
 }

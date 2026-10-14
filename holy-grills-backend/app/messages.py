@@ -17,6 +17,8 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_CALENDAR_OWN_CAMPUS = "Your campus"
+    MARKETPLACE_INTENT_CONFLICT = "This purchase request was already used for a different listing. Start a new purchase."
     EVENT_TIER_REQUIRED = "Choose a ticket tier for this event."
     EVENT_QR_INVALID = "Scan the current event door QR code or present a valid ticket to the campus team."
     EVENT_TICKET_NOT_ADMISSIBLE = "This ticket is cancelled, expired or awaiting payment."
