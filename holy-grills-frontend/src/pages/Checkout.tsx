@@ -485,6 +485,7 @@ export default function Checkout() {
     setReschedule(null);
     navigate(`/order-confirmation/${order?.id || 'pending'}`, {
       state: {
+        startPayment: order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0,
         claim_token: order?.claim_token,
         guest: !isAuthenticated,
         is_scheduled: order?.is_scheduled,
@@ -498,13 +499,16 @@ export default function Checkout() {
   // Confirm the "schedule for the next available day" offer — one extra attempt only.
   const handleAcceptReschedule = async () => {
     if (!reschedule) return;
+    // Retain the accepted schedule across a lost response and a normal retry.
+    setScheduleRequested(true);
     setError(null);
     setPlacing(true);
     try {
       await submitOrder({ ...reschedule.payload, accept_next_available_date: true });
     } catch (e) {
       setReschedule(null);
-      setError(e.message || 'Could not schedule your order. Please try again.');
+      if (e.detail?.code === 'PRICE_CHANGED') setQuoteState({ key: quoteKey, data: e.detail.quote });
+      setError(e.message || msg('FE_CHECKOUT_SCHEDULE_FAILED_BODY', "We couldn't schedule your order. Please try again."));
     }
     setPlacing(false);
   };
@@ -822,8 +826,9 @@ export default function Checkout() {
         {quote?.order_lock_hp_reward > 0 && <div className="flex justify-between text-accent-foreground"><span>{msg('FE_CHECKOUT_LOCK_HP_DELIVERY', 'Lock reward after delivery')}</span><span>+{quote.order_lock_hp_reward} HP</span></div>}
         {quote?.order_lock_discount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_LOCK_DISCOUNT', 'Order lock discount')}</span><span>-{formatNaira(quote.order_lock_discount)}</span></div>}
         {freeSideChoice && <div className="flex justify-between text-success"><span>🏆 Reward · {freeSideChoice.name}</span><span>₦0</span></div>}
-        <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{effectiveDeliveryFee > 0 ? formatNaira(effectiveDeliveryFee) : <span className="text-success">FREE</span>}</span></div>
-        {squadDeliveryPct > 0 && deliveryFee > 0 && <div className="flex justify-between text-success"><span>Squad delivery ({squadDeliveryPct}%)</span><span>-{formatNaira(deliveryFee - effectiveDeliveryFee)}</span></div>}
+        <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{(quote?.delivery_fee_original ?? deliveryFee) > 0 ? formatNaira(quote?.delivery_fee_original ?? deliveryFee) : <span className="text-success">FREE</span>}</span></div>
+        {quote?.delivery_benefit?.discount > 0 && <div className="flex justify-between text-success"><span>{quote.delivery_benefit.source === 'monthly' ? msg('FE_CHECKOUT_MONTHLY_DELIVERY', 'Monthly free-delivery perk') : msg('FE_CHECKOUT_SPIN_DELIVERY', 'Spin delivery credit')}</span><span>-{formatNaira(quote.delivery_benefit.discount)}</span></div>}
+        {(quote?.squad_delivery_discount_amount ?? (squadDeliveryPct > 0 ? deliveryFee - effectiveDeliveryFee : 0)) > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DELIVERY_DISCOUNT', 'Squad delivery discount')}</span><span>-{formatNaira(quote?.squad_delivery_discount_amount ?? (deliveryFee - effectiveDeliveryFee))}</span></div>}
         {!quote && globalAddonsTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-semibold">{formatNaira(globalAddonsTotal)}</span></div>}
         {hpPreview > 0 && <div className="flex justify-between text-accent-foreground"><span className="flex items-center gap-1"><Flame className="w-3.5 h-3.5 text-primary" /> You'll earn</span><span className="font-semibold">+{hpPreview} HP</span></div>}
         <div className="border-t border-border pt-1.5 flex justify-between"><span className="font-semibold text-foreground">Total</span><span className="font-heading font-bold text-lg text-foreground">{formatNaira(total)}</span></div>

@@ -20,6 +20,8 @@ class Query:
     def in_(self,*a):return self
     def or_(self,*a):return self
     def is_(self,key,value):self.filters.append((key,None if value=='null' else value));return self
+    def order(self,*a):return self
+    def limit(self,*a):return self
     def single(self):self.one=True;return self
     def execute(self):
         if self.table in self.db.fail:raise RuntimeError('database unavailable')
@@ -31,7 +33,7 @@ class Query:
 class Db:
     def __init__(self):
         self.fail=set()
-        self.rows={'menu_items':[{'id':MEAL,'campus_id':CAMPUS,'name':'Meal','price':2050,'hp_multiplier':0.5,'is_available':True}],
+        self.rows={'profiles':[{'id':'student','campus_id':CAMPUS,'is_active':True,'next_order_free_delivery_cap':0}], 'menu_items':[{'id':MEAL,'campus_id':CAMPUS,'name':'Meal','price':2050,'hp_multiplier':0.5,'is_available':True}],
                    'hostels':[{'id':HOSTEL,'campus_id':CAMPUS,'delivery_fee':250,'is_active':'true'}],
                    'order_locks':[{'id':'lock','user_id':'student','campus_id':CAMPUS,'status':'active','locked_date':today_wat().isoformat(),'reward_type':'discount','discount_pct':10}]}
     def table(self,name):return Query(self,name)
@@ -45,6 +47,30 @@ class CheckoutQuoteTests(unittest.TestCase):
         with self.app.test_request_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service,'get_user_client',return_value=self.db),patch.object(service.hp_service,'get_user_tier',return_value={'tier':{'slug':'ember'}}),patch.object(service.hp_service,'calculate_delivery_hp',return_value=102):
             g.campus_id=CAMPUS
             return service.create_order(None if guest else 'student',payload or self.payload,quote_only=quote_only)
+    def test_delivery_credit_reduces_fee_and_total_without_writes(self):
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        q=self.calculate()
+        self.assertEqual((q['delivery_fee'],q['total_amount']),(150,1995))
+        self.assertEqual(q['delivery_benefit']['discount'],100)
+        self.assertEqual(self.db.rows['profiles'][0]['next_order_free_delivery_cap'],100)
+    def test_monthly_free_delivery_preserves_spin_credit(self):
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        self.db.rows['system_settings']=[{'key':'tier_perk_ember_monthly_free_delivery','campus_id':None,'value':True}]
+        q=self.calculate()
+        self.assertEqual((q['delivery_fee'],q['total_amount']),(0,1845))
+        self.assertEqual(q['delivery_benefit']['source'],'monthly')
+        self.assertEqual(self.db.rows['profiles'][0]['next_order_free_delivery_cap'],100)
+    def test_used_monthly_perk_falls_back_to_credit(self):
+        self.db.rows['system_settings']=[{'key':'tier_perk_ember_monthly_free_delivery','campus_id':None,'value':True}]
+        self.db.rows['tier_monthly_perk_usage']=[{'id':'used','user_id':'student','month':today_wat().strftime('%Y-%m'),'perk_key':'monthly_free_delivery'}]
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        self.assertEqual(self.calculate()['delivery_benefit']['source'],'legacy_spin')
+    def test_benefit_read_failure_blocks_pricing_instead_of_charging_full_fee(self):
+        for table in ('profiles','exclusive_spin_fulfillments','system_settings'):
+            self.db.fail={table}
+            with self.subTest(table=table),self.assertRaisesRegex(ValueError,'could not be verified'):
+                self.calculate()
+
     def test_quote_applies_lock_once_and_never_writes(self):
         q=self.calculate();self.assertEqual((q['subtotal'],q['discount_amount'],q['total_amount']),(2050,205,2095));self.assertEqual(q['hp_preview']['total_hp'],102)
     def test_guest_quote_has_no_user_lock_or_hp_promise(self):

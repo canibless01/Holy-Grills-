@@ -1,3 +1,4 @@
+import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { msg, useMessages } from '@/lib/messages';
 import { useState, useEffect } from 'react';
@@ -39,6 +40,9 @@ export default function OrderConfirmation() {
   const scheduledFor = order?.scheduled_for || location.state?.scheduled_for;
   const winStart = order?.delivery_window_start || location.state?.delivery_window_start;
   const winEnd = order?.delivery_window_end || location.state?.delivery_window_end;
+  const closed = ['cancelled', 'refunded'].includes(order?.status);
+  const paid = order?.payment_status === 'paid' || order?.payment_status === 'partially_refunded';
+  const reloadOrder = async () => setOrder(await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {}));
   const giftItemName = getSetting('first_order_gift_item_name', 'Hot Dog');
 
   useEffect(() => {
@@ -47,9 +51,9 @@ export default function OrderConfirmation() {
         if (id && id !== 'pending') {
           const o = await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {});
           setOrder(o);
-          playSound('order_placed');
+          if (o?.payment_status === 'paid') playSound('order_placed');
           if (o?.hp_earned > 0) setTimeout(() => playSound('hp_earned'), 700);
-          setTimeout(() => triggerMascotCelebration('cheering'), 900);
+          if (o?.payment_status === 'paid') setTimeout(() => triggerMascotCelebration('cheering'), 900);
         }
       } catch (e) { console.error(e); }
       setLoading(false);
@@ -88,16 +92,16 @@ export default function OrderConfirmation() {
         className="pt-6"
       >
         <div className="relative inline-block">
-          <div className="w-24 h-24 rounded-full bg-success/20 flex items-center justify-center mx-auto">
-            <div className="w-16 h-16 rounded-full bg-success flex items-center justify-center">
-              <Check className="w-8 h-8 text-white" strokeWidth={3} />
+          <div className={`w-24 h-24 rounded-full ${paid ? 'bg-success/20' : 'bg-primary/10'} flex items-center justify-center mx-auto`}>
+            <div className={`w-16 h-16 rounded-full ${paid ? 'bg-success' : 'bg-primary'} flex items-center justify-center`}>
+              {paid ? <Check className="w-8 h-8 text-white" strokeWidth={3} /> : <CreditCard className="w-8 h-8 text-white" />}
             </div>
           </div>
           <FlameMark className="absolute -top-2 -right-2 w-8 h-8 animate-flame-flicker" />
         </div>
-        <h1 className="font-heading font-extrabold text-2xl text-foreground mt-4">{isScheduled ? msg('FE_CONFIRMATION_SCHEDULED_TITLE', 'Order Scheduled!') : msg('FE_CONFIRMATION_CONFIRMED_TITLE', 'Order Confirmed!')}</h1>
+        <h1 className="font-heading font-extrabold text-2xl text-foreground mt-4">{closed ? msg('FE_CONFIRMATION_CLOSED_TITLE', 'Order closed') : !paid ? msg('FE_CONFIRMATION_PAYMENT_TITLE', 'Order saved — payment required') : isScheduled ? msg('FE_CONFIRMATION_SCHEDULED_TITLE', 'Order Scheduled!') : msg('FE_CONFIRMATION_CONFIRMED_TITLE', 'Order Confirmed!')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {isScheduled
+          {closed ? msg('FE_CONFIRMATION_CLOSED_BODY', 'This order is no longer awaiting payment or fulfilment.') : !paid ? msg('FE_CONFIRMATION_AWAITING_PAYMENT', 'Your order is awaiting payment.') : isScheduled
             ? msg('FE_CONFIRMATION_SCHEDULED_BODY', "You're scheduled for {date}{window}.", {
                 date: scheduledFor ? new Date(scheduledFor).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'long', day: 'numeric' }) : msg('FE_CONFIRMATION_NEXT_DAY', 'the next available day'),
                 window: winStart ? msg('FE_CONFIRMATION_DELIVERY_WINDOW', ', delivery between {start}–{end}', { start: to12h(winStart), end: to12h(winEnd) }) : '',
@@ -109,6 +113,8 @@ export default function OrderConfirmation() {
           Order #{(order.order_number || order.id || '').toUpperCase()}
         </div>
       </motion.div>
+
+      <OrderPaymentActions order={order} claimToken={claimToken} onUpdated={reloadOrder} autoStart={!!location.state?.startPayment} />
 
       {/* HP Earned */}
       {order.hp_earned > 0 && (
@@ -139,7 +145,7 @@ export default function OrderConfirmation() {
       )}
 
       {/* First-order gift */}
-      {order.is_first_order && giftItemName && (
+      {paid && order.is_first_order && giftItemName && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -251,13 +257,13 @@ export default function OrderConfirmation() {
           >
             Track Order
           </button>
-          <button
+          {paid && <button
             onClick={() => setShareOpen(true)}
             className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:border-primary/30 transition-colors"
           >
             <Share2 className="w-4 h-4" />
             Share
-          </button>
+          </button>}
         </div>
       </div>
 

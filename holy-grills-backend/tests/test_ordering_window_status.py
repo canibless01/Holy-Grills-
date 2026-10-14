@@ -59,6 +59,10 @@ class _Chain:
         self.filters[key] = value
         return self
 
+    def or_(self, expression):
+        self.filters["business_date_filter"] = expression
+        return self
+
     def gte(self, key, value):
         self.filters[key] = value
         return self
@@ -115,8 +119,17 @@ class FakeDb:
         if table == "delivery_windows":
             return [dict(r) for r in () ]  # no linked windows in these tests
         if table == "orders":
-            # capacity counter: everything the fake holds counts against capacity
-            return [dict(o) for o in self.orders]
+            rows = [dict(o) for o in self.orders]
+            expression = filters.get("business_date_filter")
+            if expression:
+                import re
+                start = datetime.fromisoformat(re.search(r"scheduled_for.gte.([^,]+)", expression)[1])
+                end = start + timedelta(days=1)
+                def counts(row):
+                    stamp = row.get("scheduled_for" if row.get("is_scheduled") else "created_at")
+                    return not stamp or start <= datetime.fromisoformat(stamp.replace("Z", "+00:00")) < end
+                rows = [r for r in rows if counts(r)]
+            return rows
         return []
 
 
@@ -207,6 +220,28 @@ class OrderingWindowStatusTest(unittest.TestCase):
         self.assertFalse(status["is_open"])
         self.assertEqual("full", status["reason"])
         self.assertFalse(status["any_capacity_remaining"])
+
+    def test_earlier_created_scheduled_order_uses_target_day_capacity(self):
+        self.db = FakeDb(
+            ordering_windows=[_window("w1", "08:00", "21:00", weekday=1, capacity=1)],
+            orders=[{"id": "scheduled", "is_scheduled": True,
+                     "created_at": "2026-10-05T12:00:00Z", "scheduled_for": "2026-10-06T10:00:00+01:00"}])
+        self._patch_clock(_at(12))
+        self.assertEqual("full", self._status()["reason"])
+        with self.assertRaises(OrderingWindowUnavailable) as caught:
+            order_service.resolve_ordering_window(self.db, CAMPUS)
+        self.assertEqual("2026-10-07", caught.exception.next_available_date)
+
+    def test_lagos_midnight_and_tomorrow_reservations_are_separate(self):
+        self.db = FakeDb(
+            ordering_windows=[_window("w1", "00:00", "23:59", weekday=1, capacity=2)],
+            orders=[{"id": "last-night-utc", "is_scheduled": False, "created_at": "2026-10-05T23:30:00Z"},
+                    {"id": "tomorrow", "is_scheduled": True, "created_at": "2026-10-06T07:00:00Z",
+                     "scheduled_for": "2026-10-07T08:00:00+01:00"}])
+        self._patch_clock(_at(12))
+        status = self._status()
+        self.assertTrue(status["is_open"])
+        self.assertEqual(1, status["windows"][0]["remaining"])
 
     def test_capacity_left_but_clock_closed(self):
         """A window with room to spare is still closed outside its hours."""
