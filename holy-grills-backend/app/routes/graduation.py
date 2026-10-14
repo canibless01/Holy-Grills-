@@ -99,6 +99,7 @@ def claim_graduation():
             amount=graduation_hp,
             txn_type="earn_graduation",
             reference_type="graduation",
+            reference_id=g.user_id,
             notes=f"Graduation milestone HP — Level {level_value}",
             apply_multiplier=False,
             campus_id=campus_id,

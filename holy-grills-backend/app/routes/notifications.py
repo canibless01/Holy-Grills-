@@ -388,6 +388,30 @@ def get_blast(blast_id):
     return jsonify(blast), 200
 
 
+@notifications_bp.route("/blasts/<blast_id>/retry", methods=["POST"])
+@require_role("admin")
+def retry_blast(blast_id):
+    if not validate_uuid(blast_id):
+        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
+    db = get_user_client()
+    blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    if not blast:
+        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
+    assert_can_modify(blast.get("campus_id"))
+    if blast.get("status") == "sent":
+        return jsonify({"already_processed": True}), 200
+    if blast.get("status") not in ("failed", "sending"):
+        return jsonify({"error": MSG.BLAST_RETRY_BUSY}), 409
+    try:
+        result = send_blast(blast_id)
+        if result.get("skipped"):
+            return jsonify({"error": MSG.BLAST_RETRY_BUSY}), 409
+        return jsonify(result), 200
+    except Exception:
+        logger.exception("Campaign retry failed for %s", blast_id)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+
+
 @notifications_bp.route("/blasts", methods=["POST"])
 @require_role("admin")
 def create_blast():
@@ -426,6 +450,16 @@ def create_blast():
             or any(c not in ("in_app", "email", "push") for c in data["channels"])):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = resolve_write_campus(data.get("campus_id"))
+    action_url = data.get("action_url")
+    if action_url is not None:
+        from urllib.parse import unquote
+        if not isinstance(action_url, str) or len(action_url) > 1000:
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        action_url = action_url.strip() or None
+        if action_url:
+            decoded = unquote(unquote(action_url))
+            if not decoded.startswith("/") or decoded.startswith("//") or "\\" in decoded or any(ord(c) < 32 for c in decoded):
+                return jsonify({"error": MSG.INVALID_INPUT}), 400
     segment = data.get("target_segment", data.get("segment", {}))
     if not isinstance(segment, dict):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
@@ -451,7 +485,7 @@ def create_blast():
     data = {"title": data["title"].strip(), "body": data["body"].strip(),
             "channels": list(dict.fromkeys(data["channels"])), "segment": segment,
             "campus_id": campus_id, "created_by": g.user_id, "scheduled_at": scheduled_at,
-            "email_provider": email_provider}
+            "email_provider": email_provider, "action_url": action_url}
     if request_id:
         data["id"] = request_id
 

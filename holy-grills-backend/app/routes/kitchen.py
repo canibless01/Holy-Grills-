@@ -123,11 +123,16 @@ def create_stock_item():
         description: Stock item created
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     required = ["name", "purchase_unit_id", "usage_unit_id", "conversion_factor", "low_stock_threshold"]
     for f in required:
         if data.get(f) is None or data.get(f) == "":
             return jsonify({"error": MSG.STOCK_FIELD_REQUIRED.format(field=f)}), 400
+    if not isinstance(data["name"], str) or not 1 <= len(data["name"].strip()) <= 128 or any(not isinstance(data[k], str) or not validate_uuid(data[k]) for k in ("purchase_unit_id", "usage_unit_id")):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    data["name"] = data["name"].strip()
 
     try:
         conversion_factor = float(data["conversion_factor"])
@@ -139,6 +144,8 @@ def create_stock_item():
         return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
     if conversion_factor <= 0:
         return jsonify({"error": MSG.STOCK_CONVERSION_FACTOR_INVALID}), 400
+    if current_balance != 0:
+        return jsonify({"error": MSG.STOCK_OPENING_BALANCE_USE_LEDGER}), 400
 
     campus_id = resolve_write_campus(data.get("campus_id"))
     if not campus_id:

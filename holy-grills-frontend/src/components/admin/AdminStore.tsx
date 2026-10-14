@@ -77,7 +77,7 @@ export default function AdminStore() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatTile icon={Boxes} label="Tracked Items" value={items.length} iconClass="text-primary" iconBg="bg-primary/10" />
         <StatTile icon={AlertTriangle} label="Low Stock" value={lowCount} iconClass="text-destructive" iconBg="bg-destructive/10" />
-        <StatTile icon={PackagePlus} label="In Stock" value={items.reduce((s, i) => s + (Number(i.current_balance) || 0), 0)} iconClass="text-success" iconBg="bg-success/15" />
+        <StatTile icon={PackagePlus} label={msg('FE_STOCK_ITEMS_WITH_STOCK', 'Ingredients with stock')} value={items.filter(i => Number(i.current_balance) > 0).length} iconClass="text-success" iconBg="bg-success/15" />
         <StatTile icon={PackageMinus} label="Tracked Units" value={units.length} iconClass="text-accent-foreground" iconBg="bg-accent/25" />
       </div>
 

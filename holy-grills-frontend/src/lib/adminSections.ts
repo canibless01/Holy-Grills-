@@ -14,6 +14,7 @@ import {
   Boxes, Webhook, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { msg } from '@/lib/messages';
 
 export type AdminSection = {
   id: string;
@@ -61,6 +62,7 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
     { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, desc: 'Rankings & HoF', keywords: ['leaderboard', 'rank', 'hall of fame', 'hof', 'prize'] },
   ]},
   { label: 'Config', items: [
+    { id: 'campuses', label: msg('FE_CAMPUSES', 'Campuses'), icon: School, desc: msg('FE_CAMPUS_SETUP', 'Campus setup'), keywords: ['campus', 'setup', 'availability'] },
     { id: 'departments', label: 'Departments', icon: School, desc: 'Academic', keywords: ['department', 'faculty', 'academic', 'level'] },
     { id: 'storefront', label: 'Storefront', icon: Store, desc: 'Banners', keywords: ['storefront', 'banner', 'hero', 'promo section', 'early supporter', 'newsletter'] },
     { id: 'onboarding', label: 'Onboarding', icon: GraduationCap, desc: 'Gifts', keywords: ['onboarding', 'gift', 'first order', 'graduation'] },

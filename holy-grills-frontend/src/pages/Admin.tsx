@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { msg } from '@/lib/messages';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { ShieldAlert, LogOut } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -24,6 +25,7 @@ import AdminLeaderboard from '@/components/admin/AdminLeaderboard';
 import AdminDepartments from '@/components/admin/AdminDepartments';
 import AdminStorefront from '@/components/admin/AdminStorefront';
 import AdminOnboarding from '@/components/admin/AdminOnboarding';
+import AdminCampuses from '@/components/admin/AdminCampuses';
 import AdminHpMultipliers from '@/components/admin/AdminHpMultipliers';
 import AdminChallenges from '@/components/admin/AdminChallenges';
 import AdminAbandonedCarts from '@/components/admin/AdminAbandonedCarts';
@@ -70,6 +72,7 @@ const TITLES = {
   flags: 'Feature Flags',
   settings: 'System Settings',
   academiccalendar: 'Academic Calendar',
+  campuses: msg('FE_CAMPUSES', 'Campuses'),
   webhooks: 'Webhook Events',
   system: 'System — Cron & Audit',
 };
@@ -155,6 +158,7 @@ export default function Admin() {
       case 'flags': return <AdminFeatureFlags />;
       case 'settings': return <AdminSystemSettings />;
       case 'academiccalendar': return <AdminAcademicCalendar />;
+      case 'campuses': return <AdminCampuses />;
       case 'webhooks': return <AdminWebhooks />;
       case 'system': return <AdminSystem />;
       default: return <AdminDashboard />;

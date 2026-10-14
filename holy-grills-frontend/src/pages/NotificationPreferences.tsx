@@ -111,8 +111,7 @@ export default function NotificationPreferences() {
 
       <div className="rounded-2xl bg-secondary/60 border border-border p-4">
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Transactional notifications (order status, delivery updates) always send regardless of your
-          preferences. Promotional notifications are throttled, max 3 per day with a 6 hour minimum gap.
+          {msg('FE_NOTIFICATION_PREFERENCE_POLICY', 'Order and delivery updates remain in your inbox. Your preferences control email and device alerts. Account security notices still send. Promotional alerts follow the configured sending limits.')}
         </p>
       </div>
     </div>

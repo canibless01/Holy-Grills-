@@ -34,7 +34,7 @@ const CHANNELS = [
 ];
 
 const STATUS_STYLE = {
-  sent: { tone: 'green', icon: CheckCircle2, label: 'Sent' },
+  sent: { tone: 'green', icon: CheckCircle2, label: msg('FE_BLAST_PROCESSED', 'Processed') },
   scheduled: { tone: 'amber', icon: Clock, label: 'Scheduled' },
   pending: { tone: 'cocoa', icon: AlertCircle, label: 'Pending' },
 };
@@ -46,6 +46,7 @@ export default function AdminNotifications() {
   const [role, setRole] = useState('all');
   const [tier, setTier] = useState('all');
   const [sendAt, setSendAt] = useState(''); // datetime-local string, '' = immediate
+  const [actionUrl, setActionUrl] = useState('');
   const [emailProvider, setEmailProvider] = useState('default');
   const [sending, setSending] = useState(false);
   const [blasts, setBlasts] = useState([]);
@@ -60,6 +61,10 @@ export default function AdminNotifications() {
   };
   const cancelCampaign = async (id) => {
     try { await apiClient.post(`/notifications/blasts/${id}/cancel`, {}); await load(); }
+    catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
+  };
+  const retryCampaign = async (id) => {
+    try { await apiClient.post(`/notifications/blasts/${id}/retry`, {}); await load(); }
     catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
   };
   useEffect(() => { setPreviewCount(null); }, [role, tier]);
@@ -79,6 +84,7 @@ export default function AdminNotifications() {
 
   const buildPayload = () => {
     const payload: NotificationBlastPayload = { title: title.trim(), body: body.trim(), channels };
+    if (actionUrl.trim()) payload.action_url = actionUrl.trim();
     // Segment builder — always send target_segment; "all" means no filtering.
     const segment = { role, tier };
     payload.target_segment = segment;
@@ -97,19 +103,27 @@ export default function AdminNotifications() {
     setSending(true);
     try {
       const res = await mockApi.admin.sendNotificationBlast(intent.body(buildPayload()));
+      if (res?.already_created && ['pending', 'sending', 'failed'].includes(res?.blast?.status)) {
+        toast({ title: msg('FE_BLAST_EXISTS_PENDING', 'This campaign is already saved. Check its history entry to review progress or retry.') });
+        setConfirmOpen(false);
+        await load();
+        setSending(false);
+        return;
+      }
       intent.clear();
       if (isScheduled) {
         toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SCHEDULED', '📅 Campaign scheduled'), description: msg('FE_ADMIN_NOTIFICATIONS_WILL_SEND_ON_DATE', 'Will send on {date}', { date: new Date(sendAt).toLocaleString() }) });
       } else {
         const sentTo = res?.sent_to ?? res?.recipients ?? res?.recipient_count;
-        toast({ title: msg('FE_ADMIN_NOTIFICATIONS_CAMPAIGN_SENT', '🔔 Campaign sent'), description: sentTo != null ? msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: sentTo }) : undefined });
+        toast({ title: msg('FE_BLAST_PROCESSED', 'Processed'), description: sentTo != null ? msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: sentTo }) : undefined });
       }
-      setTitle(''); setBody(''); setSendAt(''); setRole('all'); setTier('all');
+      setTitle(''); setBody(''); setSendAt(''); setRole('all'); setTier('all'); setActionUrl('');
       setConfirmOpen(false);
       await load();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_NOTIFICATIONS_FAILED_TO_SEND', 'Failed to send'), description: e.message, variant: 'destructive' });
       setConfirmOpen(false);
+      await load();
     }
     setSending(false);
   };
@@ -150,6 +164,7 @@ export default function AdminNotifications() {
             </div>
           </Field>
 
+          <Field label={msg('FE_BLAST_LINK', 'Destination path (optional)')}><TextInput value={actionUrl} onChange={e => setActionUrl(e.target.value)} placeholder="/events" /></Field>
           <Field label="Channels (at least one required)" hint="Push = mobile notification, In-App = the notifications inbox, Email = email to registered users.">
             <div className="flex gap-4 mt-1 flex-wrap">
               {CHANNELS.map((c) => (
@@ -217,6 +232,9 @@ export default function AdminNotifications() {
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{b.body}</p>
                   {['pending', 'scheduled'].includes(b.status) && <button onClick={() => cancelCampaign(b.id)} className="text-destructive font-bold text-xs">{msg('FE_BLAST_CANCEL', 'Cancel campaign')}</button>}
+                  {['failed', 'sending'].includes(b.status) && <button onClick={() => retryCampaign(b.id)} className="text-primary font-bold text-xs">{msg('FE_BLAST_RETRY', 'Retry campaign')}</button>}
+                  {b.metadata?.processed_count != null && <p className="text-xs">{msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: b.metadata.processed_count })}</p>}
+                  {b.metadata?.notification_records != null && <p className="text-xs">{msg('FE_BLAST_STORED_RECORDS', '{count} notification records stored', { count: b.metadata.notification_records })}</p>}
                   <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground font-bold flex-wrap">
                     {(b.scheduled_at || b.send_at) && <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {new Date(b.scheduled_at || b.send_at).toLocaleString()}</span>}
                     <span>{Array.isArray(b.channels) ? b.channels.join(', ') : '—'}</span>

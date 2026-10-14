@@ -1599,7 +1599,7 @@ def membership_anniversary_awards(self):
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_blasts", bind=True, max_retries=3)
 @with_cron_logging("send-scheduled-blasts")
-def send_scheduled_blasts(self):
+def send_scheduled_blasts(self, campus_id=None):
     """
     Runs: Every 15 minutes.
     System 1 Scheduled Marketing Engine:
@@ -1617,13 +1617,17 @@ def send_scheduled_blasts(self):
 
     try:
         now = datetime.now(timezone.utc).isoformat()
-        blasts = (
+        query = (
             db.table("notification_blasts")
             .select("id")
-            .eq("status", "scheduled")
-            .lte("scheduled_at", now)
-            .execute()
-        ) or []
+            .in_("status", ["scheduled", "failed", "sending"])
+        )
+        if campus_id:
+            from app.utils.validators import validate_uuid
+            if not validate_uuid(campus_id):
+                raise ValueError("Invalid campus_id")
+            query = query.eq("campus_id", campus_id)
+        blasts = query.execute() or []
 
         processed = 0
         from app.services.notification_service import send_blast
@@ -1632,12 +1636,13 @@ def send_scheduled_blasts(self):
             if not blast_id:
                 continue
             try:
-                send_blast(blast_id)
-                processed += 1
+                outcome = send_blast(blast_id)
+                if not outcome.get("skipped"):
+                    processed += 1
             except Exception as e:
                 logger.error("send_scheduled_blasts: blast %s failed: %s", blast_id, e)
 
-        return {"processed": processed, "checked_at": now}
+        return {"processed": processed, "checked_at": now, "campus_id": campus_id}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})

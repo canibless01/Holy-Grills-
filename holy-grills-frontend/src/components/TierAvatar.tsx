@@ -33,7 +33,7 @@ export default function TierAvatar({ user, hpEarned120Day = 0, size = 'md', clas
   const accent = getTierAccent(hpEarned120Day);
   const s = SIZES[size] || SIZES.md;
   const band = RINGS[accent.slug] || RINGS.ember;
-  const avatarUrl = user?.avatar_url || user?.profile?.avatar_url;
+  const avatarUrl = user?.avatar_url || user?.photo_url || user?.profile?.photo_url || user?.profile?.avatar_url;
 
   return (
     <span
