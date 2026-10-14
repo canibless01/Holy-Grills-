@@ -2273,7 +2273,7 @@ class MSG:
     FE_SPIN_HP_WON                          = "+{amount} HP!"
     FE_SPIN_HP_CREDITED                     = "Holy Points added to your balance."
     FE_SPIN_DELIVERY_GRANTED                = "Up to ₦{amount} in delivery fees covered on your next order."
-    FE_SPIN_MULTIPLIER_GRANTED              = "Earn {multiplier}× food HP on your next delivered order."
+    FE_SPIN_MULTIPLIER_GRANTED              = "Saved: {multiplier}× food HP for a delivered order. Earlier bonuses are used first."
     FE_SPIN_PHYSICAL_PENDING                = "Your campus team has your prize for fulfilment. Track its status in My Rewards."
     FE_SPIN_TITLE                           = "🎡 Exclusive Spin"
     FE_SPIN_CLOSE                           = "Close spin wheel"
@@ -2546,6 +2546,19 @@ class MSG:
     FE_PREF_TITLE                           = "Preferences"
     FE_PREF_RECEIVE                         = "What you receive"
     FE_PREF_POLICY                          = "Your channel and category choices control alerts. Account and wallet receipts are separate from promotional preferences. Promotional alerts follow the platform rate limits."
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_SPIN_MULTIPLIER_READY                = "{multiplier}× food HP saved for a delivered order"
+    FE_SPIN_MULTIPLIER_APPLIED              = "HP bonus applied to order {order}"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_SPIN_MULTIPLIER_LEGACY               = "Legacy HP bonus; usage was not recorded"
 
 # Short alias
 M = MSG

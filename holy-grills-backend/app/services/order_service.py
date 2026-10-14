@@ -1035,18 +1035,18 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         except Exception as exc:
             logger.warning("create_order: tier lookup failed for %s — the HP preview uses the default tier: %s",
                             user_id, exc)
+        from app.services.food_hp_multiplier import next_food_hp_multiplier
         try:
-            prof = db.table("profiles").select("next_order_hp_multiplier").eq("id", user_id).single().execute()
-            next_order_hp_mult = float((prof or {}).get("next_order_hp_multiplier") or 1)
+            next_order_hp_mult = next_food_hp_multiplier(get_db(),user_id,campus_id)['multiplier']
         except Exception as exc:
-            logger.warning("create_order: next_order_hp_multiplier unreadable for %s — the bonus may be lost: %s",
-                            user_id, exc)
+            logger.exception('Order HP multiplier quote unavailable')
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
 
     hp_preview_total = hp_service.calculate_delivery_hp(
         subtotal, tier_slug, order_items, user_id=user_id, campus_id=campus_id
     )
     if next_order_hp_mult > 1:
-        # Preview only -- READ next_order_hp_multiplier to show the customer their doubled total, but
+        # Preview only -- read the selected entitlement to show its bonus, but
         # do NOT reset it here. This used to write next_order_hp_multiplier back to 1 at order-creation
         # time; _handle_delivery_rewards (the actual payout, at delivery) reads the same column and
         # found it already reset, so the "Double HP next order" prize was silently never paid, and a
@@ -1778,13 +1778,8 @@ def _handle_delivery_rewards(order: dict):
     squad_plan = None
     for attempt in range(3):
         try:
-            prof = db.table('profiles').select('next_order_hp_multiplier').eq('id', user_id).single().execute()
-            if not prof:
-                raise ValueError('profile unavailable')
-            raw_mult = float(prof.get('next_order_hp_multiplier') or 1)
-            if not math.isfinite(raw_mult):
-                raise ValueError('multiplier unavailable')
-            mult = max(1.0, raw_mult)
+            from app.services.food_hp_multiplier import next_food_hp_multiplier
+            mult = next_food_hp_multiplier(db,user_id,order.get('campus_id'))['multiplier']
             hp_amount = round(base_hp_amount * mult)
             sm_check = db.table('squad_members').select('id').eq('order_id', order_id).limit(1).execute()
             has_squad_members = bool(sm_check)

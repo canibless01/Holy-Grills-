@@ -12,7 +12,11 @@ class AfterPrimaryAward(Exception):
 class DeliveryMultiplierRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__); self.db = MagicMock(); self.profiles = MagicMock(); self.squads = MagicMock()
-        self.db.table.side_effect = lambda name: {'profiles': self.profiles, 'squad_members': self.squads}[name]
+        self.receipts = MagicMock()
+        for method in ('select','eq','or_','is_','order','limit'):
+            getattr(self.receipts,method).return_value=self.receipts
+        self.receipts.execute.return_value=[]
+        self.db.table.side_effect = lambda name: {'profiles': self.profiles, 'squad_members': self.squads,'exclusive_spin_fulfillments':self.receipts}[name]
         self.profile_read = self.profiles.select.return_value.eq.return_value.single.return_value.execute
         self.profile_read.return_value = {'next_order_hp_multiplier': 2}
         self.squads.select.return_value.eq.return_value.limit.return_value.execute.return_value = []
