@@ -1498,7 +1498,7 @@ def _on_order_paid(order: dict):
     )
 
 
-def confirm_order_payment(order_id: str, payment_reference: str, provider_response: dict = None) -> dict:
+def confirm_order_payment(order_id: str, payment_reference: str, provider_response: dict = None, provider: str = 'paystack') -> dict:
     """
     Called after card payment confirmed (webhook).
     Updates payment_status to paid. Order is already in 'received' state.
@@ -1510,6 +1510,9 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise ValueError(MSG.RIDER_ORDER_NOT_FOUND)
+
+    from app.services.order_payments import validate_provider_payment, card_due
+    validate_provider_payment(order, payment_reference, provider_response, provider)
 
     current_pay_status = order.get("payment_status")
     if current_pay_status in ("paid", "partially_refunded"):
@@ -1523,22 +1526,17 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         raise ValueError(f"Cannot transition payment status because order is already '{order.get('status')}'")
 
     # Call the existing RPC rather than a direct table update
-    provider = "paystack"
-
     try:
         payment_result = db.rpc("hg_mark_order_paid", {
             "p_order_id": order_id,
             "p_provider": provider,
             "p_provider_reference": payment_reference,
-            "p_amount": order["total_amount"],
+            "p_amount": float(card_due(order)),
             "p_metadata": provider_response or {},
         })
     except Exception as exc:
         logger.error("confirm_order_payment: RPC call failed for order %s: %s", order_id, exc)
         payment_result = {"error": str(exc)}
-
-    if not payment_result:
-        raise ValueError("Failed to mark order as paid")
 
     if isinstance(payment_result, dict) and payment_result.get("error"):
         raise ValueError(payment_result["error"])
@@ -1551,7 +1549,10 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         .execute()
     )
 
-    if isinstance(updated_order, dict):
+    if not isinstance(updated_order, dict) or updated_order.get('payment_status') != 'paid':
+        raise ValueError(MSG.ORDER_PAYMENT_UNAVAILABLE)
+
+    if payment_result and isinstance(updated_order, dict):
         _on_order_paid(updated_order)
 
     return updated_order

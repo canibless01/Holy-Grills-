@@ -1,6 +1,6 @@
 # Playwright Full Site Coverage Map — Holy Grills
 
-> Builder's test plan, not an implemented suite. Frontend is not in this checkout. This doc is a map for any builder who can run Playwright directly to cover full site functionality.
+> Historical test plan, not execution evidence. The current checkout includes the frontend and backend. See [coverage and ownership status](ADMIN_AUDIT_COVERAGE_STATUS.md) and [audit progress](ECOSYSTEM_AUDIT_PROGRESS.md) for actual verification and remaining gaps.
 
 ## Purpose
 This map enumerates every user-visible flow, API contract, and background job that must be exercised to claim full-site coverage. Each section lists:

@@ -1,3 +1,4 @@
+import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -356,6 +357,8 @@ export default function OrderDetail() {
           </button>
         </div>
       )}
+
+      <OrderPaymentActions order={order} claimToken={resolveClaimToken()} onUpdated={async () => setOrder(await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {}))} />
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">

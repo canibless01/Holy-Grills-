@@ -17,6 +17,12 @@ Rules for editing this file:
 """
 
 class MSG:
+    WEBHOOK_IN_PROGRESS = "This payment event is still being processed. Please retry delivery."
+    ORDER_PAYMENT_INVALID = 'The payment does not match this order. Please contact support.'
+    ORDER_PAYMENT_CLOSED = 'This order is no longer available for payment.'
+    ORDER_PAYMENT_EMAIL_REQUIRED = 'An email address is required to pay for this order.'
+    ORDER_PAYMENT_UNAVAILABLE = 'Payment is temporarily unavailable. Your order is saved; please retry from its payment section.'
+    ORDER_PAYMENT_PENDING = 'Payment has not been confirmed. You can continue payment or check again.'
     SPIN_AUTOMATIC_FULFILLMENT = 'This reward is applied automatically through checkout and cannot be manually fulfilled.'
 
     # ── API / Health ──────────────────────────────────────────────────────────
@@ -2367,6 +2373,35 @@ class MSG:
     # the fallback the UI already shipped; reword it here and the app follows.
 
     FE_CHECKOUT_SQUAD_DELIVERY_DISCOUNT     = "Squad delivery discount"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_ORDER_PAYMENT_PENDING                = "Payment has not been confirmed. You can continue payment or check again."
+    FE_ORDER_PAYMENT_INVALID_LINK           = "The payment link could not be verified. Please retry."
+    FE_ORDER_PAYMENT_UNAVAILABLE            = "Payment is unavailable. Your order is saved; please retry here."
+    FE_ORDER_PAYMENT_SECTION                = "Order payment"
+    FE_ORDER_PAYMENT_REQUIRED               = "Payment required"
+    FE_ORDER_PAYMENT_REQUIRED_BODY          = "Your order is saved. The kitchen can start preparing it after payment is confirmed."
+    FE_ORDER_PAYMENT_WALLET_RESERVED        = "Wallet contribution already deducted: {amount}"
+    FE_ORDER_PAYMENT_CARD_DUE               = "Card amount due: {amount}"
+    FE_ORDER_PAYMENT_BUSY                   = "Checking payment…"
+    FE_ORDER_PAYMENT_PAY                    = "Pay {amount}"
+    FE_ORDER_PAYMENT_CHECK                  = "I have paid — check payment"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CONFIRMATION_PAYMENT_TITLE           = "Order saved — payment required"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CONFIRMATION_CLOSED_TITLE            = "Order closed"
+    FE_CONFIRMATION_CLOSED_BODY             = "This order is no longer awaiting payment or fulfilment."
 
 # Short alias
 M = MSG

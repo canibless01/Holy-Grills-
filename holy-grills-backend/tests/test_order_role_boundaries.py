@@ -40,6 +40,13 @@ class OrderRoleBoundaryTests(unittest.TestCase):
                 self.call_as('admin', order_service.update_order_status, new_status=status)
         self.db.table.assert_not_called()
 
+    def test_unpaid_order_cannot_be_prepared_by_kitchen_or_admin(self):
+        self.order.update(status='received', payment_status='pending')
+        for role in ['kitchen', 'admin', 'super_admin']:
+            with self.subTest(role=role), self.assertRaises(order_service.OrderConflictError):
+                self.call_as(role, order_service.update_order_status, new_status='preparing')
+        self.db.table.return_value.update.assert_not_called()
+
     def test_delivery_retry_preserves_pending_rewards_without_repeating_transition(self):
         self.order['status'] = 'delivered'
         with patch('app.services.order_service._handle_delivery_rewards', side_effect=RuntimeError('RPC unavailable')) as recovery:

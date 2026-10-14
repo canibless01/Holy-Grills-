@@ -19,6 +19,25 @@ from app.services.notification_service import send_notification
 webhooks_bp = Blueprint("webhooks", __name__)
 
 
+def _claim_provider_event(provider, event_type, reference, payload):
+    """A failed delivery can retry; an in-flight delivery is not acknowledged as done."""
+    db = get_db()
+    try:
+        db.table("webhook_events").insert({"provider": provider, "event_type": event_type,
+            "reference": reference, "payload": payload, "status": "processing"})
+        return "claimed"
+    except SupabaseError as exc:
+        text = str(exc).lower()
+        if not any(marker in text for marker in ("23505", "duplicate", "unique")):
+            raise
+    query = lambda: db.table("webhook_events").eq("provider", provider).eq("event_type", event_type).eq("reference", reference)
+    claimed = query().eq("status", "failed").update({"status": "processing", "error": None, "processed_at": None, "payload": payload})
+    if claimed:
+        return "claimed"
+    row = query().select("status").single().execute() or {}
+    return "processed" if row.get("status") == "processed" else "busy"
+
+
 @webhooks_bp.route("/paystack", methods=["POST"])
 def paystack_webhook():
     """
@@ -70,20 +89,11 @@ def paystack_webhook():
             # Fallback to stable SHA-256 hash of raw payload bytes to ensure idempotency when all references are missing
             reference = "hash_" + hashlib.sha256(payload_bytes).hexdigest()
 
-    # Atomic Idempotency Claim
-    try:
-        get_db().table("webhook_events").insert({
-            "provider": "paystack",
-            "event_type": event_type,
-            "reference": reference,
-            "payload": payload,
-            "status": "processing",
-        }).execute()
-    except SupabaseError as err:
-        err_str = str(err)
-        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-        raise
+    claim = _claim_provider_event("paystack", event_type, reference, payload)
+    if claim == "processed":
+        return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
+    if claim == "busy":
+        return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 503
 
     try:
         resolved_campus_id = None
@@ -168,20 +178,11 @@ def flutterwave_webhook():
             # Fallback to stable SHA-256 hash of raw payload bytes to ensure idempotency when all references are missing
             reference = "hash_" + hashlib.sha256(payload_bytes).hexdigest()
 
-    # Atomic Idempotency Claim
-    try:
-        get_db().table("webhook_events").insert({
-            "provider": "flutterwave",
-            "event_type": event_type,
-            "reference": reference,
-            "payload": payload,
-            "status": "processing",
-        }).execute()
-    except SupabaseError as err:
-        err_str = str(err)
-        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-        raise
+    claim = _claim_provider_event("flutterwave", event_type, reference, payload)
+    if claim == "processed":
+        return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
+    if claim == "busy":
+        return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 503
 
     try:
         resolved_campus_id = None
@@ -251,29 +252,12 @@ def _handle_flutterwave_charge_success(data: dict):
         order_id = meta.get("order_id")
         if not order_id:
             raise ValueError("Missing order_id in metadata")
-
-        order = db.table("orders").select("id,user_id,total_amount,status,payment_status,campus_id").eq("id", order_id).single().execute()
+        order = db.table("orders").select("*").eq("id", order_id).single().execute()
         if not order:
-            raise ValueError(f"Order {order_id} not found")
-
-        if order.get("user_id") and str(order.get("user_id")) != str(user_id):
-            raise ValueError("Order user mismatch")
-
-        if order.get("payment_status") == "paid":
-            current_app.logger.warning(
-                "Duplicate payment webhook for already-paid order %s (ref %s) — skipping",
-                order_id, reference,
-            )
-            return order.get("campus_id")
-
-        expected_amount = float(order.get("total_amount") or 0)
-        if abs(amount_naira - expected_amount) > 0.01:
-            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
-
-        if order.get("status") in ("cancelled", "refunded"):
-            raise ValueError(f"Order is already {order.get('status')}")
-
-        confirm_order_payment(order_id, reference, provider_response=data)
+            raise ValueError("Order not found")
+        # Confirmation validates currency, owner, campus, reference and the card
+        # remainder (not the full basket when a wallet contribution exists).
+        confirm_order_payment(order_id, reference, provider_response=data, provider="flutterwave")
         return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":
@@ -433,29 +417,12 @@ def _handle_charge_success(data: dict):
         order_id = metadata.get("order_id")
         if not order_id:
             raise ValueError("Missing order_id in metadata")
-
-        order = db.table("orders").select("id,user_id,total_amount,status,payment_status,campus_id").eq("id", order_id).single().execute()
+        order = db.table("orders").select("*").eq("id", order_id).single().execute()
         if not order:
-            raise ValueError(f"Order {order_id} not found")
-
-        if order.get("user_id") and str(order.get("user_id")) != str(user_id):
-            raise ValueError("Order user mismatch")
-
-        if order.get("payment_status") == "paid":
-            current_app.logger.warning(
-                "Duplicate payment webhook for already-paid order %s (ref %s) — skipping",
-                order_id, reference,
-            )
-            return order.get("campus_id")
-
-        expected_amount = float(order.get("total_amount") or 0)
-        if abs(amount_naira - expected_amount) > 0.01:
-            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
-
-        if order.get("status") in ("cancelled", "refunded"):
-            raise ValueError(f"Order is already {order.get('status')}")
-
-        confirm_order_payment(order_id, reference, provider_response=data)
+            raise ValueError("Order not found")
+        # Confirmation validates currency, owner, campus, reference and the card
+        # remainder (not the full basket when a wallet contribution exists).
+        confirm_order_payment(order_id, reference, provider_response=data, provider="paystack")
         return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":

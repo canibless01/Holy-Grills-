@@ -186,6 +186,36 @@ def quote_order():
         return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503
 
 
+def _order_payment_response(order_id, verify=False):
+    from app.services import order_payments
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    try:
+        order = order_payments.authorized_order(order_id, g.user_id, data.get('claim_token'))
+        result = order_payments.verify(order) if verify else order_payments.initialize(order)
+        return jsonify(result), 200
+    except order_payments.OrderPaymentError as exc:
+        return jsonify({'error': str(exc)}), exc.status
+    except Exception:
+        logger.exception('Order payment unavailable for %s', order_id)
+        return jsonify({'error': MSG.ORDER_PAYMENT_UNAVAILABLE}), 503
+
+
+@orders_bp.route('/<order_id>/payment', methods=['POST'])
+@optional_auth
+@rate_limit('RATE_LIMIT_ORDERS_REQUESTS', 'RATE_LIMIT_ORDERS_WINDOW')
+def initialize_order_payment(order_id):
+    return _order_payment_response(order_id)
+
+
+@orders_bp.route('/<order_id>/payment/verify', methods=['POST'])
+@optional_auth
+@rate_limit('RATE_LIMIT_ORDERS_REQUESTS', 'RATE_LIMIT_ORDERS_WINDOW')
+def verify_order_payment(order_id):
+    return _order_payment_response(order_id, verify=True)
+
+
 @orders_bp.route("", methods=["GET"])
 @require_auth
 def list_orders():

@@ -485,6 +485,7 @@ export default function Checkout() {
     setReschedule(null);
     navigate(`/order-confirmation/${order?.id || 'pending'}`, {
       state: {
+        startPayment: order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0,
         claim_token: order?.claim_token,
         guest: !isAuthenticated,
         is_scheduled: order?.is_scheduled,
