@@ -8,12 +8,15 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import KitchenHeader from '@/components/kitchen/KitchenHeader';
 import KitchenOrderCard from '@/components/kitchen/KitchenOrderCard';
 import KitchenSettings from '@/components/kitchen/KitchenSettings';
+import KitchenCatering from '@/components/kitchen/KitchenCatering';
+import { msg } from '@/lib/messages';
 
 const TABS = [
   { id: 'queue', label: 'Live Queue' },
   { id: 'scheduled', label: 'Scheduled' },
   { id: 'batch', label: 'Prep List' },
   { id: 'settings', label: 'Settings' },
+  { id: 'catering', label: msg('FE_CATERING_KITCHEN', 'Catering') },
 ];
 
 const COLUMN_ACCENTS = {
@@ -98,6 +101,7 @@ export default function Kitchen() {
         </div>
 
         {/* Live Queue — 3-column KDS board */}
+        {tab === 'catering' && <KitchenCatering />}
         {tab === 'queue' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
             {['received', 'preparing', 'ready'].map((status) => {

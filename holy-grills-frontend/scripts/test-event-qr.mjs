@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root=join(dirname(fileURLToPath(import.meta.url)),'..');
+const out=join(root,'node_modules','.cache-event-qr.mjs');
+execFileSync(join(root,'node_modules','.bin','esbuild'),[join(root,'src/lib/eventQr.ts'),'--format=esm',`--outfile=${out}`]);
+const { eventQrPayload }=await import(out);
+const id='bbbb0000-0000-4000-8000-000000000004';const token='1a'.repeat(16);const payload=`hg-event:${id}:${token}`;
+assert.equal(eventQrPayload(payload,id),payload);
+assert.equal(eventQrPayload(token,id),payload);
+assert.equal(eventQrPayload(`HG-EVT-${id}-${token}`,id),payload);
+assert.equal(eventQrPayload(payload,'bbbb0000-0000-4000-8000-000000000099'),null);
+for(const raw of ['', 'token', payload+':extra','https://example.invalid', 'javascript:alert(1)'])assert.equal(eventQrPayload(raw,id),null);
+rmSync(out,{force:true});console.log('EVENT QR: canonical, manual, legacy and foreign-event checks passed');

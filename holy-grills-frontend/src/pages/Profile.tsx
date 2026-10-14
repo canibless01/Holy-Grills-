@@ -9,6 +9,8 @@ import ImageUploader from '@/components/admin/ImageUploader';
 import TierAvatar from '@/components/TierAvatar';
 import TierIcon from '@/components/TierIcon';
 import ProfileSecurityPanel from '@/components/profile/ProfileSecurityPanel';
+import LoadingSpinner from '@/components/LoadingSpinner';
+import { msg } from '@/lib/messages';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -22,7 +24,7 @@ export default function Profile() {
     phone: user?.profile?.phone || '',
     department_id: user?.profile?.department_id || '',
     academic_level_id: user?.profile?.academic_level_id || '',
-    avatar_url: user?.avatar_url || user?.profile?.avatar_url || '',
+    avatar_url: user?.avatar_url || user?.profile?.photo_url || user?.profile?.avatar_url || '',
   });
   const [saving, setSaving] = useState(false);
   const [freeSideCredits, setFreeSideCredits] = useState({ count: 0, expires_at: null });
@@ -34,15 +36,40 @@ export default function Profile() {
   const [deleteReason, setDeleteReason] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
-
+  const [referenceReady, setReferenceReady] = useState(false);
+  const [referenceError, setReferenceError] = useState(false);
   useEffect(() => {
-    (async () => {
-      try { setFreeSideCredits(await liveApi.rewards.getFreeSideCredits()); } catch { /* ignore */ }
-      try { setExclusiveStatus(await liveApi.hp.getExclusiveSpinStatus()); } catch { /* ignore */ }
-      try { setDepartments(await liveApi.departments.list()); } catch { /* ignore */ }
-      try { setAcademicLevels(await liveApi.academicLevels.list()); } catch { /* ignore */ }
-    })();
-  }, []);
+    if (!user || editing) return;
+    const savedLevel = user.profile?.academic_level || user.academic_level;
+    const level = academicLevels.find(l => l.value === savedLevel || l.name === savedLevel);
+    setForm({
+      full_name: user.full_name || '', nickname: user.profile?.nickname || user.nickname || '',
+      phone: user.profile?.phone || '',
+      leaderboard_show_full_name: user.profile?.leaderboard_show_full_name ?? false,
+      department_id: user.profile?.department_id || '',
+      academic_level_id: user.profile?.academic_level_id || level?.id || (savedLevel ? '__saved__' : ''),
+      avatar_url: user.avatar_url || user.profile?.photo_url || user.profile?.avatar_url || '',
+    });
+  }, [user, academicLevels, editing]);
+
+  const loadReferences = async () => {
+    if (!user) return;
+    setReferenceReady(false); setReferenceError(false);
+    try {
+      const [deps, levels] = await Promise.all([liveApi.departments.list(), liveApi.academicLevels.list()]);
+      setDepartments(deps); setAcademicLevels(levels);
+      const saved = user.profile?.academic_level || user.academic_level;
+      const matching = levels.find(l => l.value === saved || l.name === saved);
+      if (!editing && matching) setForm(current => ({ ...current, academic_level_id: matching.id }));
+      setReferenceReady(true);
+    } catch { setReferenceError(true); }
+  };
+  useEffect(() => {
+    if (!user) return;
+    liveApi.rewards.getFreeSideCredits().then(setFreeSideCredits).catch(() => {});
+    liveApi.hp.getExclusiveSpinStatus().then(setExclusiveStatus).catch(() => {});
+    loadReferences();
+  }, [user?.id]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -51,15 +78,15 @@ export default function Profile() {
       const level = academicLevels.find((l) => l.id === form.academic_level_id);
       const body = {
         full_name: form.full_name,
-        nickname: form.nickname.trim() || undefined,
-        phone: form.phone || undefined,
+        nickname: form.nickname.trim(),
+        phone: form.phone.trim() || null,
         leaderboard_show_full_name: form.leaderboard_show_full_name,
-        department: dept ? dept.name : undefined,
-        academic_level: level ? (level.name || level.label || level.level) : undefined,
+        department: dept ? dept.name : (form.department_id ? user.profile?.department : ''),
+        academic_level: level ? level.value : (form.academic_level_id ? user.profile?.academic_level || user.academic_level : ''),
       };
       // Avatar goes through the dedicated photo route — update_profile does not
       // accept photo_url, so bundling it there silently drops the upload.
-      const origAvatar = user?.avatar_url || user?.profile?.avatar_url || '';
+      const origAvatar = user?.avatar_url || user?.profile?.photo_url || user?.profile?.avatar_url || '';
       if (form.avatar_url && form.avatar_url !== origAvatar) {
         await liveApi.auth.updateProfilePhoto({ photo_url: form.avatar_url });
       }
@@ -110,8 +137,10 @@ export default function Profile() {
     { to: '/events', icon: CalendarDays, label: 'Events' },
   ];
 
+  if (!user) return <LoadingSpinner label={msg('FE_PROFILE_LOADING', 'Loading profile…')} />;
   return (
     <div className="space-y-4 animate-fade-in">
+      {referenceError && <div className="rounded-xl border border-border p-3 space-y-2"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={loadReferences} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>}
       <h1 className="font-heading font-extrabold text-2xl text-foreground">Profile</h1>
 
       {/* Profile Card */}
@@ -166,6 +195,7 @@ export default function Profile() {
                 className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
               >
                 <option value="" className="text-foreground">Department</option>
+                {form.department_id && !departments.some(d => d.id === form.department_id) && <option value={form.department_id} className="text-foreground">{user.profile?.department}</option>}
                 {departments.map((d) => (
                   <option key={d.id} value={d.id} className="text-foreground">{d.name}</option>
                 ))}
@@ -176,6 +206,7 @@ export default function Profile() {
                 className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
               >
                 <option value="" className="text-foreground">Level</option>
+                {form.academic_level_id && !academicLevels.some(l => l.id === form.academic_level_id) && <option value={form.academic_level_id} className="text-foreground">{user.profile?.academic_level || user.academic_level}</option>}
                 {academicLevels.map((l) => (
                   <option key={l.id} value={l.id} className="text-foreground">{l.name || l.label || l.level}</option>
                 ))}
@@ -186,7 +217,7 @@ export default function Profile() {
         <div className="mt-4 flex gap-2">
           {editing ? (
             <>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-2 rounded-xl bg-white text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
+              <button onClick={handleSave} disabled={saving || !referenceReady} className="flex-1 py-2 rounded-xl bg-white text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
               </button>
               <button onClick={() => setEditing(false)} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
@@ -194,7 +225,7 @@ export default function Profile() {
               </button>
             </>
           ) : (
-            <button onClick={() => setEditing(true)} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
+            <button onClick={() => setEditing(true)} disabled={!referenceReady} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
               Edit Profile
             </button>
           )}

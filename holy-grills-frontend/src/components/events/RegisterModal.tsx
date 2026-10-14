@@ -31,11 +31,11 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
   const [submitting, setSubmitting] = useState(false);
 
   const regFields = Array.isArray(event?.registration_fields) ? event.registration_fields : [];
-  const price = selectedTier ? (selectedTier.price_naira ?? 0) : (event?.ticket_price ?? 0);
+  const price = selectedTier ? (useHp ? (selectedTier.price_naira ?? 0) : (selectedTier.price_naira_full ?? selectedTier.price_naira ?? 0)) : (event?.ticket_price ?? 0);
   const hpPrice = selectedTier ? (selectedTier.price_hp ?? 0) : (event?.hp_required ?? 0);
   const walletBalance = wallet?.balance ?? wallet?.wallet_balance ?? 0;
   const activeHp = hpBalance?.active || 0;
-  const hpAvailable = !isGuest && (event?.hp_promo_enabled || hpPrice > 0);
+  const hpAvailable = !isGuest && hpPrice > 0;
   const isFree = price === 0 && hpPrice === 0;
 
   const setGuestField = (k) => (e) => setGuest({ ...guest, [k]: e.target.value });
@@ -51,6 +51,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
   const valid = guestValid && tierValid && fieldsValid && splitValid && (isFree || paymentMethod);
 
   const handleRegister = async () => {
+    if (submitting || !valid) return;
     setSubmitting(true);
     try {
       const body: RegisterEventPayload = { callback_url: window.location.href };

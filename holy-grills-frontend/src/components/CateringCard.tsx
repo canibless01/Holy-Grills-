@@ -2,12 +2,10 @@ import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
 import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect } from 'react';
-import { Utensils, ChevronRight, X, Loader2 } from 'lucide-react';
-import { liveApi } from '@/lib/liveApi';
+import { Utensils, ChevronRight } from 'lucide-react';
+import CateringRequestModal from '@/components/events/CateringRequestModal';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { toast } from '@/components/ui/use-toast';
-import { msg } from '@/lib/messages';
 
 /**
  * CateringCard — storefront-driven Catering card on the Home page, visible to
@@ -25,8 +23,6 @@ export default function CateringCard() {
   const [section, setSection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '', email: '', event_date: '', guests: '', details: '' });
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,28 +39,6 @@ export default function CateringCard() {
     })();
     return () => { cancelled = true; };
   }, [campusId]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) { toast({ title: msg('FE_CATERING_CARD_NAME_PHONE_REQUIRED', 'Name & phone required'), variant: 'destructive' }); return; }
-    setSubmitting(true);
-    try {
-      await liveApi.events.cateringRequest({
-        name: form.name.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim() || undefined,
-        event_date: form.event_date || undefined,
-        guests: form.guests ? Number(form.guests) : undefined,
-        details: form.details.trim() || undefined,
-      });
-      toast({ title: msg('FE_CATERING_CARD_REQUEST_SENT', '🍽️ Request sent'), description: msg('FE_CATERING_CARD_OUR_TEAM_WILL_REACH_OUT_SHORTLY', 'Our team will reach out shortly.') });
-      setShowForm(false);
-      setForm({ name: '', phone: '', email: '', event_date: '', guests: '', details: '' });
-    } catch (err) {
-      toast({ title: msg('FE_CATERING_CARD_REQUEST_FAILED', 'Request failed'), description: err.message, variant: 'destructive' });
-    }
-    setSubmitting(false);
-  };
 
   if (loading || !section) return null;
 
@@ -105,27 +79,7 @@ export default function CateringCard() {
         </div>
       </div>
 
-      {showForm && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-lg flex items-end sm:items-center justify-center p-4" onClick={() => !submitting && setShowForm(false)}>
-          <form onSubmit={handleSubmit} className="bg-card rounded-2xl p-6 w-full max-w-md space-y-3 animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-heading font-bold text-lg text-foreground flex items-center gap-2"><Utensils className="w-5 h-5 text-primary" /> Catering Request</h3>
-              <button type="button" onClick={() => setShowForm(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
-            </div>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Your name" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" />
-            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone (08012345678)" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" />
-            <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email (optional)" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" />
-            <div className="grid grid-cols-2 gap-2">
-              <input type="date" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" />
-              <input type="number" value={form.guests} onChange={(e) => setForm({ ...form, guests: e.target.value })} placeholder="Guests" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" />
-            </div>
-            <textarea value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} placeholder="Tell us about your event…" rows={3} className="w-full p-3 rounded-xl border border-border text-sm resize-none focus:outline-none focus:border-primary/40" />
-            <button type="submit" disabled={submitting} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
-              {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : 'Send request'}
-            </button>
-          </form>
-        </div>
-      )}
+      <CateringRequestModal open={showForm} onClose={() => setShowForm(false)} />
     </>
   );
 }

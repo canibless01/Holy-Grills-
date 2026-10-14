@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { UtensilsCrossed, RefreshCw, Search, Calendar, Users, Phone, Mail, DollarSign, StickyNote, X } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { safeText } from '@/lib/valueText';
+import { csvCell } from '@/lib/csvCell';
 import { formatNaira, formatDate } from '@/lib/hgUtils';
 
 // A joined row here would render as an object and take the panel down.
@@ -10,13 +11,14 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
-const STATUS_FLOW = ['new', 'reviewed', 'quoted', 'accepted', 'completed', 'rejected', 'cancelled'];
+const STATUS_FLOW = ['new', 'contacted', 'quoted', 'confirmed', 'in_progress', 'completed', 'rejected', 'cancelled'];
 
 const STATUS_TONE = {
   new: 'bg-blue-100 text-blue-700',
-  reviewed: 'bg-amber-100 text-amber-700',
+  contacted: 'bg-amber-100 text-amber-700',
   quoted: 'bg-purple-100 text-purple-700',
-  accepted: 'bg-green-100 text-green-700',
+  confirmed: 'bg-green-100 text-green-700',
+  in_progress: 'bg-amber-100 text-amber-700',
   completed: 'bg-emerald-100 text-emerald-700',
   rejected: 'bg-red-100 text-red-700',
   cancelled: 'bg-secondary text-muted-foreground',
@@ -49,9 +51,11 @@ export default function AdminCatering() {
   const [q, setQ] = useState('');
   const [detail, setDetail] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [reqs, evs] = await Promise.allSettled([
         liveApi.admin.getCateringRequests(),
@@ -59,6 +63,7 @@ export default function AdminCatering() {
       ]);
       setRequests(reqs.status === 'fulfilled' ? reqs.value : []);
       setEvents(evs.status === 'fulfilled' ? evs.value : []);
+      setLoadError(reqs.status === 'rejected' || evs.status === 'rejected');
     } catch { setRequests([]); }
     setLoading(false);
   };
@@ -82,7 +87,7 @@ export default function AdminCatering() {
       ...r,
       _status: r.status || 'new',
       _notes: r.notes || r.admin_notes || '',
-      _quoted_amount: r.quoted_amount || '',
+      _quoted_amount: r.quoted_amount ?? '',
       _assigned_to: r.assigned_to || '',
     });
   };
@@ -94,8 +99,8 @@ export default function AdminCatering() {
       const body = {
         status: detail._status,
         notes: detail._notes,
-        quoted_amount: detail._quoted_amount ? Number(detail._quoted_amount) : undefined,
-        assigned_to: detail._assigned_to || undefined,
+        quoted_amount: detail._quoted_amount !== '' ? Number(detail._quoted_amount) : null,
+        assigned_to: detail._assigned_to || null,
       };
       await liveApi.admin.updateCateringRequest(detail.id, body);
       toast({ title: msg('FE_ADMIN_CATERING_CATERING_REQUEST_UPDATED', '✅ Catering request updated'), description: msg('FE_ADMIN_CATERING_STATUS_STATUS', 'Status: {status}', { status: detail._status }) });
@@ -108,6 +113,7 @@ export default function AdminCatering() {
   };
 
   if (loading) return <LoadingSpinner label="Loading catering requests..." />;
+  if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   return (
     <div className="space-y-4">
@@ -271,7 +277,7 @@ function EventCateringTab({ events }) {
       r.checked_in ? 'Yes' : 'No',
       r.catering_notes || r.notes || '',
     ]);
-    const csv = [headers, ...rows].map((row) => row.map((c) => `"${(c || '').toString().replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = [headers, ...rows].map((row) => row.map((c) => `"${csvCell(c)}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
