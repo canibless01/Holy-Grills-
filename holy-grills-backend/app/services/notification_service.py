@@ -50,6 +50,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "birthday_bonus", "graduation_hp", "hall_of_fame", "prize_fulfilment_update",
     "membership_anniversary", "order_lock_redeemed",
     "flash_sale_redeemed", "exclusive_spin_won",
+    "free_side_credits_granted", "exclusive_spin_granted",
     # Milestones / badges: several can be awarded in one go (e.g. referral 5 and 10), each must arrive
     "milestone_achieved",
     # Streaks
@@ -248,6 +249,7 @@ _ACTION_URL_PREFIXES = (
     ("reward_", "/rewards"),
     ("flash_sale_", "/rewards"),
     ("exclusive_spin", "/rewards"),
+    ("free_side", "/rewards"),
     ("prize_fulfilment", "/rewards"),
     ("tier_", "/rewards"),
     ("birthday_", "/rewards"),

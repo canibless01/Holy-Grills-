@@ -112,6 +112,13 @@ class CheckoutQuoteTests(unittest.TestCase):
             with self.assertRaises(service.OrderPriceChanged) as raised:
                 self.calculate(quote_only=False,payload={**self.payload,'payment_method':'wallet','expected_total':2095})
         self.assertEqual(raised.exception.quote['total_amount'],2300);self.assertEqual(rpc.call_count,1);self.assertEqual(self.db.rows['wallets'][0]['balance'],5000)
+    def test_changed_free_side_requests_review_before_order_or_debit(self):
+        plan={'enabled':True,'items':[{'selection_id':'new','free_side_item_id':'side','name':'Slaw'}]}
+        with patch('app.services.free_side_checkout.quote_free_sides',return_value=plan),patch.object(service,'_order_for_intent',return_value=None),patch.object(service,'resolve_ordering_window',return_value={}),patch.object(service,'_check_kitchen_capacity'):
+            with self.assertRaises(service.OrderPriceChanged) as raised:
+                self.calculate(quote_only=False,payload={**self.payload,'expected_free_sides':[]})
+        self.assertEqual(raised.exception.quote['free_sides'],plan['items'])
+
     def test_committed_intent_replays_before_repricing_or_balance_checks(self):
         order={'id':'committed','total_amount':2095}
         with patch.object(service,'_order_for_intent',return_value=order):

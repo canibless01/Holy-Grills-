@@ -17,6 +17,20 @@ Rules for editing this file:
 """
 
 class MSG:
+    FREE_SIDE_REMOVED = 'Removed'
+    FREE_SIDE_DEACTIVATED = 'Deactivated'
+    FREE_SIDE_CREDITS_TITLE = 'Free side credits added'
+    FREE_SIDE_CREDITS_BODY = '{name}, you received {credits} free side credits. Choose a side at checkout before {expires_at}.'
+    EXCLUSIVE_SPIN_GRANTED_TITLE = 'Exclusive spins added'
+    EXCLUSIVE_SPIN_GRANTED_BODY = '{name}, you received {spins} exclusive spins, valid until {expires_at}.'
+    FREE_SIDE_SELECTION_INVALID = 'Your free-side selection is no longer available. Remove or change it before checkout.'
+    FREE_SIDE_SELECTION_CHANGED = 'Your free-side selection changed. Review it and try again.'
+    FREE_SIDE_GRANT_INVALID = 'Choose 1–20 whole credits and a validity of 1–365 whole days.'
+    FREE_SIDE_GRANTED = 'Free-side credits granted'
+    FREE_SIDE_ITEM_NAME_REQUIRED = 'A free-side item name is required.'
+    FREE_SIDE_ITEM_NOT_FOUND = 'Free-side item not found.'
+    FREE_SIDE_SELECTION_REQUIRED = 'Choose a free-side item.'
+    FREE_SIDE_GRANT_REASON = 'Admin grant'
     WEBHOOK_IN_PROGRESS = "This payment event is still being processed. Please retry delivery."
     ORDER_PAYMENT_INVALID = 'The payment does not match this order. Please contact support.'
     ORDER_PAYMENT_CLOSED = 'This order is no longer available for payment.'
@@ -2402,6 +2416,73 @@ class MSG:
 
     FE_CONFIRMATION_CLOSED_TITLE            = "Order closed"
     FE_CONFIRMATION_CLOSED_BODY             = "This order is no longer awaiting payment or fulfilment."
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_FREE_SIDE_MODAL_TITLE                = "Free side credit!"
+    FE_FREE_SIDE_CLOSE                      = "Close free-side selection"
+    FE_FREE_SIDE_CREDIT_COUNT               = "Free-side credits: {count}"
+    FE_FREE_SIDE_MODAL_HELP                 = "Pick a side to add at ₦0. Its credit is used only when the order is saved successfully."
+    FE_FREE_SIDE_CHOOSE                     = "Choose your free side"
+    FE_FREE_SIDE_NONE_AVAILABLE             = "No free sides are available right now. Your credit stays on your account."
+    FE_FREE_SIDE_ADDING                     = "Adding…"
+    FE_FREE_SIDE_ADD                        = "Add free side · ₦0 🏆"
+    FE_FREE_SIDE_SKIP                       = "Skip for now"
+    FE_ADMIN_FREE_SIDE_LOAD_ERROR           = "Free-side configuration could not be loaded."
+    FE_ADMIN_FREE_SIDE_UPDATED              = "Side updated"
+    FE_ADMIN_FREE_SIDE_ADDED                = "Side added"
+    FE_FREE_SIDE_DEACTIVATE_CONFIRM         = "Deactivate {name}? Past orders keep their saved side."
+    FE_FREE_SIDE_VALIDITY_INVALID           = "Choose a whole number from 1 to 365 days."
+    FE_ADMIN_FREE_SIDE_LOADING              = "Loading free credits..."
+    FE_FREE_SIDES_RETRY                     = "Retry"
+    FE_ADMIN_FREE_SIDE_TITLE                = "Free Side Credits"
+    FE_ADMIN_FREE_SIDE_EDIT                 = "Edit {name}"
+    FE_ADMIN_FREE_SIDE_REMOVE               = "Deactivate {name}"
+    FE_ADMIN_FREE_SIDE_ADD                  = "Add side"
+    FE_ADMIN_FREE_SIDE_GRANT_TITLE          = "Grant Credits"
+    FE_ADMIN_FREE_SIDE_VALIDITY_TITLE       = "Credit Validity Period"
+    FE_FREE_SIDE_VALIDITY_HELP              = "Controls expiry for new credit grants. Existing credits keep their original expiry."
+    FE_ADMIN_FREE_SIDE_VALIDITY_DAYS        = "Validity (days)"
+    FE_ADMIN_FREE_SIDE_SAVING               = "Saving..."
+    FE_ADMIN_FREE_SIDE_SAVE_VALIDITY        = "Save Validity"
+    FE_ADMIN_FREE_SIDE_EDIT_TITLE           = "Edit free side"
+    FE_ADMIN_FREE_SIDE_ADD_TITLE            = "Add free side"
+    FE_ADMIN_FREE_SIDE_NAME                 = "Name"
+    FE_ADMIN_FREE_SIDE_NAME_EXAMPLE         = "e.g. Coleslaw"
+    FE_ADMIN_FREE_SIDE_IMAGE                = "Image (optional)"
+    FE_ADMIN_FREE_SIDE_AVAILABLE            = "Available to students"
+    FE_ADMIN_FREE_SIDE_CANCEL               = "Cancel"
+    FE_ADMIN_FREE_SIDE_SAVE                 = "Save side"
+    FE_FREE_SIDES_LOAD_ERROR                = "Free-side rewards could not be loaded. Please retry."
+    FE_FREE_SIDE_UNAVAILABLE                = "Unavailable free side"
+    FE_FREE_SIDE_REMOVE                     = "Remove free side"
+    FE_FREE_SIDE_SUMMARY                    = "Free side: {name}"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_ADMIN_FREE_SIDE_LIVE_COUNT           = "{count} sides live"
+    FE_ADMIN_FREE_SIDE_HELP                 = "Students spend an earned free-side credit at checkout to add one of the active sides below for ₦0."
+    FE_ADMIN_FREE_SIDE_EMPTY                = "No sides configured yet — students cannot redeem a credit until at least one is active."
+    FE_ADMIN_FREE_SIDE_ACTIVE               = "Available at checkout"
+    FE_ADMIN_FREE_SIDE_INACTIVE             = "Inactive — hidden from students"
+    FE_ADMIN_FREE_SIDE_CAMPUS_SCOPE         = " · campus-scoped"
+    FE_ADMIN_FREE_SIDE_GLOBAL_SCOPE         = " · all campuses"
+    FE_ADMIN_FREE_SIDE_GRANT_HELP           = "Give a student free side credits directly (1-20 per grant). Search results follow your current campus scope."
+    FE_ADMIN_FREE_SIDE_CHANGE_USER          = "Change"
+    FE_ADMIN_FREE_SIDE_COUNT                = "Credits (1-20)"
+    FE_ADMIN_FREE_SIDE_REASON               = "Reason (optional)"
+    FE_ADMIN_FREE_SIDE_REASON_EXAMPLE       = "e.g. support goodwill"
+    FE_ADMIN_FREE_SIDE_GRANTING             = "Granting..."
+    FE_ADMIN_FREE_SIDE_GRANT                = "Grant credits"
+    FE_ADMIN_FREE_SIDE_SEARCH_HINT          = "Search by name, nickname or email"
+    FE_ADMIN_FREE_SIDE_SEARCHING            = "Searching..."
+    FE_ADMIN_FREE_SIDE_SEARCH               = "Search"
+    FE_ADMIN_FREE_SIDE_SELECT_USER          = "Select"
+    FE_ADMIN_FREE_SIDE_DAYS_COUNT           = "{count} days"
 
 # Short alias
 M = MSG

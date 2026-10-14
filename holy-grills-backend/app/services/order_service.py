@@ -442,38 +442,6 @@ def _claim_reward_redemption(db, redemption_id: str, user_id: str, order_id: str
     return res if isinstance(res, dict) else {"claimed": False, "reason": "unexpected_rpc_result"}
 
 
-def _consume_free_sides(db, user_id: str, campus_id, order_id: str) -> dict:
-    """Spend this user's free-side selections on `order_id`.
-
-    Primary path: hg_consume_free_sides_atomic does the credit decrement, the ₦0
-    order line and the selection deletion in one transaction. If that migration
-    is not applied yet, fall back to the Python consumer, which uses the same
-    compare-and-set decrement, so a retry cannot double-spend either way.
-    """
-    from app.services.feature_flags import is_feature_enabled
-    if not is_feature_enabled("free_side_credits"):
-        return {"consumed": 0, "skipped": "feature_disabled"}
-
-    try:
-        res = db.rpc("hg_consume_free_sides_atomic", {
-            "p_user_id": user_id,
-            "p_order_id": order_id,
-            "p_campus_id": campus_id,
-        })
-        if isinstance(res, dict):
-            return res
-    except SupabaseError as exc:
-        code = str((getattr(exc, "details", None) or {}).get("code") or "")
-        if code not in ("PGRST202", "42883") and exc.status_code != 404:
-            raise
-        logger.warning("create_order: hg_consume_free_sides_atomic missing (%s) — "
-                       "using the Python consumer", exc)
-
-    from app.routes.free_sides import consume_free_side_selections
-    inserted = consume_free_side_selections(db, user_id, campus_id, order_id) or []
-    return {"consumed": len(inserted), "source": "python_fallback"}
-
-
 # The order RPC now claims p_redemption_id inside its own transaction and refuses
 # the whole order when the reward cannot be spent. Its message wording is the
 # database's; translate the known cases so the customer gets a stable 400.
@@ -1093,8 +1061,18 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         "items": hp_preview_items,
     }
 
+    from app.services.free_side_checkout import quote_free_sides
+    try:
+        free_side_quote = quote_free_sides(get_db(), user_id, campus_id)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
+
     price_quote = {
         'subtotal':subtotal,'delivery_fee':delivery_fee,'discount_amount':total_discount,
+        'free_sides':free_side_quote['items'],
+        'free_side_credits_enabled':free_side_quote['enabled'],
         'delivery_benefit':delivery_benefit,
         'delivery_fee_original':delivery_fee_original,
         'squad_delivery_discount_amount':float(squad_delivery_discount_dec),
@@ -1106,6 +1084,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     }
     if quote_only:
         return price_quote
+    if 'expected_free_sides' in payload and payload['expected_free_sides'] != free_side_quote['items']:
+        raise OrderPriceChanged(price_quote)
     expected_total = payload.get('expected_total')
     if expected_total is not None:
         try:
@@ -1135,6 +1115,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     if order_items:
         # Internal server-priced contract, never copied from client item fields.
         order_items[0]['_delivery_benefit'] = delivery_benefit
+        order_items[0]['_free_sides'] = free_side_quote['items']
 
     rpc_payload = {
         "p_user_id": user_id,
@@ -1187,7 +1168,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         result = {}
 
     if result.get("error"):
-        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed')):
+        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed')):
             # The lock changed after pricing but before its transaction claim.
             # Return a fresh, read-only quote rather than repeating stale totals.
             refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
@@ -1208,18 +1189,6 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     rpc_total, discount_applied = create_order_apply_rpc_total(result, total)
 
     order_id = result.get("order_id")
-
-    # ── Free sides: spend the credits and add the ₦0 lines ──────────────────
-    # The one place a free-side credit is actually consumed. Runs after the order
-    # exists (it needs order_id) and must never fail the order: the customer has
-    # paid for the real items, and an unconsumed selection simply stays for the
-    # next checkout.
-    if order_id and not result.get("idempotent"):
-        try:
-            _consume_free_sides(get_db(), user_id, campus_id, str(order_id))
-        except Exception as exc:                                    # noqa: BLE001
-            logger.warning("create_order: free-side consumption failed for order %s: %s",
-                           order_id, exc)
 
     # ── Reward redemption: attach it to this order exactly once ─────────────
     # The authoritative claim happens inside hg_create_order_atomic, so this call

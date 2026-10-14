@@ -1,3 +1,5 @@
+import { localStore } from '@/lib/storage';
+import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import HeroCarousel from '@/components/HeroCarousel';
 import StorefrontSlider from '@/components/storefront/StorefrontSlider';
 import { useState, useEffect, useRef } from 'react';
@@ -35,6 +37,8 @@ function CheckoutSkeleton() {
 
 export default function Checkout() {
   useMessages();
+  useFeatureFlags();
+  const freeSidesReleased = isFeatureEnabled('free_side_credits');
   const navigate = useNavigate();
   const location = useLocation();
   const passed = location.state || {};
@@ -94,6 +98,21 @@ export default function Checkout() {
   // so changing the choice can replace it instead of stacking selections.
   const [freeSideSelectionId, setFreeSideSelectionId] = useState<string | number | null>(null);
   const [freeSideBusy, setFreeSideBusy] = useState(false);
+  const freeSideBusyRef = useRef(false);
+  const [freeSideSelections, setFreeSideSelections] = useState<any[]>([]);
+  const [freeSideLoadError, setFreeSideLoadError] = useState('');
+  const applyFreeSideStatus = (value) => {
+    setFreeSideCredits(value);
+    const selections = value.active_selections || [];
+    setFreeSideSelections(selections);
+    setFreeSideSelectionId(selections.length === 1 ? selections[0].id : null);
+    setFreeSideChoice(selections.length === 1 ? selections[0].free_side_items : null);
+    setFreeSideLoadError('');
+  };
+  const refreshFreeSides = async () => {
+    try { const value = await mockApi.rewards.getFreeSideCredits(); applyFreeSideStatus(value); return value; }
+    catch (e) { setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); }
+  };
   const [showGateSelector, setShowGateSelector] = useState(true);
   const [globalAddons, setGlobalAddons] = useState([]);
   const [selectedGlobalAddonIds, setSelectedGlobalAddonIds] = useState([]);
@@ -149,14 +168,17 @@ export default function Checkout() {
     let live = true;
     (async () => {
       try { const a = await mockApi.addresses.list(); if (live) setAddresses(a || []); } catch { /* ignore */ }
-      try { const c = await mockApi.rewards.getFreeSideCredits(); if (live) setFreeSideCredits(c || { count: 0, expires_at: null, available_sides: [] }); } catch { /* ignore */ }
+      if (freeSidesReleased) {
+        try { const c = await mockApi.rewards.getFreeSideCredits(); if (live) applyFreeSideStatus(c); }
+        catch (e) { if (live) setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); }
+      }
     })();
     return () => { live = false; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, freeSidesReleased]);
 
   const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
   const [quoteRetry, setQuoteRetry] = useState(0);
-  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds });
+  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased });
   const quote = quoteState?.key === quoteKey ? quoteState.data : null;
   const quoteReady = !!quote;
   const quoteError = quoteState?.key === quoteKey ? quoteState.error : null;
@@ -271,23 +293,38 @@ export default function Checkout() {
    * reads free_side_credit/free_side_choice (docs/WIRING_AUDIT.md §3.1).
    */
   const handleUseFreeSide = async (item: FreeSideItem) => {
-    setFreeSideBusy(true);
+    if (freeSideBusyRef.current) return;
+    freeSideBusyRef.current = true; setFreeSideBusy(true);
+    const key = `hg_free_side_selection:${user?.id}`;
+    let intentKey;
     try {
-      if (freeSideSelectionId != null) {
-        // Changing the choice: drop the previous selection first (best effort —
-        // the new selection is still worth making if this fails).
-        await mockApi.rewards.deselectFreeSide(freeSideSelectionId).catch(() => { /* ignore */ });
-        setFreeSideSelectionId(null);
-      }
-      const res = await mockApi.rewards.selectFreeSide({ free_side_item_id: item.id });
-      setFreeSideSelectionId(res?.id ?? res?.[0]?.id ?? null);
-      setFreeSideChoice(item);
+      const payload = { free_side_item_id: item.id, replace_selection_id: freeSideSelectionId || undefined };
+      const fingerprint = JSON.stringify(payload);
+      let pending;
+      try { pending = JSON.parse(localStore.getItem(key) || 'null'); } catch { pending = null; }
+      if (!pending || pending.fingerprint !== fingerprint) { pending = { fingerprint, intent_key: crypto.randomUUID() }; localStore.setItem(key, JSON.stringify(pending)); }
+      intentKey = pending.intent_key;
+      await mockApi.rewards.selectFreeSide({ ...payload, intent_key: pending.intent_key });
+      localStore.removeItem(key);
+      await refreshFreeSides();
       setShowFreeSide(false);
       toast({ title: msg('FE_CHECKOUT_FREE_SIDE_ADDED_TITLE', '🏆 Free side added'), description: msg('FE_CHECKOUT_FREE_SIDE_ADDED_BODY', '{item} is added to this order at ₦0. The credit is used when you place the order.', { item: item.name }) });
     } catch (e) {
+      const recovered = await refreshFreeSides();
+      if (intentKey && recovered?.active_selections?.some(row => row.id === intentKey && row.free_side_item_id === item.id)) {
+        localStore.removeItem(key); setShowFreeSide(false);
+        toast({ title: msg('FE_CHECKOUT_FREE_SIDE_ADDED_TITLE', '🏆 Free side added') });
+        return;
+      }
       toast({ title: msg('FE_CHECKOUT_FREE_SIDE_FAILED_TITLE', 'Could not add the free side'), description: e.message, variant: 'destructive' });
-    }
-    setFreeSideBusy(false);
+    } finally { freeSideBusyRef.current = false; setFreeSideBusy(false); }
+  };
+  const removeFreeSide = async (selectionId) => {
+    if (freeSideBusyRef.current) return;
+    freeSideBusyRef.current = true; setFreeSideBusy(true);
+    try { await mockApi.rewards.deselectFreeSide(selectionId); await refreshFreeSides(); }
+    catch (e) { await refreshFreeSides(); toast({ title: msg('FE_CHECKOUT_FREE_SIDE_FAILED_TITLE', 'Could not add the free side'), description: e.message, variant: 'destructive' }); }
+    finally { freeSideBusyRef.current = false; setFreeSideBusy(false); }
   };
 
   // One payload builder for both order paths. The normal Place Order and the
@@ -309,6 +346,7 @@ export default function Checkout() {
           selected_addons: (ci.selected_addons || []).map((a) => ({ addon_id: a.addon_id || a.id || a, quantity: a.quantity || 1 })),
         })),
         payment_method: effectivePayment,
+        expected_free_sides: quote?.free_sides || [],
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
         promo_code: promoResult?.code,
@@ -459,6 +497,7 @@ export default function Checkout() {
         delete base.is_scheduled;
         delete base.delivery_window_id;
         delete base.expected_total;
+        delete base.expected_free_sides;
         const idempotency_key = await checkoutIntent({
           actor: user?.id || 'guest', campus: campus?.id,
           cartRows: (cart?.items || []).map((item) => item.id), payload: base,
@@ -541,7 +580,7 @@ export default function Checkout() {
       {isAuthenticated && (
         <>
           {/* Free side credit — sits at the top with the squad order entry point */}
-          <div className="rounded-2xl bg-primary/10 border border-primary/30 p-3 flex items-center gap-3">
+          {freeSidesReleased && <div className="rounded-2xl bg-primary/10 border border-primary/30 p-3 flex items-center gap-3">
             <span className="text-xl">🏆</span>
             <div className="flex-1 text-xs text-foreground">
               {freeSideCredits.count > 0 ? (
@@ -551,11 +590,16 @@ export default function Checkout() {
               )}
             </div>
             {freeSideCredits.count > 0 && (
-              <button onClick={() => setShowFreeSide(true)} className="px-3 py-1.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shrink-0 shadow-glow">
+              <button disabled={freeSideBusy || freeSideSelections.length > 1} onClick={() => setShowFreeSide(true)} className="px-3 py-1.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shrink-0 shadow-glow">
                 {freeSideChoice ? 'Change' : 'Use one'}
               </button>
             )}
-          </div>
+          </div>}
+          {freeSidesReleased && freeSideLoadError && <div role="alert" className="text-sm text-destructive">{freeSideLoadError} <button onClick={refreshFreeSides} className="underline">{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></div>}
+          {freeSidesReleased && freeSideSelections.map(selection => <div key={selection.id} className="flex justify-between items-center rounded-xl border border-border p-3 text-sm">
+            <span>{selection.free_side_items?.name || msg('FE_FREE_SIDE_UNAVAILABLE', 'Unavailable free side')}</span>
+            <button disabled={freeSideBusy} onClick={() => removeFreeSide(selection.id)} className="font-semibold text-destructive">{msg('FE_FREE_SIDE_REMOVE', 'Remove free side')}</button>
+          </div>)}
           <SquadOrderButton itemCount={squadItemCount} value={squadSelection} onChange={setSquadSelection} />
         </>
       )}
@@ -825,7 +869,7 @@ export default function Checkout() {
         {squadDiscount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DISCOUNT', 'Squad discount')}</span><span>-{formatNaira(squadDiscount)}</span></div>}
         {quote?.order_lock_hp_reward > 0 && <div className="flex justify-between text-accent-foreground"><span>{msg('FE_CHECKOUT_LOCK_HP_DELIVERY', 'Lock reward after delivery')}</span><span>+{quote.order_lock_hp_reward} HP</span></div>}
         {quote?.order_lock_discount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_LOCK_DISCOUNT', 'Order lock discount')}</span><span>-{formatNaira(quote.order_lock_discount)}</span></div>}
-        {freeSideChoice && <div className="flex justify-between text-success"><span>🏆 Reward · {freeSideChoice.name}</span><span>₦0</span></div>}
+        {(quote?.free_sides || []).map(side => <div key={side.selection_id} className="flex justify-between text-success"><span>{msg('FE_FREE_SIDE_SUMMARY', 'Free side: {name}', { name: side.name })}</span><span>₦0</span></div>)}
         <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{(quote?.delivery_fee_original ?? deliveryFee) > 0 ? formatNaira(quote?.delivery_fee_original ?? deliveryFee) : <span className="text-success">FREE</span>}</span></div>
         {quote?.delivery_benefit?.discount > 0 && <div className="flex justify-between text-success"><span>{quote.delivery_benefit.source === 'monthly' ? msg('FE_CHECKOUT_MONTHLY_DELIVERY', 'Monthly free-delivery perk') : msg('FE_CHECKOUT_SPIN_DELIVERY', 'Spin delivery credit')}</span><span>-{formatNaira(quote.delivery_benefit.discount)}</span></div>}
         {(quote?.squad_delivery_discount_amount ?? (squadDeliveryPct > 0 ? deliveryFee - effectiveDeliveryFee : 0)) > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DELIVERY_DISCOUNT', 'Squad delivery discount')}</span><span>-{formatNaira(quote?.squad_delivery_discount_amount ?? (deliveryFee - effectiveDeliveryFee))}</span></div>}
