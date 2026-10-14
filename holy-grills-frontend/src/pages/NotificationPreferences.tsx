@@ -5,20 +5,18 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import PreferenceRow from '@/components/notifications/PreferenceRow';
 import PushPermissionBanner from '@/components/notifications/PushPermissionBanner';
-import { msg } from '@/lib/messages';
-
-// The 6 toggles map 1:1 to the notification_preferences table columns. No
-// unbacked toggles (e.g. "Streak reminders") are added — see discrepancy #10.
-const TOGGLES = [
-  { key: 'push_enabled', label: 'Push notifications', desc: 'Receive alerts on your device', icon: Bell },
-  { key: 'email_enabled', label: 'Email notifications', desc: 'Receive updates via email', icon: Mail },
-  { key: 'order_updates', label: 'Order updates', desc: 'Status changes, confirmations', icon: Package },
-  { key: 'delivery_updates', label: 'Delivery updates', desc: 'Rider assigned, out for delivery', icon: Truck },
-  { key: 'hp_updates', label: 'HP updates', desc: 'HP earned, tiers, unlocks', icon: Flame },
-  { key: 'promotions', label: 'Promotions', desc: 'Flash redeems, offers, events', icon: Tag },
-];
+import { msg, useMessages } from '@/lib/messages';
 
 export default function NotificationPreferences() {
+  useMessages();
+  const TOGGLES = [
+    { key: 'push_enabled', label: msg('FE_PREF_PUSH', 'Push notifications'), desc: msg('FE_PREF_PUSH_HELP', 'Receive alerts on your device'), icon: Bell },
+    { key: 'email_enabled', label: msg('FE_PREF_EMAIL', 'Email notifications'), desc: msg('FE_PREF_EMAIL_HELP', 'Receive updates via email'), icon: Mail },
+    { key: 'order_updates', label: msg('FE_PREF_ORDER', 'Order updates'), desc: msg('FE_PREF_ORDER_HELP', 'Status changes, confirmations'), icon: Package },
+    { key: 'delivery_updates', label: msg('FE_PREF_DELIVERY', 'Delivery updates'), desc: msg('FE_PREF_DELIVERY_HELP', 'Rider assigned, out for delivery'), icon: Truck },
+    { key: 'hp_updates', label: msg('FE_PREF_HP', 'HP updates'), desc: msg('FE_PREF_HP_HELP', 'HP earned, tiers, unlocks'), icon: Flame },
+    { key: 'promotions', label: msg('FE_PREF_PROMOTIONS', 'Promotions'), desc: msg('FE_PREF_PROMOTIONS_HELP', 'Flash redeems, offers, events'), icon: Tag },
+  ];
   const navigate = useNavigate();
   const [prefs, setPrefs] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,8 +29,7 @@ export default function NotificationPreferences() {
     try {
       const result = await liveApi.notifications.getPreferences();
       const data = result && result.data ? result.data : result || {};
-      // Seed defaults matching the DB defaults so the UI is usable even if the
-      // backend omits a field (all default to true per the schema).
+      // The backend returns effective channel settings, including legacy opt-outs.
       setPrefs({
         push_enabled: data.push_enabled ?? true,
         email_enabled: data.email_enabled ?? true,
@@ -82,17 +79,17 @@ export default function NotificationPreferences() {
         <button
           onClick={() => navigate('/profile')}
           className="p-2 -ml-2 rounded-full hover:bg-secondary active:scale-95 transition"
-          aria-label="Back to profile"
+          aria-label={msg('FE_PREF_BACK', 'Back to profile')}
         >
           <ArrowLeft className="w-5 h-5 text-foreground" />
         </button>
-        <h1 className="font-heading font-extrabold text-2xl text-foreground">Preferences</h1>
+        <h1 className="font-heading font-extrabold text-2xl text-foreground">{msg('FE_PREF_TITLE', 'Preferences')}</h1>
       </div>
 
       <PushPermissionBanner />
 
       <section className="space-y-2.5">
-        <h2 className="font-heading font-extrabold text-base text-foreground px-1">What you receive</h2>
+        <h2 className="font-heading font-extrabold text-base text-foreground px-1">{msg('FE_PREF_RECEIVE', 'What you receive')}</h2>
         {TOGGLES.map((t) => {
           const Icon = t.icon;
           return (
@@ -111,7 +108,7 @@ export default function NotificationPreferences() {
 
       <div className="rounded-2xl bg-secondary/60 border border-border p-4">
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          {msg('FE_NOTIFICATION_PREFERENCE_POLICY', 'Order and delivery updates remain in your inbox. Your preferences control email and device alerts. Account security notices still send. Promotional alerts follow the configured sending limits.')}
+          {msg('FE_PREF_POLICY', 'Your channel and category choices control alerts. Account and wallet receipts are separate from promotional preferences. Promotional alerts follow the platform rate limits.')}
         </p>
       </div>
     </div>

@@ -136,6 +136,20 @@ Rolled-back live SQL confirms the split card remainder, one receipt on replay, n
 
 Advisors were rerun and still return the historical newsletter-policy, extension-location, exposed-helper and password-protection categories. Direct privilege checks above prove the changed functions are private; advisory counts are not treated as a whole-database sign-off. Wider historical remediation belongs to Workstream B. Relevant [function search-path guidance](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable) and [extension-location guidance](https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public) remain available for that review.
 
+## Free-side admission, selection and admin grants
+
+`claim_free_sides_with_order_admission` appears once in migration history. It replaces the existing consumer, order-admission and refund functions and adds two private RPCs used by the selection and admin-grant endpoints. Each affected function has one signature, a pinned search path, no PUBLIC/anon/authenticated execution and service-role execution. All five live function bodies match [FREE_SIDE_ATOMIC_CHECKOUT_FIX.sql](FREE_SIDE_ATOMIC_CHECKOUT_FIX.sql). No table, column, index, trigger or overlapping overload is added.
+
+The existing credit and cart-selection tables retain authenticated SELECT under RLS; client writes and unsafe table privileges are revoked. Anonymous users have no privileges on those tables or the item catalogue. Authenticated item CRUD remains constrained by staff/campus RLS, with one restrictive campus/global SELECT policy. Authenticated TRUNCATE/REFERENCES/TRIGGER are revoked on all three tables. The scope policy occurs once.
+
+The order's existing status-log metadata stores the server-quoted plan and consumption/restoration journal. Credit decrement, zero-price order lines, selection removal, order creation and debit commit together. Matching order replay cannot consume another credit. Pre-preparation cancellation restores the exact credit once, preserving its original expiry and not recreating a cart selection. Grant intent IDs reuse credit IDs and the existing admin audit log; replay after spending cannot refill a grant. Selection replacement validates the new item before replacing the old selection.
+
+Fifteen rolled-back live assertions, run in two independent proofs, cover admission/debit/replay, cancellation, cancelled-order rejection, forced insertion failure, insufficient-wallet rollback, disabled-state rejection, spent-grant replay, conflicting/foreign grants, selection replay, failed/valid replacement, stale replacement and consumed-intent rejection, and denied raw credit/cart mutations. Credit expiry is NOT NULL; no null-expiry defect is claimed. Nullable global campus credits are supported consistently by quote, status and consumption.
+
+Security advisors were rerun. The historical 13 anonymous and 24 authenticated exposed SECURITY DEFINER helpers, newsletter-delivery policy, extension location and password-protection notices remain outside this batch's sign-off. See [exposed-function guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) and [extension-location guidance](https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public). The five changed functions are directly verified private; this is not a whole-database approval.
+
+Actual browser/Data API proof additionally verifies global creation without a campus by a super admin, campus-admin read-only global items, denied foreign-admin grants and student administration, denied authenticated raw credit/cart inserts and private selector RPC execution. The global probe is removed by exact ID.
+
 
 ## Workstream B live migrations — 14 October 2026
 
@@ -143,3 +157,17 @@ See [Workstream B evidence matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [selecte
 
 
 B continuation (14 October): free subscription retry/concurrency and last-code competition verified on a second isolated campus using campus-only gates; sold-out receipt retry and cross-listing intent conflict fixed and verified. Calendar consumer/browser save/reload verified; analytics read-failure interfaces and browser CSV escaping fixed. 212 backend tests, typecheck and complete build pass. Second exact fixture batch and campus overrides cleaned. No new live migration. See [matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [requests to A](WORKSTREAM_A_DEPENDENCIES_FROM_B.md). B remains incomplete.
+
+## Notification preference reconciliation
+
+`reconcile_notification_channel_and_category_preferences` appears once, with one `hg_update_notification_preferences_atomic(uuid,jsonb)` definition. It validates allowed boolean keys, locks the fresh active profile, preserves existing unspecified preferences and updates legacy channel switches in the same transaction. Canonical SQL: [NOTIFICATION_PREFERENCES_ATOMIC_FIX.sql](NOTIFICATION_PREFERENCES_ATOMIC_FIX.sql).
+
+The function pins `search_path=public`, revokes PUBLIC/anon/authenticated execution and permits service_role. The authenticated endpoint binds the user from its verified session. No table, column, index, policy, trigger or overload is added; existing table grants/RLS are retained. Operational receipt deduplication reuses the existing notification primary key. Four rolled-back live assertions and actual concurrent API updates verify the behavior. Security advisor categories/counts remain unchanged: the existing exposed-helper, newsletter-policy, extension-location and password-protection findings are not marked closed.
+
+## Queued spin food-HP multipliers
+
+`preserve_queued_spin_hp_multipliers_until_delivery` appears once. It replaces the existing two-argument `hg_spin_exclusive_atomic` and seven-argument `hg_credit_delivery_hp_atomic` functions without new tables, columns, indexes, policies, triggers or overloads. Both function bodies match [QUEUED_SPIN_MULTIPLIER_FIX.sql](QUEUED_SPIN_MULTIPLIER_FIX.sql); PUBLIC/anon/authenticated execution is revoked and service-role execution retained, with pinned search paths.
+
+New multiplier wins retain one immutable pending receipt each, using the existing status/snapshot/applied-order fields. The legacy scalar remains a separate earlier entitlement. Delivery serializes on the user, chooses one eligible legacy or oldest queued bonus, and commits its use with the existing HP ledger/month tracker/order marker. Zero-food awards retain the bonus, stale reads recalculate and replay cannot consume a later receipt. The existing restrictive physical-only staff policy also protects pending multiplier receipts.
+
+Eight rolled-back live assertions prove separate wins/snapshots, zero-food preservation, stale-value rejection, first and second deliveries, total HP conservation, replay and legacy precedence. No historical fulfilled win is automatically reclassified: the old scalar did not preserve enough provenance to infer which earlier losses were already consumed. Historical reconciliation and later-delivery/partial-refund policies remain separate work. Security advisory categories/counts remain unchanged.

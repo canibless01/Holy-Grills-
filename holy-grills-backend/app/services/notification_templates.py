@@ -141,6 +141,8 @@ _NON_PERSONALIZED_TYPES: frozenset = frozenset({
 #   channels     — None = derive from EMAIL_TYPES in notification_service;
 #                  list  = hard override (e.g. in_app+push only, no email)
 NOTIFICATION_TEMPLATES: dict = {
+    'free_side_credits_granted': {'title': MSG.FREE_SIDE_CREDITS_TITLE, 'body': MSG.FREE_SIDE_CREDITS_BODY, 'include_name': True, 'channels': None},
+    'exclusive_spin_granted': {'title': MSG.EXCLUSIVE_SPIN_GRANTED_TITLE, 'body': MSG.EXCLUSIVE_SPIN_GRANTED_BODY, 'include_name': True, 'channels': None},
 
     # ── Auth / Account ─────────────────────────────────────────────────────────
     "password_changed": {

@@ -17,9 +17,9 @@ class NotificationPreferenceTransportTests(unittest.TestCase):
     def test_channel_preferences_suppress_external_alerts(self):
         self.assertEqual(self.send('hp_earned', {'email_enabled': False, 'push_enabled': False}), ['in_app'])
 
-    def test_order_and_delivery_opt_out_keep_mandatory_inbox_only(self):
+    def test_order_and_delivery_category_opt_out(self):
         for kind, key in [('order_confirmed', 'order_updates'), ('order_out_for_delivery', 'delivery_updates')]:
-            self.assertEqual(self.send(kind, {key: False}), ['in_app'])
+            self.assertEqual(self.send(kind, {key: False}), [])
 
     def test_hp_and_promotional_categories_can_be_disabled(self):
         for kind, key in [('tier_upgrade', 'hp_updates'), ('blast_synthetic', 'promotions'), ('event_announcement', 'promotions')]:
@@ -28,5 +28,5 @@ class NotificationPreferenceTransportTests(unittest.TestCase):
     def test_legacy_profile_channel_opt_out_is_preserved(self):
         self.assertEqual(self.send('marketplace_purchase', {}, {'push_enabled': False, 'email_notifications': False}), ['in_app'])
 
-    def test_security_notices_remain_mandatory(self):
-        self.assertEqual(self.send('password_changed', {'push_enabled': False, 'email_enabled': False}), ['in_app', 'email', 'push'])
+    def test_security_notices_respect_channel_controls(self):
+        self.assertEqual(self.send('password_changed', {'push_enabled': False, 'email_enabled': False}), ['in_app'])

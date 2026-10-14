@@ -328,6 +328,7 @@ const rewards = {
       expires_at: soonest,
       credits,
       available_sides: Array.isArray(res?.available_sides) ? res.available_sides : [],
+      active_selections: Array.isArray(res?.active_selections) ? res.active_selections : [],
     };
   },
   // F5: `redeemFreeSide` was deleted. The backend replaced the post-order
@@ -1291,6 +1292,7 @@ const admin = {
   // The sides customers pick from live in the free_side_items TABLE: the public
   // GET /free-sides reads it directly (_get_free_side_options) — the old
   // system_settings.free_side_options blob is dead, so admins curate items here.
+  async getFreeSideConfig(params = {}) { return apiClient.get('/free-sides/admin/items', params); },
   async getFreeSideItemsAdmin(params = {}) { return unwrap(await apiClient.get('/free-sides/admin/items', params), 'items'); },
   async createFreeSideItem(body) { return apiClient.post('/free-sides/admin/items', body); },
   async updateFreeSideItem(id, body) { return apiClient.patch(`/free-sides/admin/items/${id}`, body); },

@@ -1,3 +1,4 @@
+import { msg, useMessages } from '@/lib/messages';
 import { useState } from 'react';
 import { X, Gift } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -20,6 +21,7 @@ export default function FreeSideCreditModal({ open, count, sides = [], busy = fa
   onClose: () => void;
   onUse: (item: FreeSideItem) => void;
 }) {
+  useMessages();
   const [choiceId, setChoiceId] = useState<string | null>(null);
   // First render has no stored id; fall back to the first curated item.
   const choice = sides.find((s) => s.id === choiceId) || sides[0] || null;
@@ -37,7 +39,7 @@ export default function FreeSideCreditModal({ open, count, sides = [], busy = fa
       <motion.div
         initial={{ y: 30, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-card rounded-3xl p-6 w-full max-w-sm"
+        role="dialog" aria-modal="true" aria-labelledby="free-side-title" className="bg-card rounded-3xl p-6 w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-start mb-3">
@@ -45,23 +47,23 @@ export default function FreeSideCreditModal({ open, count, sides = [], busy = fa
             <div className="w-9 h-9 rounded-full bg-gradient-cta flex items-center justify-center">
               <Gift className="w-4 h-4 text-white" />
             </div>
-            <h3 className="font-heading font-bold text-lg text-foreground">Free side credit!</h3>
+            <h3 id="free-side-title" className="font-heading font-bold text-lg text-foreground">{msg('FE_FREE_SIDE_MODAL_TITLE', 'Free side credit!')}</h3>
           </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+          <button onClick={onClose} aria-label={msg('FE_FREE_SIDE_CLOSE', 'Close free-side selection')}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
 
         <p className="text-sm text-foreground mb-1">
-          You have <span className="font-bold text-primary">{count}</span> free side credit{count !== 1 ? 's' : ''}!
+          {msg('FE_FREE_SIDE_CREDIT_COUNT', 'Free-side credits: {count}', { count })}
         </p>
-        <p className="text-xs text-muted-foreground mb-4">Pick a side — it's added to this order at ₦0. The credit is used the moment you place the order.</p>
+        <p className="text-xs text-muted-foreground mb-4">{msg('FE_FREE_SIDE_MODAL_HELP', 'Pick a side to add at ₦0. Its credit is used only when the order is saved successfully.')}</p>
 
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Choose your free side</label>
+        <label htmlFor="free-side-choice" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{msg('FE_FREE_SIDE_CHOOSE', 'Choose your free side')}</label>
         {sides.length === 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">
-            No free sides are available on the menu right now — your credit stays on your account.
+            {msg('FE_FREE_SIDE_NONE_AVAILABLE', 'No free sides are available right now. Your credit stays on your account.')}
           </p>
         ) : (
-          <select
+          <select id="free-side-choice"
             value={choice?.id ?? ''}
             onChange={(e) => setChoiceId(e.target.value)}
             className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm font-semibold text-foreground bg-card focus:outline-none focus:border-primary/40"
@@ -72,16 +74,18 @@ export default function FreeSideCreditModal({ open, count, sides = [], busy = fa
           </select>
         )}
 
+        {choice?.image_url && <img src={choice.image_url} alt={choice.name} className="mt-3 h-24 w-full rounded-xl object-cover" />}
+
         <div className="mt-4 space-y-2">
           <button
             onClick={handleUse}
             disabled={!choice || busy}
             className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm active:scale-[0.98] transition-transform disabled:opacity-50"
           >
-            {busy ? 'Adding…' : 'Add free side · ₦0 🏆'}
+            {busy ? msg('FE_FREE_SIDE_ADDING', 'Adding…') : msg('FE_FREE_SIDE_ADD', 'Add free side · ₦0 🏆')}
           </button>
           <button onClick={onClose} className="w-full py-2.5 rounded-full text-muted-foreground font-semibold text-xs">
-            Skip for now
+            {msg('FE_FREE_SIDE_SKIP', 'Skip for now')}
           </button>
         </div>
       </motion.div>

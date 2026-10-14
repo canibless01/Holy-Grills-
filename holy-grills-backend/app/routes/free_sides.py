@@ -1,8 +1,10 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.db import get_user_client
+from app.db import get_user_client, get_db, SupabaseError
 from app.messages import MSG, resolve_msg
-from app.utils.admin_helpers import as_uuid
+from app.utils.admin_helpers import as_uuid, as_int, as_bool, as_text, as_instant, get_json_object
+from app.utils.upload_urls import is_cms_image_url
+import uuid
 from app.utils.logger import get_logger
 from datetime import datetime, timezone, timedelta
 
@@ -31,9 +33,43 @@ def _active_credits(db, user_id: str) -> list:
         .gte("expires_at", now)
     )
     campus_id = getattr(g, 'campus_id', None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
-    return q.order("expires_at").execute() or []
+    if not campus_id:
+        return []
+    return q.or_(f"campus_id.eq.{campus_id},campus_id.is.null").order("expires_at").execute() or []
+
+
+def _validity_days():
+    row = get_db().table('system_settings').select('value').eq('key','free_side_credits_validity_days').is_('campus_id','null').single().execute()
+    value = row.get('value') if row else current_app.config.get('FREE_SIDE_CREDITS_VALIDITY_DAYS',60)
+    return as_int(value,minimum=1,maximum=365)
+
+
+def _rpc_failure(exc):
+    text = str(exc).lower()
+    if 'free_side_forbidden' in text:
+        return jsonify({'error': MSG.RESOURCE_NOT_FOUND}), 404
+    if 'free_side_no_credits' in text:
+        return jsonify({'error': MSG.FREE_SIDE_NO_CREDITS}), 400
+    if 'free_side_grant_invalid' in text:
+        return jsonify({'error': MSG.FREE_SIDE_GRANT_INVALID}), 400
+    if any(key in text for key in ('free_side_selection_changed', 'free_side_grant_conflict', '23505', 'duplicate')):
+        return jsonify({'error': MSG.FREE_SIDE_SELECTION_CHANGED}), 409
+    logger.exception('Free-side operation unavailable')
+    return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+
+
+def _item_payload(data, required=False):
+    safe = {}
+    if required or 'name' in data:
+        safe['name'] = as_text(data.get('name'), max_len=120)
+    if required or 'is_active' in data:
+        safe['is_active'] = as_bool(data.get('is_active', True))
+    if required or 'image_url' in data:
+        image = data.get('image_url')
+        if image and not is_cms_image_url(image):
+            raise ValueError(MSG.STOREFRONT_IMAGE_PROVIDER_INVALID)
+        safe['image_url'] = image or None
+    return safe
 
 
 @free_sides_bp.route("", methods=["GET"])
@@ -62,6 +98,7 @@ def my_free_sides():
         "total_credits": total,
         "credits": credits,
         "available_sides": options,
+        "active_selections": db.table("cart_free_side_selections").select("id,free_side_item_id,free_side_items(id,name,image_url,is_active)").eq("user_id", user_id).order("created_at").order("id").execute() or [],
     }), 200
 
 
@@ -90,7 +127,10 @@ def list_free_side_items():
     q = db.table("free_side_items").select("*").order("created_at")
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
-    return jsonify({"items": q.execute() or []}), 200
+    try:
+        return jsonify({"items": q.execute() or [], "validity_days": _validity_days()}), 200
+    except Exception as exc:
+        return _rpc_failure(exc)
 
 
 @free_sides_bp.route("/admin/items", methods=["POST"])
@@ -116,16 +156,30 @@ def create_free_side_item():
       400:
         description: name is required
     """
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    try:
+        safe = _item_payload(data, required=True)
+        campus_id = resolve_scoped_campus_id(data.get('campus_id'))
+        intent = as_uuid(data.get('intent_key')) or str(uuid.uuid4())
+    except ValueError as exc:
+        return jsonify({'error': str(exc) if str(exc)==MSG.STOREFRONT_IMAGE_PROVIDER_INVALID else MSG.FREE_SIDE_ITEM_NAME_REQUIRED}), 400
     db = get_user_client()
-    data = request.get_json(force=True, silent=True) or {}
-    if not data.get("name"):
-        return jsonify({"error": "name is required"}), 400
-    result = db.table("free_side_items").insert({
-        "name": data["name"], "image_url": data.get("image_url"),
-        "is_active": bool(data.get("is_active", True)), "campus_id": getattr(g, "campus_id", None),
-    })
-    return jsonify(result[0] if isinstance(result, list) else result), 201
-
+    existing = db.table('free_side_items').select('*').eq('id', intent).single().execute()
+    if existing:
+        if all(existing.get(k)==v for k,v in {**safe,'campus_id':campus_id}.items()):
+            return jsonify(existing), 200
+        return jsonify({'error': MSG.FREE_SIDE_SELECTION_CHANGED}), 409
+    try:
+        result = db.table('free_side_items').insert({'id':intent, **safe, 'campus_id':campus_id})
+        return jsonify(result[0] if isinstance(result,list) else result), 201
+    except SupabaseError as exc:
+        if any(marker in str(exc).lower() for marker in ('23505','duplicate')):
+            existing = db.table('free_side_items').select('*').eq('id',intent).single().execute()
+            if existing and all(existing.get(k)==v for k,v in {**safe,'campus_id':campus_id}.items()):
+                return jsonify(existing), 200
+        return _rpc_failure(exc)
 
 @free_sides_bp.route("/admin/credits", methods=["POST"])
 @require_role("admin")
@@ -160,74 +214,38 @@ def admin_grant_free_side_credits():
     """
     from app.middleware.auth import fetch_or_403
     from app.services.notification_service import send_notification
-
-    db = get_user_client()
-    data = request.get_json(force=True, silent=True) or {}
-
-    user_id = as_uuid(data.get("user_id"))
-    if not user_id:
-        return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="user_id")}), 400
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        credits = int(data.get("credits", 1))
-    except (TypeError, ValueError):
-        return jsonify({"error": "credits must be a whole number"}), 400
-    if not 1 <= credits <= 20:
-        return jsonify({"error": "credits must be between 1 and 20"}), 400
-
-    # Campus scope: fetch_or_403 404s an id outside the admin's campus.
-    target, err = fetch_or_403(db, "profiles", user_id, select="id,campus_id", not_found_msg=MSG.RESOURCE_NOT_FOUND)
+        user_id = as_uuid(data.get('user_id'))
+        intent = as_uuid(data.get('intent_key'))
+        credits = as_int(data.get('credits',1), minimum=1, maximum=20)
+        if not user_id or not intent:
+            raise ValueError()
+        reason = data.get('reason') or MSG.FREE_SIDE_GRANT_REASON
+        reason = as_text(reason,max_len=200)
+        days = data.get('validity_days')
+        if days is None:
+            days = _validity_days()
+        days = as_int(days,minimum=1,maximum=365)
+    except ValueError:
+        return jsonify({'error': MSG.FREE_SIDE_GRANT_INVALID}), 400
+    except Exception as exc:
+        return _rpc_failure(exc)
+    target, err = fetch_or_403(get_user_client(), 'profiles', user_id, select='id,campus_id', not_found_msg=MSG.RESOURCE_NOT_FOUND)
     if err:
         return err
-
-    validity_days = data.get("validity_days")
-    if validity_days is None:
+    try:
+        result = get_db().rpc('hg_grant_free_sides_atomic', {'p_actor_id':g.user_id,'p_user_id':user_id,'p_intent_key':intent,'p_credits':credits,'p_days':days,'p_reason':reason})
+    except Exception as exc:
+        return _rpc_failure(exc)
+    if not result.get('idempotent'):
         try:
-            row = db.table("system_settings").select("value").eq("key", "free_side_credits_validity_days").is_("campus_id", "null").single().execute()
-            validity_days = int((row or {}).get("value") or 60)
-        except Exception:                                    # noqa: BLE001 - a setting, not a guard
-            validity_days = 60
-    try:
-        validity_days = int(validity_days)
-    except (TypeError, ValueError):
-        return jsonify({"error": "validity_days must be a whole number"}), 400
-    if not 1 <= validity_days <= 365:
-        return jsonify({"error": "validity_days must be between 1 and 365"}), 400
-
-    reason = (data.get("reason") or "").strip()[:200] or "Admin grant"
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
-
-    result = db.table("free_side_credits").insert({
-        "user_id": user_id,
-        "credits_remaining": credits,
-        "source": "admin_grant",
-        "expires_at": expires_at,
-        "campus_id": target.get("campus_id") or getattr(g, "campus_id", None),
-    })
-    row = result[0] if isinstance(result, list) else result
-
-    # Audit + notify: a grant that leaves no trace is indistinguishable from a bug.
-    from app.routes.admin import _audit
-    _audit(g.user_id, "free_side_credits", (row or {}).get("id"), "grant",
-           after_data={"user_id": user_id, "credits": credits, "expires_at": expires_at, "reason": reason},
-           target_campus_id=target.get("campus_id"))
-    try:
-        send_notification(
-            user_id=user_id,
-            notif_type="free_side_credits_granted",
-            template_data={"credits": credits, "expires_at": expires_at[:10]},
-            campus_id=target.get("campus_id") or getattr(g, "campus_id", None),
-        )
-    except Exception as exc:                                 # noqa: BLE001 - the grant already happened
-        logger.warning("grant_free_side_credits: notify failed for %s: %s", user_id, exc)
-
-    return jsonify({
-        "message": "Free-side credits granted",
-        "credit_id": (row or {}).get("id"),
-        "user_id": user_id,
-        "credits": credits,
-        "expires_at": expires_at,
-    }), 201
-
+            send_notification(user_id=user_id,notif_type='free_side_credits_granted',template_data={'credits':credits,'expires_at':result['expires_at'][:10]},campus_id=target.get('campus_id'),reference_id=result.get('credit_id'),reference_type='free_side_grant')
+        except Exception:
+            logger.exception('Free-side grant saved but notification unavailable')
+    return jsonify({**result,'message':MSG.FREE_SIDE_GRANTED}), 200 if result.get('idempotent') else 201
 
 @free_sides_bp.route("/admin/items/<item_id>", methods=["PATCH"])
 @require_role("admin")
@@ -254,14 +272,25 @@ def update_free_side_item(item_id):
       404:
         description: Free side item not found
     """
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    try:
+        as_uuid(item_id)
+        safe = _item_payload(data)
+        if not safe:
+            raise ValueError()
+        expected_updated_at = as_instant(data['expected_updated_at']) if data.get('expected_updated_at') else None
+    except ValueError as exc:
+        return jsonify({'error': str(exc) if str(exc)==MSG.STOREFRONT_IMAGE_PROVIDER_INVALID else MSG.FREE_SIDE_ITEM_NAME_REQUIRED}), 400
     db = get_user_client()
-    data = request.get_json(force=True, silent=True) or {}
-    safe = {k: v for k, v in data.items() if k in ("name", "image_url", "is_active")}
-    result = db.table("free_side_items").eq("id", item_id).update(safe)
+    query = db.table('free_side_items').eq('id',item_id)
+    if expected_updated_at:
+        query = query.eq('updated_at',expected_updated_at)
+    result = query.update(safe)
     if not result:
-        return jsonify({"error": "Free side item not found"}), 404
-    return jsonify(result[0] if isinstance(result, list) else result), 200
-
+        return jsonify({'error': MSG.FREE_SIDE_SELECTION_CHANGED}), 409
+    return jsonify(result[0] if isinstance(result,list) else result), 200
 
 @free_sides_bp.route("/admin/items/<item_id>", methods=["DELETE"])
 @require_role("admin")
@@ -282,18 +311,21 @@ def delete_free_side_item(item_id):
       404:
         description: Free side item not found
     """
+    try:
+        as_uuid(item_id)
+    except ValueError:
+        return jsonify({'error': MSG.FREE_SIDE_ITEM_NOT_FOUND}), 404
     db = get_user_client()
     result = db.table("free_side_items").eq("id", item_id).update({"is_active": False})
     if not result:
-        return jsonify({"error": "Free side item not found"}), 404
-    return jsonify({"message": "Deactivated"}), 200
+        return jsonify({"error": MSG.FREE_SIDE_ITEM_NOT_FOUND}), 404
+    return jsonify({"message": MSG.FREE_SIDE_DEACTIVATED}), 200
 
 
 # ---------------------------------------------------------------------------
 # Cart-stage selection — replaces the old post-order /redeem flow. A user picks
 # free sides while building their cart; credits are consumed once at checkout,
-# when order_service.create_order() calls hg_consume_free_sides_atomic (with
-# consume_free_side_selections() below as the fallback if that RPC is absent).
+# inside the order admission transaction.
 # ---------------------------------------------------------------------------
 
 @free_sides_bp.route("/select", methods=["POST"])
@@ -321,28 +353,24 @@ def select_free_side():
         description: Free side item not found
     """
     from app.services.feature_flags import is_feature_enabled
-    if not is_feature_enabled("free_side_credits"):
-        return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="Free side credits")}), 403
-    db = get_user_client()
-    data = request.get_json(force=True, silent=True) or {}
-    item_id = data.get("free_side_item_id")
-    if not item_id:
-        return jsonify({"error": "free_side_item_id is required"}), 400
-    campus_id = getattr(g, "campus_id", None)
-    item = db.table("free_side_items").select("id,campus_id").eq("id", item_id).eq("is_active", "true").single().execute()
-    if not item or (campus_id and item.get("campus_id") not in (campus_id, None)):
-        return jsonify({"error": "Free side item not found"}), 404
-    credits = _active_credits(db, g.user_id)
-    available = sum(c["credits_remaining"] for c in credits)
-    current_selections = db.table("cart_free_side_selections").select("id", count="exact").eq("user_id", g.user_id).execute()
-    current_count = current_selections.get("count", 0) if isinstance(current_selections, dict) else len(current_selections or [])
-    if current_count >= available:
-        return jsonify({"error": MSG.FREE_SIDE_NO_CREDITS}), 400
-    result = db.table("cart_free_side_selections").insert({
-        "user_id": g.user_id, "free_side_item_id": item_id, "campus_id": campus_id,
-    })
-    return jsonify(result[0] if isinstance(result, list) else result), 201
-
+    if not is_feature_enabled('free_side_credits'):
+        return jsonify({'error': resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature='Free side credits')}), 403
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    try:
+        item_id = as_uuid(data.get('free_side_item_id'))
+        intent = as_uuid(data.get('intent_key')) or str(uuid.uuid4())
+        replace_id = as_uuid(data.get('replace_selection_id'))
+        if not item_id:
+            raise ValueError()
+    except ValueError:
+        return jsonify({'error': MSG.FREE_SIDE_SELECTION_REQUIRED}), 400
+    try:
+        result = get_db().rpc('hg_select_free_side_atomic',{'p_user_id':g.user_id,'p_campus_id':getattr(g,'campus_id',None),'p_item_id':item_id,'p_intent_key':intent,'p_replace_id':replace_id})
+        return jsonify(result), 200 if result.get('idempotent') else 201
+    except Exception as exc:
+        return _rpc_failure(exc)
 
 @free_sides_bp.route("/select/<selection_id>", methods=["DELETE"])
 @require_auth
@@ -362,18 +390,20 @@ def deselect_free_side(selection_id):
       404:
         description: Selection not found
     """
-    db = get_user_client()
+    try:
+        as_uuid(selection_id)
+    except ValueError:
+        return jsonify({'error': MSG.RESOURCE_NOT_FOUND}), 404
+    db = get_db()
     result = db.table("cart_free_side_selections").eq("id", selection_id).eq("user_id", g.user_id).delete()
     if not result:
-        return jsonify({"error": "Selection not found"}), 404
-    return jsonify({"message": "Removed"}), 200
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    return jsonify({"message": MSG.FREE_SIDE_REMOVED}), 200
 
 
 # ---------------------------------------------------------------------------
-# Shared consumption path — the ONE place a free-side credit is actually spent.
-# Called by order_service._consume_free_sides() at checkout — the fallback path
-# used when hg_consume_free_sides_atomic is not installed (wiring lives there,
-# not here — order_service.py is outside this pass).
+# Shared service-role grants used by scheduled reward jobs. Checkout consumption
+# lives only in the order-admission transaction.
 # ---------------------------------------------------------------------------
 
 def grant_free_side_credits(write_db, user_id: str, count: int, campus_id, source: str, validity_days: int = 30) -> list:
@@ -398,39 +428,3 @@ def grant_free_side_credits(write_db, user_id: str, count: int, campus_id, sourc
         })
         granted.append(row[0] if isinstance(row, list) and row else row)
     return granted
-
-
-def consume_free_side_selections(write_db, user_id: str, campus_id, order_id: str) -> list:
-    """Mirrors the existing OCC credit-decrement pattern already proven in this
-    domain (spin credits, the old redeem_free_side). Returns inserted order_items rows.
-    Checks the free_side_credits feature flag itself (rather than relying on the caller
-    to check it) since this is the one place a credit is actually spent. Prefer the
-    atomic path: order_service.create_order() calls hg_consume_free_sides_atomic and
-    only falls back to this function when that RPC is not installed."""
-    from app.services.feature_flags import is_feature_enabled
-    if not is_feature_enabled("free_side_credits"):
-        return []
-    selections = write_db.table("cart_free_side_selections").select("id,free_side_item_id").eq("user_id", user_id).execute() or []
-    inserted = []
-    for sel in selections:
-        credits = _active_credits(write_db, user_id)
-        consumed = False
-        for credit_row in credits:
-            res = (
-                write_db.table("free_side_credits")
-                .eq("id", credit_row["id"]).eq("credits_remaining", credit_row["credits_remaining"])
-                .update({"credits_remaining": credit_row["credits_remaining"] - 1, "used_at": datetime.now(timezone.utc).isoformat()})
-            )
-            if res:
-                consumed = True
-                break
-        if not consumed:
-            continue  # ran out of credits mid-checkout; leave this selection unconsumed
-        item = write_db.table("free_side_items").select("name").eq("id", sel["free_side_item_id"]).single().execute()
-        row = write_db.table("order_items").insert({
-            "order_id": order_id, "name_snapshot": item.get("name", "Free side") if item else "Free side",
-            "quantity": 1, "price_snapshot": 0, "line_total": 0, "is_addon": False,
-        })
-        inserted.append(row[0] if isinstance(row, list) else row)
-        write_db.table("cart_free_side_selections").eq("id", sel["id"]).delete()
-    return inserted

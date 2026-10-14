@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { msg } from '@/lib/messages';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldAlert, LogOut } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import BrandLogo from '@/components/BrandLogo';
@@ -80,7 +79,12 @@ const TITLES = {
 export default function Admin() {
   const { user, isLoading } = useHolyGrill();
   const navigate = useNavigate();
-  const [active, setActive] = useState('dashboard');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section') || 'dashboard';
+  const active = Object.prototype.hasOwnProperty.call(TITLES, requestedSection) ? requestedSection : 'dashboard';
+  const setActive = (section: string) => {
+    if (Object.prototype.hasOwnProperty.call(TITLES, section)) setSearchParams({ section });
+  };
   // Campus scope. The header selector writes hg_admin_campus_id, which
   // apiClient sends as X-Campus-ID on the *next* request — but every admin
   // section loads once on mount, so without a remount the tables kept showing
