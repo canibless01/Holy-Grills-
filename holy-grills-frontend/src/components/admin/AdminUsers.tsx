@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -65,9 +65,16 @@ export default function AdminUsers() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const latestLoad = useRef(0);
+  const [roleChange, setRoleChange] = useState(null);
+  const [roleCampuses, setRoleCampuses] = useState([]);
+  const [roleCampusId, setRoleCampusId] = useState('');
 
   const load = async () => {
+    const intent = ++latestLoad.current;
     setLoading(true);
+    setLoadError(false);
     try {
       const res = await liveApi.admin.getUsers({
         q: search || undefined,
@@ -75,19 +82,20 @@ export default function AdminUsers() {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       });
+      if (intent !== latestLoad.current) return;
       setUsers(res);
       setHasMore(res.length === PAGE_SIZE);
     } catch (e) {
+      if (intent !== latestLoad.current) return;
       toast({ title: msg('FE_ADMIN_USERS_COULDN_T_LOAD_USERS', "Couldn't load users"), description: e.message, variant: 'destructive' });
-      setUsers([]);
-      setHasMore(false);
+      setLoadError(true);
     }
     setLoading(false);
   };
 
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); latestLoad.current++; };
   }, [search, roleFilter, page]);
 
   const onSearchInput = (v) => { setSearch(v); if (page !== 0) setPage(0); };
@@ -95,7 +103,7 @@ export default function AdminUsers() {
 
   // PATCH /admin/users/:id/role — backend rejects self-changes and
   // non-super-admin → super_admin; mirrored client-side for instant feedback.
-  const handleRole = async (u, role) => {
+  const handleRole = async (u, role, campusId = null) => {
     if (role === u.role) return;
     if (u.id === me?.id) {
       toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_YOU_CANNOT_CHANGE_YOUR_OWN_ROLE', 'You cannot change your own role.'), variant: 'destructive' });
@@ -105,9 +113,20 @@ export default function AdminUsers() {
       toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_ONLY_A_SUPER_ADMIN_CAN_ASSIGN_THE_SUPER', 'Only a super admin can assign the super_admin role.'), variant: 'destructive' });
       return;
     }
+    if (role !== 'super_admin' && !u.campus_id && !campusId) {
+      try {
+        setRoleCampuses((await liveApi.admin.getCampuses()).filter(c => c.is_active !== false));
+        setRoleCampusId('');
+        setRoleChange({ user: u, role });
+      } catch (e) {
+        toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' });
+      }
+      return;
+    }
     setUpdating(u.id);
     try {
-      await liveApi.admin.updateRole(u.id, { role });
+      await liveApi.admin.updateRole(u.id, { role, ...(campusId ? { campus_id: campusId } : {}) });
+      setRoleChange(null);
       toast({ title: msg('FE_ADMIN_USERS_ROLE_UPDATED', 'Role updated'), description: msg('FE_ADMIN_USERS_NAME_IS_NOW_VALUE', '{name} is now {value}.', { name: u.full_name, value: role.replace('_', ' ') }) });
       load();
     } catch (e) {
@@ -142,6 +161,8 @@ export default function AdminUsers() {
     if (next.has(id)) next.delete(id); else next.add(id);
     setSelectedIds(next);
   };
+
+  if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   return (
     <div className="space-y-4">
@@ -262,11 +283,11 @@ export default function AdminUsers() {
                       <select
                         value={u.role || 'student'}
                         onChange={(e) => handleRole(u, e.target.value)}
-                        disabled={updating === u.id || isSelf}
+                        disabled={updating === u.id || isSelf || (me?.role !== 'super_admin' && ['admin', 'super_admin'].includes(u.role))}
                         title={isSelf ? 'You cannot change your own role' : 'Change role'}
                         className="flex-1 min-w-0 text-xs px-2.5 py-2 rounded-xl border border-border bg-card text-foreground font-bold focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
                       >
-                        {ROLES.filter((r) => r.value !== 'super_admin' || me?.role === 'super_admin').map((r) => (
+                        {ROLES.filter((r) => r.value === u.role || me?.role === 'super_admin' || !['admin', 'super_admin'].includes(r.value)).map((r) => (
                           <option key={r.value} value={r.value}>{r.label}</option>
                         ))}
                       </select>
@@ -298,6 +319,7 @@ export default function AdminUsers() {
       )}
 
       <AnimatePresence>
+        {roleChange && <Modal open onClose={() => setRoleChange(null)} title={msg('FE_ROLE_CAMPUS_REQUIRED', "Choose the user's campus")}><div className="space-y-3"><Field label={msg('FE_ROLE_CAMPUS', 'Campus')}><select value={roleCampusId} onChange={e => setRoleCampusId(e.target.value)} className="w-full p-3 border border-border rounded-xl"><option value="">{msg('FE_ROLE_SELECT_CAMPUS', 'Select a campus')}</option>{roleCampuses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><button disabled={!roleCampusId || updating === roleChange.user.id} onClick={() => handleRole(roleChange.user, roleChange.role, roleCampusId)} className="w-full p-3 rounded-full bg-primary text-white font-bold disabled:opacity-50">{msg('FE_ROLE_SAVE', 'Save role')}</button></div></Modal>}
         {selected && <UserDrawer key={selected.id} user={selected} onClose={() => setSelected(null)} />}
       </AnimatePresence>
 

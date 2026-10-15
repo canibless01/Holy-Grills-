@@ -29,15 +29,32 @@ export default function Register() {
   const [academicLevels, setAcademicLevels] = useState([]);
   const [campuses, setCampuses] = useState([]);
 
+  const [referencesError, setReferencesError] = useState(false);
+  const [referencesLoading, setReferencesLoading] = useState(true);
+  const [referenceRetry, setReferenceRetry] = useState(0);
   useEffect(() => {
-    (async () => {
-      try { setDepartments(await liveApi.departments.list()); } catch { /* ignore */ }
-      try { setAcademicLevels(await liveApi.academicLevels.list()); } catch { /* ignore */ }
-      try { setCampuses(await liveApi.campuses.list()); } catch { /* ignore */ }
-    })();
-  }, []);
+    let active = true;
+    setReferencesLoading(true);
+    setReferencesError(false);
+    setDepartments([]);
+    setAcademicLevels([]);
+    Promise.all([
+      liveApi.campuses.list(),
+      liveApi.departments.list(form.campus_id ? { campus_id: form.campus_id } : {}),
+      liveApi.academicLevels.list(form.campus_id ? { campus_id: form.campus_id } : {}),
+    ]).then(([campusRows, departmentRows, levelRows]) => {
+      if (!active) return;
+      setCampuses(campusRows);
+      setDepartments(departmentRows);
+      setAcademicLevels(levelRows);
+    }).catch(() => { if (active) setReferencesError(true); })
+      .finally(() => { if (active) setReferencesLoading(false); });
+    return () => { active = false; };
+  }, [form.campus_id, referenceRetry]);
 
-  const set = (k, v) => setForm({ ...form, [k]: v });
+  const set = (k, v) => setForm((old) => ({ ...old, [k]: v,
+    ...(k === 'campus_id' ? { department_id: '', academic_level_id: '' } : {}),
+  }));
 
   const strength = (() => {
     let s = 0;
@@ -65,6 +82,7 @@ export default function Register() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+    if (referencesLoading || referencesError) return;
     const v = validate();
     if (v) { setError(v); return; }
     setLoading(true);
@@ -107,6 +125,10 @@ export default function Register() {
           <p className="text-xs text-muted-foreground mt-1">Start showing up.</p>
         </div>
 
+        {referencesError && <div role="alert" className="text-sm text-destructive">
+          {msg('REFERENCE_DATA_UNAVAILABLE', 'This list is temporarily unavailable. Please try again.')}
+          <button type="button" onClick={() => setReferenceRetry((v) => v + 1)} className="ml-2 underline">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+        </div>}
         <AuthField icon={User} label="Full Name" value={form.full_name} onChange={(e) => set('full_name', e.target.value)} placeholder="Jane Doe" autoComplete="name" />
         <AuthField icon={User} label="Nickname (optional)" value={form.nickname} onChange={(e) => set('nickname', e.target.value)} placeholder="e.g. Speedy" />
 
@@ -126,13 +148,13 @@ export default function Register() {
 
         <AuthField icon={Calendar} label="When's your birthday?" type="date" value={form.date_of_birth} onChange={(e) => set('date_of_birth', e.target.value)} />
 
-        <SelectField icon={BookOpen} label="What are you studying?" value={form.department_id || ''} onChange={(e) => set('department_id', e.target.value)} placeholder="Pick your department">
+        <SelectField disabled={referencesLoading || referencesError} icon={BookOpen} label="What are you studying?" value={form.department_id || ''} onChange={(e) => set('department_id', e.target.value)} placeholder="Pick your department">
           {departments.map((d) => (
             <option key={d.id} value={d.id}>{d.name}</option>
           ))}
         </SelectField>
 
-        <SelectField icon={GraduationCap} label="Your level" value={form.academic_level_id || ''} onChange={(e) => set('academic_level_id', e.target.value)} placeholder="Pick your level">
+        <SelectField disabled={referencesLoading || referencesError} icon={GraduationCap} label="Your level" value={form.academic_level_id || ''} onChange={(e) => set('academic_level_id', e.target.value)} placeholder="Pick your level">
           {academicLevels.map((l) => (
             <option key={l.id} value={l.id}>{l.name || l.label || l.level}</option>
           ))}
@@ -205,7 +227,7 @@ export default function Register() {
           </div>
         )}
 
-        <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-60 active:scale-[0.98] transition-transform">
+        <button type="submit" disabled={loading || referencesLoading || referencesError} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-60 active:scale-[0.98] transition-transform">
           {loading ? (
             <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           ) : (
@@ -222,13 +244,14 @@ export default function Register() {
   );
 }
 
-function SelectField({ icon: Icon, label, value, onChange, placeholder, children }) {
+function SelectField({ icon: Icon, label, value, onChange, placeholder, children, disabled = false }) {
   return (
     <div>
       <label className="block text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">{label}</label>
       <div className="relative">
         <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <select
+          disabled={disabled}
           value={value}
           onChange={onChange}
           className="w-full pl-10 pr-9 py-3 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition appearance-none"

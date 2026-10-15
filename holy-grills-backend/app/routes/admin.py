@@ -2333,6 +2333,86 @@ def hp_pending_squad():
         return db_error_response(e, "hp_pending_squad")
 
 
+def _campus_setup_fields(data, creating=False):
+    import re
+    result = {}
+    for field, limit in (("name", 128), ("slug", 80)):
+        if field in data or creating:
+            result[field] = as_text(data.get(field), limit)
+    if "slug" in result and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", result["slug"]):
+        raise ValueError("Invalid slug")
+    if "is_active" in data:
+        if not isinstance(data["is_active"], bool):
+            raise ValueError("Invalid active flag")
+        result["is_active"] = data["is_active"]
+    return result
+
+
+@admin_bp.route("/campuses", methods=["POST"])
+@require_role("super_admin")
+def create_campus():
+    import uuid
+    data = get_json_object()
+    try:
+        if data is None:
+            raise ValueError
+        row = _campus_setup_fields(data, creating=True)
+        request_id = data.get("request_id") or str(uuid.uuid4())
+        if not isinstance(request_id, str) or not validate_uuid(request_id):
+            raise ValueError
+        request_id = str(uuid.UUID(request_id))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    row.update({"id": request_id, "is_active": row.get("is_active", True), "is_default": False})
+    db = get_db()  # campuses intentionally has read-only client policies; fresh super-admin middleware authorizes writes.
+    try:
+        saved = db.table("campuses").insert(row).execute()
+    except SupabaseError as exc:
+        if str((exc.details or {}).get("code")) == "23505":
+            existing = db.table("campuses").select("*").eq("id", request_id).single().execute()
+            if existing and all(existing.get(k) == v for k, v in row.items()):
+                return jsonify(existing), 200
+            return jsonify({"error": MSG.CAMPUS_WRITE_CONFLICT}), 409
+        return db_error_response(exc, "create_campus")
+    campus = saved[0] if isinstance(saved, list) else saved
+    _audit(g.user_id, "campuses", request_id, "create_campus", row, target_campus_id=request_id)
+    return jsonify(campus), 201
+
+
+@admin_bp.route("/campuses/<campus_id>", methods=["PATCH"])
+@require_role("super_admin")
+def update_campus(campus_id):
+    if not validate_uuid(campus_id):
+        return jsonify({"error": MSG.CAMPUS_NOT_FOUND}), 404
+    data = get_json_object()
+    try:
+        if data is None:
+            raise ValueError
+        patch = _campus_setup_fields(data)
+        if not patch:
+            raise ValueError
+        expected_updated_at = as_instant(data.get("expected_updated_at"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    db = get_db()
+    existing = db.table("campuses").select("*").eq("id", campus_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.CAMPUS_NOT_FOUND}), 404
+    if existing.get("is_default") and patch.get("is_active") is False:
+        return jsonify({"error": MSG.CAMPUS_DEFAULT_ACTIVE_REQUIRED}), 409
+    try:
+        patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+        saved = db.table("campuses").eq("id", campus_id).eq("updated_at", expected_updated_at).update(patch)
+    except SupabaseError as exc:
+        if str((exc.details or {}).get("code")) == "23505":
+            return jsonify({"error": MSG.CAMPUS_WRITE_CONFLICT}), 409
+        return db_error_response(exc, "update_campus")
+    if not saved:
+        return jsonify({"error": MSG.CAMPUS_EDIT_CONFLICT}), 409
+    _audit(g.user_id, "campuses", campus_id, "update_campus", patch, before_data=existing, target_campus_id=campus_id)
+    return jsonify(saved[0] if isinstance(saved, list) else saved), 200
+
+
 @admin_bp.route("/campuses", methods=["GET"])
 @require_role("admin")
 def list_campuses():

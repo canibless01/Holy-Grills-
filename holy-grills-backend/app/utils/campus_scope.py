@@ -38,9 +38,11 @@ def prefer_campus_rows(rows, key):
 
 
 def public_campus(requested):
-    """Guests choose a campus; users default to their own; super_admin is scoped only by the request."""
+    """Guests choose; signed non-super actors remain bound to their profile campus."""
     if getattr(g, "user_role", None) == "super_admin":
         return requested
+    if getattr(g, "user_id", None):
+        return getattr(g, "campus_id", None)
     return requested or getattr(g, "campus_id", None)
 
 

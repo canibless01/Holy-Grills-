@@ -97,8 +97,8 @@ export default function EventDetail() {
     setScanning(true);
     try {
       const result = unwrap(await liveApi.events.checkin(id, { qr_token: qrToken }));
-      const hpAdded = result?.hp_added_to_pending ?? result?.hp_earned ?? result?.pending_hp ?? result?.hp_awarded ?? 0;
-      setCheckinResult({ ...result, hp_added_to_pending: hpAdded });
+      const hpAdded = result?.hp_added_to_active ?? result?.hp_added_to_pending ?? result?.hp_earned ?? result?.pending_hp ?? result?.hp_awarded ?? 0;
+      setCheckinResult({ ...result, hp_added_to_active: hpAdded });
       await refreshHp();
       setEvent({ ...unwrap(await liveApi.events.get(id)), checked_in: true });
     } catch (e) {
@@ -216,7 +216,7 @@ export default function EventDetail() {
           <h3 className="font-heading font-bold text-lg text-success">Check-in Successful!</h3>
           <div className="flex items-center justify-center gap-1 mt-2">
             <Flame className="w-5 h-5 text-primary" />
-            <span className="font-bold text-primary text-sm">+{checkinResult.hp_added_to_pending} HP added to pending pool</span>
+            <span className="font-bold text-primary text-sm">{msg('FE_EVENT_ACTIVE_HP', '+{amount} HP added to your active balance', { amount: checkinResult.hp_added_to_active })}</span>
           </div>
           <p className="text-xs text-success mt-1">HP unlocks once your next order is delivered</p>
         </div>

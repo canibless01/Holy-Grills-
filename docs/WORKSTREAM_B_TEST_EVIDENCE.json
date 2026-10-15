@@ -999,5 +999,177 @@
         "rating": "5"
       }
     ]
+  },
+  "release_20261015": {
+    "checks": {
+      "backend_tests": 260,
+      "typecheck": "pass",
+      "lint": "pass",
+      "production_build": "pass",
+      "built_site_smoke": "pass",
+      "recovery_parser_cases": 6
+    },
+    "live_migrations_this_pass": [],
+    "limitations": [
+      "No real provider payment/email/push receipt proof",
+      "No actual scheduler cadence verification",
+      "Event admission/ledger/counter atomic snapshot contract remains open",
+      "Marketplace replacement/refund races remain open",
+      "Backend production health reports invalid Redis URL scheme",
+      "Frontend production smoke blocked by environment host policy"
+    ],
+    "event-reward-recovery-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/events",
+        "status": 201
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/qr",
+        "status": 200
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/register",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/checkin",
+        "status": 500
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/checkin",
+        "status": 200
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/checkin",
+        "status": 400
+      }
+    ],
+    "blast-recovery-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts",
+        "status": 500
+      },
+      {
+        "actor": "foreign_admin",
+        "method": "POST",
+        "path": "/notifications/blasts/27f3acc6-8739-4247-b15b-dc90aaaf695f/retry",
+        "status": 404
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/27f3acc6-8739-4247-b15b-dc90aaaf695f/retry",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/27f3acc6-8739-4247-b15b-dc90aaaf695f/retry",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/d3ad6fa7-c6d0-47bd-91e4-d0f873c70e9c/retry",
+        "status": 409
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/d3ad6fa7-c6d0-47bd-91e4-d0f873c70e9c/retry",
+        "status": 200
+      }
+    ],
+    "campus-concurrency-evidence": {
+      "checks": [
+        {
+          "actor": "super_admin",
+          "method": "PATCH",
+          "path": "/admin/campuses/4e78a108-087c-450a-b044-c8a010c2c413",
+          "status": 200
+        },
+        {
+          "actor": "super_admin",
+          "method": "PATCH",
+          "path": "/admin/campuses/4e78a108-087c-450a-b044-c8a010c2c413",
+          "status": 409
+        }
+      ],
+      "staleWriteRejected": true,
+      "persistedValuesUnchanged": true
+    },
+    "profile-photo-browser-evidence": {
+      "kind": "real Cloudinary upload and browser decode",
+      "profileUploadSaveReload": true,
+      "decoded": true,
+      "clearSaveReload": true,
+      "public_id": "profile_photos/b6180f05-9fb4-49bb-b2e0-98080d9614bd/xd6ixcxtrt1p45ulot24"
+    },
+    "user-role-browser-evidence": {
+      "kind": "real admin UI/API/database/reload",
+      "ownedPromotion": true,
+      "demotionRequiresCampus": true,
+      "demotionRetainsCampusOnReload": true
+    },
+    "identity-client-evidence": {
+      "kind": "intercepted client verification; no Auth/provider or persistence claim",
+      "recoveryFragment": true,
+      "urlScrubbed": true,
+      "truthfulRevokeFailure": true,
+      "expiredLink": true,
+      "campusReferencesReload": true,
+      "staleSelectionCleared": true,
+      "readRetry": true
+    },
+    "catering-export-browser-evidence": {
+      "kind": "native UI + real report API + browser download; read outage intercepted",
+      "realDownloadedCsv": true,
+      "ownedRecipientPresent": true,
+      "readErrorRetry": true
+    },
+    "platform-cleanup-evidence": {
+      "status": "verified",
+      "tables": {
+        "admin_audit_logs": 5,
+        "catering_requests": 2,
+        "event_checkins": 1,
+        "event_door_tokens": 1,
+        "monthly_hp_tracker": 1,
+        "notification_blasts": 6,
+        "notification_log": 9,
+        "notification_preferences": 1,
+        "notifications": 9,
+        "referral_codes": 8,
+        "wallets": 8,
+        "event_tickets": 1,
+        "hp_transactions": 1,
+        "events": 1,
+        "profiles": 8,
+        "campuses": 3
+      },
+      "auth_accounts": 8,
+      "settings_restored": "No global/production settings changed; exact owned campus setting removed.",
+      "sessions": "Owned actors deactivated, logout requested before deletion; fresh-profile authorization blocks residual JWTs."
+    },
+    "cloudinary-cleanup-evidence": [
+      {
+        "public_id": "profile_photos/b6180f05-9fb4-49bb-b2e0-98080d9614bd/xd6ixcxtrt1p45ulot24",
+        "provider_result": "ok"
+      }
+    ]
   }
 }

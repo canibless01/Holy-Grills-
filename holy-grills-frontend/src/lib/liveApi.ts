@@ -638,6 +638,8 @@ const analytics = {
 const admin = {
   // --- Campuses (Domain 0 — super-admin cross-campus management) ---
   async getCampuses() { return unwrap(await apiClient.get('/admin/campuses'), 'campuses'); },
+  async createCampus(body) { return apiClient.post('/admin/campuses', body); },
+  async updateCampus(id, body) { return apiClient.patch(`/admin/campuses/${id}`, body); },
 
   // --- Archived menu items ---
   // F5 GAP (reported): GET /items/archived has no backend route — menu.py filters
@@ -1339,10 +1341,10 @@ const admin = {
 // Public student endpoints (departments.py / academic_levels.py) — NOT the
 // /admin/* versions. Used by Profile to let students pick their department + level.
 const departments = {
-  async list() { return unwrap(await apiClient.get('/departments'), 'departments'); },
+  async list(params = {}) { return unwrap(await apiClient.get('/departments', params), 'departments'); },
 };
 const academicLevels = {
-  async list() { return unwrap(await apiClient.get('/academic-levels'), 'levels', 'academic_levels'); },
+  async list(params = {}) { return unwrap(await apiClient.get('/academic-levels', params), 'levels', 'academic_levels'); },
   // Single-level detail — GET /academic-levels/:level_id (public).
   async get(id) { return apiClient.get(`/academic-levels/${id}`); },
 };

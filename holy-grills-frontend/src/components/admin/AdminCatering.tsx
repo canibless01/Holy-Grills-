@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { UtensilsCrossed, RefreshCw, Search, Calendar, Users, Phone, Mail, DollarSign, StickyNote, X } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { safeText } from '@/lib/valueText';
@@ -250,17 +250,26 @@ function EventCateringTab({ events }) {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [registrants, setRegistrants] = useState([]);
   const [loadingRegs, setLoadingRegs] = useState(false);
+  const [registrantsError, setRegistrantsError] = useState(false);
+  const registrantLoad = useRef(0);
   const [emailing, setEmailing] = useState(false);
   const [hostEmail, setHostEmail] = useState('');
 
   const loadRegistrants = async (eventId) => {
-    setSelectedEvent(eventId);
+    const attempt = ++registrantLoad.current;
+    setSelectedEvent(eventId || null);
+    setRegistrants([]);
+    setRegistrantsError(false);
+    if (!eventId) { setLoadingRegs(false); return; }
     setLoadingRegs(true);
     try {
       const regs = await liveApi.admin.getEventRegistrantList(eventId);
-      setRegistrants(regs);
-    } catch { setRegistrants([]); }
-    setLoadingRegs(false);
+      if (attempt === registrantLoad.current) setRegistrants(regs);
+    } catch {
+      if (attempt === registrantLoad.current) setRegistrantsError(true);
+    } finally {
+      if (attempt === registrantLoad.current) setLoadingRegs(false);
+    }
   };
 
   // /events/<id>/registrants returns flat rows: { full_name, email, phone,
@@ -325,6 +334,11 @@ function EventCateringTab({ events }) {
 
           {loadingRegs ? (
             <LoadingSpinner label="Loading registrants..." />
+          ) : registrantsError ? (
+            <div role="alert" className="text-sm text-destructive">
+              {msg('REFERENCE_DATA_UNAVAILABLE', 'This list is temporarily unavailable. Please try again.')}
+              <button type="button" onClick={() => loadRegistrants(selectedEvent)} className="ml-2 underline">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+            </div>
           ) : registrants.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground">
               <Users className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />

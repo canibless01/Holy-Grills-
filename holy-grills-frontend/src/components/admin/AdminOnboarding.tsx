@@ -15,24 +15,28 @@ export default function AdminOnboarding() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [s, g] = await Promise.all([mockApi.admin.getGiftSettings(), mockApi.admin.getFirstOrderGifts()]);
       setSettings(s || {});
       setGifts(Array.isArray(g) ? g : []);
-    } catch { setSettings({}); setGifts([]); }
+    } catch { setLoadError(true); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
-  const saveSetting = async (key, value) => {
+  const saveSettings = async (entries) => {
     setSaving(true);
     try {
-      await mockApi.admin.updateGiftSetting(key, { value: String(value) });
-      setSettings((cur) => ({ ...cur, [key]: value }));
-      toast({ title: msg('FE_ADMIN_ONBOARDING_GIFT_SETTING_SAVED', 'Gift setting saved'), description: key });
+      for (const [key, value] of entries) {
+        await mockApi.admin.updateGiftSetting(key, { value: String(value) });
+        setSettings((cur) => ({ ...cur, [key]: value }));
+      }
+      toast({ title: msg('FE_ADMIN_ONBOARDING_GIFT_SETTING_SAVED', 'Gift setting saved') });
     } catch (e) { toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSaving(false);
   };
@@ -44,6 +48,7 @@ export default function AdminOnboarding() {
     setBusy(null);
   };
 
+  if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
   if (loading || !settings) return <LoadingSpinner label="Loading gift settings..." />;
 
   const isTrue = (v) => v === true || String(v) === 'true';
@@ -59,19 +64,19 @@ export default function AdminOnboarding() {
         {isSuperAdmin ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <Toggle checked={enabled} onChange={(v) => setSettings({ ...settings, first_order_gift_enabled: v })} />
+              <Toggle label={msg('FE_ONBOARDING_ENABLE_GIFT', 'Enable first-order gift')} disabled={saving} checked={enabled} onChange={(v) => setSettings({ ...settings, first_order_gift_enabled: v })} />
               <span className="text-sm text-foreground font-semibold">Enable first-order gift</span>
-              <button onClick={() => saveSetting('first_order_gift_enabled', enabled ? 'false' : 'true')} disabled={saving} className="ml-auto px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50"><Save className="w-3.5 h-3.5 inline mr-1" />Save toggle</button>
+              <button onClick={() => saveSettings([['first_order_gift_enabled', String(enabled)]])} disabled={saving} className="ml-auto px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50"><Save className="w-3.5 h-3.5 inline mr-1" />Save toggle</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Launch window end date" hint="Gift only awarded on or before this date">
-                <input type="date" value={endDate ? String(endDate).slice(0, 10) : ''} onChange={(e) => setSettings({ ...settings, launch_window_end_date: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" />
+                <input type="date" disabled={saving} value={endDate ? String(endDate).slice(0, 10) : ''} onChange={(e) => setSettings({ ...settings, launch_window_end_date: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" />
               </Field>
               <Field label="Gift item name" hint="What shows on the receipt as the gift">
-                <TextInput value={itemName} onChange={(e) => setSettings({ ...settings, first_order_gift_item_name: e.target.value })} placeholder="e.g. Hot Dog" />
+                <TextInput disabled={saving} value={itemName} onChange={(e) => setSettings({ ...settings, first_order_gift_item_name: e.target.value })} placeholder="e.g. Hot Dog" />
               </Field>
             </div>
-            <button onClick={() => { saveSetting('launch_window_end_date', settings.launch_window_end_date || ''); saveSetting('first_order_gift_item_name', settings.first_order_gift_item_name || ''); }} disabled={saving} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> Save Gift Settings</button>
+            <button onClick={() => saveSettings([['launch_window_end_date', settings.launch_window_end_date || ''], ['first_order_gift_item_name', settings.first_order_gift_item_name || '']])} disabled={saving} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> Save Gift Settings</button>
           </div>
         ) : (
           // Gift settings are system settings — writes are super-admin-only
