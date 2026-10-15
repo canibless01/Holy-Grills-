@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Bike, Check, Clock, Package } from 'lucide-react';
 import { useRiderData } from '@/hooks/useRiderData';
 import { formatNaira, formatDateTime, timeAgo, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import RiderHeader from '@/components/rider/RiderHeader';
 import RiderOrderCard from '@/components/rider/RiderOrderCard';
 
@@ -31,7 +31,7 @@ export default function Rider() {
   } = useRiderData();
 
   if (!authed) return <Navigate to="/login" state={{ from: '/rider' }} replace />;
-  if (loading) return <LoadingSpinner label="Loading rider dashboard…" fullScreen />;
+  if (loading) return <StaffPanelSkeleton variant="rider" />;
 
   const orderCount = batch?.orders?.length || 0;
   const periodLabel = period === 'all' ? 'All-Time' : period === 'today' ? "Today's" : `This ${period === 'week' ? 'Week' : 'Month'}'s`;
@@ -43,11 +43,11 @@ export default function Rider() {
       <div className="max-w-2xl w-full mx-auto px-4 sm:px-6 py-4 space-y-4 flex-1 animate-fade-in">
         {/* Error state */}
         {error && (
-          <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center justify-between gap-3">
-            <span className="text-sm text-red-600 font-medium">{error}</span>
+          <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+            <span className="text-sm text-destructive font-medium">{error}</span>
             <button
               onClick={() => window.location.reload()}
-              className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold"
+              className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold"
             >
               Retry
             </button>
@@ -91,7 +91,7 @@ export default function Rider() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}
+              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
             >
               {t.label}
             </button>
@@ -101,7 +101,7 @@ export default function Rider() {
         {/* Batch */}
         {tab === 'batch' && batch && (
           <div className="space-y-3">
-            <div className="rounded-2xl bg-white border border-border p-3.5 shadow-card">
+            <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Batch #{(batch.batch.id || '').slice(0, 8).toUpperCase() || '—'}</div>
@@ -154,14 +154,14 @@ export default function Rider() {
                 <button
                   key={p.id}
                   onClick={() => changePeriod(p.id)}
-                  className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${period === p.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}
+                  className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${period === p.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
                 >
                   {p.label}
                 </button>
               ))}
             </div>
             {(earnings?.unpriced_batches > 0) && (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-700 font-medium">
+              <div className="rounded-xl tone-warn border border-warn/40 px-3 py-2 text-[11px] text-warn font-medium">
                 {earnings.unpriced_batches} batch(es) awaiting pay-rate set by admin.
               </div>
             )}
@@ -169,9 +169,9 @@ export default function Rider() {
               {(earnings?.batches || []).map((b) => {
                 const paid = !!b.rider_paid_at;
                 return (
-                  <div key={b.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-border shadow-card">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${paid ? 'bg-emerald-100' : 'bg-accent/20'}`}>
-                      <Check className={`w-5 h-5 ${paid ? 'text-emerald-600' : 'text-accent-foreground'}`} />
+                  <div key={b.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border shadow-card">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${paid ? 'tone-success' : 'bg-accent/20'}`}>
+                      <Check className={`w-5 h-5 ${paid ? 'text-success' : 'text-accent-foreground'}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm text-foreground truncate">{b.zone || `Batch #${(b.id || '').slice(0, 8)}`}</div>
@@ -179,7 +179,7 @@ export default function Rider() {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="font-heading font-bold text-sm text-foreground tabular-nums">{formatNaira(b.rider_pay_total ?? b.batch_pay ?? 0)}</div>
-                      <div className={`text-[9px] font-bold uppercase ${paid ? 'text-emerald-600' : 'text-amber-600'}`}>{paid ? 'Paid' : 'Unpaid'}</div>
+                      <div className={`text-[9px] font-bold uppercase ${paid ? 'text-success' : 'text-warn'}`}>{paid ? 'Paid' : 'Unpaid'}</div>
                     </div>
                   </div>
                 );
@@ -200,9 +200,9 @@ export default function Rider() {
             {(history || []).map((d) => {
               const done = d.status === 'completed' || d.status === 'delivered';
               return (
-                <div key={d.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-border shadow-card">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${done ? 'bg-emerald-100' : 'bg-amber-100'}`}>
-                    {done ? <Check className="w-5 h-5 text-emerald-600" /> : <Clock className="w-5 h-5 text-amber-500" />}
+                <div key={d.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border shadow-card">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${done ? 'tone-success' : 'tone-warn'}`}>
+                    {done ? <Check className="w-5 h-5 text-success" /> : <Clock className="w-5 h-5 text-warn" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -236,7 +236,7 @@ export default function Rider() {
 
 function StatCard({ value, label, color }) {
   return (
-    <div className="rounded-2xl bg-white border border-border p-2.5 text-center shadow-card">
+    <div className="rounded-2xl bg-card border border-border p-2.5 text-center shadow-card">
       <div className={`font-heading font-extrabold text-base tabular-nums ${color}`}>{value}</div>
       <div className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wide mt-0.5">{label}</div>
     </div>

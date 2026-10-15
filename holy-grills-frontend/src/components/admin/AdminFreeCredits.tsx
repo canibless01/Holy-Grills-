@@ -1,9 +1,10 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { localStore } from '@/lib/storage';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Pencil, Trash2, Gift, Clock, Search, Zap } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Field, TextInput, Pill, SectionHeader, Modal, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
@@ -81,7 +82,7 @@ export default function AdminFreeCredits() {
   };
 
   const removeItem = async (item) => {
-    if (!confirm(msg('FE_FREE_SIDE_DEACTIVATE_CONFIRM', 'Deactivate {name}? Past orders keep their saved side.', { name: item.name }))) return;
+    if (!(await confirmAction({ title: msg('FE_FREE_SIDE_DEACTIVATE_CONFIRM', 'Deactivate {name}? Past orders keep their saved side.', { name: item.name }), destructive: true }))) return;
     setBusy(item.id);
     try {
       await mockApi.admin.deleteFreeSideItem(item.id);
@@ -157,7 +158,7 @@ export default function AdminFreeCredits() {
     setGranting(false);
   };
 
-  if (loading) return <LoadingSpinner label={msg('FE_ADMIN_FREE_SIDE_LOADING', 'Loading free credits...')} />;
+  if (loading) return <StaffPanelSkeleton />;
 
   if (loadError) return <Card><p role="alert" className="text-sm text-destructive">{loadError}</p><button onClick={load}>{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></Card>;
 
@@ -188,7 +189,7 @@ export default function AdminFreeCredits() {
                   <>
                     <Toggle checked={it.is_active !== false} onChange={() => toggleItem(it)} disabled={busy === it.id} />
                     <button aria-label={msg('FE_ADMIN_FREE_SIDE_EDIT', 'Edit {name}', { name: it.name })} onClick={() => setEditItem({ id: it.id, updated_at: it.updated_at, name: it.name, image_url: it.image_url || '', is_active: it.is_active !== false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-                    <button aria-label={msg('FE_ADMIN_FREE_SIDE_REMOVE', 'Deactivate {name}', { name: it.name })} onClick={() => removeItem(it)} disabled={busy === it.id} className="p-2 rounded-lg hover:bg-red-50 disabled:opacity-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                    <button aria-label={msg('FE_ADMIN_FREE_SIDE_REMOVE', 'Deactivate {name}', { name: it.name })} onClick={() => removeItem(it)} disabled={busy === it.id} className="p-2 rounded-lg hover:tone-error disabled:opacity-50"><Trash2 className="w-4 h-4 text-destructive" /></button>
                   </>
                 )}
               </Card>

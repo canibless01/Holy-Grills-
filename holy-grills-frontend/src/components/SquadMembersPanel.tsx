@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Users, Send, UserMinus, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -52,7 +53,7 @@ export default function SquadMembersPanel({ orderId, initialMembers, delivered }
   };
 
   const remove = async (m: SquadMemberRow) => {
-    if (!confirm(`Remove ${m.display_name || m.email} from this order? The squad roster stays unchanged.`)) return;
+    if (!(await confirmAction({ title: `Remove ${m.display_name || m.email} from this order? The squad roster stays unchanged.`, destructive: true }))) return;
     setBusyId(m.id);
     try {
       await liveApi.orders.removeSquadMember(orderId, m.id);

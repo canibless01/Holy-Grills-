@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Flame, TrendingUp, TrendingDown, Sparkles, Play } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Pill, Toggle, SectionHeader } from './AdminShared';
 
 export default function AdminHp() {
@@ -72,7 +72,7 @@ export default function AdminHp() {
     catch (e) { setExpireMsg({ error: e.message }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading HP analytics..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError || !hp) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -85,9 +85,9 @@ export default function AdminHp() {
   const num = (v) => (typeof v === 'number' ? v : Number(v) || 0);
   const kpis = [
     { label: 'HP in Circulation', value: num(hp.hp_in_circulation).toLocaleString(), icon: Flame, color: 'text-primary' },
-    { label: 'Pending HP', value: num(hp.hp_pending).toLocaleString(), icon: TrendingUp, color: 'text-amber-600' },
-    { label: 'Earned (Active)', value: num(hp.hp_earned_active).toLocaleString(), icon: Sparkles, color: 'text-green-600' },
-    { label: 'Spent', value: num(hp.hp_spent).toLocaleString(), icon: TrendingDown, color: 'text-blue-600' },
+    { label: 'Pending HP', value: num(hp.hp_pending).toLocaleString(), icon: TrendingUp, color: 'text-warn' },
+    { label: 'Earned (Active)', value: num(hp.hp_earned_active).toLocaleString(), icon: Sparkles, color: 'text-success' },
+    { label: 'Spent', value: num(hp.hp_spent).toLocaleString(), icon: TrendingDown, color: 'text-info' },
   ];
 
   return (
@@ -136,7 +136,7 @@ export default function AdminHp() {
             </button>
             {result && (
               <div className="rounded-xl bg-muted border border-border p-3 text-xs space-y-1">
-                {result.error ? <span className="text-red-600">✕ {result.error}</span> : (
+                {result.error ? <span className="text-destructive">✕ {result.error}</span> : (
                   <>
                     <div className="font-bold text-foreground">{result.dry_run ? 'Dry-run preview' : 'Grant complete'}</div>
                     {result.dry_run ? (
@@ -144,8 +144,8 @@ export default function AdminHp() {
                     ) : (
                       <div className="text-muted-foreground">{result.awarded_count} awarded × {result.amount_per_user} HP = <span className="font-bold text-primary">{(result.total_hp_awarded ?? 0).toLocaleString()} HP</span></div>
                     )}
-                    {!!result.already_granted_count && result.already_granted_count > 0 && <div className="text-amber-600">{result.already_granted_count} already granted (skipped)</div>}
-                    {!!result.failed_count && result.failed_count > 0 && <div className="text-red-600">{result.failed_count} failed</div>}
+                    {!!result.already_granted_count && result.already_granted_count > 0 && <div className="text-warn">{result.already_granted_count} already granted (skipped)</div>}
+                    {!!result.failed_count && result.failed_count > 0 && <div className="text-destructive">{result.failed_count} failed</div>}
                     {Array.isArray(result.skipped_user_ids) && result.skipped_user_ids.length > 0 && <div className="text-muted-foreground">Skipped: {result.skipped_user_ids.length} user(s) not found</div>}
                     {result.grant_id && <div className="text-[10px] text-muted-foreground font-mono">grant_id: {result.grant_id}</div>}
                   </>
@@ -171,7 +171,7 @@ export default function AdminHp() {
             </div>
             <button onClick={runGrant} disabled={!grantUserId} className="w-full py-2.5 rounded-full bg-foreground text-white text-sm font-bold disabled:opacity-50">Grant to user</button>
             {grantMsg && (
-              <div className={`rounded-xl p-3 text-xs ${grantMsg.error ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+              <div className={`rounded-xl p-3 text-xs ${grantMsg.error ? 'tone-error border border-destructive/30 text-destructive' : 'tone-success border border-success/30 text-success'}`}>
                 {grantMsg.error ? `✕ ${grantMsg.error}` : <>✓ {grantMsg.amount} HP granted. New balance: <span className="font-bold">{grantMsg.new_balance?.toLocaleString()}</span> HP</>}
               </div>
             )}
@@ -190,9 +190,9 @@ export default function AdminHp() {
             </select>
           </Field>
           <Field label="Amount (HP) — leave blank to expire all"><TextInput type="number" value={expireAmount} onChange={(e) => setExpireAmount(e.target.value)} /></Field>
-          <button onClick={runExpire} disabled={!expireUserId} className="w-full py-2.5 rounded-full bg-red-600 text-white text-sm font-bold disabled:opacity-50">Expire HP</button>
+          <button onClick={runExpire} disabled={!expireUserId} className="w-full py-2.5 rounded-full bg-destructive text-white text-sm font-bold disabled:opacity-50">Expire HP</button>
           {expireMsg && (
-            <div className={`rounded-xl p-3 text-xs ${expireMsg.error ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+            <div className={`rounded-xl p-3 text-xs ${expireMsg.error ? 'tone-error border border-destructive/30 text-destructive' : 'tone-success border border-success/30 text-success'}`}>
               {expireMsg.error ? `✕ ${expireMsg.error}` : `✓ HP expired. ${expireMsg.expired_amount ?? expireMsg.amount ?? 0} HP removed.`}
             </div>
           )}

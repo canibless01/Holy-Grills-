@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Bike, Power, ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { useSound } from '@/lib/SoundProvider';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
+import PanelSwitcher from '@/components/PanelSwitcher';
 
 // Sticky rider header with duty toggle (Online/Offline). The toggle captures
 // real GPS when going online (PATCH /riders/availability with location_lat/lng).
@@ -19,8 +20,8 @@ export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = 
           <div className="min-w-0">
             <h1 className="font-heading font-extrabold text-base sm:text-lg text-foreground leading-none">Rider</h1>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-500' : 'bg-muted-foreground'} relative flex`}>
-                {online && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60" />}
+              <span className={`w-2 h-2 rounded-full ${online ? 'bg-success' : 'bg-muted-foreground'} relative flex`}>
+                {online && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-60" />}
               </span>
               <span className="text-[11px] font-bold text-muted-foreground">{online ? 'On duty' : 'Off duty'}</span>
             </div>
@@ -36,6 +37,10 @@ export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = 
           >
             {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
+          {/* One-icon panel switcher: admin → back to /admin; rider
+              staff → student page (also their mobile way back, since the
+              View Site pill starts at sm). */}
+          <PanelSwitcher className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary transition-colors" />
           <Link
             to="/"
             className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"
@@ -44,7 +49,7 @@ export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = 
           </Link>
           <button
             onClick={onSignOut}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-red-50 border border-red-200 text-xs font-bold text-red-600 hover:bg-red-100 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full tone-error border border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/15 transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Sign out</span>
           </button>
@@ -53,7 +58,7 @@ export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = 
             disabled={busy}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all disabled:opacity-70 ${
               online
-                ? 'bg-emerald-500 text-white shadow-glow active:scale-95'
+                ? 'bg-success text-white shadow-glow active:scale-95'
                 : 'bg-gradient-cta text-white shadow-glow active:scale-95'
             }`}
           >

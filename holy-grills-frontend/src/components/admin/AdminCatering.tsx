@@ -4,23 +4,25 @@ import { liveApi } from '@/lib/liveApi';
 import { safeText } from '@/lib/valueText';
 import { csvCell } from '@/lib/csvCell';
 import { formatNaira, formatDate } from '@/lib/hgUtils';
+import ModalPortal from '@/components/ModalPortal';
 
 // A joined row here would render as an object and take the panel down.
 const tierText = (r) => safeText(r?.tier_name || r?.tier || r?.ticket_tier, '');
 import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
 const STATUS_FLOW = ['new', 'contacted', 'quoted', 'confirmed', 'in_progress', 'completed', 'rejected', 'cancelled'];
 
 const STATUS_TONE = {
-  new: 'bg-blue-100 text-blue-700',
-  contacted: 'bg-amber-100 text-amber-700',
+  new: 'tone-info',
+  contacted: 'tone-warn',
   quoted: 'bg-purple-100 text-purple-700',
-  confirmed: 'bg-green-100 text-green-700',
-  in_progress: 'bg-amber-100 text-amber-700',
-  completed: 'bg-emerald-100 text-emerald-700',
-  rejected: 'bg-red-100 text-red-700',
+  confirmed: 'tone-success',
+  in_progress: 'tone-warn',
+  completed: 'tone-success',
+  rejected: 'tone-error',
   cancelled: 'bg-secondary text-muted-foreground',
 };
 
@@ -112,17 +114,17 @@ export default function AdminCatering() {
     setSaving(false);
   };
 
-  if (loading) return <LoadingSpinner label="Loading catering requests..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   return (
     <div className="space-y-4">
       {/* Tabs */}
       <div className="flex gap-2">
-        <button onClick={() => setTab('requests')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === 'requests' ? 'bg-primary text-white' : 'bg-white border border-border text-foreground'}`}>
+        <button onClick={() => setTab('requests')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === 'requests' ? 'bg-primary text-white' : 'bg-card border border-border text-foreground'}`}>
           Partnership Requests
         </button>
-        <button onClick={() => setTab('event-catering')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === 'event-catering' ? 'bg-primary text-white' : 'bg-white border border-border text-foreground'}`}>
+        <button onClick={() => setTab('event-catering')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${tab === 'event-catering' ? 'bg-primary text-white' : 'bg-card border border-border text-foreground'}`}>
           Event Catering
         </button>
       </div>
@@ -131,11 +133,11 @@ export default function AdminCatering() {
         <>
           {/* Status summary chips */}
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === 'all' ? 'bg-foreground text-white' : 'bg-white border border-border text-muted-foreground'}`}>
+            <button onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === 'all' ? 'bg-foreground text-white' : 'bg-card border border-border text-muted-foreground'}`}>
               All ({requests.length})
             </button>
             {STATUS_FLOW.map((s) => statusCounts[s] > 0 && (
-              <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === s ? 'bg-foreground text-white' : 'bg-white border border-border text-muted-foreground'}`}>
+              <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === s ? 'bg-foreground text-white' : 'bg-card border border-border text-muted-foreground'}`}>
                 <span className="capitalize">{s}</span> ({statusCounts[s]})
               </button>
             ))}
@@ -158,7 +160,7 @@ export default function AdminCatering() {
           ) : (
             <div className="space-y-2">
               {filtered.map((r) => (
-                <button key={r.id} onClick={() => openDetail(r)} className="w-full text-left rounded-2xl bg-white border border-border p-4 hover:border-primary/40 hover:shadow-glow transition-all">
+                <button key={r.id} onClick={() => openDetail(r)} className="w-full text-left rounded-2xl bg-card border border-border p-4 hover:border-primary/40 hover:shadow-glow transition-all">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -190,8 +192,9 @@ export default function AdminCatering() {
 
       {/* Detail modal */}
       {detail && (
-        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setDetail(null)}>
-          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center hg-scrim p-4" onClick={() => setDetail(null)}>
+          <div className="bg-card rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">Catering Request</h3>
               <button onClick={() => setDetail(null)} className="p-2 rounded-full hover:bg-muted"><X className="w-5 h-5 text-muted-foreground" /></button>
@@ -240,6 +243,7 @@ export default function AdminCatering() {
             </button>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -347,13 +351,13 @@ function EventCateringTab({ events }) {
           ) : (
             <div className="space-y-2">
               {registrants.map((r, i) => (
-                <div key={r.id || i} className="rounded-2xl bg-white border border-border p-3">
+                <div key={r.id || i} className="rounded-2xl bg-card border border-border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-foreground">{r.full_name || r.user?.name || r.name || 'Attendee'}</span>
                         {tierText(r) && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/30 text-accent-foreground/80">{tierText(r)}</span>}
-                        {r.checked_in && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Checked in</span>}
+                        {r.checked_in && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tone-success">Checked in</span>}
                       </div>
                       <div className="text-xs text-muted-foreground">{r.email || r.user?.email || '—'}</div>
                       {r.catering_notes && <div className="text-xs text-foreground mt-1">📝 {r.catering_notes}</div>}

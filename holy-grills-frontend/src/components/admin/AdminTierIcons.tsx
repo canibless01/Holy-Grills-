@@ -1,5 +1,5 @@
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin } from './SuperAdminGate';
 import { useState, useEffect, useRef } from 'react';
@@ -81,7 +81,7 @@ export default function AdminTierIcons() {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label={msg('FE_ADMIN_TIER_ICONS_LOADING', 'Loading tier icons…')} />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (loadError) return <Card>
     <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
     <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>

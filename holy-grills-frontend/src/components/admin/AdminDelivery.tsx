@@ -1,11 +1,13 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
-import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, CheckSquare, Clock, Bike } from 'lucide-react';
+import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, Clock, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime, formatNaira, timeAgo } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import OrderingWindowsTab from './OrderingWindowsTab';
+import CreateBatchModal from './AdminCreateBatchModal';
 import AdminRiders from './AdminRiders';
 import AdminDeliveryArea from './AdminDeliveryArea';
 import { msg } from '@/lib/messages';
@@ -50,7 +52,7 @@ export default function AdminDelivery() {
   const handleNudge = async (id) => { setBusy(id); await mockApi.admin.nudgeAbandonedCart(id); await load(); setBusy(null); };
 
   const completeBatch = async (id) => { setBatchBusy(id); try { await mockApi.admin.updateDeliveryBatch(id, { status: 'completed' }); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_COMPLETED', '✅ Batch completed') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
-  const cancelBatch = async (id) => { if (!confirm('Cancel this batch? Its orders will be unassigned.')) return; setBatchBusy(id); try { await mockApi.admin.deleteDeliveryBatch(id); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CANCELLED', 'Batch cancelled') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
+  const cancelBatch = async (id) => { if (!(await confirmAction({ title: "Cancel this batch?", body: "Its orders will be unassigned.", destructive: true, confirmLabel: "Cancel" }))) return; setBatchBusy(id); try { await mockApi.admin.deleteDeliveryBatch(id); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CANCELLED', 'Batch cancelled') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
 
   const saveZone = async (type, item) => {
     if (item && item.id) {
@@ -81,7 +83,7 @@ export default function AdminDelivery() {
     catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_RESTORE_FAILED', 'Restore failed'), description: e.message, variant: 'destructive' }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading delivery..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   const tabs = [
     { id: 'windows', label: 'Windows', icon: Calendar },
@@ -98,7 +100,7 @@ export default function AdminDelivery() {
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === t.id ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
+            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === t.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
             <t.icon className="w-3.5 h-3.5" />{t.label}
           </button>
         ))}
@@ -114,7 +116,7 @@ export default function AdminDelivery() {
               <div key={w.id} className="rounded-2xl bg-card border border-border shadow-card p-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-sm text-foreground">{w.label}</span>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${w.status === 'open' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>{w.status.toUpperCase()}</span>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${w.status === 'open' ? 'tone-success' : 'tone-info'}`}>{w.status.toUpperCase()}</span>
                 </div>
                 <div className="text-xs text-muted-foreground mb-2">{formatDateTime(w.starts_at)}</div>
                 <div className="flex items-center gap-2 text-xs mb-2"><span className="text-muted-foreground">Cap {w.capacity}</span><span className="font-bold text-foreground">{w.order_count ?? w.orders_count ?? 0} orders</span></div>
@@ -124,7 +126,7 @@ export default function AdminDelivery() {
                     <Pencil className="w-3 h-3 inline mr-1" />Edit
                   </button>
                   <button onClick={() => handleWindow(w.id, w.status === 'open' ? 'close' : 'reopen')} disabled={busy === w.id}
-                    className={`flex-1 py-2 rounded-full text-xs font-bold disabled:opacity-50 ${w.status === 'open' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                    className={`flex-1 py-2 rounded-full text-xs font-bold disabled:opacity-50 ${w.status === 'open' ? 'tone-error border border-destructive/30' : 'tone-success border border-success/30'}`}>
                     {w.status === 'open' ? 'Close' : 'Reopen'}
                   </button>
                 </div>
@@ -149,13 +151,13 @@ export default function AdminDelivery() {
             <div key={b.id} className="rounded-2xl bg-card border border-border shadow-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <div><div className="font-bold text-sm text-foreground">{b.zone}</div><div className="text-xs text-muted-foreground font-mono">#{b.id.toUpperCase()}</div></div>
-                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${b.status === 'out_for_delivery' ? 'bg-blue-100 text-blue-600' : b.status === 'assigned' ? 'bg-amber-100 text-amber-600' : b.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-secondary text-muted-foreground'}`}>{b.status.replace(/_/g, ' ')}</span>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${b.status === 'out_for_delivery' ? 'tone-info' : b.status === 'assigned' ? 'tone-warn' : b.status === 'completed' ? 'tone-success' : 'bg-secondary text-muted-foreground'}`}>{b.status.replace(/_/g, ' ')}</span>
               </div>
-              <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Rider: {b.profiles?.full_name || b.rider_name || <span className="text-red-500">Unassigned</span>}</span><span className="font-bold text-foreground">{b.order_count ?? 0} orders</span></div>
+              <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Rider: {b.profiles?.full_name || b.rider_name || <span className="text-destructive">Unassigned</span>}</span><span className="font-bold text-foreground">{b.order_count ?? 0} orders</span></div>
               {b.status !== 'completed' && b.status !== 'cancelled' && (
                 <div className="flex gap-2 mt-2">
-                  <button onClick={() => completeBatch(b.id)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-green-600 text-white text-xs font-bold disabled:opacity-50">{batchBusy === b.id ? '...' : 'Mark Completed'}</button>
-                  <button onClick={() => cancelBatch(b.id)} disabled={batchBusy === b.id} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold disabled:opacity-50">Cancel</button>
+                  <button onClick={() => completeBatch(b.id)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">{batchBusy === b.id ? '...' : 'Mark Completed'}</button>
+                  <button onClick={() => cancelBatch(b.id)} disabled={batchBusy === b.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
                 </div>
               )}
             </div>
@@ -182,7 +184,7 @@ export default function AdminDelivery() {
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5"><MapPin className="w-4 h-4 text-blue-600" /> Off-Campus Gates</h3>
+              <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5"><MapPin className="w-4 h-4 text-info" /> Off-Campus Gates</h3>
               <button onClick={() => setZoneModal({ type: 'gate' })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-3 h-3" /> Add</button>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -191,13 +193,13 @@ export default function AdminDelivery() {
                 return (
                 <div key={g.id} className={`rounded-xl bg-card border p-3 shadow-card ${isActive ? 'border-border' : 'border-border opacity-75'}`}>
                   <div className="flex items-center gap-2">
-                    <MapPin className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                    <MapPin className={`w-4 h-4 shrink-0 ${isActive ? 'text-info' : 'text-muted-foreground'}`} />
                     <div className="flex-1 min-w-0"><div className="font-bold text-xs text-foreground truncate">{g.name}</div><div className="text-[11px] text-muted-foreground">Base fee {formatNaira(g.base_fee)}</div></div>
                     {isActive ? <Pill tone="green">Active</Pill> : <Pill tone="red">Deactivated</Pill>}
                     <button onClick={() => setZoneModal({ type: 'gate', item: g })} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                   </div>
                   {!isActive && (
-                    <button onClick={() => restoreGate(g.id)} className="mt-2 w-full px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-[11px] font-bold">Restore gate</button>
+                    <button onClick={() => restoreGate(g.id)} className="mt-2 w-full px-3 py-1.5 rounded-full tone-success border border-success/30 text-[11px] font-bold">Restore gate</button>
                   )}
                 </div>
                 );
@@ -212,12 +214,12 @@ export default function AdminDelivery() {
 
       {tab === 'carts' && (
         <div className="space-y-2">
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700"><ShoppingCart className="w-4 h-4 inline mr-1" /> Carts inactive for 60+ minutes. Send a recovery nudge to bring them back.</div>
+          <div className="rounded-xl tone-warn border border-warn/40 p-3 text-xs text-warn"><ShoppingCart className="w-4 h-4 inline mr-1" /> Carts inactive for 60+ minutes. Send a recovery nudge to bring them back.</div>
           {carts.map((c) => (
             <div key={c.id} className="rounded-2xl bg-card border border-border shadow-card p-3 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${c.nudged ? 'bg-amber-50' : 'bg-primary/10'}`}><ShoppingCart className={`w-5 h-5 ${c.nudged ? 'text-amber-500' : 'text-primary'}`} /></div>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${c.nudged ? 'tone-warn' : 'bg-primary/10'}`}><ShoppingCart className={`w-5 h-5 ${c.nudged ? 'text-warn' : 'text-primary'}`} /></div>
               <div className="flex-1"><div className="font-bold text-sm text-foreground">{c.profiles?.full_name || c.user_name || 'User'}</div><div className="text-xs text-muted-foreground">{c.item_count ?? (Array.isArray(c.items) ? c.items.length : 0)} items · {formatNaira(c.total_value ?? c.subtotal ?? c.total ?? 0)} · last activity {timeAgo(c.last_active_at || c.last_activity || c.updated_at)}</div></div>
-              {(c.recovery_attempts ?? 0) > 0 ? <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Nudged</span>
+              {(c.recovery_attempts ?? 0) > 0 ? <span className="text-[10px] font-bold tone-warn px-2 py-1 rounded-full">Nudged</span>
                 : <button onClick={() => handleNudge(c.id)} disabled={busy === c.id} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50"><Send className="w-3 h-3" />Nudge</button>}
             </div>
           ))}
@@ -239,7 +241,7 @@ function CreateWindowModal({
 }: {
   // TODO(ts): the delivery-window row is untyped; the modal mirrors it into
   // form fields with `existing?.x || ''` fallbacks.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   window?: Record<string, any> | null;
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;
@@ -290,69 +292,6 @@ function CreateWindowModal({
   );
 }
 
-function CreateBatchModal({ windows, onClose, onSaved }) {
-  const [windowId, setWindowId] = useState(windows[0]?.id || '');
-  const [riderId, setRiderId] = useState('');
-  const [zone, setZone] = useState('');
-  const [riders, setRiders] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [selected, setSelected] = useState(new Set());
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try { const r = await mockApi.admin.getUsers({ role: 'rider' }); setRiders(r || []); } catch { setRiders([]); }
-      try { const o = await mockApi.admin.getAdminOrders({ status: 'ready' }); setOrders(o || []); } catch { setOrders([]); }
-    })();
-  }, []);
-
-  const toggle = (id) => { const n = new Set(selected); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
-
-  const submit = async () => {
-    if (!windowId || !riderId || !zone) { toast({ title: msg('FE_ADMIN_DELIVERY_MISSING_FIELDS', 'Missing fields'), description: msg('FE_ADMIN_DELIVERY_WINDOW_RIDER_AND_ZONE_ARE_ALL_REQUIRED', 'Window, rider and zone are all required.'), variant: 'destructive' }); return; }
-    setSubmitting(true);
-    try {
-      await mockApi.admin.createDeliveryBatch({ window_id: windowId, rider_id: riderId, zone, order_ids: [...selected] });
-      toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CREATED', '✅ Batch created'), description: msg('FE_ADMIN_DELIVERY_COUNT_ORDER_S_ASSIGNED', '{count} order(s) assigned.', { count: selected.size }) });
-      onSaved(); onClose();
-    } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setSubmitting(false);
-  };
-
-  return (
-    <Modal open onClose={onClose} title="Create Delivery Batch">
-      <div className="space-y-3">
-        <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">A batch groups orders for one rider in one zone under a delivery window. Assigned orders move to <b>assigned</b> status.</div>
-        <Field label="Delivery Window">
-          <select value={windowId} onChange={(e) => setWindowId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-            <option value="">Select window…</option>
-            {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Rider">
-          <select value={riderId} onChange={(e) => setRiderId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-            <option value="">Select rider…</option>
-            {riders.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
-          </select>
-        </Field>
-        <Field label="Zone"><TextInput value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g. North Gate" /></Field>
-        <Field label="Assign Orders (optional)">
-          <div className="max-h-48 overflow-y-auto rounded-xl border border-border mt-1">
-            {orders.length === 0 ? <div className="p-3 text-xs text-muted-foreground">No ready orders available to assign.</div> : orders.map((o) => (
-              <button key={o.id} type="button" onClick={() => toggle(o.id)} className={`w-full text-left p-2.5 flex items-center gap-2 border-b border-border last:border-0 ${selected.has(o.id) ? 'bg-primary/10' : 'hover:bg-muted'}`}>
-                <span className="text-xs font-mono text-muted-foreground">#{o.id.slice(0, 6).toUpperCase()}</span>
-                <span className="text-xs text-muted-foreground truncate flex-1">{(o.order_items || []).map((it) => `${it.quantity}× ${it.name_snapshot || it.name}`).join(', ')}</span>
-                {selected.has(o.id) && <CheckSquare className="w-3.5 h-3.5 text-primary shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </Field>
-        <button onClick={submit} disabled={submitting || !windowId || !riderId || !zone} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? 'Creating...' : 'Create Batch'}</button>
-      </div>
-    </Modal>
-  );
-}
-
 function ZoneModal({ type, item, onClose, onSave, onDelete }) {
   const [form, setForm] = useState(item ? { ...item } : { name: '', ...(type === 'hostel' ? { delivery_fee: 300 } : { base_fee: 400, lat: 7.30, lon: 5.13 }) });
   const feeKey = type === 'hostel' ? 'delivery_fee' : 'base_fee';
@@ -372,7 +311,7 @@ function ZoneModal({ type, item, onClose, onSave, onDelete }) {
         )}
         <div className="flex gap-2">
           <button onClick={() => onSave(type, form)} disabled={!form.name} className="flex-1 py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">Save</button>
-          {item && <button onClick={() => onDelete(type, item.id)} className="px-4 py-3 rounded-full bg-red-50 text-red-600 border border-red-200 font-bold"><Trash2 className="w-4 h-4" /></button>}
+          {item && <button onClick={() => onDelete(type, item.id)} className="px-4 py-3 rounded-full tone-error border border-destructive/30 font-bold"><Trash2 className="w-4 h-4" /></button>}
         </div>
       </div>
     </Modal>

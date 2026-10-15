@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -71,7 +72,7 @@ export default function OrderLocks() {
   };
 
   const handleCancel = async (id) => {
-    if (!confirm(msg('FE_ORDER_LOCKS_CANCEL_CONFIRM', 'Cancel this order lock? You will lose the locked reward.'))) return;
+    if (!(await confirmAction({ title: msg('FE_ORDER_LOCKS_CANCEL_CONFIRM', 'Cancel this order lock? You will lose the locked reward.'), destructive: true }))) return;
     try { await liveApi.orderLocks.cancel(id); load(); } catch (e) { toast({ title: msg('FE_ORDER_LOCKS_CANCEL_FAILED', 'Cancel failed'), description: e.message, variant: 'destructive' }); }
   };
 
@@ -215,7 +216,7 @@ export default function OrderLocks() {
 
       {/* Create modal */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !creating && setShowCreate(false)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !creating && setShowCreate(false)}>
           <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Lock className="w-5 h-5 text-primary" /> New Order Lock</h3>
@@ -251,7 +252,7 @@ export default function OrderLocks() {
 
       {/* Reschedule modal */}
       {rescheduleLock && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !rescheduling && setRescheduleLock(null)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !rescheduling && setRescheduleLock(null)}>
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Calendar className="w-5 h-5 text-primary" /> Reschedule Lock</h3>

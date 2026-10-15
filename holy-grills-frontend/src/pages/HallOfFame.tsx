@@ -78,16 +78,24 @@ export default function HallOfFame() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div>
-        <span className="hg-eyebrow">Legends</span>
-        <h1 className="font-heading font-bold text-xl text-foreground">Hall of Fame 🏅</h1>
-        <p className="text-sm text-muted-foreground mt-1">Month after month at the top.</p>
+      {/* Hero strip — the page IS a trophy case, so it opens on the dark brand
+          bed + living gold, the same materials as the Holy tier ring. */}
+      <div className="rounded-3xl bg-gradient-dark relative overflow-hidden shadow-card p-6 text-white">
+        <div className="absolute inset-0 tier-shimmer-holy opacity-[0.08] pointer-events-none" />
+        <div className="relative flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-cta flex items-center justify-center text-2xl shrink-0">🏅</div>
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-accent block">Legends</span>
+            <h1 className="font-heading font-extrabold text-2xl leading-tight">Hall of Fame</h1>
+            <p className="text-xs text-white/70 mt-0.5">Month after month at the top. Tap a name to share their card.</p>
+          </div>
+        </div>
       </div>
 
       {error && (
-        <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center justify-between gap-3">
-          <span className="text-sm text-red-600 font-medium">{error}</span>
-          <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold">Retry</button>
+        <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+          <span className="text-sm text-destructive font-medium">{error}</span>
+          <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold">Retry</button>
         </div>
       )}
 
@@ -98,7 +106,7 @@ export default function HallOfFame() {
             <button
               key={y}
               onClick={() => setYearFilter(y)}
-              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${yearFilter === String(y) ? 'bg-primary text-white' : 'bg-white text-foreground border border-border'}`}
+              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${yearFilter === String(y) ? 'bg-primary text-white' : 'bg-card text-foreground border border-border'}`}
             >
               {y === 'all' ? 'All Time' : y}
             </button>
@@ -107,12 +115,12 @@ export default function HallOfFame() {
       )}
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl bg-white border border-border p-8 text-center shadow-card">
+        <div className="rounded-2xl bg-card border border-border p-8 text-center shadow-card">
           <MascotStandee mascot="peace" className="w-28 h-28 mx-auto mb-2" alt="No Hall of Fame inductees yet" />
           <p className="text-sm font-semibold text-foreground">The first spot is open.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid sm:grid-cols-2 gap-3">
           {filtered.map((entry, i) => {
             const w = entry.winner || entry;
             const name = w.full_name || w.name || 'Griller';
@@ -122,21 +130,24 @@ export default function HallOfFame() {
               <div
                 key={entry.id || w.user_id || i}
                 onClick={() => handleShare(entry)}
-                className="rounded-2xl bg-gradient-dark p-4 text-white relative overflow-hidden shadow-glow cursor-pointer hg-press"
+                className="rounded-2xl bg-gradient-dark p-4 text-white relative overflow-hidden cursor-pointer hg-press"
               >
-                {/* Golden shimmer accent */}
-                <div className="absolute inset-0 tier-shimmer-holy opacity-10" />
+                {/* Plaque treatment — gold shimmer bed + a living-gold top edge
+                    + a holy-ring avatar, so each inductee reads as a mounted
+                    plaque rather than a dark row. */}
+                <div className="absolute inset-0 tier-shimmer-holy opacity-10 pointer-events-none" />
+                <div className="absolute inset-x-0 top-0 h-[3px] tier-shimmer-holy" />
                 <div className="flex items-center gap-3 relative">
-                  <div className="w-12 h-12 rounded-full bg-gradient-cta flex items-center justify-center text-xl font-bold shrink-0 ring-2 ring-accent/40">
-                    {name.charAt(0)}
+                  <div className="w-12 h-12 rounded-full tier-ring-holy p-[3px] shrink-0">
+                    <span className="w-full h-full rounded-full bg-gradient-dark flex items-center justify-center text-xl font-bold">{name.charAt(0)}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-heading font-bold text-base flex items-center gap-1.5">
+                    <div className="font-heading font-bold text-base flex items-center gap-1.5 truncate">
                       {name}
-                      <span className="text-accent">🏅</span>
+                      <span className="text-accent shrink-0">🏅</span>
                     </div>
-                    <div className="text-xs text-white/70 flex items-center gap-1">
-                      <Award className="w-3 h-3" /> {finishes} Top 4 finishes
+                    <div className="text-xs text-accent/90 font-semibold flex items-center gap-1">
+                      <Award className="w-3 h-3 shrink-0" /> {finishes} Top 4 {finishes === 1 ? 'finish' : 'finishes'}
                     </div>
                     {period && <div className="text-[10px] text-white/50 mt-0.5">Inducted {new Date(period).toLocaleDateString()}</div>}
                   </div>

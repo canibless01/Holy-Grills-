@@ -9,7 +9,7 @@ export default function AdminSidebar({ active, onSelect, collapsed, onToggleColl
   return (
     <>
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 bg-foreground/50 backdrop-blur-sm lg:hidden" onClick={onCloseMobile} />
+        <div className="fixed inset-0 z-40 hg-scrim lg:hidden" onClick={onCloseMobile} />
       )}
 
       <aside

@@ -114,10 +114,10 @@ export default function Cart() {
       {/* Tabs + Wallet */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex gap-2">
-          <button onClick={() => setTab('cart')} className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tab === 'cart' ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-muted-foreground border border-border'}`}>
+          <button onClick={() => setTab('cart')} className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tab === 'cart' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground border border-border'}`}>
             My Cart {cart?.item_count > 0 && `(${cart.item_count})`}
           </button>
-          <button onClick={() => setTab('saved')} className={`flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tab === 'saved' ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-muted-foreground border border-border'}`}>
+          <button onClick={() => setTab('saved')} className={`flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tab === 'saved' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground border border-border'}`}>
             <Heart className={`w-3.5 h-3.5 ${tab === 'saved' ? 'fill-white' : ''}`} />
             Saved {savedCount > 0 && `(${savedCount})`}
           </button>
@@ -153,9 +153,9 @@ export default function Cart() {
             </div>
 
             {cart.has_unavailable_items && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                <div className="text-xs text-amber-800">An item sold out. Remove it.</div>
+              <div className="flex items-center gap-2 p-3 rounded-xl tone-warn border border-warn/40">
+                <AlertTriangle className="w-5 h-5 text-warn shrink-0" />
+                <div className="text-xs text-warn">An item sold out. Remove it.</div>
               </div>
             )}
 

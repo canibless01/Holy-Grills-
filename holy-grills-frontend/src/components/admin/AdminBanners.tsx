@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { bannerSlides, bannerSlidePayload, blankBannerSlide } from '@/lib/bannerSlides';
 import { useCampus } from '@/lib/campusContext';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
@@ -7,7 +8,7 @@ import { Save, Plus, Trash2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
 
@@ -88,7 +89,7 @@ export default function AdminBanners({ placement = 'home' }) {
   };
 
   const del = async (id) => {
-    if (!confirm(msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?'))) return;
+    if (!(await confirmAction({ title: msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?'), destructive: true }))) return;
     try { await liveApi.admin.deleteBanner(id); toast({ title: msg('FE_ADMIN_BANNERS_DELETED', '✅ Deleted') }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); }
   };
@@ -154,7 +155,7 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label={msg('FE_CMS_BANNER_LOADING_BANNERS', 'Loading banners...')} />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (loadError) return <Card>
     <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
     <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>
@@ -218,8 +219,8 @@ export default function AdminBanners({ placement = 'home' }) {
               <button onClick={() => save(b)} disabled={busy === b.id} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
                 <Save className="w-3.5 h-3.5" /> {msg('FE_CMS_SAVE', 'Save')}
               </button>
-              <button aria-label={msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?')} onClick={() => del(b.id)} className="p-2 rounded-lg hover:bg-red-50">
-                <Trash2 className="w-4 h-4 text-red-500" />
+              <button aria-label={msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?')} onClick={() => del(b.id)} className="p-2 rounded-lg hover:tone-error">
+                <Trash2 className="w-4 h-4 text-destructive" />
               </button>
             </div>
             </fieldset>

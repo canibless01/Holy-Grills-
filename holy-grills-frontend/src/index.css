@@ -64,6 +64,17 @@
     --success:             142 65% 38%;
     --success-foreground:  0 0% 100%;
 
+    /* Semantic info tones — BRAND hues only: warn is the accent gold darkened
+       for text/fill contrast, info is the deep brand brown. */
+    --warn:                36 79% 40%;
+    --info:                18 100% 21%;
+
+    /* Tone chip foregrounds — darker in light mode, lighter in dark mode. */
+    --tone-success-fg:     142 72% 28%;
+    --tone-warn-fg:        33 85% 32%;
+    --tone-info-fg:        206 80% 34%;
+    --tone-error-fg:       0 72% 38%;
+
     /* ── RADIUS ── */
     --radius:              1rem;   /* design spec base */
     --radius-sm:           8px;    /* inputs, badges */
@@ -142,6 +153,11 @@
     --ring:                0 88% 48%;
     --icon-color:          38 56% 95%;
     --text-color:          38 56% 95%;
+
+    --warn:                38 85% 62%;
+    --info:                18 80% 45%;
+    --tone-success-fg:     142 60% 55%;
+    --tone-error-fg:       0 95% 72%;
   }
 
   /* ── ADMIN PANEL — scoped theme override ──
@@ -180,6 +196,42 @@
     overflow-wrap: break-word;
     word-break: break-word;
   }
+
+  /* ── ADMIN — long-text containment, round 2 ──────────────────────────────
+     The first pass only protected elements that already carried
+     truncate/break-words/flex-1 classes. Plain prose — a pasted description,
+     a long email in a table cell, an unbroken URL in a modal paragraph — had
+     no rule to catch it and pushed past the mobile margin. These catch every
+     text node: `overflow-wrap: break-word` only affects runs that cannot wrap
+     normally (long URLs/IDs), so ordinary text renders exactly as before. */
+  .admin-scope p,
+  .admin-scope li,
+  .admin-scope td,
+  .admin-scope th,
+  .admin-scope dd,
+  .admin-scope dt,
+  .admin-scope figcaption,
+  .admin-scope blockquote,
+  .admin-scope h1, .admin-scope h2, .admin-scope h3,
+  .admin-scope h4, .admin-scope h5, .admin-scope h6,
+  .admin-scope label {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  /* A bare <span>/<p> as a direct flex/grid child can still force the row
+     wider than the viewport — its min-content is the longest word. Unlock
+     the shrink for text children only (fixed-size icons/avatars unaffected:
+     their width wins over min-content). */
+  .admin-scope .flex > span,
+  .admin-scope .flex > p,
+  .admin-scope .flex > a,
+  .admin-scope .flex > h1, .admin-scope .flex > h2, .admin-scope .flex > h3,
+  .admin-scope .flex > label,
+  .admin-scope .grid > span,
+  .admin-scope .grid > p {
+    min-width: 0;
+  }
 }
 
 @layer base {
@@ -201,6 +253,39 @@
 }
 
 @layer components {
+  /* ─── THE overlay scrim — one recipe for every popup, every panel ───
+     A warm brand-black veil (deep brown, not grey) + one blur step. Every
+     modal, sheet, drawer and gate in the app (user, admin, kitchen, rider)
+     uses this exact class so the dim behind a popup is identical everywhere:
+     same colour, same opacity, full-screen coverage, light never leaks.
+     Always render it through ModalPortal (or ModalBackdrop) so a transformed
+     ancestor can never clip `position: fixed` on phones. */
+  .hg-scrim {
+    background: rgba(31, 10, 0, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* ─── STATUS TONES — the four semantic chip tones ───
+     Soft bed + readable foreground + matching border in one class. Every hue
+     here is a BRAND material: gold (accent) for in-progress, deep brown for
+     neutral/informational, red (primary/destructive are the same brand red)
+     for problems, and the system's pre-existing success green only where a
+     positive state genuinely needs it. No imported tailwind palettes.
+     Pair with `border` (width) where a border is wanted. Solid fills for
+     dots/heavy badges: use the tokens directly. */
+  .tone-success { background-color: hsl(var(--success) / 0.12); color: hsl(var(--tone-success-fg)); border-color: hsl(var(--success) / 0.35); }
+  .tone-warn    { background-color: hsl(var(--accent) / 0.22);     color: hsl(var(--accent-foreground)); border-color: hsl(var(--accent) / 0.5); }
+  .tone-info    { background-color: hsl(var(--brand-brown) / 0.1);  color: hsl(var(--brand-brown));     border-color: hsl(var(--brand-brown) / 0.3); }
+  .tone-error   { background-color: hsl(var(--destructive) / 0.1); color: hsl(var(--tone-error-fg)); border-color: hsl(var(--destructive) / 0.3); }
+
+  /* ─── PODIUM MEDALS — 1st/2nd/3rd materials ───
+     Warm metals that match the tier-ring ladder; silver is warm matte, never
+     grey. Gold carries the glow (the one lit surface on the podium). */
+  .medal-gold   { background: linear-gradient(180deg, #FFD76A 0%, #F2B84B 55%, #ECA829 100%); }
+  .medal-silver { background: linear-gradient(180deg, #E8D9C3 0%, #C4A57D 100%); }
+  .medal-bronze { background: linear-gradient(180deg, #DE9A66 0%, #B26B3C 100%); }
+
   /* HolyGrill component primitives */
   .hg-card {
     background-color: hsl(var(--card));
@@ -215,6 +300,18 @@
 }
 
 @layer utilities {
+  /* ─── Reduced motion — respect the OS setting globally. Kills decorative
+     loops (gold shimmer, flame flicker, ken-burns, auto-scroll keyframes) and
+     shortens transitions; functional JS transitions keep working. ─── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .text-balance { text-wrap: balance; }

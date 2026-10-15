@@ -113,8 +113,8 @@ export default function StreakMilestones({ badges, availableChallenges, complete
           <div key={ch.id} className="rounded-3xl bg-card border border-border p-4 shadow-card">
             <div className="flex items-start justify-between mb-2 gap-2">
               <div className="flex items-center gap-2 min-w-0">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isCompleted ? 'bg-emerald-100' : 'bg-primary/10'}`}>
-                  {isCompleted ? <Check className="w-4 h-4 text-emerald-600" /> : isAction && ActionIcon ? <ActionIcon className="w-4 h-4 text-primary" /> : <Target className="w-4 h-4 text-primary" />}
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isCompleted ? 'tone-success' : 'bg-primary/10'}`}>
+                  {isCompleted ? <Check className="w-4 h-4 text-success" /> : isAction && ActionIcon ? <ActionIcon className="w-4 h-4 text-primary" /> : <Target className="w-4 h-4 text-primary" />}
                 </div>
                 <h3 className="font-bold text-sm text-foreground truncate">{ch.title || ch.name}</h3>
               </div>
@@ -125,7 +125,7 @@ export default function StreakMilestones({ badges, availableChallenges, complete
             {ch.description && <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{ch.description}</p>}
             <div className="flex items-center gap-2.5">
               <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
-                <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-emerald-500' : 'bg-gradient-cta'}`} style={{ width: `${pct}%` }} />
+                <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-success' : 'bg-gradient-cta'}`} style={{ width: `${pct}%` }} />
               </div>
               <span className="text-xs font-bold text-foreground tabular-nums shrink-0">{progress}/{target}</span>
             </div>

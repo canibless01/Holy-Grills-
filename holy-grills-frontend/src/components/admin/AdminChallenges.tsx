@@ -1,7 +1,8 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Pencil, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Field, TextInput, Card, Pill, Toggle, Modal } from './AdminShared';
 import { msg } from '@/lib/messages';
@@ -64,7 +65,7 @@ export default function AdminChallenges() {
   };
 
   const remove = async (id, title) => {
-    if (!confirm(`Delete "${title}"?`)) return;
+    if (!(await confirmAction({ title: `Delete "${title}"?`, destructive: true }))) return;
     setBusy(id);
     try {
       await mockApi.admin.deleteChallenge(id);
@@ -86,7 +87,7 @@ export default function AdminChallenges() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading milestones..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">
@@ -115,7 +116,7 @@ export default function AdminChallenges() {
               <div className="flex gap-1">
                 <button onClick={() => setEditItem(c)} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                 <button onClick={() => grant(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:bg-primary/10"><Gift className="w-3.5 h-3.5 text-primary" /></button>
-                <button onClick={() => remove(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                <button onClick={() => remove(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:tone-error"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
               </div>
             </div>
           </Card>

@@ -1,12 +1,14 @@
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState, useEffect, useRef } from 'react';
-import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2 } from 'lucide-react';
+import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, getOrderCustomer } from '@/lib/hgUtils';
+import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_DOTS, getOrderCustomer } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Card, Pill } from './AdminShared';
 import { msg, useMessages } from '@/lib/messages';
+import CreateBatchModal from './AdminCreateBatchModal';
 
 const OVERRIDE_STATUSES = ['received', 'preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered'];
 // Valid walk targets — terminal states (cancelled/refunded) can't be advanced.
@@ -28,6 +30,10 @@ export default function AdminOrders() {
   const [walkOrder, setWalkOrder] = useState(null);
   const [busy, setBusy] = useState(null);
   const [users, setUsers] = useState({});
+  // Assign flow — opens the shared batch modal preset to one order, so an
+  // admin standing on an order (incl. scheduled/off-window ones) can hand it
+  // to a rider without leaving the Orders tab.
+  const [assignCtx, setAssignCtx] = useState<{ orderId: string; windows: Array<{ id?: string | number; label?: string }> } | null>(null);
 
   // Frontend profile join — the admin orders endpoint returns user_id without a
   // profiles join, so we load the user list once and resolve user_id → name/phone
@@ -45,6 +51,18 @@ export default function AdminOrders() {
     if (search) result = o.filter(ord => ord.id.toLowerCase().includes(search.toLowerCase()));
     setOrders(result);
     setLoading(false);
+  };
+
+  const openAssign = async (orderId: string) => {
+    // TODO(ts): the delivery-window row is untyped; the modal only needs id+label.
+     
+    let windows: Array<{ id?: string | number; label?: string }> = [];
+    try {
+       
+      const w: any = await mockApi.admin.getDeliveryWindows();
+      windows = Array.isArray(w) ? w : (w?.windows || []);
+    } catch { /* modal shows the create-window guidance */ }
+    setAssignCtx({ orderId, windows });
   };
 
   const toggleExpand = async (id) => {
@@ -119,10 +137,10 @@ export default function AdminOrders() {
     <div className="space-y-4">
       {/* Tab switcher */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-        <button onClick={() => setTab('orders')} className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === 'orders' ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
+        <button onClick={() => setTab('orders')} className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === 'orders' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
           <Package className="w-3.5 h-3.5" /> Orders
         </button>
-        <button onClick={() => setTab('abandoned')} className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === 'abandoned' ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
+        <button onClick={() => setTab('abandoned')} className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === 'abandoned' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
           <ShoppingCart className="w-3.5 h-3.5" /> Abandoned
         </button>
       </div>
@@ -188,6 +206,15 @@ export default function AdminOrders() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{timeAgo(o.created_at)}</span>
+                      {['ready', 'scheduled', 'received'].includes(o.status) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openAssign(o.id); }}
+                          title="Assign to a rider"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary text-white text-[10px] font-bold active:scale-95 transition"
+                        >
+                          <Bike className="w-3 h-3" /> Assign
+                        </button>
+                      )}
                       {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                     </div>
                   </div>
@@ -211,7 +238,7 @@ export default function AdminOrders() {
                       <div className="text-[11px] font-bold text-muted-foreground uppercase mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" /> Status Timeline</div>
                       {(history[o.id] || []).map((h, i) => (
                         <div key={i} className="flex items-center gap-2 text-xs py-0.5">
-                          <span className={`w-2 h-2 rounded-full ${ORDER_STATUS_COLORS[h.status] || 'bg-secondary'}`} />
+                          <span className={`w-2 h-2 rounded-full ${ORDER_STATUS_DOTS[h.status] || 'bg-secondary'}`} />
                           <span className="font-semibold text-foreground capitalize">{ORDER_STATUS_LABELS[h.status] || h.status}</span>
                           <span className="text-muted-foreground">{formatDateTime(h.changed_at)}</span>
                           <span className="text-muted-foreground ml-auto">by {h.actor}</span>
@@ -221,17 +248,23 @@ export default function AdminOrders() {
                     <div className="flex gap-2 flex-wrap">
                       {!isTerminal && (
                         <button onClick={() => setWalkOrder({ id: o.id, current_status: o.status, target_status: WALK_TARGETS[WALK_TARGETS.indexOf(o.status) + 1] || 'delivered', reason: '' })}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-xs font-bold">
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold">
                           <ChevronDown className="w-3.5 h-3.5" /> Walk Status
                         </button>
                       )}
+                      {['ready', 'scheduled', 'received'].includes(o.status) && (
+                        <button onClick={() => openAssign(o.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold">
+                          <Bike className="w-3.5 h-3.5" /> Assign to Rider
+                        </button>
+                      )}
                       <button onClick={() => setOverrideOrder({ id: o.id, new_status: o.status, reason: '', current_status: o.status })}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 text-xs font-bold">
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-warn border border-warn/40 text-xs font-bold">
                         <AlertTriangle className="w-3.5 h-3.5" /> Override Status
                       </button>
                       {o.user_id && !['cancelled', 'refunded'].includes(o.status) && (
                         <button onClick={() => setRefundOrder({ id: o.id, total_amount: o.total_amount, reason: '', refund_amount: Math.max(0, Number(o.wallet_amount_used || 0) + (['paid', 'partially_refunded', 'refunded'].includes(o.payment_status) ? Number(o.card_amount_used || 0) : 0) - Number(o.wallet_refund_total || 0) - Number(o.card_refund_total || 0)), idempotency_key: crypto.randomUUID() })}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold">
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold">
                           <RotateCcw className="w-3.5 h-3.5" /> Refund
                         </button>
                       )}
@@ -244,13 +277,22 @@ export default function AdminOrders() {
         </div>
       )}
 
+      {assignCtx && (
+        <CreateBatchModal
+          windows={assignCtx.windows}
+          presetOrderIds={[assignCtx.orderId]}
+          onClose={() => setAssignCtx(null)}
+          onSaved={load}
+        />
+      )}
+
       {refundOrder && (
         <Modal open onClose={() => { if (!refundBusy.current) setRefundOrder(null); }} title={msg('FE_REFUND_ORDER_TITLE', 'Refund #{id}', { id: refundOrder.id.toUpperCase() })}>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">{msg('FE_REFUND_WALLET_EXPLANATION', 'Collected payments are returned to the customer wallet. A partial refund keeps the current order status; a full refund closes the order.')}</p>
             <Field label={msg('FE_REFUND_AMOUNT_LABEL', 'Refund amount (₦)')}><TextInput type="number" min="0.01" step="0.01" disabled={busy === refundOrder.id} value={refundOrder.refund_amount} onChange={(e) => setRefundOrder({ ...refundOrder, refund_amount: e.target.value })} /></Field>
             <Field label={msg('FE_REFUND_REASON_LABEL', 'Reason')}><TextInput disabled={busy === refundOrder.id} value={refundOrder.reason} onChange={(e) => setRefundOrder({ ...refundOrder, reason: e.target.value })} /></Field>
-            <button onClick={doRefund} disabled={busy === refundOrder.id} className="w-full py-3 rounded-full bg-red-600 text-white font-bold disabled:opacity-50">
+            <button onClick={doRefund} disabled={busy === refundOrder.id} className="w-full py-3 rounded-full bg-destructive text-white font-bold disabled:opacity-50">
               {busy === refundOrder.id ? msg('FE_REFUND_PROCESSING', 'Processing…') : msg('FE_REFUND_CONFIRM', 'Confirm Refund')}
             </button>
           </div>
@@ -260,7 +302,7 @@ export default function AdminOrders() {
       {overrideOrder && (
         <Modal open onClose={() => setOverrideOrder(null)} title={`Override Status — #${overrideOrder.id.toUpperCase()}`}>
           <div className="space-y-3">
-            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 flex items-start gap-2">
+            <div className="rounded-xl tone-warn border border-warn/40 p-3 text-xs text-warn flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>This forces the order status directly. Kitchen and Rider panels will see this change immediately. Use only when the normal flow is stuck.</span>
             </div>
@@ -272,7 +314,7 @@ export default function AdminOrders() {
               </select>
             </Field>
             <Field label="Reason (audit log)"><TextInput value={overrideOrder.reason} onChange={(e) => setOverrideOrder({ ...overrideOrder, reason: e.target.value })} placeholder="Why is this being overridden?" /></Field>
-            <button onClick={doOverride} disabled={busy === overrideOrder.id || overrideOrder.new_status === overrideOrder.current_status} className="w-full py-3 rounded-full bg-amber-600 text-white font-bold disabled:opacity-50">
+            <button onClick={doOverride} disabled={busy === overrideOrder.id || overrideOrder.new_status === overrideOrder.current_status} className="w-full py-3 rounded-full bg-warn text-white font-bold disabled:opacity-50">
               {busy === overrideOrder.id ? 'Overriding...' : 'Force Status Change'}
             </button>
           </div>
@@ -282,7 +324,7 @@ export default function AdminOrders() {
       {walkOrder && (
         <Modal open onClose={() => setWalkOrder(null)} title={`Walk Status — #${walkOrder.id.toUpperCase()}`}>
           <div className="space-y-3">
-            <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-700 flex items-start gap-2">
+            <div className="rounded-xl tone-success border border-success/30 p-3 text-xs text-success flex items-start gap-2">
               <ChevronDown className="w-4 h-4 shrink-0 mt-0.5" />
               <span>The server finds the shortest valid path through the order state machine and applies each transition in sequence. HP is awarded only on reaching <b>delivered</b>. Terminal states (cancelled/refunded) can't be advanced.</span>
             </div>
@@ -294,7 +336,7 @@ export default function AdminOrders() {
               </select>
             </Field>
             <Field label="Notes (optional)"><TextInput value={walkOrder.reason} onChange={(e) => setWalkOrder({ ...walkOrder, reason: e.target.value })} placeholder="Reason for manual advancement" /></Field>
-            <button onClick={doWalk} disabled={busy === walkOrder.id || !walkOrder.target_status} className="w-full py-3 rounded-full bg-green-600 text-white font-bold disabled:opacity-50">
+            <button onClick={doWalk} disabled={busy === walkOrder.id || !walkOrder.target_status} className="w-full py-3 rounded-full bg-success text-white font-bold disabled:opacity-50">
               {busy === walkOrder.id ? 'Advancing...' : 'Walk to Target Status'}
             </button>
           </div>
@@ -331,11 +373,11 @@ function AbandonedCarts() {
     setNudging(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading abandoned carts..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 flex items-center gap-2">
+      <div className="rounded-xl tone-warn border border-warn/40 p-3 text-xs text-warn flex items-center gap-2">
         <Bell className="w-3.5 h-3.5 shrink-0" />
         Carts left without checkout. Send a nudge to remind the customer to complete their order.
       </div>

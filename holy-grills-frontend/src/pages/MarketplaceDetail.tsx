@@ -92,7 +92,7 @@ export default function MarketplaceDetail() {
           </span>
         ) : (
           <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className={`w-2 h-2 rounded-full ${lowStock ? 'bg-amber-500' : 'bg-success'}`} />
+            <span className={`w-2 h-2 rounded-full ${lowStock ? 'bg-warn' : 'bg-success'}`} />
             {lowStock ? `Only ${stock} left` : `${stock ?? '—'} available`}
           </span>
         )}

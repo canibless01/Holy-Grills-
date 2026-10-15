@@ -27,7 +27,7 @@ export default function LeaderboardPrizeBadge({ rank, prize }: LeaderboardPrizeB
     <div className="relative" onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>
       <span className="text-base leading-none cursor-pointer select-none">{medal}</span>
       {open && (
-        <div className="absolute right-0 top-7 z-40 w-52 rounded-2xl bg-white border border-border shadow-xl p-3 text-left">
+        <div className="absolute right-0 top-7 z-40 w-52 rounded-2xl bg-card border border-border shadow-xl p-3 text-left">
           <div className="text-xs font-bold text-foreground mb-1">Rank #{rank} reward</div>
           <div className="text-xs text-foreground">
             {freeSides != null ? `${freeSides} free side${freeSides !== 1 ? 's' : ''}` : 'Free sides'}

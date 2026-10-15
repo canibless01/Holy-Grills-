@@ -215,9 +215,9 @@ export default function AdminSystemSettings() {
         const num = resolvePublicValue(settings, 'whatsapp_support_number', viewerCampus);
         const digits = String(num.value ?? '').replace(/\D/g, '');
         return (
-          <Card className={`p-4 ${digits ? '' : 'border-amber-400/60 bg-amber-50/60'}`}>
+          <Card className={`p-4 ${digits ? '' : 'border-warn/40/60 tone-warn/60'}`}>
             <div className="flex items-start gap-2">
-              <MessageCircle className={`w-4 h-4 shrink-0 mt-0.5 ${digits ? 'text-primary' : 'text-amber-600'}`} />
+              <MessageCircle className={`w-4 h-4 shrink-0 mt-0.5 ${digits ? 'text-primary' : 'text-warn'}`} />
               <div className="min-w-0 w-full">
                 <p className="text-sm font-bold text-foreground">{msg('FE_ADMIN_SYSTEM_SETTINGS_CONTACT_PAGE_WHATSAPP_LINK', "Contact page WhatsApp link")}</p>
                 {digits ? (
@@ -227,7 +227,7 @@ export default function AdminSystemSettings() {
                     {' '}· from the <strong>{num.reason === 'campus' ? 'campus' : 'global'}</strong> row
                   </p>
                 ) : (
-                  <p className="text-[11px] text-amber-800 mt-1 break-words">
+                  <p className="text-[11px] text-warn mt-1 break-words">
                     No public <span className="font-mono">whatsapp_support_number</span> {msg('FE_ADMIN_SYSTEM_SETTINGS_REACHES_THIS_CAMPUS_SO_THE_CONTACT_PAGE_HIDES_IT', "reaches this campus, so the contact page hides its WhatsApp link. A row only reaches visitors when it is")}{' '}
                     <strong>Public</strong> and either global or scoped to this campus.
                   </p>

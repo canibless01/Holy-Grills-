@@ -198,10 +198,10 @@ export default function ItemDetail() {
   const totalPrice = calculatePrice();
   const lowStock = item.daily_remaining != null && item.daily_remaining <= 10 && !item.is_sold_out;
   const stockLevel = item.daily_remaining == null ? 'mid' : item.daily_remaining <= 2 ? 'critical' : item.daily_remaining <= 5 ? 'low' : 'mid';
-  const stockBadgeBg = stockLevel === 'critical' ? 'bg-red-600' : stockLevel === 'low' ? 'bg-orange-500' : 'bg-amber-500';
+  const stockBadgeBg = stockLevel === 'critical' ? 'bg-destructive' : stockLevel === 'low' ? 'bg-warn' : 'bg-warn';
 
   return (
-    <div className="animate-fade-in pb-8">
+    <div className="animate-fade-in pb-8 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-4 lg:items-start max-w-6xl mx-auto">
       <SEO
         title={item.name}
         description={item.description || `${item.name}, flame grilled and delivered across FUTA.`}
@@ -210,9 +210,11 @@ export default function ItemDetail() {
         jsonLd={menuItemJsonLd(item)}
       />
 
-      {/* Full-bleed hero image */}
+      {/* Full-bleed hero image — mobile. On desktop it docks as a sticky
+          gallery column (grid below), so options scroll beside the photo
+          instead of the whole page scrolling. */}
       <motion.div
-        className="relative -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[42vh] sm:h-[48vh] overflow-hidden bg-muted shadow-card"
+        className="relative -mx-4 sm:-mx-6 lg:mx-0 -mt-6 lg:mt-0 h-[42vh] sm:h-[48vh] lg:h-[calc(100vh-8rem)] lg:sticky lg:top-20 rounded-none lg:rounded-3xl overflow-hidden bg-muted shadow-card"
       >
         <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
         {/* Gradient overlay for badge legibility + fade into content */}
@@ -261,8 +263,9 @@ export default function ItemDetail() {
         )}
       </motion.div>
 
-      {/* Overlapping content panel */}
-      <div className="relative -mt-6 rounded-t-3xl bg-background max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 space-y-5">
+      {/* Overlapping content panel — overlaps the hero on mobile; becomes the
+          right column beside the sticky gallery on desktop. */}
+      <div className="relative -mt-6 lg:mt-0 lg:pt-2 rounded-t-3xl lg:rounded-none bg-background max-w-2xl lg:max-w-none mx-auto lg:mx-0 px-4 sm:px-6 lg:px-0 pt-5 space-y-5 lg:pl-8">
 
       {/* Info */}
       <motion.div variants={fadeUp} initial="hidden" animate="show">
@@ -276,7 +279,15 @@ export default function ItemDetail() {
             <Heart className={`w-5 h-5 ${saved ? 'fill-primary' : ''}`} />
           </button>
         </div>
-        <div className="mt-1.5"><RatingStars rating={item.avg_rating ?? 0} count={item.review_count ?? 0} size="md" /></div>
+        {/* Star rating — the same average the menu cards show, read through
+            the field aliases the detail endpoint may return. */}
+        <div className="mt-1.5">
+          <RatingStars
+            rating={item.avg_rating ?? item.average_rating ?? item.rating ?? 0}
+            count={item.review_count ?? item.reviews_count ?? item.review_total ?? undefined}
+            size="md"
+          />
+        </div>
         <p className="hg-body mt-2 leading-relaxed">{item.description}</p>
         <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-3">
           <span className="font-heading font-bold text-xl text-foreground">{formatNaira(item.price)}</span>

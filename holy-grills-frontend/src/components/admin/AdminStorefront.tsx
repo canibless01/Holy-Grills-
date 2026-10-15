@@ -1,9 +1,10 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Trash2, Image, Mail, Flame, Tag, Quote, Share2, Heart, Sparkles, Clock, Pencil, Utensils, Award, BookOpen, Send, XCircle, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDate } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import AdminOperatingHours from './AdminOperatingHours';
@@ -241,7 +242,7 @@ export default function AdminStorefront() {
     setBusy(null);
   };
   const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
-  const del = async (id) => { if (!confirm('Delete this storefront section? It will be removed from the live homepage.')) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
+  const del = async (id) => { if (!(await confirmAction({ title: "Delete this storefront section?", body: "It will be removed from the live homepage.", destructive: true, confirmLabel: "Delete" }))) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
 
   const create = async () => {
     const t = newSection.section_type;
@@ -290,7 +291,7 @@ export default function AdminStorefront() {
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
-  const removeSupporter = async (id) => { if (!confirm('Remove this early supporter?')) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
+  const removeSupporter = async (id) => { if (!(await confirmAction({ title: "Remove this early supporter?", destructive: true, confirmLabel: "Remove" }))) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
   const unsubscribe = async (email) => { setBusy(email); await mockApi.admin.unsubscribeNewsletter({ email }); await load(); setBusy(null); };
 
   const campaignBody = (form) => {
@@ -324,7 +325,7 @@ export default function AdminStorefront() {
   };
 
   const cancelCampaign = async (c) => {
-    if (!confirm('Stop this campaign? Emails already delivered stay delivered.')) return;
+    if (!(await confirmAction({ title: "Stop this campaign?", body: "Emails already delivered stay delivered.", destructive: true, confirmLabel: "Stop" }))) return;
     setCampaignBusy(c.id);
     try {
       await mockApi.storefront.cancelNewsletterCampaign(c.id);
@@ -343,7 +344,7 @@ export default function AdminStorefront() {
 
   const CAMPAIGN_TONES = { queued: 'blue', sending: 'amber', sent: 'green', cancelled: 'cocoa', failed: 'red' };
 
-  if (!loaded) return <LoadingSpinner label="Loading..." />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (loadError) return <Card>
     <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
     <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>
@@ -362,7 +363,7 @@ export default function AdminStorefront() {
                 const count = t.id === 'early_supporter' ? supporters.length : t.id === 'newsletter' ? subscribers.length : t.kind === 'banners_api' ? '↗' : sections.filter((s) => s.section_type === t.id).length;
                 const Icon = t.icon;
                 return (
-                  <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${tab === t.id ? 'bg-gradient-cta text-white shadow-glow' : 'bg-white border border-border text-foreground'}`}>
+                  <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${tab === t.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-foreground'}`}>
                     <Icon className="w-3.5 h-3.5" /> {t.label} {typeof count === 'number' && <span className={`ml-0.5 text-[10px] ${tab === t.id ? 'text-white/80' : 'text-muted-foreground'}`}>{count}</span>}
                   </button>
                 );
@@ -441,7 +442,7 @@ export default function AdminStorefront() {
               )}
               <div className="flex items-center gap-2 mt-3">
                 <button onClick={() => save(s)} disabled={busy === s.id} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50"><Save className="w-3.5 h-3.5" /> Save</button>
-                <button onClick={() => del(s.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                <button onClick={() => del(s.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
               </div>
               </fieldset>
             </Card>
@@ -465,7 +466,7 @@ export default function AdminStorefront() {
               </div>
               <span className="text-[10px] text-muted-foreground">#{s.sort_order ?? 0}</span>
               <button aria-label={msg('FE_ADMIN_STOREFRONT_EDIT_SUPPORTER', 'Edit supporter {name}', { name: s.name })} disabled={!isSuperAdmin && !s.campus_id} onClick={() => setEditSupporter({ ...s, social_links: typeof s.social_links === 'string' ? s.social_links : (s.social_links?.url || s.social_links?.link || '') })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-              <button aria-label={msg('FE_ADMIN_STOREFRONT_REMOVE_SUPPORTER', 'Remove supporter {name}', { name: s.name })} disabled={!isSuperAdmin && !s.campus_id} onClick={() => removeSupporter(s.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button aria-label={msg('FE_ADMIN_STOREFRONT_REMOVE_SUPPORTER', 'Remove supporter {name}', { name: s.name })} disabled={!isSuperAdmin && !s.campus_id} onClick={() => removeSupporter(s.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </Card>
           ))}
         </div>
@@ -497,7 +498,7 @@ export default function AdminStorefront() {
                     <Pill tone={CAMPAIGN_TONES[c.status] || 'cocoa'}>{c.status}</Pill>
                     <button onClick={() => openCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:bg-muted disabled:opacity-50" title="View"><Eye className="w-4 h-4 text-muted-foreground" /></button>
                     {(c.status === 'queued' || c.status === 'sending') && (
-                      <button onClick={() => cancelCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:bg-red-50 disabled:opacity-50" title="Cancel"><XCircle className="w-4 h-4 text-red-500" /></button>
+                      <button onClick={() => cancelCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:tone-error disabled:opacity-50" title="Cancel"><XCircle className="w-4 h-4 text-destructive" /></button>
                     )}
                   </div>
                 ))}
@@ -509,7 +510,7 @@ export default function AdminStorefront() {
             <Card key={s.id} className="flex items-center gap-3 !p-3">
               <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"><Mail className="w-4 h-4" /></div>
               <div className="flex-1 min-w-0"><div className="font-bold text-sm text-foreground truncate">{s.email}</div><div className="text-[11px] text-muted-foreground">{s.full_name || '—'} · via {s.source || '—'} · {formatDate(s.subscribed_at)}</div></div>
-              <button onClick={() => unsubscribe(s.email)} disabled={busy === s.email} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold disabled:opacity-50">Unsubscribe</button>
+              <button onClick={() => unsubscribe(s.email)} disabled={busy === s.email} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Unsubscribe</button>
             </Card>
           ))}
         </div>

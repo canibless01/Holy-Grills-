@@ -1,8 +1,9 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Pencil } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
@@ -50,7 +51,7 @@ export default function AdminAddons() {
       await reloadGlobal();
     } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
   };
-  const delGlobal = async (id) => { if (!confirm('Archive this global addon?')) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: msg('FE_ADMIN_ADDONS_ADDON_ARCHIVED', 'Addon archived') }); await reloadGlobal(); } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
+  const delGlobal = async (id) => { if (!(await confirmAction({ title: "Archive this global addon?", destructive: true, confirmLabel: "Archive" }))) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: msg('FE_ADMIN_ADDONS_ADDON_ARCHIVED', 'Addon archived') }); await reloadGlobal(); } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
 
   const addVarGroup = () => setVarGroups((gs) => [...gs, { id: `vg_${Date.now()}`, name: '', is_required: true, optionsText: '' }]);
   const addAddonGroup = () => setAddonGroups((gs) => [...gs, { id: `ag_${Date.now()}`, name: '', is_required: false, min_select: 0, max_select: 3, addonsText: '' }]);
@@ -67,7 +68,7 @@ export default function AdminAddons() {
     setSaving(false);
   };
 
-  if (!config) return <LoadingSpinner label="Loading addons..." />;
+  if (!config) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-5">
@@ -82,10 +83,10 @@ export default function AdminAddons() {
         </div>
         <div className="space-y-2">
           {config.global_addons.map((a) => (
-            <div key={a.id} className="rounded-xl bg-white border border-border p-3 flex items-center gap-3">
+            <div key={a.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-3">
               <div className="flex-1"><div className="font-bold text-sm text-foreground">{a.name}</div><div className="text-xs text-muted-foreground">{formatNaira(a.price)}</div></div>
               <button onClick={() => setEditing({ id: a.id, name: a.name, price: a.price })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-              <button onClick={() => delGlobal(a.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button onClick={() => delGlobal(a.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </div>
           ))}
           {config.global_addons.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No global add-ons yet.</p>}

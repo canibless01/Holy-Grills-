@@ -170,7 +170,7 @@ function PromoModal({
 }: {
   // TODO(ts): admin promo rows are untyped on the backend; the modal reads the
   // row defensively field-by-field, so a loose record is the honest shape here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   promo?: Record<string, any> | null;
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;

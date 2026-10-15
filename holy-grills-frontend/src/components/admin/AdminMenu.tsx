@@ -1,8 +1,9 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Star, CheckSquare, Square, Zap, Gauge, Layers } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
@@ -82,7 +83,7 @@ export default function AdminMenu() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Archive this menu item? It disappears from the menu; existing orders keep their details.')) return;
+    if (!(await confirmAction({ title: "Archive this menu item?", body: "It disappears from the menu; existing orders keep their details.", destructive: true, confirmLabel: "Archive" }))) return;
     try { await mockApi.admin.deleteMenuItem(id); toast({ title: msg('FE_ADMIN_MENU_ITEM_ARCHIVED', 'Item archived') }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
@@ -124,7 +125,7 @@ export default function AdminMenu() {
 
   // No bulk-delete endpoint — archive each selected item client-side.
   const bulkDelete = async () => {
-    if (!confirm(`Archive ${selected.size} selected item(s)?`)) return;
+    if (!(await confirmAction({ title: `Archive ${selected.size} selected item(s)?`, destructive: true }))) return;
     setBulkBusy(true);
     try {
       const results = await Promise.allSettled([...selected].map((id) => mockApi.admin.deleteMenuItem(id)));
@@ -155,22 +156,22 @@ export default function AdminMenu() {
     catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading menu..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="flex gap-1 p-1 rounded-full bg-secondary">
-            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-white text-primary shadow-sm">Active</span>
+            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-card text-primary shadow-sm">Active</span>
           </div>
           {selected.size > 0 && <span className="text-xs font-bold text-primary">{selected.size} selected</span>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {selected.size > 0 && (
             <>
-              <button onClick={() => bulkToggleAvail(true)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-green-600 text-white text-xs font-bold disabled:opacity-50"><CheckSquare className="w-3.5 h-3.5" /> Available</button>
-              <button onClick={() => bulkToggleAvail(false)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-red-600 text-white text-xs font-bold disabled:opacity-50"><Square className="w-3.5 h-3.5" /> Sold Out</button>
+              <button onClick={() => bulkToggleAvail(true)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50"><CheckSquare className="w-3.5 h-3.5" /> Available</button>
+              <button onClick={() => bulkToggleAvail(false)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-destructive text-white text-xs font-bold disabled:opacity-50"><Square className="w-3.5 h-3.5" /> Sold Out</button>
               <button onClick={() => bulkAdjustHp(2)} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50"><Zap className="w-3.5 h-3.5" /> 2× HP</button>
               <button onClick={bulkDelete} disabled={bulkBusy} className="flex items-center gap-1 px-3 py-2 rounded-full bg-foreground text-white text-xs font-bold disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
             </>
@@ -191,14 +192,14 @@ export default function AdminMenu() {
         </div>
       ) : (
         items.map((it) => (
-          <div key={it.id} className={`rounded-2xl bg-white border p-3 flex items-center gap-3 ${selected.has(it.id) ? 'border-primary/60 ring-2 ring-primary/20' : 'border-border'}`}>
+          <div key={it.id} className={`rounded-2xl bg-card border p-3 flex items-center gap-3 ${selected.has(it.id) ? 'border-primary/60 ring-2 ring-primary/20' : 'border-border'}`}>
             <button aria-label={`Select ${it.name}`} onClick={() => toggleSelect(it.id)} className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected.has(it.id) ? 'bg-primary border-primary' : 'border-input'}`}>
               {selected.has(it.id) && <CheckSquare className="w-3 h-3 text-white" />}
             </button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-sm text-foreground">{it.name}</span>
-                {it.is_featured && <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />}
+                {it.is_featured && <Star className="w-3.5 h-3.5 text-warn fill-amber-400" />}
                 {it.is_available ? <Pill tone="green">Live</Pill> : <Pill tone="red">Sold Out</Pill>}
                 {it.is_secret && <Pill tone="cocoa">Secret</Pill>}
                 {it.hp_multiplier === 0.5 && <Pill tone="amber">½ HP</Pill>}
@@ -210,7 +211,7 @@ export default function AdminMenu() {
             {(!isSuperAdmin || adminCampusId) && <button aria-label={`Campus settings for ${it.name}`} onClick={() => openOverride(it)} className="text-xs font-bold text-primary px-2">{msg('FE_ADMIN_MENU_CAMPUS_SETTINGS', "Campus settings")}</button>}
             <Toggle label={`Availability of ${it.name}`} checked={it.is_available} onChange={() => toggleAvail(it.id)} />
             <button disabled={!isSuperAdmin && !it.campus_id} title={!isSuperAdmin && !it.campus_id ? 'Global item — super admin edits the catalogue' : undefined} aria-label={`Edit ${it.name}`} onClick={() => setModal({ item: { ...it, price: String(it.price) }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-            <button disabled={!isSuperAdmin && !it.campus_id} aria-label={`Archive ${it.name}`} onClick={() => remove(it.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+            <button disabled={!isSuperAdmin && !it.campus_id} aria-label={`Archive ${it.name}`} onClick={() => remove(it.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
           </div>
         ))
       )}

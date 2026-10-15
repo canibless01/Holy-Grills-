@@ -3,7 +3,7 @@ import { Save, Clock, CalendarOff, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Card, Field, TextInput, Toggle, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
 
 // Admin manager for the storefront operating-hours routes (storefront.py):
@@ -109,14 +109,14 @@ export default function AdminOperatingHours() {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label="Loading hours…" />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (!schedule) return <Card><p className="text-xs text-muted-foreground text-center py-6">Operating hours unavailable.</p></Card>;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-          <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${isOpen ? 'tone-success' : 'tone-error'}`}>
+          <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-success' : 'bg-destructive'} animate-pulse`} />
           {isOpen ? 'Open now' : 'Closed now'}
         </span>
         <span className="text-[11px] text-muted-foreground">Storefront schedule (Africa/Lagos). Updates apply immediately.</span>

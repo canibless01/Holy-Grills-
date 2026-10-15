@@ -25,17 +25,17 @@ export default function StreakPwaBonus({ pwaStatus, onEnablePush, pushLoading })
       <div className="grid grid-cols-3 gap-2.5">
         {cells.map((c, i) => (
           <div key={i} className={`rounded-2xl p-3.5 text-center border transition-all ${
-            c.done ? 'bg-emerald-50 border-emerald-200' :
+            c.done ? 'tone-success border-success/30' :
             c.eligible ? 'bg-primary/5 border-primary/20' : 'bg-muted border-border'
           }`}>
             <div className={`w-9 h-9 rounded-xl mx-auto mb-2 flex items-center justify-center ${
-              c.done ? 'bg-emerald-100' : c.eligible ? 'bg-primary/10' : 'bg-secondary'
+              c.done ? 'tone-success' : c.eligible ? 'bg-primary/10' : 'bg-secondary'
             }`}>
-              {c.done ? <Check className="w-4 h-4 text-emerald-600" /> : <c.icon className={`w-4 h-4 ${c.eligible ? 'text-primary' : 'text-muted-foreground'}`} />}
+              {c.done ? <Check className="w-4 h-4 text-success" /> : <c.icon className={`w-4 h-4 ${c.eligible ? 'text-primary' : 'text-muted-foreground'}`} />}
             </div>
             <div className="text-[10px] font-bold text-foreground">{c.label}</div>
             <div className="text-[9px] mt-0.5">
-              {c.done ? <span className="text-emerald-600 font-semibold">+{c.hp} HP</span> :
+              {c.done ? <span className="text-success font-semibold">+{c.hp} HP</span> :
                c.eligible ? <span className="text-primary font-semibold animate-pulse">Ready!</span> :
                <span className="text-muted-foreground">+{c.hp} HP</span>}
             </div>

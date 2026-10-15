@@ -23,8 +23,8 @@ export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
   const [hpPulse, setHpPulse] = useState(false);
   const lowStock = item.daily_remaining <= 10 && !item.is_sold_out;
   const stockLevel = item.daily_remaining <= 2 ? 'critical' : item.daily_remaining <= 5 ? 'low' : 'mid';
-  const stockText = stockLevel === 'critical' ? 'text-red-600' : stockLevel === 'low' ? 'text-orange-600' : 'text-amber-600';
-  const stockBadge = stockLevel === 'critical' ? 'bg-red-600' : stockLevel === 'low' ? 'bg-orange-500' : 'bg-amber-500';
+  const stockText = stockLevel === 'critical' ? 'text-destructive' : stockLevel === 'low' ? 'text-warn' : 'text-warn';
+  const stockBadge = stockLevel === 'critical' ? 'bg-destructive' : stockLevel === 'low' ? 'bg-warn' : 'bg-warn';
 
   const handleAdd = (e) => {
     if (item.is_sold_out) return;
@@ -116,7 +116,8 @@ export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
       className="group relative bg-card rounded-2xl overflow-hidden border border-border hover:border-primary/40 hover:shadow-card transition-all duration-300 w-full h-full flex flex-col"
     >
       <Link to={`/menu/${item.id}`} className="block h-full flex flex-col">
-        <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+        {/* Square photo — the food is the card; text stays a compact caption. */}
+        <div className="relative aspect-square overflow-hidden bg-muted">
           <img
             src={item.image_url}
             alt={item.name}
@@ -144,7 +145,7 @@ export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
         <div className="p-3 flex-1 flex flex-col">
           <h3 className="font-heading font-bold text-sm text-foreground leading-tight mb-1 line-clamp-1">{item.name}</h3>
           {item.avg_rating != null && <div className="mb-1"><RatingStars rating={item.avg_rating} count={item.review_count} size="sm" /></div>}
-          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{item.description}</p>
+          <p className="text-xs text-muted-foreground line-clamp-1 leading-relaxed mb-2">{item.description}</p>
           <div className="flex items-center justify-between mt-auto">
             <span className="font-heading font-bold text-base text-foreground">{formatNaira(item.price)}</span>
             {onAdd && (

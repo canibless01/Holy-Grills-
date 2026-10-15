@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, MapPin, X, Trash2, Edit2, Check } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -88,7 +89,7 @@ export default function Addresses() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this address?')) return;
+    if (!(await confirmAction({ title: "Delete this address?", destructive: true, confirmLabel: "Delete" }))) return;
     await liveApi.addresses.delete(id);
     load();
   };
@@ -160,7 +161,7 @@ export default function Addresses() {
 
       {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => !editing && setShowForm(false)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => !editing && setShowForm(false)}>
           <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-sm max-h-[92vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">{editing ? 'Edit Address' : 'Add Address'}</h3>

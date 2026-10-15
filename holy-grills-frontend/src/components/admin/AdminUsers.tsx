@@ -24,6 +24,7 @@ import { hpTierName, safeText } from '@/lib/valueText';
 import { formatNaira, timeAgo, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/hgUtils';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
+import ModalPortal from '@/components/ModalPortal';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, Pagination, body } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
 
@@ -397,9 +398,10 @@ function UserDrawer({ user, onClose }) {
   const orderList = Array.isArray(orders) ? orders : [];
 
   return (
+    <ModalPortal>
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-end sm:items-stretch sm:justify-end bg-foreground/50 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-end sm:items-stretch sm:justify-end hg-scrim"
       onClick={onClose}
     >
       <motion.div
@@ -565,6 +567,7 @@ function UserDrawer({ user, onClose }) {
 
       {grantOpen && <GrantModal user={user} onClose={() => setGrantOpen(false)} onDone={() => loadTab('hp')} />}
     </motion.div>
+    </ModalPortal>
   );
 }
 

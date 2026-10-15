@@ -4,7 +4,7 @@ import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { Card, Pill, SectionHeader } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
 
 // Unified "HP & Multipliers" page — everything HP-multiplier related in one
@@ -54,7 +54,7 @@ function PerItemMultipliers() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading menu items..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   const OPTS = [{ m: 0.5, l: '½×' }, { m: 1, l: '1×' }, { m: 2, l: '2×' }];
 
@@ -75,7 +75,7 @@ function PerItemMultipliers() {
                   key={opt.m}
                   onClick={() => setMultiplier(it.id, opt.m, it.name)}
                   disabled={busy === it.id}
-                  className={`px-2.5 py-1 rounded-full text-xs font-bold disabled:opacity-50 ${it.hp_multiplier === opt.m ? 'bg-primary text-white' : 'bg-white border border-border text-foreground'}`}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold disabled:opacity-50 ${it.hp_multiplier === opt.m ? 'bg-primary text-white' : 'bg-card border border-border text-foreground'}`}
                 >
                   {opt.l}
                 </button>
@@ -119,7 +119,7 @@ function GlobalMultiplier() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading settings..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <Card>

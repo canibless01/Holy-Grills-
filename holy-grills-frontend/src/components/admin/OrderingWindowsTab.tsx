@@ -3,7 +3,7 @@ import { Clock, Plus, Pencil, RefreshCw } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
 
 // Ordering Windows — when ordering is open each weekday/date, the per-slot
@@ -56,7 +56,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
     setBusy(false);
   };
 
-  if (windows == null) return <LoadingSpinner label="Loading ordering windows..." />;
+  if (windows == null) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-3">
@@ -75,7 +75,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
           {windows.map((w) => {
             const closed = w.is_closed;
             return (
-              <div key={w.id} className="rounded-2xl bg-white border border-border p-4">
+              <div key={w.id} className="rounded-2xl bg-card border border-border p-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-sm text-foreground">{w.label || (w.weekday != null ? `${WEEKDAYS[w.weekday]?.label || `Day ${w.weekday}`}` : (w.date || 'Window'))}</span>
                   {closed ? <Pill tone="red">CLOSED</Pill> : <Pill tone="green">OPEN</Pill>}

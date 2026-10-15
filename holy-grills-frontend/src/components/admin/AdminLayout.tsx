@@ -15,6 +15,27 @@ export default function AdminLayout({ active, onSelect, onNavigate, title, subti
 
   useEffect(() => { localStorage.setItem('hg_admin_collapsed', String(collapsed)); }, [collapsed]);
 
+  // The mobile drawer MUST close when a section is chosen. Closing is driven
+  // from here (not just the sidebar's own handlers) so the drawer can never
+  // stay open over the page you just navigated to — selection always closes.
+  useEffect(() => { setMobileOpen(false); }, [active]);
+
+  // Escape closes the mobile drawer too.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setMobileOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileOpen]);
+
+  // Lock page scroll behind the mobile drawer so the page you're leaving
+  // doesn't scroll under it.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
+
   return (
     <div className="min-h-screen bg-background admin-scope">
       <AdminSidebar

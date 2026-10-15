@@ -3,6 +3,7 @@ import { ICONS, ICON_SIZES } from '@/config/icons';
 import { liveApi } from '@/lib/liveApi';
 import { computeNextOpening } from '@/lib/kitchenSchedule';
 import ScheduleOrderPanel from '@/components/ScheduleOrderPanel';
+import ModalPortal from '@/components/ModalPortal';
 import type { DeliveryWindow, DeliveryWindowsStatus } from '@/types/orders';
 
 const { Clock, ChevronRight, X } = ICONS;
@@ -172,7 +173,8 @@ export default function KitchenStatusBox({ onStatus, compact = false }: KitchenS
     : (openingSoon ? 'border-success/25 bg-success/5 text-success' : 'border-destructive/25 bg-destructive/5 text-destructive');
 
   const scheduleModal = showSchedule ? (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => setShowSchedule(false)}>
+    <ModalPortal>
+    <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => setShowSchedule(false)}>
       <div className="bg-card rounded-3xl w-full max-w-sm relative shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <button onClick={() => setShowSchedule(false)} aria-label="Close" className="absolute top-3 right-3 z-10 p-2 rounded-full bg-secondary/70 hover:bg-secondary transition-colors">
           <X size={ICON_SIZES.sm} className="text-muted-foreground" />
@@ -187,6 +189,7 @@ export default function KitchenStatusBox({ onStatus, compact = false }: KitchenS
         </div>
       </div>
     </div>
+    </ModalPortal>
   ) : null;
 
   // Compact variant — one line for the menu page. When closed it becomes the

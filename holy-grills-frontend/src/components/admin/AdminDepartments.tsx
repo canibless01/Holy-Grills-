@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Card, Toggle, Pill } from './AdminShared';
 import { msg } from '@/lib/messages';
@@ -61,13 +61,13 @@ export default function AdminDepartments() {
     await load();
   };
 
-  if (!depts.length && !levels.length) return <LoadingSpinner label="Loading..." />;
+  if (!depts.length && !levels.length) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1 p-1 rounded-full bg-secondary">
         {[{ id: 'depts', label: 'Departments' }, { id: 'levels', label: 'Academic Levels' }].map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
         ))}
       </div>
       {tab === 'depts' ? (
@@ -78,7 +78,7 @@ export default function AdminDepartments() {
               <div className="flex-1"><div className="font-bold text-sm text-foreground">{d.name}</div><div className="text-xs text-muted-foreground">Faculty: {d.faculty}</div></div>
               <Pill tone={d.is_active ? 'green' : 'red'}>{d.is_active ? 'Active' : 'Hidden'}</Pill>
               <Toggle checked={d.is_active} onChange={() => toggleDept(d)} />
-              <button onClick={() => delDept(d.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button onClick={() => delDept(d.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </Card>
           ))}
         </div>
@@ -90,7 +90,7 @@ export default function AdminDepartments() {
               <div className="flex-1"><div className="font-bold text-sm text-foreground">{l.name}</div><div className="text-xs text-muted-foreground">Value: {l.value}</div></div>
               <Pill tone={l.is_active ? 'green' : 'red'}>{l.is_active ? 'Active' : 'Hidden'}</Pill>
               <Toggle checked={l.is_active} onChange={() => toggleLevel(l)} />
-              <button onClick={() => delLevel(l.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button onClick={() => delLevel(l.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </Card>
           ))}
         </div>

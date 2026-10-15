@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Download, X, Share2, Plus, Flame } from 'lucide-react';
+import ModalPortal from '@/components/ModalPortal';
 
 const DISMISS_KEY = 'hg_install_dismissed';
 
@@ -73,7 +74,7 @@ export default function InstallPrompt() {
               <div className="font-heading font-bold text-sm">Install Holy Grill</div>
               <div className="text-xs text-white/80 truncate">Add to your home screen for the full experience</div>
             </div>
-            <button onClick={handleInstall} className="shrink-0 px-3 py-2 rounded-full bg-white text-primary text-xs font-bold flex items-center gap-1.5 hover:bg-white/90 transition-colors">
+            <button onClick={handleInstall} className="shrink-0 px-3 py-2 rounded-full bg-card text-primary text-xs font-bold flex items-center gap-1.5 hover:bg-white/90 transition-colors">
               <Download className="w-3.5 h-3.5" /> Install
             </button>
             <button onClick={dismiss} className="shrink-0 p-1.5 rounded-full hover:bg-white/20 transition-colors" aria-label="Dismiss">
@@ -84,8 +85,9 @@ export default function InstallPrompt() {
       )}
 
       {showIOS && (
-        <div className="fixed inset-0 z-[1080] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in" onClick={dismiss}>
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md mx-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-[1080] flex items-end sm:items-center justify-center hg-scrim animate-fade-in" onClick={dismiss}>
+          <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md mx-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-2xl bg-gradient-cta flex items-center justify-center shadow-lg shadow-flame-600/30">
                 <Flame className="w-6 h-6 text-white" />
@@ -117,6 +119,7 @@ export default function InstallPrompt() {
             </button>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );

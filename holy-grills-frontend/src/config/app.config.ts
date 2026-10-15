@@ -47,12 +47,9 @@ export const APP_CONFIG = {
     appId: import.meta.env.VITE_ONESIGNAL_APP_ID || '',
   },
 
-  // Native Web Push (VAPID). The public key is safe in client code — it pairs
-  // with the server-side private key the backend uses to send pushes via the
-  // Web Push protocol. Set this to enable the /api/push/subscribe flow.
-  webPush: {
-    vapidPublicKey: '', // ← Paste your VAPID public key here to enable Web Push
-  },
+  // Native Web Push (VAPID) — removed. Push delivery is OneSignal-only
+  // (onesignal.appId above + the service worker importScript). webPush.ts
+  // routes every "enable push" action through OneSignal.
 
   seo: {
     defaultTitle: "Holy Grills 🔥 — Made With More Than Flame",

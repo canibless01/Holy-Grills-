@@ -65,14 +65,14 @@ export default function AdminCategories({ open, onClose, onChanged }) {
           {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
           {!loading && cats.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No categories yet.</p>}
           {cats.map((c) => (
-            <div key={c.id} className="rounded-xl bg-white border border-border p-2.5 flex items-center gap-2">
+            <div key={c.id} className="rounded-xl bg-card border border-border p-2.5 flex items-center gap-2">
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm text-foreground truncate">{c.name}</div>
                 <div className="text-[11px] text-muted-foreground truncate">{c.slug} · order {c.sort_order ?? 0}</div>
               </div>
               <Pill tone={c.is_active ? 'green' : 'cocoa'}>{c.is_active ? 'Active' : 'Hidden'}</Pill>
               <button aria-label={`Edit category ${c.name}`} onClick={() => { setEditingId(c.id); setForm({ name: c.name, slug: c.slug, description: c.description || '', sort_order: c.sort_order || 0, is_active: c.is_active }); }} className="text-xs font-bold text-primary">{msg('FE_ADMIN_CATEGORIES_EDIT', "Edit")}</button>
-              <button onClick={() => toggleActive(c)} className={`px-2.5 py-1.5 rounded-full text-xs font-bold shrink-0 ${c.is_active ? 'bg-red-50 text-red-600' : 'bg-green-600 text-white'}`}>{c.is_active ? 'Deactivate' : 'Activate'}</button>
+              <button onClick={() => toggleActive(c)} className={`px-2.5 py-1.5 rounded-full text-xs font-bold shrink-0 ${c.is_active ? 'tone-error' : 'bg-success text-white'}`}>{c.is_active ? 'Deactivate' : 'Activate'}</button>
             </div>
           ))}
         </div>

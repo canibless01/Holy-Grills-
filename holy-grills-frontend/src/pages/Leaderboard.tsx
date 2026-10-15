@@ -13,6 +13,7 @@ import MascotStandee from '@/components/mascot/MascotStandee';
 import ModalPortal from '@/components/ModalPortal';
 import TierIcon from '@/components/TierIcon';
 import { triggerMascotCelebration } from '@/lib/mascots';
+import { playSound } from '@/lib/soundManager';
 import { msg, useMessages } from '@/lib/messages';
 import { localStore } from '@/lib/storage';
 
@@ -40,7 +41,7 @@ const getWeeklyCountdown = () => {
 function RankChange({ change }) {
   if (!change || change === 0) return <Minus className="w-3 h-3 text-muted-foreground" />;
   return change > 0 ? (
-    <span className="flex items-center gap-0.5 text-emerald-600 text-[10px] font-bold"><ArrowUp className="w-3 h-3" />{change}</span>
+    <span className="flex items-center gap-0.5 text-success text-[10px] font-bold"><ArrowUp className="w-3 h-3" />{change}</span>
   ) : (
     <span className="flex items-center gap-0.5 text-muted-foreground text-[10px] font-bold"><ArrowDown className="w-3 h-3" />{Math.abs(change)}</span>
   );
@@ -112,6 +113,7 @@ export default function Leaderboard() {
   const prevRankRef = useRef(null);
   useEffect(() => {
     if (myRank && prevRankRef.current != null && myRank.rank < prevRankRef.current) {
+      playSound('leaderboard_up');
       triggerMascotCelebration('hips');
     }
     if (myRank) prevRankRef.current = myRank.rank;
@@ -147,15 +149,15 @@ export default function Leaderboard() {
       </div>
 
       {error && (
-        <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center justify-between gap-3">
-          <span className="text-sm text-red-600 font-medium">{error}</span>
-          <button onClick={() => setPeriod(period)} className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold">Retry</button>
+        <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+          <span className="text-sm text-destructive font-medium">{error}</span>
+          <button onClick={() => setPeriod(period)} className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold">Retry</button>
         </div>
       )}
 
       {/* Pinned user rank */}
       {myRank && (
-        <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-glow">
+        <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 rounded-full bg-gradient-cta flex items-center justify-center font-bold text-sm">#{<CountUp value={myRank.rank} />}</div>
@@ -175,7 +177,7 @@ export default function Leaderboard() {
       {/* User/Squad toggle */}
       <div className="relative flex bg-secondary rounded-full p-1 w-full">
         {VIEWS.map((v) => (
-          <button key={v.id} onClick={() => setView(v.id)} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${view === v.id ? 'bg-gradient-cta text-white shadow-glow' : 'text-foreground'}`}>
+          <button key={v.id} onClick={() => setView(v.id)} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${view === v.id ? 'bg-primary text-primary-foreground' : 'text-foreground'}`}>
             {v.label}
           </button>
         ))}
@@ -184,7 +186,7 @@ export default function Leaderboard() {
       {view !== 'squad' && (
         <div className="grid grid-cols-3 gap-2">
           {PERIODS.map((p) => (
-            <button key={p.id} onClick={() => setPeriod(p.id)} className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${period === p.id ? 'bg-primary text-white' : 'bg-white text-foreground border border-border'}`}>
+            <button key={p.id} onClick={() => setPeriod(p.id)} className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${period === p.id ? 'bg-primary text-white' : 'bg-card text-foreground border border-border'}`}>
               {p.label}
             </button>
           ))}
@@ -197,14 +199,14 @@ export default function Leaderboard() {
             <>
               {hallReleased && hallOfFame.length > 0 && (
                 <Link to="/hall-of-fame" className="block mb-4 group">
-                  <div className="relative rounded-2xl bg-accent/10 border border-accent/30 p-4 overflow-hidden shadow-glow transition-transform group-hover:scale-[1.01]">
+                  <div className="relative rounded-2xl bg-accent/10 border border-accent/30 p-4 overflow-hidden shadow-card transition-transform group-hover:scale-[1.01]">
                     <Crown className="absolute -right-3 -top-3 w-16 h-16 text-accent/20" />
                     <div className="relative flex items-center gap-3">
                       <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center shrink-0 ring-2 ring-accent/40 shadow-md">
                         <Crown className="w-6 h-6 text-white" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600">Hall of Fame</div>
+                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-warn">Hall of Fame</div>
                         <div className="font-heading font-extrabold text-base text-foreground truncate">
                           {hallOfFame[0].winner?.full_name || hallOfFame[0].full_name}
                         </div>
@@ -212,7 +214,7 @@ export default function Leaderboard() {
                           Month after month at the top.
                         </div>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-amber-600 shrink-0" />
+                      <ChevronRight className="w-5 h-5 text-warn shrink-0" />
                     </div>
                   </div>
                 </Link>
@@ -226,13 +228,17 @@ export default function Leaderboard() {
                 </div>
               )}
 
-              {/* Spin card */}
-              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 shadow-card ${spinEarned ? 'bg-accent/15 border-accent/30' : 'bg-white border-border'}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-primary' : 'bg-secondary'}`}>🎡</div>
+              {/* Spin card — the loudest card on the page when a spin is
+                  actually earned; quiet outline when locked. */}
+              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 relative overflow-hidden ${spinEarned ? 'bg-gradient-dark border-accent/40' : 'bg-card border-border'}`}>
+                {spinEarned && <div className="absolute inset-0 tier-shimmer-holy opacity-[0.07] pointer-events-none" />}
+                <div className="flex items-center gap-3 relative">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-gradient-cta' : 'bg-secondary'}`}>
+                    <span className={spinEarned ? 'animate-flame-flicker inline-block' : 'inline-block'}>🎡</span>
+                  </div>
                   <div className="flex-1">
                     {spinEarned ? (
-                      <><div className="font-heading font-bold text-sm text-foreground">{msg('FE_LEADERBOARD_SPINS_AVAILABLE', '{count} spins available', { count: spinCount })}</div><div className="text-xs text-muted-foreground">Spin to win bonus HP.</div></>
+                      <><div className="font-heading font-bold text-sm text-white">{msg('FE_LEADERBOARD_SPINS_AVAILABLE', '{count} spins available', { count: spinCount })}</div><div className="text-xs text-white/70">Spin to win bonus HP.</div></>
                     ) : hasSpun ? (
                       <><div className="font-heading font-bold text-sm text-foreground">Spin Used</div><div className="text-xs text-muted-foreground">Come back next month for another shot.</div></>
                     ) : (
@@ -258,7 +264,7 @@ export default function Leaderboard() {
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.04, duration: 0.3 }}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border shadow-card ${entry.is_current_user ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/40' : 'bg-white border-border'}`}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border ${entry.is_current_user ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/40 shadow-card' : 'bg-card border-border'}`}
                   >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs tabular-nums ${entry.rank <= 3 ? 'bg-gradient-cta text-white' : 'bg-secondary text-foreground'}`}>{entry.rank}</div>
                     {isFeatureEnabled('leaderboard_prizes', true) && (
@@ -299,7 +305,7 @@ export default function Leaderboard() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.04, duration: 0.3 }}
-                      className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-border shadow-card"
+                      className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border shadow-card"
                     >
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs tabular-nums ${squad.rank <= 3 ? 'bg-gradient-cta text-white' : 'bg-secondary text-foreground'}`}>{squad.rank}</div>
                       <div className="flex-1 min-w-0">
@@ -331,8 +337,8 @@ export default function Leaderboard() {
           and below the sheet. */}
       {showPrizesModal && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowPrizesModal(false)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={() => setShowPrizesModal(false)}>
+          <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">How Prizes Work 🏆</h3>
               <button onClick={() => setShowPrizesModal(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
@@ -377,18 +383,37 @@ export default function Leaderboard() {
 }
 
 function PodiumBar({ rank, place, height, delay }) {
-  const colors = ['bg-accent', 'bg-muted-foreground/40', 'bg-accent/70'];
+  // Medal materials — gold / warm silver / copper. Same ladder language as the
+  // tier rings: 1st glows warm gold, 2nd/3rd are warm matte metals, never grey.
+  const medals = ['medal-gold', 'medal-silver', 'medal-bronze'];
+  const medalEmoji = ['🥇', '🥈', '🥉'];
+  const name = rank.full_name || '—';
+  const initials = name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   return (
     <div className="flex flex-col items-center" style={{ order: place === 1 ? 1 : place === 2 ? 0 : 2 }}>
-      <div className="text-xs font-semibold text-foreground text-center max-w-[80px] truncate">{rank.full_name}</div>
+      {/* Medal-ringed avatar — the winner's face slot on the podium */}
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: delay + 0.35, type: 'spring', stiffness: 260, damping: 18 }}
+        className="relative mb-1.5"
+      >
+        <div className={`w-11 h-11 rounded-full ${medals[place - 1]} p-[2.5px]`}>
+          <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
+            <span className="text-[11px] font-extrabold text-foreground">{initials}</span>
+          </div>
+        </div>
+        <span className="absolute -bottom-1.5 -right-1 text-sm leading-none drop-shadow-sm">{medalEmoji}</span>
+      </motion.div>
+      <div className="text-xs font-semibold text-foreground text-center max-w-[80px] truncate">{name}</div>
       <div className="flex items-center gap-0.5 text-xs text-primary font-semibold mb-1 tabular-nums"><Flame className="w-3 h-3" />{rank.hp_total}</div>
       <motion.div
         initial={{ height: 0, opacity: 0 }}
         animate={{ height, opacity: 1 }}
         transition={{ delay, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-        className={`w-16 rounded-t-xl ${colors[place - 1]} flex items-start justify-center pt-2 overflow-hidden`}
+        className={`w-16 rounded-t-xl ${medals[place - 1]} flex items-start justify-center pt-2 overflow-hidden`}
       >
-        <span className="text-white font-bold text-lg">#{place}</span>
+        <span className="text-white font-bold text-lg drop-shadow-sm">#{place}</span>
       </motion.div>
     </div>
   );

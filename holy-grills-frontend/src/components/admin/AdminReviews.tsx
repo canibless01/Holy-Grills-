@@ -2,16 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { Star, Search, RefreshCw, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
 const RATING_TONE = {
-  5: 'bg-green-100 text-green-700',
+  5: 'tone-success',
   4: 'bg-lime-100 text-lime-700',
-  3: 'bg-amber-100 text-amber-700',
-  2: 'bg-orange-100 text-orange-700',
-  1: 'bg-red-100 text-red-700',
+  3: 'tone-warn',
+  2: 'tone-warn',
+  1: 'tone-error',
 };
 
 function Stars({ value }) {
@@ -81,7 +81,7 @@ export default function AdminReviews() {
   // GET /admin/reviews only) and the button 404'd. Homepage testimonials are
   // storefront sections, so promotion needs a backend route before it can come back.
 
-  if (loading) return <LoadingSpinner label="Loading reviews..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
@@ -90,7 +90,7 @@ export default function AdminReviews() {
     <div className="space-y-4">
       {/* Summary + filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-border">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-border">
           <TrendingUp className="w-4 h-4 text-primary" />
           <span className="text-sm font-bold text-foreground">{reviews.length} reviews</span>
           <span className="text-xs text-muted-foreground">· avg {avgRating}★</span>
@@ -132,7 +132,7 @@ export default function AdminReviews() {
             const userName = r.profiles?.full_name || r.user?.name || r.user_name || 'Student';
             const isPromoted = r.is_promoted || r.promoted;
             return (
-              <div key={r.id} className="rounded-2xl bg-white border border-border p-4">
+              <div key={r.id} className="rounded-2xl bg-card border border-border p-4">
                 <button onClick={() => setExpanded(isOpen ? null : r.id)} className="w-full flex items-start justify-between gap-3 text-left">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -140,7 +140,7 @@ export default function AdminReviews() {
                       <Stars value={r.rating} />
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${RATING_TONE[r.rating] || 'bg-secondary text-muted-foreground'}`}>{r.rating}★</span>
                       {isPromoted && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/30 text-accent-foreground/80">★ On Homepage</span>}
-                      {r.is_flagged && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">🚩 Flagged</span>}
+                      {r.is_flagged && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tone-error">🚩 Flagged</span>}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{formatDateTime(r.created_at || r.created_date)}</p>
                     {r.order_id && <p className="text-[11px] text-muted-foreground">Order #{r.order_id?.slice?.(-6) || r.order_id}</p>}

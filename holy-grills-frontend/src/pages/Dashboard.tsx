@@ -109,7 +109,7 @@ export default function Dashboard() {
 
       {/* Login streak — auto/system-read, no button. Aligned to the backend's
           Mon–Sun week_progress so the flames reflect the days you actually logged in. */}
-      <div className="rounded-2xl p-4 text-white relative overflow-hidden shadow-glow" style={{ background: tierGradient }}>
+      <div className="rounded-2xl p-4 text-white relative overflow-hidden shadow-card" style={{ background: tierGradient }}>
         <FlameMark className="absolute -right-4 -top-4 w-24 h-24 opacity-15" />
         <div className="relative">
           <div className="flex items-center justify-between mb-2">
@@ -220,9 +220,10 @@ export default function Dashboard() {
         );
       })}
 
-      {/* Lock-in prompt — order placed, no active lock, within 24h */}
+      {/* Lock-in prompt — order placed, no active lock, within 24h. Solid
+          primary: the tier card above owns the page's gradient. */}
       {showLockPrompt && (
-        <Link to="/order-locks" className="block rounded-2xl bg-gradient-cta p-4 text-white hover:scale-[1.01] transition-transform shadow-glow">
+        <Link to="/order-locks" className="block rounded-2xl bg-primary p-4 text-white hg-press shadow-card">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
               <Lock className="w-5 h-5 text-white" />
@@ -256,7 +257,9 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="space-y-2">
-            {recentOrders.map(order => (
+            {/* Three most recent only — the full history lives on /orders
+                behind "See all", not on the dashboard. */}
+            {recentOrders.slice(0, 3).map(order => (
               <Link key={order.id} to={`/orders/${order.id}`} className="block rounded-2xl bg-card border border-border p-3 hover:shadow-md transition-all">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">

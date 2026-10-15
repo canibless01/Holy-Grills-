@@ -28,8 +28,11 @@ const SHELL_ASSETS = [
   '/index.html',
   '/offline.html',
   '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/maskable-192.png',
+  '/icons/maskable-512.png',
   '/icons/icon.svg',
-  '/icons/maskable.svg',
 ];
 
 // Anything that must always come from the network, never from a cache: dev

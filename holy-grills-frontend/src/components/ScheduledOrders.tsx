@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Clock, Calendar, X } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
@@ -23,7 +24,7 @@ export default function ScheduledOrders() {
   useEffect(() => { load(); }, []);
 
   const cancel = async (id) => {
-    if (!confirm('Cancel this scheduled order? Your slot will be released and any wallet payment refunded.')) return;
+    if (!(await confirmAction({ title: "Cancel this scheduled order?", body: "Your slot will be released and any wallet payment refunded.", destructive: true, confirmLabel: "Cancel" }))) return;
     setCancelling(id);
     try {
       await mockApi.orders.cancelScheduled(id);

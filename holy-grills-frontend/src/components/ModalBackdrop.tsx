@@ -5,8 +5,9 @@ import ModalPortal from './ModalPortal';
  *
  *  · Portalled to <body> so a transformed ancestor (Framer Motion) can never
  *    clip `position: fixed` — the backdrop always covers the full screen.
- *  · One shared look everywhere: a blurred dark veil (bg-black/60 +
- *    backdrop-blur-md), no light bleeding through the edges.
+ *  · One shared look everywhere: the .hg-scrim veil (warm brand-black +
+ *    one blur step) — same colour, same opacity on every page and every panel,
+ *    no light bleeding through the edges.
  *
  * Usage — wrap the popup's panel:
  *   <ModalBackdrop onClose={close}>
@@ -19,7 +20,7 @@ export default function ModalBackdrop({ children, onClose, align = 'items-end sm
   return (
     <ModalPortal>
       <div
-        className={`fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex ${align} justify-center p-4`}
+        className={`fixed inset-0 z-50 hg-scrim flex ${align} justify-center p-4`}
         onClick={onClose}
       >
         {children}

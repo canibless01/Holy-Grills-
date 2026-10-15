@@ -197,7 +197,7 @@ export default function AdminDeliveryArea() {
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 text-xs text-red-600 font-semibold">
+              <div className="flex items-start gap-2 text-xs text-destructive font-semibold">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span className="min-w-0 break-words">{error.text}</span>
               </div>
@@ -210,7 +210,7 @@ export default function AdminDeliveryArea() {
             )}
 
             {!saved && !error && (
-              <p className="text-[11px] text-amber-700 font-semibold break-words">
+              <p className="text-[11px] text-warn font-semibold break-words">
                 {msg('FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING', 'Without a centre point every address is measured against nothing, so students get the 15 km default instead of your campus.')}
               </p>
             )}

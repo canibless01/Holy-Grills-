@@ -35,7 +35,7 @@ export default function FreeSideCreditModal({ open, count, sides = [], busy = fa
 
   return (
     <ModalPortal>
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ y: 30, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}

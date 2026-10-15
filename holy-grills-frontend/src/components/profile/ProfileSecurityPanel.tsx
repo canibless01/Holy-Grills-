@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState } from 'react';
 import { KeyRound, MailCheck, LogOut, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -52,7 +53,7 @@ export default function ProfileSecurityPanel() {
   };
 
   const handleLogoutAll = async () => {
-    if (!confirm("Sign out of every device? You will be logged out here too.")) return;
+    if (!(await confirmAction({ title: "Sign out of every device?", body: "You will be logged out here too.", destructive: true, confirmLabel: "Sign out" }))) return;
     setLoggingOutAll(true);
     try {
       await liveApi.auth.logoutAll();

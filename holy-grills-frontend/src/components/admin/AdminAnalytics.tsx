@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
+import ModalPortal from '@/components/ModalPortal';
 import { Card, Skeleton, EmptyState, SectionTitle, StatTile, BreakdownTiles, body } from './ui/AdminKit';
 import {
   OrderTimingDashboard, AddonAcceptanceDashboard, DeliveryLocationDashboard,
@@ -226,7 +227,7 @@ export default function AdminAnalytics() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === t.id ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
+            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === t.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
           >
             {t.label}
           </button>
@@ -381,8 +382,8 @@ export default function AdminAnalytics() {
                 </div>
                 {b.status === 'pending' ? (
                   <div className="flex gap-1 shrink-0">
-                    <button onClick={() => updateBrandStatus(b.id, 'approved')} className="px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-xs font-bold active:scale-95 whitespace-nowrap">Approve</button>
-                    <button onClick={() => updateBrandStatus(b.id, 'rejected')} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold active:scale-95 whitespace-nowrap">Reject</button>
+                    <button onClick={() => updateBrandStatus(b.id, 'approved')} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold active:scale-95 whitespace-nowrap">Approve</button>
+                    <button onClick={() => updateBrandStatus(b.id, 'rejected')} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold active:scale-95 whitespace-nowrap">Reject</button>
                   </div>
                 ) : (
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 self-start ${b.status === 'approved' ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'}`}>{b.status}</span>
@@ -409,7 +410,8 @@ export default function AdminAnalytics() {
       )}
 
       {brandModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setBrandModal(false)}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex items-center justify-center hg-scrim p-4" onClick={() => setBrandModal(false)}>
           <div className="bg-card rounded-2xl p-5 w-full max-w-md space-y-3 shadow-card" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-sm text-foreground">Log Brand Partnership Request</h3>
             <div>
@@ -430,6 +432,7 @@ export default function AdminAnalytics() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );

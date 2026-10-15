@@ -16,9 +16,9 @@ export default function StreakWeekCalendar({ week, completedThisWeek, cycleDays,
         {week.map((d, i) => (
           <div key={i} className="flex flex-col items-center gap-1.5">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all ${
-              d.status === 'checked_in' ? 'bg-emerald-100 text-emerald-600 shadow-sm' :
-              d.status === 'reclaimed' ? 'bg-amber-100 text-amber-600 shadow-sm' :
-              d.status === 'missed' ? 'bg-red-50 text-red-400' : 'bg-muted text-muted-foreground/50'
+              d.status === 'checked_in' ? 'tone-success shadow-sm' :
+              d.status === 'reclaimed' ? 'tone-warn shadow-sm' :
+              d.status === 'missed' ? 'tone-error' : 'bg-muted text-muted-foreground/50'
             }`}>
               {d.status === 'checked_in' ? <Check className="w-4 h-4" /> :
                d.status === 'reclaimed' ? <RotateCcw className="w-4 h-4" /> :
@@ -29,9 +29,9 @@ export default function StreakWeekCalendar({ week, completedThisWeek, cycleDays,
         ))}
       </div>
       <div className="flex items-center gap-3 mt-4 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><Check className="w-3 h-3 text-emerald-500" /> Checked in</span>
-        <span className="flex items-center gap-1"><RotateCcw className="w-3 h-3 text-amber-500" /> Reclaimed</span>
-        <span className="flex items-center gap-1"><X className="w-3 h-3 text-red-400" /> Missed</span>
+        <span className="flex items-center gap-1"><Check className="w-3 h-3 text-success" /> Checked in</span>
+        <span className="flex items-center gap-1"><RotateCcw className="w-3 h-3 text-warn" /> Reclaimed</span>
+        <span className="flex items-center gap-1"><X className="w-3 h-3 text-destructive" /> Missed</span>
       </div>
     </div>
   );

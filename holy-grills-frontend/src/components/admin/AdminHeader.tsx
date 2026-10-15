@@ -4,6 +4,7 @@ import { Menu, ExternalLink, LogOut, UtensilsCrossed, Bike, Search, X } from 'lu
 import AdminGlobalSearch from '@/components/admin/AdminGlobalSearch';
 import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
+import PanelSwitcher from '@/components/PanelSwitcher';
 import BrandLogo from '@/components/BrandLogo';
 
 /**
@@ -51,6 +52,9 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
 
         {/* Right — campus + actions */}
         <div className="flex items-center gap-1 shrink-0">
+          {/* One-icon panel switcher: on /admin → student page (an admin
+              visiting Kitchen/Rider gets "back to /admin" there instead). */}
+          <PanelSwitcher className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />
           <AdminCampusSelector />
           {/* Mobile search toggle */}
           <button

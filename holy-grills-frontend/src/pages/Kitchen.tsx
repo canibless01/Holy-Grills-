@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { Calendar, Package, Zap, Check, ChefHat } from 'lucide-react';
 import { useKitchenData } from '@/hooks/useKitchenData';
 import { formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import KitchenHeader from '@/components/kitchen/KitchenHeader';
 import KitchenOrderCard from '@/components/kitchen/KitchenOrderCard';
 import KitchenSettings from '@/components/kitchen/KitchenSettings';
@@ -20,9 +20,9 @@ const TABS = [
 ];
 
 const COLUMN_ACCENTS = {
-  received: { dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700', label: 'New Orders' },
-  preparing: { dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700', label: 'In Preparation' },
-  ready: { dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700', label: 'Ready for Pickup' },
+  received: { dot: 'bg-brand-brown/50', badge: 'tone-info', label: 'New Orders' },
+  preparing: { dot: 'bg-accent', badge: 'tone-warn', label: 'In Preparation' },
+  ready: { dot: 'bg-success', badge: 'tone-success', label: 'Ready for Pickup' },
 };
 
 export default function Kitchen() {
@@ -35,7 +35,7 @@ export default function Kitchen() {
   } = useKitchenData();
 
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
-  if (loading) return <LoadingSpinner label="Loading kitchen…" fullScreen />;
+  if (loading) return <StaffPanelSkeleton variant="kitchen" />;
 
   const received = queue.filter((o) => o.status === 'received');
   const preparing = queue.filter((o) => o.status === 'preparing');
@@ -48,11 +48,11 @@ export default function Kitchen() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 space-y-4 animate-fade-in">
         {/* Error state */}
         {error && (
-          <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center justify-between gap-3">
-            <span className="text-sm text-red-600 font-medium">{error}</span>
+          <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+            <span className="text-sm text-destructive font-medium">{error}</span>
             <button
               onClick={() => window.location.reload()}
-              className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold"
+              className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold"
             >
               Retry
             </button>
@@ -61,7 +61,7 @@ export default function Kitchen() {
 
         {/* Capacity bar */}
         {capacity && (
-          <div className="rounded-2xl bg-white border border-border p-3.5 shadow-card flex items-center justify-between gap-3 flex-wrap">
+          <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Package className="w-4 h-4 text-primary" />
               <span className="text-sm font-bold text-foreground">Today's Capacity</span>
@@ -70,7 +70,7 @@ export default function Kitchen() {
               <span className="font-bold text-foreground tabular-nums">{capacity.orders_today ?? 0}</span>
               <span>/</span>
               <span className="tabular-nums">{capacity.daily_order_capacity ?? 0}</span>
-              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'tone-error' : 'tone-success'}`}>
                 {(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'AT CAPACITY' : `${Math.max(0, (capacity.daily_order_capacity ?? 0) - (capacity.orders_today ?? 0))} LEFT`}
               </span>
             </div>
@@ -81,8 +81,8 @@ export default function Kitchen() {
         {metrics && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <MetricCard value={metrics?.total_orders ?? 0} label="Total Today" color="text-foreground" />
-            <MetricCard value={metrics?.orders_by_status?.preparing || 0} label="Preparing" color="text-blue-500" />
-            <MetricCard value={metrics?.orders_by_status?.ready || 0} label="Ready" color="text-emerald-500" />
+            <MetricCard value={metrics?.orders_by_status?.preparing || 0} label="Preparing" color="text-info" />
+            <MetricCard value={metrics?.orders_by_status?.ready || 0} label="Ready" color="text-success" />
             <MetricCard value={`${metrics?.avg_prep_time_minutes ?? '—'}m`} label="Avg Prep" color="text-primary" />
           </div>
         )}
@@ -93,7 +93,7 @@ export default function Kitchen() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}
+              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
             >
               {t.label}
             </button>
@@ -150,7 +150,7 @@ export default function Kitchen() {
               <span><span className="font-bold">{scheduled.count}</span> scheduled order(s) awaiting promotion to the queue</span>
             </div>
             {scheduled.scheduled_orders.map((order) => (
-              <div key={order.id} className="rounded-2xl bg-white border border-border p-3.5 shadow-card">
+              <div key={order.id} className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-foreground font-mono">#{(order.id || '').slice(0, 8).toUpperCase()}</span>
                   <span className="text-xs text-primary font-semibold">{formatDateTime(order.scheduled_for)}</span>
@@ -187,7 +187,7 @@ export default function Kitchen() {
                 <button
                   key={w.id}
                   onClick={() => selectWindow(w.id)}
-                  className={`shrink-0 px-3.5 py-2.5 rounded-2xl border text-left transition-all ${selectedWindow === w.id ? 'bg-primary border-primary text-white shadow-glow' : 'bg-white border-border text-foreground'}`}
+                  className={`shrink-0 px-3.5 py-2.5 rounded-2xl border text-left transition-all ${selectedWindow === w.id ? 'bg-primary border-primary text-white shadow-glow' : 'bg-card border-border text-foreground'}`}
                 >
                   <div className="text-xs font-bold">{w.label}</div>
                   <div className={`text-[10px] ${selectedWindow === w.id ? 'text-white/80' : 'text-muted-foreground'}`}>
@@ -198,25 +198,25 @@ export default function Kitchen() {
             </div>
 
             {batchResult && (
-              <div className="rounded-2xl bg-white border border-border p-3.5 shadow-card">
+              <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
                 <div className="flex items-center justify-between mb-2.5">
                   <span className="text-xs font-bold text-foreground">{batchResult.label}</span>
                   <button onClick={clearBatchResult} className="text-muted-foreground text-xs font-bold hover:text-muted">✕</button>
                 </div>
                 <div className="flex gap-2.5">
-                  <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-center">
-                    <div className="text-lg font-heading font-extrabold text-emerald-600 tabular-nums">{batchResult.advanced}</div>
-                    <div className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide">advanced</div>
+                  <div className="flex-1 rounded-xl tone-success border border-success/30 p-2.5 text-center">
+                    <div className="text-lg font-heading font-extrabold text-success tabular-nums">{batchResult.advanced}</div>
+                    <div className="text-[10px] text-success font-semibold uppercase tracking-wide">advanced</div>
                   </div>
-                  <div className="flex-1 rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-center">
-                    <div className="text-lg font-heading font-extrabold text-amber-600 tabular-nums">{batchResult.skipped}</div>
-                    <div className="text-[10px] text-amber-600 font-semibold uppercase tracking-wide">skipped</div>
+                  <div className="flex-1 rounded-xl tone-warn border border-warn/40 p-2.5 text-center">
+                    <div className="text-lg font-heading font-extrabold text-warn tabular-nums">{batchResult.skipped}</div>
+                    <div className="text-[10px] text-warn font-semibold uppercase tracking-wide">skipped</div>
                   </div>
                 </div>
                 {batchResult.skipped > 0 && Object.keys(batchResult.skippedReasons).length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {Object.entries(batchResult.skippedReasons).map(([reason, count]) => (
-                      <span key={reason} className="text-[10px] font-semibold px-2 py-1 rounded-md bg-amber-100 text-amber-700">{count}× {reason}</span>
+                      <span key={reason} className="text-[10px] font-semibold px-2 py-1 rounded-md tone-warn">{count}× {reason}</span>
                     ))}
                   </div>
                 )}
@@ -237,7 +237,7 @@ export default function Kitchen() {
                 <button
                   onClick={() => handleBatchAdvance(selectedWindow, { from_status: 'preparing', notes: 'Marked batch ready' }, 'Preparing → Ready')}
                   disabled={batchBusy}
-                  className="flex flex-col items-center gap-0.5 py-3 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
+                  className="flex flex-col items-center gap-0.5 py-3 rounded-xl bg-success text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Mark Ready</span>
@@ -247,7 +247,7 @@ export default function Kitchen() {
             )}
 
             {batchSummary && (
-              <div className="rounded-2xl bg-white border border-border p-4 shadow-card">
+              <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
                 <h3 className="font-bold text-sm text-foreground mb-1">Consolidated Prep List</h3>
                 <p className="text-xs text-muted-foreground mb-3">{batchSummary.total_orders} orders in this window</p>
                 <div className="space-y-2">
@@ -274,7 +274,7 @@ export default function Kitchen() {
 
 function MetricCard({ value, label, color }) {
   return (
-    <div className="rounded-2xl bg-white border border-border p-3 text-center shadow-card">
+    <div className="rounded-2xl bg-card border border-border p-3 text-center shadow-card">
       <div className={`font-heading font-extrabold text-xl tabular-nums ${color}`}>{value}</div>
       <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide mt-0.5">{label}</div>
     </div>

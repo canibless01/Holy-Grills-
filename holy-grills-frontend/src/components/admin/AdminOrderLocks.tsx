@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Lock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg, useMessages } from '@/lib/messages';
 import { Pill } from './AdminShared';
 
@@ -32,7 +32,7 @@ export default function AdminOrderLocks() {
   };
   useEffect(() => { load(); }, [status, date]);
 
-  if (loading) return <LoadingSpinner label="Loading order locks..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">
@@ -60,7 +60,7 @@ export default function AdminOrderLocks() {
             const phone = l.phone || profile.phone || '';
             const contact = [email, phone].filter(Boolean).join(' · ') || '—';
             return (
-              <div key={l.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3">
+              <div key={l.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-foreground">{name}</span>

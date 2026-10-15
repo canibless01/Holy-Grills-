@@ -81,7 +81,7 @@ export default function MenuItemModifiers({ itemId }) {
       <div className="flex items-center justify-between"><span className="text-[11px] font-bold text-muted-foreground uppercase">{msg('FE_MENU_ITEM_MODIFIERS_VARIATION_GROUPS', "Variation Groups")}</span><button aria-label={msg('FE_MENU_ITEM_MODIFIERS_ADD_VARIATION_GROUP', "Add variation group")} onClick={addVarGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_MENU_ITEM_MODIFIERS_GROUP', "Group")}</button></div>
       <p className="text-[11px] text-muted-foreground -mt-1">Combo choices that change the base price (e.g. "Choose your protein"). Each option adds its price delta to the item price.</p>
       {varGroups.map((g, gi) => (
-        <div key={g.id} className="rounded-xl bg-white border border-border p-2.5 space-y-2">
+        <div key={g.id} className="rounded-xl bg-card border border-border p-2.5 space-y-2">
           <Field label="Group name (e.g. Spice level, Protein)">
             <TextInput value={g.name} onChange={(e) => setVarGroups((gs) => gs.map((x, i) => i === gi ? { ...x, name: e.target.value } : x))} placeholder="e.g. Choose your protein" />
           </Field>
@@ -91,7 +91,7 @@ export default function MenuItemModifiers({ itemId }) {
               Required (customer must pick one)
             </label>
             <div className="ml-auto">
-              <button aria-label={`Remove variation group ${g.name || gi + 1}`} onClick={() => setVarGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button aria-label={`Remove variation group ${g.name || gi + 1}`} onClick={() => setVarGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </div>
           </div>
           <Field label="Options (one per line)" hint="Format: OptionName:PriceDelta — the delta is added to the item price. e.g. Chicken:0, Beef:200, Fish:150">
@@ -104,14 +104,14 @@ export default function MenuItemModifiers({ itemId }) {
       <div className="flex items-center justify-between pt-1"><span className="text-[11px] font-bold text-muted-foreground uppercase">{msg('FE_MENU_ITEM_MODIFIERS_ADD_ON_GROUPS', "Add-on Groups")}</span><button aria-label={msg('FE_MENU_ITEM_MODIFIERS_ADD_ADD_ON_GROUP', "Add add-on group")} onClick={addAddonGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_MENU_ITEM_MODIFIERS_GROUP', "Group")}</button></div>
       <p className="text-[11px] text-muted-foreground -mt-1">Optional extras with a selection range (e.g. "Choose up to 3 sides"). Each add-on has its own flat price.</p>
       {addonGroups.map((g, gi) => (
-        <div key={g.id} className="rounded-xl bg-white border border-border p-2.5 space-y-2">
+        <div key={g.id} className="rounded-xl bg-card border border-border p-2.5 space-y-2">
           <div className="flex items-start gap-2">
             <div className="flex-1">
               <Field label="Group name (e.g. Extras, Sides)">
                 <TextInput value={g.name} onChange={(e) => setAddonGroups((gs) => gs.map((x, i) => i === gi ? { ...x, name: e.target.value } : x))} placeholder="e.g. Choose your sides" />
               </Field>
             </div>
-            <button aria-label={`Remove add-on group ${g.name || gi + 1}`} onClick={() => setAddonGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:bg-red-50 mt-6"><Trash2 className="w-4 h-4 text-red-500" /></button>
+            <button aria-label={`Remove add-on group ${g.name || gi + 1}`} onClick={() => setAddonGroups((gs) => gs.filter((_, i) => i !== gi))} className="p-1.5 rounded-lg hover:tone-error mt-6"><Trash2 className="w-4 h-4 text-destructive" /></button>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Min selections" hint="Fewest add-ons a customer must pick (0 = optional)">

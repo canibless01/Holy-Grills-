@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { ShoppingCart, RefreshCw, Search, Bell } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
 const STATUS_TONE = {
-  pending: 'bg-amber-100 text-amber-700',
-  pending_unrecovered: 'bg-amber-100 text-amber-700',
-  recovered: 'bg-green-100 text-green-700',
+  pending: 'tone-warn',
+  pending_unrecovered: 'tone-warn',
+  recovered: 'tone-success',
   exhausted: 'bg-secondary text-foreground',
   cleared: 'bg-secondary text-muted-foreground',
 };
@@ -50,7 +50,7 @@ export default function AdminAbandonedCarts() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading abandoned carts..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">
@@ -81,7 +81,7 @@ export default function AdminAbandonedCarts() {
             const items = c.items || c.cart_items || c.snapshot || [];
             const userName = c.profiles?.full_name || c.user?.name || c.user_name || 'User';
             return (
-              <div key={c.id} className="rounded-2xl bg-white border border-border p-4">
+              <div key={c.id} className="rounded-2xl bg-card border border-border p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

@@ -121,18 +121,56 @@ export const ORDER_STATUS_LABELS = {
   scheduled: 'Scheduled',
 };
 
+// Status chips — one shared language for user pages AND the admin panel.
+// BRAND MATERIALS ONLY (beige → gold → deep brown heat ladder, red tints for
+// problem states): no imported blue/green palettes. Warmth increases as the
+// order moves; delivered lands on the deep brand brown.
 export const ORDER_STATUS_COLORS = {
-  received: 'bg-gradient-cta text-white',
-  preparing: 'bg-gradient-cta text-white',
-  ready: 'bg-gradient-cta text-white',
-  assigned: 'bg-gradient-cta text-white',
-  out_for_delivery: 'bg-gradient-cta text-white',
-  delivered: 'bg-accent/80 text-white',
-  cancelled: 'bg-primary/90 text-white',
-  refunded: 'bg-primary/90 text-white',
-  delivery_attempted: 'bg-gradient-cta text-white',
-  unclaimed: 'bg-primary/90 text-white',
-  scheduled: 'bg-gradient-cta text-white',
+  received: 'bg-secondary text-secondary-foreground',
+  preparing: 'tone-warn',
+  ready: 'bg-accent text-accent-foreground',
+  assigned: 'tone-info',
+  out_for_delivery: 'bg-brand-brown/15 text-brand-brown',
+  delivered: 'bg-brand-brown text-brand-brown-foreground',
+  cancelled: 'tone-error',
+  refunded: 'tone-error',
+  delivery_attempted: 'tone-warn',
+  unclaimed: 'tone-error',
+  scheduled: 'bg-secondary text-secondary-foreground',
+};
+
+// Solid dots for compact timelines (soft chips are unreadable at 8px) —
+// same brand ladder.
+export const ORDER_STATUS_DOTS = {
+  received: 'bg-brand-brown/40',
+  preparing: 'bg-accent',
+  ready: 'bg-accent',
+  assigned: 'bg-brand-brown/70',
+  out_for_delivery: 'bg-brand-brown',
+  delivered: 'bg-brand-brown',
+  cancelled: 'bg-destructive',
+  refunded: 'bg-destructive',
+  delivery_attempted: 'bg-accent',
+  unclaimed: 'bg-destructive',
+  scheduled: 'bg-muted-foreground',
+};
+
+// Chip classes for chips that sit ON DARK surfaces (the tracking hero cards).
+// The light-mode tone chips carry dark text, which disappears on the dark
+// brand gradient. Terminal states use SOLID fills (white text) — translucent
+// beds read as muddy brown-on-brown over the dark gradient.
+export const ORDER_STATUS_COLORS_ON_DARK = {
+  received: 'bg-white/10 text-white/85 border border-white/15',
+  scheduled: 'bg-white/10 text-white/85 border border-white/15',
+  preparing: 'bg-accent/25 text-accent border border-accent/30',
+  delivery_attempted: 'bg-accent/25 text-accent border border-accent/30',
+  ready: 'bg-accent text-accent-foreground border border-accent',
+  assigned: 'bg-white/15 text-white border border-white/20',
+  out_for_delivery: 'bg-white/15 text-white border border-white/20',
+  delivered: 'bg-success text-white border border-success',
+  cancelled: 'bg-destructive text-white border border-destructive',
+  refunded: 'bg-destructive text-white border border-destructive',
+  unclaimed: 'bg-destructive text-white border border-destructive',
 };
 
 // Extract the ordering student's identity (name / phone / email) from an order

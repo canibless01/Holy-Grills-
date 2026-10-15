@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, Check, Package, Clock, Search, AlertCircle, Mail } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW } from '@/lib/hgUtils';
+import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, ORDER_STATUS_COLORS_ON_DARK } from '@/lib/hgUtils';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import ScheduledOrders from '@/components/ScheduledOrders';
 
@@ -172,7 +172,7 @@ export default function TrackOrders() {
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 bg-gradient-dark text-white">
                   <div>
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${ORDER_STATUS_COLORS[order.status]}`}>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${ORDER_STATUS_COLORS_ON_DARK[order.status] || ORDER_STATUS_COLORS[order.status]}`}>
                       {ORDER_STATUS_LABELS[order.status]}
                     </span>
                     <div className="text-xs text-white/70 mt-1 flex items-center gap-1.5">

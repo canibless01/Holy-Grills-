@@ -47,7 +47,7 @@ export default function SellItemModal({ open, onClose }) {
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={onClose}>
         <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-heading font-bold text-lg text-foreground flex items-center gap-2"><Store className="w-5 h-5 text-primary" /> Selling opens soon.</h3>

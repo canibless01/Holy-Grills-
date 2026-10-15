@@ -144,11 +144,11 @@ export default function Home() {
       <OrderSuggestionCard />
 
       {launchWindowEnd && (
-        <div className="rounded-2xl bg-gradient-dark p-4 text-white flex items-center gap-3 shadow-card">
-          <span className="text-2xl">🎁</span>
+        <div className="rounded-2xl bg-accent/15 border border-accent/35 px-4 py-3 text-foreground flex items-center gap-3 shadow-card">
+          <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center text-lg shrink-0">🎁</span>
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm">Free {giftItemName} on your first order!</div>
-            <div className="text-xs text-white/75">First-order gift ends {new Date(launchWindowEnd).toLocaleDateString()}</div>
+            <div className="text-xs text-muted-foreground">First-order gift ends {new Date(launchWindowEnd).toLocaleDateString()}</div>
           </div>
         </div>
       )}
@@ -198,11 +198,15 @@ export default function Home() {
       <HeroCarousel placement="home" />
       <StorefrontSlider sectionType="promo" variant="poster" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
 
+
       {/* 4. Squad Orders — right after the menu */}
       <SquadOrderEducation />
 
       {/* 5. How it's made — process-stage slider (backend-driven) */}
       <StorefrontSlider sectionType="how_its_made" variant="landscape" eyebrow="How it's made" headline="Made the long way." subline="The care behind every plate." />
+
+      {/* 6b. Home-placement promo carousel + posters — placed here so the two
+          big image blocks don't stack right after the featured menu. */}
 
       {/* 6. Holy Points banner — gradient on the large card only; the inner
           feature tiles are outline-only, per the reference design */}
@@ -271,7 +275,8 @@ export default function Home() {
         <TestimonialSlider testimonials={testimonials} />
       </div>
 
-      {/* 11. Fire Feast Squad — newsletter */}
+      {/* 11. Fire Feast Squad — newsletter. Kept on the dark brand bed (it is
+          the end-of-page sign-off and should stand apart from the cards above). */}
       {/* Newsletter — compact 2-row layout: icon + text on one line, input + button on the next */}
       <div className="rounded-3xl bg-gradient-dark p-5 text-white shadow-card">
         <div className="flex items-center gap-2.5 mb-3">
@@ -281,7 +286,7 @@ export default function Home() {
           <div className="leading-tight">
             <span className="text-[10px] font-bold uppercase tracking-wider text-accent block">Fire Feast Squad</span>
             <span className="text-sm font-semibold">Get the drops first.</span>
-            <span className="text-xs text-muted-foreground block mt-0.5">The squad hears everything early.</span>
+            <span className="text-xs text-white/60 block mt-0.5">The squad hears everything early.</span>
           </div>
         </div>
         {subscribed ? (
@@ -313,7 +318,7 @@ export default function Home() {
 
       {showStreakPopup && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-lg flex items-end sm:items-center justify-center p-4" onClick={() => setShowStreakPopup(false)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => setShowStreakPopup(false)}>
           <motion.div
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -326,7 +331,7 @@ export default function Home() {
             <motion.div
               animate={{ scale: [1, 1.1, 1], rotate: [0, -3, 3, 0] }}
               transition={{ duration: 1.5, repeat: Infinity }}
-              className="w-16 h-16 rounded-full bg-gradient-cta flex items-center justify-center mx-auto mb-3 shadow-glow"
+              className="w-16 h-16 rounded-full bg-gradient-cta flex items-center justify-center mx-auto mb-3"
             >
               <FlameMark className="w-9 h-9" />
             </motion.div>

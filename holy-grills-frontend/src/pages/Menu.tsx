@@ -168,7 +168,7 @@ export default function Menu() {
       <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4 pb-1">
         <button
           onClick={() => setActiveCategory(null)}
-          className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all ${!activeCategory ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-muted-foreground border border-border hover:border-primary/30'}`}
+          className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all ${!activeCategory ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground border border-border hover:border-primary/30'}`}
         >
           All Items
         </button>
@@ -176,7 +176,7 @@ export default function Menu() {
           <button
             key={cat.id}
             onClick={() => setActiveCategory(cat.slug)}
-            className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all ${activeCategory === cat.slug ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-muted-foreground border border-border hover:border-primary/30'}`}
+            className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all ${activeCategory === cat.slug ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground border border-border hover:border-primary/30'}`}
           >
             {cat.name}
           </button>

@@ -238,9 +238,28 @@ export default function Rewards() {
         <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
       </Link>
 
+      {/* Free side credit wallet chip — credits used to be invisible until
+          checkout; now the balance + expiry live right under the HP bar. */}
+      {freeSidesReleased && freeSideCredits.count > 0 && (
+        <div className="rounded-2xl bg-accent/12 border border-accent/30 p-3.5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shrink-0">
+            <Gift className="w-4 h-4 text-accent-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-extrabold text-foreground">
+              {freeSideCredits.count} free side{freeSideCredits.count !== 1 ? 's' : ''} waiting
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Pick one at checkout — it lands on your order at ₦0.
+              {freeSideCredits.expires_at ? ` Expires ${new Date(freeSideCredits.expires_at).toLocaleDateString()}.` : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tier progress card with liquid-fill bar */}
       {tierInfo && (
-        <div className="rounded-2xl bg-white border border-border p-4 shadow-card">
+        <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <TierIcon slug={tierInfo.current.slug || tierInfo.current.id} tier={tierInfo.current} className="w-7 h-7 text-2xl" />
@@ -309,7 +328,7 @@ export default function Rewards() {
               <>
                 <h3 className="font-heading font-bold text-lg text-white mb-1">Claim your graduation HP! 🎓</h3>
                 <p className="text-xs text-white/80 mb-3">Eligible graduates receive up to {graduationHp()} HP. Eligibility is verified when you claim.</p>
-                <button onClick={handleGraduationClaim} disabled={claimingGrad} className="px-5 py-2.5 rounded-full bg-white text-primary font-bold text-sm shadow-md disabled:opacity-60 flex items-center gap-2">
+                <button onClick={handleGraduationClaim} disabled={claimingGrad} className="px-5 py-2.5 rounded-full bg-card text-primary font-bold text-sm shadow-md disabled:opacity-60 flex items-center gap-2">
                   {claimingGrad ? <><div className="w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /> Claiming…</> : <>Claim {graduationHp()} HP</>}
                 </button>
               </>
@@ -325,7 +344,7 @@ export default function Rewards() {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold transition-all ${
-              tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'
+              tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'
             }`}
           >
             <t.icon className="w-3.5 h-3.5" />
@@ -337,7 +356,7 @@ export default function Rewards() {
       {/* Dashboard tab */}
       {tab === 'dashboard' && (
         <div className="space-y-3">
-          {freeSidesReleased && <div className="rounded-2xl bg-white border border-border p-4 shadow-card">
+          {freeSidesReleased && <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
             <div className="flex items-center gap-2 mb-1">
               <Gift className="w-4 h-4 text-primary" />
               <h3 className="font-bold text-sm text-foreground">Free Sides on Us</h3>
@@ -353,7 +372,7 @@ export default function Rewards() {
           </div>}
 
           {/* Exclusive Spin — with actual spin button */}
-          {spinReleased && <div className={`rounded-2xl border p-4 shadow-card ${spinCount > 0 ? 'bg-gradient-gold border-primary/30' : 'bg-white border-border'}`}>
+          {spinReleased && <div className={`rounded-2xl border p-4 shadow-card ${spinCount > 0 ? 'bg-gradient-gold border-primary/30' : 'bg-card border-border'}`}>
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinCount > 0 ? 'bg-primary' : 'bg-secondary'}`}>
                 🎡
@@ -390,7 +409,7 @@ export default function Rewards() {
             </div>
           </div>}
 
-          {spinReleased && exclusiveStatus?.history?.length > 0 && <section className="rounded-2xl border border-border bg-white p-4 shadow-card" aria-label={msg('FE_SPIN_HISTORY_TITLE', 'Exclusive spin prizes')}>
+          {spinReleased && exclusiveStatus?.history?.length > 0 && <section className="rounded-2xl border border-border bg-card p-4 shadow-card" aria-label={msg('FE_SPIN_HISTORY_TITLE', 'Exclusive spin prizes')}>
             <h3 className="font-bold text-sm mb-2">{msg('FE_SPIN_HISTORY_TITLE', 'Exclusive spin prizes')}</h3>
             <div className="space-y-2">{exclusiveStatus.history.map((receipt) => <div key={receipt.id} className="rounded-xl bg-secondary/40 p-3 flex items-center justify-between gap-2">
               <div><p className="font-semibold text-sm">{receipt.prize_name}</p><p className="text-xs text-muted-foreground">{new Date(receipt.created_at).toLocaleDateString()}</p></div>
@@ -436,7 +455,7 @@ export default function Rewards() {
             const slotsLeft = flash?.slotsRemaining;
 
             return (
-              <div key={reward.id} className={`rounded-2xl bg-white border p-3 flex gap-3 shadow-card ${flash ? 'border-primary/30' : 'border-border'}`}>
+              <div key={reward.id} className={`rounded-2xl bg-card border p-3 flex gap-3 shadow-card ${flash ? 'border-primary/30' : 'border-border'}`}>
                 {reward.image_url ? (
                   <img src={reward.image_url} alt={reward.name} loading="lazy" decoding="async" className="w-16 h-16 rounded-xl object-cover shrink-0" />
                 ) : (
@@ -540,7 +559,7 @@ export default function Rewards() {
                     <div className="flex items-center gap-2 mb-2"><Award className="w-4 h-4 text-accent" /><span className="text-xs font-bold text-foreground">Badges Earned</span></div>
                     <div className="flex flex-wrap gap-2">
                       {earned.map((b) => (
-                        <span key={b.id} className="text-xs font-bold px-2.5 py-1 rounded-full bg-white border border-accent/20 text-accent-foreground flex items-center gap-1">
+                        <span key={b.id} className="text-xs font-bold px-2.5 py-1 rounded-full bg-card border border-accent/20 text-accent-foreground flex items-center gap-1">
                           {b.icon_won || '🏅'} {b.title || b.name}
                         </span>
                       ))}
@@ -571,7 +590,7 @@ export default function Rewards() {
                   const pct = Math.min(100, (progress / target) * 100);
                   const isSocial = !isCompleted && (ch.trigger_type === 'social_follow' || (`${ch.title || ch.name || ''} ${ch.slug || ''}`.toLowerCase().includes('social') && `${ch.title || ch.name || ''} ${ch.slug || ''}`.toLowerCase().includes('follow')));
                   return (
-                    <div key={ch.id} className="rounded-2xl bg-white border border-border p-4 shadow-card">
+                    <div key={ch.id} className="rounded-2xl bg-card border border-border p-4 shadow-card">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <Target className="w-4 h-4 text-primary" />
@@ -591,7 +610,7 @@ export default function Rewards() {
                       <div className="flex items-center justify-between mt-2">
                         {ch.expires_at && <p className="text-[10px] text-muted-foreground">Expires: {new Date(ch.expires_at).toLocaleDateString()}</p>}
                         {isCompleted ? (
-                          <span className="ml-auto text-[10px] font-bold text-emerald-600">✓ Completed</span>
+                          <span className="ml-auto text-[10px] font-bold text-success">✓ Completed</span>
                         ) : isSocial ? (
                           <></>
                         ) : (
@@ -621,9 +640,9 @@ export default function Rewards() {
               <p className="text-sm text-muted-foreground">Nothing redeemed yet.</p>
             </div>
           ) : redemptions.map((r) => (
-            <div key={r.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-border shadow-card">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${r.status === 'fulfilled' ? 'bg-emerald-100' : (r.status === 'cancelled' || r.status === 'rejected') ? 'bg-red-100' : 'bg-amber-100'}`}>
-                {r.status === 'fulfilled' ? <Check className="w-5 h-5 text-emerald-600" /> : (r.status === 'cancelled' || r.status === 'rejected') ? <X className="w-5 h-5 text-red-500" /> : <Clock className="w-5 h-5 text-amber-500" />}
+            <div key={r.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border shadow-card">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${r.status === 'fulfilled' ? 'tone-success' : (r.status === 'cancelled' || r.status === 'rejected') ? 'tone-error' : 'tone-warn'}`}>
+                {r.status === 'fulfilled' ? <Check className="w-5 h-5 text-success" /> : (r.status === 'cancelled' || r.status === 'rejected') ? <X className="w-5 h-5 text-destructive" /> : <Clock className="w-5 h-5 text-warn" />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-foreground truncate">{r.reward?.name || r.reward_name || 'Reward'}</div>
@@ -654,7 +673,7 @@ export default function Rewards() {
             ) : (
               <div className="space-y-2">
                 {spinHistory.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between p-3 rounded-xl bg-white border border-border shadow-card">
+                  <div key={s.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border shadow-card">
                     <div>
                       <div className="text-sm font-semibold text-foreground">+{s.hp_won || 0} HP</div>
                       <div className="text-[10px] text-muted-foreground">{s.free_spin ? 'Free spin' : `Cost ${s.spin_cost_hp || 0} HP`} · {new Date(s.created_at || s.spun_at).toLocaleString()}</div>
@@ -672,7 +691,7 @@ export default function Rewards() {
             ) : (
               <div className="space-y-2">
                 {unlockHistory.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-white border border-border shadow-card">
+                  <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border shadow-card">
                     <div>
                       <div className="text-sm font-semibold text-foreground">{u.reward_name || u.name || 'Reward unlocked'}</div>
                       <div className="text-[10px] text-muted-foreground">{new Date(u.created_at || u.unlocked_at).toLocaleString()}</div>
@@ -688,8 +707,8 @@ export default function Rewards() {
 
       {/* Redeem confirmation modal */}
       {selectedReward && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSelectedReward(null)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={() => setSelectedReward(null)}>
+          <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">Confirm Redemption</h3>
               <button onClick={() => setSelectedReward(null)}><X className="w-5 h-5 text-muted-foreground" /></button>

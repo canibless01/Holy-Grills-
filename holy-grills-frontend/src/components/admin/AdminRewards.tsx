@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { toast } from '@/components/ui/use-toast';
@@ -165,7 +165,7 @@ export default function AdminRewards() {
   };
   const remove = async (id) => { await mockApi.admin.deleteReward(id); await load(); };
 
-  if (!rewards.length && !redemptions.length) return <LoadingSpinner label="Loading rewards..." />;
+  if (!rewards.length && !redemptions.length) return <StaffPanelSkeleton />;
 
   // Stage 16 — active economics group + live summary for the open editor.
   const econGroup = modal ? ECONOMICS_GROUP[modal.item.reward_type] : null;
@@ -186,7 +186,7 @@ export default function AdminRewards() {
     <div className="space-y-4">
       <div className="flex gap-1 p-1 rounded-full bg-secondary">
         {[{ id: 'rewards', label: 'Rewards' }, { id: 'redemptions', label: 'Redemptions' }].map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
         ))}
       </div>
       {tab === 'rewards' ? (
@@ -196,7 +196,7 @@ export default function AdminRewards() {
             const fs = flashStatus(r);
             const badge = fs ? FLASH_BADGE[fs] : null;
             return (
-              <div key={r.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3">
+              <div key={r.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="font-bold text-sm text-foreground">{r.name}</div>
@@ -218,7 +218,7 @@ export default function AdminRewards() {
                 </div>
                 <button onClick={() => setFlashModal(r)} title="Open flash sale" className="p-2 rounded-lg hover:bg-primary/10"><Zap className="w-4 h-4 text-primary" /></button>
                 <button onClick={() => setModal({ item: { ...r }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-                <button onClick={() => remove(r.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                <button onClick={() => remove(r.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
               </div>
             );
           })}
@@ -230,7 +230,7 @@ export default function AdminRewards() {
             const statusLabel = r.status === 'fulfilled' ? 'Fulfilled' : r.status === 'rejected' ? 'Rejected' : 'Pending';
             const user = r.profiles || {};
             return (
-              <div key={r.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3">
+              <div key={r.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="font-bold text-sm text-foreground">{r.rewards?.name}</div>
@@ -413,8 +413,8 @@ function RedemptionActionModal({ redemption, onClose, onSaved }) {
           <div className="text-muted-foreground">{user.full_name || user.email || 'Unknown user'} · {redemption.hp_cost_snapshot} HP</div>
         </div>
         <div className="flex gap-2">
-          <button type="button" onClick={() => setMode('fulfilled')} className={`flex-1 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${mode === 'fulfilled' ? 'border-green-500 bg-green-50 text-green-700' : 'border-border text-muted-foreground'}`}><Check className="w-3.5 h-3.5" /> Fulfil</button>
-          <button type="button" onClick={() => setMode('rejected')} className={`flex-1 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${mode === 'rejected' ? 'border-red-500 bg-red-50 text-red-700' : 'border-border text-muted-foreground'}`}><Ban className="w-3.5 h-3.5" /> Reject</button>
+          <button type="button" onClick={() => setMode('fulfilled')} className={`flex-1 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${mode === 'fulfilled' ? 'border-success/30 tone-success' : 'border-border text-muted-foreground'}`}><Check className="w-3.5 h-3.5" /> Fulfil</button>
+          <button type="button" onClick={() => setMode('rejected')} className={`flex-1 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${mode === 'rejected' ? 'border-destructive/30 tone-error' : 'border-border text-muted-foreground'}`}><Ban className="w-3.5 h-3.5" /> Reject</button>
         </div>
         {mode === 'fulfilled' && (
           <Field label="Actual cost (₦)" hint="Optional — logs what this reward cost the business. The server derives it from the reward if left blank.">
@@ -422,7 +422,7 @@ function RedemptionActionModal({ redemption, onClose, onSaved }) {
           </Field>
         )}
         {mode === 'rejected' && (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-[11px] text-amber-700">Rejecting refunds the spent HP to the student automatically.</div>
+          <div className="rounded-xl tone-warn border border-warn/40 p-2.5 text-[11px] text-warn">Rejecting refunds the spent HP to the student automatically.</div>
         )}
         <Field label="Admin notes (optional)"><TextInput value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} placeholder="Reason / instructions" /></Field>
         {error && <p className="text-[11px] font-bold text-destructive text-center">⚠ {error}</p>}

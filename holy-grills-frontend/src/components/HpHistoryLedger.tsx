@@ -86,8 +86,8 @@ export default function HpHistoryLedger() {
             const credit = positive && !isSpend;
             return (
               <div key={t.id} className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${credit ? 'bg-green-50' : 'bg-red-50'}`}>
-                  {credit ? <ArrowDownLeft className="w-4 h-4 text-green-600" /> : <ArrowUpRight className="w-4 h-4 text-red-500" />}
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${credit ? 'tone-success' : 'tone-error'}`}>
+                  {credit ? <ArrowDownLeft className="w-4 h-4 text-success" /> : <ArrowUpRight className="w-4 h-4 text-destructive" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-sm text-foreground truncate">
@@ -99,7 +99,7 @@ export default function HpHistoryLedger() {
                     <span>· {formatDateTime(t.created_date || t.created_at)}</span>
                   </div>
                 </div>
-                <div className={`font-bold text-sm whitespace-nowrap ${credit ? 'text-green-600' : 'text-red-500'}`}>
+                <div className={`font-bold text-sm whitespace-nowrap ${credit ? 'text-success' : 'text-destructive'}`}>
                   {credit ? '+' : ''}{t.amount || 0} HP
                 </div>
               </div>

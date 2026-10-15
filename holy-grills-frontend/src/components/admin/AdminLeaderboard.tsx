@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trophy, Gift, Check, Clock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Pill, SectionHeader, Modal, Field, TextInput } from './AdminShared';
 import { msg } from '@/lib/messages';
@@ -62,13 +62,13 @@ export default function AdminLeaderboard() {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label="Loading..." />;
+  if (!loaded) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1 p-1 rounded-full bg-secondary">
         {[{ id: 'rewards', label: 'Leaderboard Rewards' }, { id: 'hof', label: 'Hall of Fame' }].map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -90,7 +90,7 @@ export default function AdminLeaderboard() {
                         {r.phone && <div className="text-[11px] text-muted-foreground mt-0.5">{r.phone}</div>}
                       </div>
                       <Pill tone="amber"><Clock className="w-3 h-3 inline mr-0.5" />Pending</Pill>
-                      <button onClick={() => fulfillReward(r.id, r.user_name || r.full_name)} disabled={busy === r.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-bold disabled:opacity-50">
+                      <button onClick={() => fulfillReward(r.id, r.user_name || r.full_name)} disabled={busy === r.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
                         <Check className="w-3.5 h-3.5" /> {busy === r.id ? '...' : 'Fulfill'}
                       </button>
                     </div>
@@ -112,7 +112,7 @@ export default function AdminLeaderboard() {
               <div className="space-y-2">
                 {rewardHistory.map((r) => (
                   <div key={r.id} className="rounded-xl bg-muted border border-border p-3 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold">#{r.rank}</div>
+                    <div className="w-8 h-8 rounded-full tone-success flex items-center justify-center text-xs font-bold">#{r.rank}</div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm text-foreground">{r.user_name || r.full_name}</div>
                       <div className="text-xs text-muted-foreground">{r.reward_description || r.prize}</div>
@@ -140,7 +140,7 @@ export default function AdminLeaderboard() {
                   return (
                     <Card key={h.id}>
                       <div className="flex items-center gap-3 flex-wrap">
-                        <Trophy className="w-5 h-5 text-amber-500 shrink-0" />
+                        <Trophy className="w-5 h-5 text-warn shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-sm text-foreground">{h.user_name || h.full_name || 'Inductee'}</div>
                           <div className="text-xs text-muted-foreground">Inducted {(h.inducted_at || h.induction_date) ? new Date(h.inducted_at || h.induction_date).toLocaleDateString() : '—'}{h.phone ? ` · ${h.phone}` : ''}</div>
@@ -155,14 +155,14 @@ export default function AdminLeaderboard() {
                         {!isCancelled && (
                           <div className="flex items-center gap-1.5">
                             {!isBoxPrepared && (
-                              <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'box_prepared', notes: h.notes || '' })} disabled={busy === h.id} className="px-3 py-1.5 rounded-full bg-blue-600 text-white text-xs font-bold disabled:opacity-50">
+                              <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'box_prepared', notes: h.notes || '' })} disabled={busy === h.id} className="px-3 py-1.5 rounded-full bg-info text-white text-xs font-bold disabled:opacity-50">
                                 {busy === h.id ? '...' : 'Box prepared'}
                               </button>
                             )}
-                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'fulfilled', notes: h.notes || '' })} disabled={busy === h.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-bold disabled:opacity-50">
+                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'fulfilled', notes: h.notes || '' })} disabled={busy === h.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
                               <Check className="w-3.5 h-3.5" /> {busy === h.id ? '...' : 'Fulfill'}
                             </button>
-                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'cancelled', notes: h.notes || '' })} disabled={busy === h.id} className="px-3 py-1.5 rounded-full bg-red-100 text-red-700 text-xs font-bold disabled:opacity-50">
+                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'cancelled', notes: h.notes || '' })} disabled={busy === h.id} className="px-3 py-1.5 rounded-full tone-error text-xs font-bold disabled:opacity-50">
                               Cancel
                             </button>
                           </div>
@@ -181,7 +181,7 @@ export default function AdminLeaderboard() {
               <div className="space-y-2">
                 {hofHistory.map((h) => (
                   <div key={h.id} className="rounded-xl bg-muted border border-border p-3 flex items-center gap-3">
-                    <Trophy className="w-4 h-4 text-amber-500" />
+                    <Trophy className="w-4 h-4 text-warn" />
                     <div className="flex-1">
                       <div className="font-semibold text-sm text-foreground">{h.user_name || h.full_name}</div>
                       <div className="text-xs text-muted-foreground">Inducted {(h.inducted_at || h.induction_date) ? new Date(h.inducted_at || h.induction_date).toLocaleDateString() : '—'}</div>

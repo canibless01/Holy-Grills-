@@ -35,9 +35,9 @@ type SharePayload = {
  *        payload ({ orderId, headline, value, caption, link }) .
  */
 const PLATFORMS = [
-  { id: 'whatsapp', label: 'WhatsApp', color: 'bg-green-500', url: (text, url) => `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}` },
+  { id: 'whatsapp', label: 'WhatsApp', color: 'bg-success', url: (text, url) => `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}` },
   { id: 'twitter', label: 'Twitter', color: 'bg-sky-500', url: (text, url) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}` },
-  { id: 'facebook', label: 'Facebook', color: 'bg-blue-600', url: (text, url) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}` },
+  { id: 'facebook', label: 'Facebook', color: 'bg-info', url: (text, url) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}` },
   { id: 'instagram', label: 'Instagram', color: 'bg-pink-500', url: (text, url) => `https://www.instagram.com/` },
 ];
 
@@ -206,14 +206,14 @@ export default function ShareSheet({
         <ModalPortal>
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-lg flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={onClose}
         >
           <motion.div
             initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 220, damping: 26 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-5 pb-8"
+            className="bg-card rounded-t-3xl sm:rounded-3xl w-full max-w-md p-5 pb-8"
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Share2 className="w-5 h-5 text-primary" /> Share</h3>
@@ -265,7 +265,7 @@ export default function ShareSheet({
 
             {/* Copy fallback */}
             <button onClick={copyLink} className="w-full py-2.5 rounded-full bg-muted border border-border text-foreground text-xs font-bold flex items-center justify-center gap-1.5">
-              {copied ? <><Check className="w-4 h-4 text-green-600" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy caption + link</>}
+              {copied ? <><Check className="w-4 h-4 text-success" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy caption + link</>}
             </button>
           </motion.div>
         </motion.div>

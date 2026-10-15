@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
@@ -10,7 +11,7 @@ import { liveApi } from '@/lib/liveApi';
 import { safeCallHref } from '@/lib/safeNavigation';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
-import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer } from '@/lib/hgUtils';
+import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer, ORDER_STATUS_COLORS_ON_DARK } from '@/lib/hgUtils';
 import ShareSheet from '@/components/ShareSheet';
 import SquadMembersPanel from '@/components/SquadMembersPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -91,7 +92,7 @@ export default function OrderDetail() {
   const handleCancel = async () => {
     const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
     const prompt = isScheduled ? 'Cancel this scheduled order? Your slot will be released.' : 'Cancel this order? You will be refunded.';
-    if (!confirm(prompt)) return;
+    if (!(await confirmAction({ title: prompt, destructive: true }))) return;
     try {
       if (isScheduled) await mockApi.orders.cancelScheduled(id);
       else await mockApi.orders.cancel(id, { reason: 'Changed my mind' });
@@ -207,7 +208,7 @@ export default function OrderDetail() {
         className="rounded-2xl bg-gradient-dark p-5 text-white shadow-card"
       >
         <div className="flex items-center justify-between mb-3">
-          <span className={`px-3 py-1 rounded-full text-xs font-bold ${ORDER_STATUS_COLORS[order.status] || 'bg-muted text-foreground'}`}>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${ORDER_STATUS_COLORS_ON_DARK[order.status] || ORDER_STATUS_COLORS[order.status]}`}>
             {ORDER_STATUS_LABELS[order.status] || order.status}
           </span>
           <span className="text-xs text-white/70 font-mono">#{(order.order_number || order.id || '').toUpperCase()}</span>
@@ -352,7 +353,7 @@ export default function OrderDetail() {
           </div>
           <button
             onClick={() => navigate('/register')}
-            className="shrink-0 px-3.5 py-2 rounded-full bg-white text-primary text-xs font-bold active:scale-95 transition-transform"
+            className="shrink-0 px-3.5 py-2 rounded-full bg-card text-primary text-xs font-bold active:scale-95 transition-transform"
           >
             Sign up
           </button>
@@ -418,7 +419,7 @@ export default function OrderDetail() {
             href={googleReviewUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full py-3 rounded-full bg-white text-foreground font-bold text-sm active:scale-95 transition"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-full bg-card text-foreground font-bold text-sm active:scale-95 transition"
           >
             <Star className="w-4 h-4 fill-accent text-accent" /> Leave a Google review
           </a>
@@ -428,7 +429,7 @@ export default function OrderDetail() {
       {/* Review Modal */}
       {showReview && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}>
           <div role="dialog" aria-modal="true" aria-label={msg('FE_REVIEW_DIALOG', 'Rate Your Order')} className="bg-card rounded-3xl p-6 w-full max-w-md animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">{msg('FE_REVIEW_DIALOG', 'Rate Your Order')}</h3>

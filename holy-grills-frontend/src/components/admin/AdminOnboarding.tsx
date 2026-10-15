@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Toggle, Pill } from './AdminShared';
 import { useIsSuperAdmin, SuperAdminNotice } from './SuperAdminGate';
 import { toast } from '@/components/ui/use-toast';
@@ -49,7 +49,7 @@ export default function AdminOnboarding() {
   };
 
   if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
-  if (loading || !settings) return <LoadingSpinner label="Loading gift settings..." />;
+  if (loading || !settings) return <StaffPanelSkeleton />;
 
   const isTrue = (v) => v === true || String(v) === 'true';
   const enabled = isTrue(settings.first_order_gift_enabled);
@@ -106,8 +106,8 @@ export default function AdminOnboarding() {
               </div>
               {g.status === 'pending' ? (
                 <div className="flex gap-1">
-                  <button onClick={() => updateGift(g.id, 'fulfilled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-xs font-bold disabled:opacity-50">Fulfill</button>
-                  <button onClick={() => updateGift(g.id, 'cancelled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold disabled:opacity-50">Cancel</button>
+                  <button onClick={() => updateGift(g.id, 'fulfilled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold disabled:opacity-50">Fulfill</button>
+                  <button onClick={() => updateGift(g.id, 'cancelled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
                 </div>
               ) : <Pill tone={g.status === 'fulfilled' ? 'green' : g.status === 'claimed' || g.status === 'redeemed' ? 'blue' : 'red'}>{g.status}</Pill>}
             </Card>

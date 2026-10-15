@@ -44,8 +44,8 @@ export default class SectionErrorBoundary extends React.Component<SectionErrorBo
       const isAuth = /401|unauthor|session expired|log in/i.test(detail);
       return (
         <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mb-4">
-            <AlertTriangle className="w-7 h-7 text-red-500" />
+          <div className="w-14 h-14 rounded-2xl tone-error flex items-center justify-center mb-4">
+            <AlertTriangle className="w-7 h-7 text-destructive" />
           </div>
           <h3 className="font-heading font-extrabold text-base text-foreground mb-1">
             {isAuth ? 'Session expired' : 'Couldn\'t load this section'}

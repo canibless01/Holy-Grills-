@@ -124,7 +124,7 @@ export default function Orders() {
           <button
             key={d.id}
             onClick={() => setDateFilter(d.id)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${dateFilter === d.id ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-muted-foreground border border-border'}`}
+            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${dateFilter === d.id ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground border border-border'}`}
           >
             {d.label}
           </button>

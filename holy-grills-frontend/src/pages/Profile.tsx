@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Mail, Calendar, Lock, Bell, LogOut, ChevronRight, Shield, Trash2, Flame, MapPin as MapPinIcon, Wallet as WalletIcon, Volume2, VolumeX, Store, CalendarDays, Sparkles, Crown, GraduationCap, BookOpen, Users, X } from 'lucide-react';
@@ -98,7 +99,7 @@ export default function Profile() {
   };
 
   const handleLogout = async () => {
-    if (confirm('Log out of Holy Grill?')) {
+    if (await confirmAction({ title: "Log out of Holy Grill?", destructive: true, confirmLabel: "Log out" })) {
       await logout();
       navigate('/');
     }
@@ -217,7 +218,7 @@ export default function Profile() {
         <div className="mt-4 flex gap-2">
           {editing ? (
             <>
-              <button onClick={handleSave} disabled={saving || !referenceReady} className="flex-1 py-2 rounded-xl bg-white text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
+              <button onClick={handleSave} disabled={saving || !referenceReady} className="flex-1 py-2 rounded-xl bg-card text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
               </button>
               <button onClick={() => setEditing(false)} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
@@ -353,7 +354,7 @@ export default function Profile() {
 
       {/* Delete Account Modal */}
       {showDelete && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !deleting && setShowDelete(false)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !deleting && setShowDelete(false)}>
           <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-heading font-bold text-lg text-foreground">Delete Account</h3>

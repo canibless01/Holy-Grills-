@@ -84,8 +84,8 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
     // was clipped to the wrapper so the dimmed backdrop missed the top/bottom
     // of the screen.
     <ModalPortal>
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-3">
           <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Camera className="w-5 h-5 text-primary" /> Scan Event QR</h3>
           <button onClick={() => { stopCamera(); onClose(); }}><X className="w-5 h-5 text-muted-foreground" /></button>
@@ -116,9 +116,9 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
               )}
             </div>
             {error && (
-              <div className="flex items-center gap-2 mt-3 p-2.5 rounded-xl bg-red-50 border border-red-200">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                <span className="text-xs text-red-800">{error}</span>
+              <div className="flex items-center gap-2 mt-3 p-2.5 rounded-xl tone-error border border-destructive/30">
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                <span className="text-xs text-destructive">{error}</span>
               </div>
             )}
             <button onClick={() => { setManual(true); }} className="w-full mt-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground">
@@ -127,9 +127,9 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
           </>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span className="text-xs text-amber-800">{error || 'Your browser does not support QR scanning. Enter the code manually.'}</span>
+            <div className="flex items-center gap-2 p-3 rounded-xl tone-warn border border-warn/40">
+              <AlertCircle className="w-4 h-4 text-warn shrink-0" />
+              <span className="text-xs text-warn">{error || 'Your browser does not support QR scanning. Enter the code manually.'}</span>
             </div>
             <input
               value={manualToken}
