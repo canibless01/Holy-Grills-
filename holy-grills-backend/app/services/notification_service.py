@@ -30,7 +30,7 @@ _ONESIGNAL_BASE = os.environ.get("ONESIGNAL_BASE_URL", "https://api.onesignal.co
 # Everything else is subject to the 6-hour same-type gap and daily cap.
 _CRITICAL_NOTIF_TYPES = frozenset({
     # Order
-    "order_confirmed", "order_preparing", "order_ready", "order_assigned",
+    "order_placed", "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
     "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
     "order_refunded", "order_unclaimed",

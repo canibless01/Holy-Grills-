@@ -1,3 +1,4 @@
+import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import React, { useState, useEffect, useRef } from 'react';
@@ -358,6 +359,7 @@ export default function OrderDetail() {
         </div>
       )}
 
+      <OrderRewardSummary order={order} />
       <OrderPaymentActions order={order} claimToken={resolveClaimToken()} onUpdated={async () => setOrder(await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {}))} />
 
       {/* Actions */}

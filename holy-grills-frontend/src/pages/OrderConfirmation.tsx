@@ -1,3 +1,4 @@
+import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { msg, useMessages } from '@/lib/messages';
@@ -114,6 +115,7 @@ export default function OrderConfirmation() {
         </div>
       </motion.div>
 
+      <OrderRewardSummary order={order} />
       <OrderPaymentActions order={order} claimToken={claimToken} onUpdated={reloadOrder} autoStart={!!location.state?.startPayment} />
 
       {/* HP Earned */}

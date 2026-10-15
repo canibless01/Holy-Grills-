@@ -17,6 +17,8 @@ Rules for editing this file:
 """
 
 class MSG:
+    ORDER_SAVED_NOTIFICATION_TITLE = "Order saved"
+    ORDER_SAVED_NOTIFICATION_BODY = "{name}, order {order_id} is saved. Open your order to check payment and delivery."
     CHECKOUT_REWARD_UNAVAILABLE = 'This reward is no longer available for this order. Choose another reward or save rewards for later.'
     CHECKOUT_MONTHLY_DELIVERY_NAME = 'Monthly free delivery'
     CHECKOUT_LEGACY_DELIVERY_NAME = 'Saved delivery credit'
@@ -2589,6 +2591,16 @@ class MSG:
     # the fallback the UI already shipped; reword it here and the app follows.
 
     FE_CHECKOUT_REWARD_REVIEW               = "Review your selected reward"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_ORDER_HP_RESERVED                    = "{name}: {multiplier}× food HP is reserved for this order and awarded on delivery."
+    FE_ORDER_HP_APPLIED                     = "{name}: {multiplier}× food HP was applied to this order."
+    FE_ORDER_HP_RELEASED                    = "The HP bonus selected for this order was released. Check My Rewards for its current availability."
+    FE_ORDER_HP_UNAVAILABLE                 = "Your HP reward receipt could not be loaded. Refresh this page to check its status."
+    FE_ORDER_HP_TITLE                       = "Order HP reward"
 
 # Short alias
 M = MSG

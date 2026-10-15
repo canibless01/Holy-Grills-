@@ -55,3 +55,12 @@ class NotificationDeliveryTests(unittest.TestCase):
             self.assertEqual(len(self.db.rows['notification_log']),2)
             self.assertEqual(dispatch.call_count,4)
             self.assertFalse(service._is_throttled(MagicMock(),'user','marketplace_request'))
+    def test_order_saved_template_creates_honest_receipt_and_avoids_marketing_throttle(self):
+        with self.app.app_context(), patch.object(service,'get_db',return_value=self.db), patch.object(service.threading,'Thread'):
+            rows=service.send_notification('user','order_placed',template_data={'order_id':'ABCD1234','name':'Student'},action_url='/orders/full-id',channels=['in_app'])
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['title'],'Order saved')
+        self.assertIn('ABCD1234',rows[0]['body'])
+        self.assertIn('check payment',rows[0]['body'])
+        self.assertEqual(rows[0]['action_url'],'/orders/full-id')
+        self.assertFalse(service._is_throttled(MagicMock(),'user','order_placed'))

@@ -253,6 +253,12 @@ NOTIFICATION_TEMPLATES: dict = {
         "include_name": False,
         "channels":     None,
     },
+    "order_placed": {
+        "title": MSG.ORDER_SAVED_NOTIFICATION_TITLE,
+        "body": MSG.ORDER_SAVED_NOTIFICATION_BODY,
+        "include_name": True,
+        "channels": None,
+    },
     "order_confirmed": {
         "title":        MSG.ORDER_CONFIRMED_TITLE,
         "body":         MSG.ORDER_CONFIRMED_BODY,

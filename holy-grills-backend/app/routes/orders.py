@@ -320,6 +320,10 @@ def get_order(order_id):
         if not claim_token or not hmac.compare_digest(str(order.get("claim_token") or ""), str(claim_token)):
             return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
+    # Service reads are permitted only after the ownership/token checks above.
+    from app.services.order_reward_summary import food_hp_reward_summary
+    order['food_hp_reward'] = food_hp_reward_summary(get_db(), order)
+
     # Resolve the assigned rider from the persisted batch/profile relation.
     # No phone number is embedded in the response or codebase.
     if g.user_id or claim_token:

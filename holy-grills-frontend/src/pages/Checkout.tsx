@@ -626,14 +626,14 @@ export default function Checkout() {
         <h2 className="font-bold">{msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}</h2>
         <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARDS_HELP', 'Choose rewards for this order, or save them for later. An HP bonus is reserved for this order and used when it is delivered.')}</p>
         <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')}
-          <select disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+          <select aria-label={msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
             <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
             {deliveryRewardId !== 'none' && !rewardOptions.delivery.some(r => r.id === deliveryRewardId) && <option disabled value={deliveryRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
             {rewardOptions.delivery.map(r => <option key={r.id} value={r.id}>{r.name} · {formatNaira(r.discount)} {msg('FE_CHECKOUT_REWARD_OFF', 'off delivery')}</option>)}
           </select>
         </label>
         <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')}
-          <select disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+          <select aria-label={msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
             <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
             {hpRewardId !== 'none' && !rewardOptions.hp.some(r => r.id === hpRewardId) && <option disabled value={hpRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
             {rewardOptions.hp.map(r => <option key={r.id} value={r.id}>{r.name} · {r.multiplier}× HP</option>)}

@@ -85,6 +85,7 @@ export interface Order {
   payment_status?: string;
   hp_points_used?: number;
   hp_earned?: number;
+  food_hp_reward?: { status: 'reserved' | 'applied' | 'released' | 'unavailable'; name?: string; multiplier?: number } | null;
   delivery_address?: OrderDeliveryAddress | null;
   delivery_window?: OrderDeliveryWindow | null;
   delivery_batch?: DeliveryBatch | null;

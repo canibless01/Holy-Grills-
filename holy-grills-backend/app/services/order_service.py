@@ -1342,6 +1342,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             send_notification(
                 user_id=user_id,
                 notif_type="order_placed",
+                action_url=f"/orders/{result['order_id']}",
                 template_data={"order_id": result["order_id"][:8].upper(), "total_amount": total_amount},
             )
         except Exception as _pe:
