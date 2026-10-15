@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Trash2, Image, Mail, Flame, Tag, Quote, Share2, Heart, Sparkles, Clock, Pencil, Utensils, Award, BookOpen, Send, XCircle, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDate } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import AdminOperatingHours from './AdminOperatingHours';
@@ -344,7 +344,7 @@ export default function AdminStorefront() {
 
   const CAMPAIGN_TONES = { queued: 'blue', sending: 'amber', sent: 'green', cancelled: 'cocoa', failed: 'red' };
 
-  if (!loaded) return <LoadingSpinner label="Loading..." />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (loadError) return <Card>
     <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
     <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>

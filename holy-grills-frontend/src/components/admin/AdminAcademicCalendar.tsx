@@ -132,7 +132,7 @@ function CalendarModal({
 }: {
   // TODO(ts): the admin academic-calendar row is untyped; the modal reads it
   // defensively (period.x || default) and mirrors it into form fields.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   period?: Record<string, any> | null;
   campuses?: Array<{ id: string; name: string }>;
   onClose?: () => void;

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Bike, Check, Clock, Package } from 'lucide-react';
 import { useRiderData } from '@/hooks/useRiderData';
 import { formatNaira, formatDateTime, timeAgo, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import RiderHeader from '@/components/rider/RiderHeader';
 import RiderOrderCard from '@/components/rider/RiderOrderCard';
 
@@ -31,7 +31,7 @@ export default function Rider() {
   } = useRiderData();
 
   if (!authed) return <Navigate to="/login" state={{ from: '/rider' }} replace />;
-  if (loading) return <LoadingSpinner label="Loading rider dashboard…" fullScreen />;
+  if (loading) return <StaffPanelSkeleton variant="rider" />;
 
   const orderCount = batch?.orders?.length || 0;
   const periodLabel = period === 'all' ? 'All-Time' : period === 'today' ? "Today's" : `This ${period === 'week' ? 'Week' : 'Month'}'s`;

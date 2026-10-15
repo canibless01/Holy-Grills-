@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Eye, QrCode, Ticket, Download, Mail, BarChart3 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { safeText } from '@/lib/valueText';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
@@ -73,7 +73,7 @@ export default function AdminEvents() {
   const exportRegs = async (eventId) => {
     try {
       // TODO(ts): the export endpoint's envelope varies (rows/data/registrants/array).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const res: any = await mockApi.admin.exportEventRegistrations(eventId);
       const rows = res?.rows || res?.data || res?.registrants || (Array.isArray(res) ? res : []);
       if (!rows.length) { toast({ title: msg('FE_ADMIN_EVENTS_NO_REGISTRANTS_TO_EXPORT', 'No registrants to export'), description: msg('FE_ADMIN_EVENTS_THE_EXPORT_ENDPOINT_RETURNED_NO_DATA', 'The export endpoint returned no data.'), variant: 'destructive' }); return; }
@@ -93,7 +93,7 @@ export default function AdminEvents() {
     catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SEND', 'Failed to send'), description: e.message, variant: 'destructive' }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading events..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   const filteredRegs = regs ? regs.data.filter(r => {

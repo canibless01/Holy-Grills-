@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Star, Search, RefreshCw, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
@@ -81,7 +81,7 @@ export default function AdminReviews() {
   // GET /admin/reviews only) and the button 404'd. Homepage testimonials are
   // storefront sections, so promotion needs a backend route before it can come back.
 
-  if (loading) return <LoadingSpinner label="Loading reviews..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : '—';

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Star, CheckSquare, Square, Zap, Gauge, Layers } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
@@ -156,7 +156,7 @@ export default function AdminMenu() {
     catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading menu..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-3">

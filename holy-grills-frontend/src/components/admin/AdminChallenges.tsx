@@ -2,7 +2,7 @@ import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Pencil, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Field, TextInput, Card, Pill, Toggle, Modal } from './AdminShared';
 import { msg } from '@/lib/messages';
@@ -87,7 +87,7 @@ export default function AdminChallenges() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading milestones..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">

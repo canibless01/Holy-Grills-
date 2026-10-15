@@ -5,7 +5,7 @@ import { useCampus } from '@/lib/campusContext';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { msg } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Card, Field, Modal, TextInput } from './ui/AdminKit';
 
 export default function AdminCampuses() {
@@ -43,7 +43,7 @@ export default function AdminCampuses() {
     } catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
     setSaving(false);
   };
-  if (loading) return <LoadingSpinner />;
+  if (loading) return <StaffPanelSkeleton />;
   if (error) return <Card className="p-5 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
   return <div className="space-y-4">
     {canManage ? <button onClick={() => begin(null)} className="px-4 py-2 rounded-full bg-gradient-cta text-white font-bold">{msg('FE_CAMPUS_ADD', 'Add campus')}</button> : <p>{msg('FE_CAMPUS_GLOBAL_ONLY', 'Campus names and availability are managed by super admins.')}</p>}

@@ -110,7 +110,7 @@ export default function TopNav() {
           {user && ['admin', 'super_admin', 'kitchen', 'rider'].includes(user.role) && (
             <button
               onClick={() => navigate({ admin: '/admin', super_admin: '/admin', kitchen: '/kitchen', rider: '/rider' }[user.role])}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-bold hover:opacity-90 active:scale-95 transition-all shrink-0"
+              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-bold hover:opacity-90 active:scale-95 transition-all shrink-0"
               title={`Return to ${user.role === 'super_admin' ? 'Admin' : user.role.charAt(0).toUpperCase() + user.role.slice(1)} Panel`}
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />

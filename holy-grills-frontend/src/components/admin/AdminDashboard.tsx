@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import {
@@ -31,6 +31,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [loadError, setLoadError] = useState(false);
+  // A single flaky request must not blank the dashboard: partial failures
+  // render the fetched data with a warning strip and ONE silent retry.
+  const autoRetried = useRef(false);
 
   const load = useCallback(async () => {
     const range = { from_date: daysAgoStr(30), to_date: todayStr() };
@@ -42,7 +45,15 @@ export default function AdminDashboard() {
       liveApi.analytics.items(range),
       liveApi.menu.getKitchenCapacity(),
     ]);
-    setLoadError([d, s, u, h, it, cap].some(result => result.status === 'rejected'));
+    const failed = [d, s, u, h, it, cap].some(result => result.status === 'rejected');
+    setLoadError(failed);
+    if (failed && !autoRetried.current) {
+      // Transient network/timeout — try the whole load once more before the
+      // user ever sees a warning; never loops (one retry per failure streak).
+      autoRetried.current = true;
+      setTimeout(() => { load(); }, 6000);
+    }
+    if (!failed) autoRetried.current = false;
     setData(d.status === 'fulfilled' ? body(d.value) : null);
     setSales(s.status === 'fulfilled' ? body(s.value) : null);
     setUsers(u.status === 'fulfilled' ? body(u.value) : null);
@@ -77,7 +88,8 @@ export default function AdminDashboard() {
     );
   }
 
-  if (loadError || (!data && !sales && !users && !hp && items.length === 0 && !capacity)) {
+  const nothingLoaded = !data && !sales && !users && !hp && items.length === 0 && !capacity;
+  if (loadError && nothingLoaded) {
     return (
       <Card>
         <EmptyState
@@ -94,6 +106,8 @@ export default function AdminDashboard() {
   }
 
   const d = data || {};
+  // Partial-failure strip — data is on screen, but some refreshes failed.
+  const partialWarning = loadError && !nothingLoaded;
   const stats = [
     { label: 'Orders Today', value: d.total_orders ?? d.today?.total_orders ?? 0, icon: Package, iconClass: 'text-primary', iconBg: 'bg-primary/10' },
     { label: 'Revenue Delivered (Today)', value: formatNaira(d.revenue_delivered ?? d.today?.revenue_delivered ?? 0), icon: DollarSign, iconClass: 'text-success', iconBg: 'bg-success/15' },
@@ -118,6 +132,19 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-4">
+      {/* Partial-failure strip — the page still shows every tile that loaded;
+          only the failed refreshes are called out, with a manual retry. */}
+      {partialWarning && (
+        <div className="rounded-2xl tone-warn border border-warn/40 p-3 flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            Some insights couldn't refresh just now.
+          </span>
+          <button onClick={load} className="px-3 py-1.5 rounded-full bg-warn text-white text-[11px] font-bold shrink-0 flex items-center gap-1">
+            <RefreshCw className="w-3 h-3" /> Retry
+          </button>
+        </div>
+      )}
       {/* Header strip */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">

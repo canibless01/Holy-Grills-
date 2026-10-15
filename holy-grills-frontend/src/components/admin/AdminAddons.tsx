@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Pencil } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
@@ -68,7 +68,7 @@ export default function AdminAddons() {
     setSaving(false);
   };
 
-  if (!config) return <LoadingSpinner label="Loading addons..." />;
+  if (!config) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-5">

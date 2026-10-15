@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Bike, Power, ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
+import { Bike, Power, ExternalLink, LayoutGrid, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { useSound } from '@/lib/SoundProvider';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
 
 // Sticky rider header with duty toggle (Online/Offline). The toggle captures
@@ -8,6 +9,9 @@ import InlineNotificationBell from '@/components/InlineNotificationBell';
 // Sound toggle lets the rider mute/unmute dispatch alerts.
 export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = false }) {
   const { soundOn, toggleSound } = useSound();
+  const { user } = useHolyGrill();
+  // Panel switcher — admins hop to the admin panel from the rider header.
+  const isAdmin = !!user && ['admin', 'super_admin'].includes(user.role);
 
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-border">
@@ -36,11 +40,21 @@ export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = 
           >
             {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
+          {isAdmin && (
+            <Link
+              to="/admin"
+              aria-label="Admin panel"
+              title="Admin panel"
+              className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </Link>
+          )}
           <Link
             to="/"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"
           >
-            View Site <ExternalLink className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">View Site</span> <ExternalLink className="w-3.5 h-3.5" />
           </Link>
           <button
             onClick={onSignOut}

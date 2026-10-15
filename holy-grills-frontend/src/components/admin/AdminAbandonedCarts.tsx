@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ShoppingCart, RefreshCw, Search, Bell } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
@@ -50,7 +50,7 @@ export default function AdminAbandonedCarts() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading abandoned carts..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">

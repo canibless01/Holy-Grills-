@@ -46,7 +46,7 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
       })
       .catch(() => { if (alive) setStatus({ configured: true, missing: [] }); });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const handleFile = useCallback(

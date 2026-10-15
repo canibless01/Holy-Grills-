@@ -5,7 +5,7 @@ import { Plus, Pencil, Trash2, Save, Zap, Clock, Gift, Check, Search } from 'luc
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCampus } from '@/lib/campusContext';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Field, TextInput, Pill, SectionHeader, Modal } from './AdminShared';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
@@ -168,7 +168,7 @@ export default function AdminExclusiveSpin() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label={msg('FE_ADMIN_SPIN_LOADING', 'Loading exclusive spin...')} />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError) return <Card><p role="alert" className="text-sm text-destructive">{loadError}</p><button onClick={load}>{msg('FE_ADMIN_SPIN_RETRY', 'Retry')}</button></Card>;
 
   return (

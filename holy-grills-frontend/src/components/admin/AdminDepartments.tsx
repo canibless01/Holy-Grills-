@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Card, Toggle, Pill } from './AdminShared';
 import { msg } from '@/lib/messages';
@@ -61,7 +61,7 @@ export default function AdminDepartments() {
     await load();
   };
 
-  if (!depts.length && !levels.length) return <LoadingSpinner label="Loading..." />;
+  if (!depts.length && !levels.length) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">

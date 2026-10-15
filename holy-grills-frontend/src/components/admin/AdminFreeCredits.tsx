@@ -4,7 +4,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Pencil, Trash2, Gift, Clock, Search, Zap } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Field, TextInput, Pill, SectionHeader, Modal, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
@@ -158,7 +158,7 @@ export default function AdminFreeCredits() {
     setGranting(false);
   };
 
-  if (loading) return <LoadingSpinner label={msg('FE_ADMIN_FREE_SIDE_LOADING', 'Loading free credits...')} />;
+  if (loading) return <StaffPanelSkeleton />;
 
   if (loadError) return <Card><p role="alert" className="text-sm text-destructive">{loadError}</p><button onClick={load}>{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></Card>;
 

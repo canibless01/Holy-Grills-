@@ -9,6 +9,7 @@ import ModalPortal from '@/components/ModalPortal';
 // A joined row here would render as an object and take the panel down.
 const tierText = (r) => safeText(r?.tier_name || r?.tier || r?.ticket_tier, '');
 import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
@@ -113,7 +114,7 @@ export default function AdminCatering() {
     setSaving(false);
   };
 
-  if (loading) return <LoadingSpinner label="Loading catering requests..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   return (

@@ -8,7 +8,7 @@ import { Save, Plus, Trash2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
 
@@ -155,7 +155,7 @@ export default function AdminBanners({ placement = 'home' }) {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label={msg('FE_CMS_BANNER_LOADING_BANNERS', 'Loading banners...')} />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (loadError) return <Card>
     <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
     <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>

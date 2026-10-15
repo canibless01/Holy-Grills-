@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Flame, TrendingUp, TrendingDown, Sparkles, Play } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Pill, Toggle, SectionHeader } from './AdminShared';
 
 export default function AdminHp() {
@@ -72,7 +72,7 @@ export default function AdminHp() {
     catch (e) { setExpireMsg({ error: e.message }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading HP analytics..." />;
+  if (loading) return <StaffPanelSkeleton />;
   if (loadError || !hp) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">

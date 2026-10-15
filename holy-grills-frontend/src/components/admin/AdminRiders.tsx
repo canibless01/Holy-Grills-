@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Bike, Phone, MapPin, Wallet, ChevronDown, ChevronRight, Check, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime, timeAgo } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
@@ -78,7 +78,7 @@ export default function AdminRiders() {
     setBusy(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading riders..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">

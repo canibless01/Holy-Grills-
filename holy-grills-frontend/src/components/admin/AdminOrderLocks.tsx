@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Lock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg, useMessages } from '@/lib/messages';
 import { Pill } from './AdminShared';
 
@@ -32,7 +32,7 @@ export default function AdminOrderLocks() {
   };
   useEffect(() => { load(); }, [status, date]);
 
-  if (loading) return <LoadingSpinner label="Loading order locks..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">

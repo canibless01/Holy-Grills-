@@ -3,7 +3,7 @@ import { Clock, Plus, Pencil, RefreshCw } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
 
 // Ordering Windows — when ordering is open each weekday/date, the per-slot
@@ -56,7 +56,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
     setBusy(false);
   };
 
-  if (windows == null) return <LoadingSpinner label="Loading ordering windows..." />;
+  if (windows == null) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-3">

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, Clock, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime, formatNaira, timeAgo } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import OrderingWindowsTab from './OrderingWindowsTab';
@@ -83,7 +83,7 @@ export default function AdminDelivery() {
     catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_RESTORE_FAILED', 'Restore failed'), description: e.message, variant: 'destructive' }); }
   };
 
-  if (loading) return <LoadingSpinner label="Loading delivery..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   const tabs = [
     { id: 'windows', label: 'Windows', icon: Calendar },
@@ -241,7 +241,7 @@ function CreateWindowModal({
 }: {
   // TODO(ts): the delivery-window row is untyped; the modal mirrors it into
   // form fields with `existing?.x || ''` fallbacks.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   window?: Record<string, any> | null;
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;

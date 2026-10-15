@@ -3,7 +3,7 @@ import { Save, Clock, CalendarOff, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Card, Field, TextInput, Toggle, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
 
 // Admin manager for the storefront operating-hours routes (storefront.py):
@@ -109,7 +109,7 @@ export default function AdminOperatingHours() {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label="Loading hours…" />;
+  if (!loaded) return <StaffPanelSkeleton />;
   if (!schedule) return <Card><p className="text-xs text-muted-foreground text-center py-6">Operating hours unavailable.</p></Card>;
 
   return (

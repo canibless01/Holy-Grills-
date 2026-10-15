@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { toast } from '@/components/ui/use-toast';
@@ -165,7 +165,7 @@ export default function AdminRewards() {
   };
   const remove = async (id) => { await mockApi.admin.deleteReward(id); await load(); };
 
-  if (!rewards.length && !redemptions.length) return <LoadingSpinner label="Loading rewards..." />;
+  if (!rewards.length && !redemptions.length) return <StaffPanelSkeleton />;
 
   // Stage 16 — active economics group + live summary for the open editor.
   const econGroup = modal ? ECONOMICS_GROUP[modal.item.reward_type] : null;

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trophy, Gift, Check, Clock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Pill, SectionHeader, Modal, Field, TextInput } from './AdminShared';
 import { msg } from '@/lib/messages';
@@ -62,7 +62,7 @@ export default function AdminLeaderboard() {
     setBusy(null);
   };
 
-  if (!loaded) return <LoadingSpinner label="Loading..." />;
+  if (!loaded) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">

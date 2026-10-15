@@ -5,6 +5,7 @@ import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_DOTS, getOrderCustomer } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Card, Pill } from './AdminShared';
 import { msg, useMessages } from '@/lib/messages';
 import CreateBatchModal from './AdminCreateBatchModal';
@@ -54,10 +55,10 @@ export default function AdminOrders() {
 
   const openAssign = async (orderId: string) => {
     // TODO(ts): the delivery-window row is untyped; the modal only needs id+label.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let windows: Array<{ id?: string | number; label?: string }> = [];
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const w: any = await mockApi.admin.getDeliveryWindows();
       windows = Array.isArray(w) ? w : (w?.windows || []);
     } catch { /* modal shows the create-window guidance */ }
@@ -372,7 +373,7 @@ function AbandonedCarts() {
     setNudging(null);
   };
 
-  if (loading) return <LoadingSpinner label="Loading abandoned carts..." />;
+  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-3">

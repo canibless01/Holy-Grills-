@@ -157,20 +157,20 @@ export const ORDER_STATUS_DOTS = {
 
 // Chip classes for chips that sit ON DARK surfaces (the tracking hero cards).
 // The light-mode tone chips carry dark text, which disappears on the dark
-// brand gradient — these are their light-on-dark twins: translucent white/gold
-// beds, light text, same colour meaning (gold = in progress, red = problem).
+// brand gradient. Terminal states use SOLID fills (white text) — translucent
+// beds read as muddy brown-on-brown over the dark gradient.
 export const ORDER_STATUS_COLORS_ON_DARK = {
   received: 'bg-white/10 text-white/85 border border-white/15',
   scheduled: 'bg-white/10 text-white/85 border border-white/15',
   preparing: 'bg-accent/25 text-accent border border-accent/30',
   delivery_attempted: 'bg-accent/25 text-accent border border-accent/30',
-  ready: 'bg-accent/35 text-white border border-accent/40',
+  ready: 'bg-accent text-accent-foreground border border-accent',
   assigned: 'bg-white/15 text-white border border-white/20',
   out_for_delivery: 'bg-white/15 text-white border border-white/20',
-  delivered: 'bg-success/30 text-white border border-success/40',
-  cancelled: 'bg-destructive/30 text-white border border-destructive/40',
-  refunded: 'bg-destructive/30 text-white border border-destructive/40',
-  unclaimed: 'bg-destructive/30 text-white border border-destructive/40',
+  delivered: 'bg-success text-white border border-success',
+  cancelled: 'bg-destructive text-white border border-destructive',
+  refunded: 'bg-destructive text-white border border-destructive',
+  unclaimed: 'bg-destructive text-white border border-destructive',
 };
 
 // Extract the ordering student's identity (name / phone / email) from an order

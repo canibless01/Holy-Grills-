@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { Calendar, Package, Zap, Check, ChefHat } from 'lucide-react';
 import { useKitchenData } from '@/hooks/useKitchenData';
 import { formatDateTime } from '@/lib/hgUtils';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import KitchenHeader from '@/components/kitchen/KitchenHeader';
 import KitchenOrderCard from '@/components/kitchen/KitchenOrderCard';
 import KitchenSettings from '@/components/kitchen/KitchenSettings';
@@ -35,7 +35,7 @@ export default function Kitchen() {
   } = useKitchenData();
 
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
-  if (loading) return <LoadingSpinner label="Loading kitchen…" fullScreen />;
+  if (loading) return <StaffPanelSkeleton variant="kitchen" />;
 
   const received = queue.filter((o) => o.status === 'received');
   const preparing = queue.filter((o) => o.status === 'preparing');
