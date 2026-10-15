@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, ShoppingCart, Bell, ChevronDown, ArrowLeftRight } from 'lucide-react';
+import { Flame, ShoppingCart, Bell, ChevronDown } from 'lucide-react';
+import PanelSwitcher from '@/components/PanelSwitcher';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { getTierProgress } from '@/lib/hgUtils';
 import TierAvatar from '@/components/TierAvatar';
@@ -103,20 +104,13 @@ export default function TopNav() {
 
         {/* Right actions */}
         <div className="flex items-center gap-1.5">
-          {/* Return-to-panel button — shown only when a staff member (admin /
-              kitchen / rider) is browsing the student site, so they can jump
-              back to their own panel without using the back button (which can
-              trigger a re-auth/logut). */}
-          {user && ['admin', 'super_admin', 'kitchen', 'rider'].includes(user.role) && (
-            <button
-              onClick={() => navigate({ admin: '/admin', super_admin: '/admin', kitchen: '/kitchen', rider: '/rider' }[user.role])}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-bold hover:opacity-90 active:scale-95 transition-all shrink-0"
-              title={`Return to ${user.role === 'super_admin' ? 'Admin' : user.role.charAt(0).toUpperCase() + user.role.slice(1)} Panel`}
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              <span className="hidden lg:inline">{user.role === 'super_admin' ? 'Admin' : user.role.charAt(0).toUpperCase() + user.role.slice(1)} Panel</span>
-            </button>
-          )}
+          {/* Panel switcher — ONE icon for staff (admin / kitchen / rider):
+              on the student site it carries them to their home panel; on
+              their own panel it flips back here. Icon-only on phones. */}
+          <PanelSwitcher
+            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-bold hover:opacity-90 active:scale-95 transition-all shrink-0"
+            labelClassName="hidden lg:inline"
+          />
 
           {/* HP pill — quiet status, only for signed-in users */}
           {user && (

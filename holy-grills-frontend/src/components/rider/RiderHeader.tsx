@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Bike, Power, ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { useSound } from '@/lib/SoundProvider';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
+import PanelSwitcher from '@/components/PanelSwitcher';
 
 // Sticky rider header with duty toggle (Online/Offline). The toggle captures
 // real GPS when going online (PATCH /riders/availability with location_lat/lng).
@@ -36,6 +37,10 @@ export default function RiderHeader({ online, onToggleOnline, onSignOut, busy = 
           >
             {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
+          {/* One-icon panel switcher: admin → back to /admin; rider
+              staff → student page (also their mobile way back, since the
+              View Site pill starts at sm). */}
+          <PanelSwitcher className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary transition-colors" />
           <Link
             to="/"
             className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"

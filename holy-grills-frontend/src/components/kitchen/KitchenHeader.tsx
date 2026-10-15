@@ -10,6 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
+import PanelSwitcher from '@/components/PanelSwitcher';
 
 // Sticky kitchen header with open/closed toggle (PATCH /kitchen/settings),
 // sound toggle, and navigation. The toggle maps to is_accepting_orders —
@@ -71,6 +72,10 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
             >
               {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
+            {/* One-icon panel switcher: admin → back to /admin; kitchen
+                staff → student page (also their mobile way back, since the
+                View Site pill starts at sm). */}
+            <PanelSwitcher className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary transition-colors" />
             <Link
               to="/"
               className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"
