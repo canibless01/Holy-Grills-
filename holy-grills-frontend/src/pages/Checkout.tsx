@@ -46,6 +46,27 @@ export default function Checkout() {
   const orderRequest = useRef<Promise<any> | null>(null);
   const { campus, openGate } = useCampus();
   const { play } = useSound();
+  const rewardStateKey = user?.id && campus?.id ? `hg_checkout_rewards:${user.id}:${campus.id}` : null;
+  const pendingKey = campus?.id ? `hg_pending_checkout:${user?.id || 'guest'}:${campus.id}` : null;
+  const [rewardSelection, setRewardSelection] = useState({ key: null as string | null, hp: 'none', delivery: 'none' });
+  const [pendingCheckout, setPendingCheckout] = useState<any>(null);
+  const [rewardOptions, setRewardOptions] = useState<{ hp: any[]; delivery: any[] }>({ hp: [], delivery: [] });
+  useEffect(() => {
+    let saved;
+    try { saved = JSON.parse(rewardStateKey ? localStore.getItem(rewardStateKey) || 'null' : 'null'); } catch { saved = null; }
+    setRewardSelection({ key: rewardStateKey, hp: typeof saved?.hp === 'string' ? saved.hp : 'none', delivery: typeof saved?.delivery === 'string' ? saved.delivery : 'none' });
+    try { setPendingCheckout(pendingKey ? JSON.parse(localStore.getItem(pendingKey) || 'null') : null); } catch { setPendingCheckout(null); }
+  }, [rewardStateKey, pendingKey]);
+  const hpRewardId = rewardSelection.key === rewardStateKey ? rewardSelection.hp : 'none';
+  const deliveryRewardId = rewardSelection.key === rewardStateKey ? rewardSelection.delivery : 'none';
+  const rewardChoicesReady = !isAuthenticated || (!!rewardStateKey && rewardSelection.key === rewardStateKey);
+  const chooseReward = (kind: 'hp' | 'delivery', value: string) => {
+    const next = { ...rewardSelection, key: rewardStateKey, [kind]: value };
+    if (rewardStateKey) localStore.setItem(rewardStateKey, JSON.stringify(next));
+    setRewardSelection(next);
+  };
+  const clearPendingCheckout = () => { if (pendingKey) localStore.removeItem(pendingKey); setPendingCheckout(null); };
+
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [windowStatus, setWindowStatus] = useState(null);
@@ -157,8 +178,8 @@ export default function Checkout() {
   // showing the popup then would tell a guest who has not picked a campus that
   // the kitchen is shut.
   useEffect(() => {
-    if (windowStatus?.is_open === false && !scheduledWindow && !scheduleRequested) setShowClosedPopup(true);
-  }, [windowStatus, scheduledWindow, scheduleRequested]);
+    if (windowStatus?.is_open === false && !scheduledWindow && !scheduleRequested && !pendingCheckout) setShowClosedPopup(true);
+  }, [windowStatus, scheduledWindow, scheduleRequested, pendingCheckout]);
 
   // Addresses + free side credits are auth-scoped. The auth state resolves
   // AFTER mount, so this has to react to it — a mount-only fetch left both
@@ -178,8 +199,11 @@ export default function Checkout() {
 
   const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
   const [quoteRetry, setQuoteRetry] = useState(0);
-  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased });
+  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady });
   const quote = quoteState?.key === quoteKey ? quoteState.data : null;
+  useEffect(() => {
+    if (quote) setRewardOptions({ hp: quote.available_hp_rewards || [], delivery: quote.available_delivery_rewards || [] });
+  }, [quote]);
   const quoteReady = !!quote;
   const quoteError = quoteState?.key === quoteKey ? quoteState.error : null;
   const subtotal = quote?.subtotal ?? (cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0));
@@ -347,6 +371,9 @@ export default function Checkout() {
         })),
         payment_method: effectivePayment,
         expected_free_sides: quote?.free_sides || [],
+        delivery_reward_id: deliveryRewardId,
+        hp_reward_id: hpRewardId,
+        expected_hp_bonus_plan: quote?.hp_bonus_plan,
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
         promo_code: promoResult?.code,
@@ -377,7 +404,7 @@ export default function Checkout() {
   useEffect(() => {
     let active = true;
     const hasLocation = deliveryType === 'on_campus' ? !!hostelId : deliveryType === 'off_campus' && (!!gateId || deliveryPin?.lat != null);
-    if (!campus?.id || !cart?.items?.length || !hasLocation || addressNeedsReselect) return;
+    if (!campus?.id || !cart?.items?.length || !hasLocation || addressNeedsReselect || !rewardChoicesReady || pendingCheckout) return;
     const timer = setTimeout(async () => {
       try {
         // Quoting never reserves stock, claims rewards, or authorizes a payment.
@@ -422,6 +449,7 @@ export default function Checkout() {
   };
 
   const handlePlaceOrder = async () => {
+    if (pendingCheckout) { await recoverCheckout(); return; }
     if (!validateCheckout()) return;
     setPlacing(true);
     const payload = buildPayload();
@@ -472,6 +500,7 @@ export default function Checkout() {
    * the date and delivery window the order actually landed in.
    */
   const handleScheduleOrder = async () => {
+    if (pendingCheckout) { await recoverCheckout(); return; }
     setScheduleRequested(true);
     setShowClosedPopup(false);
     if (!validateCheckout()) return;
@@ -489,7 +518,7 @@ export default function Checkout() {
 
   // Shared submit — places the order and hands off to the confirmation screen.
   // Throws so the caller can apply its own error handling (capacity reschedule).
-  const submitOrder = async (payload: CreateOrderPayload) => {
+  const submitOrder = async (payload: CreateOrderPayload, recover = false) => {
     if (!orderRequest.current) {
       orderRequest.current = (async () => {
         const base = { ...payload };
@@ -498,17 +527,29 @@ export default function Checkout() {
         delete base.delivery_window_id;
         delete base.expected_total;
         delete base.expected_free_sides;
-        const idempotency_key = await checkoutIntent({
+        delete base.expected_hp_bonus_plan;
+        const idempotency_key = recover ? pendingCheckout.payload.idempotency_key : await checkoutIntent({
           actor: user?.id || 'guest', campus: campus?.id,
           cartRows: (cart?.items || []).map((item) => item.id), payload: base,
         });
-        return mockApi.orders.create({ ...payload, expected_total: quote.total_amount, idempotency_key });
+        const requestPayload = recover ? pendingCheckout.payload : { ...payload, expected_total: quote.total_amount, idempotency_key };
+        const checkpoint = { payload: requestPayload, created_at: new Date().toISOString() };
+        if (pendingKey) localStore.setItem(pendingKey, JSON.stringify(checkpoint));
+        setPendingCheckout(checkpoint);
+        try { return await mockApi.orders.create(requestPayload); }
+        catch (e) {
+          if ([400, 401, 403, 404, 409, 422].includes(e.status)) clearPendingCheckout();
+          throw e;
+        }
       })();
     }
     let result;
     try { result = await orderRequest.current; }
     finally { orderRequest.current = null; }
     const order = result?.order || result;
+    if (!order?.id) throw new Error(msg('FE_CHECKOUT_CONFIRMATION_MISSING', 'We could not confirm the saved order. Recover this checkout before trying another order.'));
+    clearPendingCheckout();
+    if (rewardStateKey) localStore.removeItem(rewardStateKey);
     play('order_placed');
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
@@ -533,6 +574,14 @@ export default function Checkout() {
         delivery_window_end: order?.delivery_window_end,
       },
     });
+  };
+
+  const recoverCheckout = async () => {
+    if (!pendingCheckout || placing || scheduling) return;
+    setPlacing(true); setError(null);
+    try { await submitOrder(pendingCheckout.payload, true); }
+    catch (e) { setError(e.message || msg('FE_CHECKOUT_RECOVERY_FAILED', 'Checkout recovery failed. Please retry.')); }
+    setPlacing(false);
   };
 
   // Confirm the "schedule for the next available day" offer — one extra attempt only.
@@ -568,6 +617,30 @@ export default function Checkout() {
         <p className="text-sm text-muted-foreground mt-1">One step to the table.</p>
       </div>
 
+      {pendingCheckout && <section role="alert" className="rounded-2xl border border-primary/40 bg-primary/5 p-4 space-y-2">
+        <h2 className="font-bold">{msg('FE_CHECKOUT_RECOVER_TITLE', 'Recover your previous checkout')}</h2>
+        <p className="text-sm text-muted-foreground">{msg('FE_CHECKOUT_RECOVER_HELP', 'Your previous checkout did not return confirmation. Recover it before placing another order; this reuses the same request.')}</p>
+        <button disabled={placing || scheduling} onClick={recoverCheckout} className="rounded-full bg-gradient-cta text-white font-bold px-4 py-2 disabled:opacity-50">{msg('FE_CHECKOUT_RECOVER_ACTION', 'Recover checkout')}</button>
+      </section>}
+      {isAuthenticated && <section className="rounded-2xl border border-border bg-card p-4 space-y-3" aria-label={msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}>
+        <h2 className="font-bold">{msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}</h2>
+        <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARDS_HELP', 'Choose rewards for this order, or save them for later. An HP bonus is reserved for this order and used when it is delivered.')}</p>
+        <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')}
+          <select disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+            <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
+            {deliveryRewardId !== 'none' && !rewardOptions.delivery.some(r => r.id === deliveryRewardId) && <option disabled value={deliveryRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
+            {rewardOptions.delivery.map(r => <option key={r.id} value={r.id}>{r.name} · {formatNaira(r.discount)} {msg('FE_CHECKOUT_REWARD_OFF', 'off delivery')}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')}
+          <select disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+            <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
+            {hpRewardId !== 'none' && !rewardOptions.hp.some(r => r.id === hpRewardId) && <option disabled value={hpRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
+            {rewardOptions.hp.map(r => <option key={r.id} value={r.id}>{r.name} · {r.multiplier}× HP</option>)}
+          </select>
+        </label>
+        {!quote && <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARD_LOCATION', 'Choose your delivery location to load eligible rewards.')}</p>}
+      </section>}
       {scheduleRequested && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_YOUR_ORDER_WILL_BE_SCHEDULED_FOR_THE_NEXT_AVAILA', "Your order will be scheduled for the next available opening. Wallet payment is charged when you place the order.")}</p>}
 
       {!isAuthenticated && (

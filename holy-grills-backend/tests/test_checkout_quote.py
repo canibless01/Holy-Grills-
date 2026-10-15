@@ -25,7 +25,7 @@ class Query:
     def single(self):self.one=True;return self
     def execute(self):
         if self.table in self.db.fail:raise RuntimeError('database unavailable')
-        rows=[copy.deepcopy(row) for row in self.db.rows.get(self.table,[]) if all(row.get(k)==v for k,v in self.filters)]
+        rows=[copy.deepcopy(row) for row in self.db.rows.get(self.table,[]) if all((row.get(k.split('->>')[0],{}).get(k.split('->>')[1]) if '->>' in k else row.get(k))==v for k,v in self.filters)]
         return (rows[0] if rows else None) if self.one else rows
     def insert(self,*a):raise AssertionError('Quote attempted an insert')
     def update(self,*a):raise AssertionError('Quote attempted an update')
@@ -43,8 +43,8 @@ class CheckoutQuoteTests(unittest.TestCase):
     def setUp(self):
         self.app=Flask(__name__);self.app.config.update(HP_PER_NAIRA_FOOD=0.1,SQUAD_ORDER_ENABLED=False)
         self.db=Db();self.payload={'items':[{'menu_item_id':MEAL,'quantity':1}],'payment_method':'card','delivery_type':'on_campus','delivery_location_id':HOSTEL}
-    def calculate(self,guest=False,quote_only=True,payload=None):
-        with self.app.test_request_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service,'get_user_client',return_value=self.db),patch.object(service.hp_service,'get_user_tier',return_value={'tier':{'slug':'ember'}}),patch.object(service.hp_service,'calculate_delivery_hp',return_value=102):
+    def calculate(self,guest=False,quote_only=True,payload=None,base_hp=102):
+        with self.app.test_request_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service,'get_user_client',return_value=self.db),patch.object(service.hp_service,'get_user_tier',return_value={'tier':{'slug':'ember'}}),patch.object(service.hp_service,'calculate_delivery_hp',return_value=base_hp):
             g.campus_id=CAMPUS
             return service.create_order(None if guest else 'student',payload or self.payload,quote_only=quote_only)
     def test_delivery_credit_reduces_fee_and_total_without_writes(self):
@@ -123,5 +123,47 @@ class CheckoutQuoteTests(unittest.TestCase):
         order={'id':'committed','total_amount':2095}
         with patch.object(service,'_order_for_intent',return_value=order):
             self.assertEqual(self.calculate(quote_only=False,payload={**self.payload,'expected_total':2300,'payment_method':'wallet'}),order)
+
+    def test_delivery_reward_can_be_saved_for_later(self):
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        q=self.calculate(payload={**self.payload,'delivery_reward_id':'none'})
+        self.assertEqual((q['delivery_fee'],q['total_amount']),(250,2095))
+        self.assertEqual(q['available_delivery_rewards'][0]['id'],'legacy')
+        self.assertEqual(self.db.rows['profiles'][0]['next_order_free_delivery_cap'],100)
+    def test_choose_a_specific_delivery_win_instead_of_monthly_or_legacy(self):
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        self.db.rows['system_settings']=[{'key':'tier_perk_ember_monthly_free_delivery','campus_id':None,'value':True}]
+        self.db.rows['exclusive_spin_fulfillments']=[{'id':'second','user_id':'student','campus_id':CAMPUS,'status':'pending','prize_name':'Saved delivery','result_snapshot':{'prize_type':'free_delivery','reward_config':{'cap':200}}}]
+        q=self.calculate(payload={**self.payload,'delivery_reward_id':'second'})
+        self.assertEqual((q['delivery_fee'],q['total_amount']),(50,1895))
+        self.assertEqual(q['delivery_benefit']['receipt_id'],'second')
+        self.assertEqual(len(q['available_delivery_rewards']),3)
+    def test_hp_bonus_can_be_saved_without_a_promise_to_apply_it(self):
+        self.db.rows['profiles'][0]['next_order_hp_multiplier']=3
+        q=self.calculate(payload={**self.payload,'hp_reward_id':'none'})
+        self.assertEqual(q['hp_preview']['total_hp'],102)
+        self.assertEqual(q['hp_bonus_plan'],{'source':'none','multiplier':1})
+        self.assertEqual(q['available_hp_rewards'][0]['multiplier'],3)
+    def test_customer_can_choose_a_specific_hp_win(self):
+        self.db.rows['profiles'][0]['next_order_hp_multiplier']=2
+        self.db.rows['exclusive_spin_fulfillments']=[{'id':'second','user_id':'student','campus_id':CAMPUS,'status':'pending','prize_name':'Triple','result_snapshot':{'prize_type':'hp_multiplier','reward_config':{'multiplier':3}}}]
+        q=self.calculate(payload={**self.payload,'hp_reward_id':'second'})
+        self.assertEqual(q['hp_preview']['total_hp'],306)
+        self.assertEqual(q['hp_bonus_plan']['receipt_id'],'second')
+        self.assertEqual(self.db.rows['profiles'][0]['next_order_hp_multiplier'],2)
+    def test_missing_reward_does_not_silently_fall_back_to_auto(self):
+        for field in ('hp_reward_id','delivery_reward_id'):
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'no longer available'):
+                self.calculate(payload={**self.payload,field:'missing'})
+    def test_changed_legacy_bonus_requires_review_before_admission(self):
+        self.db.rows['profiles'][0]['next_order_hp_multiplier']=3
+        with patch.object(service,'_order_for_intent',return_value=None),patch.object(service,'resolve_ordering_window',return_value={}),patch.object(service,'_check_kitchen_capacity'),self.assertRaises(service.OrderPriceChanged):
+            self.calculate(quote_only=False,payload={**self.payload,'hp_reward_id':'legacy','expected_hp_bonus_plan':{'source':'legacy','multiplier':2}})
+    def test_zero_hp_preserves_the_selected_bonus_for_later(self):
+        self.db.rows['profiles'][0]['next_order_hp_multiplier']=2
+        q=self.calculate(payload={**self.payload,'hp_reward_id':'legacy'},base_hp=0)
+        self.assertEqual(q['hp_bonus_plan']['source'],'none')
+        self.assertEqual(q['hp_preview']['total_hp'],0)
+        self.assertEqual(self.db.rows['profiles'][0]['next_order_hp_multiplier'],2)
 
 if __name__=='__main__':unittest.main()

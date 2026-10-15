@@ -52,7 +52,7 @@ const revealCopy = (result) => {
   switch (result.prize_type) {
     case 'hp': return { emoji: '⚡', title: msg('FE_SPIN_HP_WON', '+{amount} HP!', { amount: result.hp_won }), body: msg('FE_SPIN_HP_CREDITED', 'Holy Points added to your balance.') };
     case 'free_delivery': return { emoji: '🚚', title, body: msg('FE_SPIN_DELIVERY_GRANTED', 'Up to ₦{amount} in delivery fees covered on your next order.', { amount: result.delivery_cap }) };
-    case 'hp_multiplier': return { emoji: '🔥', title, body: msg('FE_SPIN_MULTIPLIER_GRANTED', 'Saved: {multiplier}× food HP for a delivered order. Earlier bonuses are used first.', { multiplier: result.hp_multiplier }) };
+    case 'hp_multiplier': return { emoji: '🔥', title, body: msg('FE_SPIN_MULTIPLIER_GRANTED', 'Saved: {multiplier}× food HP. Choose an order at checkout.', { multiplier: result.hp_multiplier }) };
     default: return { emoji: '🎁', title, body: msg('FE_SPIN_PHYSICAL_PENDING', 'Your campus team has your prize for fulfilment. Track its status in My Rewards.') };
   }
 };
