@@ -17,6 +17,12 @@ Rules for editing this file:
 """
 
 class MSG:
+    CHECKOUT_REWARD_UNAVAILABLE = 'This reward is no longer available for this order. Choose another reward or save rewards for later.'
+    CHECKOUT_MONTHLY_DELIVERY_NAME = 'Monthly free delivery'
+    CHECKOUT_LEGACY_DELIVERY_NAME = 'Saved delivery credit'
+    CHECKOUT_DELIVERY_REWARD_NAME = 'Delivery credit'
+    CHECKOUT_LEGACY_HP_NAME = 'Saved HP bonus'
+    CHECKOUT_HP_REWARD_NAME = 'Food HP bonus'
     FREE_SIDE_REMOVED = 'Removed'
     FREE_SIDE_DEACTIVATED = 'Deactivated'
     FREE_SIDE_CREDITS_TITLE = 'Free side credits added'
@@ -2273,7 +2279,7 @@ class MSG:
     FE_SPIN_HP_WON                          = "+{amount} HP!"
     FE_SPIN_HP_CREDITED                     = "Holy Points added to your balance."
     FE_SPIN_DELIVERY_GRANTED                = "Up to ₦{amount} in delivery fees covered on your next order."
-    FE_SPIN_MULTIPLIER_GRANTED              = "Saved: {multiplier}× food HP for a delivered order. Earlier bonuses are used first."
+    FE_SPIN_MULTIPLIER_GRANTED              = "Saved: {multiplier}× food HP. Choose an order at checkout."
     FE_SPIN_PHYSICAL_PENDING                = "Your campus team has your prize for fulfilment. Track its status in My Rewards."
     FE_SPIN_TITLE                           = "🎡 Exclusive Spin"
     FE_SPIN_CLOSE                           = "Close spin wheel"
@@ -2551,6 +2557,7 @@ class MSG:
     # Added from frontend call sites (`npm run messages:fix`). Preview text is
     # the fallback the UI already shipped; reword it here and the app follows.
 
+    FE_SPIN_MULTIPLIER_RESERVED = "HP bonus reserved for order {order}"
     FE_SPIN_MULTIPLIER_READY                = "{multiplier}× food HP saved for a delivered order"
     FE_SPIN_MULTIPLIER_APPLIED              = "HP bonus applied to order {order}"
 
@@ -2559,6 +2566,29 @@ class MSG:
     # the fallback the UI already shipped; reword it here and the app follows.
 
     FE_SPIN_MULTIPLIER_LEGACY               = "Legacy HP bonus; usage was not recorded"
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CHECKOUT_CONFIRMATION_MISSING        = "We could not confirm the saved order. Recover this checkout before trying another order."
+    FE_CHECKOUT_RECOVERY_FAILED             = "Checkout recovery failed. Please retry."
+    FE_CHECKOUT_RECOVER_TITLE               = "Recover your previous checkout"
+    FE_CHECKOUT_RECOVER_HELP                = "Your previous checkout did not return confirmation. Recover it before placing another order; this reuses the same request."
+    FE_CHECKOUT_RECOVER_ACTION              = "Recover checkout"
+    FE_CHECKOUT_REWARDS_TITLE               = "Available rewards"
+    FE_CHECKOUT_REWARDS_HELP                = "Choose rewards for this order, or save them for later. An HP bonus is reserved for this order and used when it is delivered."
+    FE_CHECKOUT_DELIVERY_REWARD             = "Delivery reward"
+    FE_CHECKOUT_REWARD_SAVE                 = "Save rewards for later"
+    FE_CHECKOUT_REWARD_OFF                  = "off delivery"
+    FE_CHECKOUT_HP_REWARD                   = "Food HP reward"
+    FE_CHECKOUT_REWARD_LOCATION             = "Choose your delivery location to load eligible rewards."
+
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CHECKOUT_REWARD_REVIEW               = "Review your selected reward"
 
 # Short alias
 M = MSG

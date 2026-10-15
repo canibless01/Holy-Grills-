@@ -129,6 +129,9 @@ export interface CreateOrderItem {
  * `items` and `payment_method` are always present.
  */
 export interface CreateOrderPayload {
+  delivery_reward_id?: string;
+  hp_reward_id?: string;
+  expected_hp_bonus_plan?: any;
   expected_free_sides?: Array<{ selection_id: string; free_side_item_id: string; name: string }>;
   idempotency_key?: string;
   expected_total?: number;

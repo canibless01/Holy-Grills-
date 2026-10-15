@@ -34,3 +34,12 @@ class FoodMultiplierTests(unittest.TestCase):
    with self.subTest(value=value),self.assertRaises((ValueError,TypeError)):next_food_hp_multiplier(self.db,'user','campus')
   self.db.fail={'exclusive_spin_fulfillments'}
   with self.assertRaises(RuntimeError):next_food_hp_multiplier(self.db,'user','campus')
+
+ def test_order_opt_out_ignores_other_available_bonuses(self):
+  self.db.rows['order_status_logs']=[{'metadata':{'hp_bonus_plan':{'source':'none','multiplier':1}}}]
+  self.db.fail={'profiles','exclusive_spin_fulfillments'}
+  self.assertEqual(next_food_hp_multiplier(self.db,'user','campus',order_id='order')['multiplier'],1)
+ def test_delivery_reads_its_reserved_choice_instead_of_another_bonus(self):
+  self.db.rows['order_status_logs']=[{'metadata':{'hp_bonus_plan':{'source':'spin','receipt_id':'chosen','multiplier':3}}}]
+  self.db.fail={'profiles','exclusive_spin_fulfillments'}
+  self.assertEqual(next_food_hp_multiplier(self.db,'user','campus',order_id='order'),{'source':'spin','receipt_id':'chosen','multiplier':3})

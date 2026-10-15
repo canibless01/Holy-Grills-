@@ -16,7 +16,7 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
         for method in ('select','eq','or_','is_','order','limit'):
             getattr(self.receipts,method).return_value=self.receipts
         self.receipts.execute.return_value=[]
-        self.db.table.side_effect = lambda name: {'profiles': self.profiles, 'squad_members': self.squads,'exclusive_spin_fulfillments':self.receipts}[name]
+        self.db.table.side_effect = lambda name: {'profiles': self.profiles, 'squad_members': self.squads,'exclusive_spin_fulfillments':self.receipts,'order_status_logs':self.receipts}[name]
         self.profile_read = self.profiles.select.return_value.eq.return_value.single.return_value.execute
         self.profile_read.return_value = {'next_order_hp_multiplier': 2}
         self.squads.select.return_value.eq.return_value.limit.return_value.execute.return_value = []

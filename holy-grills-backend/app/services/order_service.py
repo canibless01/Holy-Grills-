@@ -922,9 +922,12 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     from app.services.delivery_benefits import quote_delivery_benefit
     try:
-        delivery_benefit = quote_delivery_benefit(user_id, campus_id, delivery_fee_dec, is_squad_order, db=get_db())
+        delivery_benefit = quote_delivery_benefit(user_id, campus_id, delivery_fee_dec, is_squad_order, db=get_db(), choice=payload.get("delivery_reward_id","auto"))
     except Exception as exc:
+        if str(exc)==MSG.CHECKOUT_REWARD_UNAVAILABLE:
+            raise ValueError(MSG.CHECKOUT_REWARD_UNAVAILABLE) from exc
         raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
+    delivery_reward_choices=delivery_benefit.pop('choices',[])
     delivery_fee_dec = max(Decimal('0'), delivery_fee_dec - Decimal(str(delivery_benefit['discount'])))
     delivery_fee = float(delivery_fee_dec)
 
@@ -1028,6 +1031,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     tier_slug = "ember"
     next_order_hp_mult = 1.0
+    hp_bonus_plan=None
+    hp_reward_choices=[]
     if user_id:
         try:
             tier_info = hp_service.get_user_tier(user_id)
@@ -1037,14 +1042,26 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                             user_id, exc)
         from app.services.food_hp_multiplier import next_food_hp_multiplier
         try:
-            next_order_hp_mult = next_food_hp_multiplier(get_db(),user_id,campus_id)['multiplier']
+            if 'hp_reward_id' in payload:
+                from app.services.food_hp_multiplier import choose_food_hp_reward
+                hp_bonus_plan,hp_reward_choices=choose_food_hp_reward(get_db(),user_id,campus_id,payload['hp_reward_id'])
+                next_order_hp_mult=hp_bonus_plan['multiplier']
+            else:
+                next_order_hp_mult = next_food_hp_multiplier(get_db(),user_id,campus_id)['multiplier']
         except Exception as exc:
+            if str(exc)==MSG.CHECKOUT_REWARD_UNAVAILABLE:
+                raise ValueError(MSG.CHECKOUT_REWARD_UNAVAILABLE) from exc
             logger.exception('Order HP multiplier quote unavailable')
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
 
     hp_preview_total = hp_service.calculate_delivery_hp(
         subtotal, tier_slug, order_items, user_id=user_id, campus_id=campus_id
     )
+    if not user_id and payload.get('hp_reward_id','none')!='none':
+        raise ValueError(MSG.CHECKOUT_REWARD_UNAVAILABLE)
+    if hp_bonus_plan is not None and hp_preview_total<=0:
+        hp_bonus_plan={'source':'none','multiplier':1.0}
+        next_order_hp_mult=1.0
     if next_order_hp_mult > 1:
         # Preview only -- read the selected entitlement to show its bonus, but
         # do NOT reset it here. This used to write next_order_hp_multiplier back to 1 at order-creation
@@ -1074,6 +1091,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         'free_sides':free_side_quote['items'],
         'free_side_credits_enabled':free_side_quote['enabled'],
         'delivery_benefit':delivery_benefit,
+        'available_delivery_rewards':delivery_reward_choices,
+        'available_hp_rewards':hp_reward_choices,
+        'hp_bonus_plan':hp_bonus_plan,
         'delivery_fee_original':delivery_fee_original,
         'squad_delivery_discount_amount':float(squad_delivery_discount_dec),
         'promo_discount':promo_discount,'squad_discount':squad_discount,
@@ -1085,6 +1105,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     if quote_only:
         return price_quote
     if 'expected_free_sides' in payload and payload['expected_free_sides'] != free_side_quote['items']:
+        raise OrderPriceChanged(price_quote)
+    if 'expected_hp_bonus_plan' in payload and payload['expected_hp_bonus_plan'] != hp_bonus_plan:
         raise OrderPriceChanged(price_quote)
     expected_total = payload.get('expected_total')
     if expected_total is not None:
@@ -1116,6 +1138,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         # Internal server-priced contract, never copied from client item fields.
         order_items[0]['_delivery_benefit'] = delivery_benefit
         order_items[0]['_free_sides'] = free_side_quote['items']
+        if hp_bonus_plan is not None:
+            order_items[0]['_hp_bonus_plan'] = hp_bonus_plan
 
     rpc_payload = {
         "p_user_id": user_id,
@@ -1168,7 +1192,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         result = {}
 
     if result.get("error"):
-        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed')):
+        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed', 'hp_bonus_changed')):
             # The lock changed after pricing but before its transaction claim.
             # Return a fresh, read-only quote rather than repeating stale totals.
             refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
@@ -1779,7 +1803,7 @@ def _handle_delivery_rewards(order: dict):
     for attempt in range(3):
         try:
             from app.services.food_hp_multiplier import next_food_hp_multiplier
-            mult = next_food_hp_multiplier(db,user_id,order.get('campus_id'))['multiplier']
+            mult = next_food_hp_multiplier(db,user_id,order.get('campus_id'),order_id=order_id)['multiplier']
             hp_amount = round(base_hp_amount * mult)
             sm_check = db.table('squad_members').select('id').eq('order_id', order_id).limit(1).execute()
             has_squad_members = bool(sm_check)
