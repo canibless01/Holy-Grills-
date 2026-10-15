@@ -265,6 +265,18 @@
 }
 
 @layer utilities {
+  /* ─── Reduced motion — respect the OS setting globally. Kills decorative
+     loops (gold shimmer, flame flicker, ken-burns, auto-scroll keyframes) and
+     shortens transitions; functional JS transitions keep working. ─── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .text-balance { text-wrap: balance; }

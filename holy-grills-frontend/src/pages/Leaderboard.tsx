@@ -13,6 +13,7 @@ import MascotStandee from '@/components/mascot/MascotStandee';
 import ModalPortal from '@/components/ModalPortal';
 import TierIcon from '@/components/TierIcon';
 import { triggerMascotCelebration } from '@/lib/mascots';
+import { playSound } from '@/lib/soundManager';
 import { msg, useMessages } from '@/lib/messages';
 import { localStore } from '@/lib/storage';
 
@@ -112,6 +113,7 @@ export default function Leaderboard() {
   const prevRankRef = useRef(null);
   useEffect(() => {
     if (myRank && prevRankRef.current != null && myRank.rank < prevRankRef.current) {
+      playSound('leaderboard_up');
       triggerMascotCelebration('hips');
     }
     if (myRank) prevRankRef.current = myRank.rank;
