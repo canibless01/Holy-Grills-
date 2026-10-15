@@ -275,22 +275,22 @@ export default function Home() {
         <TestimonialSlider testimonials={testimonials} />
       </div>
 
-      {/* 11. Fire Feast Squad — newsletter (warm card; dark surfaces stay
-          reserved for the one hero banner per page) */}
+      {/* 11. Fire Feast Squad — newsletter. Kept on the dark brand bed (it is
+          the end-of-page sign-off and should stand apart from the cards above). */}
       {/* Newsletter — compact 2-row layout: icon + text on one line, input + button on the next */}
-      <div className="rounded-3xl bg-card border border-border p-5 shadow-card">
+      <div className="rounded-3xl bg-gradient-dark p-5 text-white shadow-card">
         <div className="flex items-center gap-2.5 mb-3">
-          <div className="w-9 h-9 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
             <Mail className="w-4 h-4 text-accent" />
           </div>
           <div className="leading-tight">
             <span className="text-[10px] font-bold uppercase tracking-wider text-accent block">Fire Feast Squad</span>
-            <span className="text-sm font-semibold text-foreground">Get the drops first.</span>
-            <span className="text-xs text-muted-foreground block mt-0.5">The squad hears everything early.</span>
+            <span className="text-sm font-semibold">Get the drops first.</span>
+            <span className="text-xs text-white/60 block mt-0.5">The squad hears everything early.</span>
           </div>
         </div>
         {subscribed ? (
-          <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full tone-success border text-xs font-bold w-full justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-success/20 border border-success/40 text-success text-xs font-bold w-full justify-center">
             <Check className="w-3.5 h-3.5" /> You're in ❤️‍🔥.
           </div>
         ) : (
@@ -301,7 +301,7 @@ export default function Home() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Your email"
-              className="flex-1 px-4 py-2.5 rounded-full text-foreground text-sm bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="flex-1 px-4 py-2.5 rounded-full text-foreground text-sm bg-card border-0 focus:outline-none focus:ring-2 focus:ring-accent/50"
             />
             <button type="submit" disabled={subscribing} className="px-5 py-2.5 rounded-full bg-gradient-cta text-white font-bold text-sm whitespace-nowrap disabled:opacity-60 active:scale-95 transition">
               {subscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : "I'm In"}

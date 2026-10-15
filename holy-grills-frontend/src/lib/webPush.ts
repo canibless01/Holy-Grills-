@@ -1,116 +1,63 @@
 /**
- * Holy Grill — Native Web Push Subscription
+ * Holy Grill — Push enablement (OneSignal)
  * ============================================================================
- * Aligns with the backend's /api/push/subscribe (POST/DELETE) routes in
- * notifications.py (push_bp). The backend stores a standard browser
- * PushSubscription object ({ endpoint, keys: { p256dh, auth } }) in the
- * push_subscriptions table.
+ * Holy Grills sends push through OneSignal — NOT raw Web Push/VAPID. The two
+ * UI entry points (PushPermissionBanner, InstallPushBonuses) call
+ * `subscribeToWebPush()`; this module now routes that action through the
+ * OneSignal SDK (onesignal.ts):
  *
- * This is SEPARATE from the OneSignal flow (onesignal.js → /auth/device-token).
- * Both coexist — the backend's notification service sends via whichever
- * subscription a device has. Use this module when the backend's Web Push
- * route is the intended delivery channel.
+ *   1. init OneSignal with the configured App ID (registers the OneSignal
+ *      service worker and the app user).
+ *   2. show OneSignal's slidedown permission prompt.
+ *   3. on grant, OneSignal's subscriptionChange handler stores the player id
+ *      via POST /auth/device-token (the backend owns delivery).
  *
- * Requires a VAPID public key in APP_CONFIG.webPush.vapidPublicKey.
+ * The old native PushManager/VAPID implementation is gone on purpose: no
+ * VAPID key exists in this product, and every surface that used to surface
+ * the "set the VAPID public key" message was a dead end.
  */
 import APP_CONFIG from '@/config/app.config';
-import { liveApi } from './liveApi';
-import { msg } from '@/lib/messages';
+import { initOneSignal, requestPushPermission, isPushSupported } from './onesignal';
+
+export const isWebPushSupported = isPushSupported;
 
 /**
- * Convert a base64 string to a Uint8Array for pushManager.subscribe().
- * The VAPID public key from the backend is base64url-encoded.
- */
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  const output = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    output[i] = rawData.charCodeAt(i);
-  }
-  return output;
-}
-
-export const isWebPushSupported = () => {
-  return typeof window !== 'undefined'
-    && 'serviceWorker' in navigator
-    && 'PushManager' in window
-    && 'Notification' in window;
-};
-
-/**
- * Subscribe the browser to Web Push and register the subscription with the
- * backend (POST /push/subscribe). Returns true on success.
- *
- * Flow:
- *   1. Request Notification permission (if not already granted).
- *   2. Subscribe via pushManager.subscribe({ userVisibleOnly: true, applicationServerKey }).
- *   3. POST the subscription object to /push/subscribe with a device label.
- *   4. POST the same subscription to /challenges/push-subscribed, which claims the
- *      push-subscribe milestone / PWA-push bonus (it 404s when the milestone is not
- *      configured, so its failure never blocks registration).
+ * Enable push via OneSignal. Resolves true when permission was granted and
+ * the device registered, false when the user dismissed the prompt.
+ * Throws with a user-readable message when OneSignal isn't configured or the
+ * browser blocks notifications.
  */
 export const subscribeToWebPush = async () => {
-  const vapidKey = APP_CONFIG.webPush?.vapidPublicKey;
-  if (!vapidKey) {
-    throw new Error(
-      msg('FE_WEB_PUSH_WEB_PUSH_ISN_T_CONFIGURED_YET_SET_THE', 'Web Push isn’t configured yet. Set the VAPID public key in app.config → webPush.vapidPublicKey to enable it.')
-    );
+  if (!APP_CONFIG.onesignal?.appId) {
+    // onesignal.ts's requestPushPermission throws the same message; the guard
+    // here keeps the banner from flashing a promptless state first.
+    await initOneSignal(null);
   }
-  if (!isWebPushSupported()) {
-    throw new Error(msg('FE_WEB_PUSH_THIS_BROWSER_DOESN_T_SUPPORT_WEB_PUSH', 'This browser doesn’t support Web Push notifications.'));
-  }
-
-  // Step 1 — permission
-  if (Notification.permission === 'denied') {
-    throw new Error(msg('FE_WEB_PUSH_PUSH_IS_BLOCKED_IN_YOUR_BROWSER', 'Push is blocked in your browser settings. Update site permissions to allow notifications.'));
-  }
-  if (Notification.permission !== 'granted') {
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      return false;
+  // OneSignal identifies the signed-in user on its own once initOneSignal ran
+  // at login (HolyGrillContext). Pass through to the slidedown prompt.
+  await initOneSignal(null);
+  try {
+    return await requestPushPermission();
+  } catch (e) {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+      throw new Error('Push is blocked in your browser settings. Update site permissions to allow notifications.');
     }
+    throw e;
   }
-
-  // Step 2 — PushSubscription
-  const reg = await navigator.serviceWorker.ready;
-  let subscription = await reg.pushManager.getSubscription();
-  if (!subscription) {
-    subscription = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidKey),
-    });
-  }
-
-  // Step 3 — register with backend
-  const subJSON = subscription.toJSON();
-  const deviceLabel = navigator.userAgent || 'Web browser';
-  await liveApi.push.subscribe({ subscription: subJSON, device_label: deviceLabel });
-
-  // Reward path: /challenges/push-subscribed stores the same subscription AND
-  // awards the push milestone / PWA-push bonus. Kept non-blocking — enabling push
-  // must succeed even where the milestone is not configured.
-  await liveApi.challenges.pushSubscribed({ subscription: subJSON, device_label: deviceLabel }).catch(() => {});
-
-  return true;
 };
 
 /**
- * Unsubscribe the browser from Web Push — both locally (PushSubscription.unsubscribe)
- * and on the backend (DELETE /push/subscribe). Pass an optional endpoint to
- * unsubscribe a single device; omit to deactivate all of the user's subscriptions.
+ * Disable push on this device — flips the OneSignal subscription off. The
+ * backend device-token row stays; delivery stops because OneSignal will not
+ * send to an unsubscribed player.
  */
-export const unsubscribeFromWebPush = async (endpoint) => {
-  if (isWebPushSupported()) {
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const subscription = await reg.pushManager.getSubscription();
-      if (subscription) {
-        endpoint = endpoint || subscription.endpoint;
-        await subscription.unsubscribe();
-      }
-    } catch { /* local unsubscribe failure is non-fatal */ }
-  }
-  await liveApi.push.unsubscribe(endpoint ? { endpoint } : {});
+export const unsubscribeFromWebPush = async () => {
+  try {
+    await initOneSignal(null);
+    if (window.OneSignal) {
+      window.OneSignal.push(() => {
+        try { window.OneSignal.setSubscription(false); } catch (e) { /* ignore */ }
+      });
+    }
+  } catch { /* non-fatal */ }
 };

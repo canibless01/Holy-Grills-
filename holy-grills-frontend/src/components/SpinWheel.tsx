@@ -16,6 +16,19 @@ const CENTER = 150;
 // Brand colours for the configured prize segments.
 const FALLBACK_COLORS = ['#F72B13', '#FFC251', '#FF6B1A', '#FFDD9F', '#D4200C', '#ECA829', '#FF7070', '#C4A57D', '#F2542D', '#FFB347'];
 
+// Mix a hex colour toward white (amt > 0) or black (amt < 0) — used to give
+// every segment a light-to-dark gradient so the wheel reads as a physical,
+// lit object instead of flat 2D fills.
+const shade = (hex, amt) => {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const ch = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const mix = (c) => (amt >= 0 ? ch(c + (255 - c) * amt) : ch(c * (1 + amt)));
+  const r = mix((num >> 16) & 255);
+  const g = mix((num >> 8) & 255);
+  const b = mix(num & 255);
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+};
+
 // Visuals follow the stored category; an unavailable pool has no mock prizes.
 const buildSegments = (backendPrizes) => {
   if (!Array.isArray(backendPrizes)) return [];
@@ -230,11 +243,51 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
           <button onClick={close} aria-label={msg('FE_SPIN_CLOSE', 'Close spin wheel')}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
 
-        {/* Wheel */}
+        {/* Wheel — layered like a physical wheel: dark wood rim, gold band,
+            gradient segments, gloss highlight, branded hub. The pointer is a
+            real rendered triangle (its old colour class didn't exist in the
+            Tailwind config, so no pointer ever painted). */}
         <div className="relative w-72 h-72 mx-auto mb-4">
           {/* Fixed pointer at top */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 z-10 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[18px] border-l-transparent border-r-transparent border-t-cocoa-800" />
-          <svg viewBox="0 0 300 300" className="w-full h-full" style={{ transform: `rotate(${rotation}deg)` }}>
+          <div
+            className="absolute top-[-2px] left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[11px] border-r-[11px] border-t-[20px] border-l-transparent border-r-transparent"
+            style={{ borderTopColor: '#3D1200', filter: 'drop-shadow(0 2px 3px rgba(31,10,0,0.45))' }}
+          />
+          <svg viewBox="0 0 300 300" className="w-full h-full" style={{ transform: `rotate(${rotation}deg)`, filter: 'drop-shadow(0 10px 24px rgba(31,10,0,0.35))' }}>
+            <defs>
+              {segments.map((seg, i) => (
+                <linearGradient key={i} id={`seg-grad-${i}`} x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor={shade(seg.color, 0.28)} />
+                  <stop offset="55%" stopColor={seg.color} />
+                  <stop offset="100%" stopColor={shade(seg.color, -0.22)} />
+                </linearGradient>
+              ))}
+              <radialGradient id="hub-grad" cx="0.5" cy="0.35" r="0.8">
+                <stop offset="0%" stopColor="#FFE08A" />
+                <stop offset="60%" stopColor="#F2B84B" />
+                <stop offset="100%" stopColor="#D89A22" />
+              </radialGradient>
+              <radialGradient id="rim-grad" cx="0.5" cy="0.4" r="0.75">
+                <stop offset="0%" stopColor="#4A1B05" />
+                <stop offset="78%" stopColor="#2A0E00" />
+                <stop offset="100%" stopColor="#180700" />
+              </radialGradient>
+              <linearGradient id="gloss-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+                <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+              </linearGradient>
+            </defs>
+
+            {/* Rim stack — dark wood outer, warm gold band, cream inner edge */}
+            <circle cx={CENTER} cy={CENTER} r={148} fill="url(#rim-grad)" />
+            <circle cx={CENTER} cy={CENTER} r={139} fill="none" stroke="#F2B84B" strokeWidth="7" />
+            <circle cx={CENTER} cy={CENTER} r={134} fill="none" stroke="#FFF5F0" strokeWidth="1.5" opacity="0.85" />
+            {/* Gold band bulbs — small dots around the rim */}
+            {SEG_COUNT > 0 && Array.from({ length: Math.max(SEG_COUNT, 12) }).map((_, i, arr) => {
+              const p = polarToCartesian((i * 360) / arr.length, 139);
+              return <circle key={i} cx={p.x} cy={p.y} r="2.2" fill="#FFE9A8" opacity="0.9" />;
+            })}
+
             {segments.map((seg, i) => {
               const isWinning = flashing && i === winningIndex;
               const labelPos = polarToCartesian(i * SEG_ANGLE + SEG_ANGLE / 2, RADIUS * 0.62);
@@ -242,26 +295,37 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
                 <g key={i}>
                   <path
                     d={SEG_COUNT === 1 ? `M ${CENTER-RADIUS} ${CENTER} a ${RADIUS} ${RADIUS} 0 1 0 ${2*RADIUS} 0 a ${RADIUS} ${RADIUS} 0 1 0 ${-2*RADIUS} 0` : describeSegment(i, SEG_ANGLE)}
-                    fill={seg.color}
-                    stroke="#fff"
-                    strokeWidth="2"
-                    style={{ opacity: isWinning ? 1 : 0.88, filter: isWinning ? 'brightness(1.4)' : 'none', transition: 'opacity 0.1s' }}
+                    fill={`url(#seg-grad-${i})`}
+                    stroke="#FFF5F0"
+                    strokeWidth="1.5"
+                    style={{ opacity: isWinning ? 1 : 0.96, filter: isWinning ? 'brightness(1.45)' : 'none', transition: 'opacity 0.1s' }}
                   />
                   <text
                     x={labelPos.x}
                     y={labelPos.y}
-                    fontSize="20"
+                    fontSize="22"
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+                    style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.45))' }}
                   >
                     {seg.icon}
                   </text>
                 </g>
               );
             })}
-            <circle cx={CENTER} cy={CENTER} r="20" fill="#3D1200" />
-            <circle cx={CENTER} cy={CENTER} r="15" fill="#FFC251" />
+
+            {/* Gloss — a soft light sweep over the upper third, clipped to the
+                wheel face (reads as varnish, not as a flat overlay) */}
+            <path
+              d={`M ${CENTER - RADIUS} ${CENTER} A ${RADIUS} ${RADIUS} 0 0 1 ${CENTER + RADIUS} ${CENTER} L ${CENTER + RADIUS * 0.55} ${CENTER} A ${RADIUS * 0.55} ${RADIUS * 0.55} 0 0 0 ${CENTER - RADIUS * 0.55} ${CENTER} Z`}
+              fill="url(#gloss-grad)"
+              pointerEvents="none"
+            />
+
+            {/* Hub — dark socket, gold dome, flame */}
+            <circle cx={CENTER} cy={CENTER} r="26" fill="#2A0E00" />
+            <circle cx={CENTER} cy={CENTER} r="21" fill="url(#hub-grad)" stroke="#3D1200" strokeWidth="2" />
+            <text x={CENTER} y={CENTER + 1} fontSize="17" textAnchor="middle" dominantBaseline="middle">🔥</text>
           </svg>
         </div>
 

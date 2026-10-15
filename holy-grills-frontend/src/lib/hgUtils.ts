@@ -155,6 +155,24 @@ export const ORDER_STATUS_DOTS = {
   scheduled: 'bg-muted-foreground',
 };
 
+// Chip classes for chips that sit ON DARK surfaces (the tracking hero cards).
+// The light-mode tone chips carry dark text, which disappears on the dark
+// brand gradient — these are their light-on-dark twins: translucent white/gold
+// beds, light text, same colour meaning (gold = in progress, red = problem).
+export const ORDER_STATUS_COLORS_ON_DARK = {
+  received: 'bg-white/10 text-white/85 border border-white/15',
+  scheduled: 'bg-white/10 text-white/85 border border-white/15',
+  preparing: 'bg-accent/25 text-accent border border-accent/30',
+  delivery_attempted: 'bg-accent/25 text-accent border border-accent/30',
+  ready: 'bg-accent/35 text-white border border-accent/40',
+  assigned: 'bg-white/15 text-white border border-white/20',
+  out_for_delivery: 'bg-white/15 text-white border border-white/20',
+  delivered: 'bg-success/30 text-white border border-success/40',
+  cancelled: 'bg-destructive/30 text-white border border-destructive/40',
+  refunded: 'bg-destructive/30 text-white border border-destructive/40',
+  unclaimed: 'bg-destructive/30 text-white border border-destructive/40',
+};
+
 // Extract the ordering student's identity (name / phone / email) from an order
 // object across every field shape the backend has been seen to return.
 // Used by the Kitchen, Admin, Rider, and Student panels so they all surface

@@ -6,6 +6,7 @@ import { loadSystemSettings, loadFeatureFlags, useFeatureFlags, getSetting, getS
 import { loadTiers } from './hgUtils';
 import { msg, useMessages } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
+import { initOneSignal } from './onesignal';
 
 // Holy Grills app context — real JWT auth against the live backend.
 // No demo auto-login. Authenticated users hit the server-side cart; guests
@@ -240,6 +241,9 @@ export const HolyGrillProvider = ({ children }) => {
       setUser(profile); persistUserCampus(profile);
       setHpBalance(normalizeHpBalance(profile));
       setWallet(profile.wallet || null);
+      // Push runs on OneSignal — identify the signed-in user so the device's
+      // player id maps to their account (fire-and-forget, never blocks login).
+      if (profile?.id) initOneSignal(profile.id).catch(() => {});
     } catch (e) { /* ignore */ }
   }, []);
 

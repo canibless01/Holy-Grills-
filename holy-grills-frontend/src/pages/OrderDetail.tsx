@@ -11,7 +11,7 @@ import { liveApi } from '@/lib/liveApi';
 import { safeCallHref } from '@/lib/safeNavigation';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
-import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer } from '@/lib/hgUtils';
+import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer, ORDER_STATUS_COLORS_ON_DARK } from '@/lib/hgUtils';
 import ShareSheet from '@/components/ShareSheet';
 import SquadMembersPanel from '@/components/SquadMembersPanel';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -208,7 +208,7 @@ export default function OrderDetail() {
         className="rounded-2xl bg-gradient-dark p-5 text-white shadow-card"
       >
         <div className="flex items-center justify-between mb-3">
-          <span className={`px-3 py-1 rounded-full text-xs font-bold ${ORDER_STATUS_COLORS[order.status] || 'bg-muted text-foreground'}`}>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${ORDER_STATUS_COLORS_ON_DARK[order.status] || ORDER_STATUS_COLORS[order.status]}`}>
             {ORDER_STATUS_LABELS[order.status] || order.status}
           </span>
           <span className="text-xs text-white/70 font-mono">#{(order.order_number || order.id || '').toUpperCase()}</span>
