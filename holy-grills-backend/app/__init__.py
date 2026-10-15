@@ -12,6 +12,7 @@ from app.db import SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
 from app.routes.health import health_bp
+from app.routes.messages import messages_bp
 from app.routes.auth import auth_bp, users_bp
 from app.routes.menu import menu_bp
 from app.routes.orders import orders_bp
@@ -92,9 +93,13 @@ def create_app(config_class=Config):
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+    # Pinned to the real frontend origins (Config.CORS_ORIGINS, env-overridable)
+    # instead of "*". Requests are Bearer-token based, not cookie based, so this
+    # was hygiene rather than a hole — but a wildcard let any site script calls
+    # against the API from a visitor's browser.
     CORS(
         app,
-        origins="*",
+        origins=[*Config.CORS_ORIGINS, *Config.CORS_ORIGIN_PATTERNS],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "Accept", "Origin", "X-Requested-With"],
         expose_headers=["Authorization", "Deprecation", "Sunset", "Link"],
@@ -190,6 +195,7 @@ def create_app(config_class=Config):
     app.register_blueprint(squads_bp, url_prefix="/api/squads")
     app.register_blueprint(admin_economics_bp, url_prefix="/api/admin/economics")
     app.register_blueprint(health_bp, url_prefix="/api")
+    app.register_blueprint(messages_bp, url_prefix="/api/messages")
 
     _logger = get_logger("holy_grills.app")
 

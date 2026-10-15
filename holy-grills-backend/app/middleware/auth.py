@@ -28,13 +28,39 @@ def _abort_on_auth_failure(exc, message):
     abort(503, MSG.SERVICE_UNAVAILABLE)
 
 
+def header_campus_id():
+    """
+    The campus chosen in the admin header switcher, sent as `X-Campus-ID` by the
+    frontend apiClient (super-admins pick a campus to inspect; "All Campuses"
+    sends no header). Guests send the same header from the campus gate — see
+    storefront._get_campus_id, which is the public equivalent of this.
+
+    Returns None for an absent, blank or non-UUID value: the header is client
+    input, so it is validated here rather than trusted at the 60-odd call
+    sites. A junk header must never become a PostgREST filter.
+    """
+    from app.utils.validators import validate_uuid
+
+    raw = (request.headers.get("X-Campus-ID") or "").strip()
+    if not raw:
+        return None
+    return raw.lower() if validate_uuid(raw) else None
+
+
 def resolve_scoped_campus_id(requested_campus_id=None):
     """
-    For super_admin: requested value (or None = all campuses).
-    For everyone else: always their assigned campus (g.campus_id) — requested value is ignored.
+    For super_admin: the requested `campus_id` query/body value, else the campus
+    selected in the admin header (X-Campus-ID), else None (= all campuses).
+    For everyone else: always their assigned campus (g.campus_id) — the requested
+    value AND the header are ignored.
     """
     if getattr(g, "user_role", None) == "super_admin":
-        return requested_campus_id
+        # ADM-CAMPUS. The admin header switcher used to be cosmetic: nothing on
+        # the server ever read X-Campus-ID, so a super-admin picking "Futa"
+        # kept seeing the unfiltered platform-wide data. The header is the
+        # switcher's whole contract with the backend, so honour it here — the
+        # single place every admin list route resolves its scope.
+        return requested_campus_id or header_campus_id()
     return getattr(g, "campus_id", None)
 
 

@@ -1,0 +1,1175 @@
+{
+  "platform-api-evidence": [
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "student2",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "kitchen",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "rider",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "foreign_admin",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "foreign_student",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "super_admin",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200
+    },
+    {
+      "actor": "guest",
+      "method": "GET",
+      "path": "/admin/users",
+      "status": 401
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/events/admin",
+      "status": 403
+    },
+    {
+      "actor": "rider",
+      "method": "GET",
+      "path": "/events/admin",
+      "status": 403
+    },
+    {
+      "actor": "kitchen",
+      "method": "GET",
+      "path": "/events/admin",
+      "status": 403
+    }
+  ],
+  "platform-domain-api-evidence": [
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/departments",
+      "status": 201
+    },
+    {
+      "actor": "foreign_admin",
+      "method": "PATCH",
+      "path": "/admin/departments/ad5b4a6a-b686-4ab2-95d2-d03de054b991",
+      "status": 403
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/departments?campus_id=a2218e70-4928-44e8-bd9c-82ec560237cb",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/academic-levels",
+      "status": 201
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/measurement-units",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items",
+      "status": 201
+    },
+    {
+      "actor": "foreign_admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 403
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/usage",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/usage",
+      "status": 400
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/ledger",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/delivery/admin/hostels",
+      "status": 400
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/delivery/admin/gates",
+      "status": 201
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/delivery/admin/hostels",
+      "status": 201
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/delivery/hostels",
+      "status": 200
+    }
+  ],
+  "platform-followup-evidence": [
+    {
+      "actor": "admin",
+      "method": "PATCH",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 200
+    },
+    {
+      "actor": "kitchen",
+      "method": "GET",
+      "path": "/events/catering-requests",
+      "status": 200
+    },
+    {
+      "actor": "kitchen",
+      "method": "PATCH",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 403
+    },
+    {
+      "actor": "kitchen",
+      "method": "PATCH",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 200
+    },
+    {
+      "actor": "kitchen",
+      "method": "PATCH",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 200
+    },
+    {
+      "actor": "kitchen",
+      "method": "PATCH",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 200
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 200
+    },
+    {
+      "actor": "student2",
+      "method": "GET",
+      "path": "/events/catering-requests/f200db00-0158-4d18-92aa-475a4d624803",
+      "status": 404
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/admin/stock-items/4b983134-152c-43a4-b695-596dcccad8d4/purchase",
+      "status": 409
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/events/3ef384eb-d655-44ca-81d8-cd0292c85549/qr",
+      "status": 200
+    },
+    {
+      "actor": "student",
+      "method": "POST",
+      "path": "/events/3ef384eb-d655-44ca-81d8-cd0292c85549/checkin",
+      "status": 200
+    },
+    {
+      "actor": "student",
+      "method": "POST",
+      "path": "/events/3ef384eb-d655-44ca-81d8-cd0292c85549/checkin",
+      "status": 400
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/events/my-tickets",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/marketplace/admin/listings",
+      "status": 201
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/marketplace/admin/codes/9ecae9b7-c6f2-4d94-b62e-ff0abc5470cb",
+      "status": 201
+    },
+    {
+      "actor": "student",
+      "method": "POST",
+      "path": "/marketplace/9ecae9b7-c6f2-4d94-b62e-ff0abc5470cb/purchase",
+      "status": 403
+    },
+    {
+      "check": "marketplace_code_purchase",
+      "result_keys": [
+        "error"
+      ],
+      "release_gate_blocked": true
+    }
+  ],
+  "platform-reports-evidence": [
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/items",
+      "status": 200,
+      "schema_keys": [
+        "from_date",
+        "items",
+        "to_date",
+        "total_items_found"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/orders",
+      "status": 200,
+      "schema_keys": [
+        "completion_rate",
+        "from_date",
+        "hourly_distribution",
+        "orders_by_zone",
+        "orders_per_delivery_window",
+        "peak_hour_wat",
+        "status_funnel",
+        "to_date",
+        "total_orders",
+        "unassigned_to_batch"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/sales",
+      "status": 200,
+      "schema_keys": [
+        "average_order_value",
+        "card_revenue",
+        "from_date",
+        "order_count",
+        "payment_method_breakdown",
+        "payment_method_revenue",
+        "to_date",
+        "total_revenue",
+        "wallet_revenue"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/dashboard",
+      "status": 200,
+      "schema_keys": [
+        "as_of",
+        "delivery_pipeline",
+        "today"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/gifts",
+      "status": 200,
+      "schema_keys": [
+        "by_status",
+        "total_gifts"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/retention",
+      "status": 200,
+      "schema_keys": [
+        "cohorts",
+        "weeks"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/order-timing",
+      "status": 200,
+      "schema_keys": [
+        "day_of_week_distribution",
+        "from_date",
+        "hourly_distribution",
+        "to_date",
+        "total_orders"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/addon-acceptance",
+      "status": 200,
+      "schema_keys": [
+        "attachment_rate",
+        "from_date",
+        "orders_with_addons",
+        "to_date",
+        "top_addons",
+        "total_orders"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/users",
+      "status": 200,
+      "schema_keys": [
+        "daily_ordering_users",
+        "from_date",
+        "monthly_ordering_users",
+        "new_signups",
+        "tier_breakdown",
+        "to_date",
+        "total_active_users"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/delivery-locations",
+      "status": 200,
+      "schema_keys": [
+        "from_date",
+        "locations",
+        "to_date",
+        "total_orders"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/marketplace",
+      "status": 200,
+      "schema_keys": [
+        "hp_priced_purchases",
+        "low_stock_listings",
+        "total_purchases",
+        "total_revenue"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/squad-orders",
+      "status": 200,
+      "schema_keys": [
+        "avg_items_per_squad_order",
+        "avg_squad_group_size",
+        "from_date",
+        "squad_order_pct",
+        "squad_orders_count",
+        "to_date",
+        "total_orders"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/demographics",
+      "status": 200,
+      "schema_keys": [
+        "by_academic_level",
+        "by_department",
+        "by_faculty",
+        "from_date",
+        "to_date"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/payment-methods",
+      "status": 200,
+      "schema_keys": [
+        "counts",
+        "from_date",
+        "percentages",
+        "revenue_by_method",
+        "to_date",
+        "total_orders"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/academic-calendar",
+      "status": 200,
+      "schema_keys": [
+        "academic_periods",
+        "normal_day_baseline"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/order-sources",
+      "status": 200,
+      "schema_keys": [
+        "from_date",
+        "order_sources",
+        "to_date",
+        "total_orders"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/engagement",
+      "status": 200,
+      "schema_keys": [
+        "total_event_checkins",
+        "total_referrals_made",
+        "total_reviews_left"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/referral-network",
+      "status": 200,
+      "schema_keys": [
+        "completed_referrals",
+        "top_referrers",
+        "total_referrals"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/audit-log",
+      "status": 200,
+      "schema_keys": [
+        "count",
+        "limit",
+        "logs",
+        "offset"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/retention-ltv",
+      "status": 200,
+      "schema_keys": [
+        "arpu",
+        "customer_ltv",
+        "ordering_customers",
+        "repeat_customer_rate",
+        "repeat_customers",
+        "total_revenue",
+        "total_students"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/webhook-events",
+      "status": 200,
+      "schema_keys": [
+        "count",
+        "webhook_events"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/reviews",
+      "status": 200,
+      "schema_keys": [
+        "limit",
+        "offset",
+        "reviews",
+        "total"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/hp",
+      "status": 200,
+      "schema_keys": [
+        "from_date",
+        "hp_earned_active",
+        "hp_expired",
+        "hp_in_circulation",
+        "hp_pending",
+        "hp_spent",
+        "hp_transfer_received",
+        "hp_transfer_sent",
+        "redemption_rate",
+        "tier_distribution",
+        "to_date"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/first-order-gifts",
+      "status": 200,
+      "schema_keys": [
+        "count",
+        "gifts"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/academic-calendar",
+      "status": 200,
+      "schema_keys": [
+        "academic_calendar",
+        "count"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/settings",
+      "status": 200,
+      "schema_keys": [
+        "count",
+        "settings"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/notifications/blasts",
+      "status": 200,
+      "schema_keys": [
+        "blasts",
+        "count"
+      ]
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/admin/cron/status",
+      "status": 200,
+      "schema_keys": [
+        "checked_at",
+        "jobs",
+        "summary"
+      ]
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/analytics/dashboard",
+      "status": 403
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/analytics/sales",
+      "status": 403
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/admin/audit-log",
+      "status": 403
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/admin/cron/status",
+      "status": 403
+    },
+    {
+      "actor": "student",
+      "method": "GET",
+      "path": "/admin/webhook-events",
+      "status": 403
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/sales?from_date=bad",
+      "status": 400
+    },
+    {
+      "actor": "admin",
+      "method": "GET",
+      "path": "/analytics/dashboard",
+      "status": 200
+    },
+    {
+      "check": "own-campus-empty-order-dashboard",
+      "database_owned_orders": 0,
+      "dashboard_keys": [
+        "as_of",
+        "delivery_pipeline",
+        "today"
+      ]
+    }
+  ],
+  "platform-admin-control-evidence": [
+    {
+      "actor": "admin",
+      "method": "PATCH",
+      "path": "/admin/settings/audit_b_20261014_f529b619_setting",
+      "status": 400
+    },
+    {
+      "actor": "foreign_admin",
+      "method": "PATCH",
+      "path": "/admin/settings/audit_b_20261014_f529b619_setting",
+      "status": 403
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/notifications/blasts/preview",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/notifications/blasts",
+      "status": 201
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/notifications/blasts",
+      "status": 200
+    },
+    {
+      "actor": "foreign_admin",
+      "method": "POST",
+      "path": "/notifications/blasts/7434bfbf-b781-4459-aa93-68561d99855e/cancel",
+      "status": 404
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/notifications/blasts/7434bfbf-b781-4459-aa93-68561d99855e/cancel",
+      "status": 200
+    },
+    {
+      "actor": "admin",
+      "method": "POST",
+      "path": "/notifications/blasts/7434bfbf-b781-4459-aa93-68561d99855e/cancel",
+      "status": 200
+    }
+  ],
+  "platform-live-browser-evidence": [
+    {
+      "loop": "admin UI event and tier -> real API -> customer free registration -> reload",
+      "event_id": "3ef384eb-d655-44ca-81d8-cd0292c85549",
+      "tier_id": "40f1148e-ce0d-44e5-bcc0-ab7aa9bdb92c",
+      "ticket_id": "a9b67c10-3851-464a-9fb8-99281b8b1065",
+      "capacity": 3
+    }
+  ],
+  "platform-catering-browser-evidence": [
+    {
+      "loop": "catering UI submission -> admin quote/assignment UI -> kitchen start/complete UI -> customer receipt -> reload",
+      "request_id": "2d19ee43-ef93-4aa3-81b2-ea5e0c9690f0",
+      "quote": 62000
+    }
+  ],
+  "platform-identity-browser-evidence": {
+    "preferencesReloadAndPreservedOptOuts": true,
+    "profileNicknamePhoneDepartmentAcademicLevelReload": true
+  },
+  "platform-door-browser-evidence": {
+    "canonicalDoorPayloadScanned": true,
+    "zeroRewardPreserved": true,
+    "checkinReload": true,
+    "ticket_id": "2be3cf99-b009-43fa-85ac-316a4882bae6"
+  },
+  "platform-cleanup-evidence": {
+    "status": "verified",
+    "tables": {
+      "academic_levels": 1,
+      "admin_audit_logs": 6,
+      "catering_requests": 3,
+      "event_checkins": 2,
+      "hostels": 1,
+      "marketplace_access_codes": 1,
+      "notification_blasts": 1,
+      "notification_log": 6,
+      "notification_preferences": 1,
+      "notifications": 6,
+      "referral_codes": 8,
+      "stock_ledger": 3,
+      "system_settings": 1,
+      "wallets": 8,
+      "event_tickets": 2,
+      "gates": 1,
+      "marketplace_listings": 1,
+      "stock_items": 1,
+      "event_ticket_tiers": 1,
+      "events": 1,
+      "profiles": 8,
+      "departments": 1,
+      "campuses": 2
+    },
+    "auth_accounts": 8,
+    "settings_restored": "No global/production settings changed; exact owned campus setting removed.",
+    "sessions": "Owned actors deactivated, logout requested before deletion; fresh-profile authorization blocks residual JWTs."
+  },
+  "limitations": "Selected run traces, not full page/button coverage. Initial door scanner succeeded; final browser rerun checked existing receipt only. Provider sends suppressed. See evidence matrix.",
+  "continuation_20261014": {
+    "platform-continuation-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/admin/academic-calendar",
+        "status": 201
+      },
+      {
+        "actor": "foreign_admin",
+        "method": "PATCH",
+        "path": "/admin/academic-calendar/1ec97807-643d-4965-af35-adbf334ea13f",
+        "status": 403
+      },
+      {
+        "actor": "admin",
+        "method": "PATCH",
+        "path": "/admin/academic-calendar/1ec97807-643d-4965-af35-adbf334ea13f",
+        "status": 400
+      },
+      {
+        "actor": "student",
+        "method": "GET",
+        "path": "/academic-calendar/current?campus_id=dab4700b-4c69-4281-a1f0-51ebebb95e43",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "GET",
+        "path": "/analytics/academic-calendar",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/marketplace/admin/listings",
+        "status": 201
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/marketplace/admin/listings/d20babee-f1f7-4f1e-87bc-e22923099436/codes",
+        "status": 404
+      }
+    ],
+    "platform-marketplace-concurrency-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/marketplace/admin/codes/d20babee-f1f7-4f1e-87bc-e22923099436",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "GET",
+        "path": "/marketplace/purchases",
+        "status": 200
+      },
+      {
+        "actor": "foreign_student",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 403
+      }
+    ],
+    "platform-marketplace-competition-evidence": [
+      {
+        "actor": "student2",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 400
+      },
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 201
+      },
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 400
+      }
+    ],
+    "platform-marketplace-replay-evidence": [
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/d20babee-f1f7-4f1e-87bc-e22923099436/purchase",
+        "status": 200
+      },
+      {
+        "actor": "kitchen",
+        "method": "POST",
+        "path": "/marketplace/ca495a21-730b-4c87-b028-e8de9fa9a771/purchase",
+        "status": 409
+      }
+    ],
+    "platform-calendar-browser-evidence": {
+      "readFailureRetry": "intercepted 503 then real backend read",
+      "calendarEditAndReload": true
+    },
+    "platform-cleanup-evidence": {
+      "status": "verified",
+      "tables": {
+        "academic_calendar": 1,
+        "admin_audit_logs": 2,
+        "feature_flags": 2,
+        "marketplace_access_codes": 2,
+        "marketplace_purchases": 2,
+        "monthly_hp_tracker": 2,
+        "notification_log": 4,
+        "notifications": 4,
+        "referral_codes": 8,
+        "wallets": 8,
+        "hp_transactions": 2,
+        "marketplace_listings": 1,
+        "profiles": 8,
+        "campuses": 2
+      },
+      "auth_accounts": 8,
+      "settings_restored": "No global/production settings changed; exact owned campus setting removed.",
+      "sessions": "Owned actors deactivated, logout requested before deletion; fresh-profile authorization blocks residual JWTs."
+    },
+    "bonus_ledger_check": {
+      "purchase_count": 2,
+      "bonus_transaction_count": 2,
+      "scope": "owned actors only"
+    }
+  },
+  "review_client_pagination": {
+    "kind": "intercepted client-only",
+    "retry": true,
+    "pagination": true,
+    "filterResetsPage": true,
+    "calls": [
+      {
+        "limit": "25",
+        "offset": "0"
+      },
+      {
+        "limit": "25",
+        "offset": "0"
+      },
+      {
+        "limit": "25",
+        "offset": "25"
+      },
+      {
+        "limit": "25",
+        "offset": "50"
+      },
+      {
+        "limit": "25",
+        "offset": "0",
+        "rating": "5"
+      }
+    ]
+  },
+  "release_20261015": {
+    "checks": {
+      "backend_tests": 260,
+      "typecheck": "pass",
+      "lint": "pass",
+      "production_build": "pass",
+      "built_site_smoke": "pass",
+      "recovery_parser_cases": 6
+    },
+    "live_migrations_this_pass": [],
+    "limitations": [
+      "No real provider payment/email/push receipt proof",
+      "No actual scheduler cadence verification",
+      "Event admission/ledger/counter atomic snapshot contract remains open",
+      "Marketplace replacement/refund races remain open",
+      "Backend production health reports invalid Redis URL scheme",
+      "Frontend production smoke blocked by environment host policy"
+    ],
+    "event-reward-recovery-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/events",
+        "status": 201
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/qr",
+        "status": 200
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/register",
+        "status": 201
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/checkin",
+        "status": 500
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/checkin",
+        "status": 200
+      },
+      {
+        "actor": "student",
+        "method": "POST",
+        "path": "/events/4f2ffcbc-22c2-4b33-98a1-211758e31269/checkin",
+        "status": 400
+      }
+    ],
+    "blast-recovery-evidence": [
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts",
+        "status": 500
+      },
+      {
+        "actor": "foreign_admin",
+        "method": "POST",
+        "path": "/notifications/blasts/27f3acc6-8739-4247-b15b-dc90aaaf695f/retry",
+        "status": 404
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/27f3acc6-8739-4247-b15b-dc90aaaf695f/retry",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/27f3acc6-8739-4247-b15b-dc90aaaf695f/retry",
+        "status": 200
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/d3ad6fa7-c6d0-47bd-91e4-d0f873c70e9c/retry",
+        "status": 409
+      },
+      {
+        "actor": "admin",
+        "method": "POST",
+        "path": "/notifications/blasts/d3ad6fa7-c6d0-47bd-91e4-d0f873c70e9c/retry",
+        "status": 200
+      }
+    ],
+    "campus-concurrency-evidence": {
+      "checks": [
+        {
+          "actor": "super_admin",
+          "method": "PATCH",
+          "path": "/admin/campuses/4e78a108-087c-450a-b044-c8a010c2c413",
+          "status": 200
+        },
+        {
+          "actor": "super_admin",
+          "method": "PATCH",
+          "path": "/admin/campuses/4e78a108-087c-450a-b044-c8a010c2c413",
+          "status": 409
+        }
+      ],
+      "staleWriteRejected": true,
+      "persistedValuesUnchanged": true
+    },
+    "profile-photo-browser-evidence": {
+      "kind": "real Cloudinary upload and browser decode",
+      "profileUploadSaveReload": true,
+      "decoded": true,
+      "clearSaveReload": true,
+      "public_id": "profile_photos/b6180f05-9fb4-49bb-b2e0-98080d9614bd/xd6ixcxtrt1p45ulot24"
+    },
+    "user-role-browser-evidence": {
+      "kind": "real admin UI/API/database/reload",
+      "ownedPromotion": true,
+      "demotionRequiresCampus": true,
+      "demotionRetainsCampusOnReload": true
+    },
+    "identity-client-evidence": {
+      "kind": "intercepted client verification; no Auth/provider or persistence claim",
+      "recoveryFragment": true,
+      "urlScrubbed": true,
+      "truthfulRevokeFailure": true,
+      "expiredLink": true,
+      "campusReferencesReload": true,
+      "staleSelectionCleared": true,
+      "readRetry": true
+    },
+    "catering-export-browser-evidence": {
+      "kind": "native UI + real report API + browser download; read outage intercepted",
+      "realDownloadedCsv": true,
+      "ownedRecipientPresent": true,
+      "readErrorRetry": true
+    },
+    "platform-cleanup-evidence": {
+      "status": "verified",
+      "tables": {
+        "admin_audit_logs": 5,
+        "catering_requests": 2,
+        "event_checkins": 1,
+        "event_door_tokens": 1,
+        "monthly_hp_tracker": 1,
+        "notification_blasts": 6,
+        "notification_log": 9,
+        "notification_preferences": 1,
+        "notifications": 9,
+        "referral_codes": 8,
+        "wallets": 8,
+        "event_tickets": 1,
+        "hp_transactions": 1,
+        "events": 1,
+        "profiles": 8,
+        "campuses": 3
+      },
+      "auth_accounts": 8,
+      "settings_restored": "No global/production settings changed; exact owned campus setting removed.",
+      "sessions": "Owned actors deactivated, logout requested before deletion; fresh-profile authorization blocks residual JWTs."
+    },
+    "cloudinary-cleanup-evidence": [
+      {
+        "public_id": "profile_photos/b6180f05-9fb4-49bb-b2e0-98080d9614bd/xd6ixcxtrt1p45ulot24",
+        "provider_result": "ok"
+      }
+    ]
+  }
+}

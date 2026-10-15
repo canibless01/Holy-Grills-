@@ -1,0 +1,3 @@
+-- Historical payment-state fix, included in ORDER_ADMISSION_RPC_FIX.sql.
+-- Apply the canonical current definition there; do not overwrite it with the
+-- older pre-admission definition of hg_create_order_atomic.

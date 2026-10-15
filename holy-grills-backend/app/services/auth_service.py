@@ -44,7 +44,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     # DOB validation — user must meet minimum age
     if date_of_birth:
         try:
-            dob = date.fromisoformat(str(date_of_birth)[:10])
+            dob = date.fromisoformat(date_of_birth)
             today = today_wat()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
             minimum_age = config.get("MINIMUM_AGE", 16)
@@ -247,24 +247,26 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         logger.warning("register: retroactive guest-order HP backfill failed for %s: %s", email, e)
 
     try:
-        db.table("squad_roster").eq("email", email).update({"user_id": user_id})
+        db.table("squad_roster").eq("email", email).update({"user_id": user_id}).execute()
         pending = db.table("pending_squad_hp").select("id,order_id,hp_amount,campus_id").eq("email", email).eq("status", "pending").execute() or []
         if pending:
             from app.services.hp_service import award_active_hp
             for p in pending:
                 try:
                     award_active_hp(
-                        user_id=user_id, amount=p["hp_amount"], source_type="squad_bonus_claimed",
+                        user_id=user_id, amount=p["hp_amount"], source_type="squad_split_claimed",
                         # B8: a reference makes the award idempotent (unique index + RPC replay check
                         # both require reference_type AND reference_id to be non-null).
-                        reference_type="squad_bonus_claimed", reference_id=p["order_id"],
+                        reference_type="squad_split_claimed", reference_id=p["order_id"],
                         notes=f"Squad HP claimed from order {p['order_id'][:8]}",
+                        apply_multiplier=False,
+                        campus_id=p.get("campus_id") or campus_id,
                     )
-                    db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"})
+                    db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"}).execute()
                     send_notification(user_id=user_id, notif_type="squad_hp_share", template_data={"hp": p["hp_amount"]}, campus_id=p.get("campus_id") or campus_id)
                 except Exception as e:
                     logger.error("register: squad HP claim failed for user %s, pending row %s: %s", user_id, p.get("id"), e)
-        db.table("squad_members").eq("email", email).update({"user_id": user_id, "is_registered": True})
+        db.table("squad_members").eq("email", email).update({"user_id": user_id, "is_registered": True}).execute()
     except Exception as e:
         logger.warning("register: squad backfill failed for %s: %s", email, e)
 
@@ -327,6 +329,12 @@ def get_current_user(access_token: str) -> dict:
         # Top-level aliases so mobile clients don't need to dig into profile{}
         "full_name": _profile.get("full_name"),
         "role": _profile.get("role"),
+        # The user's campus. Without this top-level alias the client cannot scope
+        # itself: it reads `campus_id` off the session user, gets undefined, sends
+        # no X-Campus-ID, and every campus-scoped read (menu availability, gates,
+        # hostels, delivery-window status) falls back to global/unscoped data —
+        # which is also what made logged-in users get asked to pick a campus.
+        "campus_id": _profile.get("campus_id"),
         "referral_code": _profile.get("referral_code"),
         "profile": profile,
         "wallet": {
@@ -370,7 +378,7 @@ def update_profile(user_id: str, data: dict) -> dict:
 
     if update_data.get("date_of_birth"):
         try:
-            dob = date.fromisoformat(str(update_data["date_of_birth"])[:10])
+            dob = date.fromisoformat(update_data["date_of_birth"])
         except ValueError:
             raise ValueError(MSG.DOB_FORMAT_INVALID)
         today = today_wat()

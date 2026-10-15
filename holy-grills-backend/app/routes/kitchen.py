@@ -1,4 +1,8 @@
 from flask import Blueprint, request, jsonify, g
+import math
+from app.utils.campus_scope import assert_can_modify, resolve_write_campus
+from app.utils.validators import validate_uuid
+from app.middleware.auth import resolve_scoped_campus_id
 from app.middleware.auth import require_role, fetch_or_403
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
@@ -14,6 +18,33 @@ logger = get_logger(__name__)
 kitchen_bp = Blueprint("kitchen", __name__)
 units_bp = Blueprint("measurement_units", __name__)
 stock_bp = Blueprint("stock_items", __name__)
+
+def _stock_adjustment(db, params, request_id):
+    if request_id is not None:
+        if not isinstance(request_id, str) or not validate_uuid(request_id):
+            return None, (jsonify({"error": MSG.INVALID_INPUT}), 400)
+        params["p_request_id"] = request_id
+    try:
+        return db.rpc("hg_adjust_stock_balance", params), None
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get("code"))
+        status = {"23514": 400, "23505": 409, "42501": 403, "P0002": 404}.get(code, 503)
+        message = {"23514": MSG.STOCK_ADJUSTMENT_REJECTED, "23505": MSG.STOCK_INTENT_CONFLICT,
+                   "42501": MSG.RESOURCE_ACCESS_DENIED, "P0002": MSG.STOCK_ITEM_NOT_FOUND}.get(code, MSG.SERVICE_UNAVAILABLE)
+        return None, (jsonify({"error": message}), status)
+
+
+def _attach_kitchen_customer_names(orders):
+    # Only names belonging to already-authorized order rows are fetched. Kitchen
+    # tickets do not need customer phone numbers, email or profile financials.
+    user_ids = list({o['user_id'] for o in orders if o.get('user_id')})
+    names = {}
+    for offset in range(0, len(user_ids), 100):
+        rows = get_db().table('profiles').select('id,full_name').in_('id', user_ids[offset:offset+100]).execute() or []
+        names.update({row['id']: row.get('full_name') for row in rows})
+    for order in orders:
+        order['customer_name'] = names.get(order.get('user_id')) or order.get('guest_name')
+    return orders
 
 
 def _today_start_iso():
@@ -92,11 +123,16 @@ def create_stock_item():
         description: Stock item created
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     required = ["name", "purchase_unit_id", "usage_unit_id", "conversion_factor", "low_stock_threshold"]
     for f in required:
         if data.get(f) is None or data.get(f) == "":
             return jsonify({"error": MSG.STOCK_FIELD_REQUIRED.format(field=f)}), 400
+    if not isinstance(data["name"], str) or not 1 <= len(data["name"].strip()) <= 128 or any(not isinstance(data[k], str) or not validate_uuid(data[k]) for k in ("purchase_unit_id", "usage_unit_id")):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    data["name"] = data["name"].strip()
 
     try:
         conversion_factor = float(data["conversion_factor"])
@@ -104,12 +140,14 @@ def create_stock_item():
         current_balance = float(data.get("current_balance", 0))
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
+    if any(isinstance(data.get(k), bool) for k in ("conversion_factor", "low_stock_threshold", "current_balance")) or not all(math.isfinite(v) for v in (conversion_factor, low_stock_threshold, current_balance)) or low_stock_threshold < 0 or current_balance < 0:
+        return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
     if conversion_factor <= 0:
         return jsonify({"error": MSG.STOCK_CONVERSION_FACTOR_INVALID}), 400
+    if current_balance != 0:
+        return jsonify({"error": MSG.STOCK_OPENING_BALANCE_USE_LEDGER}), 400
 
-    campus_id = getattr(g, "campus_id", None)
-    if getattr(g, "user_role", None) == "super_admin" and data.get("campus_id"):
-        campus_id = data["campus_id"]
+    campus_id = resolve_write_campus(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
 
@@ -146,7 +184,7 @@ def list_stock_items():
     """
     db = get_user_client()
     q = db.table("stock_items").select("*")
-    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -192,20 +230,24 @@ def log_stock_purchase(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="*", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
     item = existing
+    assert_can_modify(item.get("campus_id"))
 
     try:
         qty_entered = float(data["quantity"])
         cost = float(data.get("cost", 0)) if data.get("cost") is not None else None
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
+    if isinstance(data["quantity"], bool) or isinstance(data.get("cost"), bool) or not math.isfinite(qty_entered) or qty_entered <= 0 or (cost is not None and (not math.isfinite(cost) or cost < 0)):
+        return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
     conv_factor = float(item.get("conversion_factor") or 1.0)
     usage_qty = qty_entered * conv_factor
 
-    result = db.rpc("hg_adjust_stock_balance", {
+    result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": "purchase", "p_quantity_entered": qty_entered,
         "p_delta_usage_units": usage_qty, "p_unit_id": item.get("purchase_unit_id"),
         "p_cost": cost, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
-    })
+    }, data.get("request_id"))
+    if error: return error
     row = result[0] if isinstance(result, list) else result
 
     return jsonify({
@@ -253,17 +295,21 @@ def log_stock_usage(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="*", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
     item = existing
+    assert_can_modify(item.get("campus_id"))
 
     try:
         qty_entered = float(data["quantity"])
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
+    if isinstance(data["quantity"], bool) or not math.isfinite(qty_entered) or (entry_type != "correction" and qty_entered <= 0):
+        return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
 
-    result = db.rpc("hg_adjust_stock_balance", {
+    result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": entry_type, "p_quantity_entered": qty_entered,
         "p_delta_usage_units": -qty_entered, "p_unit_id": item.get("usage_unit_id"),
         "p_cost": None, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
-    })
+    }, data.get("request_id"))
+    if error: return error
     row = result[0] if isinstance(result, list) else result
     if row["is_low_stock"]:
         _alert_admin_low_stock(item, row["new_balance"])
@@ -449,8 +495,10 @@ def live_queue():
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
-        .in_("status", ["received", "preparing"])
+        .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        .in_("status", ["received", "paid", "preparing", "ready"])
+        .in_("payment_status", ["paid", "partially_refunded"])
+        .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -459,7 +507,7 @@ def live_queue():
     if window_id:
         q = q.eq("delivery_window_id", window_id)
 
-    orders = q.execute()
+    orders = _attach_kitchen_customer_names(q.execute() or [])
     return jsonify(orders), 200
 
 
@@ -533,12 +581,12 @@ def scheduled_orders():
     q = (
         db.table("orders")
         .select(
-            "id,status,notes,scheduled_for,is_scheduled,received_at,created_at,"
+            "id,user_id,guest_name,status,notes,scheduled_for,is_scheduled,received_at,created_at,"
             "delivery_windows(id,label,starts_at,ends_at),"
-            "order_items(name_snapshot,quantity,price_snapshot)"
+            "order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         )
         .eq("is_scheduled", "true")
-        .eq("status", "received")
+        .in_("status", ["received", "paid"])
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -547,7 +595,7 @@ def scheduled_orders():
     if window_id:
         q = q.eq("delivery_window_id", window_id)
 
-    orders = q.execute() or []
+    orders = _attach_kitchen_customer_names(q.execute() or [])
     return jsonify({"scheduled_orders": orders, "count": len(orders)}), 200
 
 
@@ -648,9 +696,9 @@ def batch_summary(window_id):
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,status,order_items(name_snapshot,quantity)")
+        .select("id,status,order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .eq("delivery_window_id", window_id)
-        .in_("status", ["received", "preparing", "ready"])
+        .in_("status", ["received", "paid", "preparing", "ready"])
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -706,14 +754,23 @@ def batch_advance(batch_id):
     if err:
         return err
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     from_status_filter = data.get("from_status")
-    notes = data.get("notes", f"Batch advance by kitchen ({batch_id[:8]})")
+    notes = data.get("notes") or MSG.ORDER_KITCHEN_BATCH_NOTE
+    if from_status_filter and from_status_filter not in ("received", "paid", "preparing"):
+        return jsonify({"error": MSG.ORDER_KITCHEN_PREPARATION_ONLY}), 400
+    if not isinstance(notes, str) or len(notes) > 500:
+        return jsonify({"error": MSG.ORDER_ITEM_NOTES_INVALID}), 400
 
     q = (
         db.table("orders")
         .select("id,status")
         .eq("delivery_window_id", batch_id)
+        .in_("status", ["received", "paid", "preparing"])
+        .in_("payment_status", ["paid", "partially_refunded"])
+        .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -723,14 +780,12 @@ def batch_advance(batch_id):
 
     orders = q.execute() or []
     if not orders:
-        return jsonify({"error": "No advanceable orders found in this batch", "batch_id": batch_id}), 404
+        return jsonify({"error": MSG.ORDER_KITCHEN_BATCH_EMPTY, "batch_id": batch_id}), 404
 
     NEXT_STATUS = {
+        "paid": "preparing",
         "received": "preparing",
         "preparing": "ready",
-        "ready": "assigned",
-        "assigned": "out_for_delivery",
-        "out_for_delivery": "delivered",
     }
 
     advanced = []

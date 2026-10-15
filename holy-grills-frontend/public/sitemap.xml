@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Static public pages of the Holy Grills storefront.
+  Individual menu item URLs (/menu/<id>) are data-driven and listed here only
+  once the site is server-rendered — see the SEO notes in the project docs.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://holygrill.app/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
+  <url><loc>https://holygrill.app/menu</loc><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://holygrill.app/events</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://holygrill.app/marketplace</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://holygrill.app/our-story</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://holygrill.app/faq</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://holygrill.app/terms</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+</urlset>

@@ -99,6 +99,7 @@ def claim_graduation():
             amount=graduation_hp,
             txn_type="earn_graduation",
             reference_type="graduation",
+            reference_id=g.user_id,
             notes=f"Graduation milestone HP — Level {level_value}",
             apply_multiplier=False,
             campus_id=campus_id,
@@ -122,7 +123,9 @@ def claim_graduation():
     # Notify
     try:
         from app.services.notification_service import send_notification
-        name = (profile.get("full_name") or "").split()[0] or "Graduate"
+        # Nickname-first, like every other notification that greets someone.
+        from app.services.squad_service import resolve_display_name
+        name = (resolve_display_name(profile=profile) or "").split()[0] or "Graduate"
         send_notification(
             user_id=g.user_id,
             notif_type="graduation_hp",

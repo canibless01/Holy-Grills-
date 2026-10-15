@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth, resolve_scoped_campus_id
+from app.middleware.auth import require_auth, optional_auth, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from datetime import timedelta, datetime, timezone
 from app.utils.tz import today_wat
@@ -33,6 +33,7 @@ def _period_start_utc_iso(period_type: str):
 
 
 @leaderboard_bp.route("", methods=["GET"])
+@optional_auth
 def get_leaderboard():
     """
     Get leaderboard. period_type: monthly | weekly | all_time.
@@ -65,7 +66,17 @@ def get_leaderboard():
     limit = max(1, min(limit, max_limit))
     period_key = _period_key_for(period_type)
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    # Same three sources, same priority as events._get_campus_id(): ?campus_id=,
+    # then the X-Campus-ID header the campus gate sends, then the signed-in
+    # session. Reading only the query param meant a guest's header was ignored and
+    # campus_id came back None -- and `if campus_id:` below applies no filter for
+    # None, so the board was silently platform-wide across every campus. With no
+    # campus resolvable at all it is refused, exactly as /delivery/hostels,
+    # /delivery/gates and /delivery/calculate-fee already refuse.
+    from app.routes.events import _require_campus_selection
+    campus_id, _err = _require_campus_selection()
+    if _err:
+        return _err
 
     if period_type != "all_time":
         # Snapshots (leaderboard_snapshots) only ever hold ALREADY-COMPLETED periods --
@@ -121,7 +132,6 @@ def get_leaderboard():
         }), 200
 
     q = db.table("profiles").select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name,hp_balance").eq("is_active", "true").eq("role", "student")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     profile_data = q.order("hp_balance", ascending=False).limit(limit).execute()
@@ -372,9 +382,13 @@ def my_rank():
 
 
 @leaderboard_bp.route("/squad", methods=["GET"])
+@optional_auth
 def squad_leaderboard():
     db = get_db()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    from app.routes.events import _require_campus_selection
+    campus_id, _err = _require_campus_selection()
+    if _err:
+        return _err
     orders_q = db.table("orders").select("squad_id,hp_earned").eq("is_squad_order", "true").eq("status", "delivered")
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)

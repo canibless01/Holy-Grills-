@@ -133,6 +133,8 @@ def _rider_order_view(order):
     """
     order = order or {}
     view = {k: order.get(k) for k in ("id", "status", "out_for_delivery_at", "delivered_at", "delivery_attempted_at")}
+    if order.get("rewards_pending"):
+        view["rewards_pending"] = True
     if order.get("unchanged"):
         view["unchanged"] = True          # a repeated tap: nothing was done twice
     return view
@@ -253,8 +255,8 @@ def my_batch():
             logger.warning("my_batch: customer names unavailable for rider %s", g.user_id, exc_info=True)
     items_by_order = {}
     try:
-        for it in _select_in(db, "order_items", "order_id,name_snapshot,quantity", "order_id", [o["id"] for o in all_orders]):
-            items_by_order.setdefault(it["order_id"], []).append({"name_snapshot": it.get("name_snapshot"), "quantity": it.get("quantity")})
+        for it in _select_in(db, "order_items", "order_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity)", "order_id", [o["id"] for o in all_orders]):
+            items_by_order.setdefault(it["order_id"], []).append(it)
     except SupabaseError:
         logger.warning("my_batch: order items unavailable for rider %s", g.user_id, exc_info=True)
 

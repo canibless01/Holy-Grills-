@@ -222,6 +222,8 @@ Hi {d.get('name', 'there')},
 
 Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.
 
+Sign up here to join and earn HP: {d.get('invite_link', '')}
+
 — {d.get('app_tagline', '')}
 """,
     },
@@ -346,7 +348,7 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         return False
 
 
-def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
+def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str, headers: dict = None) -> bool:
     """
     Send a raw HTML email via Resend (no template lookup).
     Used for dynamically assembled bodies (birthday report, event export, etc.).
@@ -366,6 +368,8 @@ def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str) ->
         "subject": subject,
         "html": html_body,
     }
+    if headers:
+        payload["headers"] = dict(headers)
 
     try:
         from app.utils.retry import with_retry

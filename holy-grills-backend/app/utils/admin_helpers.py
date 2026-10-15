@@ -31,7 +31,7 @@ def as_int(value, minimum=None, maximum=None):
         raise ValueError("must be an integer")
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("must be an integer")
     if (minimum is not None and number < minimum) or (maximum is not None and number > maximum):
         raise ValueError("out of range")

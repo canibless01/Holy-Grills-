@@ -8,6 +8,7 @@ from app.services.wallet_service import get_wallet
 from app.services.payment_service import initialize_payment
 from app.db import get_db, get_user_client
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 import uuid
 
 wallet_bp = Blueprint("wallet", __name__)
@@ -74,7 +75,12 @@ def fund_via_card():
     import math
     data = request.get_json(silent=True) or {}
     from flask import current_app
-    min_topup = current_app.config.get("WALLET_MIN_CARD_TOPUP", 100)
+    db = get_user_client()
+    min_topup = setting_or_config(
+        db, "wallet_min_card_topup",
+        current_app.config.get("WALLET_MIN_CARD_TOPUP", 100),
+        minimum=0,
+    )
     try:
         amount = float(data.get("amount", 0))
     except (TypeError, ValueError):
@@ -82,7 +88,6 @@ def fund_via_card():
     if not math.isfinite(amount) or amount < min_topup:
         return jsonify({"error": MSG.WALLET_MIN_TOPUP.format(min=min_topup)}), 400
 
-    db = get_user_client()
     auth_user_rows = db.table("profiles").select("id").eq("id", g.user_id).single().execute()
     if not auth_user_rows:
         return jsonify({"error": MSG.WALLET_USER_NOT_FOUND}), 404

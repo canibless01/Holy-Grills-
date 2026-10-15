@@ -17,7 +17,7 @@ admin controls the canonical list (e.g. "100 Level", "200 Level", "Postgraduate"
 """
 
 import requests
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role, optional_auth
 from app.db import get_user_client, SupabaseError
 from app.messages import MSG
@@ -76,7 +76,7 @@ def list_academic_levels():
         requested = as_campus_id(_get_campus_id())
     except ValueError:
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
-    campus_id = public_campus(requested)
+    campus_id = getattr(g, "campus_id", None) if getattr(g, "user_id", None) and getattr(g, "user_role", None) != "super_admin" else public_campus(requested)
     try:
         q = db.table("academic_levels").select("id,name,value,sort_order,campus_id").eq("is_active", True)
         rows = campus_or_global(q, campus_id).order("sort_order", ascending=True).execute() or []
