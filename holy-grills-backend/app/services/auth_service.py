@@ -44,7 +44,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     # DOB validation — user must meet minimum age
     if date_of_birth:
         try:
-            dob = date.fromisoformat(str(date_of_birth)[:10])
+            dob = date.fromisoformat(date_of_birth)
             today = today_wat()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
             minimum_age = config.get("MINIMUM_AGE", 16)
@@ -378,7 +378,7 @@ def update_profile(user_id: str, data: dict) -> dict:
 
     if update_data.get("date_of_birth"):
         try:
-            dob = date.fromisoformat(str(update_data["date_of_birth"])[:10])
+            dob = date.fromisoformat(update_data["date_of_birth"])
         except ValueError:
             raise ValueError(MSG.DOB_FORMAT_INVALID)
         today = today_wat()

@@ -192,7 +192,9 @@ def register():
         active = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(2).execute() or []
         if len(active) > 1:
             return jsonify({"error": MSG.CAMPUS_REQUIRED}), 400
-        campus_id = active[0]["id"] if active else None
+        if not active:
+            return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
+        campus_id = active[0]["id"]
 
     try:
         result = auth_service.register(
@@ -270,7 +272,11 @@ def login():
         except Exception as e:
             prof = None
             logger.warning("login: is_active lookup failed for %s: %s", user_id, e)
-        if prof is not None and prof.get("is_active") is False:
+        if prof is None:
+            # A valid Auth password does not establish an active application identity.
+            get_db().auth_sign_out(result.get("access_token"), scope="local")
+            return jsonify({"error": MSG.AUTH_LOGIN_FAILED}), 503
+        if prof.get("is_active") is False:
             get_db().auth_sign_out(result.get("access_token"), scope="local")   # drop the session just issued
             return jsonify({"error": MSG.ACCOUNT_DEACTIVATED}), 403
         _streak_checkin(user_id)
@@ -402,17 +408,19 @@ def update_profile_photo():
     """Update user profile photo with Cloudinary URL."""
     data = _json_body() or {}
     photo_url = data.get("photo_url")
-    if not isinstance(photo_url, str) or not photo_url.strip():
+    if "photo_url" not in data or (photo_url is not None and not isinstance(photo_url, str)):
         return jsonify({"error": MSG.PHOTO_URL_REQUIRED}), 400
-    photo_url = photo_url.strip()
-    if not is_trusted_upload_url(photo_url, f"profile_photos/{g.user_id}"):
+    photo_url = (photo_url or "").strip() or None
+    if photo_url and not is_trusted_upload_url(photo_url, f"profile_photos/{g.user_id}"):
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
 
     db = get_user_client()
-    db.table("profiles").eq("id", g.user_id).update({
+    updated = db.table("profiles").eq("id", g.user_id).update({
         "photo_url": photo_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+    if not updated:
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     return jsonify({"photo_url": photo_url, "message": MSG.PROFILE_PHOTO_UPDATED}), 200
 
 
@@ -1059,10 +1067,10 @@ def reset_password_confirm():
         return jsonify({"error": MSG.AUTH_RESET_FAILED}), 400
 
     user = res.get("user") or res
-    _revoke_supabase_sessions(access_token)      # a reset must end every other (possibly hostile) session
+    sessions_revoked = _revoke_own_sessions(access_token)
     if user.get("id"):
         _notify_security(user["id"], "password_changed")
-    return jsonify({"message": MSG.PASSWORD_CHANGED, "user": user}), 200
+    return jsonify({"message": MSG.PASSWORD_CHANGED, "user": user, "sessions_revoked": sessions_revoked}), 200
 
 
 @auth_bp.route("/device-token", methods=["POST"])

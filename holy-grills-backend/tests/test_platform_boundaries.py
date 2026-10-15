@@ -5,7 +5,7 @@ from flask import Flask, g
 from werkzeug.exceptions import Forbidden
 from app.routes import events, notifications, marketplace, kitchen, delivery
 from app.middleware.auth import require_role
-from app.routes import departments, academic_levels, academic_calendar
+from app.routes import departments, academic_levels, academic_calendar, auth
 
 A = 'bbbb0000-0000-4000-8000-000000000001'
 B = 'bbbb0000-0000-4000-8000-000000000002'
@@ -37,6 +37,48 @@ class PlatformBoundaryTests(unittest.TestCase):
         self.app.config['PHONE_REGEX_PATTERN'] = r'^(\+?234|0)[789]\d{9}$'
     def identity(self, role='student', campus=A):
         g.user_id, g.user_role, g.campus_id = USER, role, campus
+    def test_profile_photo_clear_persists_null_and_requires_a_saved_row(self):
+        for saved, expected in [([{'id': USER, 'photo_url': None}], 200), ([], 503)]:
+            db = MagicMock()
+            db.table.return_value.eq.return_value.update.return_value = saved
+            with self.app.test_request_context(method='POST', json={'photo_url': None}), patch.object(auth, 'get_user_client', return_value=db):
+                self.identity()
+                _, status = auth.update_profile_photo.__wrapped__()
+                self.assertEqual(status, expected)
+                self.assertIsNone(db.table.return_value.eq.return_value.update.call_args.args[0]['photo_url'])
+    def test_stock_opening_balance_must_go_through_existing_ledger_adjustment(self):
+        db = DB({})
+        body = {'name': 'Owned ingredient', 'purchase_unit_id': A, 'usage_unit_id': A, 'conversion_factor': 1, 'low_stock_threshold': 0, 'current_balance': 2}
+        with self.app.test_request_context(method='POST', json=body), patch.object(kitchen, 'get_user_client', return_value=db):
+            self.identity('admin')
+            _, status = kitchen.create_stock_item.__wrapped__()
+            self.assertEqual(status, 400)
+            self.assertEqual(db.writes, [])
+    def test_shared_public_reference_scope_preserves_guest_and_super_choices_only(self):
+        from app.utils.campus_scope import public_campus
+        with self.app.test_request_context():
+            self.assertEqual(public_campus(B), B)
+            for role in ('student', 'kitchen', 'rider', 'admin'):
+                self.identity(role)
+                self.assertEqual(public_campus(B), A)
+            self.identity('super_admin')
+            self.assertEqual(public_campus(B), B)
+            self.identity('student', None)
+            self.assertIsNone(public_campus(B))
+    def test_committed_scan_with_missing_reward_recovers_without_second_checkin(self):
+        db = DB({'events': [{'id': EVENT, 'campus_id': A, 'is_published': True, 'hp_per_attendee': 50}],
+                 'event_door_tokens': [{'event_id': EVENT, 'qr_token': 'door'}],
+                 'event_tickets': [{'id': TICKET, 'event_id': EVENT, 'user_id': USER, 'status': 'confirmed', 'payment_status': 'paid'}],
+                 'event_checkins': [{'id': B, 'ticket_id': TICKET}]})
+        with self.app.test_request_context(method='POST', json={'qr_token': 'door', 'ticket_id': TICKET}), patch.object(events, 'get_user_client', return_value=db), patch.object(events, 'get_db', return_value=db), patch.object(events, 'award_active_hp', return_value={'awarded': 50, 'replayed': False}) as award, patch('app.services.milestone_service.check_milestone_trigger'):
+            self.identity()
+            response, status = events.checkin.__wrapped__(EVENT)
+            self.assertEqual(status, 200)
+            self.assertTrue(response.json['recovered'])
+            self.assertEqual(response.json['hp_added_to_active'], 50)
+            self.assertEqual(response.json['hp_added_to_pending'], 0)
+            self.assertEqual(db.writes, [])
+            self.assertEqual(award.call_args.kwargs['reference_id'], EVENT)
     def test_calendar_explicit_global_selection_beats_super_admin_header_only(self):
         payload = {'name': 'Audit term', 'period_type': 'semester', 'academic_year': '2026/2027', 'start_date': '2026-10-14', 'end_date': '2026-10-15', 'campus_id': None}
         for role, expected in [('super_admin', None), ('admin', A)]:

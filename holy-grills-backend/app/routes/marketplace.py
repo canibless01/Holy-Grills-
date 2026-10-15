@@ -32,6 +32,37 @@ def _non_negative_number(value):
     return number == number and number != float("inf") and number >= 0
 
 
+def _validate_listing_fields(data, existing=None):
+    """Validate fields before PostgREST coercion; compare the final saved window."""
+    for field in ("is_featured", "is_out_of_stock"):
+        if field in data and not isinstance(data[field], bool):
+            return MSG.FIELD_MUST_BE_BOOLEAN.format(field=field)
+    if "sort_order" in data:
+        value = data["sort_order"]
+        if isinstance(value, bool) or not isinstance(value, int):
+            return MSG.FIELD_MUST_BE_INTEGER.format(field="sort_order")
+    window = {}
+    for field in ("available_from", "available_until"):
+        value = data.get(field, (existing or {}).get(field))
+        if value is None or value == "":
+            if field in data:
+                data[field] = None
+            window[field] = None
+            continue
+        try:
+            if not isinstance(value, str):
+                raise ValueError()
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError()
+            window[field] = parsed
+        except (ValueError, TypeError):
+            return MSG.PROMO_DATE_INVALID.format(field=field)
+    if window.get("available_from") and window.get("available_until") and window["available_until"] <= window["available_from"]:
+        return MSG.INVALID_INPUT
+    return None
+
+
 def _page_args(default_limit, max_limit):
     """Read ?limit and ?offset. Returns (limit, offset), or None when they are not whole numbers."""
     try:
@@ -864,7 +895,12 @@ def admin_create_listing():
         description: Validation error
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    error = _validate_listing_fields(data)
+    if error:
+        return jsonify({"error": error}), 400
     for f in ["title", "listing_type", "price"]:
         if not data.get(f) and data.get(f) != 0:
             return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
@@ -1011,10 +1047,15 @@ def admin_update_listing(listing_id):
         description: Not found
     """
     db = get_user_client()
-    listing = db.table("marketplace_listings").select("id,title,status").eq("id", listing_id).single().execute()
+    listing = db.table("marketplace_listings").select("id,title,status,available_from,available_until").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    error = _validate_listing_fields(data, listing)
+    if error:
+        return jsonify({"error": error}), 400
     ALLOWED = {
         "status", "title", "description", "price", "hp_price",
         "cash_price", "total_value", "image_url", "is_featured", "sort_order",

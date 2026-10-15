@@ -205,6 +205,10 @@ Checkout preview and delivery read the same selected entitlement; a reward-read 
 
 Historical collapsed wins are not automatically reissued because the old scalar lacks reliable consumption provenance. Existing legacy scalar entitlements are preserved, and history makes that tracking limit explicit. Full tier/menu/event/promo stacking, later refunds, auxiliary HP hooks and physical-prize delivery choices remain open.
 
+## Workstream B completion pass in progress — 14 October 2026
+
+PR #66 is merged (`0635b21`); continuation branch `audit/platform-ecosystem-b-completion-20261014` has merged current main through `5015267`. A's canonical notification preference and operational deduplication implementation was preserved and B's overlap removed. The integrated backend suite passes251 tests; frontend typecheck, recovery-parser cases and complete production/prerender build pass. Detailed targeted proofs and remaining gaps are in the appended [B matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md). Four parallel domain passes cover events, marketplace, identity and historical security while root handles integration/browser evidence. B remains incomplete; active exact-owned fixtures still require cleanup and no new completion-pass PR/merge is yet claimed.
+
 
 ## Explicit checkout reward choice and uncertain-response recovery — 15 October 2026
 
@@ -232,3 +236,6 @@ This run also exposed `order_placed` calls being silently skipped because the te
 Still open: a new full native kitchen/rider selected-bonus delivery, physical-prize order attachment versus standalone delivery, full tier/menu/event/promo stacking, later refund/reversal policies, guest-to-account unresolved-checkout transitions, durable provider retries and remaining kitchen/rider/retention families. Event HP recovery implementation is progressing in parallel; its investigation checkpoint is not completion.
 
 Verification before integration: **248 backend tests**, frontend lint/typecheck and full client/SSR/prerender build pass. No database migration was needed for the customer receipt and template changes.
+## Workstream B release subset — 15 October 2026
+
+At the user's request, completed fixes are released through PR #67 while the whole-domain audit remains open. Main through `3c71150` was merged normally. Validation:260 backend tests; frontend typecheck/lint, recovery parser, complete build and built-site smoke pass. Native catering CSV download/read retry and intercepted identity recovery/reference UI checks pass; integrated live blast recovery rerun passes. Third fixture batch cleanup verified (eight Auth accounts, three campuses and exact owned dependents); test Cloudinary asset deleted. No new B migration applied. See [the release section and resume order](WORKSTREAM_B_EVIDENCE_MATRIX.md) and [selected evidence](WORKSTREAM_B_TEST_EVIDENCE.json). Event fully atomic admission/HP snapshots, funded cancellation/refunds, marketplace financial/report races, remaining identity interruption cases, page/role coverage and historical security remediation remain open. Production health reports a Redis URL scheme error; frontend deployment and backend activation must be verified separately from merging.

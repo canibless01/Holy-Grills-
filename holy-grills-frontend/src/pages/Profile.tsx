@@ -87,8 +87,8 @@ export default function Profile() {
       // Avatar goes through the dedicated photo route — update_profile does not
       // accept photo_url, so bundling it there silently drops the upload.
       const origAvatar = user?.avatar_url || user?.profile?.photo_url || user?.profile?.avatar_url || '';
-      if (form.avatar_url && form.avatar_url !== origAvatar) {
-        await liveApi.auth.updateProfilePhoto({ photo_url: form.avatar_url });
+      if (form.avatar_url !== origAvatar) {
+        await liveApi.auth.updateProfilePhoto({ photo_url: form.avatar_url || null });
       }
       await liveApi.auth.updateProfile(body);
       await refreshUser();

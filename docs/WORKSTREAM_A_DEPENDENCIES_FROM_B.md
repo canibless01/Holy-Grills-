@@ -19,3 +19,17 @@ B now verified free subscription allocation and competing buyers using campus-on
 ## A integration update — 14 October 2026
 
 B's PR #66 is integrated with A's free-side transaction fixes on main. Shared transport now enforces persisted category/channel opt-outs, atomically reconciles canonical channel edits with legacy profile switches, and reflects legacy opt-outs on preference reads. Operational catering/marketplace request receipts bypass marketing throttling and deduplicate by request/recipient/channel using the existing primary key. Native Catering inbox navigation and reload, two independent requests and six concurrent replays pass; channel dispatch was recorded locally, not delivered by a real provider. See the progress/migration reports for exact evidence and the new private preference RPC. Durable failed/provider receipt recovery, blasts, positive check-in HP and payment/refund dependencies remain open. No B-owned fixtures were modified.
+
+## Reclassification after main integration — completion pass
+
+The original request table above is historical, not a list of work B is waiting on. Main through `5015267` has been merged normally into B's continuation branch.
+
+- **Resolved on main by A:** canonical notification preferences, atomic profile reconciliation and request-aware operational receipt deduplication. B retained A's implementation and removed its overlapping preference policy.
+- **Implemented by B, targeted live verified:** positive check-in reward retry using the existing active-HP primitive; signed public campus scoping; blast interruption/stale-lease recovery, scoped worker invocation and persisted destination links. These do not require A to implement a second mechanism.
+- **B continues itself:** event cancellation/refund domain rules, marketplace code/report/refund concurrency, identity interruption recovery, security/dependency review and the remaining UI verification matrix. Financial/schema changes will be inspected against current existing contracts before any live migration; no parallel financial ledger will be introduced.
+- **Deployment/integration coordination remains:** deploy backend with the already-live protected event-door reader; avoid replaying the six earlier B migrations. Continuation changes are not yet all on main.
+- **Provider/configuration limitation, not an A implementation assignment:** this runtime lacks configured Resend/OneSignal keys. Stored in-app receipts, local dispatch tests or controlled worker invocation do not prove real provider delivery or scheduler cadence.
+
+## Release handoff — 15 October 2026
+
+PR #67 releases completed B fixes. Main through `3c71150`, including `EVENT_HP_RECOVERY_CHECKPOINT.md`, is integrated. B's event route now recovers a committed check-in lacking its ledger award using `award_active_hp`, returns explicit active amount and skips ordinary ledger replays; preserve this when continuing the fully atomic admission/immutable snapshot/counter contract. It is a targeted recovery patch, not full closure of that checkpoint. No new B migration or shared financial RPC was deployed. B's exact-owned fixtures are cleaned; future verification must create a distinct new fixture batch. Remaining domain work and provider/runtime constraints are in the matrix; they are not all assignments to A.
