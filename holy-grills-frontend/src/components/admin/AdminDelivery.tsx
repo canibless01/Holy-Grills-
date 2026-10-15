@@ -1,12 +1,13 @@
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
-import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, CheckSquare, Clock, Bike } from 'lucide-react';
+import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, Clock, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime, formatNaira, timeAgo } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import OrderingWindowsTab from './OrderingWindowsTab';
+import CreateBatchModal from './AdminCreateBatchModal';
 import AdminRiders from './AdminRiders';
 import AdminDeliveryArea from './AdminDeliveryArea';
 import { msg } from '@/lib/messages';
@@ -286,69 +287,6 @@ function CreateWindowModal({
         </div>
         <Field label="Capacity"><TextInput type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
         <button onClick={submit} disabled={submitting || !form.label || !form.starts_at || !form.ends_at} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? (editing ? 'Saving...' : 'Creating...') : (editing ? 'Save Changes' : 'Create Window')}</button>
-      </div>
-    </Modal>
-  );
-}
-
-function CreateBatchModal({ windows, onClose, onSaved }) {
-  const [windowId, setWindowId] = useState(windows[0]?.id || '');
-  const [riderId, setRiderId] = useState('');
-  const [zone, setZone] = useState('');
-  const [riders, setRiders] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [selected, setSelected] = useState(new Set());
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try { const r = await mockApi.admin.getUsers({ role: 'rider' }); setRiders(r || []); } catch { setRiders([]); }
-      try { const o = await mockApi.admin.getAdminOrders({ status: 'ready' }); setOrders(o || []); } catch { setOrders([]); }
-    })();
-  }, []);
-
-  const toggle = (id) => { const n = new Set(selected); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
-
-  const submit = async () => {
-    if (!windowId || !riderId || !zone) { toast({ title: msg('FE_ADMIN_DELIVERY_MISSING_FIELDS', 'Missing fields'), description: msg('FE_ADMIN_DELIVERY_WINDOW_RIDER_AND_ZONE_ARE_ALL_REQUIRED', 'Window, rider and zone are all required.'), variant: 'destructive' }); return; }
-    setSubmitting(true);
-    try {
-      await mockApi.admin.createDeliveryBatch({ window_id: windowId, rider_id: riderId, zone, order_ids: [...selected] });
-      toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CREATED', '✅ Batch created'), description: msg('FE_ADMIN_DELIVERY_COUNT_ORDER_S_ASSIGNED', '{count} order(s) assigned.', { count: selected.size }) });
-      onSaved(); onClose();
-    } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setSubmitting(false);
-  };
-
-  return (
-    <Modal open onClose={onClose} title="Create Delivery Batch">
-      <div className="space-y-3">
-        <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">A batch groups orders for one rider in one zone under a delivery window. Assigned orders move to <b>assigned</b> status.</div>
-        <Field label="Delivery Window">
-          <select value={windowId} onChange={(e) => setWindowId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-            <option value="">Select window…</option>
-            {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Rider">
-          <select value={riderId} onChange={(e) => setRiderId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-            <option value="">Select rider…</option>
-            {riders.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
-          </select>
-        </Field>
-        <Field label="Zone"><TextInput value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g. North Gate" /></Field>
-        <Field label="Assign Orders (optional)">
-          <div className="max-h-48 overflow-y-auto rounded-xl border border-border mt-1">
-            {orders.length === 0 ? <div className="p-3 text-xs text-muted-foreground">No ready orders available to assign.</div> : orders.map((o) => (
-              <button key={o.id} type="button" onClick={() => toggle(o.id)} className={`w-full text-left p-2.5 flex items-center gap-2 border-b border-border last:border-0 ${selected.has(o.id) ? 'bg-primary/10' : 'hover:bg-muted'}`}>
-                <span className="text-xs font-mono text-muted-foreground">#{o.id.slice(0, 6).toUpperCase()}</span>
-                <span className="text-xs text-muted-foreground truncate flex-1">{(o.order_items || []).map((it) => `${it.quantity}× ${it.name_snapshot || it.name}`).join(', ')}</span>
-                {selected.has(o.id) && <CheckSquare className="w-3.5 h-3.5 text-primary shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </Field>
-        <button onClick={submit} disabled={submitting || !windowId || !riderId || !zone} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? 'Creating...' : 'Create Batch'}</button>
       </div>
     </Modal>
   );

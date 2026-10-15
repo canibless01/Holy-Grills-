@@ -1,12 +1,13 @@
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState, useEffect, useRef } from 'react';
-import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2 } from 'lucide-react';
+import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, getOrderCustomer } from '@/lib/hgUtils';
+import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_DOTS, getOrderCustomer } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Modal, Field, TextInput, Card, Pill } from './AdminShared';
 import { msg, useMessages } from '@/lib/messages';
+import CreateBatchModal from './AdminCreateBatchModal';
 
 const OVERRIDE_STATUSES = ['received', 'preparing', 'ready', 'assigned', 'out_for_delivery', 'delivered'];
 // Valid walk targets — terminal states (cancelled/refunded) can't be advanced.
@@ -28,6 +29,10 @@ export default function AdminOrders() {
   const [walkOrder, setWalkOrder] = useState(null);
   const [busy, setBusy] = useState(null);
   const [users, setUsers] = useState({});
+  // Assign flow — opens the shared batch modal preset to one order, so an
+  // admin standing on an order (incl. scheduled/off-window ones) can hand it
+  // to a rider without leaving the Orders tab.
+  const [assignCtx, setAssignCtx] = useState<{ orderId: string; windows: Array<{ id?: string | number; label?: string }> } | null>(null);
 
   // Frontend profile join — the admin orders endpoint returns user_id without a
   // profiles join, so we load the user list once and resolve user_id → name/phone
@@ -45,6 +50,18 @@ export default function AdminOrders() {
     if (search) result = o.filter(ord => ord.id.toLowerCase().includes(search.toLowerCase()));
     setOrders(result);
     setLoading(false);
+  };
+
+  const openAssign = async (orderId: string) => {
+    // TODO(ts): the delivery-window row is untyped; the modal only needs id+label.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let windows: Array<{ id?: string | number; label?: string }> = [];
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w: any = await mockApi.admin.getDeliveryWindows();
+      windows = Array.isArray(w) ? w : (w?.windows || []);
+    } catch { /* modal shows the create-window guidance */ }
+    setAssignCtx({ orderId, windows });
   };
 
   const toggleExpand = async (id) => {
@@ -188,6 +205,15 @@ export default function AdminOrders() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{timeAgo(o.created_at)}</span>
+                      {['ready', 'scheduled', 'received'].includes(o.status) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openAssign(o.id); }}
+                          title="Assign to a rider"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary text-white text-[10px] font-bold active:scale-95 transition"
+                        >
+                          <Bike className="w-3 h-3" /> Assign
+                        </button>
+                      )}
                       {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                     </div>
                   </div>
@@ -211,7 +237,7 @@ export default function AdminOrders() {
                       <div className="text-[11px] font-bold text-muted-foreground uppercase mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" /> Status Timeline</div>
                       {(history[o.id] || []).map((h, i) => (
                         <div key={i} className="flex items-center gap-2 text-xs py-0.5">
-                          <span className={`w-2 h-2 rounded-full ${ORDER_STATUS_COLORS[h.status] || 'bg-secondary'}`} />
+                          <span className={`w-2 h-2 rounded-full ${ORDER_STATUS_DOTS[h.status] || 'bg-secondary'}`} />
                           <span className="font-semibold text-foreground capitalize">{ORDER_STATUS_LABELS[h.status] || h.status}</span>
                           <span className="text-muted-foreground">{formatDateTime(h.changed_at)}</span>
                           <span className="text-muted-foreground ml-auto">by {h.actor}</span>
@@ -223,6 +249,12 @@ export default function AdminOrders() {
                         <button onClick={() => setWalkOrder({ id: o.id, current_status: o.status, target_status: WALK_TARGETS[WALK_TARGETS.indexOf(o.status) + 1] || 'delivered', reason: '' })}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold">
                           <ChevronDown className="w-3.5 h-3.5" /> Walk Status
+                        </button>
+                      )}
+                      {['ready', 'scheduled', 'received'].includes(o.status) && (
+                        <button onClick={() => openAssign(o.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold">
+                          <Bike className="w-3.5 h-3.5" /> Assign to Rider
                         </button>
                       )}
                       <button onClick={() => setOverrideOrder({ id: o.id, new_status: o.status, reason: '', current_status: o.status })}
@@ -242,6 +274,15 @@ export default function AdminOrders() {
             );
           })}
         </div>
+      )}
+
+      {assignCtx && (
+        <CreateBatchModal
+          windows={assignCtx.windows}
+          presetOrderIds={[assignCtx.orderId]}
+          onClose={() => setAssignCtx(null)}
+          onSaved={load}
+        />
       )}
 
       {refundOrder && (

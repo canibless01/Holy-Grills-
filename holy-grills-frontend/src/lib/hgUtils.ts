@@ -121,18 +121,36 @@ export const ORDER_STATUS_LABELS = {
   scheduled: 'Scheduled',
 };
 
+// Status chips — one shared language for user pages AND the admin panel.
+// Soft tone chips for pipeline states, solid success for delivered, brand
+// tints for rider states. The hero CTA gradient no longer dresses statuses.
 export const ORDER_STATUS_COLORS = {
-  received: 'bg-gradient-cta text-white',
-  preparing: 'bg-gradient-cta text-white',
-  ready: 'bg-gradient-cta text-white',
-  assigned: 'bg-gradient-cta text-white',
-  out_for_delivery: 'bg-gradient-cta text-white',
-  delivered: 'bg-accent/80 text-white',
-  cancelled: 'bg-primary/90 text-white',
-  refunded: 'bg-primary/90 text-white',
-  delivery_attempted: 'bg-gradient-cta text-white',
-  unclaimed: 'bg-primary/90 text-white',
-  scheduled: 'bg-gradient-cta text-white',
+  received: 'tone-info',
+  preparing: 'tone-warn',
+  ready: 'tone-success',
+  assigned: 'bg-primary/10 text-primary',
+  out_for_delivery: 'bg-primary/15 text-primary',
+  delivered: 'bg-success text-success-foreground',
+  cancelled: 'tone-error',
+  refunded: 'tone-error',
+  delivery_attempted: 'tone-warn',
+  unclaimed: 'tone-error',
+  scheduled: 'bg-secondary text-secondary-foreground',
+};
+
+// Solid dots for compact timelines (soft chips are unreadable at 8px).
+export const ORDER_STATUS_DOTS = {
+  received: 'bg-info',
+  preparing: 'bg-warn',
+  ready: 'bg-success',
+  assigned: 'bg-primary',
+  out_for_delivery: 'bg-primary',
+  delivered: 'bg-success',
+  cancelled: 'bg-destructive',
+  refunded: 'bg-destructive',
+  delivery_attempted: 'bg-warn',
+  unclaimed: 'bg-destructive',
+  scheduled: 'bg-muted-foreground',
 };
 
 // Extract the ordering student's identity (name / phone / email) from an order
