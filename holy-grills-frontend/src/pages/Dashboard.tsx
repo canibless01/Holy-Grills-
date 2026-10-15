@@ -220,9 +220,10 @@ export default function Dashboard() {
         );
       })}
 
-      {/* Lock-in prompt — order placed, no active lock, within 24h */}
+      {/* Lock-in prompt — order placed, no active lock, within 24h. Solid
+          primary: the tier card above owns the page's gradient. */}
       {showLockPrompt && (
-        <Link to="/order-locks" className="block rounded-2xl bg-gradient-cta p-4 text-white hover:scale-[1.01] transition-transform shadow-glow">
+        <Link to="/order-locks" className="block rounded-2xl bg-primary p-4 text-white hg-press shadow-glow">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
               <Lock className="w-5 h-5 text-white" />

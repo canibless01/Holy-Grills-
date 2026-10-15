@@ -83,25 +83,41 @@ export default function OrderConfirmation() {
     );
   }
 
+  // Progress fill follows the real kitchen/delivery pipeline instead of a
+  // hardcoded 15% — the bar now means something on every status.
+  const STATUS_STEPS = ['received', 'preparing', 'ready', 'out_for_delivery', 'delivered'];
+  const progressPct = (() => {
+    const idx = STATUS_STEPS.indexOf(order.status);
+    if (order.status === 'delivered') return 100;
+    if (idx < 0) return 15;
+    return Math.round(((idx + 1) / STATUS_STEPS.length) * 100);
+  })();
+
   return (
     <div className="space-y-5 animate-fade-in text-center max-w-md mx-auto">
-      {/* Success Animation */}
+      {/* Success hero — the one gradient bed on this page, with the flame
+          watermark; everything below stays on warm cards. */}
       <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
+        initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-        className="pt-6"
+        transition={{ type: 'spring', stiffness: 200, damping: 18 }}
+        className="relative overflow-hidden rounded-3xl bg-gradient-cta pt-8 pb-6 px-4 text-white shadow-glow -mx-4 sm:mx-0"
       >
-        <div className="relative inline-block">
-          <div className={`w-24 h-24 rounded-full ${paid ? 'bg-success/20' : 'bg-primary/10'} flex items-center justify-center mx-auto`}>
-            <div className={`w-16 h-16 rounded-full ${paid ? 'bg-success' : 'bg-primary'} flex items-center justify-center`}>
-              {paid ? <Check className="w-8 h-8 text-white" strokeWidth={3} /> : <CreditCard className="w-8 h-8 text-white" />}
+        <FlameMark className="absolute -right-6 -top-6 w-28 h-28 opacity-15 pointer-events-none" />
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.1 }}
+          className="relative inline-block"
+        >
+          <div className={`w-24 h-24 rounded-full ${paid ? 'bg-white/25' : 'bg-white/15'} flex items-center justify-center mx-auto backdrop-blur-[2px]`}>
+            <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center">
+              {paid ? <Check className="w-8 h-8 text-primary" strokeWidth={3} /> : <CreditCard className="w-8 h-8 text-primary" />}
             </div>
           </div>
-          <FlameMark className="absolute -top-2 -right-2 w-8 h-8 animate-flame-flicker" />
-        </div>
-        <h1 className="font-heading font-extrabold text-2xl text-foreground mt-4">{closed ? msg('FE_CONFIRMATION_CLOSED_TITLE', 'Order closed') : !paid ? msg('FE_CONFIRMATION_PAYMENT_TITLE', 'Order saved — payment required') : isScheduled ? msg('FE_CONFIRMATION_SCHEDULED_TITLE', 'Order Scheduled!') : msg('FE_CONFIRMATION_CONFIRMED_TITLE', 'Order Confirmed!')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        </motion.div>
+        <h1 className="font-heading font-extrabold text-2xl mt-4 relative">{closed ? msg('FE_CONFIRMATION_CLOSED_TITLE', 'Order closed') : !paid ? msg('FE_CONFIRMATION_PAYMENT_TITLE', 'Order saved — payment required') : isScheduled ? msg('FE_CONFIRMATION_SCHEDULED_TITLE', 'Order Scheduled!') : msg('FE_CONFIRMATION_CONFIRMED_TITLE', 'Order Confirmed!')}</h1>
+        <p className="text-sm text-white/85 mt-1 relative">
           {closed ? msg('FE_CONFIRMATION_CLOSED_BODY', 'This order is no longer awaiting payment or fulfilment.') : !paid ? msg('FE_CONFIRMATION_AWAITING_PAYMENT', 'Your order is awaiting payment.') : isScheduled
             ? msg('FE_CONFIRMATION_SCHEDULED_BODY', "You're scheduled for {date}{window}.", {
                 date: scheduledFor ? new Date(scheduledFor).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'long', day: 'numeric' }) : msg('FE_CONFIRMATION_NEXT_DAY', 'the next available day'),
@@ -110,7 +126,7 @@ export default function OrderConfirmation() {
             : order.payment_status !== 'paid' ? msg('FE_CONFIRMATION_AWAITING_PAYMENT', 'Your order is awaiting payment.')
             : order.status === 'preparing' ? msg('FE_CONFIRMATION_PREPARING', 'Your flame grilled order is being prepared.') : msg('FE_CONFIRMATION_RECEIVED', 'Your order has been received by the kitchen.')}
         </p>
-        <div className="inline-block mt-2 px-4 py-1.5 rounded-full bg-muted text-xs font-bold text-muted-foreground">
+        <div className="inline-block mt-3 px-4 py-1.5 rounded-full bg-white/20 border border-white/30 text-xs font-bold">
           Order #{(order.order_number || order.id || '').toUpperCase()}
         </div>
       </motion.div>
@@ -237,27 +253,27 @@ export default function OrderConfirmation() {
         <h3 className="font-bold text-sm text-foreground mb-3">Order Status</h3>
         <div className="flex items-center gap-2">
           <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-cta transition-all" style={{ width: '15%' }} />
+            <div className="h-full rounded-full bg-gradient-cta transition-all" style={{ width: `${progressPct}%` }} />
           </div>
           <span className="text-xs font-bold text-primary">{ORDER_STATUS_LABELS[order.status] || order.status}</span>
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions — Track Order is the next action, so it wears the hero CTA */}
       <div className="space-y-2">
         <motion.button
           whileTap={{ scale: 0.97 }}
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate(`/orders/${order.id}${claimToken ? `?claim_token=${claimToken}` : ''}`)}
           className="w-full py-4 rounded-xl bg-gradient-cta text-white font-bold shadow-glow"
         >
-          Go to Dashboard
+          Track Order
         </motion.button>
         <div className="flex gap-2">
           <button
-            onClick={() => navigate(`/orders/${order.id}${claimToken ? `?claim_token=${claimToken}` : ''}`)}
+            onClick={() => navigate('/dashboard')}
             className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm hover:border-primary/30 transition-colors"
           >
-            Track Order
+            Go to Dashboard
           </button>
           {paid && <button
             onClick={() => setShareOpen(true)}
