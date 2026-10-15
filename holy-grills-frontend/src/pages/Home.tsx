@@ -144,11 +144,11 @@ export default function Home() {
       <OrderSuggestionCard />
 
       {launchWindowEnd && (
-        <div className="rounded-2xl bg-gradient-dark p-4 text-white flex items-center gap-3 shadow-card">
-          <span className="text-2xl">🎁</span>
+        <div className="rounded-2xl bg-accent/15 border border-accent/35 px-4 py-3 text-foreground flex items-center gap-3 shadow-card">
+          <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center text-lg shrink-0">🎁</span>
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm">Free {giftItemName} on your first order!</div>
-            <div className="text-xs text-white/75">First-order gift ends {new Date(launchWindowEnd).toLocaleDateString()}</div>
+            <div className="text-xs text-muted-foreground">First-order gift ends {new Date(launchWindowEnd).toLocaleDateString()}</div>
           </div>
         </div>
       )}
@@ -198,11 +198,15 @@ export default function Home() {
       <HeroCarousel placement="home" />
       <StorefrontSlider sectionType="promo" variant="poster" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
 
+
       {/* 4. Squad Orders — right after the menu */}
       <SquadOrderEducation />
 
       {/* 5. How it's made — process-stage slider (backend-driven) */}
       <StorefrontSlider sectionType="how_its_made" variant="landscape" eyebrow="How it's made" headline="Made the long way." subline="The care behind every plate." />
+
+      {/* 6b. Home-placement promo carousel + posters — placed here so the two
+          big image blocks don't stack right after the featured menu. */}
 
       {/* 6. Holy Points banner — gradient on the large card only; the inner
           feature tiles are outline-only, per the reference design */}
@@ -271,21 +275,22 @@ export default function Home() {
         <TestimonialSlider testimonials={testimonials} />
       </div>
 
-      {/* 11. Fire Feast Squad — newsletter */}
+      {/* 11. Fire Feast Squad — newsletter (warm card; dark surfaces stay
+          reserved for the one hero banner per page) */}
       {/* Newsletter — compact 2-row layout: icon + text on one line, input + button on the next */}
-      <div className="rounded-3xl bg-gradient-dark p-5 text-white shadow-card">
+      <div className="rounded-3xl bg-card border border-border p-5 shadow-card">
         <div className="flex items-center gap-2.5 mb-3">
-          <div className="w-9 h-9 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center shrink-0">
             <Mail className="w-4 h-4 text-accent" />
           </div>
           <div className="leading-tight">
             <span className="text-[10px] font-bold uppercase tracking-wider text-accent block">Fire Feast Squad</span>
-            <span className="text-sm font-semibold">Get the drops first.</span>
+            <span className="text-sm font-semibold text-foreground">Get the drops first.</span>
             <span className="text-xs text-muted-foreground block mt-0.5">The squad hears everything early.</span>
           </div>
         </div>
         {subscribed ? (
-          <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-success/20 border border-success/40 text-success text-xs font-bold w-full justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full tone-success border text-xs font-bold w-full justify-center">
             <Check className="w-3.5 h-3.5" /> You're in ❤️‍🔥.
           </div>
         ) : (
@@ -296,7 +301,7 @@ export default function Home() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Your email"
-              className="flex-1 px-4 py-2.5 rounded-full text-foreground text-sm bg-card border-0 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="flex-1 px-4 py-2.5 rounded-full text-foreground text-sm bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-accent/50"
             />
             <button type="submit" disabled={subscribing} className="px-5 py-2.5 rounded-full bg-gradient-cta text-white font-bold text-sm whitespace-nowrap disabled:opacity-60 active:scale-95 transition">
               {subscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : "I'm In"}

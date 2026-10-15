@@ -238,6 +238,25 @@ export default function Rewards() {
         <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
       </Link>
 
+      {/* Free side credit wallet chip — credits used to be invisible until
+          checkout; now the balance + expiry live right under the HP bar. */}
+      {freeSidesReleased && freeSideCredits.count > 0 && (
+        <div className="rounded-2xl bg-accent/12 border border-accent/30 p-3.5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shrink-0">
+            <Gift className="w-4 h-4 text-accent-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-extrabold text-foreground">
+              {freeSideCredits.count} free side{freeSideCredits.count !== 1 ? 's' : ''} waiting
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Pick one at checkout — it lands on your order at ₦0.
+              {freeSideCredits.expires_at ? ` Expires ${new Date(freeSideCredits.expires_at).toLocaleDateString()}.` : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tier progress card with liquid-fill bar */}
       {tierInfo && (
         <div className="rounded-2xl bg-card border border-border p-4 shadow-card">

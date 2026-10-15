@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crown, Flame, Users, ArrowUp, ArrowDown, Minus, Clock, Info, X, ChevronRight } from 'lucide-react';
+import { Crown, Flame, Users, ArrowUp, ArrowDown, Minus, Clock, Info, X, ChevronRight, Trophy } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
@@ -153,6 +153,24 @@ export default function Leaderboard() {
         </div>
       )}
 
+      {/* Prize framing — the season's promise, visible without opening any
+          modal: finish Top 4, take real rewards. Tap for the breakdown. */}
+      {view !== 'squad' && (
+        <button
+          onClick={() => setShowPrizesModal(true)}
+          className="w-full flex items-center gap-2.5 rounded-2xl bg-accent/12 border border-accent/30 px-3.5 py-2.5 text-left hg-press"
+        >
+          <span className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shrink-0">
+            <Trophy className="w-4 h-4 text-accent-foreground" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-xs font-extrabold text-foreground">Top 4 take real rewards.</span>
+            <span className="block text-[11px] text-muted-foreground">Free sides, spins and a shot at the Hall of Fame.</span>
+          </span>
+          <ChevronRight className="w-4 h-4 text-warn shrink-0" />
+        </button>
+      )}
+
       {/* Pinned user rank */}
       {myRank && (
         <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-glow">
@@ -226,13 +244,17 @@ export default function Leaderboard() {
                 </div>
               )}
 
-              {/* Spin card */}
-              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 shadow-card ${spinEarned ? 'bg-accent/15 border-accent/30' : 'bg-card border-border'}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-primary' : 'bg-secondary'}`}>🎡</div>
+              {/* Spin card — the loudest card on the page when a spin is
+                  actually earned; quiet outline when locked. */}
+              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 relative overflow-hidden ${spinEarned ? 'bg-gradient-dark border-accent/40 shadow-glow' : 'bg-card border-border'}`}>
+                {spinEarned && <div className="absolute inset-0 tier-shimmer-holy opacity-[0.07] pointer-events-none" />}
+                <div className="flex items-center gap-3 relative">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-gradient-cta shadow-glow' : 'bg-secondary'}`}>
+                    <span className={spinEarned ? 'animate-flame-flicker inline-block' : 'inline-block'}>🎡</span>
+                  </div>
                   <div className="flex-1">
                     {spinEarned ? (
-                      <><div className="font-heading font-bold text-sm text-foreground">{msg('FE_LEADERBOARD_SPINS_AVAILABLE', '{count} spins available', { count: spinCount })}</div><div className="text-xs text-muted-foreground">Spin to win bonus HP.</div></>
+                      <><div className="font-heading font-bold text-sm text-white">{msg('FE_LEADERBOARD_SPINS_AVAILABLE', '{count} spins available', { count: spinCount })}</div><div className="text-xs text-white/70">Spin to win bonus HP.</div></>
                     ) : hasSpun ? (
                       <><div className="font-heading font-bold text-sm text-foreground">Spin Used</div><div className="text-xs text-muted-foreground">Come back next month for another shot.</div></>
                     ) : (
@@ -258,7 +280,7 @@ export default function Leaderboard() {
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.04, duration: 0.3 }}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border shadow-card ${entry.is_current_user ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/40' : 'bg-card border-border'}`}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border ${entry.is_current_user ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/40 shadow-card' : 'bg-card border-border'}`}
                   >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs tabular-nums ${entry.rank <= 3 ? 'bg-gradient-cta text-white' : 'bg-secondary text-foreground'}`}>{entry.rank}</div>
                     {isFeatureEnabled('leaderboard_prizes', true) && (
@@ -377,7 +399,9 @@ export default function Leaderboard() {
 }
 
 function PodiumBar({ rank, place, height, delay }) {
-  const colors = ['bg-accent', 'bg-muted-foreground/40', 'bg-accent/70'];
+  // Medal materials — gold / warm silver / copper. Same ladder language as the
+  // tier rings: 1st glows, 2nd/3rd are warm matte metals, never grey.
+  const medals = ['medal-gold', 'medal-silver', 'medal-bronze'];
   return (
     <div className="flex flex-col items-center" style={{ order: place === 1 ? 1 : place === 2 ? 0 : 2 }}>
       <div className="text-xs font-semibold text-foreground text-center max-w-[80px] truncate">{rank.full_name}</div>
@@ -386,9 +410,9 @@ function PodiumBar({ rank, place, height, delay }) {
         initial={{ height: 0, opacity: 0 }}
         animate={{ height, opacity: 1 }}
         transition={{ delay, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-        className={`w-16 rounded-t-xl ${colors[place - 1]} flex items-start justify-center pt-2 overflow-hidden`}
+        className={`w-16 rounded-t-xl ${medals[place - 1]} flex items-start justify-center pt-2 overflow-hidden ${place === 1 ? 'shadow-glow' : ''}`}
       >
-        <span className="text-white font-bold text-lg">#{place}</span>
+        <span className="text-white font-bold text-lg drop-shadow-sm">#{place}</span>
       </motion.div>
     </div>
   );

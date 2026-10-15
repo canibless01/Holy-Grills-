@@ -244,6 +244,13 @@
   .tone-info    { background-color: hsl(var(--info) / 0.12);     color: hsl(var(--tone-info-fg));    border-color: hsl(var(--info) / 0.35); }
   .tone-error   { background-color: hsl(var(--destructive) / 0.1); color: hsl(var(--tone-error-fg)); border-color: hsl(var(--destructive) / 0.3); }
 
+  /* ─── PODIUM MEDALS — 1st/2nd/3rd materials ───
+     Warm metals that match the tier-ring ladder; silver is warm matte, never
+     grey. Gold carries the glow (the one lit surface on the podium). */
+  .medal-gold   { background: linear-gradient(180deg, #FFD76A 0%, #F2B84B 55%, #ECA829 100%); }
+  .medal-silver { background: linear-gradient(180deg, #E8D9C3 0%, #C4A57D 100%); }
+  .medal-bronze { background: linear-gradient(180deg, #DE9A66 0%, #B26B3C 100%); }
+
   /* HolyGrill component primitives */
   .hg-card {
     background-color: hsl(var(--card));

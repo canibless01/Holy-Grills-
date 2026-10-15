@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import EventsSkeleton from '@/components/skeletons/EventsSkeleton';
 import SEO from '@/components/SEO';
@@ -65,43 +65,47 @@ export default function Events() {
     <div className="space-y-5 animate-fade-in max-w-2xl mx-auto">
       <SEO title={META.title} description={META.description} path={META.path} />
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <span className="hg-eyebrow">Events</span>
           <h1 className="font-heading font-extrabold text-2xl text-foreground mt-0.5">Somewhere to be.</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Go with your people.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Go with your people.{' '}
+            <button onClick={() => setShowCatering(true)} className="text-primary font-bold underline-offset-2 hover:underline">
+              {msg('FE_CATERING_REQUEST_ACTION', 'Request catering')}
+            </button>
+          </p>
         </div>
-        <button
-          onClick={() => setShowCatering(true)}
-          className="flex items-center gap-1 px-3 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold transition-all active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5" /> {msg('FE_CATERING_REQUEST_ACTION', 'Request catering')}
-        </button>
       </div>
 
       {isAuthenticated && (
-        <div className="flex gap-2 bg-secondary/60 rounded-full p-1">
-          <button onClick={() => setTab('discover')} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === 'discover' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Discover</button>
-          <button onClick={() => setTab('mine')} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>My Events</button>
+        <div className="flex gap-2 items-center">
+          {/* Toggle + category chips share one row — the page's two controls
+              stop stacking into two full-width bars. */}
+          <div className="flex bg-secondary/60 rounded-full p-1 shrink-0">
+            <button onClick={() => setTab('discover')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${tab === 'discover' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Discover</button>
+            <button onClick={() => setTab('mine')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${tab === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>My Events</button>
+          </div>
+          {tab === 'discover' && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 py-0.5 flex-1 min-w-0">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setFilter(c.id)}
+                  className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === c.id ? 'bg-primary text-primary-foreground' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {tab === 'mine' ? (
+      {tab === 'mine' && isAuthenticated ? (
         <MyEvents />
       ) : (
         <>
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setFilter(c.id)}
-                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === c.id ? 'bg-primary text-primary-foreground' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-
           {loadError ? (
             <div className="text-center py-12">
               <MascotStandee mascot="thinking" className="w-28 h-28 mx-auto mb-3" alt="Could not load events" />
