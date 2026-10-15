@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
 import { localStore } from '@/lib/storage';
 import { Plus, Pencil, Trash2, Save, Zap, Clock, Gift, Check, Search } from 'lucide-react';
@@ -130,7 +131,7 @@ export default function AdminExclusiveSpin() {
   };
 
   const deleteItem = async (id, name) => {
-    if (!confirm(msg('FE_ADMIN_SPIN_DEACTIVATE_CONFIRM', 'Deactivate "{name}" from the spin pool?', { name }))) return;
+    if (!(await confirmAction({ title: msg('FE_ADMIN_SPIN_DEACTIVATE_CONFIRM', 'Deactivate "{name}" from the spin pool?', { name }), destructive: true }))) return;
     setBusy(id);
     try {
       const res = await mockApi.admin.deleteExclusiveSpinTemplateItem(id);

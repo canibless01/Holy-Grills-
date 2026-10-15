@@ -313,7 +313,7 @@ export default function Home() {
 
       {showStreakPopup && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-lg flex items-end sm:items-center justify-center p-4" onClick={() => setShowStreakPopup(false)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => setShowStreakPopup(false)}>
           <motion.div
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}

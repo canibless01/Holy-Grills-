@@ -4,6 +4,7 @@ import { ICONS, ICON_SIZES } from '@/config/icons';
 import FlameMark from '@/components/FlameMark';
 import { formatNaira } from '@/lib/hgUtils';
 import { msg, useMessages } from '@/lib/messages';
+import ModalPortal from '@/components/ModalPortal';
 
 const { X, ArrowRight, Clock, Check, AlertCircle } = ICONS;
 
@@ -71,10 +72,11 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
   // guest sees the date and delivery window the order actually landed in.
   if (placed) {
     return (
+      <ModalPortal>
       <AnimatePresence>
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4"
+          className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4"
         >
           <motion.div
             initial={{ scale: 0.94, y: 24 }} animate={{ scale: 1, y: 0 }}
@@ -115,14 +117,16 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
           </motion.div>
         </motion.div>
       </AnimatePresence>
+      </ModalPortal>
     );
   }
 
   return (
     <AnimatePresence>
+      <ModalPortal>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4"
+        className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4"
       >
         <motion.div
           initial={{ scale: 0.94, y: 24 }} animate={{ scale: 1, y: 0 }}
@@ -175,6 +179,7 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
           </div>
         </motion.div>
       </motion.div>
+      </ModalPortal>
     </AnimatePresence>
   );
 }

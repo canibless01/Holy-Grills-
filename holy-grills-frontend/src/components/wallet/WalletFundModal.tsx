@@ -89,7 +89,7 @@ export default function WalletFundModal({ open, onClose, wallet, onSuccess }) {
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !bankWaiting && !processing && onClose()}>
+      <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !bankWaiting && !processing && onClose()}>
         <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-sm animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           {bankWaiting ? (
             <div className="text-center py-4">

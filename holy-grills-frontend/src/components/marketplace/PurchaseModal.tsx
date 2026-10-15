@@ -26,7 +26,7 @@ export default function PurchaseModal({ listing, onClose, onSuccess }) {
   if (done) {
     return (
       <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={onClose}>
           <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-sm text-center animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-3">
               <Check className="w-8 h-8 text-success" />
@@ -89,7 +89,7 @@ export default function PurchaseModal({ listing, onClose, onSuccess }) {
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !purchasing && onClose()}>
+      <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !purchasing && onClose()}>
         <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-sm animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-heading font-bold text-lg text-foreground">Choose Payment</h3>

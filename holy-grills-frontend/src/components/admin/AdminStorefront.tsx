@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Plus, Trash2, Image, Mail, Flame, Tag, Quote, Share2, Heart, Sparkles, Clock, Pencil, Utensils, Award, BookOpen, Send, XCircle, Eye } from 'lucide-react';
@@ -241,7 +242,7 @@ export default function AdminStorefront() {
     setBusy(null);
   };
   const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
-  const del = async (id) => { if (!confirm('Delete this storefront section? It will be removed from the live homepage.')) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
+  const del = async (id) => { if (!(await confirmAction({ title: "Delete this storefront section?", body: "It will be removed from the live homepage.", destructive: true, confirmLabel: "Delete" }))) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
 
   const create = async () => {
     const t = newSection.section_type;
@@ -290,7 +291,7 @@ export default function AdminStorefront() {
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
-  const removeSupporter = async (id) => { if (!confirm('Remove this early supporter?')) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
+  const removeSupporter = async (id) => { if (!(await confirmAction({ title: "Remove this early supporter?", destructive: true, confirmLabel: "Remove" }))) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
   const unsubscribe = async (email) => { setBusy(email); await mockApi.admin.unsubscribeNewsletter({ email }); await load(); setBusy(null); };
 
   const campaignBody = (form) => {
@@ -324,7 +325,7 @@ export default function AdminStorefront() {
   };
 
   const cancelCampaign = async (c) => {
-    if (!confirm('Stop this campaign? Emails already delivered stay delivered.')) return;
+    if (!(await confirmAction({ title: "Stop this campaign?", body: "Emails already delivered stay delivered.", destructive: true, confirmLabel: "Stop" }))) return;
     setCampaignBusy(c.id);
     try {
       await mockApi.storefront.cancelNewsletterCampaign(c.id);

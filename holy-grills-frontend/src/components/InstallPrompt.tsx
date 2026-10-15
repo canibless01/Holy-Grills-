@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Download, X, Share2, Plus, Flame } from 'lucide-react';
+import ModalPortal from '@/components/ModalPortal';
 
 const DISMISS_KEY = 'hg_install_dismissed';
 
@@ -84,7 +85,8 @@ export default function InstallPrompt() {
       )}
 
       {showIOS && (
-        <div className="fixed inset-0 z-[1080] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in" onClick={dismiss}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-[1080] flex items-end sm:items-center justify-center hg-scrim animate-fade-in" onClick={dismiss}>
           <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md mx-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-2xl bg-gradient-cta flex items-center justify-center shadow-lg shadow-flame-600/30">
@@ -117,6 +119,7 @@ export default function InstallPrompt() {
             </button>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );

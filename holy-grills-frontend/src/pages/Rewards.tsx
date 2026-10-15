@@ -688,7 +688,7 @@ export default function Rewards() {
 
       {/* Redeem confirmation modal */}
       {selectedReward && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSelectedReward(null)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={() => setSelectedReward(null)}>
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">Confirm Redemption</h3>

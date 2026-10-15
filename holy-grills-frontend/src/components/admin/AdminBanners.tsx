@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { bannerSlides, bannerSlidePayload, blankBannerSlide } from '@/lib/bannerSlides';
 import { useCampus } from '@/lib/campusContext';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
@@ -88,7 +89,7 @@ export default function AdminBanners({ placement = 'home' }) {
   };
 
   const del = async (id) => {
-    if (!confirm(msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?'))) return;
+    if (!(await confirmAction({ title: msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?'), destructive: true }))) return;
     try { await liveApi.admin.deleteBanner(id); toast({ title: msg('FE_ADMIN_BANNERS_DELETED', '✅ Deleted') }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); }
   };

@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Star, CheckSquare, Square, Zap, Gauge, Layers } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -82,7 +83,7 @@ export default function AdminMenu() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Archive this menu item? It disappears from the menu; existing orders keep their details.')) return;
+    if (!(await confirmAction({ title: "Archive this menu item?", body: "It disappears from the menu; existing orders keep their details.", destructive: true, confirmLabel: "Archive" }))) return;
     try { await mockApi.admin.deleteMenuItem(id); toast({ title: msg('FE_ADMIN_MENU_ITEM_ARCHIVED', 'Item archived') }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_MENU_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
   };
@@ -124,7 +125,7 @@ export default function AdminMenu() {
 
   // No bulk-delete endpoint — archive each selected item client-side.
   const bulkDelete = async () => {
-    if (!confirm(`Archive ${selected.size} selected item(s)?`)) return;
+    if (!(await confirmAction({ title: `Archive ${selected.size} selected item(s)?`, destructive: true }))) return;
     setBulkBusy(true);
     try {
       const results = await Promise.allSettled([...selected].map((id) => mockApi.admin.deleteMenuItem(id)));

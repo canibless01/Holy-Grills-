@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Users, UserPlus, UserMinus, Mail, Loader2 } from 'lucide-react';
@@ -42,7 +43,7 @@ export default function SquadDetail({ squadId, currentUserId, onBack }) {
   };
 
   const handleRemoveMember = async (m) => {
-    if (!confirm(`Remove ${m.display_name || m.email} from the squad?`)) return;
+    if (!(await confirmAction({ title: `Remove ${m.display_name || m.email} from the squad?`, destructive: true }))) return;
     try {
       await liveApi.squads.removeMember(squadId, m.id);
       toast({ title: msg('FE_SQUAD_DETAIL_MEMBER_REMOVED', 'Member removed'), description: msg('FE_SQUAD_DETAIL_THEY_NO_LONGER_JOIN_NEW_SQUAD_ORDERS', 'They no longer join new squad orders.') });

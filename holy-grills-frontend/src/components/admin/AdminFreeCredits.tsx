@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { localStore } from '@/lib/storage';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useState, useEffect, useRef } from 'react';
@@ -81,7 +82,7 @@ export default function AdminFreeCredits() {
   };
 
   const removeItem = async (item) => {
-    if (!confirm(msg('FE_FREE_SIDE_DEACTIVATE_CONFIRM', 'Deactivate {name}? Past orders keep their saved side.', { name: item.name }))) return;
+    if (!(await confirmAction({ title: msg('FE_FREE_SIDE_DEACTIVATE_CONFIRM', 'Deactivate {name}? Past orders keep their saved side.', { name: item.name }), destructive: true }))) return;
     setBusy(item.id);
     try {
       await mockApi.admin.deleteFreeSideItem(item.id);

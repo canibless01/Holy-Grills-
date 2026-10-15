@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import ProfileMenuContent from '@/components/ProfileMenuContent';
+import ModalPortal from '@/components/ModalPortal';
 
 /**
  * MobileProfileDrawer — the account menu as a full-height side panel on phones.
@@ -9,9 +10,14 @@ import ProfileMenuContent from '@/components/ProfileMenuContent';
  * bottom — stays reachable no matter how short the screen is. The panel itself
  * is just the shell; the header, list and close button all come from
  * ProfileMenuContent, the same body the desktop dropdown renders.
+ *
+ * Portalled to <body>: the header it lives in carries a transform (show/hide
+ * on scroll), and a transformed ancestor re-bases `position: fixed` — which
+ * would squash the drawer into the 64px header instead of covering the screen.
  */
 export default function MobileProfileDrawer({ open, onClose, user, hpBalance, tierInfo, onNavigate, onLogout }) {
   return (
+    <ModalPortal>
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[60] md:hidden">
@@ -20,7 +26,7 @@ export default function MobileProfileDrawer({ open, onClose, user, hpBalance, ti
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+            className="absolute inset-0 hg-scrim"
             onClick={onClose}
           />
           <motion.aside
@@ -44,5 +50,6 @@ export default function MobileProfileDrawer({ open, onClose, user, hpBalance, ti
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

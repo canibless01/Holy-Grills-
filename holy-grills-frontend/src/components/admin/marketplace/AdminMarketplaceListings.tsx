@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState } from 'react';
 import { Plus, Pencil, Trash2, Settings } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -40,7 +41,7 @@ export default function AdminMarketplaceListings({ listings, reload }) {
   };
 
   const remove = async (id) => {
-    if (!confirm('Delete this listing? This cannot be undone.')) return;
+    if (!(await confirmAction({ title: "Delete this listing?", body: "This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     try {
       const res = await liveApi.admin.deleteListing(id);
       toast({ title: msg('FE_ADMIN_MARKETPLACE_LISTINGS_LISTING_DELETED', 'Listing deleted'), description: res?.message });

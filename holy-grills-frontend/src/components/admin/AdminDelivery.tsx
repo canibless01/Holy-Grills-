@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, CheckSquare, Clock, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -50,7 +51,7 @@ export default function AdminDelivery() {
   const handleNudge = async (id) => { setBusy(id); await mockApi.admin.nudgeAbandonedCart(id); await load(); setBusy(null); };
 
   const completeBatch = async (id) => { setBatchBusy(id); try { await mockApi.admin.updateDeliveryBatch(id, { status: 'completed' }); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_COMPLETED', '✅ Batch completed') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
-  const cancelBatch = async (id) => { if (!confirm('Cancel this batch? Its orders will be unassigned.')) return; setBatchBusy(id); try { await mockApi.admin.deleteDeliveryBatch(id); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CANCELLED', 'Batch cancelled') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
+  const cancelBatch = async (id) => { if (!(await confirmAction({ title: "Cancel this batch?", body: "Its orders will be unassigned.", destructive: true, confirmLabel: "Cancel" }))) return; setBatchBusy(id); try { await mockApi.admin.deleteDeliveryBatch(id); toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CANCELLED', 'Batch cancelled') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBatchBusy(null); };
 
   const saveZone = async (type, item) => {
     if (item && item.id) {

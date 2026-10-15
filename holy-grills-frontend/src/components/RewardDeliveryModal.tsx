@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import type { RedemptionDeliveryChoicePayload } from '@/types/rewards';
 import { msg } from '@/lib/messages';
+import ModalPortal from "@/components/ModalPortal";
 
 /**
  * Post-fulfilment "How would you like this delivered?" flow.
@@ -74,7 +75,8 @@ export default function RewardDeliveryModal({ redemption, open, onClose, onDeliv
   const instantBlocked = mode === 'instant' && addresses.length > 0 && !addressId;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+    <ModalPortal>
+    <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-4">
           <div>
@@ -158,5 +160,6 @@ export default function RewardDeliveryModal({ redemption, open, onClose, onDeliv
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

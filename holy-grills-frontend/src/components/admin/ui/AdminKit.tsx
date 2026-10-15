@@ -2,6 +2,7 @@ import { msg, useMessages } from '@/lib/messages';
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import ModalPortal from '@/components/ModalPortal';
 import type { ReactNode } from 'react';
 
 // UI kit scoped to the Admin Panel & User Management + Analytics domains.
@@ -150,11 +151,12 @@ export function Modal({ open, onClose, title, children, wide = false }: {
   useMessages();
   const titleId = React.useId();
   return (
+    <ModalPortal>
     <AnimatePresence>
       {open && (
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-foreground/50 backdrop-blur-sm sm:p-4"
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center hg-scrim sm:p-4"
           onClick={onClose}
         >
           <motion.div
@@ -177,6 +179,7 @@ export function Modal({ open, onClose, title, children, wide = false }: {
         </motion.div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }
 

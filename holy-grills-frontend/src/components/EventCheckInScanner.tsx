@@ -84,7 +84,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
     // was clipped to the wrapper so the dimmed backdrop missed the top/bottom
     // of the screen.
     <ModalPortal>
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-3">
           <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Camera className="w-5 h-5 text-primary" /> Scan Event QR</h3>

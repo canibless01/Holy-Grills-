@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
+import ModalPortal from '@/components/ModalPortal';
 import { Card, Skeleton, EmptyState, SectionTitle, StatTile, BreakdownTiles, body } from './ui/AdminKit';
 import {
   OrderTimingDashboard, AddonAcceptanceDashboard, DeliveryLocationDashboard,
@@ -409,7 +410,8 @@ export default function AdminAnalytics() {
       )}
 
       {brandModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setBrandModal(false)}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex items-center justify-center hg-scrim p-4" onClick={() => setBrandModal(false)}>
           <div className="bg-card rounded-2xl p-5 w-full max-w-md space-y-3 shadow-card" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-sm text-foreground">Log Brand Partnership Request</h3>
             <div>
@@ -430,6 +432,7 @@ export default function AdminAnalytics() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );

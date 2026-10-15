@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Eye, QrCode, Ticket, Download, Mail, BarChart3 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -43,7 +44,7 @@ export default function AdminEvents() {
   };
 
   const remove = async (id) => {
-    if (confirm('Delete event?')) {
+    if (await confirmAction({ title: "Delete event?", destructive: true, confirmLabel: "Delete" })) {
       try { await mockApi.admin.deleteEvent(id); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_DELETED', 'Event deleted') }); await load(); }
       catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     }
@@ -293,7 +294,7 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
   };
 
   const deleteTier = async (tierId, name) => {
-    if (!confirm(`Delete "${name}" tier?`)) return;
+    if (!(await confirmAction({ title: `Delete "${name}" tier?`, destructive: true }))) return;
     setBusy(tierId);
     try { await mockApi.admin.deleteEventTicketTier(eventId, tierId); setTiers(tiers.filter(t => t.id !== tierId)); toast({ title: msg('FE_ADMIN_EVENTS_TIER_DELETED', 'Tier deleted'), description: `"${name}" removed.` }); }
     catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }

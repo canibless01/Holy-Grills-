@@ -1,6 +1,7 @@
 import { msg, useMessages } from '@/lib/messages';
 import React from 'react';
 import { X } from 'lucide-react';
+import ModalPortal from '@/components/ModalPortal';
 
 export function Toggle({ checked, onChange, disabled, label = 'Toggle' }: { checked?: boolean; onChange: (next: boolean) => void; disabled?: boolean; label?: string }) {
   return (
@@ -23,7 +24,8 @@ export function Modal({ open, onClose, title, children }: { open?: boolean; onCl
   const titleId = React.useId();
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={onClose}>
+    <ModalPortal>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center hg-scrim p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full sm:max-w-lg bg-white rounded-3xl shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } }}>
         <div className="sticky top-0 bg-white px-5 py-4 border-b border-border flex items-center justify-between z-10">
           <h3 id={titleId} className="font-heading font-extrabold text-base text-foreground">{title}</h3>
@@ -34,6 +36,7 @@ export function Modal({ open, onClose, title, children }: { open?: boolean; onCl
         <div className="p-5">{children}</div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

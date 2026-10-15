@@ -5,6 +5,7 @@ import { timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Pill, type PillTone } from '@/components/admin/ui/AdminKit';
 import { msg } from '@/lib/messages';
+import ModalPortal from "@/components/ModalPortal";
 
 // Reads the real response shape from GET /marketplace/purchases:
 // each row carries nested marketplace_listings(title, listing_type, image_url)
@@ -68,7 +69,8 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
       )}
 
       {reporting && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => !submitting && setReporting(null)}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !submitting && setReporting(null)}>
+    <ModalPortal>
           <div className="bg-card rounded-t-3xl sm:rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-heading font-bold text-base text-foreground">Report a Problem</h3>
@@ -92,6 +94,7 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Send className="w-4 h-4" /> Send Report</>}
             </button>
           </div>
+    </ModalPortal>
         </div>
       )}
     </div>

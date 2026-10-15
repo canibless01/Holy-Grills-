@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { safeText } from '@/lib/valueText';
 import { csvCell } from '@/lib/csvCell';
 import { formatNaira, formatDate } from '@/lib/hgUtils';
+import ModalPortal from '@/components/ModalPortal';
 
 // A joined row here would render as an object and take the panel down.
 const tierText = (r) => safeText(r?.tier_name || r?.tier || r?.ticket_tier, '');
@@ -190,7 +191,8 @@ export default function AdminCatering() {
 
       {/* Detail modal */}
       {detail && (
-        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setDetail(null)}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center hg-scrim p-4" onClick={() => setDetail(null)}>
           <div className="bg-white rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">Catering Request</h3>
@@ -240,6 +242,7 @@ export default function AdminCatering() {
             </button>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );

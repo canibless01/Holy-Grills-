@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Pencil, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -64,7 +65,7 @@ export default function AdminChallenges() {
   };
 
   const remove = async (id, title) => {
-    if (!confirm(`Delete "${title}"?`)) return;
+    if (!(await confirmAction({ title: `Delete "${title}"?`, destructive: true }))) return;
     setBusy(id);
     try {
       await mockApi.admin.deleteChallenge(id);

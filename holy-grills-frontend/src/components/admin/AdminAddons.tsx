@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Pencil } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -50,7 +51,7 @@ export default function AdminAddons() {
       await reloadGlobal();
     } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
   };
-  const delGlobal = async (id) => { if (!confirm('Archive this global addon?')) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: msg('FE_ADMIN_ADDONS_ADDON_ARCHIVED', 'Addon archived') }); await reloadGlobal(); } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
+  const delGlobal = async (id) => { if (!(await confirmAction({ title: "Archive this global addon?", destructive: true, confirmLabel: "Archive" }))) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: msg('FE_ADMIN_ADDONS_ADDON_ARCHIVED', 'Addon archived') }); await reloadGlobal(); } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
 
   const addVarGroup = () => setVarGroups((gs) => [...gs, { id: `vg_${Date.now()}`, name: '', is_required: true, optionsText: '' }]);
   const addAddonGroup = () => setAddonGroups((gs) => [...gs, { id: `ag_${Date.now()}`, name: '', is_required: false, min_select: 0, max_select: 3, addonsText: '' }]);

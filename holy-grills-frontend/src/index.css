@@ -201,6 +201,19 @@
 }
 
 @layer components {
+  /* ─── THE overlay scrim — one recipe for every popup, every panel ───
+     A warm brand-black veil (deep brown, not grey) + one blur step. Every
+     modal, sheet, drawer and gate in the app (user, admin, kitchen, rider)
+     uses this exact class so the dim behind a popup is identical everywhere:
+     same colour, same opacity, full-screen coverage, light never leaks.
+     Always render it through ModalPortal (or ModalBackdrop) so a transformed
+     ancestor can never clip `position: fixed` on phones. */
+  .hg-scrim {
+    background: rgba(31, 10, 0, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
   /* HolyGrill component primitives */
   .hg-card {
     background-color: hsl(var(--card));

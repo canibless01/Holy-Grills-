@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
@@ -91,7 +92,7 @@ export default function OrderDetail() {
   const handleCancel = async () => {
     const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
     const prompt = isScheduled ? 'Cancel this scheduled order? Your slot will be released.' : 'Cancel this order? You will be refunded.';
-    if (!confirm(prompt)) return;
+    if (!(await confirmAction({ title: prompt, destructive: true }))) return;
     try {
       if (isScheduled) await mockApi.orders.cancelScheduled(id);
       else await mockApi.orders.cancel(id, { reason: 'Changed my mind' });
@@ -428,7 +429,7 @@ export default function OrderDetail() {
       {/* Review Modal */}
       {showReview && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4" onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}>
           <div role="dialog" aria-modal="true" aria-label={msg('FE_REVIEW_DIALOG', 'Rate Your Order')} className="bg-card rounded-3xl p-6 w-full max-w-md animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">{msg('FE_REVIEW_DIALOG', 'Rate Your Order')}</h3>
