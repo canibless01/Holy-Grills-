@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import EventsSkeleton from '@/components/skeletons/EventsSkeleton';
 import SEO from '@/components/SEO';
@@ -69,13 +69,14 @@ export default function Events() {
         <div>
           <span className="hg-eyebrow">Events</span>
           <h1 className="font-heading font-extrabold text-2xl text-foreground mt-0.5">Somewhere to be.</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Go with your people.{' '}
-            <button onClick={() => setShowCatering(true)} className="text-primary font-bold underline-offset-2 hover:underline">
-              {msg('FE_CATERING_REQUEST_ACTION', 'Request catering')}
-            </button>
-          </p>
+          <p className="text-sm text-muted-foreground mt-0.5">Go with your people.</p>
         </div>
+        <button
+          onClick={() => setShowCatering(true)}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-primary text-primary-foreground text-xs font-bold transition-all active:scale-95 shrink-0"
+        >
+          <Plus className="w-3.5 h-3.5" /> {msg('FE_CATERING_REQUEST_ACTION', 'Request catering')}
+        </button>
       </div>
 
       {isAuthenticated && (

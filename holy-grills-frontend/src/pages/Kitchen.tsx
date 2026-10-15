@@ -20,8 +20,8 @@ const TABS = [
 ];
 
 const COLUMN_ACCENTS = {
-  received: { dot: 'bg-warn', badge: 'tone-warn', label: 'New Orders' },
-  preparing: { dot: 'bg-info', badge: 'tone-info', label: 'In Preparation' },
+  received: { dot: 'bg-brand-brown/50', badge: 'tone-info', label: 'New Orders' },
+  preparing: { dot: 'bg-accent', badge: 'tone-warn', label: 'In Preparation' },
   ready: { dot: 'bg-success', badge: 'tone-success', label: 'Ready for Pickup' },
 };
 

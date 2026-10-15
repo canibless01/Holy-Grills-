@@ -122,15 +122,16 @@ export const ORDER_STATUS_LABELS = {
 };
 
 // Status chips — one shared language for user pages AND the admin panel.
-// Soft tone chips for pipeline states, solid success for delivered, brand
-// tints for rider states. The hero CTA gradient no longer dresses statuses.
+// BRAND MATERIALS ONLY (beige → gold → deep brown heat ladder, red tints for
+// problem states): no imported blue/green palettes. Warmth increases as the
+// order moves; delivered lands on the deep brand brown.
 export const ORDER_STATUS_COLORS = {
-  received: 'tone-info',
+  received: 'bg-secondary text-secondary-foreground',
   preparing: 'tone-warn',
-  ready: 'tone-success',
-  assigned: 'bg-primary/10 text-primary',
-  out_for_delivery: 'bg-primary/15 text-primary',
-  delivered: 'bg-success text-success-foreground',
+  ready: 'bg-accent text-accent-foreground',
+  assigned: 'tone-info',
+  out_for_delivery: 'bg-brand-brown/15 text-brand-brown',
+  delivered: 'bg-brand-brown text-brand-brown-foreground',
   cancelled: 'tone-error',
   refunded: 'tone-error',
   delivery_attempted: 'tone-warn',
@@ -138,17 +139,18 @@ export const ORDER_STATUS_COLORS = {
   scheduled: 'bg-secondary text-secondary-foreground',
 };
 
-// Solid dots for compact timelines (soft chips are unreadable at 8px).
+// Solid dots for compact timelines (soft chips are unreadable at 8px) —
+// same brand ladder.
 export const ORDER_STATUS_DOTS = {
-  received: 'bg-info',
-  preparing: 'bg-warn',
-  ready: 'bg-success',
-  assigned: 'bg-primary',
-  out_for_delivery: 'bg-primary',
-  delivered: 'bg-success',
+  received: 'bg-brand-brown/40',
+  preparing: 'bg-accent',
+  ready: 'bg-accent',
+  assigned: 'bg-brand-brown/70',
+  out_for_delivery: 'bg-brand-brown',
+  delivered: 'bg-brand-brown',
   cancelled: 'bg-destructive',
   refunded: 'bg-destructive',
-  delivery_attempted: 'bg-warn',
+  delivery_attempted: 'bg-accent',
   unclaimed: 'bg-destructive',
   scheduled: 'bg-muted-foreground',
 };

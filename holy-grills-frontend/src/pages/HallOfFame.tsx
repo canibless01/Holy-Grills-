@@ -80,10 +80,10 @@ export default function HallOfFame() {
     <div className="space-y-5 animate-fade-in">
       {/* Hero strip — the page IS a trophy case, so it opens on the dark brand
           bed + living gold, the same materials as the Holy tier ring. */}
-      <div className="rounded-3xl bg-gradient-dark relative overflow-hidden shadow-glow p-6 text-white">
+      <div className="rounded-3xl bg-gradient-dark relative overflow-hidden shadow-card p-6 text-white">
         <div className="absolute inset-0 tier-shimmer-holy opacity-[0.08] pointer-events-none" />
         <div className="relative flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-cta flex items-center justify-center text-2xl shrink-0 shadow-glow">🏅</div>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-cta flex items-center justify-center text-2xl shrink-0">🏅</div>
           <div>
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-accent block">Legends</span>
             <h1 className="font-heading font-extrabold text-2xl leading-tight">Hall of Fame</h1>

@@ -331,7 +331,7 @@ export default function Home() {
             <motion.div
               animate={{ scale: [1, 1.1, 1], rotate: [0, -3, 3, 0] }}
               transition={{ duration: 1.5, repeat: Infinity }}
-              className="w-16 h-16 rounded-full bg-gradient-cta flex items-center justify-center mx-auto mb-3 shadow-glow"
+              className="w-16 h-16 rounded-full bg-gradient-cta flex items-center justify-center mx-auto mb-3"
             >
               <FlameMark className="w-9 h-9" />
             </motion.div>

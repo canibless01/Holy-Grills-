@@ -279,7 +279,15 @@ export default function ItemDetail() {
             <Heart className={`w-5 h-5 ${saved ? 'fill-primary' : ''}`} />
           </button>
         </div>
-        <div className="mt-1.5"><RatingStars rating={item.avg_rating ?? 0} count={item.review_count ?? 0} size="md" /></div>
+        {/* Star rating — the same average the menu cards show, read through
+            the field aliases the detail endpoint may return. */}
+        <div className="mt-1.5">
+          <RatingStars
+            rating={item.avg_rating ?? item.average_rating ?? item.rating ?? 0}
+            count={item.review_count ?? item.reviews_count ?? item.review_total ?? undefined}
+            size="md"
+          />
+        </div>
         <p className="hg-body mt-2 leading-relaxed">{item.description}</p>
         <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-3">
           <span className="font-heading font-bold text-xl text-foreground">{formatNaira(item.price)}</span>

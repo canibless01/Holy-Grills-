@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crown, Flame, Users, ArrowUp, ArrowDown, Minus, Clock, Info, X, ChevronRight, Trophy } from 'lucide-react';
+import { Crown, Flame, Users, ArrowUp, ArrowDown, Minus, Clock, Info, X, ChevronRight } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
@@ -155,27 +155,9 @@ export default function Leaderboard() {
         </div>
       )}
 
-      {/* Prize framing — the season's promise, visible without opening any
-          modal: finish Top 4, take real rewards. Tap for the breakdown. */}
-      {view !== 'squad' && (
-        <button
-          onClick={() => setShowPrizesModal(true)}
-          className="w-full flex items-center gap-2.5 rounded-2xl bg-accent/12 border border-accent/30 px-3.5 py-2.5 text-left hg-press"
-        >
-          <span className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shrink-0">
-            <Trophy className="w-4 h-4 text-accent-foreground" />
-          </span>
-          <span className="flex-1 min-w-0">
-            <span className="block text-xs font-extrabold text-foreground">Top 4 take real rewards.</span>
-            <span className="block text-[11px] text-muted-foreground">Free sides, spins and a shot at the Hall of Fame.</span>
-          </span>
-          <ChevronRight className="w-4 h-4 text-warn shrink-0" />
-        </button>
-      )}
-
       {/* Pinned user rank */}
       {myRank && (
-        <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-glow">
+        <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 rounded-full bg-gradient-cta flex items-center justify-center font-bold text-sm">#{<CountUp value={myRank.rank} />}</div>
@@ -217,7 +199,7 @@ export default function Leaderboard() {
             <>
               {hallReleased && hallOfFame.length > 0 && (
                 <Link to="/hall-of-fame" className="block mb-4 group">
-                  <div className="relative rounded-2xl bg-accent/10 border border-accent/30 p-4 overflow-hidden shadow-glow transition-transform group-hover:scale-[1.01]">
+                  <div className="relative rounded-2xl bg-accent/10 border border-accent/30 p-4 overflow-hidden shadow-card transition-transform group-hover:scale-[1.01]">
                     <Crown className="absolute -right-3 -top-3 w-16 h-16 text-accent/20" />
                     <div className="relative flex items-center gap-3">
                       <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center shrink-0 ring-2 ring-accent/40 shadow-md">
@@ -248,10 +230,10 @@ export default function Leaderboard() {
 
               {/* Spin card — the loudest card on the page when a spin is
                   actually earned; quiet outline when locked. */}
-              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 relative overflow-hidden ${spinEarned ? 'bg-gradient-dark border-accent/40 shadow-glow' : 'bg-card border-border'}`}>
+              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 relative overflow-hidden ${spinEarned ? 'bg-gradient-dark border-accent/40' : 'bg-card border-border'}`}>
                 {spinEarned && <div className="absolute inset-0 tier-shimmer-holy opacity-[0.07] pointer-events-none" />}
                 <div className="flex items-center gap-3 relative">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-gradient-cta shadow-glow' : 'bg-secondary'}`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-gradient-cta' : 'bg-secondary'}`}>
                     <span className={spinEarned ? 'animate-flame-flicker inline-block' : 'inline-block'}>🎡</span>
                   </div>
                   <div className="flex-1">
@@ -402,17 +384,34 @@ export default function Leaderboard() {
 
 function PodiumBar({ rank, place, height, delay }) {
   // Medal materials — gold / warm silver / copper. Same ladder language as the
-  // tier rings: 1st glows, 2nd/3rd are warm matte metals, never grey.
+  // tier rings: 1st glows warm gold, 2nd/3rd are warm matte metals, never grey.
   const medals = ['medal-gold', 'medal-silver', 'medal-bronze'];
+  const medalEmoji = ['🥇', '🥈', '🥉'];
+  const name = rank.full_name || '—';
+  const initials = name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   return (
     <div className="flex flex-col items-center" style={{ order: place === 1 ? 1 : place === 2 ? 0 : 2 }}>
-      <div className="text-xs font-semibold text-foreground text-center max-w-[80px] truncate">{rank.full_name}</div>
+      {/* Medal-ringed avatar — the winner's face slot on the podium */}
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: delay + 0.35, type: 'spring', stiffness: 260, damping: 18 }}
+        className="relative mb-1.5"
+      >
+        <div className={`w-11 h-11 rounded-full ${medals[place - 1]} p-[2.5px]`}>
+          <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
+            <span className="text-[11px] font-extrabold text-foreground">{initials}</span>
+          </div>
+        </div>
+        <span className="absolute -bottom-1.5 -right-1 text-sm leading-none drop-shadow-sm">{medalEmoji}</span>
+      </motion.div>
+      <div className="text-xs font-semibold text-foreground text-center max-w-[80px] truncate">{name}</div>
       <div className="flex items-center gap-0.5 text-xs text-primary font-semibold mb-1 tabular-nums"><Flame className="w-3 h-3" />{rank.hp_total}</div>
       <motion.div
         initial={{ height: 0, opacity: 0 }}
         animate={{ height, opacity: 1 }}
         transition={{ delay, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-        className={`w-16 rounded-t-xl ${medals[place - 1]} flex items-start justify-center pt-2 overflow-hidden ${place === 1 ? 'shadow-glow' : ''}`}
+        className={`w-16 rounded-t-xl ${medals[place - 1]} flex items-start justify-center pt-2 overflow-hidden`}
       >
         <span className="text-white font-bold text-lg drop-shadow-sm">#{place}</span>
       </motion.div>
