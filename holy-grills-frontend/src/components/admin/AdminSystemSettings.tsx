@@ -7,7 +7,7 @@ import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } fro
 import EmailDeliverySettings from './EmailDeliverySettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
-import { msg, useMessages } from '@/lib/messages';
+import { msg } from '@/lib/messages';
 
 // Documented settings from the backend reference (system_settings table) —
 // used only to enrich rows with default + purpose when the backend row has no
