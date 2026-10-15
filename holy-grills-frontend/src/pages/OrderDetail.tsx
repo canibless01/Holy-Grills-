@@ -353,7 +353,7 @@ export default function OrderDetail() {
           </div>
           <button
             onClick={() => navigate('/register')}
-            className="shrink-0 px-3.5 py-2 rounded-full bg-white text-primary text-xs font-bold active:scale-95 transition-transform"
+            className="shrink-0 px-3.5 py-2 rounded-full bg-card text-primary text-xs font-bold active:scale-95 transition-transform"
           >
             Sign up
           </button>
@@ -419,7 +419,7 @@ export default function OrderDetail() {
             href={googleReviewUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full py-3 rounded-full bg-white text-foreground font-bold text-sm active:scale-95 transition"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-full bg-card text-foreground font-bold text-sm active:scale-95 transition"
           >
             <Star className="w-4 h-4 fill-accent text-accent" /> Leave a Google review
           </a>

@@ -116,7 +116,7 @@ export default function AdminChallenges() {
               <div className="flex gap-1">
                 <button onClick={() => setEditItem(c)} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                 <button onClick={() => grant(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:bg-primary/10"><Gift className="w-3.5 h-3.5 text-primary" /></button>
-                <button onClick={() => remove(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                <button onClick={() => remove(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:tone-error"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
               </div>
             </div>
           </Card>

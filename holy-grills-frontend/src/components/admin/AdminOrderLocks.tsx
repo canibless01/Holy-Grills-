@@ -60,7 +60,7 @@ export default function AdminOrderLocks() {
             const phone = l.phone || profile.phone || '';
             const contact = [email, phone].filter(Boolean).join(' · ') || '—';
             return (
-              <div key={l.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3">
+              <div key={l.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-foreground">{name}</span>

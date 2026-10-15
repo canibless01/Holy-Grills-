@@ -38,7 +38,7 @@ const PILL_TONES = {
   outline: 'border border-border text-muted-foreground',
   // D1: `blue` was missing from this map (and from ADMIN_TONES in AdminShared
   // until it was audited too). It is the palette's informational tone.
-  blue: 'bg-blue-500/10 text-blue-600',
+  blue: 'bg-info/10 text-info',
 };
 
 // Typing `tone` as the key union (not `string`) is the other half of D1: an
@@ -214,7 +214,7 @@ export function Toggle({ checked, onChange, disabled, label = 'Toggle' }: { chec
       disabled={disabled}
       className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 disabled:opacity-50 ${checked ? 'bg-gradient-cta' : 'bg-secondary border border-border'}`}
     >
-      <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : ''}`} />
+      <div className={`w-5 h-5 rounded-full bg-card shadow-sm transition-transform ${checked ? 'translate-x-5' : ''}`} />
     </button>
   );
 }

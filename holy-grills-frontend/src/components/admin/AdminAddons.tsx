@@ -83,10 +83,10 @@ export default function AdminAddons() {
         </div>
         <div className="space-y-2">
           {config.global_addons.map((a) => (
-            <div key={a.id} className="rounded-xl bg-white border border-border p-3 flex items-center gap-3">
+            <div key={a.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-3">
               <div className="flex-1"><div className="font-bold text-sm text-foreground">{a.name}</div><div className="text-xs text-muted-foreground">{formatNaira(a.price)}</div></div>
               <button onClick={() => setEditing({ id: a.id, name: a.name, price: a.price })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-              <button onClick={() => delGlobal(a.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+              <button onClick={() => delGlobal(a.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </div>
           ))}
           {config.global_addons.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No global add-ons yet.</p>}

@@ -43,7 +43,7 @@ export default function AdminMarketplace() {
     <div className="space-y-4">
       <div className="flex gap-1 p-1 rounded-full bg-secondary overflow-x-auto scrollbar-hide">
         {TABS.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 min-w-[80px] py-2 rounded-full text-xs font-bold whitespace-nowrap ${tab === t.id ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 min-w-[80px] py-2 rounded-full text-xs font-bold whitespace-nowrap ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
         ))}
       </div>
 

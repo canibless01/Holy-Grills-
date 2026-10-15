@@ -59,7 +59,7 @@ export default function AdminMarketplaceListings({ listings, reload }) {
         </button>
       </div>
       {listings.map((m) => (
-        <div key={m.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-2">
+        <div key={m.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm text-foreground truncate">{m.title}</div>
             <div className="text-xs text-muted-foreground truncate">{m.listing_type} · {formatNaira(m.price)} / {m.hp_price} HP · {m.vendor_name}</div>
@@ -67,7 +67,7 @@ export default function AdminMarketplaceListings({ listings, reload }) {
           <Pill tone={STATUS_TONE[m.status] || 'cocoa'}>{m.status}</Pill>
           <button onClick={() => setManager(m)} title="Manage stock & codes" className="p-2 rounded-lg hover:bg-primary/10"><Settings className="w-4 h-4 text-primary" /></button>
           <button onClick={() => setModal({ item: { ...m }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-          <button onClick={() => remove(m.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+          <button onClick={() => remove(m.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
         </div>
       ))}
       {listings.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No listings yet.</p>}

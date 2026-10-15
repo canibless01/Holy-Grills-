@@ -708,12 +708,12 @@ export default function Checkout() {
             </Link>
           </div>
           {addressNeedsReselect && (
-            <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-fade-in">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="flex-1 text-xs text-amber-700 dark:text-amber-400">
+            <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-warn/10 border border-warn/40/30 animate-fade-in">
+              <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs text-warn dark:text-warn">
                 <span className="font-semibold">{addressNeedsReselect.label || 'That saved address'}</span> points at a hostel or gate we can no longer find, so it can't be priced. Pick the location again below, or edit the address.
               </div>
-              <button type="button" onClick={() => setAddressNeedsReselect(null)} className="text-amber-700 dark:text-amber-400 text-xs font-bold">Dismiss</button>
+              <button type="button" onClick={() => setAddressNeedsReselect(null)} className="text-warn dark:text-warn text-xs font-bold">Dismiss</button>
             </div>
           )}
           {addresses.length > 0 ? (

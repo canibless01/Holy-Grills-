@@ -42,7 +42,7 @@ function FriendRow({ friend, index }) {
         className={`flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-full ${
           completed
             ? 'text-success bg-success/10'
-            : 'text-amber-700 bg-amber-100'
+            : 'tone-warn'
         }`}
       >
         {completed ? <UserCheck className="w-3 h-3" /> : <Clock className="w-3 h-3" />}

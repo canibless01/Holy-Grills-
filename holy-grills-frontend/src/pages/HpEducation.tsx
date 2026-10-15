@@ -52,7 +52,7 @@ export default function HpEducation() {
       <HpDisplay hpBalance={hpBalance} />
 
       {hpTransferEnabled && (
-        <button onClick={() => setShowTransfer(true)} className="w-full rounded-2xl bg-white border border-border p-4 flex items-center gap-3 hover:shadow-card transition-all text-left">
+        <button onClick={() => setShowTransfer(true)} className="w-full rounded-2xl bg-card border border-border p-4 flex items-center gap-3 hover:shadow-card transition-all text-left">
           <div className="w-10 h-10 shrink-0 rounded-full bg-accent/15 flex items-center justify-center">
             <Send className="w-5 h-5 text-primary" />
           </div>
@@ -64,7 +64,7 @@ export default function HpEducation() {
         </button>
       )}
 
-      <section className="rounded-2xl bg-white border border-border p-4 space-y-2 shadow-card">
+      <section className="rounded-2xl bg-card border border-border p-4 space-y-2 shadow-card">
         <span className="text-[10px] font-bold uppercase tracking-wider text-primary">The basics</span>
         <h2 className="font-heading font-bold text-lg text-foreground">What are Holy Points?</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
@@ -76,7 +76,7 @@ export default function HpEducation() {
         <h2 className="font-heading font-bold text-lg text-foreground">How you earn</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {EARN_WAYS.map((w) => (
-            <Link key={w.title} to={w.to} className="rounded-2xl bg-white border border-border p-4 flex gap-3 items-start hover:shadow-card transition-all">
+            <Link key={w.title} to={w.to} className="rounded-2xl bg-card border border-border p-4 flex gap-3 items-start hover:shadow-card transition-all">
               <div className="w-10 h-10 shrink-0 rounded-full bg-primary/5 flex items-center justify-center">
                 <w.icon className="w-5 h-5 text-primary" />
               </div>
@@ -106,7 +106,7 @@ export default function HpEducation() {
             return (
               <div
                 key={tier.id || slug}
-                className={`rounded-2xl bg-white border p-4 flex items-center gap-3 shadow-card transition-all ${isCurrent ? 'border-primary/30 ring-2 ring-primary/20' : 'border-border'}`}
+                className={`rounded-2xl bg-card border p-4 flex items-center gap-3 shadow-card transition-all ${isCurrent ? 'border-primary/30 ring-2 ring-primary/20' : 'border-border'}`}
               >
                 <TierIcon slug={slug} tier={tier} className="w-8 h-8 text-2xl shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -128,7 +128,7 @@ export default function HpEducation() {
         </div>
       </section>
 
-      <Link to="/rewards" className="rounded-2xl bg-white border border-border p-4 flex items-center gap-3 hover:shadow-card transition-all">
+      <Link to="/rewards" className="rounded-2xl bg-card border border-border p-4 flex items-center gap-3 hover:shadow-card transition-all">
         <div className="w-10 h-10 shrink-0 rounded-full bg-accent/15 flex items-center justify-center">
           <Gift className="w-5 h-5 text-accent" />
         </div>
@@ -148,7 +148,7 @@ export default function HpEducation() {
         </div>
         <div className="space-y-2.5">
           {FAQ.map((item, i) => (
-            <details key={i} className="group rounded-2xl bg-white border border-border p-4 shadow-card cursor-pointer">
+            <details key={i} className="group rounded-2xl bg-card border border-border p-4 shadow-card cursor-pointer">
               <summary className="flex items-center justify-between font-heading font-bold text-sm text-foreground list-none">
                 {item.q}
                 <ChevronRight className="w-4 h-4 text-muted-foreground transition-transform group-open:rotate-90 shrink-0" />

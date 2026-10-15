@@ -75,7 +75,7 @@ function PerItemMultipliers() {
                   key={opt.m}
                   onClick={() => setMultiplier(it.id, opt.m, it.name)}
                   disabled={busy === it.id}
-                  className={`px-2.5 py-1 rounded-full text-xs font-bold disabled:opacity-50 ${it.hp_multiplier === opt.m ? 'bg-primary text-white' : 'bg-white border border-border text-foreground'}`}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold disabled:opacity-50 ${it.hp_multiplier === opt.m ? 'bg-primary text-white' : 'bg-card border border-border text-foreground'}`}
                 >
                   {opt.l}
                 </button>

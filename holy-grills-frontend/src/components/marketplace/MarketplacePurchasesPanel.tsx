@@ -15,7 +15,7 @@ const purchaseTitle = (p) => p?.marketplace_listings?.title || p?.title || 'List
 const purchaseCode = (p) => p?.metadata?.code || p?.code;
 
 // E2: this map was computed and then thrown away — the row hardcoded
-// text-success / text-blue-600 / text-destructive inline instead, so 'pending'
+// text-success / text-info / text-destructive inline instead, so 'pending'
 // and 'refunded' lost their colours. Typing it keeps it honest.
 const STATUS_TONE: Record<string, PillTone> = {
   pending: 'amber', completed: 'green', refunded: 'blue', cancelled: 'red',

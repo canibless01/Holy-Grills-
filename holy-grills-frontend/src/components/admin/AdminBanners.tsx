@@ -219,8 +219,8 @@ export default function AdminBanners({ placement = 'home' }) {
               <button onClick={() => save(b)} disabled={busy === b.id} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
                 <Save className="w-3.5 h-3.5" /> {msg('FE_CMS_SAVE', 'Save')}
               </button>
-              <button aria-label={msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?')} onClick={() => del(b.id)} className="p-2 rounded-lg hover:bg-red-50">
-                <Trash2 className="w-4 h-4 text-red-500" />
+              <button aria-label={msg('FE_CMS_DELETE_CAROUSEL', 'Delete this carousel from the live site?')} onClick={() => del(b.id)} className="p-2 rounded-lg hover:tone-error">
+                <Trash2 className="w-4 h-4 text-destructive" />
               </button>
             </div>
             </fieldset>

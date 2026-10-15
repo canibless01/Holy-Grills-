@@ -34,7 +34,7 @@ export default function AdminMarketplaceRequests({ requests, reload }) {
   return (
     <div className="space-y-2">
       {requests.map((r) => (
-        <div key={r.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3">
+        <div key={r.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm text-foreground truncate">{r.service_title || r.title}</div>
             <div className="text-xs text-muted-foreground truncate">{r.vendor_name || r.user_name} · {r.category || r.listing_type} · {formatNaira(r.proposed_price || r.price)}</div>
@@ -42,8 +42,8 @@ export default function AdminMarketplaceRequests({ requests, reload }) {
           </div>
           {r.status === 'pending' ? (
             <div className="flex gap-1 shrink-0">
-              <button onClick={() => { setReviewing({ row: r, status: 'approved' }); setNotes(''); }} title="Approve" className="p-2 rounded-lg bg-green-600 text-white"><Check className="w-4 h-4" /></button>
-              <button onClick={() => { setReviewing({ row: r, status: 'rejected' }); setNotes(''); }} title="Reject" className="p-2 rounded-lg bg-red-600 text-white"><X className="w-4 h-4" /></button>
+              <button onClick={() => { setReviewing({ row: r, status: 'approved' }); setNotes(''); }} title="Approve" className="p-2 rounded-lg bg-success text-white"><Check className="w-4 h-4" /></button>
+              <button onClick={() => { setReviewing({ row: r, status: 'rejected' }); setNotes(''); }} title="Reject" className="p-2 rounded-lg bg-destructive text-white"><X className="w-4 h-4" /></button>
             </div>
           ) : <Pill tone={r.status === 'approved' ? 'green' : 'red'}>{r.status}</Pill>}
         </div>

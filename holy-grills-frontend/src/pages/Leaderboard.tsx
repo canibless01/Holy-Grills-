@@ -40,7 +40,7 @@ const getWeeklyCountdown = () => {
 function RankChange({ change }) {
   if (!change || change === 0) return <Minus className="w-3 h-3 text-muted-foreground" />;
   return change > 0 ? (
-    <span className="flex items-center gap-0.5 text-emerald-600 text-[10px] font-bold"><ArrowUp className="w-3 h-3" />{change}</span>
+    <span className="flex items-center gap-0.5 text-success text-[10px] font-bold"><ArrowUp className="w-3 h-3" />{change}</span>
   ) : (
     <span className="flex items-center gap-0.5 text-muted-foreground text-[10px] font-bold"><ArrowDown className="w-3 h-3" />{Math.abs(change)}</span>
   );
@@ -147,9 +147,9 @@ export default function Leaderboard() {
       </div>
 
       {error && (
-        <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center justify-between gap-3">
-          <span className="text-sm text-red-600 font-medium">{error}</span>
-          <button onClick={() => setPeriod(period)} className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold">Retry</button>
+        <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+          <span className="text-sm text-destructive font-medium">{error}</span>
+          <button onClick={() => setPeriod(period)} className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold">Retry</button>
         </div>
       )}
 
@@ -175,7 +175,7 @@ export default function Leaderboard() {
       {/* User/Squad toggle */}
       <div className="relative flex bg-secondary rounded-full p-1 w-full">
         {VIEWS.map((v) => (
-          <button key={v.id} onClick={() => setView(v.id)} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${view === v.id ? 'bg-gradient-cta text-white shadow-glow' : 'text-foreground'}`}>
+          <button key={v.id} onClick={() => setView(v.id)} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${view === v.id ? 'bg-primary text-primary-foreground' : 'text-foreground'}`}>
             {v.label}
           </button>
         ))}
@@ -184,7 +184,7 @@ export default function Leaderboard() {
       {view !== 'squad' && (
         <div className="grid grid-cols-3 gap-2">
           {PERIODS.map((p) => (
-            <button key={p.id} onClick={() => setPeriod(p.id)} className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${period === p.id ? 'bg-primary text-white' : 'bg-white text-foreground border border-border'}`}>
+            <button key={p.id} onClick={() => setPeriod(p.id)} className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${period === p.id ? 'bg-primary text-white' : 'bg-card text-foreground border border-border'}`}>
               {p.label}
             </button>
           ))}
@@ -204,7 +204,7 @@ export default function Leaderboard() {
                         <Crown className="w-6 h-6 text-white" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600">Hall of Fame</div>
+                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-warn">Hall of Fame</div>
                         <div className="font-heading font-extrabold text-base text-foreground truncate">
                           {hallOfFame[0].winner?.full_name || hallOfFame[0].full_name}
                         </div>
@@ -212,7 +212,7 @@ export default function Leaderboard() {
                           Month after month at the top.
                         </div>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-amber-600 shrink-0" />
+                      <ChevronRight className="w-5 h-5 text-warn shrink-0" />
                     </div>
                   </div>
                 </Link>
@@ -227,7 +227,7 @@ export default function Leaderboard() {
               )}
 
               {/* Spin card */}
-              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 shadow-card ${spinEarned ? 'bg-accent/15 border-accent/30' : 'bg-white border-border'}`}>
+              {spinReleased && <div className={`rounded-2xl border p-4 mb-4 shadow-card ${spinEarned ? 'bg-accent/15 border-accent/30' : 'bg-card border-border'}`}>
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${spinEarned ? 'bg-primary' : 'bg-secondary'}`}>🎡</div>
                   <div className="flex-1">
@@ -258,7 +258,7 @@ export default function Leaderboard() {
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.04, duration: 0.3 }}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border shadow-card ${entry.is_current_user ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/40' : 'bg-white border-border'}`}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border shadow-card ${entry.is_current_user ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/40' : 'bg-card border-border'}`}
                   >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs tabular-nums ${entry.rank <= 3 ? 'bg-gradient-cta text-white' : 'bg-secondary text-foreground'}`}>{entry.rank}</div>
                     {isFeatureEnabled('leaderboard_prizes', true) && (
@@ -299,7 +299,7 @@ export default function Leaderboard() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.04, duration: 0.3 }}
-                      className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-border shadow-card"
+                      className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border shadow-card"
                     >
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs tabular-nums ${squad.rank <= 3 ? 'bg-gradient-cta text-white' : 'bg-secondary text-foreground'}`}>{squad.rank}</div>
                       <div className="flex-1 min-w-0">
@@ -332,7 +332,7 @@ export default function Leaderboard() {
       {showPrizesModal && (
         <ModalPortal>
         <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={() => setShowPrizesModal(false)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">How Prizes Work 🏆</h3>
               <button onClick={() => setShowPrizesModal(false)}><X className="w-5 h-5 text-muted-foreground" /></button>

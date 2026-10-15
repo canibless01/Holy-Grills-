@@ -106,8 +106,8 @@ export default function AdminOnboarding() {
               </div>
               {g.status === 'pending' ? (
                 <div className="flex gap-1">
-                  <button onClick={() => updateGift(g.id, 'fulfilled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full bg-green-50 text-green-600 border border-green-200 text-xs font-bold disabled:opacity-50">Fulfill</button>
-                  <button onClick={() => updateGift(g.id, 'cancelled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-xs font-bold disabled:opacity-50">Cancel</button>
+                  <button onClick={() => updateGift(g.id, 'fulfilled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold disabled:opacity-50">Fulfill</button>
+                  <button onClick={() => updateGift(g.id, 'cancelled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
                 </div>
               ) : <Pill tone={g.status === 'fulfilled' ? 'green' : g.status === 'claimed' || g.status === 'redeemed' ? 'blue' : 'red'}>{g.status}</Pill>}
             </Card>

@@ -189,7 +189,7 @@ export default function AdminFreeCredits() {
                   <>
                     <Toggle checked={it.is_active !== false} onChange={() => toggleItem(it)} disabled={busy === it.id} />
                     <button aria-label={msg('FE_ADMIN_FREE_SIDE_EDIT', 'Edit {name}', { name: it.name })} onClick={() => setEditItem({ id: it.id, updated_at: it.updated_at, name: it.name, image_url: it.image_url || '', is_active: it.is_active !== false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-                    <button aria-label={msg('FE_ADMIN_FREE_SIDE_REMOVE', 'Deactivate {name}', { name: it.name })} onClick={() => removeItem(it)} disabled={busy === it.id} className="p-2 rounded-lg hover:bg-red-50 disabled:opacity-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                    <button aria-label={msg('FE_ADMIN_FREE_SIDE_REMOVE', 'Deactivate {name}', { name: it.name })} onClick={() => removeItem(it)} disabled={busy === it.id} className="p-2 rounded-lg hover:tone-error disabled:opacity-50"><Trash2 className="w-4 h-4 text-destructive" /></button>
                   </>
                 )}
               </Card>

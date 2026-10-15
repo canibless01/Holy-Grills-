@@ -10,9 +10,9 @@ import { msg } from '@/lib/messages';
 // (wallet+HP refund, no restock) or reject (no problem confirmed). The PATCH
 // route returns { message, status } — message is toasted verbatim.
 const ACTIONS = [
-  { key: 'replace', label: 'Replace code', icon: RefreshCw, btn: 'bg-green-600' },
-  { key: 'refund', label: 'Refund buyer', icon: RotateCcw, btn: 'bg-blue-600' },
-  { key: 'reject', label: 'Reject report', icon: X, btn: 'bg-red-600' },
+  { key: 'replace', label: 'Replace code', icon: RefreshCw, btn: 'bg-success' },
+  { key: 'refund', label: 'Refund buyer', icon: RotateCcw, btn: 'bg-info' },
+  { key: 'reject', label: 'Reject report', icon: X, btn: 'bg-destructive' },
 ];
 
 export default function AdminMarketplaceReports({ reports, reload }) {
@@ -43,7 +43,7 @@ export default function AdminMarketplaceReports({ reports, reload }) {
         const title = purchase?.marketplace_listings?.title || 'Listing';
         const buyer = r.profiles?.full_name || r.user_name || 'Buyer';
         return (
-          <div key={r.id} className="rounded-2xl bg-white border border-border p-3 space-y-2">
+          <div key={r.id} className="rounded-2xl bg-card border border-border p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="font-bold text-sm text-foreground truncate">{title}</div>

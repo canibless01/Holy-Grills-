@@ -238,7 +238,7 @@ export default function OurStory() {
       <motion.div {...fade()} className="rounded-3xl bg-gradient-cta p-7 text-white text-center shadow-glow mt-9">
         <h3 className="font-heading font-extrabold text-2xl leading-tight">Bring your people.</h3>
         <h3 className="font-heading font-extrabold text-2xl leading-tight">We bring the fire.</h3>
-        <Link to="/menu" className="inline-flex items-center gap-1.5 px-5 py-3 rounded-full bg-white text-primary font-bold text-sm active:scale-95 transition mt-5">
+        <Link to="/menu" className="inline-flex items-center gap-1.5 px-5 py-3 rounded-full bg-card text-primary font-bold text-sm active:scale-95 transition mt-5">
           View the menu <ChevronRight className="w-4 h-4" />
         </Link>
       </motion.div>

@@ -47,7 +47,7 @@ export default function ReferralCodeCard({ code, link, copied, onCopy, onShare, 
           <button
             onClick={onCopy}
             disabled={!link || loading}
-            className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full bg-white text-brand-brown font-bold text-sm active:scale-[0.98] transition-transform disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full bg-card text-brand-brown font-bold text-sm active:scale-[0.98] transition-transform disabled:opacity-50"
           >
             {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
             {copied ? 'Copied!' : 'Copy link'}

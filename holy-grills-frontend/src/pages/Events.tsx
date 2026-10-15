@@ -81,8 +81,8 @@ export default function Events() {
 
       {isAuthenticated && (
         <div className="flex gap-2 bg-secondary/60 rounded-full p-1">
-          <button onClick={() => setTab('discover')} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === 'discover' ? 'bg-gradient-cta text-white shadow-glow' : 'text-muted-foreground'}`}>Discover</button>
-          <button onClick={() => setTab('mine')} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === 'mine' ? 'bg-gradient-cta text-white shadow-glow' : 'text-muted-foreground'}`}>My Events</button>
+          <button onClick={() => setTab('discover')} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === 'discover' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Discover</button>
+          <button onClick={() => setTab('mine')} className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>My Events</button>
         </div>
       )}
 
@@ -95,7 +95,7 @@ export default function Events() {
               <button
                 key={c.id}
                 onClick={() => setFilter(c.id)}
-                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === c.id ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
+                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === c.id ? 'bg-primary text-primary-foreground' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
               >
                 {c.label}
               </button>

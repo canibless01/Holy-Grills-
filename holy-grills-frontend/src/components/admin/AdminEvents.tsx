@@ -110,7 +110,7 @@ export default function AdminEvents() {
         <button onClick={() => setModal({ item: { ...BLANK }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Event</button>
       </div>
       {events.map((e) => (
-        <div key={e.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-2 flex-wrap">
+        <div key={e.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-2 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-sm text-foreground">{e.title}</span>
@@ -122,11 +122,11 @@ export default function AdminEvents() {
           </div>
           {canManage(e) && <Toggle checked={e.is_published} onChange={() => togglePub(e.id)} />}
           <button disabled={!canManage(e)} onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
-          <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-green-500" /></button>
+          <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-success" /></button>
           <button disabled={!canManage(e)} onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
           <button disabled={!canManage(e)} onClick={() => genQR(e.id)} title="QR" className="p-2 rounded-lg hover:bg-muted"><QrCode className="w-4 h-4 text-muted-foreground" /></button>
           <button disabled={!canManage(e)} onClick={() => setModal({ item: { ...e }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-          <button disabled={!canManage(e)} onClick={() => remove(e.id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+          <button disabled={!canManage(e)} onClick={() => remove(e.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
         </div>
       ))}
 
@@ -218,7 +218,7 @@ export default function AdminEvents() {
                   </div>
                   <div className="space-y-2">
                     {tiers.map((t) => (
-                      <div key={t.id} className="rounded-xl bg-white border border-border p-3">
+                      <div key={t.id} className="rounded-xl bg-card border border-border p-3">
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-bold text-sm text-foreground">{t.name}</span>
                           <Pill tone={(t.quantity_sold || t.tickets_sold || t.sold_count || 0) >= (t.quantity_available || t.capacity || t.available || 0) ? 'red' : 'green'}>{t.quantity_sold || t.tickets_sold || t.sold_count || 0}/{t.quantity_available || t.capacity || t.available || 0} sold</Pill>
@@ -328,7 +328,7 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
                   <span className="font-bold text-sm text-foreground">{t.name}</span>
                   <div className="flex gap-1">
                     <button onClick={() => setEditTier({ ...t, price_wallet: t.price_naira ?? 0, price_full: t.price_naira_full ?? '', quantity_available: t.capacity ?? '' })} className="p-1 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
-                    <button onClick={() => deleteTier(t.id, t.name)} disabled={busy === t.id} className="p-1 rounded-lg hover:bg-red-50"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                    <button onClick={() => deleteTier(t.id, t.name)} disabled={busy === t.id} className="p-1 rounded-lg hover:tone-error"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground">₦{t.price_wallet || t.price_naira || 0} · {t.price_hp || 0} HP · {t.quantity_sold || t.tickets_sold || t.sold_count || 0}/{t.quantity_available || t.capacity || t.available || 0} sold</div>

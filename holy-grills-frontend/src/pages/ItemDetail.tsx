@@ -198,7 +198,7 @@ export default function ItemDetail() {
   const totalPrice = calculatePrice();
   const lowStock = item.daily_remaining != null && item.daily_remaining <= 10 && !item.is_sold_out;
   const stockLevel = item.daily_remaining == null ? 'mid' : item.daily_remaining <= 2 ? 'critical' : item.daily_remaining <= 5 ? 'low' : 'mid';
-  const stockBadgeBg = stockLevel === 'critical' ? 'bg-red-600' : stockLevel === 'low' ? 'bg-orange-500' : 'bg-amber-500';
+  const stockBadgeBg = stockLevel === 'critical' ? 'bg-destructive' : stockLevel === 'low' ? 'bg-warn' : 'bg-warn';
 
   return (
     <div className="animate-fade-in pb-8">

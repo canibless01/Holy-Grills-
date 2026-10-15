@@ -64,6 +64,17 @@
     --success:             142 65% 38%;
     --success-foreground:  0 0% 100%;
 
+    /* Semantic info tones — the only blue/amber in the product, derived warm
+       so status chips stop importing random tailwind palettes. */
+    --warn:                35 90% 40%;
+    --info:                206 75% 42%;
+
+    /* Tone chip foregrounds — darker in light mode, lighter in dark mode. */
+    --tone-success-fg:     142 72% 28%;
+    --tone-warn-fg:        33 85% 32%;
+    --tone-info-fg:        206 80% 34%;
+    --tone-error-fg:       0 72% 38%;
+
     /* ── RADIUS ── */
     --radius:              1rem;   /* design spec base */
     --radius-sm:           8px;    /* inputs, badges */
@@ -142,6 +153,13 @@
     --ring:                0 88% 48%;
     --icon-color:          38 56% 95%;
     --text-color:          38 56% 95%;
+
+    --warn:                38 92% 58%;
+    --info:                205 90% 64%;
+    --tone-success-fg:     142 60% 55%;
+    --tone-warn-fg:        38 92% 62%;
+    --tone-info-fg:        205 90% 66%;
+    --tone-error-fg:       0 95% 72%;
   }
 
   /* ── ADMIN PANEL — scoped theme override ──
@@ -213,6 +231,18 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
+
+  /* ─── STATUS TONES — the four semantic chip tones ───
+     Soft bed + readable foreground + matching border in one class. These
+     replace the scattered `bg-green-100 text-green-700`-style tailwind
+     palette picks so a "success" looks like the SAME success on every page
+     and in both themes. Pair with `border` (width) where a border is wanted.
+     Solid fills for dots/heavy badges: use the tokens directly
+     (bg-success / bg-warn / bg-info / bg-destructive). */
+  .tone-success { background-color: hsl(var(--success) / 0.12); color: hsl(var(--tone-success-fg)); border-color: hsl(var(--success) / 0.35); }
+  .tone-warn    { background-color: hsl(var(--warn) / 0.14);     color: hsl(var(--tone-warn-fg));    border-color: hsl(var(--warn) / 0.4); }
+  .tone-info    { background-color: hsl(var(--info) / 0.12);     color: hsl(var(--tone-info-fg));    border-color: hsl(var(--info) / 0.35); }
+  .tone-error   { background-color: hsl(var(--destructive) / 0.1); color: hsl(var(--tone-error-fg)); border-color: hsl(var(--destructive) / 0.3); }
 
   /* HolyGrill component primitives */
   .hg-card {

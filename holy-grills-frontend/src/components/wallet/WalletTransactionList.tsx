@@ -100,7 +100,7 @@ export default function WalletTransactionList({ walletTxns, hpTxns, activeTab, o
           {filtered.map((tx) => (
             <div key={`${tx.kind}-${tx.id}`} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border transition-all hover:shadow-card">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                tx.kind === 'hp' ? (tx.isCredit ? 'bg-amber-100' : 'bg-orange-100') : (tx.isCredit ? 'bg-success/10' : 'bg-destructive/10')
+                tx.kind === 'hp' ? (tx.isCredit ? 'tone-warn' : 'tone-warn') : (tx.isCredit ? 'bg-success/10' : 'bg-destructive/10')
               }`}>
                 {tx.kind === 'hp'
                   ? <FlameMark className="w-5 h-5" />
@@ -110,7 +110,7 @@ export default function WalletTransactionList({ walletTxns, hpTxns, activeTab, o
                 <div className="font-semibold text-sm text-foreground truncate">{tx.label}</div>
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                   <span>{timeAgo(tx.date)}</span>
-                  {tx.kind === 'hp' && <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[9px] font-bold">HP</span>}
+                  {tx.kind === 'hp' && <span className="px-1.5 py-0.5 rounded-full tone-warn text-[9px] font-bold">HP</span>}
                 </div>
               </div>
               <div className="text-right shrink-0">

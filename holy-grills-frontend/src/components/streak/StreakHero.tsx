@@ -17,7 +17,7 @@ export default function StreakHero({ currentStreak, cycleDays, completedThisWeek
             <span className="text-sm font-medium text-white/70">day{currentStreak !== 1 ? 's' : ''}</span>
           </div>
           <div className="mt-4 flex items-center gap-2 rounded-2xl bg-white/10 px-3 py-2.5 backdrop-blur-sm">
-            <Flame className="w-4 h-4 text-amber-200 shrink-0" />
+            <Flame className="w-4 h-4 text-warn shrink-0" />
             <div className="text-xs text-white/90 leading-snug">
               {completedThisWeek >= cycleDays
                 ? <span className="font-semibold">Week complete — {weeklyHp} HP heading to your pending balance.</span>

@@ -88,11 +88,11 @@ export default function HpTransferModal({ open, onClose }) {
   return (
     <ModalPortal>
     <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {done ? (
           <div className="text-center py-4">
-            <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
-              <Check className="w-7 h-7 text-green-600" />
+            <div className="w-14 h-14 rounded-full tone-success flex items-center justify-center mx-auto mb-3">
+              <Check className="w-7 h-7 text-success" />
             </div>
             <h3 className="font-heading font-bold text-lg text-foreground">{done.amount} HP sent!</h3>
             <p className="text-sm text-muted-foreground mt-1">Sent to {done.name}.{done.newBalance != null && ` New balance: ${done.newBalance} HP.`}</p>
@@ -174,9 +174,9 @@ export default function HpTransferModal({ open, onClose }) {
             />
 
             {error && (
-              <div className="flex items-center gap-2 mt-3 p-2.5 rounded-xl bg-red-50 border border-red-200">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                <span className="text-xs text-red-800">{error}</span>
+              <div className="flex items-center gap-2 mt-3 p-2.5 rounded-xl tone-error border border-destructive/30">
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                <span className="text-xs text-destructive">{error}</span>
               </div>
             )}
 

@@ -24,7 +24,7 @@ export default function KitchenTimer({ receivedAt, targetMinutes }) {
   const overTarget = targetMinutes != null && mins >= targetMinutes;
 
   return (
-    <div className={`flex items-center gap-1 text-xs font-bold tabular-nums ${overTarget ? 'text-red-600' : 'text-muted-foreground'}`}>
+    <div className={`flex items-center gap-1 text-xs font-bold tabular-nums ${overTarget ? 'text-destructive' : 'text-muted-foreground'}`}>
       <Timer className={`w-3 h-3 ${overTarget ? 'animate-pulse' : ''}`} />
       <span className={overTarget ? 'animate-pulse' : ''}>{display}</span>
     </div>

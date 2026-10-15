@@ -85,9 +85,9 @@ export default function HallOfFame() {
       </div>
 
       {error && (
-        <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center justify-between gap-3">
-          <span className="text-sm text-red-600 font-medium">{error}</span>
-          <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold">Retry</button>
+        <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+          <span className="text-sm text-destructive font-medium">{error}</span>
+          <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold">Retry</button>
         </div>
       )}
 
@@ -98,7 +98,7 @@ export default function HallOfFame() {
             <button
               key={y}
               onClick={() => setYearFilter(y)}
-              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${yearFilter === String(y) ? 'bg-primary text-white' : 'bg-white text-foreground border border-border'}`}
+              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${yearFilter === String(y) ? 'bg-primary text-white' : 'bg-card text-foreground border border-border'}`}
             >
               {y === 'all' ? 'All Time' : y}
             </button>
@@ -107,7 +107,7 @@ export default function HallOfFame() {
       )}
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl bg-white border border-border p-8 text-center shadow-card">
+        <div className="rounded-2xl bg-card border border-border p-8 text-center shadow-card">
           <MascotStandee mascot="peace" className="w-28 h-28 mx-auto mb-2" alt="No Hall of Fame inductees yet" />
           <p className="text-sm font-semibold text-foreground">The first spot is open.</p>
         </div>

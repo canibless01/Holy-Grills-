@@ -225,7 +225,7 @@ export default function AdminNotifications() {
               const st = STATUS_STYLE[status] || STATUS_STYLE.pending;
               const StIcon = st.icon;
               return (
-                <div key={b.id} className="rounded-2xl bg-white border border-border p-3">
+                <div key={b.id} className="rounded-2xl bg-card border border-border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-sm text-foreground truncate">{b.title}</span>
                     <Pill tone={st.tone}><StIcon className="w-2.5 h-2.5" /> {st.label}</Pill>

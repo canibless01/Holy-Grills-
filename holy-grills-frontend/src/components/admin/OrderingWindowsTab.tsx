@@ -75,7 +75,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
           {windows.map((w) => {
             const closed = w.is_closed;
             return (
-              <div key={w.id} className="rounded-2xl bg-white border border-border p-4">
+              <div key={w.id} className="rounded-2xl bg-card border border-border p-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-sm text-foreground">{w.label || (w.weekday != null ? `${WEEKDAYS[w.weekday]?.label || `Day ${w.weekday}`}` : (w.date || 'Window'))}</span>
                   {closed ? <Pill tone="red">CLOSED</Pill> : <Pill tone="green">OPEN</Pill>}

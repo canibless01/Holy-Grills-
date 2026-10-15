@@ -41,7 +41,7 @@ export default function AdminMarketplacePurchases({ purchases, reload }) {
         const paid = (p.wallet_amount || 0) + (p.card_amount || 0);
         const final = p.status === 'refunded' || p.status === 'cancelled';
         return (
-          <div key={p.id} className="rounded-2xl bg-white border border-border p-3 flex items-center gap-3">
+          <div key={p.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0"><Package className="w-5 h-5 text-muted-foreground" /></div>
             <div className="flex-1 min-w-0">
               <div className="font-bold text-sm text-foreground truncate">{title}</div>
@@ -50,9 +50,9 @@ export default function AdminMarketplacePurchases({ purchases, reload }) {
             <Pill tone={STATUS_TONE[p.status] || 'cocoa'}>{p.status}</Pill>
             {p.status === 'pending' && (
               <div className="flex gap-1 shrink-0">
-                <button onClick={() => { setActing({ purchase: p, status: 'completed' }); setNote(''); }} title="Mark completed" className="p-2 rounded-lg bg-green-600 text-white"><Package className="w-4 h-4" /></button>
-                <button onClick={() => { setActing({ purchase: p, status: 'refunded' }); setNote(''); }} title="Refund" className="p-2 rounded-lg bg-blue-600 text-white"><RotateCcw className="w-4 h-4" /></button>
-                <button onClick={() => { setActing({ purchase: p, status: 'cancelled' }); setNote(''); }} title="Cancel" className="p-2 rounded-lg bg-red-600 text-white"><Ban className="w-4 h-4" /></button>
+                <button onClick={() => { setActing({ purchase: p, status: 'completed' }); setNote(''); }} title="Mark completed" className="p-2 rounded-lg bg-success text-white"><Package className="w-4 h-4" /></button>
+                <button onClick={() => { setActing({ purchase: p, status: 'refunded' }); setNote(''); }} title="Refund" className="p-2 rounded-lg bg-info text-white"><RotateCcw className="w-4 h-4" /></button>
+                <button onClick={() => { setActing({ purchase: p, status: 'cancelled' }); setNote(''); }} title="Cancel" className="p-2 rounded-lg bg-destructive text-white"><Ban className="w-4 h-4" /></button>
               </div>
             )}
           </div>

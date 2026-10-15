@@ -30,7 +30,7 @@ export default function PreferenceRow({ icon: Icon, label, desc, enabled, onTogg
         <motion.span
           layout
           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-          className={`block w-5 h-5 rounded-full bg-white shadow-sm ${enabled ? 'translate-x-5' : ''}`}
+          className={`block w-5 h-5 rounded-full bg-card shadow-sm ${enabled ? 'translate-x-5' : ''}`}
         />
       </button>
     </motion.div>

@@ -186,7 +186,7 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
               type="button"
               onClick={remove}
               disabled={uploading}
-              className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-full bg-red-600 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+              className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-full bg-destructive text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50"
             >
               <X className="w-3.5 h-3.5" /> Remove
             </button>
@@ -228,7 +228,7 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
       )}
 
       {status && status.configured === false && (
-        <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-700 font-semibold">
+        <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-warn font-semibold">
           <ImageOff className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span className="min-w-0 break-words">
             {msg('FE_IMAGE_UPLOADER_FILE_UPLOAD_OFF', 'File upload is off')} —{' '}
@@ -273,11 +273,11 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
       )}
 
       {error && (
-        <div className="mt-1.5 flex items-start gap-1.5 text-xs text-red-600 font-semibold">
+        <div className="mt-1.5 flex items-start gap-1.5 text-xs text-destructive font-semibold">
           <ImageOff className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span className="min-w-0 break-words">
             {error.text}
-            {error.hint && <span className="block font-normal text-red-500 mt-0.5">{error.hint}</span>}
+            {error.hint && <span className="block font-normal text-destructive mt-0.5">{error.hint}</span>}
           </span>
         </div>
       )}

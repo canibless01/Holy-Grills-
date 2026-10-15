@@ -108,7 +108,7 @@ export default function MenuGridCard({ item, onAdd }) {
               </motion.button>
             )}
           </div>
-          {lowStock && <span className="text-[10px] font-semibold text-orange-600">Only {item.daily_remaining} left</span>}
+          {lowStock && <span className="text-[10px] font-semibold text-warn">Only {item.daily_remaining} left</span>}
         </div>
       </Link>
     </motion.div>

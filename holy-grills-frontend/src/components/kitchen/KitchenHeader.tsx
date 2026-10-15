@@ -32,7 +32,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
     onToggleAccepting(false);
   };
 
-  const dotColor = open && accepting ? 'bg-emerald-500' : accepting ? 'bg-amber-500' : 'bg-red-500';
+  const dotColor = open && accepting ? 'bg-success' : accepting ? 'bg-warn' : 'bg-destructive';
   const statusLabel = open && accepting ? 'Open' : accepting ? 'Paused — no window' : 'Closed';
 
   return (
@@ -60,7 +60,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
               <Switch
                 checked={open && accepting}
                 onCheckedChange={handleSwitch}
-                className="data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-red-400"
+                className="data-[state=checked]:bg-success data-[state=unchecked]:bg-destructive/40"
               />
               <span className="hidden sm:inline text-[11px] font-bold text-foreground">{open && accepting ? 'Open' : 'Closed'}</span>
             </div>
@@ -79,7 +79,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
             </Link>
             <button
               onClick={() => { clearTokens(); navigate('/'); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-red-50 border border-red-200 text-xs font-bold text-red-600 hover:bg-red-100 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full tone-error border border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/15 transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Sign out</span>
             </button>
@@ -99,7 +99,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmClose}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-destructive text-white hover:bg-destructive"
             >
               Yes, close kitchen
             </AlertDialogAction>

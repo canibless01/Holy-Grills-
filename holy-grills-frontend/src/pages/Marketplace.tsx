@@ -118,7 +118,7 @@ export default function Marketplace() {
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
-            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === f.id ? 'bg-gradient-cta text-white shadow-glow' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
+            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === f.id ? 'bg-primary text-primary-foreground' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
           >
             {f.label}
           </button>

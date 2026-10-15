@@ -5,17 +5,17 @@ import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import KitchenTimer from '@/components/kitchen/KitchenTimer';
 
 const STATUS_STYLES = {
-  received: 'bg-amber-500 text-white',
-  preparing: 'bg-blue-500 text-white',
-  ready: 'bg-emerald-500 text-white',
-  assigned: 'bg-violet-500 text-white',
+  received: 'bg-warn text-white',
+  preparing: 'bg-info text-white',
+  ready: 'bg-success text-white',
+  assigned: 'bg-primary text-white',
   out_for_delivery: 'bg-cyan-500 text-white',
 };
 
 const STATUS_DOT = {
-  received: 'bg-amber-500',
-  preparing: 'bg-blue-500',
-  ready: 'bg-emerald-500',
+  received: 'bg-warn',
+  preparing: 'bg-info',
+  ready: 'bg-success',
 };
 
 // A single order ticket in the KDS board. Kitchen staff see the ordering
@@ -41,7 +41,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
   };
 
   return (
-    <div className={`rounded-2xl bg-white border p-3.5 shadow-card transition-all duration-300 ${isNew ? 'border-red-400 ring-2 ring-red-400/50 animate-pulse' : 'border-border'}`}>
+    <div className={`rounded-2xl bg-card border p-3.5 shadow-card transition-all duration-300 ${isNew ? 'border-destructive/30 ring-2 ring-destructive/50 animate-pulse' : 'border-border'}`}>
       {/* Header row — status + order id + timer */}
       <div className="flex items-center justify-between mb-2.5 gap-2">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -69,7 +69,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
       {(order.has_free_side || order.is_squad || order.squad_name) && (
         <div className="flex flex-wrap gap-1 mb-2">
           {order.has_free_side && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-600 flex items-center gap-0.5">
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md tone-warn flex items-center gap-0.5">
               <Trophy className="w-2.5 h-2.5" /> Reward Side
             </span>
           )}
@@ -90,13 +90,13 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
               <span className="font-bold shrink-0">{item.quantity}×</span>
               <div className={`flex-1 min-w-0 ${isOut ? 'line-through text-muted-foreground' : ''}`}>{item.name_snapshot}<OrderItemCustomizations item={item} /></div>
               {item.is_free_side && (
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-600 shrink-0">🏆</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md tone-warn shrink-0">🏆</span>
               )}
               {item.menu_item_id && (
                 <button
                   onClick={(e) => toggleSoldOut(e, item)}
                   className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors shrink-0 ${
-                    isOut ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' : 'bg-red-50 text-red-500 hover:bg-red-100'
+                    isOut ? 'tone-success hover:bg-success/20' : 'tone-error hover:bg-destructive/15'
                   }`}
                   title={isOut ? 'Restock item' : 'Mark sold out (86)'}
                 >
@@ -113,7 +113,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
 
       {/* Notes */}
       {order.notes && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mb-2">
+        <p className="text-xs tone-warn border border-warn/40 rounded-lg px-2 py-1.5 mb-2">
           📝 {order.notes}
         </p>
       )}
@@ -141,13 +141,13 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
           <button
             onClick={() => onStatusUpdate(order.id, 'ready')}
             disabled={isLoading}
-            className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
+            className="flex-1 py-2.5 rounded-xl bg-success text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
           >
             {isLoading ? 'Updating…' : 'Mark Ready'}
           </button>
         )}
         {order.status === 'ready' && (
-          <div className="flex-1 py-2.5 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold text-center flex items-center justify-center gap-1 border border-emerald-200">
+          <div className="flex-1 py-2.5 rounded-xl tone-success text-xs font-bold text-center flex items-center justify-center gap-1 border border-success/30">
             <Check className="w-3.5 h-3.5" /> Ready — awaiting rider
           </div>
         )}

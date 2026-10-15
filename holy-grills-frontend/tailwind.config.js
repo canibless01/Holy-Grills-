@@ -88,6 +88,8 @@ module.exports = {
           DEFAULT: 'hsl(var(--success))',
           foreground: 'hsl(var(--success-foreground))'
         },
+        warn: 'hsl(var(--warn))',
+        info: 'hsl(var(--info))',
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

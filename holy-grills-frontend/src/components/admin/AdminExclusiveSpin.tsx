@@ -179,7 +179,7 @@ export default function AdminExclusiveSpin() {
           action={<button onClick={() => setAdding(true)} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> {msg('FE_ADMIN_SPIN_ADD_TITLE', 'Add Prize')}</button>}
         />
         <p className="text-xs text-muted-foreground mb-1">{msg('FE_ADMIN_SPIN_POOL_HELP', 'Configure the spin prizes, their reward categories and relative odds. Credits come from leaderboard finishes, tier perks or admin grants.')}</p>
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-[11px] text-amber-800 mb-3">
+        <div className="rounded-xl tone-warn border border-warn/40 p-2.5 text-[11px] text-warn mb-3">
           {msg('FE_ADMIN_SPIN_SCOPE_HELP', 'Campus prizes replace the global pool for that campus. Global prizes are managed by super admins.')}
         </div>
 
@@ -201,14 +201,14 @@ export default function AdminExclusiveSpin() {
                     </div>
                   </div>
                   <button aria-label={msg('FE_ADMIN_SPIN_EDIT_NAME', 'Edit {name}', { name: t.name })} disabled={!isSuperAdmin && t.campus_id !== user?.campus_id} onClick={() => setEditItem(t)} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-                  <button aria-label={msg('FE_ADMIN_SPIN_DEACTIVATE_NAME', 'Deactivate {name}', { name: t.name })} onClick={() => deleteItem(t.id, t.name || t.label)} disabled={busy === t.id || (!isSuperAdmin && t.campus_id !== user?.campus_id)} className="p-2 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                  <button aria-label={msg('FE_ADMIN_SPIN_DEACTIVATE_NAME', 'Deactivate {name}', { name: t.name })} onClick={() => deleteItem(t.id, t.name || t.label)} disabled={busy === t.id || (!isSuperAdmin && t.campus_id !== user?.campus_id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
                 </div>
               </Card>
             ))}
           </div>
         )}
         {totalWeight > 0 && totalWeight !== 100 && (
-          <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 p-2 text-xs text-amber-700">
+          <div className="mt-2 rounded-xl tone-warn border border-warn/40 p-2 text-xs text-warn">
             {msg('FE_ADMIN_SPIN_WEIGHT_TOTAL', 'Total weight: {weight}. Probabilities are normalized within each campus pool.', { weight:totalWeight })}
           </div>
         )}
@@ -293,7 +293,7 @@ export default function AdminExclusiveSpin() {
                   <div className="font-bold text-sm text-foreground">{p.full_name || 'User'}</div>
                   <div className="text-xs text-muted-foreground">Won: <span className="font-bold text-primary">{p.prize_name || p.prize || '—'}</span>{p.phone ? ` · ${p.phone}` : ''}{p.created_at ? ` · ${new Date(p.created_at).toLocaleDateString()}` : ''}</div>
                 </div>
-                <button aria-label={msg('FE_ADMIN_SPIN_FULFILL_NAME', 'Fulfil {name}', { name:p.prize_name })} onClick={() => fulfillPrize(p.id)} disabled={busy === p.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-bold disabled:opacity-50">
+                <button aria-label={msg('FE_ADMIN_SPIN_FULFILL_NAME', 'Fulfil {name}', { name:p.prize_name })} onClick={() => fulfillPrize(p.id)} disabled={busy === p.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
                   <Check className="w-3.5 h-3.5" /> {busy === p.id ? '...' : msg('FE_ADMIN_SPIN_FULFILL', 'Fulfill')}
                 </button>
               </Card>

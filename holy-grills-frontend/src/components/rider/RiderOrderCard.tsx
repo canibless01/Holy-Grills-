@@ -9,10 +9,10 @@ import {
 } from '@/components/ui/alert-dialog';
 
 const STATUS_STYLES = {
-  assigned: 'bg-violet-500 text-white',
+  assigned: 'bg-primary text-white',
   out_for_delivery: 'bg-cyan-500 text-white',
-  delivered: 'bg-green-700 text-white',
-  delivery_attempted: 'bg-red-500 text-white',
+  delivered: 'bg-success text-white',
+  delivery_attempted: 'bg-destructive text-white',
   unclaimed: 'bg-gray-400 text-white',
 };
 
@@ -38,7 +38,7 @@ export default function RiderOrderCard({ order, onAction, onCall, onNavigate, ac
 
   return (
     <>
-      <div className="rounded-2xl bg-white border border-border shadow-card overflow-hidden">
+      <div className="rounded-2xl bg-card border border-border shadow-card overflow-hidden">
         {/* Rank + customer header */}
         <div className="flex items-center gap-3 p-3.5 pb-2.5">
           <div className="w-9 h-9 rounded-full bg-gradient-cta flex items-center justify-center text-white text-sm font-extrabold shrink-0">
@@ -138,26 +138,26 @@ export default function RiderOrderCard({ order, onAction, onCall, onNavigate, ac
               <button
                 onClick={() => onAction(order.id, 'attempt')}
                 disabled={isLoading}
-                className="px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs font-bold disabled:opacity-50 hover:bg-red-100 transition-colors"
+                className="px-3 py-2 rounded-xl tone-error border border-destructive/30 text-destructive text-xs font-bold disabled:opacity-50 hover:bg-destructive/15 transition-colors"
               >
                 {isLoading ? '…' : 'Miss'}
               </button>
               <button
                 onClick={() => setShowDeliverConfirm(true)}
                 disabled={isLoading}
-                className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
+                className="flex-1 py-2 rounded-xl bg-success text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
               >
                 {isLoading ? '…' : 'Delivered'}
               </button>
             </>
           )}
           {status === 'delivered' && (
-            <div className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold text-center flex items-center justify-center gap-1 border border-emerald-200">
+            <div className="flex-1 py-2 rounded-xl tone-success text-xs font-bold text-center flex items-center justify-center gap-1 border border-success/30">
               <Check className="w-3.5 h-3.5" /> Delivered
             </div>
           )}
           {status === 'delivery_attempted' && (
-            <div className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 text-xs font-bold text-center flex items-center justify-center gap-1 border border-amber-200">
+            <div className="flex-1 py-2 rounded-xl tone-warn text-xs font-bold text-center flex items-center justify-center gap-1 border border-warn/40">
               <AlertCircle className="w-3.5 h-3.5" /> Attempted — retry pending
             </div>
           )}
@@ -187,7 +187,7 @@ export default function RiderOrderCard({ order, onAction, onCall, onNavigate, ac
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeliver}
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className="bg-success text-white hover:bg-success"
             >
               Yes, complete
             </AlertDialogAction>

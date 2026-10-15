@@ -157,17 +157,17 @@ export default function Streak() {
         onSocialFollowClaimed={handleSocialFollowClaimed}
       />
 
-      <div className="rounded-3xl bg-amber-50 border border-amber-200 p-5">
+      <div className="rounded-3xl tone-warn border border-warn/40 p-5">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0">
-            <RotateCcw className="w-5 h-5 text-amber-600" />
+          <div className="w-10 h-10 rounded-2xl tone-warn flex items-center justify-center shrink-0">
+            <RotateCcw className="w-5 h-5 text-warn" />
           </div>
           <div className="flex-1">
             <div className="font-bold text-sm text-foreground">Missed a day? Reclaim it.</div>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">Place an order or top up your wallet by ₦1,000+ and we'll restore that day automatically — your streak won't skip a beat.</p>
             <div className="flex gap-2 mt-3">
               <Link to="/menu" className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold transition-all active:scale-95">Order now</Link>
-              <Link to="/wallet" className="px-4 py-2 rounded-full bg-card border border-amber-200 text-amber-700 text-xs font-bold transition-all active:scale-95">Top up wallet</Link>
+              <Link to="/wallet" className="px-4 py-2 rounded-full bg-card border border-warn/40 text-warn text-xs font-bold transition-all active:scale-95">Top up wallet</Link>
             </div>
           </div>
         </div>

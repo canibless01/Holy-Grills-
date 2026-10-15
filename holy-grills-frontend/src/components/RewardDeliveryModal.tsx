@@ -77,7 +77,7 @@ export default function RewardDeliveryModal({ redemption, open, onClose, onDeliv
   return (
     <ModalPortal>
     <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-4">
           <div>
             <h3 className="font-heading font-bold text-lg text-foreground">How would you like this delivered?</h3>

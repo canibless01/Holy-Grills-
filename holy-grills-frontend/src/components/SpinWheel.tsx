@@ -224,7 +224,7 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
   return (
     <ModalPortal>
     <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={close}>
-      <div className="bg-white rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-heading font-bold text-lg text-foreground">{msg('FE_SPIN_TITLE', '🎡 Exclusive Spin')}</h3>
           <button onClick={close} aria-label={msg('FE_SPIN_CLOSE', 'Close spin wheel')}><X className="w-5 h-5 text-muted-foreground" /></button>

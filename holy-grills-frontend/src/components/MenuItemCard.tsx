@@ -23,8 +23,8 @@ export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
   const [hpPulse, setHpPulse] = useState(false);
   const lowStock = item.daily_remaining <= 10 && !item.is_sold_out;
   const stockLevel = item.daily_remaining <= 2 ? 'critical' : item.daily_remaining <= 5 ? 'low' : 'mid';
-  const stockText = stockLevel === 'critical' ? 'text-red-600' : stockLevel === 'low' ? 'text-orange-600' : 'text-amber-600';
-  const stockBadge = stockLevel === 'critical' ? 'bg-red-600' : stockLevel === 'low' ? 'bg-orange-500' : 'bg-amber-500';
+  const stockText = stockLevel === 'critical' ? 'text-destructive' : stockLevel === 'low' ? 'text-warn' : 'text-warn';
+  const stockBadge = stockLevel === 'critical' ? 'bg-destructive' : stockLevel === 'low' ? 'bg-warn' : 'bg-warn';
 
   const handleAdd = (e) => {
     if (item.is_sold_out) return;

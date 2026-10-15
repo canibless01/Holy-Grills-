@@ -218,7 +218,7 @@ export default function Profile() {
         <div className="mt-4 flex gap-2">
           {editing ? (
             <>
-              <button onClick={handleSave} disabled={saving || !referenceReady} className="flex-1 py-2 rounded-xl bg-white text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
+              <button onClick={handleSave} disabled={saving || !referenceReady} className="flex-1 py-2 rounded-xl bg-card text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
               </button>
               <button onClick={() => setEditing(false)} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
