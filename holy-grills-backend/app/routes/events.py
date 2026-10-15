@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g, current_app, abort
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.middleware.rate_limit import rate_limit
 from app.utils.email import send_qr_ticket_email
-from app.services.hp_service import earn_pending_hp
+from app.services.hp_service import award_active_hp
 from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
 from app.messages import MSG
 from app.utils.settings import setting_or_config
@@ -252,23 +252,24 @@ def checkin(event_id):
 
         # Check existing check-in
         existing_checkin = db.table("event_checkins").select("id").eq("ticket_id", ticket_id_str).execute() or []
-        if existing_checkin:
-            return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
+        recovering = bool(existing_checkin)
 
         # Insert check-in record - B-6: use service client for the insert only, after validation
         checked_by = getattr(g, "user_id", None)
         try:
-            get_db().table("event_checkins").insert({
-                "ticket_id": ticket_id_str,
-                "checked_in_by": checked_by,
-                "qr_code": clean_token or ticket_id_str,
-                "campus_id": event.get("campus_id"),
-            }).execute()
+            if not recovering:
+                get_db().table("event_checkins").insert({
+                    "ticket_id": ticket_id_str,
+                    "checked_in_by": checked_by,
+                    "qr_code": clean_token or ticket_id_str,
+                    "campus_id": event.get("campus_id"),
+                }).execute()
         except SupabaseError as insert_err:
             err_str = str(insert_err)
             if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
-            raise
+                recovering = True
+            else:
+                raise
 
         # Check if guest email now has an account profile in system
         if ticket.get("user_id") and getattr(g, "user_id", None) and ticket["user_id"] != g.user_id:
@@ -293,7 +294,7 @@ def checkin(event_id):
                 })
                 was_guest_linked = True
 
-            event = db.table("events").select("hp_reward,hp_per_attendee,title").eq("id", event_id).single().execute()
+            event = db.table("events").select("hp_reward,hp_per_attendee,title,campus_id").eq("id", event_id).single().execute()
             # Fallback HP for an event that sets no reward of its own: the seeded
             # setting decides, env is the floor — so the admin UI row is real.
             default_checkin_hp = setting_or_config(
@@ -306,13 +307,19 @@ def checkin(event_id):
             if hp_amount is None:
                 hp_amount = default_checkin_hp
 
-            hp_result = earn_pending_hp(
+            prior_reward = get_db().table("hp_transactions").select("id").eq("user_id", target_user_id).eq("reference_type", "event").eq("reference_id", event_id).limit(1).execute() or []
+            if recovering and (hp_amount <= 0 or prior_reward):
+                return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
+            hp_result = award_active_hp(
                 user_id=target_user_id,
                 amount=hp_amount,
-                source_type="event",
+                source_type="event", reference_type="event",
                 reference_id=event_id,
+                campus_id=event.get("campus_id"),
                 notes=f"Event check-in HP: {event.get('title', '') if event else ''}",
-            ) if hp_amount > 0 else {"added_to_pending": 0}
+            ) if hp_amount > 0 else {"awarded": 0}
+            if recovering and hp_result.get("replayed"):
+                return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
 
             try:
                 from app.services.milestone_service import check_milestone_trigger
@@ -326,10 +333,14 @@ def checkin(event_id):
             msg_text = MSG.TICKET_LINKED_TO_ACCOUNT if was_guest_linked else MSG.EVENT_CHECKIN_SUCCESS
             return jsonify({
                 "message": msg_text,
-                "hp_added_to_pending": hp_result.get("added_to_pending", hp_amount),
+                "hp_added_to_pending": 0,
+                "hp_added_to_active": hp_result.get("awarded", 0),
+                "recovered": recovering,
             }), 200
 
         # Still guest without account
+        if recovering:
+            return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
         return jsonify({
             "message": MSG.EVENT_CHECKIN_SUCCESS,
             "hp_added_to_pending": 0,
@@ -658,7 +669,12 @@ def register_for_event(event_id):
 
     # ── Guest path (no bearer token) -- always full price, card only ──
     if not user_id:
-        guest_email = (data.get("guest_email") or data.get("email") or "").strip()
+        guest_email = data.get("guest_email") or data.get("email") or ""
+        guest_name = data.get("guest_name") or data.get("name") or ""
+        guest_phone = data.get("guest_phone") or data.get("phone") or ""
+        if any(not isinstance(value, str) for value in (guest_email, guest_name, guest_phone)):
+            return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+        guest_email = guest_email.strip()
         guest_name = (data.get("guest_name") or data.get("name") or "").strip()
         guest_phone = (data.get("guest_phone") or data.get("phone") or "").strip()
         if not guest_email:
@@ -667,6 +683,8 @@ def register_for_event(event_id):
             return jsonify({"error": MSG.GUEST_NAME_REQUIRED}), 400
         if not guest_phone:
             return jsonify({"error": MSG.GUEST_PHONE_REQUIRED}), 400
+        if not validate_email(guest_email) or not validate_phone(guest_phone, pattern=r"^(\+?234|0)[789]\d{9}$") or len(guest_name) > 200:
+            return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
 
         promo_code_id = None
         full_price = float((tier or {}).get("price_naira_full") or (tier or {}).get("price_naira") or 0)
@@ -801,7 +819,7 @@ def register_for_event(event_id):
     }
 
     card_amount = float(rpc_res.get("card_amount_used") or 0)
-    if not already and card_amount > 0:
+    if card_amount > 0 and response["payment_status"] not in ("paid", "not_required", "expired", "refunded"):
         profile = db.table("profiles").select("email,full_name").eq("id", user_id).single().execute() or {}
         email = (g.jwt_payload or {}).get("email") or profile.get("email") or ""
         resp = _initiate_event_card_payment(db, ticket_id, event_id, card_amount, email, data.get("callback_url"), user_id=user_id)
@@ -825,13 +843,26 @@ def register_for_event(event_id):
 
 def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, callback_url=None, user_id=None):
     """Shared helper: initialize Paystack for the card portion of an event ticket."""
-    import uuid
     from app.services.payment_service import initialize_payment
     if not current_app.config.get("PAYSTACK_SECRET_KEY"):
-        return {"error": "Card payments are not configured on this server."}
+        return {"error": MSG.EVENT_CARD_UNAVAILABLE}
     try:
+        ticket = db.table("event_tickets").select("*").eq("id", ticket_id).single().execute() or {}
+        if (ticket.get("event_id") != event_id or ticket.get("status") in TICKET_EXCLUDED_STATUSES
+                or ticket.get("payment_status") in ("paid", "not_required", "expired", "refunded")):
+            return {"error": MSG.EVENT_CARD_NOT_PENDING}
+        expiry = ticket.get("payment_expires_at")
+        if expiry and datetime.fromisoformat(as_instant(expiry)) <= datetime.now(timezone.utc):
+            return {"error": MSG.EVENT_CARD_NOT_PENDING}
+        saved_metadata = ticket.get("metadata") or {}
+        saved_url = saved_metadata.get("card_authorization_url")
+        if saved_url and ticket.get("payment_reference"):
+            return {"authorization_url": saved_url, "card_amount_due": amount_naira}
+        # One provider intent per reservation, including concurrent requests and
+        # response-loss retries. Never overwrite an earlier payable reference.
         ref_prefix = current_app.config.get("EVENT_TICKET_REF_PREFIX", "HG-EVTKT-")
-        reference = f"{ref_prefix}{str(uuid.uuid4())[:8].upper()}"
+        reference = ticket.get("payment_reference") or f"{ref_prefix}{str(ticket_id).replace('-', '').upper()}"
+        db.table("event_tickets").eq("id", ticket_id).update({"payment_reference": reference})
         meta = {"type": "event_ticket_payment", "ticket_id": ticket_id, "event_id": event_id}
         if user_id:
             meta["user_id"] = user_id
@@ -839,10 +870,13 @@ def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, c
             email=email, amount_naira=amount_naira, reference=reference,
             metadata=meta, callback_url=callback_url,
         )
-        db.table("event_tickets").eq("id", ticket_id).update({"payment_reference": reference})
-        return {"authorization_url": pay_result["authorization_url"], "card_amount_due": amount_naira}
-    except Exception as exc:
-        return {"error": f"Registration recorded but card payment setup failed: {exc}"}
+        authorization_url = pay_result["authorization_url"]
+        saved_metadata = {**saved_metadata, "card_authorization_url": authorization_url}
+        db.table("event_tickets").eq("id", ticket_id).update({"metadata": saved_metadata})
+        return {"authorization_url": authorization_url, "card_amount_due": amount_naira}
+    except Exception:
+        logger.exception("Event payment initialization failed for ticket %s", ticket_id)
+        return {"error": MSG.EVENT_CARD_SETUP_FAILED}
 
 
 @events_bp.route("/<event_id>/tickets/<ticket_id>/pdf", methods=["GET"])
