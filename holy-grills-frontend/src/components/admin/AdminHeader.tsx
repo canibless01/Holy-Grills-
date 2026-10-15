@@ -36,11 +36,9 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             {/* Logo is desktop-only — mobile needs the room for the action icons. */}
             <BrandLogo size="admin" className="hidden lg:block shrink-0" />
             <div className="min-w-0 leading-tight">
-              <h1 className="font-heading font-extrabold text-[13px] sm:text-base text-foreground truncate">{title}</h1>
-              {/* Subtitle is desktop-only — on phones the row belongs to the
-                  panel-switch icons, and the section title says enough. */}
+              <h1 className="font-heading font-extrabold text-sm sm:text-base text-foreground truncate">{title}</h1>
               {subtitle && (
-                <p className="hidden sm:block text-[10px] sm:text-[11px] text-muted-foreground font-bold uppercase tracking-wide truncate">{subtitle}</p>
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground font-bold uppercase tracking-wide truncate">{subtitle}</p>
               )}
             </div>
           </div>
@@ -69,7 +67,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             to="/kitchen"
             aria-label="Kitchen panel"
             title="Kitchen panel"
-            className="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
+            className="hidden sm:flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
           >
             <UtensilsCrossed className="w-4 h-4" /> <span className="hidden lg:inline">Kitchen</span>
           </Link>
@@ -77,7 +75,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             to="/rider"
             aria-label="Rider panel"
             title="Rider panel"
-            className="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
+            className="hidden sm:flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
           >
             <Bike className="w-4 h-4" /> <span className="hidden lg:inline">Rider</span>
           </Link>

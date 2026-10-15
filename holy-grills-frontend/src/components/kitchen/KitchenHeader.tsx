@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ExternalLink, LayoutGrid, LogOut, Volume2, VolumeX } from 'lucide-react';
+import { ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import BrandLogo from '@/components/BrandLogo';
 import { clearTokens } from '@/lib/apiClient';
 import { useSound } from '@/lib/SoundProvider';
-import { useHolyGrill } from '@/lib/HolyGrillContext';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -18,9 +17,6 @@ import InlineNotificationBell from '@/components/InlineNotificationBell';
 export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
   const navigate = useNavigate();
   const { soundOn, toggleSound } = useSound();
-  const { user } = useHolyGrill();
-  // Panel switcher — admins hop to the admin panel from the kitchen header.
-  const isAdmin = !!user && ['admin', 'super_admin'].includes(user.role);
   const [showConfirm, setShowConfirm] = useState(false);
 
   const handleSwitch = (checked) => {
@@ -75,21 +71,11 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
             >
               {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
-            {isAdmin && (
-              <Link
-                to="/admin"
-                aria-label="Admin panel"
-                title="Admin panel"
-                className="w-8 h-8 rounded-full bg-card border border-border flex sm:hidden items-center justify-center text-muted-foreground hover:text-primary transition-colors"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </Link>
-            )}
             <Link
               to="/"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border text-xs font-bold text-foreground hover:text-primary transition-colors"
             >
-              <span className="hidden sm:inline">View Site</span> <ExternalLink className="w-3.5 h-3.5" />
+              View Site <ExternalLink className="w-3.5 h-3.5" />
             </Link>
             <button
               onClick={() => { clearTokens(); navigate('/'); }}
