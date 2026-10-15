@@ -80,7 +80,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
                 to="/admin"
                 aria-label="Admin panel"
                 title="Admin panel"
-                className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+                className="w-8 h-8 rounded-full bg-card border border-border flex sm:hidden items-center justify-center text-muted-foreground hover:text-primary transition-colors"
               >
                 <LayoutGrid className="w-4 h-4" />
               </Link>
