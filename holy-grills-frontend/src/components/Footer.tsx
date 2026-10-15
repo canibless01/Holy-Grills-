@@ -1,5 +1,5 @@
 import { useFeatureFlags, showMarketplaceUI } from '@/lib/featureConfig';
-import { msg, useMessages } from '@/lib/messages';
+import { useMessages } from '@/lib/messages';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin } from 'lucide-react';
 import APP_CONFIG from '@/config/app.config';

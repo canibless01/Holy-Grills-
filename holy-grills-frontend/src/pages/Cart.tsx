@@ -7,7 +7,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useSound } from '@/lib/SoundProvider';
 import { formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
-import { msg, useMessages } from '@/lib/messages';
+import { msg } from '@/lib/messages';
 import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import MascotStandee from '@/components/mascot/MascotStandee';
