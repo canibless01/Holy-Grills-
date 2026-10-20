@@ -64,7 +64,7 @@ export default function AdminMarketplacePurchases({ purchases, reload }) {
         {acting && (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              {acting.status === 'completed' ? 'Fulfil this purchase — the buyer receives their access code.' : 'This refunds the buyer\'s wallet and HP, and restocks the code. This cannot be undone.'}
+              {acting.status === 'completed' ? 'Fulfil this purchase — the buyer receives their access code.' : msg('FE_MARKETPLACE_REFUND_POLICY', 'Refund recorded wallet, card and HP amounts. Card amounts return to the wallet. Eligible item stock is restored once; delivered codes require a problem report.')}
             </p>
             <Field label="Admin note (optional)">
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" />

@@ -17,6 +17,10 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_MARKETPLACE_REFUND_POLICY = "Refund recorded wallet, card and HP amounts. Card amounts return to the wallet. Eligible item stock is restored once; delivered codes require a problem report."
+    MARKETPLACE_RESOLUTION_CONFLICT = "This purchase or report changed. Reload it before trying again."
+    MARKETPLACE_LEGACY_REFUND_REVIEW = "This purchase has an earlier partial refund. Review its refund records before continuing."
+    MARKETPLACE_RESOLUTION_UNAVAILABLE = "This action could not be completed. Please retry."
     ORDER_SAVED_NOTIFICATION_TITLE = "Order saved"
     ORDER_SAVED_NOTIFICATION_BODY = "{name}, order {order_id} is saved. Open your order to check payment and delivery."
     EVENT_CARD_UNAVAILABLE = "Card payments are not configured on this server."
@@ -216,7 +220,7 @@ class MSG:
     NO_VALID_FIELDS          = "No valid fields to update"
 
     GUEST_REGISTRATION_SUCCESS        = "Registration successful! Check your email for QR code."
-    GUEST_ACCOUNT_PROMPT              = "Create an account to earn HP for this event!"
+    GUEST_ACCOUNT_PROMPT              = "Create an account for future event rewards."
     GUEST_EMAIL_REQUIRED              = "Email is required for guest registration."
     GUEST_NAME_REQUIRED               = "Full name is required for guest registration."
     GUEST_PHONE_REQUIRED              = "Phone number is required for guest registration."
