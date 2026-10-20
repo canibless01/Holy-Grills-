@@ -1171,5 +1171,168 @@
         "provider_result": "ok"
       }
     ]
+  },
+  "functional_20261020": {
+    "checks": {
+      "backend": 280,
+      "typecheck": "pass",
+      "lint": "pass",
+      "production_build": "pass"
+    },
+    "ui_main_preserved": "7b90cc9",
+    "uploaded_skills": "not read or applied",
+    "migrations_live": [
+      "serialize_marketplace_report_resolution_and_refund_stock",
+      "return_marketplace_business_conflicts_as_http_conflicts"
+    ],
+    "migration_staged_deployment_gated": "restrict_marketplace_financial_mutations_to_atomic_backend",
+    "cleanup": "fourth exact-owned fixture batch active pending deployment checks",
+    "limits": [
+      "No real card/email/push provider proof",
+      "Historical partial refund repair requires individual ledger review",
+      "Auth partial-account recovery and graduation live concurrency unverified",
+      "Event cancellation/refund and immutable admission contract still open",
+      "Historical advisors unresolved"
+    ],
+    "marketplace-resolution-live-evidence": {
+      "kind": "real API/database; synthetic wallet seed and actual admission/debit/refund; no provider charge",
+      "competingReports": {
+        "oneReplacement": true,
+        "oneConflict": true
+      },
+      "sixReportReplaysRechecked": true,
+      "metadataPreserved": true,
+      "oneAuditForReport": true,
+      "sixRefundRetriesOneCreditOneRestock": true,
+      "walletBeforePurchase": 1000,
+      "walletAfterPurchase": 900,
+      "walletAfterRefund": 1000,
+      "inventoryRestored": 5,
+      "staleCompletionDenied": true,
+      "initialStaleCompletionProbe": "Original serialization SQLSTATE surfaced as503 overHTTP; follow-up PT409 migration verified409 with unchanged final state",
+      "checks": [
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/reports/bad8e72f-fd77-44d3-94f9-87fdd189c041",
+          "status": 200
+        },
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/reports/bad8e72f-fd77-44d3-94f9-87fdd189c041",
+          "status": 200
+        },
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/reports/bad8e72f-fd77-44d3-94f9-87fdd189c041",
+          "status": 200
+        },
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/reports/bad8e72f-fd77-44d3-94f9-87fdd189c041",
+          "status": 200
+        },
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/reports/bad8e72f-fd77-44d3-94f9-87fdd189c041",
+          "status": 200
+        },
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/reports/bad8e72f-fd77-44d3-94f9-87fdd189c041",
+          "status": 200
+        },
+        {
+          "actor": "admin",
+          "method": "PATCH",
+          "path": "/marketplace/admin/purchases/46b58d70-039d-4c5a-8d24-a84d1246d923",
+          "status": 409
+        }
+      ]
+    },
+    "marketplace-resolution-browser-evidence": {
+      "kind": "native customer report -> staff replacement -> customer code/reload; initial read failures intercepted",
+      "report_id": "10db2825-31a4-4a61-b1b9-37a9b32c6b6c",
+      "customerReadRetry": true,
+      "adminReadRetry": true,
+      "reportSubmission": true,
+      "adminReplacement": true,
+      "customerNewCodeOnReload": true,
+      "oldCodeHidden": true,
+      "closedReportGoneOnAdminReload": true,
+      "persistedReportAndCodeVerified": true,
+      "oneCustomerInAppReceiptWithReplacementCode": true,
+      "oneAuditReceipt": true,
+      "metadataPreserved": true
+    },
+    "marketplace-refund-browser-evidence": {
+      "kind": "native admin refund with simulated committed response loss -> retry original action -> customer history and staff reload",
+      "purchase_id": "5fe34601-b1d5-4cb2-a086-18f4f9c348b0",
+      "firstCommittedResponseReplacedWith503": true,
+      "retryReturnsOriginalReceipt": true,
+      "customerRefundedHistory": true,
+      "finalActionHiddenOnStaffReload": true
+    },
+    "marketplace-write-probe-before": {
+      "kind": "no-op same-value PATCH of exact owned purchase via campus-admin DataAPI",
+      "status": 200
+    },
+    "event-guest-ownership-live-evidence": {
+      "kind": "real API/database; guest contact email matches existing owned profile",
+      "guestAdmission": true,
+      "ticketRemainsUnlinked": true,
+      "matchingProfileUncredited": true,
+      "noEventHpLedger": true,
+      "duplicateRejectedWithoutInsert": true,
+      "wrongDoorRejected": true,
+      "checks": [
+        {
+          "actor": "admin",
+          "method": "POST",
+          "path": "/events",
+          "status": 201
+        },
+        {
+          "actor": "admin",
+          "method": "POST",
+          "path": "/events/ff8332b1-fa54-4db9-bad6-3bb4bbe05bfa/qr",
+          "status": 200
+        },
+        {
+          "actor": "guest",
+          "method": "POST",
+          "path": "/events/ff8332b1-fa54-4db9-bad6-3bb4bbe05bfa/register",
+          "status": 201
+        },
+        {
+          "actor": "guest",
+          "method": "POST",
+          "path": "/events/ff8332b1-fa54-4db9-bad6-3bb4bbe05bfa/checkin",
+          "status": 200
+        },
+        {
+          "actor": "guest",
+          "method": "POST",
+          "path": "/events/ff8332b1-fa54-4db9-bad6-3bb4bbe05bfa/checkin",
+          "status": 400
+        },
+        {
+          "actor": "guest",
+          "method": "POST",
+          "path": "/events/ff8332b1-fa54-4db9-bad6-3bb4bbe05bfa/checkin",
+          "status": 400
+        }
+      ]
+    },
+    "marketplace-listing-retry-evidence": {
+      "kind": "intercepted listing failure then native real read",
+      "failedReadNotOpeningSoon": true,
+      "retryLoadsActualOwnedListing": true
+    }
   }
 }

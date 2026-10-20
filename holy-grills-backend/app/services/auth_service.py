@@ -168,7 +168,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     try:
         existing_profile = db.table("profiles").select("id").eq("id", user_id).execute()
         if not (existing_profile and len(existing_profile) > 0):
-            db.table("profiles").insert(profile_data)
+            saved_profile = db.table("profiles").insert(profile_data)
         else:
             # Profile created by Supabase trigger — patch referral/personal fields
             patch = {
@@ -192,13 +192,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                     patch["faculty"] = dept_faculty
             if level_value:
                 patch["academic_level"] = level_value
-            try:
-                db.table("profiles").eq("id", user_id).update(patch)
-            except SupabaseError as e:
-                # B5: never swallow silently — a lost patch means no campus / phone / DOB / referral link.
-                logger.error("register: profile patch failed for user %s: %s", user_id, e)
-    except SupabaseError:
-        raise ValueError(MSG.REGISTER_FAILED_RETRY)
+            saved_profile = db.table("profiles").eq("id", user_id).update(patch)
+        if not saved_profile:
+            raise ValueError(MSG.REGISTER_FAILED_RETRY)
+    except SupabaseError as exc:
+        logger.error("register: required profile persistence failed for %s: %s", user_id, exc)
+        raise ValueError(MSG.REGISTER_FAILED_RETRY) from exc
 
     if referred_by_user_id:
         try:

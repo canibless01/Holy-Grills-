@@ -25,6 +25,11 @@ class MSG:
     FE_REWARDS_CHOOSE_DELIVERY = "Your reward is ready. Choose how to receive it."
     FE_CHECKOUT_REDEEMED_ITEM = "Redeemed reward: {name}"
     FE_CHECKOUT_REWARD_ONLY = "Your redeemed reward is free. Review the delivery fee below. Items already in your cart will stay saved."
+    FE_MARKETPLACE_REFUND_POLICY = "Refund recorded wallet, card and HP amounts. Card amounts return to the wallet. Eligible item stock is restored once; delivered codes require a problem report."
+    MARKETPLACE_RESOLUTION_CONFLICT = "This purchase or report changed. Reload it before trying again."
+    MARKETPLACE_LEGACY_REFUND_REVIEW = "This purchase has an earlier partial refund. Review its refund records before continuing."
+    MARKETPLACE_RESOLUTION_UNAVAILABLE = "This action could not be completed. Please retry."
+
     FE_ORDER_GIFT_INCLUDED = "Gift included"
     FE_SF_PLACEMENT = "Show on page"
     FE_SF_INSIDE_HELP = "Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended)."
@@ -241,7 +246,7 @@ class MSG:
     NO_VALID_FIELDS          = "No valid fields to update"
 
     GUEST_REGISTRATION_SUCCESS        = "Registration successful! Check your email for QR code."
-    GUEST_ACCOUNT_PROMPT              = "Create an account to earn HP for this event!"
+    GUEST_ACCOUNT_PROMPT              = "Create an account for future event rewards."
     GUEST_EMAIL_REQUIRED              = "Email is required for guest registration."
     GUEST_NAME_REQUIRED               = "Full name is required for guest registration."
     GUEST_PHONE_REQUIRED              = "Phone number is required for guest registration."

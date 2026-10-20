@@ -242,6 +242,10 @@ At the user's request, completed fixes are released through PR #67 while the who
 
 Integrated B release `a32bcff` without force-pushing, preserving both message registries and reports. Combined validation: **267 backend tests**, frontend lint/typecheck/full build and built-site smoke pass; no duplicate `MSG` keys. Event admission/HP atomicity is still open after B's retry improvements and remains assigned for independent completion.
 
+## Workstream B functional batch — 20 October 2026
+
+Current UI main `7b90cc9` preserved; uploaded skills left unread as requested. New marketplace domain transaction closes replacement/refund/restock races and stale final-state reopening. Real competing reports, six refund retries, native report/admin/customer reload, a committed-refund503/UI retry and exact in-app/audit persistence pass; fifteen rolled-back SQL cases cover scoped monetary/HP/stock/role boundaries. Event contact email no longer links/credits an account without authoritative ticket ownership; real guest admission/duplicate/wrong-door outcomes pass. Signup profile-write failure and graduation marker/lifetime-receipt recovery have focused backend regressions. Backend280 tests, typecheck/lint/build pass. See [matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md) for explicit limits and deployment order: two marketplace migrations live, direct-write restriction staged until the new backend deploys. Fourth owned fixture batch still active; complete cleanup remains required. The full audit remains open.
+
 
 ## 20 October 2026 — checkout, storefront and rewards interaction batch
 
