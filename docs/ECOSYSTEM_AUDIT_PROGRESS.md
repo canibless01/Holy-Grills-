@@ -256,3 +256,8 @@ Open work is maintained in [the short audit status index](AUDIT_STATUS.md). The 
 ### Legacy first-order gift promise correction
 
 Removed the rigid homepage hot-dog/launch-date offer. Confirmation now shows a gift only for an open, paid order with `gift_included` and an actual persisted gift item; it uses that item's name snapshot rather than today's settings or a Hot Dog fallback. Existing granted gift items remain visible in the receipt. Four controlled native browser cases passed: no rigid home offer, first-order-without-gift has no promise, actual gift displays its snapshot name, and a closed order has no active gift promise. Typecheck, message registry check and lint passed. This is a misleading-copy fix; the requested configurable multi-benefit promotion engine and signup free-side credit are **still open**.
+
+
+## 21 October 2026 — automatic reward checkout integration
+
+Normal/flash HP redemptions now become ready inside existing stock/HP transactions. Added server-priced reward items and quote validation, a fee-only checkout entry that preserves the paid cart, direct delivery choice, correct earned-reward names after catalogue deactivation, and links to attached orders. Retained one 38-argument checkout function and its private execution grants; reused optional reward metadata for menu links with no new table/column. Six isolated live transaction cases and the native wallet delivery-choice path passed. See [evidence and remaining limits](INSTANT_REDEMPTION_EVIDENCE.md). This is not a full reward-delivery or production-readiness sign-off.

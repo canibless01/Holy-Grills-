@@ -43,6 +43,8 @@ export default function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
   const passed = location.state || {};
+  const redemptionId = new URLSearchParams(location.search).get('reward') || passed.reward_redemption_id || null;
+  const rewardOnly = !!redemptionId;
   const { cart, wallet, user, refreshUser, refreshCart, clearCart, isAuthenticated } = useHolyGrill();
   const orderRequest = useRef<Promise<any> | null>(null);
   const { campus, openGate } = useCampus();
@@ -205,14 +207,14 @@ export default function Checkout() {
 
   const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
   const [quoteRetry, setQuoteRetry] = useState(0);
-  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady });
+  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady });
   const quote = quoteState?.key === quoteKey ? quoteState.data : null;
   useEffect(() => {
     if (quote) setRewardOptions({ hp: quote.available_hp_rewards || [], delivery: quote.available_delivery_rewards || [] });
   }, [quote]);
   const quoteReady = !!quote;
   const quoteError = quoteState?.key === quoteKey ? quoteState.error : null;
-  const subtotal = quote?.subtotal ?? (cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0));
+  const subtotal = quote?.subtotal ?? (rewardOnly ? 0 : (cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0)));
   const promoDiscount = quote?.promo_discount ?? (promoResult?.calculated_discount || 0);
   const squadSubPct = squadSelection?.squad_id && squadOrderDiscountEnabled() ? squadOrderDiscountPct() : 0;
   const squadDelEnabled = squadSelection?.squad_id && squadDeliveryDiscountEnabled();
@@ -380,13 +382,15 @@ export default function Checkout() {
     // window. Otherwise the backend picks the next available one.
     const scheduled = !windowStatus?.is_open ? scheduledWindow : null;
     return {
-        items: (cart?.items || []).map((ci) => ({
+        items: (rewardOnly ? [] : (cart?.items || [])).map((ci) => ({
           menu_item_id: ci.menu_item_id,
           quantity: ci.quantity,
           notes: ci.notes || undefined,
           selected_variations: (ci.selected_variations || []).map((v) => ({ option_id: v.option_id || v.id || v })),
           selected_addons: (ci.selected_addons || []).map((a) => ({ addon_id: a.addon_id || a.id || a, quantity: a.quantity || 1 })),
         })),
+        ...(redemptionId ? { redemption_id: redemptionId } : {}),
+        expected_reward_claims: quote?.reward_claims,
         payment_method: effectivePayment,
         expected_free_sides: quote?.free_sides || [],
         delivery_reward_id: deliveryRewardId,
@@ -396,7 +400,7 @@ export default function Checkout() {
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
         promo_code: promoResult?.code,
-        ...(squadSelection?.squad_id ? {
+        ...(!rewardOnly && squadSelection?.squad_id ? {
           squad_id: squadSelection.squad_id,
           ...(squadSelection.excluded_member_ids?.length ? { excluded_member_ids: squadSelection.excluded_member_ids } : {}),
           ...(squadSelection.extra_members?.length ? { extra_members: squadSelection.extra_members } : {}),
@@ -415,7 +419,7 @@ export default function Checkout() {
             ...(deliveryPin && deliveryPin.lat != null ? { delivery_location_lat: deliveryPin.lat, delivery_location_lon: deliveryPin.lng } : {}),
             delivery_address: { line1: deliveryAddress, landmark },
           }),
-        ...(selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
+        ...(!rewardOnly && selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
         ...((scheduled || scheduleRequested) ? { accept_next_available_date: true } : {}),
     };
   };
@@ -423,7 +427,7 @@ export default function Checkout() {
   useEffect(() => {
     let active = true;
     const hasLocation = deliveryType === 'on_campus' ? !!hostelId : deliveryType === 'off_campus' && (!!gateId || deliveryPin?.lat != null);
-    if (!campus?.id || !cart?.items?.length || !hasLocation || addressNeedsReselect || !rewardChoicesReady || pendingCheckout) return;
+    if (!campus?.id || (!cart?.items?.length && !redemptionId) || !hasLocation || addressNeedsReselect || !rewardChoicesReady || pendingCheckout) return;
     const timer = setTimeout(async () => {
       try {
         // Quoting never reserves stock, claims rewards, or authorizes a payment.
@@ -548,6 +552,7 @@ export default function Checkout() {
         delete base.expected_free_sides;
         delete base.expected_hp_bonus_plan;
         delete base.expected_food_hp_plan;
+        delete base.expected_reward_claims;
         const idempotency_key = recover ? pendingCheckout.payload.idempotency_key : await checkoutIntent({
           actor: user?.id || 'guest', campus: campus?.id,
           cartRows: (cart?.items || []).map((item) => item.id), payload: base,
@@ -689,7 +694,7 @@ export default function Checkout() {
       {isAuthenticated && (
         <>
           {/* Free side credit — sits at the top with the squad order entry point */}
-          {freeSidesReleased && <div className="rounded-2xl bg-primary/10 border border-primary/30 p-3 flex items-center gap-3">
+          {!rewardOnly && freeSidesReleased && <div className="rounded-2xl bg-primary/10 border border-primary/30 p-3 flex items-center gap-3">
             <span className="text-xl">🏆</span>
             <div className="flex-1 text-xs text-foreground">
               {freeSideCredits.count > 0 ? (
@@ -704,12 +709,12 @@ export default function Checkout() {
               </button>
             )}
           </div>}
-          {freeSidesReleased && freeSideLoadError && <div role="alert" className="text-sm text-destructive">{freeSideLoadError} <button onClick={refreshFreeSides} className="underline">{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></div>}
-          {freeSidesReleased && freeSideSelections.map(selection => <div key={selection.id} className="flex justify-between items-center rounded-xl border border-border p-3 text-sm">
+          {!rewardOnly && freeSidesReleased && freeSideLoadError && <div role="alert" className="text-sm text-destructive">{freeSideLoadError} <button onClick={refreshFreeSides} className="underline">{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></div>}
+          {!rewardOnly && freeSidesReleased && freeSideSelections.map(selection => <div key={selection.id} className="flex justify-between items-center rounded-xl border border-border p-3 text-sm">
             <span>{selection.free_side_items?.name || msg('FE_FREE_SIDE_UNAVAILABLE', 'Unavailable free side')}</span>
             <button disabled={freeSideBusy} onClick={() => removeFreeSide(selection.id)} className="font-semibold text-destructive">{msg('FE_FREE_SIDE_REMOVE', 'Remove free side')}</button>
           </div>)}
-          <SquadOrderButton itemCount={squadItemCount} value={squadSelection} onChange={setSquadSelection} />
+          {!rewardOnly && <SquadOrderButton itemCount={squadItemCount} value={squadSelection} onChange={setSquadSelection} />}
         </>
       )}
 
@@ -942,7 +947,7 @@ export default function Checkout() {
       </div>
 
       {/* Global add-ons — the single, admin-managed add-on system */}
-      {globalAddons.length > 0 && (
+      {!rewardOnly && globalAddons.length > 0 && (
         <div className="hg-card">
           <h3 className="hg-section-title mb-2 flex items-center gap-2"><Plus className="w-4 h-4 text-primary" /> Add extras to your order</h3>
           <div className="space-y-2">
@@ -970,6 +975,8 @@ export default function Checkout() {
         {promoError && <div className="mt-2 flex items-center gap-2 text-xs text-destructive font-semibold"><AlertTriangle className="w-3.5 h-3.5" /> {promoError}</div>}
       </div>
 
+      {rewardOnly && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_REWARD_ONLY', 'Your redeemed reward is free. Review the delivery fee below. Items already in your cart will stay saved.')}</p>}
+
       {/* Order summary */}
       <div className="rounded-2xl bg-card border border-border p-4 space-y-1.5 text-sm shadow-card">
         <div className="font-heading font-bold text-base text-foreground mb-2">Order Summary</div>
@@ -978,6 +985,7 @@ export default function Checkout() {
         {squadDiscount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DISCOUNT', 'Squad discount')}</span><span>-{formatNaira(squadDiscount)}</span></div>}
         {quote?.order_lock_hp_reward > 0 && <div className="flex justify-between text-accent-foreground"><span>{msg('FE_CHECKOUT_LOCK_HP_DELIVERY', 'Lock reward after delivery')}</span><span>+{quote.order_lock_hp_reward} HP</span></div>}
         {quote?.order_lock_discount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_LOCK_DISCOUNT', 'Order lock discount')}</span><span>-{formatNaira(quote.order_lock_discount)}</span></div>}
+        {(quote?.reward_items || []).map(item => <div key={item.redemption_id} className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_REDEEMED_ITEM', 'Redeemed reward: {name}', { name: item.name })}</span><span>₦0</span></div>)}
         {(quote?.free_sides || []).map(side => <div key={side.selection_id} className="flex justify-between text-success"><span>{msg('FE_FREE_SIDE_SUMMARY', 'Free side: {name}', { name: side.name })}</span><span>₦0</span></div>)}
         <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{(quote?.delivery_fee_original ?? deliveryFee) > 0 ? formatNaira(quote?.delivery_fee_original ?? deliveryFee) : <span className="text-success">FREE</span>}</span></div>
         {quote?.delivery_benefit?.discount > 0 && <div className="flex justify-between text-success"><span>{quote.delivery_benefit.source === 'monthly' ? msg('FE_CHECKOUT_MONTHLY_DELIVERY', 'Monthly free-delivery perk') : msg('FE_CHECKOUT_SPIN_DELIVERY', 'Spin delivery credit')}</span><span>-{formatNaira(quote.delivery_benefit.discount)}</span></div>}

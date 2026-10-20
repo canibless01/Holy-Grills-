@@ -17,6 +17,14 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_REWARD_DELIVERY_LOCATION_FEE = "Your reward is free. Choose your delivery location and review any delivery fee at checkout."
+    FE_REWARDS_REWARD_LABEL = "Reward"
+    FE_REWARDS_ATTACHED_ORDER = "Added to order"
+    FE_REWARDS_READY_DELIVERY = "Ready for delivery"
+    FE_REWARDS_VIEW_ORDER = "View order"
+    FE_REWARDS_CHOOSE_DELIVERY = "Your reward is ready. Choose how to receive it."
+    FE_CHECKOUT_REDEEMED_ITEM = "Redeemed reward: {name}"
+    FE_CHECKOUT_REWARD_ONLY = "Your redeemed reward is free. Review the delivery fee below. Items already in your cart will stay saved."
     FE_ORDER_GIFT_INCLUDED = "Gift included"
     FE_SF_PLACEMENT = "Show on page"
     FE_SF_INSIDE_HELP = "Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended)."

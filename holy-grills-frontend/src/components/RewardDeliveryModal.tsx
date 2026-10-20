@@ -72,7 +72,7 @@ export default function RewardDeliveryModal({ redemption, open, onClose, onDeliv
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0"><Truck className="w-5 h-5 text-primary" /></div>
             <div className="flex-1">
               <div className="font-bold text-sm text-foreground">Deliver now</div>
-              <div className="text-[11px] text-muted-foreground">Your reward is free. Choose delivery or pickup and review any delivery fee at checkout.</div>
+              <div className="text-[11px] text-muted-foreground">{msg('FE_REWARD_DELIVERY_LOCATION_FEE', 'Your reward is free. Choose your delivery location and review any delivery fee at checkout.')}</div>
             </div>
           </div>
         </button>

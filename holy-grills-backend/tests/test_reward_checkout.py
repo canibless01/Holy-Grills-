@@ -15,6 +15,9 @@ class Query:
     def eq(self, key, value):
         self.filters.append(lambda row: row.get(key) == value)
         return self
+    def in_(self, key, values):
+        self.filters.append(lambda row: row.get(key) in values)
+        return self
     def is_(self, key, value):
         assert value == 'null'
         self.filters.append(lambda row: row.get(key) is None)
@@ -22,6 +25,7 @@ class Query:
     def single(self):
         self.one = True
         return self
+    def order(self, *_args, **_kwargs): return self
     def execute(self):
         rows = [copy.deepcopy(row) for row in self.db.rows.get(self.name, []) if all(f(row) for f in self.filters)]
         return (rows[0] if rows else None) if self.one else rows
@@ -103,3 +107,43 @@ class DeliveryChoiceTests(unittest.TestCase):
              patch('app.routes.rewards.get_user_client', return_value=db):
             g.user_id = 'owner'
             self.assertEqual(choose_redemption_delivery.__wrapped__(RID)[1], 400)
+
+
+class RedemptionHistoryTests(unittest.TestCase):
+    def test_hidden_catalog_name_is_loaded_only_for_owned_history(self):
+        from app.routes.rewards import my_redemptions
+        db = DB()
+        db.rows['reward_redemptions'].append(dict(db.rows['reward_redemptions'][0], id=RID2,
+                                                user_id='someone-else', reward_id='private-reward'))
+        db.rows['rewards'].append({'id': 'private-reward', 'name': 'Foreign history'})
+        service = DB()
+        with Flask(__name__).test_request_context(), \
+             patch('app.routes.rewards.get_user_client', return_value=db), \
+             patch('app.routes.rewards.get_db', return_value=service):
+            g.user_id = 'owner'
+            response, status = my_redemptions.__wrapped__()
+        self.assertEqual(status, 200)
+        self.assertEqual(len(response.json), 1)
+        self.assertEqual(response.json[0]['rewards']['name'], 'Free lunch')
+        self.assertEqual(response.json[0]['user_id'], 'owner')
+
+
+class RewardOnlyAdmissionTests(unittest.TestCase):
+    def test_empty_cart_requires_explicit_reward_and_still_reaches_server_validation(self):
+        import inspect
+        from app.routes.orders import create_order
+        route = inspect.unwrap(create_order)
+        app = Flask(__name__)
+        for body, expected in (({'items': [], 'redemption_id': RID}, 201),
+                               ({'items': []}, 400),
+                               ({'items': 'invalid', 'redemption_id': RID}, 400)):
+            with self.subTest(body=body), app.test_request_context(json={**body, 'payment_method': 'wallet'}), \
+                 patch('app.routes.orders.order_service.create_order', return_value={'id': 'saved'}) as service:
+                g.user_id = 'owner'
+                _, status = route()
+                self.assertEqual(status, expected)
+                if expected == 201:
+                    service.assert_called_once()
+                    self.assertEqual(service.call_args.args[0], 'owner')
+                else:
+                    service.assert_not_called()

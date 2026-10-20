@@ -131,7 +131,7 @@ def create_order():
       400:
         description: Validation error
     """
-    if not data.get("items"):
+    if not isinstance(data.get("items"), list) or (not data["items"] and not data.get("redemption_id")):
         return jsonify({"error": MSG.ORDER_ITEMS_REQUIRED}), 400
     if not data.get("payment_method"):
         return jsonify({"error": MSG.ORDER_PAYMENT_METHOD_REQUIRED}), 400

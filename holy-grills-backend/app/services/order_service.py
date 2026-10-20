@@ -590,8 +590,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             _check_kitchen_capacity(get_db())
 
     raw_items = payload.get("items", [])
-    if not isinstance(raw_items, list) or not raw_items:
+    redemption_id = payload.get("redemption_id")
+    if not isinstance(raw_items, list) or (not raw_items and not redemption_id):
         raise ValueError(MSG.ORDER_ITEMS_EMPTY)
+    reward_only = bool(redemption_id and not raw_items)
     from app.utils.validators import validate_uuid
     if any(not isinstance(item, dict) or not validate_uuid(item.get('menu_item_id')) for item in raw_items):
         raise ValueError(MSG.ORDER_ITEMS_INVALID)
@@ -757,13 +759,18 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         })
         subtotal += float(line_total)
 
+    from app.services.reward_checkout import reward_checkout_plan
+    reward_plan = reward_checkout_plan(get_db(), user_id, campus_id, redemption_id,
+                                       include_next_order=not reward_only)
+    order_items.extend(reward_plan["items"])
+
     subtotal = float(Decimal(str(subtotal)).quantize(Decimal("0.01")))
 
     # ── Order Lock check (detect active lock for today before computing total) ──
     # Must run before total is calculated so the discount is baked into the order.
     order_lock = None
     order_lock_discount = 0.0
-    if user_id:
+    if user_id and not reward_only:
         try:
             today_date = today_wat().isoformat()
             _lock_rows = (
@@ -1091,7 +1098,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     from app.services.free_side_checkout import quote_free_sides
     try:
-        free_side_quote = quote_free_sides(get_db(), user_id, campus_id)
+        free_side_quote = {'enabled': False, 'items': []} if reward_only else quote_free_sides(get_db(), user_id, campus_id)
     except ValueError:
         raise
     except Exception as exc:
@@ -1099,6 +1106,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     price_quote = {
         'subtotal':subtotal,'delivery_fee':delivery_fee,'discount_amount':total_discount,
+        'reward_claims': reward_plan['claims'],
+        'reward_items': [{'redemption_id': item['options_snapshot']['reward_redemption_id'],
+                          'name': item['name_snapshot'], 'quantity': item['quantity']}
+                         for item in reward_plan['items']],
         'free_sides':free_side_quote['items'],
         'free_side_credits_enabled':free_side_quote['enabled'],
         'delivery_benefit':delivery_benefit,
@@ -1116,6 +1127,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     }
     if quote_only:
         return price_quote
+    if 'expected_reward_claims' in payload and payload['expected_reward_claims'] != reward_plan['claims']:
+        raise OrderPriceChanged(price_quote)
     if 'expected_free_sides' in payload and payload['expected_free_sides'] != free_side_quote['items']:
         raise OrderPriceChanged(price_quote)
     if 'expected_food_hp_plan' in payload and payload['expected_food_hp_plan'] != food_hp_plan:
@@ -1151,6 +1164,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     if order_items:
         # Internal server-priced contract, never copied from client item fields.
         order_items[0].setdefault('options_snapshot', {})['_food_hp_plan'] = food_hp_plan
+        order_items[0]['_reward_claims'] = reward_plan['claims']
         order_items[0]['_delivery_benefit'] = delivery_benefit
         order_items[0]['_free_sides'] = free_side_quote['items']
         if hp_bonus_plan is not None:
@@ -1373,7 +1387,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     # Guests (user_id is None) don't have a server-side cart to clear.
     # Skip on an idempotent replay (same idempotency_key called twice) — the
     # cart was already cleared the first time this order was actually created.
-    if user_id and not result.get("idempotent"):
+    if user_id and raw_items and not result.get("idempotent"):
         try:
             db.table("cart_items").eq("user_id", user_id).delete()
         except Exception as cart_exc:

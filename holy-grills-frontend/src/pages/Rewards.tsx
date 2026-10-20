@@ -137,11 +137,13 @@ export default function Rewards() {
   const handleFlashRedeem = async (reward) => {
     setFlashRedeeming(reward.id);
     try {
-      await liveApi.hp.flashRedeem(reward.id);
-      await refreshHp();
+      const res = await liveApi.hp.flashRedeem(reward.id);
+      const saved = res?.redemption || res;
+      const redemptionId = saved?.redemption_id || saved?.id;
+      if (redemptionId) setDeliveryRedemption({ ...saved, id: redemptionId, status: 'fulfilled', reward });
+      try { await refreshHp(); } catch { /* the reward was already redeemed */ }
       toast({ title: msg('FE_REWARDS_FLASH_REWARD_REDEEMED', '⚡ Flash reward redeemed!'), description: msg('FE_REWARDS_NAME_UNLOCKED_AT_FLASH_PRICE', '{name} unlocked at flash price.', { name: reward.name }) });
-      const r = await liveApi.rewards.list();
-      setRewards(r);
+      try { const r = await liveApi.rewards.list(); setRewards(r); } catch { /* do not report a saved redemption as failed */ }
     } catch (e) {
       toast({ title: msg('FE_REWARDS_FLASH_REDEMPTION_FAILED', 'Flash redemption failed'), description: e.message, variant: 'destructive' });
     }
@@ -186,10 +188,13 @@ export default function Rewards() {
   const handleRedeem = async () => {
     setRedeeming(true);
     try {
-      await liveApi.rewards.redeem(selectedReward.id);
-      await refreshHp();
-      toast({ title: msg('FE_REWARDS_REWARD_REDEEMED', '🎉 Reward redeemed!'), description: msg('FE_REWARDS_NAME_IS_ON_ITS_WAY', '{name} is on its way.', { name: selectedReward.name }) });
+      const chosen = selectedReward;
+      const res = await liveApi.rewards.redeem(chosen.id);
+      const saved = res?.redemption || res;
       setSelectedReward(null);
+      if (saved?.id && saved.status === 'fulfilled') setDeliveryRedemption({ ...saved, reward: chosen });
+      toast({ title: msg('FE_REWARDS_REWARD_REDEEMED', '🎉 Reward redeemed!'), description: msg('FE_REWARDS_CHOOSE_DELIVERY', 'Your reward is ready. Choose how to receive it.') });
+      try { await refreshHp(); await loadRedemptions(); } catch { /* a read failure does not undo the saved redemption */ }
     } catch (e) {
       toast({ title: msg('FE_REWARDS_REDEMPTION_FAILED', 'Redemption failed'), description: e.message, variant: 'destructive' });
     }
@@ -565,15 +570,16 @@ export default function Rewards() {
                 {r.status === 'fulfilled' ? <Check className="w-5 h-5 text-success" /> : (r.status === 'cancelled' || r.status === 'rejected') ? <X className="w-5 h-5 text-destructive" /> : <Clock className="w-5 h-5 text-warn" />}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm text-foreground truncate">{r.reward?.name || r.reward_name || 'Reward'}</div>
-                <div className="text-xs text-muted-foreground capitalize">{r.status} · {r.hp_cost_snapshot || 0} HP</div>
+                <div className="font-semibold text-sm text-foreground truncate">{r.reward?.name || r.rewards?.name || r.reward_name || msg('FE_REWARDS_REWARD_LABEL', 'Reward')}</div>
+                <div className="text-xs text-muted-foreground capitalize">{r.status === 'fulfilled' ? (r.attached_order_id ? msg('FE_REWARDS_ATTACHED_ORDER', 'Added to order') : msg('FE_REWARDS_READY_DELIVERY', 'Ready for delivery')) : r.status} · {r.hp_cost_snapshot || 0} HP</div>
                 <div className="text-[10px] text-muted-foreground">{new Date(r.created_at).toLocaleString()}</div>
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <div className="flex items-center gap-1 text-xs font-bold text-primary">
                   <Flame className="w-3.5 h-3.5" /> {r.hp_cost_snapshot || 0}
                 </div>
-                {r.status === 'fulfilled' && !r.attached_order_id && (
+                {r.attached_order_id && <Link to={'/orders/' + r.attached_order_id} className="text-xs font-semibold text-primary underline">{msg('FE_REWARDS_VIEW_ORDER', 'View order')}</Link>}
+                {r.status === 'fulfilled' && !r.attached_order_id && !r.used_at && (
                   <button onClick={() => setDeliveryRedemption(r)} className="px-3 py-1.5 rounded-full bg-gradient-cta text-white text-[11px] font-bold active:scale-95 transition">Choose delivery</button>
                 )}
               </div>
@@ -669,7 +675,7 @@ export default function Rewards() {
         redemption={deliveryRedemption}
         open={!!deliveryRedemption}
         onClose={() => setDeliveryRedemption(null)}
-        onDelivered={(res) => { loadRedemptions(); if (res?.next_step === 'checkout') navigate('/checkout'); }}
+        onDelivered={(res) => { loadRedemptions(); if (res?.next_step === 'checkout' && res.reward_redemption_id) navigate('/checkout?reward=' + encodeURIComponent(res.reward_redemption_id)); }}
       />
     </div>
   );

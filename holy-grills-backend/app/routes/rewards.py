@@ -762,6 +762,18 @@ def my_redemptions():
         .order("created_at", ascending=False)
         .execute()
     )
+    # Catalog RLS can hide an inactive reward, but an earned entitlement must
+    # retain its name in the owner's history and delivery chooser. Only hydrate
+    # public display fields for reward IDs obtained from the authorized rows.
+    hidden_ids = sorted({row['reward_id'] for row in (redemptions or [])
+                         if row.get('reward_id') and not row.get('rewards')})
+    if hidden_ids:
+        display_rows = (get_db().table('rewards').select('id,name,reward_type,hp_cost,image_url')
+                        .in_('id', hidden_ids).execute()) or []
+        display_by_id = {row['id']: row for row in display_rows}
+        for row in redemptions or []:
+            if not row.get('rewards') and row.get('reward_id') in display_by_id:
+                row['rewards'] = display_by_id[row['reward_id']]
     return jsonify(redemptions), 200
 
 

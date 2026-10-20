@@ -1,6 +1,6 @@
 # Ecosystem audit status
 
-Updated 20 October 2026. This is the short status index. The longer [progress report](ECOSYSTEM_AUDIT_PROGRESS.md) records changes and evidence chronologically; an inventory or proposed test there is not a completed audit.
+Updated 21 October 2026. This is the short status index. The longer [progress report](ECOSYSTEM_AUDIT_PROGRESS.md) records changes and evidence chronologically; an inventory or proposed test there is not a completed audit.
 
 ## Fixed and verified in published batches
 
@@ -16,13 +16,15 @@ Updated 20 October 2026. This is the short status index. The longer [progress re
 | Checkout payment | Open card/split gateway directly after saving; retain honest unpaid recovery on setup failure | Native scheduled card/split and missing-provider fallback passed; actual Paystack test transaction remains open |
 | Food HP | Include global add-ons; use discounted food spend excluding delivery; freeze new-order earning snapshot | Focused regressions and live admission/receipt passed; native delivered payout and stacking combinations remain |
 | Delivery summary | Normalize persisted hostel/gate/address and actual delivery-window relation | Native on-campus/gate-only passed; nearest-gate/override/radius API passed; full native pin-address map remains |
-| Reward redemption | Remove approval wait; deliver-now versus next-order attachment with one atomic claim | Migration review, private grants, stock/HP conservation, replay/race/cancel and UI proofs |
+| Reward redemption | Remove approval wait; deliver-now versus next-order attachment with one atomic claim | Automatic readiness, private grants, live replay/race/cancel and native fee-only checkout passed; native next-paid-order/rider handover, immutable snapshots and verified legacy pending rows remain |
 | Delivery batches | Atomic assignment/reassignment/splitting and matching admin controls | Owned multi-order kitchen/admin/rider loops and concurrent operations |
 | Storefront | Full unclipped flyer artwork; five display-page placements; compact What's Inside cards; section-specific inputs | Controlled section routing, multiple-item rendering, admin save/read-back and native layout passed; live CMS publication and each authenticated flyer route remain |
 | Rewards interaction | Remove visual badges and stacked credit banner; install/push/claim actions; recipient suggestions; podium/spin readability | Seven controlled browser assertions and SDK outcomes passed; live challenge creation/claim, transfer/grant and real PWA/push remain |
 | Graduation/promotions | Delivered-order/time/level eligibility; replace rigid hot-dog offer with configured benefits and signup free-side credit | Server enforcement, campus/global scope, atomic once-only awards, banner/toggle and calendar tests |
 
 Checkout evidence for the current batch: [native/API results and provider limits](CHECKOUT_PAYMENT_DELIVERY_EVIDENCE.json).
+
+Reward evidence for the current batch: [live transactions and native delivery-choice checkout](INSTANT_REDEMPTION_EVIDENCE.md).
 
 ## Still open across the full audit
 
