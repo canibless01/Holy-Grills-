@@ -477,6 +477,37 @@ def purchase_hp_bundle():
         return jsonify({"error": str(e)}), 400
 
 
+def _transfer_order_eligibility(db, user_id):
+    # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
+    # min_orders is read from system_settings first (admin-editable), falling back to
+    # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
+    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
+    _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
+    min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
+    completed_orders = (
+        db.table("orders")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("status", "delivered")
+        .execute()
+    )
+    # execute() returns a list on success, None / dict / empty on no-rows edge cases
+    if isinstance(completed_orders, list):
+        completed_count = len(completed_orders)
+    elif isinstance(completed_orders, dict) and completed_orders.get("id"):
+        completed_count = 1
+    else:
+        completed_count = 0
+    return min_orders, completed_count
+
+
+@hp_bp.route("/transfer-eligibility", methods=["GET"])
+@require_auth
+def transfer_order_eligibility():
+    minimum, delivered = _transfer_order_eligibility(get_user_client(), g.user_id)
+    return jsonify({"minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum}), 200
+
+
 @hp_bp.route("/transfer", methods=["POST"])
 @require_auth
 def transfer_hp():
@@ -533,26 +564,7 @@ def transfer_hp():
 
     db = get_user_client()
 
-    # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
-    # min_orders is read from system_settings first (admin-editable), falling back to
-    # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
-    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
-    _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
-    min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
-    completed_orders = (
-        db.table("orders")
-        .select("id")
-        .eq("user_id", g.user_id)
-        .eq("status", "delivered")
-        .execute()
-    )
-    # execute() returns a list on success, None / dict / empty on no-rows edge cases
-    if isinstance(completed_orders, list):
-        completed_count = len(completed_orders)
-    elif isinstance(completed_orders, dict) and completed_orders.get("id"):
-        completed_count = 1
-    else:
-        completed_count = 0
+    min_orders, completed_count = _transfer_order_eligibility(db, g.user_id)
     if completed_count < min_orders:
         return jsonify({
             "error": resolve_msg(MSG.HP_TRANSFER_MIN_ORDERS, min_orders=min_orders, completed=completed_count),

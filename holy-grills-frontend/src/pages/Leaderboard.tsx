@@ -66,6 +66,7 @@ export default function Leaderboard() {
   const hallReleased = isFeatureEnabled('hall_of_fame');
   const [showPrizesModal, setShowPrizesModal] = useState(false);
   const [error, setError] = useState(null);
+  const [reload, setReload] = useState(0);
   const [hpTiers, setHpTiers] = useState([]);
 
   useEffect(() => {
@@ -96,7 +97,7 @@ export default function Leaderboard() {
       setLoading(false);
     };
     load();
-  }, [period]);
+  }, [period, reload]);
 
   useEffect(() => {
     let active = true;
@@ -151,7 +152,7 @@ export default function Leaderboard() {
       {error && (
         <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
           <span className="text-sm text-destructive font-medium">{error}</span>
-          <button onClick={() => setPeriod(period)} className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold">Retry</button>
+          <button onClick={() => setReload((value) => value + 1)} className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold">Retry</button>
         </div>
       )}
 
@@ -258,7 +259,7 @@ export default function Leaderboard() {
                     <p className="text-sm text-muted-foreground">No rankings yet.</p>
                   </div>
                 )}
-                {rankings.map((entry, i) => (
+                {(rankings.length >= 3 ? rankings.slice(3) : rankings).map((entry, i) => (
                   <motion.div
                     key={entry.user_id || i}
                     initial={{ opacity: 0, x: -10 }}
@@ -386,25 +387,9 @@ function PodiumBar({ rank, place, height, delay }) {
   // Medal materials — gold / warm silver / copper. Same ladder language as the
   // tier rings: 1st glows warm gold, 2nd/3rd are warm matte metals, never grey.
   const medals = ['medal-gold', 'medal-silver', 'medal-bronze'];
-  const medalEmoji = ['🥇', '🥈', '🥉'];
   const name = rank.full_name || '—';
-  const initials = name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   return (
     <div className="flex flex-col items-center" style={{ order: place === 1 ? 1 : place === 2 ? 0 : 2 }}>
-      {/* Medal-ringed avatar — the winner's face slot on the podium */}
-      <motion.div
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: delay + 0.35, type: 'spring', stiffness: 260, damping: 18 }}
-        className="relative mb-1.5"
-      >
-        <div className={`w-11 h-11 rounded-full ${medals[place - 1]} p-[2.5px]`}>
-          <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
-            <span className="text-[11px] font-extrabold text-foreground">{initials}</span>
-          </div>
-        </div>
-        <span className="absolute -bottom-1.5 -right-1 text-sm leading-none drop-shadow-sm">{medalEmoji}</span>
-      </motion.div>
       <div className="text-xs font-semibold text-foreground text-center max-w-[80px] truncate">{name}</div>
       <div className="flex items-center gap-0.5 text-xs text-primary font-semibold mb-1 tabular-nums"><Flame className="w-3 h-3" />{rank.hp_total}</div>
       <motion.div

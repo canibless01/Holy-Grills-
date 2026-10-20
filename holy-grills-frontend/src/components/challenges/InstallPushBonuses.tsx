@@ -1,64 +1,68 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { toast } from '@/components/ui/use-toast';
-import { subscribeToWebPush } from '@/lib/webPush';
+import { subscribeToWebPush, isWebPushSupported } from '@/lib/webPush';
+import { isStandalone, hasInstallPrompt, triggerInstall } from '@/lib/installPromptStore';
 import StreakPwaBonus from '@/components/streak/StreakPwaBonus';
-import { msg } from '@/lib/messages';
 
-/**
- * InstallPushBonuses — the app-install + push-subscribe bonuses, living
- * permanently under Challenges. It owns its own backend calls so it can be
- * dropped anywhere without the host page wiring anything up.
- */
+/** Each step records a real browser action; the server owns eligibility/HP. */
 export default function InstallPushBonuses() {
   const { refreshHp } = useHolyGrill();
-  const [pwaStatus, setPwaStatus] = useState(null);
-  const [pushLoading, setPushLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiClient.get('/challenges/pwa-push-bonus-status')
-      .then((s) => { if (!cancelled) setPwaStatus(s); })
-      .catch(() => { /* bonus not configured yet — card stays hidden */ });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Auto-claim the install bonus when running as an installed app and the
-  // backend hasn't recorded it yet. POST /api/challenges/pwa-installed is the
-  // only trigger point — nothing awards automatically.
-  useEffect(() => {
-    if (!pwaStatus || pwaStatus.pwa_install) return;
-    if (!window.matchMedia('(display-mode: standalone)').matches) return;
-    apiClient.post('/challenges/pwa-installed')
-      .then(async (res) => {
-        if (res?.hp_awarded && !res?.already_completed) {
-          await refreshHp();
-          toast({ title: msg('FE_INSTALL_PUSH_BONUSES_PWA_INSTALL_BONUS', '🎉 PWA install bonus!'), description: msg('FE_INSTALL_PUSH_BONUSES_HP_HP_ADDED_TO_YOUR_WALLET', '+{hp} HP added to your wallet.', { hp: res.hp_awarded }) });
-        }
-        const updated = await apiClient.get('/challenges/pwa-push-bonus-status').catch(() => null);
-        if (updated) setPwaStatus(updated);
-      })
-      .catch(() => { /* milestone may not be configured — silent */ });
-  }, [pwaStatus?.pwa_install]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleEnablePush = async () => {
-    setPushLoading(true);
-    try {
-      // Native Web Push — requests permission, subscribes via PushManager, and
-      // registers the subscription with the backend (POST /push/subscribe).
-      const ok = await subscribeToWebPush();
-      if (!ok) throw new Error(msg('FE_INSTALL_PUSH_BONUSES_PUSH_PERMISSION_WAS_NOT_GRANTED', 'Push permission was not granted.'));
-
-      await refreshHp();
-      const updated = await apiClient.get('/challenges/pwa-push-bonus-status').catch(() => null);
-      if (updated) setPwaStatus(updated);
-      toast({ title: msg('FE_INSTALL_PUSH_BONUSES_PUSH_ENABLED', '🔔 Push enabled!'), description: msg('FE_INSTALL_PUSH_BONUSES_YOU_LL_RECEIVE_ALERTS_ON_THIS_DEVICE', 'You\'ll receive alerts on this device.') });
-    } catch (e) {
-      toast({ title: msg('FE_INSTALL_PUSH_BONUSES_COULD_NOT_ENABLE_PUSH', 'Could not enable push'), description: e.message, variant: 'destructive' });
-    }
-    setPushLoading(false);
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [installed, setInstalled] = useState(isStandalone);
+  const [installAvailable, setInstallAvailable] = useState(hasInstallPrompt);
+  const reload = async () => {
+    const updated = await apiClient.get('/challenges/pwa-push-bonus-status');
+    setStatus(updated);
+    return updated;
   };
 
-  return <StreakPwaBonus pwaStatus={pwaStatus} onEnablePush={handleEnablePush} pushLoading={pushLoading} />;
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/challenges/pwa-push-bonus-status')
+      .then((value) => { if (active) setStatus(value); })
+      .catch((failure) => { if (active) setError(failure.message); });
+    const onInstalled = () => { setInstalled(true); setInstallAvailable(false); };
+    const onPrompt = () => setInstallAvailable(true);
+    window.addEventListener('appinstalled', onInstalled);
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    return () => {
+      active = false;
+      window.removeEventListener('appinstalled', onInstalled);
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+    };
+  }, []);
+
+  const action = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      if (!status) { await reload(); return; }
+      if (!status.pwa_install) {
+        if (!installed && !isStandalone()) {
+          if (!hasInstallPrompt()) throw new Error('Open your browser menu and choose Install app or Add to Home Screen, then open the installed app to continue.');
+          const choice = await triggerInstall();
+          setInstallAvailable(hasInstallPrompt());
+          if (choice?.outcome !== 'accepted') return;
+          // Acceptance alone is not proof: appinstalled or standalone confirms it.
+          if (!isStandalone() && !installed) return;
+        }
+        await apiClient.post('/challenges/pwa-installed');
+      } else if (!status.push_subscribe) {
+        if (!isWebPushSupported()) throw new Error('Push alerts are unavailable in this browser. Open the installed app in a supported browser.');
+        if (!await subscribeToWebPush()) throw new Error('Push permission was not granted. You can retry or update site permissions.');
+        await apiClient.post('/challenges/push-registered');
+      } else if (!status.bonus_completed) {
+        await apiClient.post('/challenges/pwa-push-bonus');
+      }
+      await reload();
+      await refreshHp();
+    } catch (failure) { setError(failure.message || 'Please try again.'); }
+    finally { setBusy(false); }
+  };
+
+  return <StreakPwaBonus pwaStatus={status} onAction={action} busy={busy} error={error}
+    installed={installed} installAvailable={installAvailable} pushSupported={isWebPushSupported()} />;
 }

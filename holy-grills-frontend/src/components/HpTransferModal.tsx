@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, X, Send, Flame, AlertCircle, Check } from 'lucide-react';
+import { useStudentSearch } from '@/hooks/useStudentSearch';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
 import { msg } from '@/lib/messages';
+import { apiClient } from '@/lib/apiClient';
 import { displayName, displayInitial } from '@/lib/displayName';
 
 const DEFAULT_MIN_TRANSFER = 10;
@@ -19,46 +21,38 @@ const DEFAULT_MIN_TRANSFER = 10;
 export default function HpTransferModal({ open, onClose }) {
   const { hpBalance, refreshHp, user, getSetting } = useHolyGrill();
   const MIN_AMOUNT = getSetting('hp_transfer_min_amount', DEFAULT_MIN_TRANSFER);
-  const [results, setResults] = useState([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [sending, setSending] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
-  const debounceRef = useRef(null);
   const [showResults, setShowResults] = useState(false);
 
-  // Debounced search — hit /users/search 350ms after the user stops typing.
+  const { results, searching, searchError, retry } = useStudentSearch(query, open && !selected);
+  const [eligibility, setEligibility] = useState(null);
+  const [eligibilityError, setEligibilityError] = useState('');
   useEffect(() => {
     if (!open) return;
-    const q = query.trim();
-    if (!q) { setResults([]); setSearching(false); return; }
-    setSearching(true);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await liveApi.users.search({ q });
-        setResults(Array.isArray(res) ? res : []);
-      } catch { setResults([]); }
-      setSearching(false);
-    }, 350);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query, open]);
+    let active = true;
+    setEligibility(null); setEligibilityError('');
+    apiClient.get('/hp/transfer-eligibility').then((value) => { if (active) setEligibility(value); })
+      .catch((failure) => { if (active) setEligibilityError(failure.message); });
+    return () => { active = false; };
+  }, [open]);
 
   useEffect(() => {
     if (open) {
-      setQuery(''); setSelected(null); setAmount(''); setNotes(''); setError(null); setDone(null); setResults([]); setShowResults(false);
+      setQuery(''); setSelected(null); setAmount(''); setNotes(''); setError(null); setDone(null); setShowResults(false);
     }
   }, [open]);
 
   if (!open) return null;
 
   const activeHp = hpBalance?.active || 0;
-  const amt = parseInt(amount, 10);
-  const amountValid = !isNaN(amt) && amt >= MIN_AMOUNT && amt <= activeHp;
+  const amt = Number(amount);
+  const amountValid = Number.isInteger(amt) && amt > 0 && amt >= MIN_AMOUNT && amt <= activeHp;
 
   const pickRecipient = (r) => { setSelected(r); setQuery(displayName(r)); setShowResults(false); };
 
@@ -66,7 +60,7 @@ export default function HpTransferModal({ open, onClose }) {
     setError(null);
     if (!selected) { setError(msg('FE_HP_TRANSFER_MODAL_PICK_A_RECIPIENT_FIRST', 'Pick a recipient first.')); return; }
     if (selected.id === user?.id) { setError(msg('FE_HP_TRANSFER_MODAL_YOU_CAN_T_SEND_HP_TO_YOURSELF', 'You can\'t send HP to yourself.')); return; }
-    if (isNaN(amt) || amt < MIN_AMOUNT) { setError(msg('FE_HP_TRANSFER_MODAL_MINIMUM_TRANSFER_IS_MIN_AMOUNT_HP', 'Minimum transfer is {min_amount} HP.', { min_amount: MIN_AMOUNT })); return; }
+    if (!Number.isInteger(amt) || amt < MIN_AMOUNT) { setError(msg('FE_HP_TRANSFER_MODAL_MINIMUM_TRANSFER_IS_MIN_AMOUNT_HP', 'Minimum transfer is {min_amount} HP.', { min_amount: MIN_AMOUNT })); return; }
     if (amt > activeHp) { setError(msg('FE_HP_TRANSFER_MODAL_INSUFFICIENT_HP_BALANCE', 'Insufficient HP balance.')); return; }
     setSending(true);
     try {
@@ -110,6 +104,9 @@ export default function HpTransferModal({ open, onClose }) {
               <div className="font-heading font-extrabold text-2xl">{activeHp}</div>
             </div>
 
+            <p role="status" className="text-xs text-muted-foreground mb-3">
+              {eligibility ? `${eligibility.delivered_orders}/${eligibility.minimum_orders} delivered orders · ${eligibility.eligible ? 'Ready to send HP' : 'Complete more delivered orders to send HP'}` : eligibilityError || 'Checking transfer eligibility…'}
+            </p>
             {/* Recipient search */}
             <label className="text-xs font-bold text-muted-foreground uppercase">Recipient</label>
             <div className="relative mt-1">
@@ -118,7 +115,7 @@ export default function HpTransferModal({ open, onClose }) {
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setSelected(null); setShowResults(true); }}
                 onFocus={() => setShowResults(true)}
-                placeholder="Search by name or username…"
+                placeholder="Search campus students by name or email…"
                 className="w-full pl-9 pr-3 py-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/60"
               />
             </div>
@@ -127,6 +124,8 @@ export default function HpTransferModal({ open, onClose }) {
               <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5">
                 {searching ? (
                   <p className="text-xs text-muted-foreground text-center py-2">Searching…</p>
+                ) : searchError ? (
+                  <button onClick={retry} className="text-xs text-destructive py-2">{searchError} Retry</button>
                 ) : results.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-2">No students found for "{query.trim()}".</p>
                 ) : (
@@ -182,7 +181,7 @@ export default function HpTransferModal({ open, onClose }) {
 
             <button
               onClick={handleSend}
-              disabled={sending || !selected || !amountValid}
+              disabled={sending || !selected || !amountValid || !eligibility?.eligible}
               className="w-full mt-4 py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {sending ? 'Sending…' : (<><Send className="w-4 h-4" /> Send{amt && !isNaN(amt) ? ` ${amt} HP` : ''}</>)}

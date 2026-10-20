@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Target, Award, Flame, Check, Download, Bell } from 'lucide-react';
+import { Target, Flame, Check, Download, Bell } from 'lucide-react';
 import { isStandalone, hasInstallPrompt, triggerInstall } from '@/lib/installPromptStore';
 import { toast } from '@/components/ui/use-toast';
 import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge';
@@ -20,9 +20,9 @@ const isPushChallenge = (ch) => {
 // the generic claim button.
 const isSocialFollowChallenge = (ch) => ch.trigger_type === 'social_follow' || (challengeText(ch).includes('social') && challengeText(ch).includes('follow'));
 
-export default function StreakMilestones({ badges, availableChallenges, completedChallenges, completing, onComplete, onSocialFollowClaimed }) {
+export default function StreakMilestones({ availableChallenges, completedChallenges, completing, onComplete, onSocialFollowClaimed }) {
   const [actioning, setActioning] = useState(null);
-  if (badges.length === 0 && availableChallenges.length === 0 && completedChallenges.length === 0) return null;
+  if (availableChallenges.length === 0 && completedChallenges.length === 0) return null;
 
   const allChallenges = [...availableChallenges, ...completedChallenges];
   const completedIds = new Set(completedChallenges.map((c) => c.id));
@@ -81,23 +81,6 @@ export default function StreakMilestones({ badges, availableChallenges, complete
         <Target className="w-4 h-4 text-primary" />
         <h2 className="font-heading font-bold text-base text-foreground">Milestones</h2>
       </div>
-
-      {badges.length > 0 && (
-        <div className="rounded-3xl bg-accent/10 border border-accent/20 p-4 shadow-card">
-          <div className="flex items-center gap-2 mb-3">
-            <Award className="w-4 h-4 text-accent" />
-            <span className="text-xs font-bold text-foreground">Badges Earned</span>
-            <span className="ml-auto text-[10px] font-bold text-accent-foreground tabular-nums">{badges.length}</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {badges.map((b, i) => (
-              <span key={i} className="text-xs font-bold px-3 py-1.5 rounded-full bg-card border border-accent/20 text-accent-foreground flex items-center gap-1.5">
-                <span className="text-sm">{b.icon_won || '🏅'}</span> {b.title || b.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {allChallenges.map((ch) => {
         const isCompleted = completedIds.has(ch.id);

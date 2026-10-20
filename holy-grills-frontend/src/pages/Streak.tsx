@@ -9,6 +9,7 @@ import { toast } from '@/components/ui/use-toast';
 import StreakSkeleton from '@/components/skeletons/StreakSkeleton';
 import StreakHero from '@/components/streak/StreakHero';
 import StreakWeekCalendar from '@/components/streak/StreakWeekCalendar';
+import InstallPushBonuses from '@/components/challenges/InstallPushBonuses';
 import StreakMilestones from '@/components/streak/StreakMilestones';
 import { triggerMascotCelebration } from '@/lib/mascots';
 import { msg } from '@/lib/messages';
@@ -122,9 +123,8 @@ export default function Streak() {
 
   if (loading) return <StreakSkeleton />;
 
-  const badges = myChallenges?.badges || [];
-  const availableChallenges = myChallenges?.challenges_available || [];
-  const completedChallenges = myChallenges?.challenges_completed || [];
+  const availableChallenges = [...(myChallenges?.milestones_available || []), ...(myChallenges?.challenges_available || [])];
+  const completedChallenges = [...(myChallenges?.milestones_completed || []), ...(myChallenges?.challenges_completed || [])];
 
   return (
     <div className="space-y-5 animate-fade-in max-w-2xl mx-auto">
@@ -148,8 +148,9 @@ export default function Streak() {
         allowedMisses={allowedMisses}
       />
 
+      <InstallPushBonuses />
+
       <StreakMilestones
-        badges={badges}
         availableChallenges={availableChallenges}
         completedChallenges={completedChallenges}
         completing={completing}
