@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { msg } from '@/lib/messages';
 import { liveApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -22,8 +22,10 @@ export default function AdminMarketplace() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const loadAttempt = useRef(0);
 
   const load = useCallback(async () => {
+    const attempt = ++loadAttempt.current;
     setLoading(true);
     setLoadError(false);
     const [l, r, p, rep] = await Promise.allSettled([
@@ -32,6 +34,7 @@ export default function AdminMarketplace() {
       liveApi.admin.getMarketplacePurchases(),
       liveApi.admin.getMarketplaceReports({ status: 'open' }),
     ]);
+    if (attempt !== loadAttempt.current) return;
     setListings(l.status === 'fulfilled' ? l.value : []);
     setRequests(r.status === 'fulfilled' ? r.value : []);
     setPurchases(p.status === 'fulfilled' ? p.value : []);

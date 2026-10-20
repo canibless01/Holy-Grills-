@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Plus, Ticket } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -45,32 +45,39 @@ export default function Marketplace() {
   const [loadingPurchases, setLoadingPurchases] = useState(false);
   const [purchaseError, setPurchaseError] = useState(false);
   const [listingError, setListingError] = useState(false);
+  const listingAttempt = useRef(0);
+  const purchaseAttempt = useRef(0);
 
   const loadListings = useCallback(async () => {
+    const attempt = ++listingAttempt.current;
     setLoading(true);
     setListingError(false);
     try {
-      setListings(unwrapList(await liveApi.marketplace.list()));
+      const rows = unwrapList(await liveApi.marketplace.list());
+      if (attempt === listingAttempt.current) setListings(rows);
     } catch {
-      setListingError(true);
+      if (attempt === listingAttempt.current) setListingError(true);
     } finally {
-      setLoading(false);
+      if (attempt === listingAttempt.current) setLoading(false);
     }
   }, []);
   useEffect(() => { loadListings(); }, [loadListings]);
 
   const loadPurchases = async () => {
     if (!isAuthenticated) { toast({ title: msg('FE_MARKETPLACE_SIGN_IN_TO_VIEW_PURCHASES', 'Sign in to view purchases'), description: msg('FE_MARKETPLACE_YOUR_PURCHASE_HISTORY_IS_TIED_TO_YOUR', 'Your purchase history is tied to your account.') }); return; }
+    const attempt = ++purchaseAttempt.current;
     setShowPurchases(true);
     setLoadingPurchases(true);
     setPurchaseError(false);
     try {
-      setPurchases(await liveApi.marketplace.myPurchases());
+      const rows = await liveApi.marketplace.myPurchases();
+      if (attempt === purchaseAttempt.current) setPurchases(rows);
     } catch (e) {
+      if (attempt !== purchaseAttempt.current) return;
       setPurchaseError(true);
       toast({ title: msg('FE_MARKETPLACE_COULD_NOT_LOAD_PURCHASES', 'Could not load purchases'), description: e.message, variant: 'destructive' });
     }
-    setLoadingPurchases(false);
+    if (attempt === purchaseAttempt.current) setLoadingPurchases(false);
   };
 
   const filtered = listings.filter((l) => {

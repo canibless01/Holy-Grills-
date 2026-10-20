@@ -1328,6 +1328,11 @@
           "status": 400
         }
       ]
+    },
+    "marketplace-listing-retry-evidence": {
+      "kind": "intercepted listing failure then native real read",
+      "failedReadNotOpeningSoon": true,
+      "retryLoadsActualOwnedListing": true
     }
   }
 }
