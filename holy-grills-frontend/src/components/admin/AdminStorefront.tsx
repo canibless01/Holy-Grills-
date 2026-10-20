@@ -1,3 +1,4 @@
+import CmsPlacementSelect from './CmsPlacementSelect';
 import { confirmAction } from '@/lib/confirmAction';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import React, { useState, useEffect, useRef } from 'react';
@@ -62,11 +63,11 @@ const TAB_GROUPS: Array<{ label: string; tabs: StorefrontTab[] }> = [
       { id: 'promo', label: 'Promos', icon: Tag, kind: 'section', desc: 'Promo blocks — single image + text + CTA.' },
       { id: 'testimonial', label: 'Testimonials', icon: Quote, kind: 'section', desc: 'Student reviews shown on the homepage.' },
       { id: 'share_template', label: 'Share Templates', icon: Share2, kind: 'section', desc: 'Base images students overlay their name + HP on.' },
-      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: 'Logged-out feature slider — portrait cards with overlaid text.' },
+      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:2 design image (960 × 640 recommended).') },
       { id: 'how_its_made', label: "How It's Made", icon: Flame, kind: 'section', desc: 'Process-stage slider — each slide is a step from raw to door.' },
       { id: 'catering', label: 'Catering', icon: Utensils, kind: 'section', desc: 'Catering card — single image + text + CTA on the homepage.' },
       { id: 'our_story', label: 'Our Story', icon: BookOpen, kind: 'section', desc: 'Our Story page — hero image + title + caption.' },
-      { id: 'popup', label: 'Popup Flyer', icon: Sparkles, kind: 'section', desc: 'Flyer popup shown once per visit on the homepage — image + CTA button to a page. Re-shows after re-login.' },
+      { id: 'popup', label: 'Popup Flyer', icon: Sparkles, kind: 'section', desc: msg('FE_SF_POPUP_HELP', 'Transparent PNG artwork keeps its original shape and full content. Any aspect ratio; 1200 px on the longest edge recommended. Text is part of your artwork.') },
       { id: 'tier_icon', label: 'Tier Icons', icon: Award, kind: 'tier_icons', desc: 'One image per membership tier — used everywhere a tier is shown.' },
     ],
   },
@@ -125,6 +126,7 @@ type SectionDraft = {
   badge: string;
   eyebrow: string;
   share_key: string;
+  display_mode: string;
 };
 
 /** Sections have no `placement` column — the backend keeps it inside `content`. */
@@ -154,7 +156,7 @@ const sectionPatch = (s: any, name: string, value: any) => {
   return { [name]: value, content };
 };
 
-const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', eyebrow: '', share_key: 'share_template' });
+const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', eyebrow: '', share_key: 'share_template', display_mode: 'text' });
 
 export default function AdminStorefront() {
   const sectionIntent = useCmsCreateIntent();
@@ -248,7 +250,7 @@ export default function AdminStorefront() {
     const t = newSection.section_type;
     if (t === 'testimonial') { if (!newSection.testimonial_name || !newSection.testimonial_review) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_AND_REVIEW_REQUIRED', 'Name and review required'), variant: 'destructive' }); return; } }
     else if (t === 'share_template') { if (!newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_BASE_IMAGE_REQUIRED', 'Base image required'), variant: 'destructive' }); return; } }
-    else { if (!newSection.title || !newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_TITLE_AND_IMAGE_REQUIRED', 'Title and image required'), variant: 'destructive' }); return; } }
+    else { if (!(newSection.image_url || (t === 'whats_inside' && newSection.title)) || (!(t === 'popup' || newSection.display_mode === 'image') && !newSection.title)) { toast({ title: msg('FE_ADMIN_STOREFRONT_TITLE_AND_IMAGE_REQUIRED', 'Title and image required'), variant: 'destructive' }); return; } }
     setBusy('create');
     try {
       const body: SectionBody = { section_type: t, placement: newSection.placement || 'home', sort_order: Number(newSection.sort_order) || 0, is_active: true };
@@ -258,7 +260,7 @@ export default function AdminStorefront() {
         : (slugify(newSection.title || newSection.testimonial_name) || `${t}-${Date.now().toString(36)}`);
       if (t === 'testimonial') { body.title = newSection.testimonial_name; body.content = { name: newSection.testimonial_name, review: newSection.testimonial_review, rating: Number(newSection.testimonial_rating) }; }
       else if (t === 'share_template') { body.title = newSection.title || 'Share Template'; body.key = newSection.share_key || 'share_template'; body.content = { base_image_url: newSection.image_url, caption_template: newSection.caption_template || '', key: newSection.share_key || 'share_template' }; }
-      else { body.title = newSection.title; body.subtitle = newSection.subtitle; body.image_url = newSection.image_url; body.cta_text = newSection.cta_text; body.cta_url = newSection.cta_url; if (SLIDER_TAB_IDS.includes(t)) body.content = { ...(body.content || {}), badge: newSection.badge, eyebrow: newSection.eyebrow }; }
+      else { body.title = newSection.title; body.content = { display_mode: t === 'popup' ? 'image' : newSection.display_mode };  body.subtitle = newSection.subtitle; body.image_url = newSection.image_url; body.cta_text = newSection.cta_text; body.cta_url = newSection.cta_url; if (SLIDER_TAB_IDS.includes(t)) body.content = { ...(body.content || {}), badge: newSection.badge, eyebrow: newSection.eyebrow }; }
       await mockApi.admin.createStorefrontSection(sectionIntent.body(body));
       sectionIntent.clear();
       setAddOpen(false); setNewSection(blankSection(t)); await load();
@@ -384,6 +386,7 @@ export default function AdminStorefront() {
 
       {isSectionType && (
         <div className="space-y-3">
+          {activeTab?.desc && <p className="text-xs text-muted-foreground">{activeTab.desc}</p>}
           <div className="flex justify-between items-center">
             <p className="text-[11px] text-muted-foreground capitalize">{tab.replace(/_/g, ' ')} sections — render on the live homepage in sort order.</p>
             <div className="flex gap-2">
@@ -427,11 +430,15 @@ export default function AdminStorefront() {
                 </>
               ) : (
                 <>
+                  {s.section_type === 'popup' && <Field label={msg('FE_SF_PLACEMENT', 'Show on page')}><CmsPlacementSelect value={placementOf(s)} onChange={(value) => upd(s.id, sectionPatch(s, 'placement', value))} /></Field>}
+                  {s.section_type !== 'popup' && <DisplayMode value={s.content?.display_mode || 'text'} onChange={(value) => upd(s.id, { content: { ...s.content, display_mode: value } })} />}
+                  {s.section_type !== 'popup' && s.content?.display_mode !== 'image' && <>
                   <input value={s.title || ''} onChange={(e) => upd(s.id, { title: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm font-bold" placeholder="Title" />
                   {SLIDER_TAB_IDS.includes(s.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={s.content?.eyebrow || ''} onChange={(e) => upd(s.id, { content: { ...s.content, eyebrow: e.target.value } })} /></Field>}
                   <input value={sectionField(s, 'subtitle')} onChange={(e) => upd(s.id, sectionPatch(s, 'subtitle', e.target.value))} className="w-full mb-2 p-2 rounded-lg border border-border text-sm" placeholder="Subtitle" />
+                  </>}
                   <ImageUploader value={sectionField(s, 'image_url')} onChange={(url) => upd(s.id, sectionPatch(s, 'image_url', url))} folder="banners" />
-                  {SLIDER_TAB_IDS.includes(s.section_type) && (
+                  {SLIDER_TAB_IDS.includes(s.section_type) && s.content?.display_mode !== 'image' && (
                     <input value={s.content?.badge || ''} onChange={(e) => upd(s.id, { content: { ...s.content, badge: e.target.value } })} className="w-full mt-2 p-2 rounded-lg border border-border text-sm" placeholder="Optional badge (e.g. Opening soon)" />
                   )}
                   <div className="grid grid-cols-2 gap-2 mt-2">
@@ -583,11 +590,15 @@ export default function AdminStorefront() {
             </>
           ) : (
             <>
+              {newSection.section_type === 'popup' && <Field label={msg('FE_SF_PLACEMENT', 'Show on page')}><CmsPlacementSelect value={newSection.placement} onChange={(value) => setNewSection({ ...newSection, placement: value })} /></Field>}
+              {newSection.section_type !== 'popup' && <DisplayMode value={newSection.display_mode} onChange={(value) => setNewSection({ ...newSection, display_mode: value })} />}
+              {newSection.section_type !== 'popup' && newSection.display_mode !== 'image' && <>
               <Field label="Title (required)"><TextInput value={newSection.title} onChange={(e) => setNewSection({ ...newSection, title: e.target.value })} /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={newSection.eyebrow} onChange={(e) => setNewSection({ ...newSection, eyebrow: e.target.value })} /></Field>}
               <Field label="Subtitle"><TextInput value={newSection.subtitle} onChange={(e) => setNewSection({ ...newSection, subtitle: e.target.value })} /></Field>
+              </>}
               <Field label="Image (required)"><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
-              {SLIDER_TAB_IDS.includes(newSection.section_type) && (
+              {SLIDER_TAB_IDS.includes(newSection.section_type) && newSection.display_mode !== 'image' && (
                 <Field label="Optional badge (e.g. Opening soon)"><TextInput value={newSection.badge} onChange={(e) => setNewSection({ ...newSection, badge: e.target.value })} /></Field>
               )}
               <div className="grid grid-cols-2 gap-3">
@@ -635,4 +646,11 @@ export default function AdminStorefront() {
       </Modal>
     </div>
   );
+}
+
+function DisplayMode({ value, onChange }) {
+  return <Field label={msg('FE_SF_DISPLAY_MODE', 'Card design')}><select value={value} onChange={(event) => onChange(event.target.value)} className="w-full p-2 rounded-lg border border-border text-sm bg-card">
+    <option value="text">{msg('FE_SF_MODE_TEXT', 'Image or icon with text')}</option>
+    <option value="image">{msg('FE_SF_MODE_IMAGE', 'Full design image only')}</option>
+  </select></Field>;
 }

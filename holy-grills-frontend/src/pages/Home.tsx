@@ -25,7 +25,6 @@ import CountUp from '@/components/CountUp';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import FlameMark from '@/components/FlameMark';
 import ModalPortal from '@/components/ModalPortal';
-import PromoFlyerPopup from '@/components/storefront/PromoFlyerPopup';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { msg } from '@/lib/messages';
 
@@ -135,7 +134,6 @@ export default function Home() {
   return (
     <>
       <SEO />
-      <PromoFlyerPopup />
 
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: 'easeOut' }} className="space-y-7">
 
@@ -254,7 +252,7 @@ export default function Home() {
 
       {/* 7. What's inside — logged-out feature slider only */}
       {!isAuthenticated && (
-        <StorefrontSlider sectionType="whats_inside" variant="portrait" eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
+        <StorefrontSlider sectionType="whats_inside" variant="compact" eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
       )}
 
       {/* 8. The First Believers — early supporters slider */}

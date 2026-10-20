@@ -86,7 +86,7 @@ export default function MenuGridCard({ item, onAdd }) {
               <Heart className={`w-3.5 h-3.5 transition-all ${saved ? 'fill-primary text-primary scale-110' : 'text-muted-foreground'}`} />
             </button>
           </div>
-          <p className="text-[11px] text-muted-foreground line-clamp-1 leading-snug hidden sm:block">{item.description}</p>
+          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-snug">{item.description}</p>
           <div className="mt-auto flex items-end justify-between gap-1.5">
             <div className="min-w-0">
               <span className="font-heading font-bold text-sm text-foreground leading-none block">{formatNaira(item.price)}</span>

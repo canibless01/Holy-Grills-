@@ -528,10 +528,10 @@ def create_section():
         name: body
         required: true
         schema:
-          required: [key, title, section_type]
+          required: [key, section_type]
           properties:
             key: {type: string, description: "Unique identifier slug (unique per campus)"}
-            title: {type: string}
+            title: {type: string, description: "Required except for popup or image-only sections"}
             section_type: {type: string, description: "e.g. hero, banner, promo, faq"}
             content: {type: object}
             subtitle: {type: string, description: "folded into content.subtitle / content.subheadline"}
@@ -553,19 +553,28 @@ def create_section():
     data = _json_body()
     if data is None:
         return _bad_request()
-    for f in ("key", "title", "section_type"):
+    for f in ("key", "section_type"):
         if not isinstance(data.get(f), str) or not data[f].strip():
             return _field_required(f)
     content = _section_content(data)
     if content is None:
         return _bad_request()                                                       # D17-B13 (content: null -> NOT NULL 500)
+    # Artwork-only sections have no overlay copy; title remains a string column.
+    title = data.get("title", "")
+    if not isinstance(title, str):
+        return _bad_request()
+    image_only = data["section_type"].strip() == "popup" or content.get("display_mode") == "image"
+    if image_only and not content.get("image_url"):
+        return _field_required("image_url")
+    if not title.strip() and not image_only:
+        return _field_required("title")
     err = _section_validation(content, data["section_type"].strip())
     if err:
         return err
     try:
         safe = {
             "key": data["key"].strip(),
-            "title": data["title"],
+            "title": title,
             "section_type": data["section_type"].strip(),
             "content": content,
             "is_active": _parse_bool(data["is_active"]) if "is_active" in data else True,

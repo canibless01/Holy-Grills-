@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { ChevronRight, Sparkles, Pause, Play } from 'lucide-react';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useCampus } from '@/lib/campusContext';
 import { msg } from '@/lib/messages';
@@ -14,6 +14,7 @@ import { openCmsDestination } from '@/lib/safeNavigation';
 //   landscape — 3:2, text overlaid on image, 2-up desktop  (How It's Made)
 //   poster    — 3:2, text below image in a card, 2-up      (Catering)
 const VARIANTS = {
+  compact: { aspect: '3 / 2', cardClass: 'w-[72vw] sm:w-[280px]', maxW: 320, textBelow: true },
   portrait: {
     aspect: '4 / 5',
     cardClass: 'w-[68vw] sm:w-[calc((100%-1.5rem)/3)]',
@@ -40,6 +41,9 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
   const [slides, setSlides] = useState(null);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const reducedMotion = useReducedMotion();
   const scrollRef = useRef(null);
 
   const v = VARIANTS[variant] || VARIANTS.portrait;
@@ -60,37 +64,33 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
     return () => { live = false; };
   }, [sectionType, campusId, placement]);
 
-  const reducedMotion = typeof window !== 'undefined' && window.matchMedia
-    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    : false;
-
   const scrollTo = useCallback((idx) => {
     const el = scrollRef.current;
     if (!el) return;
     const card = el.children[idx];
-    if (card) el.scrollTo({ left: card.offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: 'smooth' });
+    if (card) el.scrollTo({ left: card.offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: reducedMotion ? 'auto' : 'smooth' });
     setActive(idx);
-  }, []);
+  }, [reducedMotion]);
 
   // Auto-advance + loop. The `paused` flag stops/restarts the interval cleanly —
   // no manual timer juggling. Stays still for reduced-motion users.
   useEffect(() => {
-    if (!slides || slides.length <= 1 || reducedMotion || paused) return;
+    if (!slides || slides.length <= 1 || reducedMotion || paused || userPaused || focusWithin) return;
     const timer = setInterval(() => {
       setActive((p) => {
         const next = (p + 1) % slides.length;
         const el = scrollRef.current;
-        if (el && el.children[next]) el.scrollTo({ left: el.children[next].offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: 'smooth' });
+        if (el && el.children[next]) el.scrollTo({ left: el.children[next].offsetLeft - (el.children[0]?.offsetLeft || 0), behavior: reducedMotion ? 'auto' : 'smooth' });
         return next;
       });
     }, 4500);
     return () => clearInterval(timer);
-  }, [slides, reducedMotion, paused]);
+  }, [slides, reducedMotion, paused, userPaused, focusWithin]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el || !slides || slides.length <= 1) return;
-    const idx = Math.round(el.scrollLeft / (el.children[0]?.offsetWidth || 1));
+    const idx = Math.round(el.scrollLeft / ((el.children[0]?.offsetWidth || 1) + 12));
     if (idx !== active && idx >= 0 && idx < slides.length) setActive(idx);
   }, [slides, active]);
 
@@ -122,26 +122,43 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        onFocusCapture={() => setFocusWithin(true)}
+        onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false); }}
         onTouchStart={() => setPaused(true)}
         onTouchEnd={() => setPaused(false)}
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
-        className="flex gap-3 overflow-x-auto scrollbar-hide snap-x snap-mandatory -mx-1 px-1"
+        className="flex items-start gap-3 overflow-x-auto scrollbar-hide snap-x snap-mandatory -mx-1 px-1"
         style={{ scrollSnapType: 'x mandatory' }}
       >
         {slides.map((s, i) => {
           const img = s.image_url || s.content?.image_url || '';
           const title = s.title || s.content?.title || '';
           const line = s.subtitle || s.content?.line || s.content?.subtitle || '';
+          const imageOnly = s.content?.display_mode === 'image';
+          const compact = variant === 'compact';
           const badge = s.content?.badge || s.badge || '';
           return (
             <button
               key={s.id || i}
               onClick={() => handleTap(s)}
+              aria-label={title || msg('FE_STOREFRONT_EXPLORE', 'Explore')}
               className={`relative shrink-0 snap-start overflow-hidden rounded-2xl text-left group ${v.cardClass} ${v.textBelow ? 'flex flex-col bg-card border border-border' : 'bg-foreground'}`}
               style={{ maxWidth: v.maxW, aspectRatio: v.textBelow ? undefined : v.aspect, scrollSnapAlign: 'start' }}
             >
-              {v.textBelow ? (
+              {imageOnly ? (
+                <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-full object-contain" style={{ aspectRatio: v.aspect }} />
+              ) : compact ? (
+                <div className="p-4 flex items-start gap-3 min-h-[132px]">
+                  {img ? <img src={img} alt="" className="w-11 h-11 object-contain shrink-0" loading="lazy" /> : <Sparkles className="w-9 h-9 text-primary shrink-0" aria-hidden="true" />}
+                  <div className="min-w-0">
+                    {s.content?.eyebrow && <span className="block text-[10px] font-bold text-primary mb-1">{s.content.eyebrow}</span>}
+                    {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight">{title}</h3>}
+                    {line && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{line}</p>}
+                    {s.content?.cta_text && <span className="block text-xs text-primary font-bold mt-2">{s.content.cta_text}</span>}
+                  </div>
+                </div>
+              ) : v.textBelow ? (
                 <>
                   <div className="relative overflow-hidden" style={{ aspectRatio: v.aspect }}>
                     {img && <img src={img} alt={title} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />}
@@ -174,9 +191,10 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
         })}
       </div>
       {slides.length > 1 && (
-        <div className="flex gap-1.5 justify-center">
+        <div className="flex gap-1.5 justify-center items-center">
+          {!reducedMotion && <button type="button" onClick={() => setUserPaused(!userPaused)} aria-label={userPaused ? msg('FE_SF_PLAY', 'Resume carousel') : msg('FE_SF_PAUSE', 'Pause carousel')} className="p-2 rounded-full text-muted-foreground hover:bg-muted">{userPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}</button>}
           {slides.map((_, idx) => (
-            <button key={idx} onClick={() => scrollTo(idx)} aria-label={`Slide ${idx + 1}`} className={`h-1.5 rounded-full transition-all ${idx === active ? 'bg-primary w-5' : 'bg-muted-foreground/30 w-1.5'}`} />
+            <button key={idx} onClick={() => scrollTo(idx)} aria-label={msg('FE_CMS_SLIDE_NUMBER', 'Slide {number}', { number: idx + 1 })} aria-current={idx === active ? 'true' : undefined} className={`h-1.5 rounded-full transition-all ${idx === active ? 'bg-primary w-5' : 'bg-muted-foreground/30 w-1.5'}`} />
           ))}
         </div>
       )}
