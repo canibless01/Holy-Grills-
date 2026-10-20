@@ -17,6 +17,7 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ORDER_GIFT_INCLUDED = "Gift included"
     FE_SF_PLACEMENT = "Show on page"
     FE_SF_INSIDE_HELP = "Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended)."
     FE_SF_POPUP_HELP = "Transparent PNG artwork keeps its original shape and full content. Any aspect ratio; 1200 px on the longest edge recommended. Text is part of your artwork."
