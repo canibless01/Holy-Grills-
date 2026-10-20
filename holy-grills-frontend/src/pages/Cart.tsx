@@ -36,6 +36,14 @@ export default function Cart() {
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('cart');
+  const [clearing, setClearing] = useState(false);
+  const handleClear = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try { await clearCart(); }
+    catch (e) { toast({ title: msg('FE_CART_CLEAR_FAILED', 'Cart could not be cleared'), description: e.message, variant: 'destructive' }); }
+    finally { setClearing(false); }
+  };
 
   useEffect(() => {
     refreshCart().then(() => setLoading(false));
@@ -147,7 +155,7 @@ export default function Cart() {
                 <h1 className="font-heading font-bold text-xl text-foreground">Your Cart</h1>
                 <p className="text-sm text-muted-foreground">{cart.item_count} item{cart.item_count !== 1 ? 's' : ''}</p>
               </div>
-              <button onClick={clearCart} className="text-xs font-semibold text-destructive hover:text-destructive flex items-center gap-1 transition-colors">
+              <button onClick={handleClear} disabled={clearing} className="text-xs font-semibold text-destructive hover:text-destructive flex items-center gap-1 transition-colors">
                 <Trash2 className="w-3.5 h-3.5" /> Clear all
               </button>
             </div>

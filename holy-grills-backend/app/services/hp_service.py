@@ -243,7 +243,7 @@ def _tier_multiplier_for_slug(tier_slug) -> float:
         return 1.0
 
 
-def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None) -> int:
+def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None, *, include_addons=False, net_food_spend=None) -> int:
     """Pure calculation — no DB writes. Extracted from award_food_order_hp."""
     tier_multiplier = 1.0
     if user_id:
@@ -260,27 +260,9 @@ def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = No
     menu_multiplier = _get_menu_multiplier(campus_id)
 
     if order_items:
-        base_hp = 0
-        multiplied_base_hp = 0
-        total_hp = 0
-        for item in order_items:
-            if item.get("is_addon") or not item.get("price_snapshot"):
-                continue
-            line_base_hp = int(
-                float(item.get("price_snapshot") or 0)
-                * int(item.get("quantity") or 1)
-                * food_earn_rate
-            )
-            base_hp += line_base_hp
-            try:
-                item_multiplier = float(item.get("hp_multiplier_snapshot") or 1.0)
-            except (TypeError, ValueError):
-                item_multiplier = 1.0
-            if item_multiplier not in (0.5, 1.0, 2.0):
-                item_multiplier = 1.0
-            multiplied_line_hp = round(line_base_hp * item_multiplier * event_multiplier * menu_multiplier)
-            multiplied_base_hp += multiplied_line_hp
-            total_hp += round(multiplied_line_hp * tier_multiplier)
+        from app.services.food_hp_plan import food_hp_lines
+        lines = food_hp_lines(order_items, food_earn_rate, include_addons=include_addons, net_food_spend=net_food_spend)
+        total_hp = sum(round(round(line['base_hp'] * line['hp_multiplier'] * event_multiplier * menu_multiplier) * tier_multiplier) for line in lines)
     else:
         # Same order of operations as the per-item branch (event x menu first, tier on top). This branch used to
         # skip the menu multiplier and add the tier bonus to the unmultiplied base, so the two paths disagreed

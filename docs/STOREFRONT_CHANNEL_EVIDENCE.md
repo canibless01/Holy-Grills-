@@ -24,3 +24,5 @@ Private browser script and results: `/workspace/work/ecosystem-audit/storefront-
 ## Limits
 
 No production CMS publication, live customer-data edit, database migration, deployment or push is performed in this channel. Native authenticated Dashboard/Orders/Rewards popup behavior follows the same exact-path mapping but requires the broader authenticated fixture matrix to verify each route visually.
+
+Root visual review further reduces the compact card minimum to 88 px and uses a 3:1 full-artwork canvas. Recommended compact artwork: **960 × 320 px** (or 1200 × 400), PNG for transparency. Full artwork still uses contain, so other ratios are preserved with spare space rather than cropped. The earlier 134 px measurement is the pre-refinement proof. A final rerun of the complete browser harness passed with **90 px** compact-card height; popup containment/transparency, both homepage channels, reduced motion, native CMS save/reload and page-scoped routing also passed.

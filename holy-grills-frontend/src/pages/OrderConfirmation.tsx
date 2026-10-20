@@ -132,7 +132,7 @@ export default function OrderConfirmation() {
       </motion.div>
 
       <OrderRewardSummary order={order} />
-      <OrderPaymentActions order={order} claimToken={claimToken} onUpdated={reloadOrder} autoStart={!!location.state?.startPayment} />
+      <OrderPaymentActions order={order} claimToken={claimToken} onUpdated={reloadOrder} autoStart={!!location.state?.startPayment} initialError={location.state?.paymentError || ''} />
 
       {/* HP Earned */}
       {order.hp_earned > 0 && (
@@ -214,14 +214,14 @@ export default function OrderConfirmation() {
           <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
             <div className="text-xs text-muted-foreground">Delivery to</div>
-            <div className="font-semibold text-foreground">{order.delivery_address?.line1 || '—'}</div>
+            <div className="font-semibold text-foreground">{order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Package className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
             <div className="text-xs text-muted-foreground">Window</div>
-            <div className="font-semibold text-foreground">{order.delivery_window?.label || (winStart ? `${to12h(winStart)}–${to12h(winEnd)}` : '—')}</div>
+            <div className="font-semibold text-foreground">{order.delivery_window?.label || (winStart && winEnd ? `${to12h(winStart)}–${to12h(winEnd)}` : msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned'))}</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">

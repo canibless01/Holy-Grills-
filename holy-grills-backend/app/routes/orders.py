@@ -323,6 +323,8 @@ def get_order(order_id):
     # Service reads are permitted only after the ownership/token checks above.
     from app.services.order_reward_summary import food_hp_reward_summary
     order['food_hp_reward'] = food_hp_reward_summary(get_db(), order)
+    from app.services.order_delivery_details import order_delivery_details
+    order['delivery_address'], order['delivery_window'] = order_delivery_details(get_db(), order)
 
     # Resolve the assigned rider from the persisted batch/profile relation.
     # No phone number is embedded in the response or codebase.

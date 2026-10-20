@@ -63,7 +63,7 @@ const TAB_GROUPS: Array<{ label: string; tabs: StorefrontTab[] }> = [
       { id: 'promo', label: 'Promos', icon: Tag, kind: 'section', desc: 'Promo blocks — single image + text + CTA.' },
       { id: 'testimonial', label: 'Testimonials', icon: Quote, kind: 'section', desc: 'Student reviews shown on the homepage.' },
       { id: 'share_template', label: 'Share Templates', icon: Share2, kind: 'section', desc: 'Base images students overlay their name + HP on.' },
-      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:2 design image (960 × 640 recommended).') },
+      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended).') },
       { id: 'how_its_made', label: "How It's Made", icon: Flame, kind: 'section', desc: 'Process-stage slider — each slide is a step from raw to door.' },
       { id: 'catering', label: 'Catering', icon: Utensils, kind: 'section', desc: 'Catering card — single image + text + CTA on the homepage.' },
       { id: 'our_story', label: 'Our Story', icon: BookOpen, kind: 'section', desc: 'Our Story page — hero image + title + caption.' },

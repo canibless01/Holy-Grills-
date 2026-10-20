@@ -287,11 +287,11 @@ export default function OrderDetail() {
         )}
         <div className="flex items-center gap-3 text-sm">
           <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div><div className="text-xs text-muted-foreground">Delivery to</div><div className="font-semibold text-foreground">{order.delivery_address?.line1 || '—'}</div></div>
+          <div><div className="text-xs text-muted-foreground">Delivery to</div><div className="font-semibold text-foreground">{order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div></div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Package className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div><div className="text-xs text-muted-foreground">Window</div><div className="font-semibold text-foreground">{order.delivery_window?.label || '—'}</div></div>
+          <div><div className="text-xs text-muted-foreground">Window</div><div className="font-semibold text-foreground">{order.delivery_window?.label || msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned')}</div></div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <CreditCard className="w-4 h-4 text-muted-foreground shrink-0" />

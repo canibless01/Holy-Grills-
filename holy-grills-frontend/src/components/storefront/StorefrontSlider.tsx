@@ -14,7 +14,7 @@ import { openCmsDestination } from '@/lib/safeNavigation';
 //   landscape — 3:2, text overlaid on image, 2-up desktop  (How It's Made)
 //   poster    — 3:2, text below image in a card, 2-up      (Catering)
 const VARIANTS = {
-  compact: { aspect: '3 / 2', cardClass: 'w-[72vw] sm:w-[280px]', maxW: 320, textBelow: true },
+  compact: { aspect: '3 / 1', cardClass: 'w-[72vw] sm:w-[280px]', maxW: 320, textBelow: true },
   portrait: {
     aspect: '4 / 5',
     cardClass: 'w-[68vw] sm:w-[calc((100%-1.5rem)/3)]',
@@ -149,12 +149,12 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
               {imageOnly ? (
                 <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-full object-contain" style={{ aspectRatio: v.aspect }} />
               ) : compact ? (
-                <div className="p-4 flex items-start gap-3 min-h-[132px]">
-                  {img ? <img src={img} alt="" className="w-11 h-11 object-contain shrink-0" loading="lazy" /> : <Sparkles className="w-9 h-9 text-primary shrink-0" aria-hidden="true" />}
+                <div className="p-3 flex items-start gap-3 min-h-[88px]">
+                  {img ? <img src={img} alt="" className="w-9 h-9 object-contain shrink-0" loading="lazy" /> : <Sparkles className="w-9 h-9 text-primary shrink-0" aria-hidden="true" />}
                   <div className="min-w-0">
                     {s.content?.eyebrow && <span className="block text-[10px] font-bold text-primary mb-1">{s.content.eyebrow}</span>}
-                    {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight">{title}</h3>}
-                    {line && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{line}</p>}
+                    {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight line-clamp-1">{title}</h3>}
+                    {line && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{line}</p>}
                     {s.content?.cta_text && <span className="block text-xs text-primary font-bold mt-2">{s.content.cta_text}</span>}
                   </div>
                 </div>

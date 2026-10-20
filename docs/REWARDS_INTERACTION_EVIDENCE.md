@@ -22,6 +22,8 @@ Verified browser outcomes:
 3. A plain lifetime HP milestone shows its real fixture progress (`1/3`) after badge inventory removal.
 4. Podium users appear once each, with remaining rankings following them; the first three are not duplicated in the list.
 5. Typing successive recipient queries sends only the final debounced email query. Suggestions are selectable; the visible `2/3 delivered orders` state keeps Send disabled.
+6. The spin wheel renders the configured prize names in its SVG segments.
+7. Native admin free-credit recipient entry displays Gmail suggestions without a separate Search click.
 
 Screenshots: `redemption-local-mobile.png` and `leaderboard-local-mobile.png` beside the harness.
 

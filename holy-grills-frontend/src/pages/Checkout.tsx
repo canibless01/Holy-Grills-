@@ -1,3 +1,4 @@
+import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { localStore } from '@/lib/storage';
 import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import HeroCarousel from '@/components/HeroCarousel';
@@ -150,7 +151,10 @@ export default function Checkout() {
   const [validatingPromo, setValidatingPromo] = useState(false);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
+      if (!campus?.id) { setLoading(false); return; }
+      setLoading(true);
       try {
         const [status, h, g, ga] = await Promise.all([
           // The campus id is passed explicitly, so the status is read for THIS
@@ -162,16 +166,18 @@ export default function Checkout() {
           mockApi.delivery.getGates(),
           mockApi.menu.getGlobalAddons().catch(() => []),
         ]);
+        if (!active) return;
         setWindowStatus(status);
         setHostels(h || []);
         setGates(g || []);
         setGlobalAddons(Array.isArray(ga) ? ga : (ga?.addons || ga?.global_addons || []));
       } catch (e) { console.error(e); }
-      setLoading(false);
+      if (active) setLoading(false);
     };
     load();
     try { setScheduledWindow(JSON.parse(sessionStorage.getItem('hg_scheduled_window') || 'null')); } catch { /* ignore */ }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { active = false; };
+  }, [campus?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Closed kitchen on load. Only an EXPLICIT is_open === false counts: `null`
   // means the campus is not resolved yet, which is "unknown", not "closed" —
@@ -233,11 +239,20 @@ export default function Checkout() {
   const pinRef = useRef(null);
   const gateRef = useRef(null);
   const feeTimer = useRef(null);
+  const feeRequestId = useRef(0);
+  useEffect(() => {
+    feeRequestId.current += 1;
+    if (feeTimer.current) clearTimeout(feeTimer.current);
+    pinRef.current = null; gateRef.current = null;
+    setHostelId(null); setGateId(null); setDeliveryPin(null); setFeePreview(null);
+    setSelectedAddressId(null); setRewardOptions({ hp: [], delivery: [] });
+    return () => { feeRequestId.current += 1; if (feeTimer.current) clearTimeout(feeTimer.current); };
+  }, [campus?.id]);
 
   // Off-campus fee: when the pin moves we ask the backend for the nearest gate
   // (no delivery_location_id) and adopt the gate object it returns. A manually
   // chosen gate overrides that for the calc (keepGate) so its fee is used.
-  const runFeeCalc = async ({ keepGate = false } = {}) => {
+  const runFeeCalc = async ({ keepGate = false, sequence = feeRequestId.current } = {}) => {
     const ll = pinRef.current;
     if (!ll || ll.lat == null || ll.lng == null) { setDeliveryFee(0); setFeePreview(null); setRadiusError(null); return; }
     // delivery_location_id is attached below once a gate is pinned/kept.
@@ -247,7 +262,7 @@ export default function Checkout() {
     // A re-drop on the same spot answers from cache. calculate-fee makes several
     // database calls in a row, and on a cold or idle backend the first one is the
     // slow one — dragging the pin around should not re-pay that cost every time.
-    const cached = readFeeCache(ll.lat, ll.lng);
+    const cached = readFeeCache(ll.lat, ll.lng, campus?.id);
     if (cached && !keepGate) {
       setDeliveryFee(cached.fee);
       if (cached.gateId) { gateRef.current = cached.gateId; setGateId(cached.gateId); }
@@ -256,6 +271,7 @@ export default function Checkout() {
     }
     try {
       const res = await mockApi.delivery.calculateFee(body);
+      if (sequence !== feeRequestId.current) return;
       const fee = res.delivery_fee ?? res.fee ?? 0;
       setDeliveryFee(fee);
       const returnedGate = res.gate || null;
@@ -265,8 +281,9 @@ export default function Checkout() {
       }
       const preview = { fee, km: res.distance_km ?? null, gateName: returnedGate?.name || returnedGate?.id || 'nearest gate' };
       setFeePreview(preview);
-      if (!keepGate) writeFeeCache(ll.lat, ll.lng, { ...preview, gateId: returnedGate?.id ?? null });
+      if (!keepGate) writeFeeCache(ll.lat, ll.lng, { ...preview, gateId: returnedGate?.id ?? null }, campus?.id);
     } catch (e) {
+      if (sequence !== feeRequestId.current) return;
       setDeliveryFee(0); setFeePreview(null);
       // Backend rejects pins outside the delivery area — surface its message as-is.
       if (e?.message && /outside|delivery area|radius/i.test(e.message)) { setRadiusError(e.message); return; }
@@ -286,7 +303,8 @@ export default function Checkout() {
     if (gid !== undefined && gid !== null) gateRef.current = gid;
     if (ll && ll.lat != null) pinRef.current = ll;
     if (feeTimer.current) clearTimeout(feeTimer.current);
-    feeTimer.current = setTimeout(() => runFeeCalc({ keepGate }), 350);
+    const sequence = ++feeRequestId.current;
+    feeTimer.current = setTimeout(() => runFeeCalc({ keepGate, sequence }), 350);
   };
 
   const friendlyPromoError = (msg = '') => {
@@ -374,6 +392,7 @@ export default function Checkout() {
         delivery_reward_id: deliveryRewardId,
         hp_reward_id: hpRewardId,
         expected_hp_bonus_plan: quote?.hp_bonus_plan,
+        expected_food_hp_plan: quote?.food_hp_plan,
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
         promo_code: promoResult?.code,
@@ -394,7 +413,7 @@ export default function Checkout() {
           : {
             ...(gateId ? { delivery_location_id: gateId } : {}),
             ...(deliveryPin && deliveryPin.lat != null ? { delivery_location_lat: deliveryPin.lat, delivery_location_lon: deliveryPin.lng } : {}),
-            delivery_address: deliveryAddress || landmark || 'Off-campus delivery',
+            delivery_address: { line1: deliveryAddress, landmark },
           }),
         ...(selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
         ...((scheduled || scheduleRequested) ? { accept_next_available_date: true } : {}),
@@ -528,6 +547,7 @@ export default function Checkout() {
         delete base.expected_total;
         delete base.expected_free_sides;
         delete base.expected_hp_bonus_plan;
+        delete base.expected_food_hp_plan;
         const idempotency_key = recover ? pendingCheckout.payload.idempotency_key : await checkoutIntent({
           actor: user?.id || 'guest', campus: campus?.id,
           cartRows: (cart?.items || []).map((item) => item.id), payload: base,
@@ -550,7 +570,7 @@ export default function Checkout() {
     if (!order?.id) throw new Error(msg('FE_CHECKOUT_CONFIRMATION_MISSING', 'We could not confirm the saved order. Recover this checkout before trying another order.'));
     clearPendingCheckout();
     if (rewardStateKey) localStore.removeItem(rewardStateKey);
-    play('order_placed');
+    let paymentError = '';
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
     if (!isAuthenticated) {
@@ -562,10 +582,26 @@ export default function Checkout() {
       } catch { /* ignore */ }
     }
     if (payload.delivery_window_id) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
+    const cardPending = order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0;
+    if (cardPending) {
+      try {
+        const payment = await mockApi.orders.initializePayment(order.id, order.claim_token ? { claim_token: order.claim_token } : {});
+        if (payment.payment_status !== 'paid') {
+          if (!isAllowedPaymentUrl(payment.authorization_url)) throw new Error(msg('FE_ORDER_PAYMENT_INVALID_LINK', 'The payment link could not be verified. Please retry.'));
+          window.location.assign(payment.authorization_url);
+          return;
+        }
+        order.payment_status = 'paid';
+      } catch (e) {
+        paymentError = e.message || msg('FE_ORDER_PAYMENT_UNAVAILABLE', 'Payment is unavailable. Your order is saved; please retry here.');
+      }
+    }
+    if (order.payment_status === 'paid') play('order_placed');
     setReschedule(null);
     navigate(`/order-confirmation/${order?.id || 'pending'}`, {
       state: {
-        startPayment: order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0,
+        startPayment: false,
+        paymentError,
         claim_token: order?.claim_token,
         guest: !isAuthenticated,
         is_scheduled: order?.is_scheduled,
