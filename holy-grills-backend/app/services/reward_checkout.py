@@ -26,11 +26,14 @@ def reward_checkout_plan(db, user_id, campus_id, redemption_id=None, include_nex
         valid = (row.get('user_id') == user_id and row.get('status') == 'fulfilled'
                  and not row.get('attached_order_id') and not row.get('used_at')
                  and row.get('campus_id') in (None, campus_id))
-        reward = (db.table('rewards').select('id,name,reward_type,fulfillment_type,menu_item_id,campus_id')
+        reward = (db.table('rewards').select('id,name,reward_type,fulfillment_type,metadata,campus_id')
                   .eq('id', row['reward_id']).single().execute()) if valid else None
         valid = valid and bool(reward) and reward.get('campus_id') in (None, campus_id)
-        menu_id = reward.get('menu_item_id') if reward else None
-        if valid and reward.get('fulfillment_type') == 'menu_item':
+        metadata = (reward.get('metadata') or {}) if reward else {}
+        menu_id = metadata.get('menu_item_id') if isinstance(metadata, dict) else None
+        if valid and menu_id and not validate_uuid(menu_id):
+            valid = False
+        if valid and menu_id:
             menu = (db.table('menu_items').select('id,campus_id,is_available,deleted_at')
                     .eq('id', menu_id).single().execute()) if menu_id else None
             valid = bool(menu and menu.get('is_available') and not menu.get('deleted_at')

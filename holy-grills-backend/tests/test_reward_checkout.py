@@ -37,8 +37,8 @@ class DB:
                      'reward_id': 'reward', 'status': 'fulfilled', 'delivery_mode': 'instant',
                      'attached_order_id': None, 'used_at': None}],
                      'rewards': [{'id': 'reward', 'name': 'Free lunch', 'fulfillment_type': 'menu_item',
-                                  'menu_item_id': 'menu', 'campus_id': 'campus', 'reward_type': 'food'}],
-                     'menu_items': [{'id': 'menu', 'campus_id': 'campus', 'is_available': True}]}
+                                  'metadata': {'menu_item_id': '00000000-0000-4000-8000-000000000099'}, 'campus_id': 'campus', 'reward_type': 'food'}],
+                     'menu_items': [{'id': '00000000-0000-4000-8000-000000000099', 'campus_id': 'campus', 'is_available': True}]}
     def table(self, table): return Query(self, table)
 
 
@@ -64,7 +64,7 @@ class RewardCheckoutTests(unittest.TestCase):
         self.assertEqual(self.plan(), {'items': [], 'claims': []})
         with self.assertRaises(ValueError): self.plan(redemption_id=RID)
     def test_simple_physical_reward_has_nullable_menu_and_zero_price(self):
-        self.db.rows['rewards'][0].update(fulfillment_type='simple', menu_item_id=None)
+        self.db.rows['rewards'][0].update(fulfillment_type='simple', metadata={})
         self.assertIsNone(self.plan(redemption_id=RID)['items'][0]['menu_item_id'])
     def test_automatic_claims_are_sorted_deduplicated_and_can_be_excluded(self):
         first = self.db.rows['reward_redemptions'][0]
@@ -72,6 +72,14 @@ class RewardCheckoutTests(unittest.TestCase):
         self.db.rows['reward_redemptions'].insert(0, dict(first, id=RID2))
         self.assertEqual(self.plan(redemption_id=RID)['claims'], [RID, RID2])
         self.assertEqual(self.plan(redemption_id=RID, include_next_order=False)['claims'], [RID])
+    def test_malformed_optional_link_waits_automatically_but_explicit_fails(self):
+        self.db.rows['rewards'][0]['metadata']['menu_item_id'] = 'not-a-uuid'
+        self.db.rows['reward_redemptions'][0]['delivery_mode'] = 'next_order'
+        self.assertEqual(self.plan(), {'items': [], 'claims': []})
+        with self.assertRaises(ValueError): self.plan(redemption_id=RID)
+    def test_unlinked_food_reward_is_its_own_named_kitchen_line(self):
+        self.db.rows['rewards'][0]['metadata'] = {}
+        self.assertIsNone(self.plan(redemption_id=RID)['items'][0]['menu_item_id'])
     def test_guest_has_no_automatic_claims(self):
         self.assertEqual(reward_checkout_plan(self.db, None, 'campus'), {'items': [], 'claims': []})
         with self.assertRaises(ValueError): reward_checkout_plan(self.db, None, 'campus', RID)
