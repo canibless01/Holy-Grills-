@@ -303,12 +303,13 @@ export default function SpinWheel({ open, onClose, onResult, canSpin = true, pri
                   <text
                     x={labelPos.x}
                     y={labelPos.y}
-                    fontSize="22"
+                    fontSize="10"
                     textAnchor="middle"
                     dominantBaseline="middle"
                     style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.45))' }}
                   >
-                    {seg.icon}
+                    {seg.label.length > 19 ? `${seg.label.slice(0, 18)}…` : seg.label}
+                    <title>{seg.label}</title>
                   </text>
                 </g>
               );

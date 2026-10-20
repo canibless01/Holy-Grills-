@@ -115,6 +115,8 @@ def get_user_milestones(user_id: str) -> dict:
 
     badges_earned = []
     badges_locked = []
+    milestones_available = []
+    milestones_completed = []
     challenges_available = []
     challenges_completed = []
 
@@ -144,12 +146,25 @@ def get_user_milestones(user_id: str) -> dict:
             else:
                 challenges_available.append(m)
 
+    # Plain HP milestones preserve progress without exposing badge artwork or inventories.
+    now = datetime.now(timezone.utc)
+    for milestone in badges_earned + badges_locked:
+        if milestone.get("is_system") or milestone.get("trigger_type") in SYSTEM_VERIFIED_TRIGGERS:
+            continue  # Browser actions have their own ordered install/push card.
+        item = {key: value for key, value in milestone.items() if key not in {"icon_won", "icon_locked"}}
+        target = int(item.get("trigger_value") or 1)
+        item["progress"] = target if item.get("earned") else _compute_trigger_progress(
+            db, user_id, item.get("trigger_type"), target, None, now)
+        (milestones_completed if item.get("earned") else milestones_available).append(item)
+
     # `badges` is the whole set with the `earned` flag, kept for clients that
     # still read it. `badges_earned` / `badges_locked` are the two groups the UI
     # should render — listing `badges` under a "Badges Earned" heading shows
     # every badge the campus defines, earned or not.
     all_badges = badges_earned + badges_locked
     return {
+        "milestones_available": milestones_available,
+        "milestones_completed": milestones_completed,
         "badges_earned": badges_earned,
         "badges_locked": badges_locked,
         "badges": all_badges,
@@ -197,6 +212,16 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
         return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True}
 
     db = get_db()
+
+    # Enforce eligibility here too; generic completion must not bypass it.
+    if trigger_type == "pwa_push_bonus":
+        if not check_and_award_pwa_push_bonus(user_id)["eligible"]:
+            raise ValueError(MSG.PWA_BONUS_REQUIREMENTS)
+    elif trigger_type == "push_subscribe":
+        tokens = (db.table("device_tokens").select("id").eq("user_id", user_id)
+                  .eq("platform", "web").limit(1).execute()) or []
+        if not tokens:
+            raise ValueError(MSG.PWA_PUSH_REGISTRATION_REQUIRED)
 
     # Resolve reward amount for system-verified triggers from system_settings
     if trigger_type in SYSTEM_VERIFIED_TRIGGERS:
@@ -391,13 +416,13 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str, target
     return {"milestone": milestone, "hp_awarded": actual_hp, "awarded_by": admin_id}
 
 
-def check_and_award_pwa_push_bonus(user_id: str) -> dict:
+def check_and_award_pwa_push_bonus(user_id: str, *, award: bool = False) -> dict:
     """
     Check if both pwa_install and push_subscribe system milestones are completed by user_id.
     If both are completed and pwa_push_bonus has not been awarded, award pwa_push_bonus.
     Returns status dict.
     """
-    db = get_db()
+    db = get_user_client()
     # Fetch milestones for pwa_install, push_subscribe, pwa_push_bonus
     m_rows = (
         db.table("milestones")
@@ -418,7 +443,7 @@ def check_and_award_pwa_push_bonus(user_id: str) -> dict:
     eligible = pwa_done and push_done
     bonus_result = None
 
-    if eligible and not bonus_done and bonus_m:
+    if award and eligible and not bonus_done and bonus_m:
         try:
             bonus_result = check_and_award_milestone(user_id, bonus_m["id"])
             if bonus_result.get("already_completed"):
@@ -434,6 +459,7 @@ def check_and_award_pwa_push_bonus(user_id: str) -> dict:
         "bonus_completed": bonus_done,
         "eligible": eligible,
         "bonus_result": bonus_result,
+        "bonus_configured": bool(bonus_m),
     }
 
 

@@ -15,6 +15,7 @@ import { liveApi } from '@/lib/liveApi';
 import { msg } from '@/lib/messages';
 
 let initialized = false;
+let registeredUserId: string | null = null;
 
 const loadScript = (src: string) =>
   new Promise<void>((resolve, reject) => {
@@ -29,22 +30,21 @@ const loadScript = (src: string) =>
 
 const storeDeviceToken = async (userId, playerId) => {
   if (!userId || !playerId) return;
-  try {
-    // POST /auth/device-token — the backend owns device-token registration.
-    // OneSignal gives us the player/subscription ID; the backend stores it.
-    await liveApi.auth.deviceToken({
-      player_id: playerId,
-      platform: 'web',
-      device_info: navigator.userAgent || '',
-    });
-  } catch (e) {
-    // Token may already exist — ignore duplicate errors.
-  }
+  await liveApi.auth.deviceToken({
+    player_id: playerId,
+    platform: 'web',
+    device_info: navigator.userAgent || '',
+  });
 };
 
 export const initOneSignal = async (userId) => {
   const appId = APP_CONFIG.onesignal.appId;
-  if (!appId || initialized) return;
+  if (userId) registeredUserId = userId;
+  if (!appId) return;
+  if (initialized) {
+    if (userId && window.OneSignal) window.OneSignal.push(() => window.OneSignal.setExternalUserId(userId));
+    return;
+  }
   try {
     await loadScript('https://cdn.onesignal.com/sdks/OneSignalSDK.js');
     window.OneSignal = window.OneSignal || [];
@@ -63,12 +63,12 @@ export const initOneSignal = async (userId) => {
 
     window.OneSignal.push(() => {
       window.OneSignal.getUserId().then((playerId) => {
-        if (playerId) storeDeviceToken(userId, playerId);
+        if (playerId) storeDeviceToken(registeredUserId, playerId).catch(() => {});
       });
       window.OneSignal.on('subscriptionChange', (isSubscribed) => {
         if (isSubscribed) {
           window.OneSignal.getUserId().then((playerId) => {
-            if (playerId) storeDeviceToken(userId, playerId);
+            if (playerId) storeDeviceToken(registeredUserId, playerId).catch(() => {});
           });
         }
       });
@@ -91,12 +91,50 @@ export const requestPushPermission = async () => {
   if (!window.OneSignal) {
     throw new Error(msg('FE_ONESIGNAL_ONE_SIGNAL_IS_STILL_LOADING_TRY_AGAIN', 'OneSignal is still loading — try again in a moment.'));
   }
-  try {
-    await window.OneSignal.push(() => window.OneSignal.showSlidedownPrompt());
-    return true;
-  } catch (e) {
-    throw e;
-  }
+  return new Promise<boolean>((resolve, reject) => {
+    window.OneSignal.push(async () => {
+      const sdk = window.OneSignal;
+      const userId = registeredUserId;
+      let settled = false;
+      let checking = false;
+      const events = ['subscriptionChange', 'notificationPermissionChange'];
+      const finish = (value, error = null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        clearInterval(poll);
+        events.forEach((event) => sdk.off(event, verify));
+        if (error) reject(error); else resolve(value);
+      };
+      const verify = async () => {
+        if (settled || checking) return;
+        checking = true;
+        try {
+          if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+            finish(false); return;
+          }
+          const enabled = await sdk.isPushNotificationsEnabled();
+          const permission = await sdk.getNotificationPermission();
+          const playerId = enabled && permission === 'granted' ? await sdk.getUserId() : null;
+          if (playerId && userId && registeredUserId === userId) {
+            await storeDeviceToken(userId, playerId);
+            finish(true);
+          }
+        } catch (failure) { finish(false, failure); }
+        finally { checking = false; }
+      };
+      // Opening the prompt does not mean the browser granted permission.
+      const timeout = setTimeout(() => finish(false), 45000);
+      const poll = setInterval(verify, 1000);
+      events.forEach((event) => sdk.on(event, verify));
+      try {
+        await verify();
+        if (settled) return;
+        await sdk.showSlidedownPrompt();
+        await verify();
+      } catch (failure) { finish(false, failure); }
+    });
+  });
 };
 
 export const isPushSupported = () => {

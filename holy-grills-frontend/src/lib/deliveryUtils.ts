@@ -51,16 +51,19 @@ export function formatKm(km) {
 const FEE_CACHE = new Map();
 const FEE_CACHE_MAX = 40;
 
-export const feeCacheKey = (lat, lng) => `${lat.toFixed(4)},${lng.toFixed(4)}`;
+export const feeCacheKey = (lat, lng, campusId = '') => `${campusId}:${lat.toFixed(4)},${lng.toFixed(4)}`;
 
-export const readFeeCache = (lat, lng) => FEE_CACHE.get(feeCacheKey(lat, lng)) || null;
+export const readFeeCache = (lat, lng, campusId = '') => {
+  const entry = FEE_CACHE.get(feeCacheKey(lat, lng, campusId));
+  return entry && Date.now() - entry.savedAt < 60000 ? entry.value : null;
+};
 
-export const writeFeeCache = (lat, lng, value) => {
+export const writeFeeCache = (lat, lng, value, campusId = '') => {
   // Simple bound — the checkout screen is short-lived, so evicting the oldest
   // entry is enough and no timestamp bookkeeping is needed.
   if (FEE_CACHE.size >= FEE_CACHE_MAX) {
     const oldest = FEE_CACHE.keys().next().value;
     if (oldest !== undefined) FEE_CACHE.delete(oldest);
   }
-  FEE_CACHE.set(feeCacheKey(lat, lng), value);
+  FEE_CACHE.set(feeCacheKey(lat, lng, campusId), { value, savedAt: Date.now() });
 };

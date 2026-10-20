@@ -376,7 +376,7 @@ def push_subscribed_challenge():
 @require_auth
 def pwa_push_bonus_status():
     """
-    Get PWA + Push Subscription bonus eligibility and status. Automatically awards bonus if eligible.
+    Get PWA + Push Subscription bonus eligibility without awarding HP.
     ---
     tags: [Challenges]
     responses:
@@ -390,7 +390,40 @@ def pwa_push_bonus_status():
         "push_subscribe": status["push_subscribe"],
         "bonus_completed": status["bonus_completed"],
         "eligible": status["eligible"],
+        "bonus_configured": status["bonus_configured"],
     }), 200
+
+
+@challenges_bp.route("/pwa-push-bonus", methods=["POST"])
+@require_auth
+def claim_pwa_push_bonus():
+    """Explicit, idempotent claim; eligibility comes from recorded milestones."""
+    from app.services.milestone_service import check_and_award_pwa_push_bonus
+    status = check_and_award_pwa_push_bonus(g.user_id, award=True)
+    if not status["eligible"]:
+        return jsonify({"error": MSG.PWA_BONUS_REQUIREMENTS}), 400
+    if not status["bonus_completed"]:
+        return jsonify({"error": MSG.PWA_BONUS_UNAVAILABLE}), 503
+    return jsonify({key: value for key, value in status.items() if key != "bonus_result"}), 200
+
+
+@challenges_bp.route("/push-registered", methods=["POST"])
+@require_auth
+def claim_registered_push():
+    """The OneSignal flow must have registered a web token for this user first."""
+    db = get_user_client()
+    tokens = db.table("device_tokens").select("id").eq("user_id", g.user_id).eq("platform", "web").limit(1).execute() or []
+    if not tokens:
+        return jsonify({"error": MSG.PWA_PUSH_REGISTRATION_REQUIRED}), 400
+    milestones = db.table("milestones").select("id").eq("trigger_type", "push_subscribe").eq("is_active", True).limit(1).execute() or []
+    if not milestones:
+        return jsonify({"error": MSG.PWA_BONUS_UNAVAILABLE}), 503
+    from app.services.milestone_service import check_and_award_milestone
+    try:
+        result = check_and_award_milestone(g.user_id, milestones[0]["id"])
+        return jsonify({"success": True, "already_completed": bool(result.get("already_completed"))}), 200
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 # ── Admin endpoints ───────────────────────────────────────────────────────────

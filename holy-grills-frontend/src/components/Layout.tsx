@@ -1,5 +1,6 @@
 import { useMessages } from '@/lib/messages';
 import { Outlet, useLocation } from 'react-router-dom';
+import PromoFlyerPopup from './storefront/PromoFlyerPopup';
 import TopNav from './TopNav';
 import BottomNav from './BottomNav';
 import Footer from './Footer';
@@ -21,6 +22,7 @@ export default function Layout() {
       <Footer />
       <BottomNav />
       <MascotCelebrationOverlay />
+      <PromoFlyerPopup />
     </div>
   );
 }

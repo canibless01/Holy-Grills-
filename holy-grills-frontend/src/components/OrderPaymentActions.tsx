@@ -6,11 +6,11 @@ import { msg, useMessages } from '@/lib/messages';
 import { formatNaira } from '@/lib/hgUtils';
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 
-export default function OrderPaymentActions({ order, claimToken, onUpdated, autoStart = false }) {
+export default function OrderPaymentActions({ order, claimToken, onUpdated, autoStart = false, initialError = '' }) {
   useMessages();
   const location = useLocation();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const busyRef = useRef(false);
   const started = useRef('');
   const pending = order?.payment_status === 'pending' && !['cancelled', 'refunded'].includes(order?.status) && Number(order?.card_amount_used) > 0;

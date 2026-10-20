@@ -1,6 +1,6 @@
 import { formatNaira } from '@/lib/hgUtils';
 import { useState, useEffect } from 'react';
-import { Flame, Lock, Gift, Target, X, Check, History, GraduationCap, Sparkles, Crown, Zap, Clock, ChevronRight, Award, Download } from 'lucide-react';
+import { Flame, Lock, Gift, Target, X, Check, History, Sparkles, Crown, Zap, Clock, ChevronRight, Award, Download } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -13,6 +13,7 @@ import { toast } from '@/components/ui/use-toast';
 import RewardsSkeleton from '@/components/skeletons/RewardsSkeleton';
 import SpinWheel from '@/components/SpinWheel';
 import RewardDeliveryModal from '@/components/RewardDeliveryModal';
+import ModalPortal from '@/components/ModalPortal';
 import InstallPushBonuses from '@/components/challenges/InstallPushBonuses';
 import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge';
 import MascotStandee from '@/components/mascot/MascotStandee';
@@ -238,25 +239,6 @@ export default function Rewards() {
         <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
       </Link>
 
-      {/* Free side credit wallet chip — credits used to be invisible until
-          checkout; now the balance + expiry live right under the HP bar. */}
-      {freeSidesReleased && freeSideCredits.count > 0 && (
-        <div className="rounded-2xl bg-accent/12 border border-accent/30 p-3.5 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shrink-0">
-            <Gift className="w-4 h-4 text-accent-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-extrabold text-foreground">
-              {freeSideCredits.count} free side{freeSideCredits.count !== 1 ? 's' : ''} waiting
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              Pick one at checkout — it lands on your order at ₦0.
-              {freeSideCredits.expires_at ? ` Expires ${new Date(freeSideCredits.expires_at).toLocaleDateString()}.` : ''}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Tier progress card with liquid-fill bar */}
       {tierInfo && (
         <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
@@ -312,30 +294,6 @@ export default function Rewards() {
           </div>
         );
       })()}
-
-      {/* Graduation claim — backend is source of truth for eligibility */}
-      {user && (
-        <div className="rounded-2xl bg-gradient-dark p-5 text-white relative overflow-hidden">
-          <div className="absolute -right-4 -top-4 text-6xl opacity-15">🎓</div>
-          <div className="relative">
-            <div className="flex items-center gap-2 mb-1">
-              <GraduationCap className="w-5 h-5 text-white/60" />
-              <span className="text-xs font-bold uppercase tracking-wide text-white/60">Graduation Reward</span>
-            </div>
-            {gradClaimed ? (
-              <p className="text-sm font-semibold text-white/90">✓ You've already claimed your graduation HP. Check back after admin approval!</p>
-            ) : (
-              <>
-                <h3 className="font-heading font-bold text-lg text-white mb-1">Claim your graduation HP! 🎓</h3>
-                <p className="text-xs text-white/80 mb-3">Eligible graduates receive up to {graduationHp()} HP. Eligibility is verified when you claim.</p>
-                <button onClick={handleGraduationClaim} disabled={claimingGrad} className="px-5 py-2.5 rounded-full bg-card text-primary font-bold text-sm shadow-md disabled:opacity-60 flex items-center gap-2">
-                  {claimingGrad ? <><div className="w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /> Claiming…</> : <>Claim {graduationHp()} HP</>}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 rounded-full bg-secondary overflow-x-auto scrollbar-hide">
@@ -536,53 +494,15 @@ export default function Rewards() {
           <InstallPushBonuses />
 
           {(() => {
-            const available = challenges?.challenges_available || [];
-            const completed = challenges?.challenges_completed || [];
-            // The backend splits badges into `badges_earned` / `badges_locked`
-            // (and keeps `badges` as the full set with an `earned` flag). Earned
-            // only under "Badges Earned" — listing the full set there showed
-            // every badge the campus defines, earned or not. `badges` is the
-            // fallback for a backend that has not been redeployed yet.
-            const allBadges = challenges?.badges || [];
-            const earned = challenges?.badges_earned
-              || allBadges.filter((b) => b.earned);
-            const locked = challenges?.badges_locked
-              || allBadges.filter((b) => !b.earned);
+            const available = [...(challenges?.milestones_available || []), ...(challenges?.challenges_available || [])];
+            const completed = [...(challenges?.milestones_completed || []), ...(challenges?.challenges_completed || [])];
+            // Lifetime HP milestones and recurring challenges share progress cards.
             const all = [...available, ...completed];
-            if (all.length === 0 && allBadges.length === 0) {
+            if (all.length === 0) {
               return <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border"><p className="text-sm text-muted-foreground">Nothing here yet.</p></div>;
             }
             return (
               <>
-                {earned.length > 0 && (
-                  <div className="rounded-2xl bg-accent/10 border border-accent/20 p-3 mb-2">
-                    <div className="flex items-center gap-2 mb-2"><Award className="w-4 h-4 text-accent" /><span className="text-xs font-bold text-foreground">Badges Earned</span></div>
-                    <div className="flex flex-wrap gap-2">
-                      {earned.map((b) => (
-                        <span key={b.id} className="text-xs font-bold px-2.5 py-1 rounded-full bg-card border border-accent/20 text-accent-foreground flex items-center gap-1">
-                          {b.icon_won || '🏅'} {b.title || b.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {locked.length > 0 && (
-                  <div className="rounded-2xl bg-secondary/40 border border-border p-3 mb-2">
-                    <div className="flex items-center gap-2 mb-2"><Lock className="w-4 h-4 text-muted-foreground" /><span className="text-xs font-bold text-foreground">Locked badges</span></div>
-                    <div className="space-y-2">
-                      {locked.map((b) => (
-                        <div key={b.id} className="flex items-start gap-2">
-                          <span className="text-sm leading-none mt-0.5 opacity-60">{b.icon_locked || '🔒'}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold text-foreground">{b.title || b.name}</div>
-                            <div className="text-[11px] text-muted-foreground leading-snug">{b.description || b.requirement}</div>
-                          </div>
-                          <span className="text-[11px] font-bold text-muted-foreground shrink-0">+{b.hp_awarded || b.hp_award || 0} HP</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 {all.map((ch) => {
                   const isCompleted = completed.some((c) => c.id === ch.id);
                   const progress = ch.progress || ch.current_progress || 0;
@@ -707,10 +627,11 @@ export default function Rewards() {
 
       {/* Redeem confirmation modal */}
       {selectedReward && (
+        <ModalPortal>
         <div className="fixed inset-0 z-50 hg-scrim flex items-center justify-center p-4" onClick={() => setSelectedReward(null)}>
-          <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-labelledby="redemption-title" className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
-              <h3 className="font-heading font-bold text-lg text-foreground">Confirm Redemption</h3>
+              <h3 id="redemption-title" className="font-heading font-bold text-lg text-foreground">Confirm Redemption</h3>
               <button onClick={() => setSelectedReward(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <div className="text-center py-2">
@@ -732,6 +653,7 @@ export default function Rewards() {
             </button>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Spin wheel modal */}

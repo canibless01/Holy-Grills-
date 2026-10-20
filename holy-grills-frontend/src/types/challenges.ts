@@ -77,6 +77,8 @@ export interface EarnedBadge {
  * campus defines as if it had been won.
  */
 export interface MyChallengesEnvelope {
+  milestones_available?: MyChallengeRow[];
+  milestones_completed?: MyChallengeRow[];
   badges_earned?: EarnedBadge[];
   badges_locked?: EarnedBadge[];
   badges?: EarnedBadge[];

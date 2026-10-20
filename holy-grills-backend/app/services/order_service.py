@@ -861,6 +861,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             logger.warning('create_order: saved-address lookup failed: %s', exc)
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
 
+    if delivery_type not in ('on_campus', 'off_campus'):
+        raise ValueError(MSG.DELIVERY_TYPE_VALUE_INVALID)
+
     from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
         delivery_location_lat, delivery_location_lon = validate_coordinates(delivery_location_lat, delivery_location_lon)
@@ -885,7 +888,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         if not delivery_location_id:
             raise ValueError(MSG.ADDRESS_DELIVERY_LOCATION_INVALID)
         try:
-            hostel = db.table('hostels').select('campus_id,delivery_fee').eq('id', delivery_location_id).eq('is_active', 'true').single().execute()
+            hostel = db.table('hostels').select('id,name,campus_id,delivery_fee').eq('id', delivery_location_id).eq('is_active', 'true').single().execute()
         except Exception as exc:
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
         if not hostel or hostel.get('campus_id') not in (campus_id, None):
@@ -993,7 +996,28 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     # Calculate variables for RPC payload
     total_discount = round(promo_discount + squad_discount + order_lock_discount, 2)
-    delivery_address_snapshot = payload.get("delivery_address") or {}
+    address_input = payload.get('delivery_address') or {}
+    if isinstance(address_input, str):
+        address_input = {'line1': address_input}
+    if not isinstance(address_input, dict):
+        raise ValueError(MSG.ORDER_DELIVERY_ADDRESS_INVALID)
+    line1 = address_input.get('line1') or address_input.get('address') or ''
+    if not isinstance(line1, str) or len(line1) > 1000:
+        raise ValueError(MSG.ORDER_DELIVERY_ADDRESS_INVALID)
+    landmark = address_input.get('landmark') or ''
+    if not isinstance(landmark, str) or len(landmark) > 500:
+        raise ValueError(MSG.ORDER_DELIVERY_ADDRESS_INVALID)
+    if landmark.strip():
+        line1 = ', '.join(part for part in (line1.strip(), landmark.strip()) if part)
+    if len(line1) > 1000:
+        raise ValueError(MSG.ORDER_DELIVERY_ADDRESS_INVALID)
+    location = hostel if delivery_type == 'on_campus' else gate
+    delivery_address_snapshot = {
+        'line1': line1.strip() or location.get('name') or '',
+        'location_name': location.get('name'), 'delivery_type': delivery_type,
+        'location_id': delivery_location_id,
+        'latitude': delivery_location_lat, 'longitude': delivery_location_lon,
+    }
 
     # Pre-calculate hp_preview. The food-earn rate is read live from system_settings (same source
     # hp_service._get_food_earn_rate() uses for the actual payout at delivery, key "hp_per_naira_food",
@@ -1009,25 +1033,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     except Exception:
         food_earn_rate = current_app.config["HP_PER_NAIRA_FOOD"]
 
-    hp_preview_items = []
-    hp_preview_base = 0
-    for line in order_items:
-        if line.get("is_addon") or not line.get("price_snapshot"):
-            continue
-        base_line = int(
-            float(line["price_snapshot"]) * int(line.get("quantity") or 1)
-            * food_earn_rate
-        )
-        multiplier = float(line.get("hp_multiplier_snapshot") or 1.0)
-        line_hp = round(base_line * multiplier)
-        hp_preview_base += base_line
-        hp_preview_items.append({
-            "menu_item_id": line.get("menu_item_id"),
-            "quantity": int(line.get("quantity") or 1),
-            "hp_multiplier": multiplier,
-            "base_hp": base_line,
-            "hp": line_hp,
-        })
+    from app.services.food_hp_plan import food_hp_lines
+    net_food_spend = float(max(Decimal('0'), subtotal_dec - total_discount_dec))
+    hp_preview_items = food_hp_lines(order_items, food_earn_rate, include_addons=True, net_food_spend=net_food_spend)
+    hp_preview_base = sum(line['base_hp'] for line in hp_preview_items)
 
     tier_slug = "ember"
     next_order_hp_mult = 1.0
@@ -1055,8 +1064,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
 
     hp_preview_total = hp_service.calculate_delivery_hp(
-        subtotal, tier_slug, order_items, user_id=user_id, campus_id=campus_id
+        subtotal, tier_slug, order_items, user_id=user_id, campus_id=campus_id,
+        include_addons=True, net_food_spend=net_food_spend,
     )
+    food_hp_plan = {'version': 2, 'food_spend': net_food_spend, 'base_award': hp_preview_total}
     if not user_id and payload.get('hp_reward_id','none')!='none':
         raise ValueError(MSG.CHECKOUT_REWARD_UNAVAILABLE)
     if hp_bonus_plan is not None and hp_preview_total<=0:
@@ -1094,6 +1105,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         'available_delivery_rewards':delivery_reward_choices,
         'available_hp_rewards':hp_reward_choices,
         'hp_bonus_plan':hp_bonus_plan,
+        'food_hp_plan':food_hp_plan,
         'delivery_fee_original':delivery_fee_original,
         'squad_delivery_discount_amount':float(squad_delivery_discount_dec),
         'promo_discount':promo_discount,'squad_discount':squad_discount,
@@ -1105,6 +1117,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     if quote_only:
         return price_quote
     if 'expected_free_sides' in payload and payload['expected_free_sides'] != free_side_quote['items']:
+        raise OrderPriceChanged(price_quote)
+    if 'expected_food_hp_plan' in payload and payload['expected_food_hp_plan'] != food_hp_plan:
         raise OrderPriceChanged(price_quote)
     if 'expected_hp_bonus_plan' in payload and payload['expected_hp_bonus_plan'] != hp_bonus_plan:
         raise OrderPriceChanged(price_quote)
@@ -1136,6 +1150,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     if order_items:
         # Internal server-priced contract, never copied from client item fields.
+        order_items[0].setdefault('options_snapshot', {})['_food_hp_plan'] = food_hp_plan
         order_items[0]['_delivery_benefit'] = delivery_benefit
         order_items[0]['_free_sides'] = free_side_quote['items']
         if hp_bonus_plan is not None:
@@ -1777,7 +1792,7 @@ def _handle_delivery_rewards(order: dict):
         try:
             order_items = (
                 db.table("order_items")
-                .select("price_snapshot,quantity,hp_earn_snapshot,hp_multiplier_snapshot,is_addon")
+                .select("price_snapshot,quantity,hp_earn_snapshot,hp_multiplier_snapshot,is_addon,options_snapshot")
                 .eq("order_id", order_id)
                 .execute()
             ) or []
@@ -1786,17 +1801,25 @@ def _handle_delivery_rewards(order: dict):
                 raise
             order_items = (
                 db.table("order_items")
-                .select("price_snapshot,quantity,hp_earn_snapshot,is_addon")
+                .select("price_snapshot,quantity,hp_earn_snapshot,is_addon,options_snapshot")
                 .eq("order_id", order_id)
                 .execute()
             ) or []
 
     # Price/tier rules determine the award; the payout transaction validates
     # and consumes the same multiplier with the ledger and idempotency marker.
-    base_hp_amount = hp_service.calculate_delivery_hp(
-        order_total=subtotal, tier_slug=tier_slug, order_items=order_items,
-        user_id=user_id, campus_id=order.get('campus_id'),
-    )
+    stored_plan = next(((item.get('options_snapshot') or {}).get('_food_hp_plan') for item in order_items
+                        if isinstance(item.get('options_snapshot'), dict) and '_food_hp_plan' in item['options_snapshot']), None)
+    if stored_plan is not None:
+        if stored_plan.get('version') != 2 or type(stored_plan.get('base_award')) is not int or stored_plan['base_award'] < 0:
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED)
+        base_hp_amount = stored_plan['base_award']
+    else:
+        # Historical orders retain the earning rule promised at admission.
+        base_hp_amount = hp_service.calculate_delivery_hp(
+            order_total=subtotal, tier_slug=tier_slug, order_items=order_items,
+            user_id=user_id, campus_id=order.get('campus_id'),
+        )
     result = None
     has_squad_members = False
     owner_share_for_credit = 0
@@ -1834,7 +1857,7 @@ def _handle_delivery_rewards(order: dict):
         raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
     try:
-        hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=subtotal)
+        hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=stored_plan['food_spend'] if stored_plan else subtotal)
     except Exception as e:
         logger.warning("_handle_delivery_rewards: unlock_pending_hp failed for order %s: %s", order_id, e)
 

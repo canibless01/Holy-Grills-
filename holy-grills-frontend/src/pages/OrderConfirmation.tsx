@@ -7,7 +7,6 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Check, Flame, Package, MapPin, CreditCard, Users, Share2, Clock } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
-import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { playSound } from '@/lib/soundManager';
 import { formatNaira, formatDateTime, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import { triggerMascotCelebration } from '@/lib/mascots';
@@ -28,7 +27,6 @@ export default function OrderConfirmation() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSetting } = useHolyGrill();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [shareOpen, setShareOpen] = useState(false);
@@ -44,7 +42,7 @@ export default function OrderConfirmation() {
   const closed = ['cancelled', 'refunded'].includes(order?.status);
   const paid = order?.payment_status === 'paid' || order?.payment_status === 'partially_refunded';
   const reloadOrder = async () => setOrder(await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {}));
-  const giftItemName = getSetting('first_order_gift_item_name', 'Hot Dog');
+  const giftItemName = order?.order_items?.find(item => item.options_snapshot?.is_gift === true)?.name_snapshot;
 
   useEffect(() => {
     const load = async () => {
@@ -132,7 +130,7 @@ export default function OrderConfirmation() {
       </motion.div>
 
       <OrderRewardSummary order={order} />
-      <OrderPaymentActions order={order} claimToken={claimToken} onUpdated={reloadOrder} autoStart={!!location.state?.startPayment} />
+      <OrderPaymentActions order={order} claimToken={claimToken} onUpdated={reloadOrder} autoStart={!!location.state?.startPayment} initialError={location.state?.paymentError || ''} />
 
       {/* HP Earned */}
       {order.hp_earned > 0 && (
@@ -163,7 +161,7 @@ export default function OrderConfirmation() {
       )}
 
       {/* First-order gift */}
-      {paid && order.is_first_order && giftItemName && (
+      {paid && !closed && order.gift_included && giftItemName && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -171,8 +169,8 @@ export default function OrderConfirmation() {
           className="rounded-2xl bg-accent/20 border border-accent/40 p-4 text-center"
         >
           <div className="text-3xl mb-1">🎁</div>
-          <h3 className="font-bold text-sm text-accent-foreground">First Order Gift!</h3>
-          <p className="text-xs text-accent-foreground mt-1">Enjoy a free {giftItemName} on us. Welcome to Holy Grills! 🔥</p>
+          <h3 className="font-bold text-sm text-accent-foreground">{msg('FE_ORDER_GIFT_INCLUDED', 'Gift included')}</h3>
+          <p className="text-xs text-accent-foreground mt-1">{giftItemName}</p>
         </motion.div>
       )}
 
@@ -214,14 +212,14 @@ export default function OrderConfirmation() {
           <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
             <div className="text-xs text-muted-foreground">Delivery to</div>
-            <div className="font-semibold text-foreground">{order.delivery_address?.line1 || '—'}</div>
+            <div className="font-semibold text-foreground">{order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Package className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
             <div className="text-xs text-muted-foreground">Window</div>
-            <div className="font-semibold text-foreground">{order.delivery_window?.label || (winStart ? `${to12h(winStart)}–${to12h(winEnd)}` : '—')}</div>
+            <div className="font-semibold text-foreground">{order.delivery_window?.label || (winStart && winEnd ? `${to12h(winStart)}–${to12h(winEnd)}` : msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned'))}</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">

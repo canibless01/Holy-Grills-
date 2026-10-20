@@ -1254,13 +1254,14 @@ def search_users():
 
     q_pattern = f"*{q_clean}*"
     or_conds = [f"full_name.ilike.{q_pattern}", f"nickname.ilike.{q_pattern}"]
-    if "@" in q_raw:
+    if getattr(g, "user_role", None) in {"admin", "super_admin"} or "@" in q_raw:
         or_conds.append(f"email.ilike.{q_pattern}")
     or_filter = ",".join(or_conds)
 
     def _shape(r):
         return {"id": r.get("id"), "full_name": r.get("full_name") or r.get("nickname") or "Student",
-                "nickname": r.get("nickname"), "email": r.get("email")}
+                "nickname": r.get("nickname"),
+                **({"email": r.get("email")} if getattr(g, "user_role", None) in {"admin", "super_admin"} else {})}
 
     results = []
     try:
@@ -1280,7 +1281,7 @@ def search_users():
             q_lower = q_clean.lower()
             for r in (base_q.limit(100).execute() or []):
                 hay = ((r.get("full_name") or "") + " " + (r.get("nickname") or "")).lower()
-                if q_lower in hay or ("@" in q_raw and q_lower in (r.get("email") or "").lower()):
+                if q_lower in hay or ((getattr(g, "user_role", None) in {"admin", "super_admin"} or "@" in q_raw) and q_lower in (r.get("email") or "").lower()):
                     results.append(_shape(r))
                     if len(results) >= 20:
                         break

@@ -21,6 +21,24 @@ class MSG:
     MARKETPLACE_RESOLUTION_CONFLICT = "This purchase or report changed. Reload it before trying again."
     MARKETPLACE_LEGACY_REFUND_REVIEW = "This purchase has an earlier partial refund. Review its refund records before continuing."
     MARKETPLACE_RESOLUTION_UNAVAILABLE = "This action could not be completed. Please retry."
+
+    FE_ORDER_GIFT_INCLUDED = "Gift included"
+    FE_SF_PLACEMENT = "Show on page"
+    FE_SF_INSIDE_HELP = "Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended)."
+    FE_SF_POPUP_HELP = "Transparent PNG artwork keeps its original shape and full content. Any aspect ratio; 1200 px on the longest edge recommended. Text is part of your artwork."
+    ORDER_DELIVERY_ADDRESS_INVALID = "Enter a valid delivery address of at most 1,000 characters."
+    FE_SF_DESTINATION = "Destination page"
+    FE_SF_NO_ACTION = "No action"
+    FE_SF_PAGE_HOME = "Home"
+    FE_SF_PAGE_MENU = "Menu"
+    FE_SF_PAGE_DASHBOARD = "Dashboard"
+    FE_SF_PAGE_ORDERS = "Orders"
+    FE_SF_PAGE_REWARDS = "Rewards"
+    FE_SF_DISPLAY_MODE = "Card design"
+    FE_SF_MODE_TEXT = "Image or icon with text"
+    FE_SF_MODE_IMAGE = "Full design image only"
+    FE_SF_PLAY = "Resume carousel"
+    FE_SF_PAUSE = "Pause carousel"
     ORDER_SAVED_NOTIFICATION_TITLE = "Order saved"
     ORDER_SAVED_NOTIFICATION_BODY = "{name}, order {order_id} is saved. Open your order to check payment and delivery."
     EVENT_CARD_UNAVAILABLE = "Card payments are not configured on this server."
@@ -2643,7 +2661,20 @@ class MSG:
     FE_ORDER_HP_UNAVAILABLE                 = "Your HP reward receipt could not be loaded. Refresh this page to check its status."
     FE_ORDER_HP_TITLE                       = "Order HP reward"
 
+
+    # Added from frontend call sites (`npm run messages:fix`). Preview text is
+    # the fallback the UI already shipped; reword it here and the app follows.
+
+    FE_CART_CLEAR_FAILED                    = "Cart could not be cleared"
+    FE_ORDER_ADDRESS_UNAVAILABLE            = "Delivery details unavailable"
+    FE_ORDER_WINDOW_PENDING                 = "Delivery window will be assigned"
+
 # Short alias
+    # Rewards interaction eligibility and retries.
+    PWA_BONUS_REQUIREMENTS = "Install the app and enable push alerts before claiming your bonus."
+    PWA_BONUS_UNAVAILABLE = "This bonus is unavailable right now. Please try again."
+    PWA_PUSH_REGISTRATION_REQUIRED = "Push registration has not reached the server yet. Please retry."
+
 M = MSG
 
 

@@ -63,3 +63,10 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.invoke()
         self.assertEqual(self.db.rpc.call_count, 3); self.profiles.update.assert_not_called()
+
+    def test_new_order_uses_admitted_food_hp_snapshot_after_config_changes(self):
+        self.order['order_items'] = [{'options_snapshot': {'_food_hp_plan': {'version': 2, 'base_award': 150, 'food_spend': 900}}}]
+        self.db.rpc.return_value = {'success': True}
+        with self.assertRaises(AfterPrimaryAward):
+            self.invoke()
+        self.assertEqual(self.db.rpc.call_args.args[1]['p_hp_amount'], 300)

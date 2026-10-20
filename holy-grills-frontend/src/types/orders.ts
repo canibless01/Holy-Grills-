@@ -132,6 +132,7 @@ export interface CreateOrderItem {
 export interface CreateOrderPayload {
   delivery_reward_id?: string;
   hp_reward_id?: string;
+  expected_food_hp_plan?: Record<string, unknown>;
   expected_hp_bonus_plan?: any;
   expected_free_sides?: Array<{ selection_id: string; free_side_item_id: string; name: string }>;
   idempotency_key?: string;
@@ -153,7 +154,7 @@ export interface CreateOrderPayload {
   delivery_location_id?: Uuid;
   delivery_location_lat?: number;
   delivery_location_lon?: number;
-  delivery_address?: string;
+  delivery_address?: string | OrderDeliveryAddress;
   addons?: Array<{ addon_id: Uuid; quantity: number }>;
   delivery_window_id?: Uuid;
   is_scheduled?: boolean;

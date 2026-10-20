@@ -1,3 +1,4 @@
+import { useStudentSearch } from '@/hooks/useStudentSearch';
 import { confirmAction } from '@/lib/confirmAction';
 import { localStore } from '@/lib/storage';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -35,8 +36,7 @@ export default function AdminFreeCredits() {
   // Grant panel state
   const [grantUser, setGrantUser] = useState(null);
   const [grantQuery, setGrantQuery] = useState('');
-  const [grantResults, setGrantResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+  const { results: grantResults, searching, searchError, retry: searchStudents } = useStudentSearch(grantQuery, !grantUser);
   const [grantCount, setGrantCount] = useState<string | number>(1);
   const [grantReason, setGrantReason] = useState('');
   const [granting, setGranting] = useState(false);
@@ -106,19 +106,6 @@ export default function AdminFreeCredits() {
     setSavingValidity(false);
   };
 
-  const searchStudents = async () => {
-    const q = grantQuery.trim();
-    if (!q) { setGrantResults([]); return; }
-    setSearching(true);
-    try {
-      const rows = await mockApi.users.search({ q });
-      setGrantResults(rows);
-      if (rows.length === 0) toast({ title: msg('FE_ADMIN_FREE_CREDITS_NO_STUDENTS_MATCHED', 'No students matched'), description: msg('FE_ADMIN_FREE_CREDITS_TRY_A_FULL_NAME_NICKNAME_OR_EMAIL', 'Try a full name, nickname or email.') });
-    } catch (e) {
-      toast({ title: msg('FE_ADMIN_FREE_CREDITS_SEARCH_FAILED', 'Search failed'), description: e.message, variant: 'destructive' });
-    }
-    setSearching(false);
-  };
 
   const grantCredits = async () => {
     if (!grantUser) { toast({ title: msg('FE_ADMIN_FREE_CREDITS_PICK_A_STUDENT_FIRST', 'Pick a student first'), variant: 'destructive' }); return; }
@@ -148,7 +135,7 @@ export default function AdminFreeCredits() {
       });
       setGrantUser(null);
       setGrantQuery('');
-      setGrantResults([]);
+
       setGrantCount(1);
       setGrantReason('');
     } catch (e) {
@@ -225,8 +212,9 @@ export default function AdminFreeCredits() {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex gap-2">
-              <input value={grantQuery} onChange={(e) => setGrantQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && searchStudents()} placeholder={msg('FE_ADMIN_FREE_SIDE_SEARCH_HINT', 'Search by name, nickname or email')} className="flex-1 p-2.5 rounded-xl border border-border text-sm" />
+            {searchError && <p role="alert" className="text-xs text-destructive">{searchError}</p>}
+              <div className="flex gap-2">
+              <input value={grantQuery} onChange={(e) => { setGrantQuery(e.target.value); setGrantUser(null); }} onKeyDown={(e) => e.key === 'Enter' && searchStudents()} placeholder={msg('FE_ADMIN_FREE_SIDE_SEARCH_HINT', 'Search by name, nickname or email')} className="flex-1 p-2.5 rounded-xl border border-border text-sm" />
               <button onClick={searchStudents} disabled={searching} className="flex items-center gap-1 px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-bold disabled:opacity-50"><Search className="w-4 h-4" /> {searching ? msg('FE_ADMIN_FREE_SIDE_SEARCHING', 'Searching...') : msg('FE_ADMIN_FREE_SIDE_SEARCH', 'Search')}</button>
             </div>
             {grantResults.length > 0 && (

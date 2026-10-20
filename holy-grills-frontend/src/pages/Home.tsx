@@ -5,7 +5,6 @@ import { ChevronRight, TrendingUp, Gift, Mail, Check, Trophy, Zap, Loader2, Flam
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCampus } from '@/lib/campusContext';
-import { getLaunchWindowEndDate, getFirstOrderGiftItemName } from '@/lib/featureConfig';
 import { toast } from '@/components/ui/use-toast';
 import MenuItemCard from '@/components/MenuItemCard';
 import HeroCarousel from '@/components/HeroCarousel';
@@ -25,7 +24,6 @@ import CountUp from '@/components/CountUp';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import FlameMark from '@/components/FlameMark';
 import ModalPortal from '@/components/ModalPortal';
-import PromoFlyerPopup from '@/components/storefront/PromoFlyerPopup';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { msg } from '@/lib/messages';
 
@@ -49,8 +47,6 @@ export default function Home() {
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const [myRank, setMyRank] = useState(null);
   const [testimonials, setTestimonials] = useState([]);
-  const launchWindowEnd = getLaunchWindowEndDate();
-  const giftItemName = getFirstOrderGiftItemName();
 
   // The backend may return the rank under different keys — normalise it so the
   // tile shows the real number whenever the user has one.
@@ -135,23 +131,12 @@ export default function Home() {
   return (
     <>
       <SEO />
-      <PromoFlyerPopup />
 
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: 'easeOut' }} className="space-y-7">
 
       <HeroCarousel onCta={handleCta} />
 
       <OrderSuggestionCard />
-
-      {launchWindowEnd && (
-        <div className="rounded-2xl bg-accent/15 border border-accent/35 px-4 py-3 text-foreground flex items-center gap-3 shadow-card">
-          <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center text-lg shrink-0">🎁</span>
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-sm">Free {giftItemName} on your first order!</div>
-            <div className="text-xs text-muted-foreground">First-order gift ends {new Date(launchWindowEnd).toLocaleDateString()}</div>
-          </div>
-        </div>
-      )}
 
       {/* 2. Kitchen Radar — live box shared with the menu page */}
       <KitchenStatusBox onStatus={setKitchenStatus} />
@@ -254,7 +239,7 @@ export default function Home() {
 
       {/* 7. What's inside — logged-out feature slider only */}
       {!isAuthenticated && (
-        <StorefrontSlider sectionType="whats_inside" variant="portrait" eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
+        <StorefrontSlider sectionType="whats_inside" variant="compact" eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
       )}
 
       {/* 8. The First Believers — early supporters slider */}

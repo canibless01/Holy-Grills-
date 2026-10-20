@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
 import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
@@ -128,6 +128,7 @@ export const HolyGrillProvider = ({ children }) => {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [sessionAttempt, setSessionAttempt] = useState(0);
   const [cart, setCart] = useState(EMPTY_CART);
+  const cartRequestVersion = useRef(0);
   const [cartCount, setCartCount] = useState(0);
   const [hpBalance, setHpBalance] = useState(null);
   const [wallet, setWallet] = useState(null);
@@ -143,15 +144,18 @@ export const HolyGrillProvider = ({ children }) => {
   const [savedItems, setSavedItems] = useState([]);
 
   const loadGuestCart = useCallback(() => {
+    cartRequestVersion.current += 1;
     const items = readGuestCart();
     setCart(computeCart(items));
     setCartCount(items.length);
   }, []);
 
   const refreshCart = useCallback(async () => {
+    const version = ++cartRequestVersion.current;
     if (!isAuthenticated()) { loadGuestCart(); return; }
     try {
       const c = await liveApi.cart.get();
+      if (version !== cartRequestVersion.current || !isAuthenticated()) return;
       const rawItems = c.items || c.cart_items || [];
       const items = rawItems.map((ci) => {
         const mi = ci.menu_items || ci.menu_item || { name: ci.name, price: ci.price, hp_earn_value: ci.hp_earn_value, is_available: ci.is_available !== false };
@@ -428,8 +432,10 @@ export const HolyGrillProvider = ({ children }) => {
   };
 
   const clearCart = async () => {
+    cartRequestVersion.current += 1;
     if (isAuthenticated()) {
       await liveApi.cart.clear();
+      setCart(EMPTY_CART); setCartCount(0);
       await refreshCart();
     } else {
       writeGuestCart([]);
