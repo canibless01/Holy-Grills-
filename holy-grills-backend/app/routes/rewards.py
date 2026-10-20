@@ -292,7 +292,7 @@ def redeem_reward(reward_id):
             return jsonify({"error": MSG.REWARD_EXPIRED}), 400
         return jsonify({"error": err_str}), 400
 
-    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "pending"}
+    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "fulfilled"}
     redemption_id = redemption_row.get("id") or redemption_row.get("redemption_id") or str(rpc_res)
 
     try:
@@ -872,7 +872,7 @@ def choose_redemption_delivery(redemption_id):
       200:
         description: Choice saved
       400:
-        description: Invalid mode, reward not fulfilled yet, or delivery already chosen
+        description: Invalid mode, reward not ready yet, or reward already attached
       404:
         description: Redemption not found
     """
@@ -885,7 +885,7 @@ def choose_redemption_delivery(redemption_id):
     # Ownership is checked with the user's own session (RLS + explicit user_id filter).
     row = (
         db.table("reward_redemptions")
-        .select("id,user_id,status,reward_id,delivery_mode,attached_order_id")
+        .select("id,user_id,status,reward_id,delivery_mode,attached_order_id,used_at")
         .eq("id", redemption_id).eq("user_id", g.user_id)
         .single().execute()
     )
@@ -893,9 +893,9 @@ def choose_redemption_delivery(redemption_id):
         return jsonify({"error": MSG.REWARD_REDEMPTION_NOT_FOUND}), 404
     if row.get("status") != "fulfilled":
         return jsonify({"error": MSG.REWARD_NOT_READY_FOR_DELIVERY}), 400
-    # 'instant' is the column default, so it means "not chosen yet"; anything else, or an order already
-    # holding this reward, means the choice is made.
-    if row.get("attached_order_id") or row.get("delivery_mode") != "instant":
+    # Choices remain editable until an order claims the entitlement. Retrying a
+    # saved choice after a lost response succeeds through the same compare-and-set.
+    if row.get("attached_order_id") or row.get("used_at"):
         return jsonify({"error": MSG.DELIVERY_ALREADY_CHOSEN}), 400
 
     # reward_redemptions has no UPDATE policy for the owner (only admins), so a write through the user's
@@ -904,7 +904,8 @@ def choose_redemption_delivery(redemption_id):
     updated = (
         get_db().table("reward_redemptions")
         .eq("id", redemption_id).eq("user_id", g.user_id)
-        .eq("status", "fulfilled").eq("delivery_mode", row["delivery_mode"]).eq("attached_order_id", None)
+        .eq("status", "fulfilled").eq("delivery_mode", row["delivery_mode"])
+        .is_("attached_order_id", "null").is_("used_at", "null")
         .update({"delivery_mode": mode})
     )
     if not updated:
