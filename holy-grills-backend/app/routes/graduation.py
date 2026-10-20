@@ -75,26 +75,30 @@ def claim_graduation():
             "your_level": level_value,
         }), 400
 
-    # OCC conditional update: mark claimed FIRST to prevent concurrent double-claim
-    updated = (
-        get_db().table("profiles")
-        .eq("id", g.user_id)
-        .eq("graduation_claimed", False)
-        .update({
-            "graduation_claimed": True,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
-    )
-    if not updated or (isinstance(updated, list) and len(updated) == 0):
-        return jsonify({"error": resolve_msg(MSG.GRADUATION_ALREADY_CLAIMED)}), 400
+    # Historical awards may predate stable references. Never issue another award
+    # merely because a legacy profile's marker was not saved.
+    receipts = (get_db().table("hp_transactions").select("id,amount")
+                .eq("user_id", g.user_id).eq("reference_type", "graduation")
+                .eq("type", "earn").limit(1).execute()) or []
 
     # HP amount: read from env/config so it can be changed without a deploy
-    graduation_hp = int(current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT))
+    raw_hp = current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT)
+    try:
+        if isinstance(raw_hp, bool) or not isinstance(raw_hp, (str, int)):
+            raise ValueError("Invalid graduation award")
+        graduation_hp = int(raw_hp)
+        if graduation_hp <= 0:
+            raise ValueError("Graduation award must be positive")
+    except (ValueError, TypeError):
+        if not receipts:
+            logger.error("graduation: invalid configured award; claim left available")
+            return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 503
+        graduation_hp = 0  # Existing lifetime receipts remain valid despite a later configuration change.
 
     campus_id = getattr(g, 'campus_id', None)
     # Award HP — not subject to HP multiplier (graduation is a fixed life event)
     try:
-        award_result = award_active_hp(
+        award_result = {"awarded": 0, "replayed": True} if receipts else award_active_hp(
             user_id=g.user_id,
             amount=graduation_hp,
             txn_type="earn_graduation",
@@ -105,12 +109,25 @@ def claim_graduation():
             campus_id=campus_id,
         )
     except Exception as exc:
-        # Roll the claim flag back so the user can retry, and log why — a silent 500 here
-        # means the flag is the only trace of a failed HP award.
-        logger.error("graduation: HP claim failed for %s, claim flag rolled back: %s",
-                     g.user_id, exc)
-        get_db().table("profiles").eq("id", g.user_id).update({"graduation_claimed": False}).execute()
-        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 500
+        logger.error("graduation: HP claim failed for %s: %s", g.user_id, exc)
+        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 503
+
+    # The atomic HP receipt is the concurrency guard. Mark the profile only
+    # after that transaction; an interrupted marker write can safely replay it.
+    try:
+        marked = get_db().table("profiles").eq("id", g.user_id).update({
+            "graduation_claimed": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not marked:
+            raise RuntimeError("No profile updated")
+    except Exception as exc:
+        logger.error("graduation: award receipt saved but marker failed for %s: %s", g.user_id, exc)
+        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 503
+
+    if award_result.get("replayed"):
+        return jsonify({"message": resolve_msg(MSG.GRADUATION_CLAIMED_OK),
+                        "hp_awarded": 0, "academic_level": level_value, "replayed": True}), 200
 
     # Fire graduation badge trigger
     try:

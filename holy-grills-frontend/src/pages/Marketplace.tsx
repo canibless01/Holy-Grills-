@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Plus, Ticket } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -43,29 +43,41 @@ export default function Marketplace() {
   const [showPurchases, setShowPurchases] = useState(false);
   const [purchases, setPurchases] = useState([]);
   const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [purchaseError, setPurchaseError] = useState(false);
+  const [listingError, setListingError] = useState(false);
+  const listingAttempt = useRef(0);
+  const purchaseAttempt = useRef(0);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const result = await liveApi.marketplace.list();
-        setListings(unwrapList(result));
-      } catch (e) { console.error(e); }
-      setLoading(false);
-    };
-    load();
+  const loadListings = useCallback(async () => {
+    const attempt = ++listingAttempt.current;
+    setLoading(true);
+    setListingError(false);
+    try {
+      const rows = unwrapList(await liveApi.marketplace.list());
+      if (attempt === listingAttempt.current) setListings(rows);
+    } catch {
+      if (attempt === listingAttempt.current) setListingError(true);
+    } finally {
+      if (attempt === listingAttempt.current) setLoading(false);
+    }
   }, []);
+  useEffect(() => { loadListings(); }, [loadListings]);
 
   const loadPurchases = async () => {
     if (!isAuthenticated) { toast({ title: msg('FE_MARKETPLACE_SIGN_IN_TO_VIEW_PURCHASES', 'Sign in to view purchases'), description: msg('FE_MARKETPLACE_YOUR_PURCHASE_HISTORY_IS_TIED_TO_YOUR', 'Your purchase history is tied to your account.') }); return; }
+    const attempt = ++purchaseAttempt.current;
     setShowPurchases(true);
     setLoadingPurchases(true);
+    setPurchaseError(false);
     try {
-      setPurchases(await liveApi.marketplace.myPurchases());
+      const rows = await liveApi.marketplace.myPurchases();
+      if (attempt === purchaseAttempt.current) setPurchases(rows);
     } catch (e) {
-      setPurchases([]);
+      if (attempt !== purchaseAttempt.current) return;
+      setPurchaseError(true);
       toast({ title: msg('FE_MARKETPLACE_COULD_NOT_LOAD_PURCHASES', 'Could not load purchases'), description: e.message, variant: 'destructive' });
     }
-    setLoadingPurchases(false);
+    if (attempt === purchaseAttempt.current) setLoadingPurchases(false);
   };
 
   const filtered = listings.filter((l) => {
@@ -98,9 +110,13 @@ export default function Marketplace() {
       </div>
 
       {showPurchases && (
-        <MarketplacePurchasesPanel purchases={purchases} loading={loadingPurchases} onRefresh={loadPurchases} />
+        <MarketplacePurchasesPanel purchases={purchases} loading={loadingPurchases} error={purchaseError} onRefresh={loadPurchases} />
       )}
 
+      {listingError && <div role="alert" className="rounded-2xl bg-card border border-border p-4 text-sm">
+        {msg('REFERENCE_DATA_UNAVAILABLE', 'This list is temporarily unavailable. Please try again.')}
+        <button type="button" onClick={loadListings} className="ml-2 underline text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+      </div>}
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
@@ -125,7 +141,7 @@ export default function Marketplace() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {!listingError && (filtered.length === 0 ? (
         <div className="text-center py-12">
           <MascotStandee mascot="thinking" className="w-28 h-28 mx-auto mb-3" alt="No marketplace listings" />
           <p className="text-sm font-semibold text-foreground">{search ? 'Nothing yet.' : 'Opening soon.'}</p>
@@ -136,7 +152,7 @@ export default function Marketplace() {
             <MarketplaceCard key={listing.id} listing={listing} onClick={() => navigate(`/marketplace/${listing.id}`)} />
           ))}
         </div>
-      )}
+      ))}
 
       <SellItemModal open={showSell} onClose={() => setShowSell(false)} />
     </div>

@@ -21,7 +21,7 @@ const STATUS_TONE: Record<string, PillTone> = {
   pending: 'amber', completed: 'green', refunded: 'blue', cancelled: 'red',
 };
 
-export default function MarketplacePurchasesPanel({ purchases, loading, onRefresh }) {
+export default function MarketplacePurchasesPanel({ purchases, loading, error = false, onRefresh }) {
   const [reporting, setReporting] = useState(null); // purchase row being reported
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -45,6 +45,11 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
       <h3 className="font-bold text-sm text-foreground mb-2">My Purchases</h3>
       {loading ? (
         <p className="text-xs text-muted-foreground text-center py-3">Loading…</p>
+      ) : error ? (
+        <div role="alert" className="text-sm">
+          {msg('REFERENCE_DATA_UNAVAILABLE', 'This list is temporarily unavailable. Please try again.')}
+          <button type="button" onClick={onRefresh} className="ml-2 underline text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+        </div>
       ) : purchases.length === 0 ? (
         <p className="text-xs text-muted-foreground text-center py-3">Nothing here yet.</p>
       ) : (
@@ -69,8 +74,8 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
       )}
 
       {reporting && (
+        <ModalPortal>
         <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !submitting && setReporting(null)}>
-    <ModalPortal>
           <div className="bg-card rounded-t-3xl sm:rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-heading font-bold text-base text-foreground">Report a Problem</h3>
@@ -94,8 +99,8 @@ export default function MarketplacePurchasesPanel({ purchases, loading, onRefres
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Send className="w-4 h-4" /> Send Report</>}
             </button>
           </div>
-    </ModalPortal>
         </div>
+        </ModalPortal>
       )}
     </div>
   );

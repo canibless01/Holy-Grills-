@@ -251,7 +251,7 @@ def checkin(event_id):
             return jsonify({"error": MSG.EVENT_TICKET_NOT_ADMISSIBLE}), 409
 
         # Check existing check-in
-        existing_checkin = db.table("event_checkins").select("id").eq("ticket_id", ticket_id_str).execute() or []
+        existing_checkin = get_db().table("event_checkins").select("id").eq("ticket_id", ticket_id_str).execute() or []
         recovering = bool(existing_checkin)
 
         # Insert check-in record - B-6: use service client for the insert only, after validation
@@ -271,29 +271,11 @@ def checkin(event_id):
             else:
                 raise
 
-        # Check if guest email now has an account profile in system
-        if ticket.get("user_id") and getattr(g, "user_id", None) and ticket["user_id"] != g.user_id:
-            target_user_id = ticket["user_id"]  # staff-assisted check-in: credit the attendee, not staff
-        else:
-            target_user_id = ticket.get("user_id")
-        was_guest_linked = False
-
-        if not target_user_id and ticket.get("guest_email"):
-            prof_row = db.table("profiles").select("id").eq("email", ticket["guest_email"]).execute() or []
-            if prof_row:
-                target_user_id = prof_row[0]["id"]
-                was_guest_linked = True
-
+        # A guest-supplied email is contact data, not proof of account ownership.
+        # Credit only the attendee already bound to the validated ticket. Guest
+        # account linking requires a separate authenticated ownership flow.
+        target_user_id = ticket.get("user_id")
         if target_user_id:
-            # Auto-link ticket if previously guest
-            if ticket.get("is_guest") or not ticket.get("user_id"):
-                get_db().table("event_tickets").eq("id", ticket_id_str).update({
-                    "user_id": target_user_id,
-                    "is_guest": False,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                })
-                was_guest_linked = True
-
             event = db.table("events").select("hp_reward,hp_per_attendee,title,campus_id").eq("id", event_id).single().execute()
             # Fallback HP for an event that sets no reward of its own: the seeded
             # setting decides, env is the floor — so the admin UI row is real.
@@ -330,7 +312,7 @@ def checkin(event_id):
                 logger.warning("checkin: milestone trigger failed for %s (event %s): %s",
                                target_user_id, event_id, exc)
 
-            msg_text = MSG.TICKET_LINKED_TO_ACCOUNT if was_guest_linked else MSG.EVENT_CHECKIN_SUCCESS
+            msg_text = MSG.EVENT_CHECKIN_SUCCESS
             return jsonify({
                 "message": msg_text,
                 "hp_added_to_pending": 0,

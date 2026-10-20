@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { msg } from '@/lib/messages';
 import { liveApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import AdminMarketplaceListings from './marketplace/AdminMarketplaceListings';
@@ -20,24 +21,35 @@ export default function AdminMarketplace() {
   const [purchases, setPurchases] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const loadAttempt = useRef(0);
 
   const load = useCallback(async () => {
+    const attempt = ++loadAttempt.current;
+    setLoading(true);
+    setLoadError(false);
     const [l, r, p, rep] = await Promise.allSettled([
       liveApi.admin.getMarketplaceListings(),
       liveApi.admin.getListingRequests(),
       liveApi.admin.getMarketplacePurchases(),
       liveApi.admin.getMarketplaceReports({ status: 'open' }),
     ]);
+    if (attempt !== loadAttempt.current) return;
     setListings(l.status === 'fulfilled' ? l.value : []);
     setRequests(r.status === 'fulfilled' ? r.value : []);
     setPurchases(p.status === 'fulfilled' ? p.value : []);
     setReports(rep.status === 'fulfilled' ? rep.value : []);
+    setLoadError([l, r, p, rep].some((result) => result.status === 'rejected'));
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <StaffPanelSkeleton />;
+  if (loadError) return <div role="alert" className="rounded-2xl bg-card border border-border p-4 text-sm">
+    {msg('REFERENCE_DATA_UNAVAILABLE', 'This list is temporarily unavailable. Please try again.')}
+    <button type="button" onClick={load} className="ml-2 underline text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+  </div>;
 
   return (
     <div className="space-y-4">
