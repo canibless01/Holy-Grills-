@@ -330,7 +330,7 @@ class MSG:
     REWARD_NEW_TITLE             = "🎁 New Reward Available!"
     REWARD_NEW_BODY              = "'{name}' is now in the rewards store. Redeem it with your {currency}!"
     REWARD_REDEEMED_TITLE        = "Reward Redeemed: {name}"
-    REWARD_REDEEMED_BODY         = "You spent {hp} {currency}. Our team will fulfil your reward shortly."
+    REWARD_REDEEMED_BODY         = "You spent {hp} {currency}. Your reward is ready. Open Redeemed in Rewards and choose how to receive it."
     REWARD_FULFILLED_TITLE       = "Reward Fulfilled"
     REWARD_STATUS_TITLE          = "Reward Update"
     REWARD_STATUS_BODY           = "Your '{name}' redemption has been {status}."
