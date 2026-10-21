@@ -24,7 +24,7 @@ export function loadTierIcons(scope = 'global') {
         const map = {};
         (Array.isArray(list) ? list : []).forEach((s) => {
           if (s.is_active === false) return;
-          const slug = s.content?.tier_slug || s.content?.slug || s.slug || s.subtitle;
+          const slug = s.content?.tier_slug || s.content?.slug || s.slug || s.subtitle || String(s.key || '').replace(/^tier[_-]icon[_-]/, '');
           const url = s.image_url || s.content?.image_url;
           if (slug && url) map[String(slug).toLowerCase()] = url;
         });

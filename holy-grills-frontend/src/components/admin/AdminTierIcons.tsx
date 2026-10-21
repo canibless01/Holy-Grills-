@@ -39,7 +39,7 @@ export default function AdminTierIcons() {
       const list = await liveApi.admin.getStorefrontSections({ section_type: 'tier_icon' });
       const map = {};
       (Array.isArray(list) ? list : []).forEach((s) => {
-        const slug = s.content?.tier_slug || s.content?.slug;
+        const slug = s.content?.tier_slug || s.content?.slug || s.slug || s.subtitle || String(s.key || '').replace(/^tier[_-]icon[_-]/, '');
         if (!slug || (s.campus_id !== null && s.campus_id !== targetScope)) return;
         const key = String(slug).toLowerCase();
         if (!map[key] || s.campus_id === targetScope) {

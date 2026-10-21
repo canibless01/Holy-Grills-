@@ -126,6 +126,9 @@ def _insert_cms(db, table, payload, data):
         if exc.details.get("code") != "23505":
             raise
     existing = db.table(table).select("*").eq("id", intent).single().execute()
+    if not existing:
+        # A different row owns the section key: this is not a changed replay.
+        return jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
     def same(key, value):
         saved = existing.get(key)
         if key in ("starts_at", "ends_at") and saved and value:
@@ -134,6 +137,20 @@ def _insert_cms(db, table, payload, data):
     if existing and all(same(key, value) for key, value in payload.items()):
         return jsonify(existing), 200
     return jsonify({"error": MSG.STOREFRONT_CREATE_CONFLICT}), 409
+
+
+def _same_timestamp(left, right):
+    """The editor may serialize UTC as Z rather than +00:00; compare instants."""
+    if left == right:
+        return True
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    try:
+        a = datetime.fromisoformat(left.replace("Z", "+00:00"))
+        b = datetime.fromisoformat(right.replace("Z", "+00:00"))
+        return a.tzinfo is not None and b.tzinfo is not None and a == b
+    except ValueError:
+        return False
 
 
 def _write_denied():
@@ -241,7 +258,7 @@ def _banner_window_error(data):
     return None
 
 
-def _banner_fields(data):
+def _banner_fields(data, placement=None):
     """
     Whitelisted, schema-valid banner columns from a request body (D17-B02).
     Accepts the legacy names cta_text/cta_url and stores them in action_label/action_url.
@@ -264,7 +281,7 @@ def _banner_fields(data):
             if any(not isinstance(slide.get(k, ""), str) for k in fields):
                 return None, _bad_request()
             row = {k: slide.get(k, "").strip() for k in fields}
-            if not row["title"] or not row["image_url"] or len(row["eyebrow"]) > 240:
+            if (not row["title"] and data.get("placement", placement) != "menu") or not row["image_url"] or len(row["eyebrow"]) > 240:
                 return None, _bad_request()
             if any(row[k] and not is_cms_image_url(row[k]) for k in ("image_url", "mobile_image_url")):
                 return None, (jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400)
@@ -1222,15 +1239,20 @@ def create_banner():
     data = _json_body()
     if data is None:
         return _bad_request()
-    for f in ("title", "image_url"):
+    for f in (("image_url",) if data.get("placement") == "menu" else ("title", "image_url")):
         if not isinstance(data.get(f), str) or not data[f].strip():
             return _field_required(f)
+    if "title" in data and not isinstance(data["title"], str):
+        return _bad_request()
     safe, err = _banner_fields(data)
     if err:
         return err
+    if not safe.get("image_url"):
+        return _field_required("image_url")
     err = _banner_window_error(safe)
     if err:
         return err
+    safe.setdefault("title", "")
     safe.setdefault("is_active", True)
     safe.setdefault("sort_order", 0)
     campus_id = _write_campus_id(data.get("campus_id"))
@@ -1291,13 +1313,18 @@ def update_banner(banner_id):
     data = _json_body()
     if data is None:
         return _bad_request()
-    update, err = _banner_fields(data)
+    # Validate media and action safety before touching the row; title requirements
+    # are then resolved from the saved placement (menu artwork has no copy).
+    _, err = _banner_fields(data, "menu")
     if err:
         return err
-    existing = db.table("banners").select("id,image_url,images,metadata,updated_at,starts_at,ends_at").eq("id", banner_id).single().execute()
+    existing = db.table("banners").select("id,image_url,images,metadata,updated_at,starts_at,ends_at,placement").eq("id", banner_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.STOREFRONT_BANNER_NOT_FOUND}), 404
-    if "expected_updated_at" in data and data["expected_updated_at"] != existing.get("updated_at"):
+    update, err = _banner_fields(data, existing.get("placement"))
+    if err:
+        return err
+    if "expected_updated_at" in data and not _same_timestamp(data["expected_updated_at"], existing.get("updated_at")):
         return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
     if "starts_at" in update or "ends_at" in update:
         err = _banner_window_error(dict(existing, **update))
