@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -18,13 +18,11 @@ import { CheckSquare, Square, Truck } from 'lucide-react';
  *     so an admin standing on an order can assign it without hunting through
  *     the Delivery tab — the flow that used to be effectively undiscoverable).
  *
- * presetOrderIds also merges SCHEDULED/off-window orders into the pick list
- * (GET /orders/scheduled — an endpoint that already existed for the scheduled
- * list), so an order that arrived outside an open window can be assigned too;
- * the admin just picks (or creates) the window it should ride in.
+ * Only paid, ready, unbatched orders are eligible. A preset still has to meet
+ * those same rules; scheduled orders become assignable after preparation.
  */
 export default function CreateBatchModal({ windows = [], presetOrderIds = [], onClose, onSaved }: {
-  windows?: Array<{ id?: string | number; label?: string }>;
+  windows?: Array<{ id?: string | number; label?: string; campus_id?: string }>;
   presetOrderIds?: string[];
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;
@@ -37,31 +35,41 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
   const [selected, setSelected] = useState(new Set(presetOrderIds));
   const [submitting, setSubmitting] = useState(false);
   const preset = presetOrderIds.length > 0;
+  const intent = useRef<{ fingerprint: string; key: string } | null>(null);
+  const selectedWindow = windows.find(window => String(window.id) === String(windowId));
+  const eligibleOrders = (orders || []).filter(order => order.status === 'ready' && !order.batch_id
+    && ['paid', 'partially_refunded'].includes(order.payment_status)
+    && (!selectedWindow?.campus_id || order.campus_id === selectedWindow.campus_id)
+    && (!order.delivery_window_id || String(order.delivery_window_id) === String(windowId)));
+  const eligibleRiders = riders.filter(rider => rider.is_active !== false
+    && (!selectedWindow?.campus_id || rider.campus_id === selectedWindow.campus_id));
+  const eligibleIdsKey = eligibleOrders.map(order => order.id).sort().join(',');
+  useEffect(() => {
+    if (orders === null) return;
+    const allowed = new Set(eligibleIdsKey.split(','));
+    setSelected(current => new Set([...current].filter(id => allowed.has(id))));
+    setRiderId(current => eligibleRiders.some(rider => rider.id === current) ? current : '');
+  }, [eligibleIdsKey, windowId, riders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (async () => {
       try { const r = await mockApi.admin.getUsers({ role: 'rider' }); setRiders(r || []); } catch { setRiders([]); }
-      // Ready orders + scheduled/off-window orders (the preset order may be one).
-      const results = await Promise.allSettled([
-        mockApi.admin.getAdminOrders({ status: 'ready' }),
-        mockApi.orders.getScheduled(),
-      ]);
-      const ready = results[0].status === 'fulfilled' ? (results[0].value || []) : [];
-      const scheduledRows = results[1].status === 'fulfilled' ? (results[1].value?.scheduled_orders || []) : [];
-      const byId = new Map();
-      [...ready, ...scheduledRows].forEach((o) => { if (o?.id && !byId.has(o.id)) byId.set(o.id, o); });
-      setOrders(Array.from(byId.values()));
+      try { setOrders(await mockApi.admin.getAdminOrders({ status: 'ready' }) || []); }
+      catch { setOrders([]); }
     })();
   }, []);
 
   const toggle = (id) => { const n = new Set(selected); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
 
   const submit = async () => {
-    if (!windowId || !riderId || !zone) { toast({ title: msg('FE_ADMIN_DELIVERY_MISSING_FIELDS', 'Missing fields'), description: msg('FE_ADMIN_DELIVERY_WINDOW_RIDER_AND_ZONE_ARE_ALL_REQUIRED', 'Window, rider and zone are all required.'), variant: 'destructive' }); return; }
-    if (selected.size === 0) { toast({ title: 'No order selected', description: 'Pick at least one order to assign.', variant: 'destructive' }); return; }
+    if (!windowId || !riderId) { toast({ title: msg('FE_ADMIN_DELIVERY_MISSING_FIELDS', 'Missing fields'), description: msg('FE_BATCH_WINDOW_RIDER_REQUIRED', 'Choose a delivery window and rider.'), variant: 'destructive' }); return; }
+    if (selected.size === 0) { toast({ title: msg('FE_BATCH_NO_ORDERS', 'No order selected'), description: msg('FE_BATCH_PICK_ORDERS', 'Pick at least one paid, ready order to assign.'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
-      await mockApi.admin.createDeliveryBatch({ window_id: windowId, rider_id: riderId, zone, order_ids: [...selected] });
+      const body = { window_id: windowId, rider_id: riderId, zone, order_ids: [...selected].sort() };
+      const fingerprint = JSON.stringify(body);
+      if (intent.current?.fingerprint !== fingerprint) intent.current = { fingerprint, key: crypto.randomUUID() };
+      await mockApi.admin.createDeliveryBatch({ ...body, idempotency_key: intent.current.key });
       toast({ title: msg('FE_ADMIN_DELIVERY_BATCH_CREATED', '✅ Batch created'), description: msg('FE_ADMIN_DELIVERY_COUNT_ORDER_S_ASSIGNED', '{count} order(s) assigned.', { count: selected.size }) });
       onSaved?.(); onClose?.();
     } catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
@@ -76,6 +84,7 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
             ? <>This creates a delivery batch for the selected order — the rider sees it the moment it's created. You can add more orders below.</>
             : <>A batch groups orders for one rider in one zone under a delivery window. Assigned orders move to <b>assigned</b> status.</>}
         </div>
+        {orders !== null && preset && !presetOrderIds.some(id => eligibleOrders.some(order => order.id === id)) && <p role="alert" className="text-xs text-warn">{msg('FE_BATCH_PRESET_CHANGED', 'This order is not currently ready for assignment in this window. Refresh its status or choose another eligible order.')}</p>}
         <Field label="Delivery Window">
           {windows.length === 0 ? (
             <div className="rounded-xl tone-warn border border-warn/40 p-3 text-xs text-warn mt-1">
@@ -91,17 +100,17 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
         <Field label="Rider">
           <select value={riderId} onChange={(e) => setRiderId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
             <option value="">Select rider…</option>
-            {riders.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
+            {eligibleRiders.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
           </select>
         </Field>
-        <Field label="Zone"><TextInput value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g. North Gate" /></Field>
+        <Field label={msg('FE_BATCH_ZONE_OPTIONAL', 'Zone (optional)')}><TextInput value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g. North Gate" /></Field>
         <Field label={preset ? 'Order to assign (add more if they ride together)' : 'Assign Orders'}>
           <div className="max-h-48 overflow-y-auto rounded-xl border border-border mt-1">
             {orders === null ? (
               <div className="p-3"><LoadingSpinner label="Loading orders…" /></div>
-            ) : orders.length === 0 ? (
-              <div className="p-3 text-xs text-muted-foreground">No ready or scheduled orders available to assign.</div>
-            ) : orders.map((o) => {
+            ) : eligibleOrders.length === 0 ? (
+              <div className="p-3 text-xs text-muted-foreground">{msg('FE_BATCH_NO_READY_ORDERS', 'No paid, ready, unassigned orders match this window.')}</div>
+            ) : eligibleOrders.map((o) => {
               const isPreset = presetOrderIds.includes(o.id);
               return (
                 <button key={o.id} type="button" onClick={() => toggle(o.id)} className={`w-full text-left p-2.5 flex items-center gap-2 border-b border-border last:border-0 ${selected.has(o.id) ? 'bg-primary/10' : 'hover:bg-muted'}`}>
@@ -109,7 +118,7 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
                   <span className="text-xs font-mono text-muted-foreground shrink-0">#{o.id.slice(0, 6).toUpperCase()}</span>
                   <span className="text-xs text-muted-foreground truncate flex-1">{(o.order_items || []).map((it) => `${it.quantity}× ${it.name_snapshot || it.name}`).join(', ')}</span>
                   <span className="text-[10px] font-bold text-muted-foreground shrink-0">
-                    {o.status === 'scheduled' || o.is_scheduled ? 'scheduled' : 'ready'}{o.total_amount ? ` · ${formatNaira(o.total_amount)}` : ''}
+                    {msg('FE_BATCH_READY', 'Ready')}{o.total_amount ? ` · ${formatNaira(o.total_amount)}` : ''}
                   </span>
                   {isPreset && <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/15 text-primary shrink-0">this one</span>}
                 </button>
@@ -117,7 +126,7 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
             })}
           </div>
         </Field>
-        <button onClick={submit} disabled={submitting || !windowId || !riderId || !zone || selected.size === 0} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+        <button onClick={submit} disabled={submitting || !windowId || !riderId || selected.size === 0} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50 flex items-center justify-center gap-2">
           <Truck className="w-4 h-4" />
           {submitting ? 'Assigning…' : `Assign ${selected.size || ''} ${selected.size === 1 ? 'order' : 'orders'} to rider`}
         </button>

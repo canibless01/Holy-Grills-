@@ -206,7 +206,7 @@ export default function AdminOrders() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{timeAgo(o.created_at)}</span>
-                      {['ready', 'scheduled', 'received'].includes(o.status) && (
+                      {o.status === 'ready' && !o.batch_id && ['paid', 'partially_refunded'].includes(o.payment_status) && (
                         <button
                           onClick={(e) => { e.stopPropagation(); openAssign(o.id); }}
                           title="Assign to a rider"

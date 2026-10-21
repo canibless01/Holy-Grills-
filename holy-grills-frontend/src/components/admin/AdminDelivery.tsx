@@ -8,6 +8,7 @@ import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import OrderingWindowsTab from './OrderingWindowsTab';
 import CreateBatchModal from './AdminCreateBatchModal';
+import AdminManageBatchModal from './AdminManageBatchModal';
 import AdminRiders from './AdminRiders';
 import AdminDeliveryArea from './AdminDeliveryArea';
 import { msg } from '@/lib/messages';
@@ -20,23 +21,25 @@ export default function AdminDelivery() {
   const [hostels, setHostels] = useState([]);
   const [gates, setGates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(null);
   const [showCreateWindow, setShowCreateWindow] = useState(false);
   const [editWindow, setEditWindow] = useState(null);
   const [batchModal, setBatchModal] = useState(false);
+  const [manageBatch, setManageBatch] = useState(null);
   const [batchBusy, setBatchBusy] = useState(null);
   const [zoneModal, setZoneModal] = useState(null); // {type:'hostel'|'gate', item?:...}
 
   const load = async () => {
     setLoading(true);
-    const [w, b, c, h, g] = await Promise.all([
-      mockApi.admin.getDeliveryWindows(),
-      mockApi.admin.getDeliveryBatches(),
-      mockApi.admin.getAbandonedCarts(),
-      mockApi.admin.getDeliveryHostels(),
-      mockApi.admin.getDeliveryGates(),
+    const results = await Promise.allSettled([
+      mockApi.admin.getDeliveryWindows(), mockApi.admin.getDeliveryBatches(),
+      mockApi.admin.getAbandonedCarts(), mockApi.admin.getDeliveryHostels(), mockApi.admin.getDeliveryGates(),
     ]);
-    setWindows(w); setBatches(b); setCarts(c); setHostels(h); setGates(g);
+    const setters = [setWindows, setBatches, setCarts, setHostels, setGates];
+    results.forEach((result, index) => { if (result.status === 'fulfilled') setters[index](result.value || []); });
+    setLoadError(results.some(result => result.status === 'rejected')
+      ? msg('FE_BATCH_LOAD_RETRY', 'Some delivery data could not be loaded. Retry to refresh it.') : '');
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -97,6 +100,7 @@ export default function AdminDelivery() {
 
   return (
     <div className="space-y-4">
+      {loadError && <div role="alert" className="rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{loadError} <button onClick={load} className="underline">{msg('FE_BATCH_RETRY', 'Retry')}</button></div>}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -150,12 +154,13 @@ export default function AdminDelivery() {
           ) : batches.map((b) => (
             <div key={b.id} className="rounded-2xl bg-card border border-border shadow-card p-4">
               <div className="flex items-center justify-between mb-2">
-                <div><div className="font-bold text-sm text-foreground">{b.zone}</div><div className="text-xs text-muted-foreground font-mono">#{b.id.toUpperCase()}</div></div>
-                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${b.status === 'out_for_delivery' ? 'tone-info' : b.status === 'assigned' ? 'tone-warn' : b.status === 'completed' ? 'tone-success' : 'bg-secondary text-muted-foreground'}`}>{b.status.replace(/_/g, ' ')}</span>
+                <div><div className="font-bold text-sm text-foreground">{b.zone || msg('FE_BATCH_LABEL', 'Delivery batch')}</div><div className="text-xs text-muted-foreground font-mono">#{b.id.toUpperCase()}</div></div>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${b.status === 'in_progress' ? 'tone-info' : b.status === 'assigned' ? 'tone-warn' : b.status === 'completed' ? 'tone-success' : 'bg-secondary text-muted-foreground'}`}>{b.status.replace(/_/g, ' ')}</span>
               </div>
               <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Rider: {b.profiles?.full_name || b.rider_name || <span className="text-destructive">Unassigned</span>}</span><span className="font-bold text-foreground">{b.order_count ?? 0} orders</span></div>
               {b.status !== 'completed' && b.status !== 'cancelled' && (
                 <div className="flex gap-2 mt-2">
+                  <button onClick={() => setManageBatch(b)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-secondary text-xs font-bold disabled:opacity-50">{msg('FE_BATCH_MANAGE_ACTION', 'Manage / split')}</button>
                   <button onClick={() => completeBatch(b.id)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">{batchBusy === b.id ? '...' : 'Mark Completed'}</button>
                   <button onClick={() => cancelBatch(b.id)} disabled={batchBusy === b.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
                 </div>
@@ -228,6 +233,7 @@ export default function AdminDelivery() {
 
       {showCreateWindow && <CreateWindowModal onClose={() => setShowCreateWindow(false)} onSaved={load} />}
       {editWindow && <CreateWindowModal window={editWindow} onClose={() => setEditWindow(null)} onSaved={load} />}
+      {manageBatch && <AdminManageBatchModal batch={manageBatch} onClose={() => setManageBatch(null)} onSaved={load} />}
       {batchModal && <CreateBatchModal windows={windows} onClose={() => setBatchModal(false)} onSaved={load} />}
       {zoneModal && <ZoneModal type={zoneModal.type} item={zoneModal.item} onClose={() => setZoneModal(null)} onSave={saveZone} onDelete={deleteZone} />}
     </div>

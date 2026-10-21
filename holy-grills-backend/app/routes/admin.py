@@ -1158,244 +1158,163 @@ def get_batch(batch_id):
     return jsonify(batch), 200
 
 
-@admin_bp.route("/delivery-batches", methods=["POST"])
-@require_role("admin")
-def create_batch():
-    # ADM-31. Only orders that are "ready" can be batched (that is the only status the state machine lets become "assigned").
-    data = get_json_object()
-    if data is None:
-        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+def _batch_mutation_body(action, data):
+    """Validate transport values before the database checks locked business rows."""
+    allowed = {'rider_id', 'zone', 'notes', 'status'} if action == 'update' else {'rider_id', 'zone', 'notes', 'order_ids', 'idempotency_key'}
+    if action == 'create':
+        allowed.add('window_id')
+    if any(key not in allowed for key in data):
+        raise ValueError()
+    clean = {}
+    for key in ('rider_id', 'window_id', 'idempotency_key'):
+        if key in data:
+            clean[key] = as_uuid(data[key])
+            if not clean[key]:
+                raise ValueError()
+    for key, maximum in (('zone', 100), ('notes', 500)):
+        if key in data:
+            if data[key] is not None and not isinstance(data[key], str):
+                raise ValueError()
+            clean[key] = as_text(data[key], maximum) if data[key] else ('' if key == 'zone' else None)
+    if action in ('create', 'split'):
+        raw_ids = data.get('order_ids')
+        if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= _MAX_BATCH_ORDERS:
+            raise ValueError()
+        clean['order_ids'] = [as_uuid(value) for value in raw_ids]
+        if None in clean['order_ids'] or len(set(clean['order_ids'])) != len(clean['order_ids']):
+            raise ValueError()
+        if not clean.get('rider_id') or (action == 'create' and not clean.get('window_id')):
+            raise ValueError()
+        clean.setdefault('idempotency_key', str(uuid.uuid4()))
+    if 'status' in data:
+        if data['status'] not in ('assigned', 'completed'):
+            raise ValueError()
+        clean['status'] = data['status']
+    if action == 'update' and not clean:
+        raise ValueError()
+    return clean
+
+
+def _batch_transaction(action, batch_id, body):
     try:
-        window_id = as_uuid(data.get("window_id"))
-        rider_id = as_uuid(data.get("rider_id"))
-        zone = as_text(data["zone"], 100) if data.get("zone") else ""
-        raw_ids = data.get("order_ids") or []
-        if not isinstance(raw_ids, list) or len(raw_ids) > _MAX_BATCH_ORDERS:
-            raise ValueError("order_ids")
-        order_ids = list(dict.fromkeys(as_uuid(x) for x in raw_ids))
-        if None in order_ids:
-            raise ValueError("order_ids")
-    except ValueError:
-        return jsonify({"error": MSG.INVALID_INPUT}), 400
-    if not window_id or not rider_id:
-        return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
-    db = get_user_client()
-    try:
-        window = db.table("delivery_windows").select("id,campus_id").eq("id", window_id).single().execute()
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "create_batch.window")
-    if not window:
-        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
-    assert_can_modify(window.get("campus_id"))
-    campus_id = window["campus_id"]
-    error = _check_rider(db, rider_id, campus_id)
-    if error:
-        return error
-    if order_ids:
-        try:
-            orders = db.table("orders").select("id,delivery_window_id,status,batch_id,campus_id").in_("id", order_ids).execute() or []
-        except (SupabaseError, requests.RequestException) as e:
-            return db_error_response(e, "create_batch.orders")
-        found = {o["id"]: o for o in orders}
-        missing = [i for i in order_ids if i not in found]
-        if missing:
-            return jsonify({"error": MSG.BATCH_ORDERS_NOT_FOUND, "orders": missing}), 404
-        problems = []
-        for o in orders:
-            if o.get("delivery_window_id") and o["delivery_window_id"] != window_id:
-                problems.append({"id": o["id"], "reason": "other_window"})
-            elif o.get("campus_id") != campus_id:
-                problems.append({"id": o["id"], "reason": "other_campus"})
-            elif o.get("batch_id"):
-                problems.append({"id": o["id"], "reason": "already_batched"})
-            elif o.get("status") != "ready":
-                problems.append({"id": o["id"], "reason": "not_ready", "status": o.get("status")})
-        if problems:
-            return jsonify({"error": MSG.BATCH_ORDERS_NOT_ELIGIBLE, "orders": problems}), 409
-    try:
-        created = db.table("delivery_batches").insert({
-            "window_id": window_id, "rider_id": rider_id, "zone": zone, "status": "assigned", "campus_id": campus_id,
+        receipt = get_db().rpc('hg_manage_delivery_batch_atomic', {
+            'p_actor_id': g.user_id, 'p_action': action,
+            'p_batch_id': batch_id, 'p_body': body,
         })
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "create_batch")
-    batch_row = created[0] if isinstance(created, list) and created else created
-    batch_id = batch_row["id"]
-
-    assigned, failed = [], []
-    if order_ids:
-        try:
-            # One conditional write: only orders that are still ready and unbatched are taken.
-            taken = db.table("orders").in_("id", order_ids).eq("status", "ready").is_("batch_id", "null").update({"batch_id": batch_id})
-        except (SupabaseError, requests.RequestException) as e:
-            db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
-            return db_error_response(e, "create_batch.attach")
-        taken_ids = [o["id"] for o in (taken or [])]
-        if len(taken_ids) != len(order_ids):
-            # Another admin changed one of the orders in the meantime: undo and report.
-            if taken_ids:
-                db.table("orders").in_("id", taken_ids).update({"batch_id": None})
-            db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
-            return jsonify({"error": MSG.BATCH_ORDERS_CHANGED}), 409
-        from app.services.order_service import update_order_status
-        for oid in taken_ids:
-            try:
-                update_order_status(oid, "assigned", changed_by=g.user_id)
-                assigned.append(oid)
-            except Exception as e:  # broad on purpose: isolate one bad order from the rest
-                logger.error("create_batch: assigning order %s failed: %s", oid, e)
-                now_status = db.table("orders").select("status").eq("id", oid).single().execute() or {}
-                if now_status.get("status") == "assigned":
-                    assigned.append(oid)  # the change did go through; keep it in the batch
-                else:
-                    db.table("orders").eq("id", oid).update({"batch_id": None})
-                    failed.append(oid)
-    _notify_rider_of_batch(rider_id, batch_id, campus_id)
-    audit_ok = _audit(g.user_id, "delivery_batches", batch_id, "create_batch",
-                      after_data={"window_id": window_id, "rider_id": rider_id, "orders": assigned},
-                      target_campus_id=campus_id)
-    body = dict(batch_row, orders_assigned=len(assigned), orders_failed=failed)
-    if not audit_ok:
-        body["audit_logged"] = False
-    return jsonify(body), 201
+    except (SupabaseError, requests.RequestException) as exc:
+        detail = getattr(exc, 'details', {}) or {}
+        marker = str(detail.get('message') or exc) if isinstance(detail, dict) else str(exc)
+        failures = (
+            ('batch_forbidden', MSG.ORDER_ACCESS_DENIED, 403),
+            ('batch_not_found', MSG.ADMIN_BATCH_NOT_FOUND, 404),
+            ('batch_rider_invalid', MSG.RIDER_CAMPUS_MISMATCH, 400),
+            ('batch_invalid', MSG.INVALID_INPUT, 400),
+            ('batch_conflict', MSG.BATCH_ACTION_CONFLICT, 409),
+        )
+        for code, message, status in failures:
+            if code in marker:
+                return None, (jsonify({'error': message}), status)
+        logger.error('Atomic batch %s failed: %s', action, exc)
+        return None, (jsonify({'error': MSG.BATCH_ACTION_UNAVAILABLE}), 503)
+    if not isinstance(receipt, dict) or not receipt.get('id'):
+        return None, (jsonify({'error': MSG.BATCH_ACTION_UNAVAILABLE}), 503)
+    return receipt, None
 
 
-@admin_bp.route("/delivery-batches/<batch_id>", methods=["PATCH"])
-@require_role("admin")
-def update_batch(batch_id):
-    # ADM-32. Cancelling goes through DELETE (it must release the orders). completed needs every order finished.
-    if not validate_uuid(batch_id):
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
+def _batch_saved_effects(action, receipt, body):
+    if receipt.get('replayed'):
+        return
+    app = current_app._get_current_object()
+    def notify():
+        with app.app_context():
+            if receipt.get('notify_rider') and receipt.get('rider_id'):
+                _notify_rider_of_batch(receipt['rider_id'], receipt['id'], receipt.get('campus_id'))
+            for order_id in receipt.get('newly_assigned') or []:
+                try:
+                    order = get_db().table('orders').select('*').eq('id', order_id).single().execute()
+                    if order:
+                        from app.services.order_service import _send_status_notification
+                        _send_status_notification(order, 'assigned')
+                        if order.get('user_id'):
+                            from app.services.gift_service import notify_gift_rider_assigned
+                            notify_gift_rider_assigned(order['user_id'], order_id)
+                except Exception as exc:
+                    logger.warning('Batch order %s saved; assignment notification failed: %s', order_id, exc)
+    # Notification delivery does not hold a bulk assignment response open.
+    threading.Thread(target=notify, daemon=True).start()
+    if not _audit(g.user_id, 'delivery_batches', receipt['id'], action + '_batch',
+                  after_data=body, target_campus_id=receipt.get('campus_id')):
+        receipt['audit_logged'] = False
+
+
+@admin_bp.route('/delivery-batches', methods=['POST'])
+@require_role('admin')
+def create_batch():
     data = get_json_object()
     if data is None:
-        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
-    db = get_user_client()
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        existing = db.table("delivery_batches").select("id,status,rider_id,campus_id").eq("id", batch_id).single().execute()
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "update_batch.lookup")
-    if not existing:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-    assert_can_modify(existing.get("campus_id"))
-    sent = {k: v for k, v in data.items() if k in {"status", "rider_id", "zone", "notes"}}
-    if not sent:
-        return jsonify({"error": MSG.ADMIN_BATCH_NO_FIELDS}), 400
-    safe = {}
-    try:
-        if "zone" in sent:
-            safe["zone"] = as_text(sent["zone"], 100) if sent["zone"] else ""
-        if "notes" in sent:
-            safe["notes"] = as_text(sent["notes"], 500) if sent["notes"] else None
-        new_rider = as_uuid(sent["rider_id"]) if "rider_id" in sent else None
-        if "rider_id" in sent and not new_rider:
-            raise ValueError("rider_id")
+        body = _batch_mutation_body('create', data)
     except ValueError:
-        return jsonify({"error": MSG.INVALID_INPUT}), 400
-    current = existing.get("status")
-    if "status" in sent:
-        new_status = sent["status"]
-        if new_status not in ("assigned", "completed", "cancelled"):
-            return jsonify({"error": MSG.ADMIN_BATCH_INVALID_STATUS}), 400
-        if new_status == "cancelled":
-            return jsonify({"error": MSG.BATCH_USE_DELETE}), 409
-        if new_status != current:
-            if new_status not in _BATCH_FLOW.get(current, ()):
-                return jsonify({"error": MSG.BATCH_STATUS_INVALID_TRANSITION.format(current=current, new=new_status)}), 409
-            if new_status == "completed":
-                try:
-                    open_rows = (
-                        db.table("orders").select("id").eq("batch_id", batch_id)
-                        .not_.in_("status", list(_ORDER_DONE)).limit(1).execute()
-                    )
-                except (SupabaseError, requests.RequestException) as e:
-                    return db_error_response(e, "update_batch.orders")
-                if open_rows:
-                    return jsonify({"error": MSG.BATCH_HAS_OPEN_ORDERS}), 409
-                safe["completed_at"] = datetime.now(timezone.utc).isoformat()
-            safe["status"] = new_status
-    if new_rider and new_rider != existing.get("rider_id"):
-        if current in ("completed", "cancelled"):
-            return jsonify({"error": MSG.BATCH_ALREADY_FINISHED}), 409
-        error = _check_rider(db, new_rider, existing.get("campus_id"))
-        if error:
-            return error
-        safe["rider_id"] = new_rider
-    if not safe:
-        return jsonify(existing), 200
-    try:
-        result = db.table("delivery_batches").eq("id", batch_id).update(safe)
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "update_batch")
-    if not result:
-        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
-    if "rider_id" in safe:
-        _notify_rider_of_batch(safe["rider_id"], batch_id, existing.get("campus_id"))
-    audit_ok = _audit(g.user_id, "delivery_batches", batch_id, "update_batch", after_data=safe,
-                      before_data={k: existing.get(k) for k in safe if k in existing},
-                      target_campus_id=existing.get("campus_id"))
-    body = dict(result[0] if isinstance(result, list) else result)
-    if not audit_ok:
-        body["audit_logged"] = False
-    return jsonify(body), 200
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    receipt, failure = _batch_transaction('create', None, body)
+    if failure:
+        return failure
+    _batch_saved_effects('create', receipt, body)
+    return jsonify(receipt), 201
 
 
-def _unassign_order(db, order_id):
-    """assigned -> ready and detach from the batch, logged. True if the order was released."""
-    from app.services.order_service import _log_status_change
-    res = db.table("orders").eq("id", order_id).eq("status", "assigned").update(
-        {"status": "ready", "batch_id": None, "assigned_at": None}
-    )
-    if not res:
-        return False
-    _log_status_change(order_id, "assigned", "ready", g.user_id, "Delivery batch cancelled")
-    return True
-
-
-@admin_bp.route("/delivery-batches/<batch_id>", methods=["DELETE"])
-@require_role("admin")
-def cancel_batch(batch_id):
-    # ADM-33. Orders still "assigned" go back to "ready". A batch with orders already out for delivery
-    # (or finished) cannot be cancelled.
+@admin_bp.route('/delivery-batches/<batch_id>', methods=['PATCH'])
+@require_role('admin')
+def update_batch(batch_id):
     if not validate_uuid(batch_id):
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-    db = get_user_client()
+        return jsonify({'error': MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    if data.get('status') == 'cancelled':
+        return jsonify({'error': MSG.BATCH_USE_DELETE}), 409
     try:
-        existing = db.table("delivery_batches").select("id,status,campus_id").eq("id", batch_id).single().execute()
-        if not existing:
-            return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-        assert_can_modify(existing.get("campus_id"))
-        if existing.get("status") == "cancelled":
-            return jsonify({"message": MSG.ADMIN_BATCH_CANCELLED, "batch_id": batch_id, "orders_unassigned": 0}), 200
-        if existing.get("status") == "completed":
-            return jsonify({"error": MSG.BATCH_ALREADY_FINISHED}), 409
-        orders = db.table("orders").select("id,status").eq("batch_id", batch_id).execute() or []
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "cancel_batch")
-    on_the_road = [o["id"] for o in orders if o.get("status") != "assigned"]
-    if on_the_road:
-        return jsonify({"error": MSG.BATCH_IN_PROGRESS, "orders": on_the_road}), 409
-    released, failed = 0, []
-    for o in orders:
-        try:
-            if _unassign_order(db, o["id"]):
-                released += 1
-            else:
-                failed.append(o["id"])
-        except (SupabaseError, requests.RequestException) as e:
-            logger.error("cancel_batch: releasing order %s failed: %s", o["id"], e)
-            failed.append(o["id"])
-    if failed:
-        return jsonify({"error": MSG.BATCH_RELEASE_FAILED, "orders": failed, "orders_unassigned": released}), 409
+        body = _batch_mutation_body('update', data)
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    receipt, failure = _batch_transaction('update', batch_id, body)
+    if failure:
+        return failure
+    _batch_saved_effects('update', receipt, body)
+    return jsonify(receipt), 200
+
+
+@admin_bp.route('/delivery-batches/<batch_id>', methods=['DELETE'])
+@require_role('admin')
+def cancel_batch(batch_id):
+    if not validate_uuid(batch_id):
+        return jsonify({'error': MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    receipt, failure = _batch_transaction('cancel', batch_id, {})
+    if failure:
+        return failure
+    _batch_saved_effects('cancel', receipt, {})
+    receipt['message'] = MSG.ADMIN_BATCH_CANCELLED
+    return jsonify(receipt), 200
+
+
+@admin_bp.route('/delivery-batches/<batch_id>/split', methods=['POST'])
+@require_role('admin')
+def split_batch(batch_id):
+    if not validate_uuid(batch_id):
+        return jsonify({'error': MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "cancel_batch.status")
-    audit_ok = _audit(g.user_id, "delivery_batches", batch_id, "cancel_batch",
-                      after_data={"orders_unassigned": released}, before_data={"status": existing.get("status")},
-                      target_campus_id=existing.get("campus_id"))
-    body = {"message": MSG.ADMIN_BATCH_CANCELLED, "batch_id": batch_id, "orders_unassigned": released}
-    if not audit_ok:
-        body["audit_logged"] = False
-    return jsonify(body), 200
+        body = _batch_mutation_body('split', data)
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    receipt, failure = _batch_transaction('split', batch_id, body)
+    if failure:
+        return failure
+    _batch_saved_effects('split', receipt, {**body, 'source_batch_id': batch_id})
+    return jsonify(receipt), 201
 
 
 @admin_bp.route("/delivery-batches/<batch_id>/orders", methods=["GET"])
