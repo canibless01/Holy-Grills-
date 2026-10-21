@@ -75,7 +75,12 @@ export default function Menu() {
         if (search) params.q = search;
         params.available_only = 'false';
         const result = await mockApi.menu.getItems(params);
-        setItems(result.items || []);
+        const sortedItems = (result.items || []).slice().sort((a, b) => {
+          const priceDiff = (Number(a.price) || 0) - (Number(b.price) || 0);
+          if (priceDiff !== 0) return priceDiff;
+          return (a.name || '').localeCompare(b.name || '');
+        });
+        setItems(sortedItems);
       } catch (e) {
         setError(msg('FE_MENU_FAILED_TO_FETCH_MENU_ITEMS', 'Failed to fetch menu items.'));
       }
