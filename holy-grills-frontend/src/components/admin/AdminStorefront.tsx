@@ -91,6 +91,7 @@ const SECTION_TAB_IDS = ['promo', 'testimonial', 'share_template', 'whats_inside
 // Slider section types — each slide is an image + overlaid title + line +
 // destination + optional badge, rendered by StorefrontSlider.
 const SLIDER_TAB_IDS = ['whats_inside', 'how_its_made'];
+const ARTWORK_MODE_IDS = [...SLIDER_TAB_IDS, 'promo'];
 
 // Share-card slots — each share surface has its own uploaded base image, on the
 // same share_template API but under its own `key`, so one upload point feeds
@@ -249,9 +250,12 @@ export default function AdminStorefront() {
 
   const create = async () => {
     const t = newSection.section_type;
-    if (t === 'testimonial') { if (!newSection.testimonial_name || !newSection.testimonial_review) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_AND_REVIEW_REQUIRED', 'Name and review required'), variant: 'destructive' }); return; } }
-    else if (t === 'share_template') { if (!newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_BASE_IMAGE_REQUIRED', 'Base image required'), variant: 'destructive' }); return; } }
-    else { if (!(newSection.image_url || (t === 'whats_inside' && newSection.title)) || (!(t === 'popup' || newSection.display_mode === 'image') && !newSection.title)) { toast({ title: msg('FE_ADMIN_STOREFRONT_TITLE_AND_IMAGE_REQUIRED', 'Title and image required'), variant: 'destructive' }); return; } }
+    const artworkOnly = t === 'popup' || newSection.display_mode === 'image';
+    if (t === 'testimonial') { if (!newSection.testimonial_name.trim() || !newSection.testimonial_review.trim()) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_AND_REVIEW_REQUIRED', 'Name and review required'), variant: 'destructive' }); return; } }
+    else if (t === 'share_template' || artworkOnly) { if (!newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_BASE_IMAGE_REQUIRED', 'Base image required'), variant: 'destructive' }); return; } }
+    else if ((SLIDER_TAB_IDS.includes(t) && !newSection.title.trim()) || (t === 'how_its_made' && !newSection.image_url) || (!SLIDER_TAB_IDS.includes(t) && ![newSection.title, newSection.subtitle, newSection.image_url].some(value => value.trim()))) {
+      toast({ title: msg('FE_SF_SECTION_CONTENT_REQUIRED', 'Add content for this section. Text cards need a title; process cards also need an image. Artwork-only sections need just an image.'), variant: 'destructive' }); return;
+    }
     setBusy('create');
     try {
       const body: SectionBody = { section_type: t, placement: newSection.placement || 'home', sort_order: Number(newSection.sort_order) || 0, is_active: true };
@@ -433,7 +437,7 @@ export default function AdminStorefront() {
               ) : (
                 <>
                   {s.section_type === 'popup' && <Field label={msg('FE_SF_PLACEMENT', 'Show on page')}><CmsPlacementSelect value={placementOf(s)} onChange={(value) => upd(s.id, sectionPatch(s, 'placement', value))} /></Field>}
-                  {SLIDER_TAB_IDS.includes(s.section_type) && <DisplayMode value={s.content?.display_mode || 'text'} onChange={(value) => upd(s.id, { content: { ...s.content, display_mode: value } })} />}
+                  {ARTWORK_MODE_IDS.includes(s.section_type) && <DisplayMode value={s.content?.display_mode || 'text'} onChange={(value) => upd(s.id, { content: { ...s.content, display_mode: value } })} />}
                   {s.section_type !== 'popup' && s.content?.display_mode !== 'image' && <>
                   <input value={s.title || ''} onChange={(e) => upd(s.id, { title: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm font-bold" placeholder="Title" />
                   {SLIDER_TAB_IDS.includes(s.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={s.content?.eyebrow || ''} onChange={(e) => upd(s.id, { content: { ...s.content, eyebrow: e.target.value } })} /></Field>}
@@ -593,13 +597,13 @@ export default function AdminStorefront() {
           ) : (
             <>
               {newSection.section_type === 'popup' && <Field label={msg('FE_SF_PLACEMENT', 'Show on page')}><CmsPlacementSelect value={newSection.placement} onChange={(value) => setNewSection({ ...newSection, placement: value })} /></Field>}
-              {SLIDER_TAB_IDS.includes(newSection.section_type) && <DisplayMode value={newSection.display_mode} onChange={(value) => setNewSection({ ...newSection, display_mode: value })} />}
+              {ARTWORK_MODE_IDS.includes(newSection.section_type) && <DisplayMode value={newSection.display_mode} onChange={(value) => setNewSection({ ...newSection, display_mode: value })} />}
               {newSection.section_type !== 'popup' && newSection.display_mode !== 'image' && <>
-              <Field label="Title (required)"><TextInput value={newSection.title} onChange={(e) => setNewSection({ ...newSection, title: e.target.value })} /></Field>
+              <Field label={SLIDER_TAB_IDS.includes(newSection.section_type) ? msg('FE_SF_TITLE_REQUIRED', 'Title (required)') : msg('FE_SF_TITLE_OPTIONAL', 'Title (optional)')}><TextInput value={newSection.title} onChange={(e) => setNewSection({ ...newSection, title: e.target.value })} /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={newSection.eyebrow} onChange={(e) => setNewSection({ ...newSection, eyebrow: e.target.value })} /></Field>}
               <Field label="Subtitle"><TextInput value={newSection.subtitle} onChange={(e) => setNewSection({ ...newSection, subtitle: e.target.value })} /></Field>
               </>}
-              <Field label={newSection.section_type === 'whats_inside' && newSection.display_mode !== 'image' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : msg('FE_SF_IMAGE_REQUIRED', 'Image (required)')}><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
+              <Field label={newSection.section_type === 'whats_inside' && newSection.display_mode !== 'image' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : (newSection.section_type === 'popup' || newSection.section_type === 'how_its_made' || newSection.display_mode === 'image') ? msg('FE_SF_IMAGE_REQUIRED', 'Image (required)') : msg('FE_SF_IMAGE_OPTIONAL', 'Image (optional)')}><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && newSection.display_mode !== 'image' && (
                 <Field label="Optional badge (e.g. Opening soon)"><TextInput value={newSection.badge} onChange={(e) => setNewSection({ ...newSection, badge: e.target.value })} /></Field>
               )}

@@ -7,6 +7,7 @@ import os
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 from flask import Blueprint, request, jsonify, g
 
@@ -177,10 +178,48 @@ def _parse_int(v):
     return int(v)
 
 
+def _cms_destination_valid(dest):
+    if not isinstance(dest, str):
+        return False
+    if not dest:
+        return True
+    if any(c.isspace() or ord(c) < 32 for c in dest) or "\\" in dest:
+        return False
+    if dest.startswith("/") and not dest.startswith("//"):
+        return True
+    try:
+        parsed = urlsplit(dest)
+        if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password:
+            return False
+        parsed.port
+        return True
+    except ValueError:
+        return False
+
+
 def _section_validation(content, section_type):
+    """Validate fields consumed by the storefront; unrelated JSON metadata survives."""
+    text_fields = ("subtitle", "subheadline", "body", "image_url", "base_image_url",
+                   "photo_url", "cta_text", "cta_url", "cta_link", "eyebrow", "badge",
+                   "name", "review", "caption_template", "tier_slug", "slug", "key",
+                   "title", "line", "description", "destination")
+    for field in text_fields:
+        if field in content and not isinstance(content[field], str):
+            return _bad_request()
+    if "config" in content and not isinstance(content["config"], dict):
+        return _bad_request()
+    if "display_mode" in content and content["display_mode"] not in ("text", "image"):
+        return _bad_request()
+    if "placement" in content:
+        allowed = {"home", "menu", "dashboard", "orders", "rewards"} if section_type == "popup" else {"home", "menu", "checkout"}
+        if not isinstance(content["placement"], str) or content["placement"] not in allowed | {""}:
+            return _bad_request()
     for field in ("image_url", "base_image_url", "photo_url"):
         if content.get(field) and not is_cms_image_url(content[field]):
             return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
+    for field in ("cta_url", "cta_link", "destination"):
+        if not _cms_destination_valid(content.get(field, "")):
+            return _bad_request()
     if section_type == "testimonial" and "rating" in content:
         try:
             rating = _parse_int(content["rating"])
@@ -189,6 +228,39 @@ def _section_validation(content, section_type):
         except (TypeError, ValueError, OverflowError):
             return jsonify({"error": MSG.STOREFRONT_RATING_INVALID}), 400
         content["rating"] = rating
+    if section_type == "tier_icon" and content.get("tier_slug") and content["tier_slug"] not in ("ember", "flame", "blaze", "holy"):
+        return _bad_request()
+    return None
+
+
+def _section_insert_requirements(section_type, title, content, key):
+    """Only require information the selected consumer needs to render content."""
+    image_only = section_type == "popup" or content.get("display_mode") == "image"
+    if section_type == "testimonial":
+        if not (content.get("name") or title).strip():
+            return _field_required("name")
+        if not content.get("review", "").strip():
+            return _field_required("review")
+    elif section_type == "share_template":
+        if not content.get("base_image_url", "").strip():
+            return _field_required("base_image_url")
+    elif section_type == "tier_icon":
+        if not content.get("image_url", "").strip():
+            return _field_required("image_url")
+        slug = content.get("tier_slug") or content.get("slug") or re.sub(r"^tier[_-]icon[_-]", "", key)
+        if slug not in ("ember", "flame", "blaze", "holy"):
+            return _field_required("tier_slug")
+    elif image_only:
+        if not content.get("image_url", "").strip():
+            return _field_required("image_url")
+    elif section_type in ("our_story", "catering", "promo"):
+        visible_fields = ("image_url", "subtitle", "line") if section_type != "catering" else ("image_url", "subtitle", "body", "description")
+        if not any(str(value or "").strip() for value in (title, *(content.get(field) for field in visible_fields))):
+            return _field_required("title")
+    elif not title.strip():
+        return _field_required("title")
+    if section_type == "how_its_made" and not content.get("image_url", "").strip():
+        return _field_required("image_url")
     return None
 
 
@@ -289,7 +361,7 @@ def _banner_fields(data, placement=None):
                 return None, (jsonify({"error": MSG.FE_CMS_CTA_PAIR}), 400)
             # A destination must be an app path or an explicit web URL.
             dest = row["cta_url"]
-            if dest and not ((dest.startswith("/") and not dest.startswith("//") and "\\" not in dest) or dest.startswith(("https://", "http://"))):
+            if not _cms_destination_valid(dest):
                 return None, _bad_request()
             clean.append(row)
         out["metadata"]["slides"] = clean
@@ -299,11 +371,20 @@ def _banner_fields(data, placement=None):
         out.setdefault("metadata", {})["eyebrow"] = data["eyebrow"].strip()
     for k in ("title", "subtitle", "image_url", "mobile_image_url", "action_url", "action_label", "placement"):
         if k in data:
+            if not isinstance(data[k], str):
+                return None, _bad_request()
             out[k] = data[k]
+    for field in ("cta_text", "cta_url"):
+        if field in data and not isinstance(data[field], str):
+            return None, _bad_request()
+    if "placement" in out and out["placement"] not in ("hero", "home", "menu", "checkout"):
+        return None, _bad_request()
     if "cta_text" in data and "action_label" not in data:
         out["action_label"] = data["cta_text"]
     if "cta_url" in data and "action_url" not in data:
         out["action_url"] = data["cta_url"]
+    if not _cms_destination_valid(out.get("action_url", "")):
+        return None, _bad_request()
     try:
         if "is_active" in data:
             out["is_active"] = _parse_bool(data["is_active"])
@@ -504,6 +585,8 @@ def update_section(section_id):
         update["key"] = data["key"].strip()
     try:
         if "title" in data:
+            if not isinstance(data["title"], str):
+                return _bad_request()
             update["title"] = data["title"]
         if "is_active" in data:
             update["is_active"] = _parse_bool(data["is_active"])
@@ -582,12 +665,10 @@ def create_section():
     title = data.get("title", "")
     if not isinstance(title, str):
         return _bad_request()
-    image_only = data["section_type"].strip() == "popup" or content.get("display_mode") == "image"
-    if image_only and not content.get("image_url"):
-        return _field_required("image_url")
-    if not title.strip() and not image_only:
-        return _field_required("title")
     err = _section_validation(content, data["section_type"].strip())
+    if err:
+        return err
+    err = _section_insert_requirements(data["section_type"].strip(), title, content, data["key"].strip())
     if err:
         return err
     try:
