@@ -17,6 +17,11 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_MENU_BANNER_OPEN = "Open banner"
+    FE_MENU_BANNER_DESIGN_HELP = "Menu artwork: 4:1 ratio, 1600 × 400 px recommended. Upload the complete design; no extra headline is displayed."
+    FE_SF_ICON_OPTIONAL = "Icon image (optional)"
+    FE_SF_IMAGE_REQUIRED = "Image (required)"
+    FE_SF_MULTI_CARD_HELP = "Each entry is one card in the automatic scrolling row. Add more entries for more cards; each keeps its own image, text and destination."
     SOCIAL_LINKS_INVALID = "Enter HTTPS social-profile links for the matching platform, or leave the field empty."
     SOCIAL_LINKS_GLOBAL_ONLY = "Social links are global. Save them without a campus."
     FE_SOCIAL_LINKS_INVALID = "Enter HTTPS social-profile links for the matching platform, or leave the field empty."
@@ -38,6 +43,7 @@ class MSG:
     FE_BATCH_LABEL = "Delivery batch"
     FE_BATCH_LOAD_RETRY = "Some delivery data could not be loaded. Retry to refresh it."
     FE_BATCH_RETRY = "Retry"
+    FE_SESSION_ACCOUNT_LOADING = "Loading account"
     FE_ONBOARDING_CANCEL = "Cancel"
     FE_ONBOARDING_FULFILL = "Fulfill"
     FE_ONBOARDING_GIFT = "Gift"

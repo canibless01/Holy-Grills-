@@ -9,6 +9,7 @@ import TierAvatar from '@/components/TierAvatar';
 import ProfileMenuContent from '@/components/ProfileMenuContent';
 import MobileProfileDrawer from '@/components/MobileProfileDrawer';
 import BrandLogo from '@/components/BrandLogo';
+import { msg } from '@/lib/messages';
 import { useScrollNav } from '@/hooks/useScrollNav';
 
 /**
@@ -29,7 +30,7 @@ const NAV_LINKS = [
 ];
 
 export default function TopNav() {
-  const { user, hpBalance, cartCount, unreadCount, logout } = useHolyGrill();
+  const { user, hpBalance, cartCount, unreadCount, logout, isLoading, isAuthenticated: savedSession } = useHolyGrill();
   const navigate = useNavigate();
   const location = useLocation();
   const visible = useScrollNav();
@@ -163,7 +164,7 @@ export default function TopNav() {
           </button>
 
           {/* Profile — drawer on phones, dropdown on desktop; Sign In for guests */}
-          {user ? (
+          {!user && savedSession ? <span role="status" aria-label={msg('FE_SESSION_ACCOUNT_LOADING', 'Loading account')} className={`block w-9 h-9 rounded-full bg-muted border border-border ${isLoading ? 'animate-pulse' : ''}`} /> : user ? (
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={handleProfileClick}

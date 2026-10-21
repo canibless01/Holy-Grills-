@@ -15,9 +15,9 @@ The returning-user problem had several independent failure paths in code. Parall
 - `node scripts/test-session-refresh.mjs`: passed runtime cases for concurrent expired requests, late-401 token reuse, provider outage, malformed refresh reply and logout during rotation.
 - `tests.test_welcome_credit`: 16 cases including session route boundaries, optional wallet outage and skipping optional balance/grant work. `tests.test_identity_completion`: four cases. Combined run: 20 passed.
 - TypeScript validation and owned `HolyGrillContext.tsx` / `apiClient.ts` ESLint: passed.
-- Controlled routed browser proof pending: `signup-welcome-20261021/session-browser.py`.
-- Live dedicated recovery endpoint proof pending: `signup-welcome-20261021/verify-deferred.py`. It journals one owned audit fixture and performs no cleanup.
+- Five controlled routed browser cases passed: transient retry, public outage notice, private outage blocker/retry, restored-user redirect away from Login, and saved-session menu/header/campus recovery. Actual UI routes with intercepted API faults; no production latency claim.
+- Live dedicated recovery endpoint proof passed: lightweight verified profile excludes optional wallet/tier work; deferred grant binds the verified caller, replays one receipt, and rejects anonymous callers. One owned fixture was journaled and retained; no cleanup.
 
 ## Limits
 
-No production latency measurement or real browser network trace is claimed. Server login and refresh still perform the existing synchronous streak check-in. Header identity styling and broader storefront loading are coordinated separately. No database migration or provider configuration change is required.
+No production latency measurement or real browser network trace is claimed. Server login and refresh still perform the existing synchronous streak check-in. Header uses a recovery/loading placeholder while a saved session has no profile; verified users visiting Login redirect to their role home. The campus provider uses an existing valid campus only as a display hint during recovery and does not open a guest prompt. Server authorization still uses the verified profile. No database migration or provider configuration change is required.

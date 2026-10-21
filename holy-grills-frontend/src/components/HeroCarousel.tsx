@@ -58,6 +58,7 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
 export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) {
   const navigate = useNavigate();
   const SlideHeading = placement === 'hero' ? 'h1' : 'h2';
+  const artworkOnly = placement === 'menu';
   const { campusId } = useCampus();
   const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [i, setI] = useState(0);
@@ -127,7 +128,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   };
 
   return (
-    <div className={placement === 'hero' ? 'relative bg-foreground -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[78vh] min-h-[480px] overflow-hidden' : 'relative bg-foreground rounded-2xl h-72 sm:h-80 overflow-hidden'}>
+    <div className={placement === 'hero' ? 'relative bg-foreground -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[78vh] min-h-[480px] overflow-hidden' : artworkOnly ? 'relative rounded-xl aspect-[4/1] overflow-hidden' : 'relative bg-foreground rounded-2xl h-72 sm:h-80 overflow-hidden'}>
       {/* Swipeable image carousel — CSS scroll-snap for native touch swipe */}
       <div
         ref={scrollRef}
@@ -148,12 +149,13 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
               loading={idx === 0 ? 'eager' : 'lazy'}
               decoding="async"
               {...({ fetchpriority: idx === 0 ? 'high' : 'auto' } as { fetchpriority: string })}
-              className={`absolute inset-0 w-full h-full object-cover ${idx === i ? 'animate-ken-burns' : ''}`}
+              className={`absolute inset-0 w-full h-full ${artworkOnly ? 'object-contain' : `object-cover ${idx === i ? 'animate-ken-burns' : ''}`}`}
             />
             </picture>
             {/* Legibility scrim only — a plain dark gradient, never a blur or
                 frosted glass over the hero image. */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
+            {!artworkOnly && <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />}
+            {artworkOnly && slide.cta_url && <button type="button" onClick={() => openCmsDestination(slide.cta_url, navigate)} aria-label={slide.tag || msg('FE_MENU_BANNER_OPEN', 'Open banner')} className="absolute inset-0 w-full h-full" />}
           </div>
         ))}
       </div>
@@ -163,8 +165,8 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
         {/* The one glass surface on the hero — the eyebrow pill. Fully
             transparent with a light backdrop blur + hairline border: no
             colour fill, only the hero image shows through it. */}
-        {s.eyebrow && <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">{s.eyebrow}</span>}
-        <>
+        {!artworkOnly && s.eyebrow && <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">{s.eyebrow}</span>}
+        {!artworkOnly && <>
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 10 }}
@@ -174,8 +176,8 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
             <SlideHeading className="font-heading font-extrabold text-4xl sm:text-5xl text-white leading-[1.05] mb-2 text-balance">{s.tag}</SlideHeading>
             <p className="text-base text-white/85 mb-5 max-w-md">{s.sub}</p>
           </motion.div>
-        </>
-        {s.cta && s.cta_url && <button
+        </>}
+        {!artworkOnly && s.cta && s.cta_url && <button
           onClick={go}
           className="self-start px-5 py-2.5 rounded-full bg-gradient-cta text-white font-bold text-sm shadow-lg hover:scale-105 transition-transform pointer-events-auto"
         >

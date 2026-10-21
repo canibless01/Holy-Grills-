@@ -120,7 +120,7 @@ export default function Menu() {
       </div>
 
       <HeroCarousel placement="menu" />
-      <StorefrontSlider sectionType="promo" variant="poster" placement="menu" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
+      <StorefrontSlider sectionType="promo" variant="banner" placement="menu" />
 
       {/* Kitchen status — compact one-line radar so menu items stay near the top */}
       <KitchenStatusBox compact />

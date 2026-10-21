@@ -191,3 +191,5 @@ Native SQL checks and HTTP/browser results are distinguished in [the B matrix](W
 - `20261021092017_signup_welcome_credit_atomic`: one grant(uuid) signature, private service execution only; existing free-side ledger reused. Seeds scoped welcome configuration/cutover and disables future legacy physical gift grants; existing earned records retained.
 
 Canonical filenames match successful server migration versions. Postapply verification checks exactly one history row and expected signatures/grants; no duplicate overloads are introduced.
+
+`20261021093327_stage_paid_ready_orders_by_gate_and_window` was applied once. One existing helper signature and one new zero-argument trigger function exist, both with pinned search_path and anon/authenticated EXECUTE denied, service_role allowed. Two distinct INSERT/UPDATE statement triggers serve different transition-table operations. No table, column or backfill was added. Live grouping/concurrency/foreign-scope and cancellation tests passed.

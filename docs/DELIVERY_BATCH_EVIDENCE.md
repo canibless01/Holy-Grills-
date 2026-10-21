@@ -30,6 +30,6 @@ The controlled browser harness `/workspace/work/ecosystem-audit/batch-20261021/b
 
 ## Remaining scope
 
-- The legacy automatic gate-staging helper remains unwired. This batch improves manual groups; it does not silently enable automatic staging on kitchen readiness.
+- Automatic paid-ready staging is handled by the subsequent migration and its separate evidence: `docs/DELIVERY_BATCH_AUTO_STAGE_EVIDENCE.md`. The manual transaction checks above remain scoped to their original test run before automatic staging was enabled.
 - Native bulk kitchen preparation → ready → admin batch → rider delivery and payout still needs the broader operational browser matrix.
 - Real rider notifications/push transport are not verified here. The saved transaction remains successful if optional follow-up notification delivery fails.

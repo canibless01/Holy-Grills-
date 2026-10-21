@@ -158,10 +158,11 @@ export default function AdminDelivery() {
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${b.status === 'in_progress' ? 'tone-info' : b.status === 'assigned' ? 'tone-warn' : b.status === 'completed' ? 'tone-success' : 'bg-secondary text-muted-foreground'}`}>{b.status.replace(/_/g, ' ')}</span>
               </div>
               <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Rider: {b.profiles?.full_name || b.rider_name || <span className="text-destructive">Unassigned</span>}</span><span className="font-bold text-foreground">{b.order_count ?? 0} orders</span></div>
+              {b.status === 'open' && !b.rider_id && <p className="mt-2 text-xs text-muted-foreground">{msg('FE_BATCH_STAGED_SUMMARY', 'Ready orders grouped by gate and delivery window. Assign a rider to send this batch.')}</p>}
               {b.status !== 'completed' && b.status !== 'cancelled' && (
                 <div className="flex gap-2 mt-2">
                   <button onClick={() => setManageBatch(b)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-secondary text-xs font-bold disabled:opacity-50">{msg('FE_BATCH_MANAGE_ACTION', 'Manage / split')}</button>
-                  <button onClick={() => completeBatch(b.id)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">{batchBusy === b.id ? '...' : 'Mark Completed'}</button>
+                  {b.status !== 'open' && <button onClick={() => completeBatch(b.id)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">{batchBusy === b.id ? '...' : 'Mark Completed'}</button>}
                   <button onClick={() => cancelBatch(b.id)} disabled={batchBusy === b.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
                 </div>
               )}

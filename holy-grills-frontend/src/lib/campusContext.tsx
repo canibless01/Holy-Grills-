@@ -30,7 +30,7 @@ export const getStoredCampusId = () => localStore.getItem(CAMPUS_KEY);
 export const getStoredAdminCampusId = () => localStore.getItem(ADMIN_CAMPUS_KEY);
 
 export const CampusProvider = ({ children }) => {
-  const { user, isLoading } = useHolyGrill();
+  const { user, isLoading, isAuthenticated: savedSession } = useHolyGrill();
   const [campuses, setCampuses] = useState([]);
   const [campusesLoading, setCampusesLoading] = useState(true);
   const [campusesError, setCampusesError] = useState(false);
@@ -74,7 +74,12 @@ export const CampusProvider = ({ children }) => {
   // under `profile`, and reading only the top level left a signed-in user with
   // NO campus — which is what asked them to pick one and silently unscoped
   // every storefront/kitchen read.
-  const userCampusId = user?.campus_id || user?.profile?.campus_id || null;
+  // Stored campus is a display/request-scope hint while a saved session is
+  // unresolved. Authorization still comes from the server-verified profile.
+  const storedUserCampus = savedSession && localStore.getItem('hg_user_role') !== 'super_admin'
+    ? localStore.getItem('hg_user_campus_id') : null;
+  const userCampusId = user?.campus_id || user?.profile?.campus_id ||
+    (campuses.some(c => c.id === storedUserCampus) ? storedUserCampus : null);
   const validGuestCampusId = campuses.some((c) => c.id === guestCampusId) ? guestCampusId : null;
   const campusId = userCampusId || validGuestCampusId;
   const campus = campuses.find((c) => c.id === campusId) || null;
@@ -114,28 +119,25 @@ export const CampusProvider = ({ children }) => {
   }, [campusesLoading, campusesError, guestCampusId, validGuestCampusId]);
 
   useEffect(() => {
-    if (user) closeGate();
-  }, [user, closeGate]);
+    if (user || savedSession) closeGate();
+  }, [user, savedSession, closeGate]);
 
   // Guests get a dismissible campus prompt once on the homepage — it must
   // never block browsing the storefront. Campus-scoped routes open the
   // non-cancelable gate via requireCampus. Once dismissed, the prompt stays
   // away until the user hits a campus-scoped page.
-  // The gate keys off the real `user` object, not a raw token check. A token can
-  // linger in storage after expiry or before the profile loads, so isAuthenticated()
-  // is unreliable and would flash the gate at logged-in users. `user` is only set
-  // after a successful /auth/me — it is null exactly when the header shows the
-  // "Sign In" button, so this mirrors what the guest actually sees.
+  // An unresolved saved session is not a guest: let account retry recover its
+  // verified campus without asking the user to select another one.
   useEffect(() => {
     // Skip the prompt on the guest order-tracking page — tracking by code is
     // campus-agnostic, so a guest shouldn't be forced to pick a campus to reach
     // the tracking box. Campus-scoped pages still open the blocking gate.
-    if (isLoading || campusesLoading) return;
+    if (isLoading || campusesLoading || savedSession) return;
     if (gateOpenRef.current) return;
     if (!user && !validGuestCampusId && campuses.length > 0 && !gateDismissed && !location.pathname.startsWith('/track-orders') && location.pathname === '/') {
       openGate('continue', 'prompt');
     }
-  }, [isLoading, campusesLoading, user, validGuestCampusId, campuses, gateDismissed, location.pathname, openGate]);
+  }, [isLoading, campusesLoading, savedSession, user, validGuestCampusId, campuses, gateDismissed, location.pathname, openGate]);
 
   // The dismissible homepage prompt can follow a guest onto the tracking page
   // (the effect above only runs on mount). Close it whenever the guest reaches
@@ -185,13 +187,13 @@ export const CampusProvider = ({ children }) => {
     // While auth is still resolving (profile fetch in flight) don't open the
     // gate — a logged-in user's `user` object is null for a brief window after
     // load. CampusScope re-runs this via its effect dep once `user` lands.
-    if (isLoading) return true;
+    if (isLoading || savedSession) return true;
     // Logged-in users (a real `user` object) are scoped server-side by their own
     // campus_id — never gate them. Guests who already chose a campus pass through.
     if (user || userCampusId || validGuestCampusId) return true;
     openGate(action, 'blocking');
     return false;
-  }, [isLoading, user, userCampusId, validGuestCampusId, openGate]);
+  }, [isLoading, savedSession, user, userCampusId, validGuestCampusId, openGate]);
 
   // Called when a campus-scoped page unmounts (navigating away, or the back
   // button). This used to only DOWNGRADE blocking -> prompt and leave the gate

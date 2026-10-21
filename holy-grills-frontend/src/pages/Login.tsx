@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Check, Eye, EyeOff } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -11,6 +11,21 @@ import AuthField from '@/components/auth/AuthField';
 // Role-based login — after POST /api/auth/login the user's role routes them:
 // admin/super_admin → /admin, kitchen → /kitchen, rider → /rider, student → /.
 const ROLE_HOME = { admin: '/admin', super_admin: '/admin', kitchen: '/kitchen', rider: '/rider', student: '/' };
+
+const loginDestination = (role, from) => {
+  const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
+  const studentRoutes = ['/', '/menu', '/cart', '/checkout', '/orders', '/track-orders', '/dashboard', '/hp-education', '/rewards', '/wallet', '/profile', '/addresses', '/notifications', '/notification-preferences', '/referrals', '/order-locks', '/streak', '/leaderboard', '/events', '/marketplace', '/faq', '/terms', '/our-story', '/hall-of-fame'];
+  const isStudentRoute = (p) => studentRoutes.includes(p) || /^\/(menu|orders|marketplace|events)\//.test(p);
+  let dest;
+  if (isStaff) {
+    dest = ROLE_HOME[role] || '/admin';
+  } else if (from && isStudentRoute(from)) {
+    dest = from;
+  } else {
+    dest = ROLE_HOME[role] || '/';
+  }
+  return dest;
+};
 
 // "Remember me" has two halves:
 //   1. This app keeps the email address, so the sign-in screen opens pre-filled.
@@ -27,7 +42,7 @@ const REMEMBER_EMAIL = 'hg_remember_email';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useHolyGrill();
+  const { login, user, isLoading } = useHolyGrill();
   const [email, setEmail] = useState(() => localStore.getItem(REMEMBER_EMAIL) || '');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(() => localStore.getItem(REMEMBER_FLAG) === '1');
@@ -38,6 +53,12 @@ export default function Login() {
   const passwordRef = useRef(null);
   const formRef = useRef(null);
 
+  useEffect(() => {
+    if (!isLoading && user?.role && !loading) {
+      navigate(loginDestination(user.role, location.state?.from), { replace: true });
+    }
+  }, [isLoading, user?.role, loading, location.state?.from, navigate]);
+
   const doLogin = async (emailVal, passwordVal) => {
     setLoading(true);
     setError(null);
@@ -45,23 +66,7 @@ export default function Login() {
       const data = await login(emailVal, passwordVal);
       const role = data?.role || data?.user?.role || 'student';
       toast({ title: msg('FE_LOGIN_WELCOME_TITLE', '🔥 Welcome back!'), description: msg('FE_LOGIN_WELCOME_BODY', 'Good to see you again, {name}.', { name: data?.user?.full_name?.split(' ')[0] || 'griller' }) });
-      // Role-based routing: staff (admin/kitchen/rider) ALWAYS land on their own
-      // role page — never on a student route, regardless of any `from` deep-link.
-      // Students return to the page they were trying to reach IF it's a student
-      // route; otherwise they land on the student home.
-      const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
-      const from = location.state?.from;
-      const studentRoutes = ['/', '/menu', '/cart', '/checkout', '/orders', '/track-orders', '/dashboard', '/hp-education', '/rewards', '/wallet', '/profile', '/addresses', '/notifications', '/notification-preferences', '/referrals', '/order-locks', '/streak', '/leaderboard', '/events', '/marketplace', '/faq', '/terms', '/our-story', '/hall-of-fame'];
-      const isStudentRoute = (p) => studentRoutes.includes(p) || /^\/(menu|orders|marketplace|events)\//.test(p);
-      let dest;
-      if (isStaff) {
-        dest = ROLE_HOME[role] || '/admin';
-      } else if (from && isStudentRoute(from)) {
-        dest = from;
-      } else {
-        dest = ROLE_HOME[role] || '/';
-      }
-      navigate(dest, { replace: true });
+      navigate(loginDestination(role, location.state?.from), { replace: true });
     } catch (err) {
       setError(err.message || msg('FE_LOGIN_FAILED', 'Login failed'));
     }

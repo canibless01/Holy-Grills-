@@ -50,7 +50,7 @@ export default function AdminManageBatchModal({ batch, onClose, onSaved }) {
   };
   return <Modal open onClose={() => { if (!busy) onClose(); }} title={msg('FE_BATCH_MANAGE_TITLE', 'Manage delivery batch')}>
     {orders === null ? <LoadingSpinner /> : <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">{msg('FE_BATCH_MANAGE_HELP', 'Reassign a waiting batch, or select some waiting orders to give another rider a new batch. Orders already on the road stay with their current rider.')}</p>
+      <p className="text-xs text-muted-foreground">{batch.status === 'open' ? msg('FE_BATCH_STAGED_MANAGE_HELP', 'These paid, ready orders share a gate and delivery window. Choose a rider to assign the entire staged group. Orders stay ready until you assign them.') : msg('FE_BATCH_MANAGE_HELP', 'Reassign a waiting batch, or select some waiting orders to give another rider a new batch. Orders already on the road stay with their current rider.')}</p>
       <Field label={msg('FE_BATCH_RIDER', 'Rider')}>
         <select value={riderId} onChange={event => setRiderId(event.target.value)} disabled={busy} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
           <option value="">{msg('FE_BATCH_SELECT_RIDER', 'Select rider…')}</option>
@@ -68,8 +68,8 @@ export default function AdminManageBatchModal({ batch, onClose, onSaved }) {
       </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
-        <button type="button" disabled={busy || !riderId || !canReassign} onClick={() => save(false)} className="flex-1 rounded-full bg-secondary py-2.5 text-xs font-bold disabled:opacity-50">{msg('FE_BATCH_REASSIGN_ACTION', 'Update whole batch')}</button>
-        <button type="button" disabled={busy || !riderId || !canSplit} onClick={() => save(true)} className="flex-1 rounded-full bg-gradient-cta text-white py-2.5 text-xs font-bold disabled:opacity-50">{msg('FE_BATCH_SPLIT_ACTION', 'Split selected orders')}</button>
+        <button type="button" disabled={busy || !riderId || !canReassign} onClick={() => save(false)} className="flex-1 rounded-full bg-secondary py-2.5 text-xs font-bold disabled:opacity-50">{batch.status === 'open' ? msg('FE_BATCH_STAGE_ASSIGN', 'Assign staged batch') : msg('FE_BATCH_REASSIGN_ACTION', 'Update whole batch')}</button>
+        {batch.status !== 'open' && <button type="button" disabled={busy || !riderId || !canSplit} onClick={() => save(true)} className="flex-1 rounded-full bg-gradient-cta text-white py-2.5 text-xs font-bold disabled:opacity-50">{msg('FE_BATCH_SPLIT_ACTION', 'Split selected orders')}</button>}
       </div>
     </div>}
   </Modal>;

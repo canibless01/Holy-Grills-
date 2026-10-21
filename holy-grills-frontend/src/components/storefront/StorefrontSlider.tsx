@@ -14,6 +14,7 @@ import { openCmsDestination } from '@/lib/safeNavigation';
 //   landscape — 3:2, text overlaid on image, 2-up desktop  (How It's Made)
 //   poster    — 3:2, text below image in a card, 2-up      (Catering)
 const VARIANTS = {
+  banner: { aspect: '4 / 1', cardClass: 'w-full', maxW: undefined, textBelow: true },
   compact: { aspect: '3 / 1', cardClass: 'w-[72vw] sm:w-[280px]', maxW: 320, textBelow: true },
   portrait: {
     aspect: '4 / 5',
@@ -135,7 +136,7 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
           const img = s.image_url || s.content?.image_url || '';
           const title = s.title || s.content?.title || '';
           const line = s.subtitle || s.content?.line || s.content?.subtitle || '';
-          const imageOnly = s.content?.display_mode === 'image';
+          const imageOnly = variant === 'banner' || s.content?.display_mode === 'image';
           const compact = variant === 'compact';
           const badge = s.content?.badge || s.badge || '';
           return (

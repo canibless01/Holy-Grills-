@@ -112,6 +112,7 @@ const keyFor = (s) => s.key || s.content?.key || (s.section_type === 'share_temp
 
 type SectionDraft = {
   section_type: string;
+  draft_key: string;
   title: string;
   subtitle: string;
   image_url: string;
@@ -156,7 +157,7 @@ const sectionPatch = (s: any, name: string, value: any) => {
   return { [name]: value, content };
 };
 
-const blankSection = (type: string): SectionDraft => ({ section_type: type, title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', eyebrow: '', share_key: 'share_template', display_mode: 'text' });
+const blankSection = (type: string): SectionDraft => ({ section_type: type, draft_key: crypto.randomUUID(), title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', eyebrow: '', share_key: 'share_template', display_mode: 'text' });
 
 export default function AdminStorefront() {
   const sectionIntent = useCmsCreateIntent();
@@ -257,7 +258,7 @@ export default function AdminStorefront() {
       // Key is required by the backend for every section — not just share templates.
       body.key = t === 'share_template'
         ? (newSection.share_key || 'share_template')
-        : (slugify(newSection.title || newSection.testimonial_name) || `${t}-${Date.now().toString(36)}`);
+        : `${t}-${newSection.draft_key}`;
       if (t === 'testimonial') { body.title = newSection.testimonial_name; body.content = { name: newSection.testimonial_name, review: newSection.testimonial_review, rating: Number(newSection.testimonial_rating) }; }
       else if (t === 'share_template') { body.title = newSection.title || 'Share Template'; body.key = newSection.share_key || 'share_template'; body.content = { base_image_url: newSection.image_url, caption_template: newSection.caption_template || '', key: newSection.share_key || 'share_template' }; }
       else { body.title = newSection.title; body.content = { display_mode: t === 'popup' ? 'image' : newSection.display_mode };  body.subtitle = newSection.subtitle; body.image_url = newSection.image_url; body.cta_text = newSection.cta_text; body.cta_url = newSection.cta_url; if (SLIDER_TAB_IDS.includes(t)) body.content = { ...(body.content || {}), badge: newSection.badge, eyebrow: newSection.eyebrow }; }
@@ -384,6 +385,7 @@ export default function AdminStorefront() {
 
       {activeTab?.kind === 'tier_icons' && <AdminTierIcons />}
 
+      {isSectionType && SLIDER_TAB_IDS.includes(tab) && <p className="text-xs text-muted-foreground">{msg('FE_SF_MULTI_CARD_HELP', 'Each entry is one card in the automatic scrolling row. Add more entries for more cards; each keeps its own image, text and destination.')}</p>}
       {isSectionType && (
         <div className="space-y-3">
           {activeTab?.desc && <p className="text-xs text-muted-foreground">{activeTab.desc}</p>}
@@ -431,7 +433,7 @@ export default function AdminStorefront() {
               ) : (
                 <>
                   {s.section_type === 'popup' && <Field label={msg('FE_SF_PLACEMENT', 'Show on page')}><CmsPlacementSelect value={placementOf(s)} onChange={(value) => upd(s.id, sectionPatch(s, 'placement', value))} /></Field>}
-                  {s.section_type !== 'popup' && <DisplayMode value={s.content?.display_mode || 'text'} onChange={(value) => upd(s.id, { content: { ...s.content, display_mode: value } })} />}
+                  {SLIDER_TAB_IDS.includes(s.section_type) && <DisplayMode value={s.content?.display_mode || 'text'} onChange={(value) => upd(s.id, { content: { ...s.content, display_mode: value } })} />}
                   {s.section_type !== 'popup' && s.content?.display_mode !== 'image' && <>
                   <input value={s.title || ''} onChange={(e) => upd(s.id, { title: e.target.value })} className="w-full mb-2 p-2 rounded-lg border border-border text-sm font-bold" placeholder="Title" />
                   {SLIDER_TAB_IDS.includes(s.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={s.content?.eyebrow || ''} onChange={(e) => upd(s.id, { content: { ...s.content, eyebrow: e.target.value } })} /></Field>}
@@ -591,13 +593,13 @@ export default function AdminStorefront() {
           ) : (
             <>
               {newSection.section_type === 'popup' && <Field label={msg('FE_SF_PLACEMENT', 'Show on page')}><CmsPlacementSelect value={newSection.placement} onChange={(value) => setNewSection({ ...newSection, placement: value })} /></Field>}
-              {newSection.section_type !== 'popup' && <DisplayMode value={newSection.display_mode} onChange={(value) => setNewSection({ ...newSection, display_mode: value })} />}
+              {SLIDER_TAB_IDS.includes(newSection.section_type) && <DisplayMode value={newSection.display_mode} onChange={(value) => setNewSection({ ...newSection, display_mode: value })} />}
               {newSection.section_type !== 'popup' && newSection.display_mode !== 'image' && <>
               <Field label="Title (required)"><TextInput value={newSection.title} onChange={(e) => setNewSection({ ...newSection, title: e.target.value })} /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text')}><TextInput value={newSection.eyebrow} onChange={(e) => setNewSection({ ...newSection, eyebrow: e.target.value })} /></Field>}
               <Field label="Subtitle"><TextInput value={newSection.subtitle} onChange={(e) => setNewSection({ ...newSection, subtitle: e.target.value })} /></Field>
               </>}
-              <Field label="Image (required)"><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
+              <Field label={newSection.section_type === 'whats_inside' && newSection.display_mode !== 'image' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : msg('FE_SF_IMAGE_REQUIRED', 'Image (required)')}><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && newSection.display_mode !== 'image' && (
                 <Field label="Optional badge (e.g. Opening soon)"><TextInput value={newSection.badge} onChange={(e) => setNewSection({ ...newSection, badge: e.target.value })} /></Field>
               )}
