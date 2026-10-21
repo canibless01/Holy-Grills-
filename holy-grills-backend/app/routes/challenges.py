@@ -20,7 +20,7 @@ from app.middleware.auth import require_auth, require_role, optional_auth
 from app.db import get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
-from app.utils.campus_scope import as_campus_id, public_campus
+from app.utils.campus_scope import as_campus_id, public_campus, resolve_write_campus, assert_can_modify
 from datetime import datetime, timezone
 
 logger = get_logger(__name__)
@@ -44,6 +44,56 @@ MILESTONE_ALLOWED_FIELDS = {
     "title", "description", "trigger_type", "trigger_value", "hp_awarded",
     "time_window", "icon_won", "icon_locked", "is_active", "social_link", "campus_id"
 }
+
+
+def _milestone_fields(data, *, creating=False):
+    """Keep admin configuration valid before persistence, including partial edits."""
+    if not isinstance(data, dict):
+        raise ValueError(MSG.CHALLENGE_CONFIG_INVALID)
+    if creating:
+        for key in ("title", "trigger_type", "trigger_value", "hp_awarded"):
+            if key not in data:
+                raise ValueError(MSG.AUTH_FIELD_REQUIRED.format(field=key))
+    safe = {key: value for key, value in data.items() if key in MILESTONE_ALLOWED_FIELDS}
+    for key in ("title", "description", "icon_won", "icon_locked", "social_link"):
+        if key not in safe:
+            continue
+        value = safe[key]
+        if value is None and key != "title":
+            continue  # Optional copy/artwork fields may be cleared.
+        if not isinstance(value, str) or len(value) > (240 if key == "title" else 4000):
+            raise ValueError(MSG.CHALLENGE_CONFIG_INVALID)
+        safe[key] = value.strip()
+    if "title" in safe and not safe["title"]:
+        raise ValueError(MSG.AUTH_FIELD_REQUIRED.format(field="title"))
+    for key, minimum in (("trigger_value", 1), ("hp_awarded", 0)):
+        if key in safe and (isinstance(safe[key], bool) or not isinstance(safe[key], int)
+                            or not minimum <= safe[key] <= 2147483647):
+            raise ValueError(MSG.CHALLENGE_CONFIG_INVALID)
+    if "is_active" in safe and not isinstance(safe["is_active"], bool):
+        raise ValueError(MSG.CHALLENGE_CONFIG_INVALID)
+    if "time_window" in safe and safe["time_window"] not in (None, "weekly", "monthly"):
+        raise ValueError(MSG.CHALLENGE_TIME_WINDOW_INVALID)
+    if "trigger_type" in safe:
+        from app.services.milestone_service import VALID_TRIGGER_TYPES
+        if not isinstance(safe["trigger_type"], str) or safe["trigger_type"] not in VALID_TRIGGER_TYPES:
+            raise ValueError(resolve_msg(MSG.MILESTONE_TRIGGER_TYPE_INVALID, valid=", ".join(sorted(VALID_TRIGGER_TYPES))))
+    if safe.get("social_link"):
+        from urllib.parse import urlparse
+        try:
+            link = urlparse(safe["social_link"])
+            valid = (link.scheme == "https" and bool(link.hostname) and not link.username
+                     and not link.password and link.port in (None, 443)
+                     and not any(char.isspace() for char in safe["social_link"]))
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError(MSG.CHALLENGE_CONFIG_INVALID)
+    return safe
+
+
+def _saved_milestone(result):
+    return result[0] if isinstance(result, list) and result else result if isinstance(result, dict) else None
 
 
 @challenges_bp.route("", methods=["GET"])
@@ -77,6 +127,8 @@ def list_challenges():
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    elif getattr(g, "user_role", None) != "super_admin":
+        q = q.is_("campus_id", "null")
     tw = request.args.get("time_window")
     if tw in ("weekly", "monthly"):
         q = q.eq("time_window", tw)
@@ -109,6 +161,8 @@ def list_badges():
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    elif getattr(g, "user_role", None) != "super_admin":
+        q = q.is_("campus_id", "null")
     rows = q.order("hp_awarded", ascending=False).execute() or []
     return jsonify(rows), 200
 
@@ -452,8 +506,13 @@ def admin_list_milestones():
         description: All milestones
     """
     db = get_user_client()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    try:
+        limit = min(int(request.args.get("limit", 50)), 200)
+        offset = int(request.args.get("offset", 0))
+        if limit < 1 or offset < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     q = db.table("milestones").select("*")
     tw = request.args.get("time_window")
     if tw == "none":
@@ -473,7 +532,7 @@ def admin_create_milestone():
     """
     Create a new milestone (admin).
     trigger_type: see module docstring for valid values.
-    time_window: null = lifetime badge; 'weekly'/'monthly' = recurring challenge.
+    time_window: null = lifetime milestone; 'weekly'/'monthly' = recurring challenge.
     ---
     tags: [Challenges]
     parameters:
@@ -495,27 +554,21 @@ def admin_create_milestone():
       201:
         description: Milestone created
     """
-    db = get_user_client()
-    data = request.get_json(force=True) or {}
-    required = ["title", "trigger_type", "trigger_value", "hp_awarded"]
-    for f in required:
-        if data.get(f) is None:
-            return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
-    if data.get("time_window") and data["time_window"] not in ("weekly", "monthly"):
-        return jsonify({"error": MSG.CHALLENGE_TIME_WINDOW_INVALID}), 400
-    from app.services.milestone_service import VALID_TRIGGER_TYPES
-    if not isinstance(data["trigger_type"], str) or data["trigger_type"] not in VALID_TRIGGER_TYPES:
-        return jsonify({"error": resolve_msg(MSG.MILESTONE_TRIGGER_TYPE_INVALID, valid=", ".join(sorted(VALID_TRIGGER_TYPES)))}), 400
-
-    safe = {k: v for k, v in data.items() if k in MILESTONE_ALLOWED_FIELDS}
-    safe["created_by"] = g.user_id
-    safe.setdefault("is_active", False)
-    safe.setdefault("campus_id", getattr(g, "campus_id", None))
     try:
-        result = db.table("milestones").insert(safe)
-    except Exception as exc:
-        return jsonify({"error": str(exc)[:200]}), 400
-    return jsonify(result[0] if isinstance(result, list) else result), 201
+        safe = _milestone_fields(request.get_json(silent=True), creating=True)
+        campus_id = resolve_write_campus(as_campus_id(safe.get("campus_id")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    safe.update(created_by=g.user_id, campus_id=campus_id)
+    safe.setdefault("is_active", False)
+    try:
+        result = _saved_milestone(get_user_client().table("milestones").insert(safe))
+    except Exception:
+        logger.exception("admin_create_milestone: write failed")
+        return jsonify({"error": MSG.CHALLENGE_SAVE_UNAVAILABLE}), 503
+    if not result:
+        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
+    return jsonify(result), 201
 
 
 @challenges_bp.route("/admin/<milestone_id>", methods=["PATCH"])
@@ -536,20 +589,34 @@ def admin_update_milestone(milestone_id):
       404:
         description: Not found
     """
-    db = get_user_client()
-    if not db.table("milestones").select("id").eq("id", milestone_id).limit(1).execute():
-        return jsonify({"error": MSG.CHALLENGE_NOT_FOUND}), 404
-    data = request.get_json(force=True) or {}
-    safe = {k: v for k, v in data.items() if k in MILESTONE_ALLOWED_FIELDS}
+    try:
+        safe = _milestone_fields(request.get_json(silent=True))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     if not safe:
         return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
-    if "trigger_type" in safe:
-        from app.services.milestone_service import VALID_TRIGGER_TYPES
-        if not isinstance(safe["trigger_type"], str) or safe["trigger_type"] not in VALID_TRIGGER_TYPES:
-            return jsonify({"error": resolve_msg(MSG.MILESTONE_TRIGGER_TYPE_INVALID, valid=", ".join(sorted(VALID_TRIGGER_TYPES)))}), 400
+    db = get_user_client()
+    existing = db.table("milestones").select("id,campus_id").eq("id", milestone_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.CHALLENGE_NOT_FOUND}), 404
+    assert_can_modify(existing.get("campus_id"))
+    # Moving an existing challenge would strand its progress/history in the old campus.
+    if "campus_id" in safe:
+        try:
+            requested = as_campus_id(safe.pop("campus_id"))
+        except ValueError:
+            return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+        if requested != existing.get("campus_id"):
+            return jsonify({"error": MSG.CHALLENGE_SCOPE_IMMUTABLE}), 400
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("milestones").eq("id", milestone_id).update(safe)
-    return jsonify(result[0] if isinstance(result, list) else result), 200
+    try:
+        result = _saved_milestone(db.table("milestones").eq("id", milestone_id).update(safe))
+    except Exception:
+        logger.exception("admin_update_milestone: write failed")
+        return jsonify({"error": MSG.CHALLENGE_SAVE_UNAVAILABLE}), 503
+    if not result:
+        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
+    return jsonify(result), 200
 
 
 @challenges_bp.route("/admin/<milestone_id>", methods=["DELETE"])

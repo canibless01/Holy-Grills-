@@ -209,7 +209,7 @@ def flash_redeem(reward_id):
         description: No active flash sale, sold out, insufficient HP, or window closed
     """
     from app.services.feature_flags import is_feature_enabled
-    if not is_feature_enabled("flash_redemptions"):
+    if not is_feature_enabled("flash_redemptions", getattr(g, "campus_id", None)):
         return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="Flash redemptions")}), 403
     from app.services.hp_service import process_flash_redeem
     try:

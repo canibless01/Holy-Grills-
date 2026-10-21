@@ -109,10 +109,10 @@ def _with_flash_status(reward: dict, flash: dict = None) -> dict:
     return result
 
 
-def _flash_for_rewards(rewards: list) -> dict:
+def _flash_for_rewards(rewards: list, campus_id: str = None) -> dict:
     """{reward_id: available flash row} for a list of rewards, in one windows query. Never raises."""
     from app.services.feature_flags import is_feature_enabled
-    if not is_feature_enabled("flash_redemptions", getattr(g, "campus_id", None)):
+    if not is_feature_enabled("flash_redemptions", campus_id or getattr(g, "campus_id", None)):
         return {}
     try:
         db = get_db()
@@ -161,6 +161,8 @@ def list_rewards():
     campus_id = _get_campus_id()
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    elif getattr(g, "user_role", None) != "super_admin":
+        q = q.is_("campus_id", "null")
 
     reward_type = request.args.get("category") or request.args.get("reward_type")
     if reward_type:
@@ -177,11 +179,12 @@ def list_rewards():
         if expires_at and expires_at < now:
             continue
         result.append(r)
-    flash_by_reward = _flash_for_rewards(result)
+    flash_by_reward = _flash_for_rewards(result, campus_id=campus_id)
     return jsonify([_with_flash_status(r, flash_by_reward.get(r.get("id"))) for r in result]), 200
 
 
 @rewards_bp.route("/<reward_id>", methods=["GET"])
+@optional_auth
 def get_reward(reward_id):
     """
     Get reward detail.
@@ -203,11 +206,12 @@ def get_reward(reward_id):
     reward = db.table("rewards").select("*,hp_tiers(name,slug)").eq("id", reward_id).single().execute()
     if not reward:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
-    try:
-        _, flash = _is_flash_active(get_db(), reward["id"])
-    except Exception:
-        logger.warning("flash status lookup failed for reward %s", reward_id, exc_info=True)
-        flash = None
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
+    if reward.get("campus_id") not in (campus_id, None) and not (
+            getattr(g, "user_role", None) == "super_admin" and not campus_id):
+        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+    flash = _flash_for_rewards([reward], campus_id=campus_id).get(reward["id"])
     return jsonify(_with_flash_status(reward, flash)), 200
 
 

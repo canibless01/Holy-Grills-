@@ -259,14 +259,22 @@ def update_setting(key):
 def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
     """Send a push + in-app notification to active users when a multiplier event goes live.
     Scoped to campus_id when the multiplier change was per-campus; global when it wasn't."""
+    from app.services.feature_flags import is_feature_enabled
+    from app.services.hp_service import _get_hp_multiplier
+    if not is_feature_enabled("hp_multiplier", campus_id) or _get_hp_multiplier(campus_id) != multiplier:
+        return
     try:
         from app.services.notification_service import send_notification
         from app.messages import MSG
-        q = db.table("profiles").select("id").eq("is_active", True)
+        q = db.table("profiles").select("id,campus_id").eq("is_active", True).eq("role", "student")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         users = q.execute() or []
         for user in users:
+            # A global event must still respect a legacy campus-specific pause.
+            user_campus = user.get("campus_id") if not campus_id else campus_id
+            if not is_feature_enabled("hp_multiplier", user_campus) or _get_hp_multiplier(user_campus) != multiplier:
+                continue
             try:
                 send_notification(
                     user_id=user["id"],

@@ -10,7 +10,7 @@ import { msg } from '@/lib/messages';
 // Trigger types map 1:1 to the backend's milestone verification logic.
 const TRIGGER_TYPES = [
   'first_order', 'first_review', 'first_referral', 'first_event', 'first_squad',
-  'first_hp_gift_sent', 'graduation', 'birthday', 'social_follow', 'membership_months',
+  'first_hp_gift_sent', 'graduation', 'social_follow', 'membership_months',
   'hp_earned_total', 'referral_count', 'order_count', 'review_count', 'event_checkins',
   'squad_orders', 'order_streak_weeks', 'login_streak_cycles',
 ];
@@ -37,13 +37,14 @@ export default function AdminChallenges() {
   const [editItem, setEditItem] = useState(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => { load(); }, []);
 
   const load = async () => {
     setLoading(true);
-    try { setItems(await mockApi.admin.getChallengesAdmin()); }
-    catch { setItems([]); }
+    try { setItems(await mockApi.admin.getChallengesAdmin()); setLoadError(false); }
+    catch { setLoadError(true); }
     setLoading(false);
   };
 
@@ -88,6 +89,7 @@ export default function AdminChallenges() {
   };
 
   if (loading) return <StaffPanelSkeleton />;
+  if (loadError) return <Card><p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_CHALLENGES_LOAD_FAILED', 'Challenges could not be loaded. Retry before editing.')}</p><button type="button" onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-primary-foreground">{msg('FE_ADMIN_CHALLENGES_RETRY', 'Retry')}</button></Card>;
 
   return (
     <div className="space-y-4">
@@ -114,9 +116,9 @@ export default function AdminChallenges() {
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span>{c.completions} completed</span>
               <div className="flex gap-1">
-                <button onClick={() => setEditItem(c)} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
-                <button onClick={() => grant(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:bg-primary/10"><Gift className="w-3.5 h-3.5 text-primary" /></button>
-                <button onClick={() => remove(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:tone-error"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
+                <button aria-label={msg('FE_ADMIN_CHALLENGES_EDIT', 'Edit milestone')} onClick={() => setEditItem(c)} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                <button aria-label={msg('FE_ADMIN_CHALLENGES_GRANT', 'Grant milestone')} onClick={() => grant(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:bg-primary/10"><Gift className="w-3.5 h-3.5 text-primary" /></button>
+                <button aria-label={msg('FE_ADMIN_CHALLENGES_REMOVE', 'Deactivate milestone')} onClick={() => remove(c.id, c.title)} disabled={busy === c.id} className="p-1.5 rounded-lg hover:tone-error"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
               </div>
             </div>
           </Card>
@@ -150,7 +152,7 @@ function ChallengeModal({ item, onClose, onSaved }) {
     };
     try {
       if (item) { await mockApi.admin.updateChallenge(item.id, body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_UPDATED', '✅ Milestone updated'), description: msg('FE_ADMIN_CHALLENGES_TITLE_SAVED', '"{title}" saved.', { title: body.title }) }); }
-      else { await mockApi.admin.createChallenge(body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_CREATED', '✅ Milestone created'), description: msg('FE_ADMIN_CHALLENGES_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) }); }
+      else { await mockApi.admin.createChallenge(body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_CREATED', '✅ Milestone created'), description: body.is_active ? msg('FE_ADMIN_CHALLENGES_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) : msg('FE_ADMIN_CHALLENGES_SAVED_PAUSED', '"{title}" is saved and paused.', { title: body.title }) }); }
       onClose(); onSaved();
     } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setSubmitting(false);
@@ -179,6 +181,7 @@ function ChallengeModal({ item, onClose, onSaved }) {
             </select>
           </Field>
         </div>
+        <Field label={msg('FE_ADMIN_CHALLENGES_ACTIVE', 'Active')}><Toggle label={msg('FE_ADMIN_CHALLENGES_ACTIVE', 'Active')} checked={!!form.is_active} onChange={(value) => setForm({ ...form, is_active: value })} /></Field>
         <button onClick={submit} disabled={submitting || !form.title} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? 'Saving...' : 'Save Milestone'}</button>
       </div>
     </Modal>

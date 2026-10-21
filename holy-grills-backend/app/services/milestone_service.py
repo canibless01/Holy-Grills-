@@ -157,6 +157,16 @@ def get_user_milestones(user_id: str) -> dict:
             db, user_id, item.get("trigger_type"), target, None, now)
         (milestones_completed if item.get("earned") else milestones_available).append(item)
 
+    # Recurring challenge cards need the same verified progress as lifetime
+    # milestones. Definitions have no progress column; leaving it absent made
+    # every live challenge look like 0/target even when a claim was eligible.
+    for challenge in challenges_available:
+        target = int(challenge.get("trigger_value") or 1)
+        challenge["progress"] = _compute_trigger_progress(
+            db, user_id, challenge.get("trigger_type"), target, challenge.get("time_window"), now)
+    for challenge in challenges_completed:
+        challenge["progress"] = int(challenge.get("trigger_value") or 1)
+
     # `badges` is the whole set with the `earned` flag, kept for clients that
     # still read it. `badges_earned` / `badges_locked` are the two groups the UI
     # should render — listing `badges` under a "Badges Earned" heading shows
