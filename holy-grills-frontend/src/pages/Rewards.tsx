@@ -1,3 +1,4 @@
+import GraduationClaimButton from '@/components/GraduationClaimButton';
 import { formatNaira } from '@/lib/hgUtils';
 import { useState, useEffect } from 'react';
 import { Flame, Lock, Gift, Target, X, Check, History, Sparkles, Crown, Zap, Clock, ChevronRight, Award, Download } from 'lucide-react';
@@ -7,7 +8,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { getTierProgress, getTierProgressGradient, getTierOverallProgress } from '@/lib/hgUtils';
 import TierIcon from '@/components/TierIcon';
 import { getStreakRewardHp, isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
-import { graduationHp, lowCodeInventoryThreshold, freeSideCreditsValidityDays } from '@/lib/appConfig';
+import { lowCodeInventoryThreshold, freeSideCreditsValidityDays } from '@/lib/appConfig';
 import { expiryLabel } from '@/lib/rewardUtils';
 import { toast } from '@/components/ui/use-toast';
 import RewardsSkeleton from '@/components/skeletons/RewardsSkeleton';
@@ -76,8 +77,6 @@ export default function Rewards() {
   const [spinHistory, setSpinHistory] = useState([]);
   const [unlockHistory, setUnlockHistory] = useState([]);
   const [completing, setCompleting] = useState(null);
-  const [gradClaimed, setGradClaimed] = useState(false);
-  const [claimingGrad, setClaimingGrad] = useState(false);
   const [freeSideCredits, setFreeSideCredits] = useState({ count: 0, expires_at: null });
   const [exclusiveStatus, setExclusiveStatus] = useState(null);
   const [flashRedeeming, setFlashRedeeming] = useState(null);
@@ -106,12 +105,6 @@ export default function Rewards() {
     };
     load();
   }, []);
-
-  // Graduation "already claimed" comes from the profile (graduation_claimed),
-  // not a status probe — the backend exposes no /graduation/status route.
-  useEffect(() => {
-    if (user?.profile?.graduation_claimed) setGradClaimed(true);
-  }, [user]);
 
   const loadRedemptions = async () => {
     try {
@@ -148,19 +141,6 @@ export default function Rewards() {
       toast({ title: msg('FE_REWARDS_FLASH_REDEMPTION_FAILED', 'Flash redemption failed'), description: e.message, variant: 'destructive' });
     }
     setFlashRedeeming(null);
-  };
-
-  const handleGraduationClaim = async () => {
-    setClaimingGrad(true);
-    try {
-      const res = await liveApi.graduation.claim({});
-      await refreshHp();
-      toast({ title: msg('FE_REWARDS_GRADUATION_HP_CLAIMED', '🎓 Graduation HP claimed!'), description: msg('FE_REWARDS_GRADUATION_HP_HP_AWARDED_AT_LEVEL', '{graduation_hp} HP awarded at level {academic_level}.', { graduation_hp: res?.hp_awarded ?? graduationHp(), academic_level: res?.academic_level ?? '' }).trim() });
-      setGradClaimed(true);
-    } catch (e) {
-      toast({ title: msg('FE_REWARDS_CLAIM_FAILED', 'Claim failed'), description: e.message, variant: 'destructive' });
-    }
-    setClaimingGrad(false);
   };
 
   const handleCompleteChallenge = async (ch) => {
@@ -379,6 +359,8 @@ export default function Rewards() {
               <span className="text-xs font-semibold">{receipt.result_snapshot?.prize_type==='hp_multiplier' && receipt.status==='pending' && receipt.applied_order_id ? <Link className="underline" to={`/orders/${receipt.applied_order_id}`}>{msg('FE_SPIN_MULTIPLIER_RESERVED', 'HP bonus reserved for order {order}', { order: receipt.applied_order_id.slice(0, 8).toUpperCase() })}</Link> : receipt.result_snapshot?.prize_type==='hp_multiplier' && receipt.status==='pending' ? msg('FE_SPIN_MULTIPLIER_READY', '{multiplier}× food HP saved for a delivered order', { multiplier: receipt.result_snapshot.reward_config?.multiplier }) : receipt.result_snapshot?.prize_type==='hp_multiplier' && receipt.applied_order_id ? msg('FE_SPIN_MULTIPLIER_APPLIED', 'HP bonus applied to order {order}', { order: receipt.applied_order_id.slice(0, 8).toUpperCase() }) : receipt.result_snapshot?.prize_type==='hp_multiplier' && receipt.status==='fulfilled' ? msg('FE_SPIN_MULTIPLIER_LEGACY', 'Legacy HP bonus; usage was not recorded') : receipt.result_snapshot?.prize_type==='free_delivery' && receipt.status==='pending' ? msg('FE_SPIN_DELIVERY_READY', 'Up to {cap} off your next delivery fee', { cap: formatNaira(receipt.result_snapshot.reward_config?.cap || 0) }) : receipt.result_snapshot?.prize_type==='free_delivery' && receipt.applied_order_id ? msg('FE_SPIN_DELIVERY_APPLIED', 'Applied to order {order}', { order: receipt.applied_order_id.slice(0, 8).toUpperCase() }) : receipt.status==='pending' ? msg('FE_SPIN_PENDING', 'Awaiting campus fulfilment') : receipt.status==='fulfilled' ? msg('FE_SPIN_FULFILLED', 'Fulfilled') : msg('FE_SPIN_CANCELLED', 'Cancelled')}</span>
             </div>)}</div>
           </section>}
+
+          <GraduationClaimButton onClaimed={refreshHp} />
 
           {hallReleased && <Link to="/hall-of-fame" className="block rounded-2xl bg-accent/10 border border-accent/20 p-4 active:scale-[0.99] transition-transform shadow-card">
             <div className="flex items-center gap-3">

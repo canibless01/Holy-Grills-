@@ -718,6 +718,8 @@ const admin = {
 
   // --- Delivery Batches (verified: /admin/delivery-batches + /:id/orders) ---
   async getDeliveryBatches() { return unwrap(await apiClient.get('/admin/delivery-batches'), 'batches', 'delivery_batches'); },
+  async getDeliveryBatch(id) { return apiClient.get(`/admin/delivery-batches/${id}`); },
+  async splitDeliveryBatch(id, body) { return apiClient.post(`/admin/delivery-batches/${id}/split`, body); },
   async createDeliveryBatch(body) { return apiClient.post('/admin/delivery-batches', body); },
   async updateDeliveryBatch(id, body) { return apiClient.patch(`/admin/delivery-batches/${id}`, body); },
   async deleteDeliveryBatch(id) { return apiClient.delete(`/admin/delivery-batches/${id}`); },
@@ -829,6 +831,8 @@ const admin = {
   // Phase 3 — path corrected: the backend serves settings at /admin/settings (admin_gifts.py:125), there is no /admin/gifts prefix.
   async getGiftSettings() { const res = await apiClient.get('/admin/settings'); return res && res.settings ? res.settings : (res || {}); },
   async updateGiftSetting(key, body) { return apiClient.patch(`/admin/settings/${key}`, body); },
+  async getWelcomeCreditSettings(params = {}) { return apiClient.get('/admin/welcome-credit', params); },
+  async updateWelcomeCreditSettings(body) { return apiClient.patch('/admin/welcome-credit', body); },
 
   // --- Menu Categories (POST/PATCH/DELETE /menu/categories) ---
   // "Delete" is a soft-deactivate (is_active=false); PATCH with is_active=true reactivates.
@@ -1427,6 +1431,7 @@ const challenges = {
 
 // ========== GRADUATION ==========
 const graduation = {
+  async eligibility() { return apiClient.get('/graduation/eligibility'); },
   async claim(body) { return apiClient.post('/graduation/claim', body); },
 };
 

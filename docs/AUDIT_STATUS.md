@@ -17,14 +17,17 @@ Updated 21 October 2026. This is the short status index. The longer [progress re
 | Food HP | Include global add-ons; use discounted food spend excluding delivery; freeze new-order earning snapshot | Focused regressions and live admission/receipt passed; native delivered payout and stacking combinations remain |
 | Delivery summary | Normalize persisted hostel/gate/address and actual delivery-window relation | Native on-campus/gate-only passed; nearest-gate/override/radius API passed; full native pin-address map remains |
 | Reward redemption | Remove approval wait; deliver-now versus next-order attachment with one atomic claim | Automatic readiness, private grants, live replay/race/cancel and native fee-only checkout passed; native next-paid-order/rider handover, immutable snapshots and verified legacy pending rows remain |
-| Delivery batches | Atomic assignment/reassignment/splitting and matching admin controls | Owned multi-order kitchen/admin/rider loops and concurrent operations |
+| Delivery batches | Atomic manual assignment/reassignment/splitting and matching admin controls verified | Seven live transaction and four controlled admin UI cases passed; automatic staging and full native kitchen/rider/payout remain |
 | Storefront | Full unclipped flyer artwork; five display-page placements; compact What's Inside cards; section-specific inputs | Controlled section routing, multiple-item rendering, admin save/read-back and native layout passed; live CMS publication and each authenticated flyer route remain |
 | Rewards interaction | Remove visual badges and stacked credit banner; install/push/claim actions; recipient suggestions; podium/spin readability | Seven controlled browser assertions and SDK outcomes passed; live challenge creation/claim, transfer/grant and real PWA/push remain |
-| Graduation/promotions | Delivered-order/time/level eligibility; replace rigid hot-dog offer with configured benefits and signup free-side credit | Server enforcement, campus/global scope, atomic once-only awards, banner/toggle and calendar tests |
+| Graduation | Level + three paid delivered orders + current graduation calendar gate; atomic earning/counter/marker; compact eligible-only UI | Nine SQL assertions, native visibility and concurrent claim proof passed; provider notification delivery remains |
+| Signup credit/promotions | New-account scoped free-side grant replaces future hot-dog gifts; deterministic retry-safe receipt | Live scope/retry/concurrency passed; admin UI validation in progress; generalized time-based multi-benefit campaigns remain open |
 
 Checkout evidence for the current batch: [native/API results and provider limits](CHECKOUT_PAYMENT_DELIVERY_EVIDENCE.json).
 
 Reward evidence for the current batch: [live transactions and native delivery-choice checkout](INSTANT_REDEMPTION_EVIDENCE.md).
+
+Current batch evidence: [graduation](GRADUATION_ELIGIBILITY_EVIDENCE.md), [delivery batches](DELIVERY_BATCH_EVIDENCE.md), [signup credit](SIGNUP_WELCOME_CREDIT_EVIDENCE.md). Database cleanup is **paused by user instruction**; private inventory is not a deletion sign-off.
 
 ## Still open across the full audit
 

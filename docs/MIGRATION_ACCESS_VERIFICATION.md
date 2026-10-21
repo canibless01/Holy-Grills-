@@ -182,3 +182,12 @@ Eight rolled-back live assertions prove separate wins/snapshots, zero-food prese
 `serialize_marketplace_report_resolution_and_refund_stock` and `return_marketplace_business_conflicts_as_http_conflicts` are applied once. Canonical SQL files are under `holy-grills-backend/migrations/20261020*`. One `hg_admin_marketplace_resolve(uuid,uuid,text,uuid,text)` overload exists, `SECURITY INVOKER`, pinned `search_path=public`; anon/authenticated executefalse, service-roletrue. Existing purchase admission/wallet/HP functions are reused without replacement. No new table, column, index or ledger.
 
 Native SQL checks and HTTP/browser results are distinguished in [the B matrix](WORKSTREAM_B_EVIDENCE_MATRIX.md). The original reserved serialization SQLSTATE was corrected with a distinct forward migration after live HTTP testing; neither migration is replayed. The final `restrict_marketplace_financial_mutations_to_atomic_backend` file is **deployment-gated and pending** here: deploy the new RPC-backed routes first, then apply once and verify role writes/remaining reads. Its policy/grant changes and manual-report compatibility were tested inside a transaction that rolled back. See [the native proof](WORKSTREAM_B_MARKETPLACE_RESOLUTION_PROOF.sql).
+
+
+## 21 October 2026 — graduation, batch and signup credit
+
+- `20261021091014_graduation_eligibility_atomic`: eligibility(uuid), claim(uuid,integer), private service execution only; existing calendar CHECK extended, no new table.
+- `20261021092016_delivery_batch_atomic`: one manage(uuid,text,uuid,jsonb) signature, private service execution only; existing batch progression trigger body replaced.
+- `20261021092017_signup_welcome_credit_atomic`: one grant(uuid) signature, private service execution only; existing free-side ledger reused. Seeds scoped welcome configuration/cutover and disables future legacy physical gift grants; existing earned records retained.
+
+Canonical filenames match successful server migration versions. Postapply verification checks exactly one history row and expected signatures/grants; no duplicate overloads are introduced.

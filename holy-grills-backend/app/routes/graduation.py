@@ -1,158 +1,91 @@
+"""Graduation eligibility and lifetime HP claim, scoped to the signed-in user."""
 from flask import Blueprint, jsonify, g, current_app
 from app.middleware.auth import require_auth
-from app.db import get_db, get_user_client
+from app.db import get_db
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-from app.services.hp_service import award_active_hp
-from app.utils.reference_data import resolve_level
-from datetime import datetime, timezone
-
 graduation_bp = Blueprint("graduation", __name__)
-
-# HP awarded on graduation claim — read from config/env so admin can adjust without deploy.
-# Falls back to 1000 if GRADUATION_HP env var is not set.
-# Not subject to the HP multiplier (use apply_multiplier=False).
 _GRADUATION_HP_DEFAULT = 1000
 
 
-@graduation_bp.route("/claim", methods=["POST"])
+def _configured_hp():
+    value = current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return 0
+    try:
+        amount = int(value)
+        return amount if 0 < amount <= 2147483647 else 0
+    except (ValueError, TypeError):
+        return 0
+
+
+def _claim_error(result):
+    code = result.get('error')
+    if code == 'profile_not_found':
+        return jsonify({'error': MSG.GRADUATION_PROFILE_NOT_FOUND}), 404
+    if code == 'already_claimed':
+        return jsonify({'error': resolve_msg(MSG.GRADUATION_ALREADY_CLAIMED)}), 400
+    messages = {'campus_required': MSG.CAMPUS_REQUIRED,
+                'level': MSG.GRADUATION_ELIGIBILITY_REQUIRED,
+                'orders': MSG.GRADUATION_ORDERS_REQUIRED,
+                'period': MSG.GRADUATION_PERIOD_REQUIRED}
+    if code in messages:
+        return jsonify({**result, 'error': messages[code]}), 400
+    logger.warning('graduation claim unavailable: %s', code)
+    return jsonify({'error': MSG.GRADUATION_HP_CLAIM_FAILED}), 503
+
+
+@graduation_bp.route('/eligibility', methods=['GET'])
+@require_auth
+def graduation_eligibility():
+    """Read eligibility without claiming HP, changing a profile or creating a row."""
+    try:
+        result = get_db().rpc('hg_graduation_eligibility', {'p_user_id': g.user_id})
+        if not isinstance(result, dict) or result.get('error'):
+            return _claim_error(result if isinstance(result, dict) else {})
+        amount = _configured_hp()
+        if not amount and not result.get('claimed'):
+            result = {**result, 'eligible': False, 'reason': 'configuration'}
+        return jsonify({**result, 'hp_amount': amount}), 200
+    except Exception as exc:
+        logger.warning('graduation eligibility unavailable: %s', type(exc).__name__)
+        return jsonify({'error': MSG.GRADUATION_HP_CLAIM_FAILED}), 503
+
+
+@graduation_bp.route('/claim', methods=['POST'])
 @require_auth
 def claim_graduation():
+    """Claim once during the campus graduation period after three delivered orders.
+
+    The service RPC rechecks all gates and commits the earning, monthly counter
+    and graduation marker together. User-supplied identity, level and HP values
+    are never accepted. Historical lifetime receipts repair their marker without
+    receiving a second award, even after the calendar/configuration changes.
     """
-    Claim the graduation HP bonus. One-time only.
-    Requires academic_level (on user profile) >= graduation_min_level setting.
-    ---
-    tags: [Graduation]
-    responses:
-      200:
-        description: Graduation HP claimed
-      400:
-        description: Not eligible or already claimed
-    """
-    db = get_user_client()
-
-    # Fetch user profile
-    profile = (
-        db.table("profiles")
-        .select("id,academic_level,campus_id,graduation_claimed,full_name")
-        .eq("id", g.user_id)
-        .single()
-        .execute()
-    )
-    if not profile:
-        return jsonify({"error": MSG.GRADUATION_PROFILE_NOT_FOUND}), 404
-
-    # Check already claimed
-    if profile.get("graduation_claimed"):
-        return jsonify({"error": resolve_msg(MSG.GRADUATION_ALREADY_CLAIMED)}), 400
-
     try:
-        setting = (
-            db.table("system_settings")
-            .select("value")
-            .eq("key", "graduation_min_level")
-            .is_("campus_id", "null")
-            .single()
-            .execute()
-        )
-        graduation_min_rank = int((setting or {}).get("value", "400") or "400")
-    except Exception:
-        graduation_min_rank = 400
-
-    user_rank = 0
-    level_value = profile.get("academic_level")
-    if level_value:
-        level_row = resolve_level(get_db(), level_value, profile.get("campus_id"), active_only=False)
-        if level_row and level_row.get("rank") is not None:
-            user_rank = int(level_row["rank"])
-
-    if user_rank < graduation_min_rank:
-        return jsonify({
-            "error": MSG.GRADUATION_LEVEL_REQUIRED.format(required=graduation_min_rank, actual=user_rank),
-            "required_level": graduation_min_rank,
-            "your_level": level_value,
-        }), 400
-
-    # Historical awards may predate stable references. Never issue another award
-    # merely because a legacy profile's marker was not saved.
-    receipts = (get_db().table("hp_transactions").select("id,amount")
-                .eq("user_id", g.user_id).eq("reference_type", "graduation")
-                .eq("type", "earn").limit(1).execute()) or []
-
-    # HP amount: read from env/config so it can be changed without a deploy
-    raw_hp = current_app.config.get("GRADUATION_HP", _GRADUATION_HP_DEFAULT)
-    try:
-        if isinstance(raw_hp, bool) or not isinstance(raw_hp, (str, int)):
-            raise ValueError("Invalid graduation award")
-        graduation_hp = int(raw_hp)
-        if graduation_hp <= 0:
-            raise ValueError("Graduation award must be positive")
-    except (ValueError, TypeError):
-        if not receipts:
-            logger.error("graduation: invalid configured award; claim left available")
-            return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 503
-        graduation_hp = 0  # Existing lifetime receipts remain valid despite a later configuration change.
-
-    campus_id = getattr(g, 'campus_id', None)
-    # Award HP — not subject to HP multiplier (graduation is a fixed life event)
-    try:
-        award_result = {"awarded": 0, "replayed": True} if receipts else award_active_hp(
-            user_id=g.user_id,
-            amount=graduation_hp,
-            txn_type="earn_graduation",
-            reference_type="graduation",
-            reference_id=g.user_id,
-            notes=f"Graduation milestone HP — Level {level_value}",
-            apply_multiplier=False,
-            campus_id=campus_id,
-        )
-    except Exception as exc:
-        logger.error("graduation: HP claim failed for %s: %s", g.user_id, exc)
-        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 503
-
-    # The atomic HP receipt is the concurrency guard. Mark the profile only
-    # after that transaction; an interrupted marker write can safely replay it.
-    try:
-        marked = get_db().table("profiles").eq("id", g.user_id).update({
-            "graduation_claimed": True,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+        result = get_db().rpc('hg_claim_graduation_atomic', {
+            'p_user_id': g.user_id, 'p_hp_amount': _configured_hp(),
         })
-        if not marked:
-            raise RuntimeError("No profile updated")
     except Exception as exc:
-        logger.error("graduation: award receipt saved but marker failed for %s: %s", g.user_id, exc)
-        return jsonify({"error": MSG.GRADUATION_HP_CLAIM_FAILED}), 503
-
-    if award_result.get("replayed"):
-        return jsonify({"message": resolve_msg(MSG.GRADUATION_CLAIMED_OK),
-                        "hp_awarded": 0, "academic_level": level_value, "replayed": True}), 200
-
-    # Fire graduation badge trigger
-    try:
-        from app.services.milestone_service import check_milestone_trigger
-        check_milestone_trigger(g.user_id, "graduation", 1)
-    except Exception as exc:
-        # The HP bonus is already credited; only the graduation badge is missing.
-        logger.warning("graduation: milestone trigger failed for %s: %s", g.user_id, exc)
-
-    # Notify
-    try:
-        from app.services.notification_service import send_notification
-        # Nickname-first, like every other notification that greets someone.
-        from app.services.squad_service import resolve_display_name
-        name = (resolve_display_name(profile=profile) or "").split()[0] or "Graduate"
-        send_notification(
-            user_id=g.user_id,
-            notif_type="graduation_hp",
-            template_data={"name": name, "hp": graduation_hp, "level": level_value},
-        )
-    except Exception:
-        pass
-
-    return jsonify({
-        "message": resolve_msg(MSG.GRADUATION_CLAIMED_OK),
-        "hp_awarded": award_result.get("awarded", graduation_hp),
-        "academic_level": level_value,
-    }), 200
+        logger.warning('graduation claim unavailable: %s', type(exc).__name__)
+        return jsonify({'error': MSG.GRADUATION_HP_CLAIM_FAILED}), 503
+    if not isinstance(result, dict) or result.get('error') or not result.get('success'):
+        return _claim_error(result if isinstance(result, dict) else {})
+    if result.get('hp_awarded', 0) > 0:
+        # HP is already committed. Optional notification/milestone failures must
+        # never turn a saved claim into an apparent failure or invite a replay.
+        try:
+            from app.services.milestone_service import check_milestone_trigger
+            check_milestone_trigger(g.user_id, 'graduation', 1)
+        except Exception as exc:
+            logger.warning('graduation milestone follow-up failed: %s', type(exc).__name__)
+        try:
+            from app.services.notification_service import send_notification
+            send_notification(user_id=g.user_id, notif_type='graduation_hp',
+                              template_data={'hp': result['hp_awarded'],
+                                             'level': result.get('academic_level')})
+        except Exception as exc:
+            logger.warning('graduation notification follow-up failed: %s', type(exc).__name__)
+    return jsonify({**result, 'message': resolve_msg(MSG.GRADUATION_CLAIMED_OK)}), 200

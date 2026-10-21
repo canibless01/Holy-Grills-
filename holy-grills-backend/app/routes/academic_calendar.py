@@ -29,7 +29,7 @@ academic_calendar_bp = Blueprint("academic_calendar", __name__)
 admin_academic_calendar_bp = Blueprint("admin_academic_calendar", __name__)
 
 # Mirrors the DB CHECK academic_calendar_period_type_check. Keep in sync.
-PERIOD_TYPES = ("semester", "exam", "break", "holiday", "orientation")
+PERIOD_TYPES = ("semester", "exam", "break", "holiday", "orientation", "graduation")
 
 
 def _requested_campus():

@@ -1958,7 +1958,7 @@ def _handle_delivery_rewards(order: dict):
     # First-order gift check — runs synchronously to prevent critical order mutation loss
     try:
         from app.services.gift_service import maybe_grant_first_order_gift
-        maybe_grant_first_order_gift(user_id, order_id)
+        maybe_grant_first_order_gift(user_id, order_id, campus_id=order.get("campus_id"))
     except Exception as _ge:
         logger.warning("first_order_gift check failed for order %s: %s", order_id, _ge)
 

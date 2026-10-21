@@ -14,6 +14,7 @@ const PERIOD_TYPES = [
   { value: 'break', label: 'Break' },
   { value: 'holiday', label: 'Holiday' },
   { value: 'orientation', label: 'Orientation' },
+  { value: 'graduation', label: msg('FE_ACADEMIC_GRADUATION_PERIOD', 'Graduation / Convocation') },
 ];
 
 const fmt = (d) => (d ? formatDate(d) : '—');
@@ -45,6 +46,7 @@ export default function AdminAcademicCalendar() {
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">{msg('FE_ACADEMIC_GRADUATION_HELP', 'Graduation / Convocation dates control when eligible graduating students can claim their bonus. Start and end dates are inclusive in campus time (WAT). Semester and exam entries do not activate graduation claims.')}</p>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 text-sm font-bold text-foreground">
           <CalendarDays className="w-4 h-4 text-primary" /> {periods ? `${periods.length} period${periods.length === 1 ? '' : 's'}` : 'Loading…'}
