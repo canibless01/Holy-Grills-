@@ -4,6 +4,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCampus } from '@/lib/campusContext';
 import { liveApi } from '@/lib/liveApi';
 import { normalizeWhatsAppNumber, safeText } from '@/lib/valueText';
+import { safeSocialLinks } from '@/lib/socialLinks';
 
 export function useContactDetails() {
   const { isLoading } = useHolyGrill();
@@ -22,6 +23,7 @@ export function useContactDetails() {
   const message = safeText(config.whatsapp_support_message) || msg('FE_CONTACT_DEFAULT_WHATSAPP_MESSAGE', 'Hello, I need help with my order');
   return {
     loading: loading || isLoading,
+    socialLinks: safeSocialLinks(config.global_social_links),
     email: safeText(config.global_support_email), phone: safeText(config.support_phone),
     address: safeText(config.support_address), social: safeText(config.support_social), whatsapp,
     whatsappUrl: whatsapp ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}` : '',

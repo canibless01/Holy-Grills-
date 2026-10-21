@@ -5,6 +5,7 @@ import { Mail, Phone, MapPin } from 'lucide-react';
 import APP_CONFIG from '@/config/app.config';
 import BrandLogo from '@/components/BrandLogo';
 import ContactActions from '@/components/ContactActions';
+import SocialLinks from '@/components/SocialLinks';
 import { useContactDetails } from '@/lib/useContactDetails';
 
 /**
@@ -66,7 +67,7 @@ export default function Footer() {
             </li>}
             <li><ContactActions /></li>
           </ul>
-          {contact.social && <p className="text-xs text-beige/70 mt-4">{contact.social}</p>}
+          <div className="mt-4"><SocialLinks links={contact.socialLinks} /></div>
         </div>
       </div>
 

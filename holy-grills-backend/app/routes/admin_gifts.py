@@ -199,6 +199,15 @@ def update_setting(key):
         except (TypeError, ValueError):
             return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
 
+    if key == 'global_social_links':
+        from app.utils.social_links import validate_social_links
+        if campus_id:
+            return jsonify({'error': MSG.SOCIAL_LINKS_GLOBAL_ONLY}), 400
+        try:
+            value = validate_social_links(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
     if key == 'signup_free_side_config':
         from app.services.welcome_credit_service import validate_config
         try:
@@ -290,6 +299,15 @@ def create_setting():
         return auth_err
     if not key or value is None:
         return jsonify({"error": MSG.SETTING_KEY_VALUE_REQUIRED}), 400
+
+    if key == 'global_social_links':
+        from app.utils.social_links import validate_social_links
+        if campus_id:
+            return jsonify({'error': MSG.SOCIAL_LINKS_GLOBAL_ONLY}), 400
+        try:
+            value = validate_social_links(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
 
     if key == 'signup_free_side_config':
         from app.services.welcome_credit_service import validate_config

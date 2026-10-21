@@ -390,6 +390,8 @@ def get_public_config():
         except Exception:
             logger.warning("get_public_config: campus coordinates unreadable for %s", campus_id, exc_info=True)
 
+    from app.utils.social_links import public_social_links
+    config_dict['global_social_links'] = public_social_links(settings)
     config_dict["global_support_email"] = global_email
     config_dict["max_delivery_radius_km"] = max_radius
     config_dict["campus_lat"] = c_lat

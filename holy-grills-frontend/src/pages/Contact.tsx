@@ -18,7 +18,6 @@ export default function Contact() {
       <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
         <ContactActions expanded />
         {contact.address && <p className="flex items-start gap-3"><MapPin className="w-5 h-5 text-primary shrink-0" /> {contact.address}</p>}
-        {contact.social && <p className="text-sm text-muted-foreground">{contact.social}</p>}
       </div>
     </section>
   );

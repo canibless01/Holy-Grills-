@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } from './ui/AdminKit';
 import EmailDeliverySettings from './EmailDeliverySettings';
+import SocialLinksSettings from './SocialLinksSettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
@@ -53,6 +54,7 @@ const KNOWN_SETTINGS = {
 // Parse an edit-string back into the jsonb value shape: arrays for known
 // list keys, booleans, numbers, or the raw string.
 const parseValue = (key, raw) => {
+  if (key === 'global_social_links') return JSON.parse(raw);
   if (KNOWN_SETTINGS[key]?.default != null && typeof KNOWN_SETTINGS[key].default !== 'string' && !Array.isArray(KNOWN_SETTINGS[key].default)) {
     if (typeof KNOWN_SETTINGS[key].default === 'boolean') return raw === 'true';
     const n = Number(raw);
@@ -238,6 +240,7 @@ export default function AdminSystemSettings() {
         );
       })()}
 
+      {settings != null && <SocialLinksSettings settings={settings} onSaved={load} canEdit={isSuperAdmin} />}
       {settings != null && <EmailDeliverySettings settings={settings} onSaved={load} />}
 
       {settings == null ? (
@@ -257,7 +260,7 @@ export default function AdminSystemSettings() {
         </Card>
       ) : (
         <div className="space-y-2.5">
-          {settings.map((s, i) => {
+          {settings.filter(s => s.key !== 'global_social_links').map((s, i) => {
             const isBool = typeof s.value === 'boolean';
             const known = KNOWN_SETTINGS[s.key];
             const desc = s.description || known?.purpose;
