@@ -1,16 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Save, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
+import { useCampus } from '@/lib/campusContext';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Toggle, Pill } from './AdminShared';
-import { useIsSuperAdmin, SuperAdminNotice } from './SuperAdminGate';
+import { useIsSuperAdmin } from './SuperAdminGate';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
 export default function AdminOnboarding() {
   const isSuperAdmin = useIsSuperAdmin();
+  const { campusId, adminCampusId, campuses } = useCampus();
+  const scopeCampus = isSuperAdmin ? adminCampusId : campusId;
+  const scopeKey = scopeCampus || 'global';
+  const scope = scopeCampus ? { campus_id: scopeCampus } : { scope: 'global' };
+  const generation = useRef(0);
   const [settings, setSettings] = useState(null);
+  const [inherited, setInherited] = useState(false);
   const [gifts, setGifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,103 +25,70 @@ export default function AdminOnboarding() {
   const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
-    setLoading(true);
-    setLoadError(false);
+    const requestId = ++generation.current;
+    setLoading(true); setLoadError(false);
     try {
-      const [s, g] = await Promise.all([mockApi.admin.getGiftSettings(), mockApi.admin.getFirstOrderGifts()]);
-      setSettings(s || {});
+      const [s, g] = await Promise.all([
+        mockApi.admin.getWelcomeCreditSettings(scope),
+        mockApi.admin.getFirstOrderGifts(scopeCampus ? { campus_id: scopeCampus } : {}),
+      ]);
+      if (requestId !== generation.current) return;
+      setSettings(s.config); setInherited(s.inherited === true);
       setGifts(Array.isArray(g) ? g : []);
-    } catch { setLoadError(true); }
-    setLoading(false);
+    } catch { if (requestId === generation.current) setLoadError(true); }
+    if (requestId === generation.current) setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); return () => { generation.current += 1; }; }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const saveSettings = async (entries) => {
+  const save = async () => {
+    if (saving) return;
+    const requestId = generation.current;
     setSaving(true);
     try {
-      for (const [key, value] of entries) {
-        await mockApi.admin.updateGiftSetting(key, { value: String(value) });
-        setSettings((cur) => ({ ...cur, [key]: value }));
+      const res = await mockApi.admin.updateWelcomeCreditSettings({ ...scope, config: {
+        enabled: settings.enabled, credits: Number(settings.credits), validity_days: Number(settings.validity_days),
+      } });
+      if (requestId === generation.current) {
+        setSettings(res.config); setInherited(false);
+        toast({ title: msg('FE_ONBOARDING_WELCOME_SAVED', 'Welcome credits saved') });
       }
-      toast({ title: msg('FE_ADMIN_ONBOARDING_GIFT_SETTING_SAVED', 'Gift setting saved') });
-    } catch (e) { toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setSaving(false);
+    } catch (error) {
+      if (requestId === generation.current) toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: error.message, variant: 'destructive' });
+    } finally { setSaving(false); }
   };
-
   const updateGift = async (id, status) => {
+    const requestId = generation.current;
     setBusy(id);
-    try { const res = await mockApi.admin.updateFirstOrderGiftStatus(id, { status }); toast({ title: res?.message || 'Gift updated' }); await load(); }
-    catch (e) { toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
+    try { const res = await mockApi.admin.updateFirstOrderGiftStatus(id, { status }); if (requestId === generation.current) { toast({ title: res?.message || msg('FE_ONBOARDING_GIFT_UPDATED', 'Gift updated') }); await load(); } }
+    catch (error) { toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: error.message, variant: 'destructive' }); }
     setBusy(null);
   };
-
   if (loadError) return <div className="py-10 text-center space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
   if (loading || !settings) return <StaffPanelSkeleton />;
-
-  const isTrue = (v) => v === true || String(v) === 'true';
-  const enabled = isTrue(settings.first_order_gift_enabled);
-  const endDate = settings.launch_window_end_date || '';
-  const itemName = settings.first_order_gift_item_name || '';
-
-  return (
-    <div className="space-y-5">
-      <Card>
-        <h3 className="font-bold text-sm text-foreground mb-1">First-Order Gift Settings</h3>
-        <p className="text-[11px] text-muted-foreground mb-3">The welcome gift is fully configurable here (not hardcoded). It auto-awards when a user's first order reaches <b>delivered</b>, only if enabled and on/before the launch end date.</p>
-        {isSuperAdmin ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Toggle label={msg('FE_ONBOARDING_ENABLE_GIFT', 'Enable first-order gift')} disabled={saving} checked={enabled} onChange={(v) => setSettings({ ...settings, first_order_gift_enabled: v })} />
-              <span className="text-sm text-foreground font-semibold">Enable first-order gift</span>
-              <button onClick={() => saveSettings([['first_order_gift_enabled', String(enabled)]])} disabled={saving} className="ml-auto px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50"><Save className="w-3.5 h-3.5 inline mr-1" />Save toggle</button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Launch window end date" hint="Gift only awarded on or before this date">
-                <input type="date" disabled={saving} value={endDate ? String(endDate).slice(0, 10) : ''} onChange={(e) => setSettings({ ...settings, launch_window_end_date: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" />
-              </Field>
-              <Field label="Gift item name" hint="What shows on the receipt as the gift">
-                <TextInput disabled={saving} value={itemName} onChange={(e) => setSettings({ ...settings, first_order_gift_item_name: e.target.value })} placeholder="e.g. Hot Dog" />
-              </Field>
-            </div>
-            <button onClick={() => saveSettings([['launch_window_end_date', settings.launch_window_end_date || ''], ['first_order_gift_item_name', settings.first_order_gift_item_name || '']])} disabled={saving} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> Save Gift Settings</button>
-          </div>
-        ) : (
-          // Gift settings are system settings — writes are super-admin-only
-          // (regular admins get 403), so render the current config read-only.
-          <div className="space-y-2.5">
-            <SuperAdminNotice>First-order gift settings are managed by a <b>super admin</b>. Current configuration:</SuperAdminNotice>
-            <div className="flex flex-wrap gap-1.5 text-xs font-bold">
-              <span className={`px-2.5 py-1 rounded-full ${enabled ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'}`}>{enabled ? 'Gift enabled' : 'Gift disabled'}</span>
-              {endDate && <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground">Ends {String(endDate).slice(0, 10)}</span>}
-              {itemName && <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground">Gift item: {itemName}</span>}
-            </div>
-          </div>
-        )}
-        <div className="mt-3 rounded-xl bg-muted p-2 text-[11px] text-muted-foreground">Note: the signup bonus HP is set in environment variables and is not admin-editable here.</div>
-      </Card>
-
-      <div>
-        <h3 className="font-bold text-sm text-foreground mb-2 flex items-center gap-2"><Gift className="w-4 h-4 text-primary" /> First-Order Gifts</h3>
-        <p className="text-[11px] text-muted-foreground mb-2">Gifted orders awaiting fulfillment (spec: GET /admin/gifts/first-order-gifts, PATCH /admin/gifts/first-order-gifts/:id).</p>
-        {gifts.length === 0 ? <p className="text-xs text-muted-foreground text-center py-6">No first-order gifts yet.</p> : (
-        <div className="space-y-2">
-          {gifts.map((g) => (
-            <Card key={g.id} className="flex items-center gap-3 !p-3">
-              <div className="flex-1">
-                <div className="font-bold text-sm text-foreground">{g.profiles?.full_name || g.user_name || g.user?.full_name || 'User'}</div>
-                <div className="text-xs text-muted-foreground">{g.gift_item_name || g.item_name || 'Gift'} · order #{(g.orders?.id || g.order_id || '').toString().toUpperCase()} · {timeAgo(g.created_at)}</div>
-              </div>
-              {g.status === 'pending' ? (
-                <div className="flex gap-1">
-                  <button onClick={() => updateGift(g.id, 'fulfilled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold disabled:opacity-50">Fulfill</button>
-                  <button onClick={() => updateGift(g.id, 'cancelled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
-                </div>
-              ) : <Pill tone={g.status === 'fulfilled' ? 'green' : g.status === 'claimed' || g.status === 'redeemed' ? 'blue' : 'red'}>{g.status}</Pill>}
-            </Card>
-          ))}
+  const credits = Number(settings.credits), days = Number(settings.validity_days);
+  const valid = Number.isInteger(credits) && credits >= 1 && credits <= 10 && Number.isInteger(days) && days >= 1 && days <= 365;
+  const scopeName = scopeCampus ? campuses.find(c => c.id === scopeCampus)?.name || msg('FE_ONBOARDING_SELECTED_CAMPUS', 'Selected campus') : msg('FE_ONBOARDING_GLOBAL_DEFAULTS', 'Global defaults');
+  return <div className="space-y-5">
+    <Card>
+      <h3 className="font-bold text-sm text-foreground mb-1">{msg('FE_ONBOARDING_WELCOME_TITLE', 'Signup welcome credits')}</h3>
+      <p className="text-[11px] text-muted-foreground mb-3">{msg('FE_ONBOARDING_WELCOME_HELP', 'Eligible new accounts receive free-side credits automatically. Pausing stops new grants. Credits already granted keep their saved balance and expiry.')}</p>
+      <div className="flex items-center gap-2 mb-3"><Pill tone="cocoa">{scopeName}</Pill>{inherited && <Pill tone="blue">{msg('FE_ONBOARDING_INHERITED', 'Using global defaults')}</Pill>}</div>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2"><Toggle label={msg('FE_ONBOARDING_WELCOME_ENABLE', 'Enable signup free-side credits')} disabled={saving} checked={settings.enabled === true} onChange={enabled => setSettings({ ...settings, enabled })} /><span className="text-sm font-semibold">{msg('FE_ONBOARDING_WELCOME_ENABLE', 'Enable signup free-side credits')}</span></div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={msg('FE_ONBOARDING_CREDITS', 'Credits per account')} hint={msg('FE_ONBOARDING_CREDITS_HINT', '1–10 free-side credits')}><TextInput type="number" min={1} max={10} step={1} disabled={saving} value={settings.credits} onChange={e => setSettings({ ...settings, credits: e.target.value })} /></Field>
+          <Field label={msg('FE_ONBOARDING_VALIDITY', 'Validity in days')} hint={msg('FE_ONBOARDING_VALIDITY_HINT', '1–365 days after grant')}><TextInput type="number" min={1} max={365} step={1} disabled={saving} value={settings.validity_days} onChange={e => setSettings({ ...settings, validity_days: e.target.value })} /></Field>
         </div>
-        )}
+        <button onClick={save} disabled={saving || !valid} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{saving ? msg('FE_ONBOARDING_SAVING', 'Saving…') : msg('FE_ONBOARDING_WELCOME_SAVE', 'Save welcome credits')}</button>
       </div>
+    </Card>
+    <div>
+      <h3 className="font-bold text-sm mb-2 flex items-center gap-2"><Gift className="w-4 h-4 text-primary" />{msg('FE_ONBOARDING_LEGACY_TITLE', 'Earlier first-order gifts')}</h3>
+      <p className="text-[11px] text-muted-foreground mb-2">{msg('FE_ONBOARDING_LEGACY_HELP', 'Previously granted physical gifts remain available for fulfillment. New welcome rewards use free-side credits.')}</p>
+      {gifts.length === 0 ? <p className="text-xs text-muted-foreground text-center py-6">{msg('FE_ONBOARDING_LEGACY_EMPTY', 'No earlier gifts to fulfill.')}</p> : <div className="space-y-2">{gifts.map(g => <Card key={g.id} className="flex items-center gap-3 !p-3">
+        <div className="flex-1"><div className="font-bold text-sm text-foreground">{g.profiles?.full_name || g.user_name || g.user?.full_name || msg('FE_ONBOARDING_USER', 'User')}</div><div className="text-xs text-muted-foreground">{g.gift_item_name || g.item_name || msg('FE_ONBOARDING_GIFT', 'Gift')} · #{(g.orders?.id || g.order_id || '').toString().toUpperCase()} · {timeAgo(g.created_at)}</div></div>
+        {g.status === 'pending' ? <div className="flex gap-1"><button onClick={() => updateGift(g.id, 'fulfilled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold disabled:opacity-50">{msg('FE_ONBOARDING_FULFILL', 'Fulfill')}</button><button onClick={() => updateGift(g.id, 'cancelled')} disabled={busy === g.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">{msg('FE_ONBOARDING_CANCEL', 'Cancel')}</button></div> : <Pill tone={g.status === 'fulfilled' ? 'green' : 'red'}>{g.status}</Pill>}
+      </Card>)}</div>}
     </div>
-  );
+  </div>;
 }

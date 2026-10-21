@@ -39,7 +39,7 @@ const KNOWN_SETTINGS = {
   order_lock_max_discount_pct: { default: 50, purpose: 'Highest discount an order lock may offer', hint: 'Percent 0–100. No backend reader today — the order-lock cap is the route default (1–50).' },
   daily_checkin_hp: { default: 0, purpose: 'Daily check-in attendance — no HP is paid per day; the weekly completion reward is what pays HP', hint: 'Daily check-in itself awards 0 HP' },
   free_side_options: { default: 'Coleslaw, Extra Sauce, Soft Drink', purpose: 'Side credit choices', hint: 'Comma-separated list' },
-  first_order_gift_enabled: { default: true, purpose: 'Welcome gift toggle' },
+  first_order_gift_enabled: { default: false, purpose: 'Legacy physical first-order gift; signup_free_side_config controls new welcome credits' },
   monthly_pending_cap: { default: 1000, purpose: 'Monthly cap on pending HP unlock' },
   graduation_min_level: { default: 400, purpose: 'Minimum academic level for graduation eligibility' },
   whatsapp_support_number: { default: '', purpose: 'WhatsApp number on the campus contact page' },

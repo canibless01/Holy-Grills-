@@ -222,6 +222,13 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             logger.error("register: referral signup notification failed for referrer %s: %s", referred_by_user_id, e)
 
     try:
+        from app.services.welcome_credit_service import grant_signup_credit
+        grant_signup_credit(user_id)
+    except Exception as exc:
+        # The atomic grant has a deterministic receipt. /auth/me retries safely.
+        logger.error("register: welcome credit unavailable for %s: %s", user_id, exc)
+
+    try:
         hp_service.award_signup_bonus(user_id)
     except Exception as e:
         logger.error("register: award_signup_bonus failed for user %s: %s", user_id, e)
@@ -318,6 +325,13 @@ def get_current_user(access_token: str) -> dict:
         .single()
         .execute()
     )
+
+    if profile and profile.get('is_active', True):
+        try:
+            from app.services.welcome_credit_service import grant_signup_credit
+            grant_signup_credit(user_id)
+        except Exception as exc:
+            logger.warning("get_current_user: welcome credit recovery unavailable for %s: %s", user_id, exc)
 
     _profile = profile or {}
     for _internal in ("is_fraud_flagged", "jwt_version", "deactivation_reason", "deactivated_by"):

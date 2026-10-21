@@ -8,7 +8,7 @@ PATCH  /admin/settings/<key>             — update a system setting
 """
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role, resolve_scoped_campus_id
-from app.db import get_user_client, SupabaseError
+from app.db import get_user_client, get_db, SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -199,6 +199,13 @@ def update_setting(key):
         except (TypeError, ValueError):
             return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
 
+    if key == 'signup_free_side_config':
+        from app.services.welcome_credit_service import validate_config
+        try:
+            value = validate_config(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
     update_payload = {
         "value": value,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -284,6 +291,13 @@ def create_setting():
     if not key or value is None:
         return jsonify({"error": MSG.SETTING_KEY_VALUE_REQUIRED}), 400
 
+    if key == 'signup_free_side_config':
+        from app.services.welcome_credit_service import validate_config
+        try:
+            value = validate_config(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
     existing = read_percampus_setting(db, key, campus_id) if campus_id else read_global_setting(db, key)
     if existing:
         return jsonify({"error": MSG.SETTING_KEY_EXISTS}), 409
@@ -322,3 +336,55 @@ def create_setting():
         return jsonify({"error": refusal}), 400
     row = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.SETTING_CREATED, "setting": row}), 201
+
+
+@admin_gifts_bp.route('/welcome-credit', methods=['GET', 'PATCH'])
+@require_role('admin')
+def welcome_credit_settings():
+    from app.services.welcome_credit_service import read_config, validate_config, CONFIG_KEY
+    from app.utils.validators import validate_uuid
+    data = request.get_json(silent=True) if request.method == 'PATCH' else {}
+    if request.method == 'PATCH' and not isinstance(data, dict):
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    global_scope = (data or {}).get('scope') == 'global' or request.args.get('scope') == 'global'
+    if global_scope and g.user_role != 'super_admin':
+        return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+    campus_id = None if global_scope else resolve_scoped_campus_id((data or {}).get('campus_id') or request.args.get('campus_id'))
+    if campus_id and not validate_uuid(campus_id):
+        return jsonify({'error': MSG.INVALID_CAMPUS_ID}), 400
+    if not campus_id and g.user_role != 'super_admin':
+        return jsonify({'error': MSG.ACCOUNT_NO_CAMPUS}), 400
+    if request.method == 'GET':
+        try:
+            config, inherited = read_config(get_db(), campus_id)
+        except Exception:
+            return jsonify({'error': MSG.WELCOME_CREDIT_UNAVAILABLE}), 503
+        return jsonify({'config': config, 'campus_id': campus_id, 'inherited': inherited}), 200
+    try:
+        config = validate_config(data.get('config'))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db = get_user_client()
+    try:
+        query = db.table('system_settings').eq('key', CONFIG_KEY)
+        query = query.eq('campus_id', campus_id) if campus_id else query.is_('campus_id', 'null')
+        existing = query.select('key').single().execute()
+        payload = {'value': config, 'is_public': True, 'updated_at': datetime.now(timezone.utc).isoformat(), 'updated_by': g.user_id}
+        if existing:
+            written = query.update(payload)
+        else:
+            written = db.table('system_settings').insert({'key': CONFIG_KEY, 'campus_id': campus_id, 'description': MSG.WELCOME_CREDIT_SETTING_DESCRIPTION, **payload})
+    except SupabaseError as exc:
+        code = str((getattr(exc, 'details', None) or {}).get('code') or '')
+        if code == '23505' or '23505' in str(exc):
+            return jsonify({'error': MSG.WELCOME_CREDIT_SETTING_CHANGED}), 409
+        if code == '42501' or getattr(exc, 'status_code', None) == 403:
+            return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+        logger.warning('Welcome configuration save failed: %s', type(exc).__name__)
+        return jsonify({'error': MSG.WELCOME_CREDIT_SAVE_FAILED}), 503
+    except Exception as exc:
+        logger.warning('Welcome configuration save failed: %s', type(exc).__name__)
+        return jsonify({'error': MSG.WELCOME_CREDIT_SAVE_FAILED}), 503
+    if not written:
+        return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+    return jsonify({'config': config, 'campus_id': campus_id, 'inherited': False}), 200
