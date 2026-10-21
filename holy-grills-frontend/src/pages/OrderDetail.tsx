@@ -2,7 +2,7 @@ import { confirmAction } from '@/lib/confirmAction';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, MapPin, Clock, CreditCard, Flame, Star, RefreshCw, Share2, X, Check, Package, Bike, Phone, User, Gift } from 'lucide-react';
@@ -43,6 +43,9 @@ export default function OrderDetail() {
   const claimToken = new URLSearchParams(location.search).get('claim_token');
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [orderError, setOrderError] = useState(null);
+  const [retry, setRetry] = useState(0);
+  const [claiming, setClaiming] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [review, setReview] = useState({ rating: 5, kitchen_rating: 4, rider_rating: 5, comment: '' });
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -52,36 +55,37 @@ export default function OrderDetail() {
   const [callLink, setCallLink] = useState(null);
   const [callingRider, setCallingRider] = useState(false);
 
-  // Guest tracking — load the claim token from localStorage first when the
-  // guest returns without ?claim_token= in the URL (new device, cleared
-  // storage, lost link). Once the guest signs up, access is by auth token
-  // and the claim_token is no longer needed.
-  const resolveClaimToken = () => {
+  // Keep the device's proof until ownership is actually linked. Signing in
+  // alone does not make an unclaimed guest order visible through account RLS.
+  const resolveClaimToken = useCallback(() => {
     if (claimToken) return claimToken;
-    if (user) return null; // authenticated — access is by token, not claim_token
     try {
-      const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
-      const match = guestOrders.find((g) => g.id === id);
-      return match?.claim_token || null;
+      const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+      return Array.isArray(saved) ? saved.find(g => g?.id === id)?.claim_token || null : null;
     } catch { return null; }
-  };
+  }, [claimToken, id]);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setOrder(null);
+    setOrderError(null);
     const load = async () => {
       try {
         const token = resolveClaimToken();
         const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
+        if (!active) return;
         setOrder(o);
         setReviewSubmitted(Boolean(o.review));
         if (o.review) setReviewAward(Number(o.review.hp_awarded) || 0);
-      } catch (e) { console.error(e); }
-      setLoading(false);
+      } catch (error) { if (active) setOrderError(error); }
+      if (active) setLoading(false);
     };
     load();
     // Keep the timeline fresh while the order is still moving.
     const timer = setInterval(load, 30000);
-    return () => clearInterval(timer);
-  }, [id, claimToken]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { active = false; clearInterval(timer); };
+  }, [id, user?.id, resolveClaimToken, retry]);
 
   // F5 GAP (reported): the guest "Resend tracking email" action was removed — the
   // backend exposes no tracking route at all (no /orders/<id>/resend-tracking, no
@@ -115,18 +119,26 @@ export default function OrderDetail() {
     } catch (e) { console.error(e); }
   };
 
-  // Guest order linking — manual claim for the one case the automatic email-match
-  // trigger can't cover: the guest registered with a different email than checkout.
   const handleClaim = async () => {
     const token = resolveClaimToken();
-    if (!token) return;
+    if (!token || claiming) return;
+    setClaiming(true);
     try {
       await mockApi.orders.claim(id, { claim_token: token });
-      await refreshUser();
+      // Saved ownership is authoritative even if optional account hydration fails.
+      setOrder(current => current ? { ...current, user_id: user.id, claim_token: null } : current);
+      try {
+        const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+        if (Array.isArray(saved)) localStorage.setItem('hg_guest_orders', JSON.stringify(saved.filter(g => g?.id !== id)));
+      } catch { /* Device storage cannot undo ownership. */ }
+      const params = new URLSearchParams(location.search);
+      params.delete('claim_token');
+      navigate({ pathname: location.pathname, search: params.toString() ? '?' + params.toString() : '' }, { replace: true });
       toast({ title: msg('FE_ORDER_DETAIL_ORDER_LINKED_TO_YOUR_ACCOUNT', '✅ Order linked to your account'), description: msg('FE_ORDER_DETAIL_YOU_CAN_NOW_TRACK_IT_FROM_YOUR_ORDERS', 'You can now track it from your orders.') });
-      const o = await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {});
-      setOrder(o);
-    } catch (e) { alert(e.message); }
+      await Promise.allSettled([refreshUser(), mockApi.orders.get(id).then(setOrder)]);
+    } catch (error) {
+      toast({ title: msg('FE_GUEST_CLAIM_FAILED', 'Could not link this order'), description: error.message, variant: 'destructive' });
+    } finally { setClaiming(false); }
   };
 
   const handleReview = async () => {
@@ -182,7 +194,8 @@ export default function OrderDetail() {
     return (
       <div className="text-center py-16 space-y-4">
         <MascotStandee mascot="worried" className="w-32 h-32 mx-auto" alt="Order not found" />
-        <p className="text-sm text-muted-foreground">Order not found</p>
+        <p role="alert" className="text-sm text-muted-foreground">{orderError?.message || msg('FE_ORDER_DETAIL_ORDER_NOT_FOUND', 'Order not found')}</p>
+        <button type="button" onClick={() => setRetry(n => n + 1)} className="px-4 py-2 rounded-xl border border-border text-sm">{msg('FE_GUEST_TRACK_RETRY', 'Retry')}</button>
         <button onClick={() => navigate('/orders')} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Back to orders</button>
       </div>
     );
@@ -352,7 +365,7 @@ export default function OrderDetail() {
             <div className="text-xs text-white/80 mt-0.5">Link it to your profile and earn HP on it.</div>
           </div>
           <button
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/register', { state: { from: location.pathname + location.search } })}
             className="shrink-0 px-3.5 py-2 rounded-full bg-card text-primary text-xs font-bold active:scale-95 transition-transform"
           >
             Sign up
@@ -361,6 +374,7 @@ export default function OrderDetail() {
       )}
 
       <OrderRewardSummary order={order} />
+      {user?.role === 'student' && !order.user_id && resolveClaimToken() && !['paid', 'partially_refunded', 'refunded'].includes(order.payment_status) && <p className="text-xs text-muted-foreground">{msg('FE_GUEST_CLAIM_PAYMENT_PENDING', 'Complete payment for this guest order before linking it to your account.')}</p>}
       <OrderPaymentActions order={order} claimToken={resolveClaimToken()} onUpdated={async () => setOrder(await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {}))} />
 
       {/* Actions */}
@@ -378,8 +392,8 @@ export default function OrderDetail() {
         <button onClick={() => setShowShare(true)} className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:border-primary/30 transition-colors">
           <Share2 className="w-4 h-4" /> Share
         </button>
-        {user && !order.user_id && resolveClaimToken() && (
-          <button onClick={handleClaim} className="flex-1 py-3 rounded-xl bg-gradient-cta text-white font-bold text-sm shadow-glow">
+        {user?.role === 'student' && !order.user_id && resolveClaimToken() && ['paid', 'partially_refunded', 'refunded'].includes(order.payment_status) && (
+          <button onClick={handleClaim} disabled={claiming} className="flex-1 py-3 rounded-xl bg-gradient-cta text-white font-bold text-sm shadow-glow disabled:opacity-60">
             Link to my account
           </button>
         )}

@@ -260,6 +260,31 @@ def list_orders():
     return jsonify(orders), 200
 
 
+@orders_bp.route('/track', methods=['GET'])
+@optional_auth
+def track_guest_order():
+    """Resolve a full UUID or displayed order number using its private token."""
+    import uuid as _uuid
+    import re
+    number = (request.args.get('order_number') or '').strip().lstrip('#')
+    token = request.args.get('claim_token')
+    try:
+        _uuid.UUID(token or '')
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({'error': MSG.ORDER_INVALID_CLAIM}), 403
+    if not number or len(number)>80 or not re.fullmatch(r'[A-Za-z0-9-]+',number):
+        return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+    try:
+        oid = str(_uuid.UUID(number))
+    except ValueError:
+        row = (get_db().table('orders').select('id,user_id,claim_token')
+               .ilike('order_number',number).limit(1).single().execute())
+        if not row or row.get('user_id') or not hmac.compare_digest(str(row.get('claim_token') or ''),str(token)):
+            return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+        oid = row['id']
+    return get_order.__wrapped__(oid)
+
+
 @orders_bp.route("/<order_id>", methods=["GET"])
 @optional_auth
 def get_order(order_id):
@@ -642,47 +667,47 @@ def claim_guest_order(order_id):
     except ValueError:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    data = request.get_json(force=True) or {}
-    claim_token = data.get("claim_token")
-    if not claim_token:
-        return jsonify({"error": MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
-
-    # A guest order has user_id NULL, so the student's own token cannot even SELECT it (RLS), and the
-    # orders trigger blocks a user changing user_id directly. The server therefore does the lookup and
-    # the claim with the service client. This is safe because: (1) @require_auth already verified the
-    # caller, (2) p_user_id is g.user_id from that verified token, never from the request body, and
-    # (3) claim_guest_order() re-checks the claim token inside the database.
-    admin_db = get_db()
-
-    order = admin_db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-
-    if order.get("user_id"):
-        return jsonify({"error": MSG.ORDER_ALREADY_CLAIMED}), 400
-
-    if not order.get("claim_token") or not hmac.compare_digest(str(order["claim_token"]), str(claim_token)):
-        return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
-
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    claim_token = data.get('claim_token')
     try:
-        result = admin_db.rpc("claim_guest_order", {
-            "p_order_id": order_id,
-            "p_user_id": g.user_id,
-            "p_claim_token": claim_token,
+        if not isinstance(claim_token, str):
+            raise ValueError()
+        claim_token = str(_uuid.UUID(claim_token))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({'error': MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
+    if getattr(g, 'user_role', None) != 'student':
+        return jsonify({'error': MSG.ORDER_ACCESS_DENIED}), 403
+    admin_db = get_db()
+    try:
+        result = admin_db.rpc('claim_guest_order', {
+            'p_order_id': order_id, 'p_user_id': g.user_id, 'p_claim_token': claim_token,
         })
-        if isinstance(result, dict) and result.get("success"):
-            # After the claim the student owns the order, so the normal user client can read it back.
-            claimed_order = get_user_client().table("orders").select("*").eq("id", order_id).single().execute()
-            if claimed_order and claimed_order.get("status") == "delivered" and not claimed_order.get("hp_credited_at"):
-                # A guest who was delivered before claiming would otherwise never get
-                # the HP a logged-in customer earns automatically on delivery.
-                from app.services.order_service import _handle_delivery_rewards
-                _handle_delivery_rewards(claimed_order)
-        if isinstance(result, dict):
-            result["message"] = MSG.ORDER_CLAIMED
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    except Exception:
+        logger.exception('Guest claim unavailable for %s', order_id)
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+    if not isinstance(result, dict) or not result.get('success'):
+        code = result.get('error') if isinstance(result, dict) else None
+        errors = {'order_not_found': (MSG.ORDER_NOT_FOUND, 404),
+                  'invalid_claim': (MSG.ORDER_INVALID_CLAIM, 403),
+                  'already_claimed': (MSG.ORDER_ALREADY_CLAIMED, 409),
+                  'campus_mismatch': (MSG.GUEST_CLAIM_CAMPUS_MISMATCH, 403),
+                  'payment_pending': (MSG.GUEST_CLAIM_PAYMENT_PENDING, 409),
+                  'forbidden': (MSG.ORDER_ACCESS_DENIED, 403)}
+        message, status = errors.get(code, (MSG.SERVICE_UNAVAILABLE, 503))
+        return jsonify({'error': message, 'code': code or 'unavailable'}), status
+    # The owner change is committed. An optional balance read/HP recovery failure
+    # must not turn a successful claim into a false failure. Own retries recover.
+    try:
+        claimed_order = admin_db.table('orders').select('*').eq('id', order_id).single().execute()
+        if claimed_order and claimed_order.get('user_id') == g.user_id and claimed_order.get('status') == 'delivered' and claimed_order.get('payment_status') in ('paid','partially_refunded') and not claimed_order.get('hp_credited_at'):
+            from app.services.order_service import _handle_delivery_rewards
+            _handle_delivery_rewards(claimed_order)
+    except Exception:
+        logger.exception('Guest claim saved; delivery reward recovery pending for %s', order_id)
+        result = {**result, 'rewards_pending': True}
+    return jsonify({**result, 'message': MSG.ORDER_CLAIMED}), 200
 
 
 def _atomic_refund_response(order_id, customer_cancel=False, scheduled_only=False):

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Check, Package, Clock, Search, AlertCircle, Mail } from 'lucide-react';
@@ -7,6 +7,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, ORDER_STATUS_COLORS_ON_DARK } from '@/lib/hgUtils';
 import { fadeUp, staggerContainer } from '@/lib/animationPresets';
 import ScheduledOrders from '@/components/ScheduledOrders';
+import { msg } from '@/lib/messages';
 
 const DONE = ['delivered', 'cancelled', 'refunded'];
 const POLL_MS = 30000;
@@ -40,7 +41,9 @@ function describeLookupError(e) {
 
 export default function TrackOrders() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useHolyGrill();
+  const { isAuthenticated, user } = useHolyGrill();
+  const generation = useRef(0);
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeOrders, setActiveOrders] = useState([]);
   const [guestOrders, setGuestOrders] = useState([]);
@@ -52,35 +55,37 @@ export default function TrackOrders() {
   // Collate EVERY undelivered order — not just the single "active" one —
   // so the page shows all in-progress orders and their timelines together.
   const load = useCallback(async () => {
-    let mine = [];
+    const current = ++generation.current;
+    let mine = [], accountFailed = false;
     if (isAuthenticated) {
-      const all = await mockApi.orders.list({ limit: 50 }).catch(() => []);
-      mine = (Array.isArray(all) ? all : []).filter((o) => !DONE.includes(o.status));
+      try {
+        const all = await mockApi.orders.list({ limit: 50 });
+        mine = Array.isArray(all) ? all : [];
+      } catch { accountFailed = true; }
     }
-    setActiveOrders(mine);
-
-    // Guest orders live only on this device (saved at checkout). They are never
-    // in the account list, so each is read back with its own claim token.
     let saved = [];
     try { saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]'); } catch { saved = []; }
-    const claimedIds = new Set(mine.map((o) => o.id));
-    const fetched = await Promise.all(
-      (Array.isArray(saved) ? saved : []).slice(0, 10).map(async (g) => {
-        if (!g?.id || claimedIds.has(g.id)) return null;
-        try {
-          const o = await mockApi.orders.get(g.id, g.claim_token ? { claim_token: g.claim_token } : {});
-          return o ? { ...o, claim_token: g.claim_token } : null;
-        } catch { return null; }
-      })
-    );
-    setGuestOrders(fetched.filter(Boolean).filter((o) => !DONE.includes(o.status)));
+    const claimedIds = new Set(mine.map(o => o.id));
+    const fetched = await Promise.all((Array.isArray(saved) ? saved : []).slice(0, 10).map(async g => {
+      if (!g?.id || claimedIds.has(g.id)) return null;
+      try {
+        const order = await mockApi.orders.get(g.id, g.claim_token ? { claim_token: g.claim_token } : {});
+        return order ? { order: { ...order, claim_token: g.claim_token } } : null;
+      } catch (error) {
+        return error.status === 403 || error.status === 404 ? null : { unavailable: g.id };
+      }
+    }));
+    if (current !== generation.current) return;
+    if (!accountFailed) setActiveOrders(mine.filter(o => !DONE.includes(o.status)));
+    setGuestOrders(previous => fetched.filter(Boolean).map(result => result.order || previous.find(o => o.id === result.unavailable)).filter(Boolean).filter(o => !DONE.includes(o.status)));
+    setLoadError(accountFailed || fetched.some(result => result?.unavailable));
     setLoading(false);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     load();
     const timer = setInterval(load, POLL_MS);
-    return () => clearInterval(timer);
+    return () => { generation.current++; clearInterval(timer); };
   }, [load]);
 
   // A guest on a new device (or who lost the email) can enter the order number
@@ -89,12 +94,19 @@ export default function TrackOrders() {
     e.preventDefault();
     const id = lookupId.trim();
     const token = lookupToken.trim();
-    if (!id || !token) { setLookupError('Enter both your order number and tracking code.'); return; }
+    if (!id || !token) { setLookupError(msg('FE_GUEST_TRACK_REQUIRED', 'Enter both your order number and tracking code.')); return; }
     setLookupBusy(true);
     setLookupError(null);
     try {
-      await mockApi.orders.get(id, { claim_token: token });
-      navigate(`/orders/${encodeURIComponent(id)}?claim_token=${encodeURIComponent(token)}`);
+      const order = await mockApi.orders.track({ order_number: id, claim_token: token });
+      if (!order.user_id) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+          const rest = Array.isArray(saved) ? saved.filter(g => g?.id !== order.id) : [];
+          localStorage.setItem('hg_guest_orders', JSON.stringify([{ id: order.id, claim_token: token }, ...rest].slice(0, 10)));
+        } catch { /* Tracking still works when device storage is unavailable. */ }
+      }
+      navigate(`/orders/${encodeURIComponent(order.id)}?claim_token=${encodeURIComponent(token)}`);
     } catch (err) {
       setLookupError(describeLookupError(err));
     }
@@ -116,7 +128,7 @@ export default function TrackOrders() {
       </div>
 
       {/* Guest lookup — order number + tracking code from the confirmation email */}
-      {!isAuthenticated && (
+      {
         <form onSubmit={handleLookup} className="rounded-2xl bg-card border border-border p-4 space-y-3 shadow-card">
           <div className="flex items-center gap-2">
             <Mail className="w-4 h-4 text-primary" />
@@ -126,13 +138,15 @@ export default function TrackOrders() {
           <input
             value={lookupId}
             onChange={(e) => setLookupId(e.target.value)}
-            placeholder="Order number"
+            aria-label={msg('FE_GUEST_TRACK_ORDER_NUMBER', 'Order number')}
+            placeholder={msg('FE_GUEST_TRACK_ORDER_NUMBER', 'Order number')}
             className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-secondary text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
           />
           <input
             value={lookupToken}
             onChange={(e) => setLookupToken(e.target.value)}
-            placeholder="Tracking code"
+            aria-label={msg('FE_GUEST_TRACK_CODE', 'Tracking code')}
+            placeholder={msg('FE_GUEST_TRACK_CODE', 'Tracking code')}
             className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-secondary text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
           />
           {lookupError && (
@@ -149,11 +163,15 @@ export default function TrackOrders() {
             <Search className="w-4 h-4" /> {lookupBusy ? 'Looking up…' : 'Track order'}
           </button>
         </form>
-      )}
+      }
 
+      {loadError && <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm">
+        {msg('FE_GUEST_TRACK_UNAVAILABLE', 'Could not load your orders. Retry to refresh their status.')}
+        <button type="button" onClick={load} className="ml-2 font-bold text-primary">{msg('FE_GUEST_TRACK_RETRY', 'Retry')}</button>
+      </div>}
       {loading ? (
         <TrackSkeleton />
-      ) : all.length === 0 ? (
+      ) : all.length === 0 ? loadError ? null : (
         <div className="text-center py-16 space-y-3">
           <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">
             <Package className="w-8 h-8 text-muted-foreground" />
