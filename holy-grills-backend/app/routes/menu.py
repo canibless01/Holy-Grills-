@@ -549,7 +549,7 @@ def list_items():
     if is_featured is not None and is_featured.lower() == "true":
         q = q.eq("is_featured", "true")
 
-    items = q.order("name").execute() or []
+    items = q.order("price").order("name").execute() or []
 
     item_ids = [item["id"] for item in items]
     availability_rows = (
@@ -579,6 +579,7 @@ def list_items():
             continue
         filtered_items.append(item)
     items = filtered_items
+    items.sort(key=lambda x: (float(x.get("price") or 0), (x.get("name") or "").lower()))
 
     capacity, orders_today, at_capacity = _kitchen_stats(db, campus_id)
     counts = _daily_item_counts(db)
