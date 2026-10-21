@@ -37,9 +37,15 @@
     }
   ],
   "limits": [
-    "Controlled admin browser proof pending rerun.",
     "Native full kitchen preparation/rider payout flow remains open.",
     "No automatic gate staging enabled.",
     "No cleanup performed."
-  ]
+  ],
+  "controlled_browser_cases": {
+    "create_filters_ready_paid_unbatched_campus_and_reuses_retry_intent": true,
+    "whole_batch_reassignment_ui": true,
+    "partial_split_ui_and_retry_intent": true,
+    "cancel_requires_confirmation_and_refreshes_saved_status": true
+  },
+  "controlled_browser_scope": "Actual admin components at a mobile viewport, every API request intercepted; proves UI interactions, not live role authorization or persistence."
 }

@@ -1,6 +1,6 @@
 # Delivery batch assignment — 21 October 2026
 
-This batch replaces per-order Python mutation loops with one private transaction for create, reassign/update, split and cancel. The isolated live transaction harness passed; native admin UI verification remains pending. This is not a full delivery release sign-off.
+This batch replaces per-order Python mutation loops with one private transaction for create, reassign/update, split and cancel. The isolated live transaction harness and controlled admin component browser checks passed. This is not a full delivery release sign-off.
 
 ## Behavior
 
@@ -26,7 +26,7 @@ Root reviewed and applied the SQL successfully once as server version **20261021
 
 The live harness `/workspace/work/ecosystem-audit/verify_delivery_batches.py` uses the journaled checkout20 campus, two newly journaled rider actors and synthetic **zero-value paid** order fixtures. It is not payment-provider or checkout-pricing proof. **All seven live cases passed**: failed mixed selections left no batch/assignments; create/replay retained one batch and the shared gate; reassignment updated effective ownership and refused the old rider; partial split/replay moved one selected order while leaving two in the source; an on-road batch refused cancellation and an attempted delivery stayed active; cancellation released every waiting order; concurrent creates produced one winner and no empty loser batch. Results: `/workspace/work/ecosystem-audit/checkout-20261020/batch-results.json`. No dataset cleanup or fixture deletion is performed.
 
-The controlled browser harness `/workspace/work/ecosystem-audit/batch-20261021/browser.py` uses actual admin components with every API request intercepted. It tests eligible order/rider filtering, create retry key preservation, whole-batch reassignment, selected split and split retry key preservation. The first run stopped because the delayed native cookie banner intercepted a click. The harness now dismisses the actual Essential only control through a locator handler; no forced click or product change was introduced. Parent rerun is pending. It is not Supabase persistence or real role authorization proof.
+The controlled browser harness `/workspace/work/ecosystem-audit/batch-20261021/browser.py` uses actual admin components with every API request intercepted. All four browser cases passed: eligible order/rider filtering and create retry key preservation; whole-batch reassignment; selected split and split retry key preservation; and cancellation requiring actual confirmation, with no request on dismissal and refreshed inactive controls after acceptance. The harness dismisses the actual Essential only cookie control and hides the unrelated storefront fixture root before mounting the admin component. No forced click or product change was introduced. Results: `/workspace/work/ecosystem-audit/batch-20261021/browser-results.json`; mobile screenshot: `/workspace/work/ecosystem-audit/batch-20261021/batch-mobile.png`. This controlled component test is not native routed Supabase persistence or real role authorization proof.
 
 ## Remaining scope
 
