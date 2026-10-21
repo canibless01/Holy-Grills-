@@ -1,6 +1,6 @@
 # Delivery batch assignment — 21 October 2026
 
-This batch replaces per-order Python mutation loops with one private transaction for create, reassign/update, split and cancel. It is not a complete delivery release sign-off until the live transaction and browser harnesses below have passed.
+This batch replaces per-order Python mutation loops with one private transaction for create, reassign/update, split and cancel. The isolated live transaction harness passed; native admin UI verification remains pending. This is not a full delivery release sign-off.
 
 ## Behavior
 
@@ -20,13 +20,13 @@ This batch replaces per-order Python mutation loops with one private transaction
 - Frontend TypeScript and owned-file ESLint checks passed.
 - Owned-path `git diff --check` passed.
 
-## Pending parent-run proofs
+## Migration and isolated live verification
 
-SQL draft: `docs/DELIVERY_BATCH_ATOMIC_FIX.sql`, SHA-256 `5ed4e88e928eafd24e6fa6d48fbd5c57f439fe18e5aa80a71be3dac0fbdc42a0`. It has not been applied by this agent. It creates one service-role-only RPC and replaces the existing batch progression trigger function, without adding a table or column. After root review/application, record the server migration version and matching canonical file name; verify one function signature and private grants.
+Root reviewed and applied the SQL successfully once as server version **20261021092016**, name `delivery_batch_atomic`. Canonical file: `holy-grills-backend/migrations/20261021092016_delivery_batch_atomic.sql`, SHA-256 `5ed4e88e928eafd24e6fa6d48fbd5c57f439fe18e5aa80a71be3dac0fbdc42a0`. It creates one service-role-only RPC and replaces the existing batch progression trigger function, without adding a table or column. Post-apply signature/grant verification belongs to the integrated migration evidence.
 
-The live harness `/workspace/work/ecosystem-audit/verify_delivery_batches.py` uses the journaled checkout20 campus, two newly journaled rider actors and synthetic **zero-value paid** order fixtures. It is not payment-provider or checkout-pricing proof. It tests failed mixed selections, create/replay/gate mapping, reassignment and old-rider refusal, split/replay, on-road cancellation refusal, failed-attempt visibility, cancellation release and concurrent competing creates. No dataset cleanup or fixture deletion is performed.
+The live harness `/workspace/work/ecosystem-audit/verify_delivery_batches.py` uses the journaled checkout20 campus, two newly journaled rider actors and synthetic **zero-value paid** order fixtures. It is not payment-provider or checkout-pricing proof. **All seven live cases passed**: failed mixed selections left no batch/assignments; create/replay retained one batch and the shared gate; reassignment updated effective ownership and refused the old rider; partial split/replay moved one selected order while leaving two in the source; an on-road batch refused cancellation and an attempted delivery stayed active; cancellation released every waiting order; concurrent creates produced one winner and no empty loser batch. Results: `/workspace/work/ecosystem-audit/checkout-20261020/batch-results.json`. No dataset cleanup or fixture deletion is performed.
 
-The controlled browser harness `/workspace/work/ecosystem-audit/batch-20261021/browser.py` uses actual admin components with every API request intercepted. It tests eligible order/rider filtering, create retry key preservation, whole-batch reassignment, selected split and split retry key preservation. It is not Supabase persistence or real role authorization proof.
+The controlled browser harness `/workspace/work/ecosystem-audit/batch-20261021/browser.py` uses actual admin components with every API request intercepted. It tests eligible order/rider filtering, create retry key preservation, whole-batch reassignment, selected split and split retry key preservation. The first run stopped because the delayed native cookie banner intercepted a click. The harness now dismisses the actual Essential only control through a locator handler; no forced click or product change was introduced. Parent rerun is pending. It is not Supabase persistence or real role authorization proof.
 
 ## Remaining scope
 
