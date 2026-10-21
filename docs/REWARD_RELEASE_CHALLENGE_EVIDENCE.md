@@ -16,7 +16,9 @@ This bounded change fixes release-off leaks and challenge administration. It doe
 
 Thirty focused backend tests passed, including six new release-gate tests and eight challenge configuration/progress tests. Runtime assertions include disabled actions before financial calls, disabled/expired broadcasts before recipient queries, effective campus overrides, invalid create/patch payloads, scoped writes, zero-row persistence, nullable optional fields and current-period progress. TypeScript and owned admin-component ESLint passed.
 
-Parent live verification is pending for the prepared journaled script `challenge-release-live.py`; it uses only the owned audit campus/student, creates one weekly challenge, and tests invalid edits, visibility and three competing successful claims. It does not modify global flags or send real-user blasts. The native routed browser script `challenge-browser-latest.py` uses controlled API fixtures and is separately pending.
+Parent ran the journaled actual backend/Supabase script `challenge-release-live.py`. It verified existing release-off listing, created one own-campus weekly challenge, read it back through the student challenges/progress endpoints, and confirmed a malformed edit leaves the saved HP unchanged. Its first three claim attempts were correctly refused because the actor had no `delivered_at` inside the current WAT week; old synthetic status-only delivered fixtures do not satisfy a weekly delivery challenge. No completion or HP was awarded by that refusal. A guarded continuation is prepared for after a genuine native kitchen/rider delivery; the positive live claim is not marked passed yet. No global flags changed and no real-user blasts were sent.
+
+The actual routed mobile Playwright script `challenge-browser-latest.py` passed two controlled UI cases: admin load-failure → retry → active weekly creation without badge inputs, and student verified progress → claim → completed state. The API responses were intercepted in that browser proof; it does not establish live HP accounting. The live script and browser proof are deliberately separate.
 
 ## Scheduler and transaction limits
 
