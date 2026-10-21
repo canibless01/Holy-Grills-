@@ -1,5 +1,7 @@
+import { useLocation } from 'react-router-dom';
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
+import { apiClient } from './apiClient';
 import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
 import { loadSystemSettings, loadFeatureFlags, useFeatureFlags, getSetting, getStringSetting, getBoolSetting } from './featureConfig';
@@ -15,6 +17,14 @@ import { initOneSignal } from './onesignal';
 // interface is follow-up work (no runtime change: createContext() and
 // createContext(undefined) are identical).
 const HolyGrillContext = createContext<any>(undefined);
+// Identity first; wallet and tier have their own background refresh paths.
+const loadSessionProfile = async () => {
+  try { return await apiClient.get('/auth/me', { session: '1' }); }
+  catch (error) {
+    if (error.status !== 0 && !(error.status >= 500)) throw error;
+    return apiClient.get('/auth/me', { session: '1' });
+  }
+};
 const GUEST_CART_KEY = 'hg_guest_cart';
 
 const readAllGuestItems = () => {
@@ -122,11 +132,20 @@ const warmPostLoginChunks = (role) => {
 
 export const HolyGrillProvider = ({ children }) => {
   const featureVersion = useFeatureFlags();
+  const { pathname } = useLocation();
+  const publicPage = ['/', '/menu', '/faq', '/contact', '/our-story', '/terms'].includes(pathname) || pathname.startsWith('/menu/');
   useMessages();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [sessionAttempt, setSessionAttempt] = useState(0);
+  const welcomeRecoveryUser = useRef(null);
+  const restoreVersion = useRef(0);
+  const recoverWelcome = (profile) => {
+    if (!profile?.id || profile.role !== 'student' || welcomeRecoveryUser.current === profile.id) return;
+    welcomeRecoveryUser.current = profile.id;
+    void apiClient.post('/auth/welcome-credit', {}).catch(() => {});
+  };
   const [cart, setCart] = useState(EMPTY_CART);
   const cartRequestVersion = useRef(0);
   const [cartCount, setCartCount] = useState(0);
@@ -258,18 +277,22 @@ export const HolyGrillProvider = ({ children }) => {
 
   // Restore session on load — real token → fetch profile; no token → guest cart.
   useEffect(() => {
+    const version = ++restoreVersion.current;
     const init = async () => {
       setSessionError(null);
+      setAuthed(isAuthenticated());
       // Promo-flyer popup session marker — survives refresh (same sessionStore),
       // re-shows the flyer after a fresh login (login/register regenerate it).
       if (!sessionStore.getItem('hg_login_session')) sessionStore.setItem('hg_login_session', String(Date.now()));
       if (isAuthenticated()) {
         try {
-          const profile = await liveApi.auth.me();
+          const profile = await loadSessionProfile();
+          if (version !== restoreVersion.current || !isAuthenticated()) return;
           setUser(profile); persistUserCampus(profile);
           setHpBalance(normalizeHpBalance(profile));
           setWallet(profile.wallet || null);
           setAuthed(true);
+          recoverWelcome(profile);
           // Unblock the UI immediately — fire background refreshes in
           // parallel so a slow/cold backend never traps the user behind a
           // full-screen spinner. Each one swallows its own errors.
@@ -282,6 +305,7 @@ export const HolyGrillProvider = ({ children }) => {
             refreshCart(),
             refreshNotifications(),
             refreshHp(),
+            refreshWallet(),
             refreshSavedItems(),
             liveApi.auth.getStreak().then(setStreak).catch(() => {}),
             loadSystemSettings().then(setSystemSettings).catch(() => {}),
@@ -289,6 +313,7 @@ export const HolyGrillProvider = ({ children }) => {
             loadTiers().catch(() => {}),
           ]);
         } catch (e) {
+          if (version !== restoreVersion.current) return;
           if (e.status === 401 || e.status === 403) {
             clearTokens();
             setAuthed(false);
@@ -308,6 +333,7 @@ export const HolyGrillProvider = ({ children }) => {
       }
     };
     init();
+    return () => { restoreVersion.current += 1; };
   }, [sessionAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -321,12 +347,14 @@ export const HolyGrillProvider = ({ children }) => {
   }, [loadGuestCart]);
 
   const login = async (email, password) => {
+    restoreVersion.current += 1;
     const data = await liveApi.auth.login({ email, password });
-    const profile = await liveApi.auth.me();
+    const profile = await loadSessionProfile();
     setUser(profile); persistUserCampus(profile);
     setHpBalance(normalizeHpBalance(profile));
     setWallet(profile.wallet || null);
-    setAuthed(true);
+    setAuthed(true); setIsLoading(false); setSessionError(null);
+    recoverWelcome(profile);
     // Fresh login → new session id so the promo-flyer popup re-shows.
     sessionStore.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
     // Migrate any guest cart items into the now-authenticated server cart.
@@ -344,7 +372,7 @@ export const HolyGrillProvider = ({ children }) => {
     // Warm the destination chunk in the same breath, so the redirect lands on a
     // rendered page instead of the Suspense fallback.
     warmPostLoginChunks(profile?.role || data?.user?.role);
-    Promise.allSettled([refreshCart(), refreshNotifications(), refreshHp(), refreshSavedItems(), liveApi.auth.getStreak().then(setStreak).catch(() => {}), loadSystemSettings().then(setSystemSettings).catch(() => {}), loadFeatureFlags().catch(() => {}), loadTiers().catch(() => {})]);
+    Promise.allSettled([refreshCart(), refreshNotifications(), refreshHp(), refreshWallet(), refreshSavedItems(), liveApi.auth.getStreak().then(setStreak).catch(() => {}), loadSystemSettings().then(setSystemSettings).catch(() => {}), loadFeatureFlags().catch(() => {}), loadTiers().catch(() => {})]);
     return { ...data, role: profile.role || data?.user?.role || 'student' };
   };
 
@@ -357,7 +385,7 @@ export const HolyGrillProvider = ({ children }) => {
     if (data?.status === 'check_email') {
       return data;
     }
-    const profile = await liveApi.auth.me();
+    const profile = await loadSessionProfile();
     setUser(profile); persistUserCampus(profile);
     setHpBalance(normalizeHpBalance(profile));
     setWallet(profile.wallet || null);
@@ -368,6 +396,7 @@ export const HolyGrillProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    restoreVersion.current += 1; welcomeRecoveryUser.current = null;
     try { await liveApi.auth.logout(); } catch { /* ignore */ }
     clearTokens();
     localStore.removeItem('hg_admin_campus_id');
@@ -455,7 +484,8 @@ export const HolyGrillProvider = ({ children }) => {
       toggleSavedItem, removeSavedItem, moveSavedToCart, isSavedItem,
       markNotificationRead, markAllNotificationsRead,
     }}>
-      {sessionError ? <div role="alert" className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4 bg-background">
+      {sessionError && publicPage && <div role="status" className="px-4 py-3 bg-secondary text-foreground text-sm flex flex-wrap items-center justify-center gap-3"><span>{msg('FE_HOLY_GRILL_CONTEXT_YOUR_SIGN_IN_IS_SAVED_TRY_LOADING_YOUR_ACCOUNT_A', "Your sign-in is saved. Try loading your account again.")}</span><button onClick={() => { setIsLoading(true); setSessionAttempt(attempt => attempt + 1); }} className="font-bold underline">{msg('FE_HOLY_GRILL_CONTEXT_RETRY_ACCOUNT', "Retry account")}</button></div>}
+      {sessionError && !publicPage ? <div role="alert" className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4 bg-background">
         <h1 className="font-heading font-bold text-xl">{msg('FE_HOLY_GRILL_CONTEXT_YOUR_ACCOUNT_IS_TEMPORARILY_UNAVAILABLE', "Your account is temporarily unavailable")}</h1>
         <p className="text-sm text-muted-foreground max-w-sm">{msg('FE_HOLY_GRILL_CONTEXT_YOUR_SIGN_IN_IS_SAVED_TRY_LOADING_YOUR_ACCOUNT_A', "Your sign-in is saved. Try loading your account again.")}</p>
         <button onClick={() => { setIsLoading(true); setSessionAttempt(attempt => attempt + 1); }} className="px-5 py-3 rounded-full bg-primary text-white font-bold">{msg('FE_HOLY_GRILL_CONTEXT_RETRY_ACCOUNT', "Retry account")}</button>

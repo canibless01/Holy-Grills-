@@ -301,10 +301,10 @@ def refresh_token(refresh_token: str) -> dict:
     return result
 
 
-def get_current_user(access_token: str) -> dict:
+def get_current_user(access_token: str, *, verified_auth_user=None, recover_welcome=True, include_balances=True) -> dict:
     db = get_user_client()
 
-    auth_user = db.auth_get_user(access_token)
+    auth_user = verified_auth_user if verified_auth_user is not None else db.auth_get_user(access_token)
     user_id = auth_user.get("id")
 
     if not user_id:
@@ -318,15 +318,20 @@ def get_current_user(access_token: str) -> dict:
         .execute()
     )
 
-    wallet = (
-        db.table("wallets")
-        .select("balance,currency")
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-    )
+    wallet = None
+    try:
+        if include_balances:
+            wallet = (
+                db.table("wallets").select("balance,currency")
+                .eq("user_id", user_id).single().execute()
+            )
+    except Exception:
+        # The wallet screen retries its own authoritative balance. A wallet
+        # outage must not make a verified application profile unavailable.
+        logger.warning("get_current_user: wallet unavailable for %s", user_id)
+        wallet = None
 
-    if profile and profile.get('is_active', True):
+    if recover_welcome and profile and profile.get('is_active', True):
         try:
             from app.services.welcome_credit_service import grant_signup_credit
             grant_signup_credit(user_id)
@@ -353,8 +358,8 @@ def get_current_user(access_token: str) -> dict:
         "wallet": {
             "balance": float(wallet.get("balance", 0)) if wallet else 0.0,
             "currency": wallet.get("currency", "NGN") if wallet else "NGN",
-        },
-        "tier": _get_tier(user_id),
+        } if wallet is not None else None,
+        "tier": _get_tier(user_id, _profile) if include_balances else None,
     }
 
 
@@ -473,18 +478,19 @@ def _generate_referral_code(full_name: str) -> str:
     return f"{prefix}{suffix}"
 
 
-def _get_tier(user_id: str) -> dict | None:
+def _get_tier(user_id: str, profile=None) -> dict | None:
     db = get_user_client()
     try:
-        profile_rows = (
-            db.table("profiles")
-            .select("current_tier_id,tier_grace_ends_at")
-            .eq("id", user_id)
-            .execute()
-        )
-        if not profile_rows:
-            return None
-        profile = profile_rows[0]
+        if profile is None:
+            profile_rows = (
+                db.table("profiles")
+                .select("current_tier_id,tier_grace_ends_at")
+                .eq("id", user_id)
+                .execute()
+            )
+            if not profile_rows:
+                return None
+            profile = profile_rows[0]
         tier_id = profile.get("current_tier_id")
         if not tier_id:
             return None

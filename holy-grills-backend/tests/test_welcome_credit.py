@@ -151,6 +151,52 @@ class WelcomeRecoveryHookTests(unittest.TestCase):
         self.assertTrue(db.table.return_value.eq.return_value.update.called)
 
 
+class SessionHydrationBoundaryTests(unittest.TestCase):
+    def test_me_reuses_verified_identity_and_does_not_wait_for_welcome_recovery(self):
+        from flask import g
+        from app.routes import auth
+        app = Flask(__name__)
+        with app.test_request_context('/api/auth/me?session=1'), patch.object(auth.auth_service, 'get_current_user', return_value={'id':'saved-user'}) as get_user:
+            g.jwt_token='opaque';g.jwt_payload={'id':'saved-user'};g.user_id='saved-user'
+            response,status=auth.me.__wrapped__()
+        self.assertEqual(status,200)
+        get_user.assert_called_once_with('opaque',verified_auth_user={'id':'saved-user'},recover_welcome=False,include_balances=False)
+
+    def test_lightweight_session_skips_optional_wallet_tier_and_welcome_work(self):
+        from unittest.mock import MagicMock
+        from app.services import auth_service
+        db=MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value={'id':'saved-user','role':'student'}
+        with Flask(__name__).app_context(), patch.object(auth_service,'get_user_client',return_value=db), patch.object(auth_service,'_get_tier') as tier, patch.object(service,'grant_signup_credit') as grant:
+            result=auth_service.get_current_user('opaque',verified_auth_user={'id':'saved-user'},recover_welcome=False,include_balances=False)
+        self.assertEqual(result['role'],'student');self.assertIsNone(result['wallet']);self.assertIsNone(result['tier'])
+        db.table.assert_called_once_with('profiles');db.auth_get_user.assert_not_called();tier.assert_not_called();grant.assert_not_called()
+
+    def test_optional_wallet_outage_does_not_reject_verified_profile(self):
+        from unittest.mock import MagicMock
+        from app.services import auth_service
+        db=MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect=[{'id':'saved-user','role':'student','is_active':True},RuntimeError('wallet outage')]
+        with Flask(__name__).app_context(), patch.object(auth_service,'get_user_client',return_value=db), patch.object(auth_service,'_get_tier',return_value=None), patch.object(service,'grant_signup_credit') as grant:
+            result=auth_service.get_current_user('opaque',verified_auth_user={'id':'saved-user'},recover_welcome=False)
+        self.assertEqual(result['role'],'student');self.assertIsNone(result['wallet'])
+        db.auth_get_user.assert_not_called();grant.assert_not_called()
+
+    def test_separate_recovery_uses_verified_caller_and_surfaces_retryable_failure(self):
+        from flask import g
+        from app.routes import auth
+        app = Flask(__name__)
+        with app.test_request_context('/api/auth/welcome-credit',method='POST',json={'user_id':'someone-else'}), patch.object(service,'grant_signup_credit',return_value={'granted':False,'idempotent':True}) as grant:
+            g.user_id='saved-user'
+            response,status=auth.recover_welcome_credit.__wrapped__()
+            self.assertEqual(status,200)
+            grant.assert_called_once_with('saved-user')
+        with app.test_request_context('/api/auth/welcome-credit',method='POST'), patch.object(service,'grant_signup_credit',side_effect=RuntimeError('outage')):
+            g.user_id='saved-user'
+            response,status=auth.recover_welcome_credit.__wrapped__()
+            self.assertEqual(status,503)
+
+
 class LegacyGiftBoundaryTests(unittest.TestCase):
     def test_malformed_legacy_launch_date_fails_before_any_gift_write(self):
         from unittest.mock import MagicMock

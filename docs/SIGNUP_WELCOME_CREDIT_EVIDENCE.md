@@ -8,7 +8,7 @@ This bounded change replaces new physical first-order gifts with a configurable 
 - The existing `free_side_credits` ledger stores the grant under a deterministic per-account UUID with source `signup`. No table or column is added.
 - The private atomic function serializes grants through the existing profile row. An existing receipt is returned without changing its balance or expiry, including when it has been consumed, expired, or the configuration has changed.
 - A private global cutover timestamp checks the actual Auth account creation time, so pre-rollout accounts do not receive retroactive signup credits. Recovery can grant an eligible post-rollout account that has no receipt when the feature is enabled; pausing the configuration prevents new grants while paused.
-- Registration attempts the grant only after required profile persistence. `/auth/me` retries safely for an active existing profile. A grant outage does not convert a saved registration or valid login into a failure.
+- Registration attempts the grant only after required profile persistence. After `/auth/me` restores the verified profile, the client invokes authenticated `POST /auth/welcome-credit` once per student per provider session. This retries safely without delaying the profile response. Default `/auth/me` and direct legacy service callers retain the idempotent recovery default. A grant outage does not convert a saved registration or valid login into a failure.
 - Admin onboarding edits the current header-selected campus; super admins can edit global defaults through All Campuses. It shows whether the displayed campus config is inherited. Invalid settings, write refusals and competing first saves do not report a false successful save.
 - The migration disables future legacy physical first-order gift grants. Existing gift rows and zero-price receipt items are preserved, and their fulfillment controls remain available. Invalid legacy launch dates fail closed.
 
@@ -20,7 +20,7 @@ Canonical SQL: `holy-grills-backend/migrations/20261021092017_signup_welcome_cre
 
 ## Local checks
 
-- `tests.test_welcome_credit`: **12 passed**, covering strict config bounds/types, campus inheritance, role/scope guards, generic settings validation, save refusal/conflict behavior, fixed server identity, and registration/auth recovery failure boundaries.
+- `tests.test_welcome_credit`: **16 passed**, covering strict config bounds/types, campus inheritance, role/scope guards, generic settings validation, save refusal/conflict behavior, fixed server identity, and registration/auth recovery failure boundaries.
 - Frontend TypeScript validation and owned admin-file ESLint: passed.
 - Source diff whitespace check: passed.
 
@@ -28,7 +28,7 @@ Canonical SQL: `holy-grills-backend/migrations/20261021092017_signup_welcome_cre
 
 The parent ran `/workspace/work/ecosystem-audit/signup-welcome-20261021/verify.py` successfully against Test Two after applying the migration. Recorded results are in that directory's `live.log` and `results.json`:
 
-- The actual `/auth/me` recovery path granted one campus-configured welcome credit.
+- The original synchronous `/auth/me` recovery path granted one campus-configured welcome credit. Default `/auth/me` retains this behavior; lightweight browser restoration opts out and uses `POST /auth/welcome-credit`. Fresh live proof of the dedicated endpoint is pending.
 - Four concurrent grants created one receipt: one grant and three idempotent replays.
 - Replaying a simulated spent/expired receipt did not refill it or extend its expiry. This verifies replay protection, not food-order consumption.
 - A disabled campus override prevented a grant while the global default remained enabled.

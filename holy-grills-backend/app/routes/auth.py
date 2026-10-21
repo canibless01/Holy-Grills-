@@ -395,11 +395,23 @@ def me():
         description: User profile data
     """
     try:
-        user = auth_service.get_current_user(g.jwt_token)
+        user = auth_service.get_current_user(g.jwt_token, verified_auth_user=g.jwt_payload, recover_welcome=request.args.get("session") != "1", include_balances=request.args.get("session") != "1")
         return jsonify(user), 200
     except Exception as e:
         logger.exception("me: failed for %s: %s", g.user_id, e)
         return jsonify({"error": MSG.AUTH_ME_FAILED}), 500
+
+
+@auth_bp.route("/welcome-credit", methods=["POST"])
+@require_auth
+def recover_welcome_credit():
+    """Retry the idempotent signup grant after session hydration, never during it."""
+    from app.services.welcome_credit_service import grant_signup_credit
+    try:
+        return jsonify(grant_signup_credit(g.user_id)), 200
+    except Exception:
+        logger.warning("welcome credit recovery unavailable for %s", g.user_id)
+        return jsonify({"error": MSG.WELCOME_CREDIT_UNAVAILABLE}), 503
 
 
 @auth_bp.route("/profile/photo", methods=["POST"])

@@ -9,6 +9,7 @@ const BASE_URL = API_BASE_URL;
 
 const TOKEN_KEY = 'hg_access_token';
 const REFRESH_KEY = 'hg_refresh_token';
+let sessionVersion = 0;
 
 // "Remember me" — when the user leaves the checkbox unchecked, tokens are
 // stored in sessionStorage so they are cleared when the browser closes.
@@ -34,7 +35,8 @@ export function getRefreshToken() {
   return localStore.getItem(REFRESH_KEY) || sessionStore.getItem(REFRESH_KEY);
 }
 
-export function setTokens(access, refresh) {
+export function setTokens(access, refresh, rotating = false) {
+  if (!rotating) sessionVersion += 1;
   // Clear both stores first so a stale token from the other storage can't
   // linger and cause isAuthenticated() to read a phantom session.
   localStore.removeItem(TOKEN_KEY);
@@ -47,13 +49,16 @@ export function setTokens(access, refresh) {
 }
 
 export function clearTokens() {
+  sessionVersion += 1;
   localStore.removeItem(TOKEN_KEY);
   localStore.removeItem(REFRESH_KEY);
   sessionStore.removeItem(TOKEN_KEY);
   sessionStore.removeItem(REFRESH_KEY);
 }
 
-async function refreshToken() {
+let refreshInFlight: Promise<string> | null = null;
+
+async function performRefresh() {
   const refresh = getRefreshToken();
   if (!refresh) throw new ApiError(401, 'No refresh token');
 
@@ -84,7 +89,7 @@ async function refreshToken() {
     // Don't clear tokens — a cold/slow backend can return 401 transiently even
     // for a valid session. Surface a retryable error so the page can retry
     // without losing the session. The user can still manually re-login.
-    throw new ApiError(401, 'Session refresh failed — please retry, or re-login if the issue persists.');
+    throw new ApiError(0, 'Session refresh failed — please retry, or re-login if the issue persists.');
   }
   if (!res.ok) {
     // 5xx or other — keep tokens; this is likely a transient backend issue.
@@ -92,8 +97,23 @@ async function refreshToken() {
   }
 
   const data = await res.json().catch(() => null);
-  if (data?.access_token) setTokens(data.access_token, data.refresh_token || refresh);
-  return data?.access_token;
+  if (typeof data?.access_token !== 'string' || !data.access_token.trim() || (data.refresh_token != null && (typeof data.refresh_token !== 'string' || !data.refresh_token.trim()))) {
+    throw new ApiError(0, 'Session refresh unavailable — please retry.');
+  }
+  // A logout or another sign-in while the request was pending must win.
+  if (getRefreshToken() !== refresh) throw new ApiError(0, 'Session changed — please retry.');
+  setTokens(data.access_token, data.refresh_token || refresh, true);
+  return data.access_token;
+}
+
+// One rotation for a burst of expired requests. Late 401 responses reuse the
+// token already refreshed by an earlier request rather than rotating again.
+async function refreshToken(rejectedToken: string) {
+  if (getToken() && getToken() !== rejectedToken) return getToken();
+  if (!refreshInFlight) {
+    refreshInFlight = performRefresh().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
 }
 
 /** fetch options plus the internal single-retry flag. */
@@ -101,6 +121,7 @@ type RequestOptions = RequestInit & { _retried?: boolean };
 
 async function request(path: string, options: RequestOptions = {}) {
   const token = getToken();
+  const version = sessionVersion;
   // NOTE: a 401 on a data fetch must NOT log the user out. The refresh attempt
   // below recovers a valid session whose access token expired; if refresh also
   // fails we surface a retryable error instead of clearing tokens, so a cold
@@ -151,8 +172,10 @@ async function request(path: string, options: RequestOptions = {}) {
   // keep the tokens so the user isn't logged out by a slow backend — surface
   // a retryable error instead. Only clear on a definitive auth rejection.
   if (res.status === 401 && token && !options._retried) {
+    if (version !== sessionVersion) throw new ApiError(0, 'Session changed — please retry.');
     try {
-      await refreshToken();
+      await refreshToken(token);
+      if (version !== sessionVersion) throw new ApiError(0, 'Session changed — please retry.');
       return request(path, { ...options, _retried: true });
     } catch (refreshErr) {
       if (refreshErr.status === 401 || refreshErr.status === 403) {
@@ -177,6 +200,7 @@ async function request(path: string, options: RequestOptions = {}) {
 // it as JSON.
 async function requestRaw(path: string, options: RequestOptions = {}) {
   const token = getToken();
+  const version = sessionVersion;
   // Domain 0 — campus scope. Guests send X-Campus-ID from the campus gate
   // (hg_campus_id). Authenticated super-admins send X-Campus-ID from the
   // admin campus selector (hg_admin_campus_id) so they can view/manage a
@@ -217,8 +241,10 @@ async function requestRaw(path: string, options: RequestOptions = {}) {
   clearTimeout(timeoutId);
 
   if (res.status === 401 && token && !options._retried) {
+    if (version !== sessionVersion) throw new ApiError(0, 'Session changed — please retry.');
     try {
-      await refreshToken();
+      await refreshToken(token);
+      if (version !== sessionVersion) throw new ApiError(0, 'Session changed — please retry.');
       return requestRaw(path, { ...options, _retried: true });
     } catch (refreshErr) {
       if (refreshErr.status === 401 || refreshErr.status === 403) {
