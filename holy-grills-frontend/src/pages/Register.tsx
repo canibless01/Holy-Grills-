@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { liveApi } from '@/lib/liveApi';
@@ -14,6 +14,9 @@ const STUDENT_HOME = '/';
 
 export default function Register() {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const from = location.state?.from;
+  const guestOrderReturn = typeof from === 'string' && /^\/orders\/[0-9a-f-]{36}(?:\?[^#]*)?$/i.test(from) ? from : null;
   const { register } = useHolyGrill();
   const [form, setForm] = useState({
     full_name: '', nickname: '', email: searchParams.get('email') || '', password: '', confirm: '',
@@ -110,7 +113,7 @@ export default function Register() {
       toast({ title: msg('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: msg('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
       const role = data?.role || data?.user?.role || 'student';
       const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
-      window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : STUDENT_HOME;
+      window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : (guestOrderReturn || STUDENT_HOME);
     } catch (err) {
       setError(err.message);
     }
@@ -220,7 +223,7 @@ export default function Register() {
               <span className="text-xs text-foreground font-medium leading-relaxed">{info}</span>
             </div>
             <div className="flex items-center gap-3 text-xs px-1">
-              <Link to="/login" className="text-primary font-bold hover:underline">Log in</Link>
+              <Link to="/login" state={guestOrderReturn ? { from: guestOrderReturn } : undefined} className="text-primary font-bold hover:underline">Log in</Link>
               <span className="text-muted-foreground">·</span>
               <Link to="/forgot-password" className="text-primary font-bold hover:underline">Reset password</Link>
             </div>
@@ -238,7 +241,7 @@ export default function Register() {
 
       <p className="text-center text-sm text-muted-foreground mt-5">
         Already have an account?{' '}
-        <Link to="/login" className="text-primary font-bold hover:underline">Log in</Link>
+        <Link to="/login" state={guestOrderReturn ? { from: guestOrderReturn } : undefined} className="text-primary font-bold hover:underline">Log in</Link>
       </p>
     </AuthShell>
   );

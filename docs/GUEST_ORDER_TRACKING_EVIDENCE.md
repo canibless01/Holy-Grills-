@@ -15,7 +15,7 @@ Tracking read outages show a retry action and keep the last known rows instead o
 ## Verification completed
 
 - Thirteen focused HTTP tests passed: verified identity binding, staff exclusion, malformed JSON/token rejection, conflicts/campus/payment boundaries, own replay, private error handling, committed-claim reward recovery, displayed-number/UUID lookup, and refusal of wildcard or invalid proof.
-- Frontend TypeScript and owned-file ESLint passed.
+- Frontend TypeScript and owned-file ESLint passed. Two additional controlled routed browser cases passed: OrderDetail → Sign up → Register → Log in preserves a validated guest-order return destination/token; an external return destination is not propagated. This uses intercepted APIs and does not create a public account or verify an email.
 - Seven native browser/API cases passed against the actual frontend, local backend and Supabase Test Two: fresh-device number/code lookup; signed-in device proof; loss of a committed claim response and successful replay; pending-payment UI/API; wrong/postclaim guest-token denial; competing account claims; and denial of direct authenticated privileged RPC execution. [Deidentified results](GUEST_TRACKING_NATIVE_RESULTS.json).
 - Native fixtures were three explicitly synthetic order rows and one confirmed audit Auth actor, all journaled privately and retained. They do not prove real payment-provider settlement, public signup email, or a kitchen/rider delivery.
 
