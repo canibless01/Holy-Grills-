@@ -319,7 +319,7 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
         # with no request context.
         campus_id = _get_user_campus_id(db, user_id)
 
-        q = db.table("milestones").select("id,trigger_value,hp_awarded,time_window,title").eq("trigger_type", trigger_type).eq("is_active", "true").lte("trigger_value", current_value)
+        q = db.table("milestones").select("id,trigger_value,hp_awarded,time_window,title").eq("trigger_type", trigger_type).eq("is_active", "true")
         if campus_id:
             q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
         else:
@@ -330,6 +330,14 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
             mid = m["id"]
             tw  = m.get("time_window")
             period_key = _milestone_period_key(tw, today_wat()) if tw else None
+            target = int(m.get("trigger_value") or 1)
+            # Delivery/referral callbacks may carry lifetime totals, while event
+            # callbacks carry only the latest increment. Recurring thresholds
+            # must always be checked against this period's actual source rows.
+            progress = _compute_trigger_progress(db, user_id, trigger_type, target, tw,
+                                                  datetime.now(timezone.utc)) if tw else current_value
+            if progress < target:
+                continue
 
             if _is_already_completed(db, user_id, mid, period_key):
                 continue

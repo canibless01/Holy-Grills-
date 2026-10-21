@@ -63,3 +63,20 @@ class ChallengeProgressTests(unittest.TestCase):
             result=milestone_service.get_user_milestones('student')
         self.assertEqual(result['challenges_available'][0]['progress'],2)
         self.assertEqual(compute.call_args.args[4],'weekly')
+
+class ChallengeAutomaticPeriodTests(unittest.TestCase):
+    def run_trigger(self, lifetime_value, period_value):
+        from app.services import milestone_service
+        db=MagicMock();q=db.table.return_value
+        for method in ('select','eq','or_','is_'):getattr(q,method).return_value=q
+        q.execute.return_value=[{'id':'weekly','title':'Weekly orders','trigger_value':3,'hp_awarded':25,'time_window':'weekly'}]
+        q.insert.return_value=[{'id':'receipt'}]
+        with Flask(__name__).app_context(),patch.object(milestone_service,'get_db',return_value=db),patch.object(milestone_service,'_get_user_campus_id',return_value=CAMPUS),patch.object(milestone_service,'_compute_trigger_progress',return_value=period_value) as progress,patch.object(milestone_service,'_is_already_completed',return_value=False),patch.object(milestone_service,'_award_milestone_hp',return_value=25) as award,patch.object(milestone_service,'notify_milestone_achieved'):
+            milestone_service.check_milestone_trigger('student','order_count',lifetime_value)
+        return q,progress,award
+    def test_lifetime_delivery_total_cannot_satisfy_weekly_target(self):
+        q,progress,award=self.run_trigger(20,1)
+        q.insert.assert_not_called();award.assert_not_called();self.assertEqual(progress.call_args.args[4],'weekly')
+    def test_increment_callback_does_not_skip_a_reached_recurring_target(self):
+        q,progress,award=self.run_trigger(1,3)
+        q.insert.assert_called_once();award.assert_called_once();q.lte.assert_not_called()
