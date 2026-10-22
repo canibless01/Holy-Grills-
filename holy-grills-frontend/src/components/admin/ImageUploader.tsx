@@ -172,7 +172,7 @@ export default function ImageUploader({ value, onChange, folder = 'general', lab
 
       {value ? (
         <div className="relative rounded-xl overflow-hidden border border-border group">
-          <img src={value} alt={label} loading="lazy" decoding="async" className="w-full h-40 object-cover" />
+          <img src={value} alt={label} loading="lazy" decoding="async" className="w-full h-40 object-contain p-2 bg-muted/30" />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-3">
             <button
               type="button"

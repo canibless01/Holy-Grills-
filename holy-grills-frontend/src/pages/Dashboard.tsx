@@ -1,3 +1,4 @@
+import { useCurrentRank } from '@/hooks/useCurrentRank';
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Flame, Wallet as WalletIcon, TrendingUp, Lock, ChevronRight, ShoppingBag, Calendar, Trophy, Users, Clock, Timer } from 'lucide-react';
@@ -17,7 +18,7 @@ export default function Dashboard() {
   const { hpBalance, wallet, streak, refreshStreak } = useHolyGrill();
   const [recentOrders, setRecentOrders] = useState([]);
   const [orderLocks, setOrderLocks] = useState([]);
-  const [rank, setRank] = useState(null);
+  const rank = useCurrentRank();
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
 
@@ -37,7 +38,6 @@ export default function Dashboard() {
         setRecentOrders(Array.isArray(orders) ? orders : []);
         setOrderLocks(Array.isArray(locks) ? locks : []);
         refreshStreak();
-        try { const r = await liveApi.leaderboard.getMyRank(); setRank(r); } catch { /* ignore */ }
       } catch (e) { console.error(e); }
       setLoading(false);
     };

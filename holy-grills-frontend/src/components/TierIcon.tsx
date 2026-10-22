@@ -42,7 +42,9 @@ export default function TierIcon({ slug, tier, fallback = '🔥', className = ''
   const url = tier?.icon_url || (key ? icons[key] : null);
 
   if (url) {
-    return <img src={url} alt={tier?.name || key || 'Tier'} className={`object-contain ${className}`} />;
+    return <span className={`inline-flex shrink-0 items-center justify-center align-middle ${className}`}>
+      <img src={url} alt={tier?.name || key || 'Tier'} className="block w-full h-full object-contain" style={{ objectFit: 'contain', objectPosition: 'center' }} />
+    </span>;
   }
 
   const SvgIcon = TIER_MARK_ICONS[key];

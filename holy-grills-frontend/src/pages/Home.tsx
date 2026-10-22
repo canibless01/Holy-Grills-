@@ -26,6 +26,7 @@ import FlameMark from '@/components/FlameMark';
 import ModalPortal from '@/components/ModalPortal';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { msg } from '@/lib/messages';
+import { useCurrentRank } from '@/hooks/useCurrentRank';
 
 const HOLY_POINTS_FEATURES = [
   { icon: Flame, title: 'Earn on orders', body: 'Every plate counts.', to: '/menu' },
@@ -45,7 +46,7 @@ export default function Home() {
   const [subscribed, setSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
-  const [myRank, setMyRank] = useState(null);
+  const myRank = useCurrentRank();
   const [testimonials, setTestimonials] = useState([]);
 
   // The backend may return the rank under different keys — normalise it so the
@@ -60,7 +61,6 @@ export default function Home() {
   useEffect(() => {
     let live = true;
     setFeaturedItems([]);
-    setMyRank(null);
     setLoading(true);
     const load = async () => {
       try {
@@ -72,9 +72,6 @@ export default function Home() {
         let featured = all.filter((i) => i.is_featured && i.is_available !== false);
         if (!featured.length) featured = all.filter((i) => i.is_available !== false).slice(0, 8);
         setFeaturedItems(featured);
-        if (isAuthenticated) {
-          try { const rank = await liveApi.leaderboard.getMyRank(); if (live) setMyRank(rank); } catch { /* ignore */ }
-        }
 
       } catch (e) { console.error(e); }
       if (live) setLoading(false);
