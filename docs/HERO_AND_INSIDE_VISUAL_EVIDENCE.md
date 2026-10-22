@@ -10,13 +10,14 @@ row. No database migration, no CMS data write, no new endpoint.
 `HeroCarousel` used to paint the entire hero title with the brand gradient. The
 headline now runs **white → fire gradient**:
 
-- the first phrase (and its own closing punctuation) is plain white;
-- the remaining copy starts white too and only then melts into
-  `#E70E0E → #F97316 → #F2B84B`, so the colour arrives gradually instead of
-  starting mid-word;
-- the split is copy-driven (`src/lib/heroTitle.ts`): explicit line break →
-  first sentence → first comma clause → even word split, so no headline copy is
-  hardcoded and no copy is lost;
+- the first phrase, **including its closing punctuation**, is plain white;
+- the gradient starts on the word after that punctuation and opens on full brand
+  red (`#E70E0E → #F97316 → #F2B84B`). There is no white or cream stop in the
+  gradient, so **white and gradient never blend** — the two meet at a hard edge;
+- the boundary is punctuation-driven (`src/lib/heroTitle.ts`): the earliest
+  `, . ; : ! ? …` followed by a space wins; an explicit line break is the
+  fallback; a headline with neither stays fully white rather than inventing a
+  break mid-phrase. No headline copy is hardcoded and none is lost;
 - `hero-title-gradient` (a utility in `index.css`, token
   `--gradient-hero-title`) is used only by the hero placement. The menu and
   checkout artwork carousels and every other heading keep plain white.
@@ -54,10 +55,10 @@ banners/sections/media; production CMS data untouched):
 - `npm run messages:check`: every call site resolves; `FE_SF_SIGN_UP` added to
   the registry (the one pre-existing drift in `AdminExclusiveSpin.tsx` is
   unrelated and unchanged).
-- `npm run test:hero-title`: **17 assertions pass** (sentence punctuation,
-  question mark, ellipsis, explicit line break, comma clause, word split, empty
-  and non-string input, no-copy-loss round trip). Wired into `npm run build`
-  next to the other lib tests.
+- `npm run test:hero-title`: **23 assertions pass** (full stop, comma, question
+  and exclamation marks, colon, ellipsis, multi-mark clusters, explicit line
+  break, no-punctuation fallback, empty and non-string input, no-copy-loss round
+  trip). Wired into `npm run build` next to the other lib tests.
 - `npm run test:value-text`, `npm run test:safe-navigation`: passed.
 - `npm run routes:check`: `vercel.json` in sync (36 SPA route families).
 - `python3 -m ast` parse of `messages.py`: MSG has 2,336 keys, no duplicates.
@@ -70,7 +71,7 @@ Measured in headless Chromium (1280 px and 430 px):
 | Check | Result |
 | --- | --- |
 | Hero `<h1>` | white `Grilled with faith.` + one `.hero-title-gradient` span `Served with fire.` |
-| Gradient | `linear-gradient(90deg, #FFF 0%, #FDE7CE 12%, #E70E0E 46%, #F97316 72%, #F2B84B 100%)`, `background-clip: text` |
+| Gradient | `linear-gradient(90deg, #E70E0E 0%, #F97316 58%, #F2B84B 100%)`, `background-clip: text` |
 | Other headings | 0 gradient spans (Squad Orders, Holy Points, section headers, Reviews) |
 | Text card | 104–106 px tall, 64 px icon frame, gradient "Sign up" pill, `aria-label="<title> — Sign up"` |
 | Full artwork | 960 × 320 upload rendered `object-contain` at 362 × 121 px (mobile) / 420 × 140 px cap (desktop), 12 px radius, transparent-to-muted frame, 10 px card margin |
@@ -78,7 +79,7 @@ Measured in headless Chromium (1280 px and 430 px):
 
 Screenshots: `01-hero-headline-split.jpg`, `02-hero-mobile.jpg`,
 `03-inside-card-mobile.jpg`, `04-inside-artwork-mobile.jpg`,
-`05-inside-artwork-desktop.jpg` (in this folder). They come from the local
+`05-inside-artwork-desktop.jpg`, `06-hero-headline-wrapped.jpg` (in this folder). They come from the local
 fixture, so the imagery and copy are placeholders, not production CMS content.
 
 ## Limits
@@ -86,3 +87,9 @@ fixture, so the imagery and copy are placeholders, not production CMS content.
 The preview backend was a local fixture: it proves rendering, geometry and
 routing, not production CMS publication. The default `/register` link is
 client-side; the real CMS rows keep whatever destination an administrator saves.
+
+The inset card frame + Sign up pill are scoped to the **compact** row
+(`variant="compact"`), which only What's Inside uses. Promos render as `poster`
+or `banner`, How It's Made as `landscape`, and the hero/menu/checkout banner
+placements render through `HeroCarousel` / `CompactBannerCarousel`; none of
+those were restyled in this change.

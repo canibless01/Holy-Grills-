@@ -101,10 +101,10 @@
     --gradient-dark: linear-gradient(135deg, #6A1F00, #1F0A00);
     --gradient-soft: linear-gradient(135deg, #F3EBDD, #E5D6BD);
     --gradient-gold: linear-gradient(135deg, #F2B84B, #E5D6BD);
-    /* Hero headline — the opening phrase is plain white, and the rest of the
-       copy starts white too before melting into the fire gradient, so the
-       colour arrives gradually instead of starting mid-word. */
-    --gradient-hero-title: linear-gradient(90deg, #FFFFFF 0%, #FDE7CE 12%, #E70E0E 46%, #F97316 72%, #F2B84B 100%);
+    /* Hero headline — used only after the white run ends at a punctuation mark.
+       The gradient starts on full brand red, with no white or cream stop, so the
+       white and the gradient meet at a hard boundary and never blend. */
+    --gradient-hero-title: linear-gradient(90deg, #E70E0E 0%, #F97316 58%, #F2B84B 100%);
     /* Brand block — deep brown bleeding into primary red. Used for the profile
        menu header, where the tier ring needs a dark bed to read against. */
     --gradient-brand: linear-gradient(135deg, #6A1F00 0%, #E70E0E 100%);
@@ -327,7 +327,8 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
-  /* Second half of a hero headline: white at the seam, brand fire by the end. */
+  /* Hero headline tail — starts on brand red exactly where the white run ended
+     at a punctuation mark. No white/cream stop, so the two never blend. */
   .hero-title-gradient {
     background-image: var(--gradient-hero-title);
     -webkit-background-clip: text;

@@ -2,10 +2,10 @@
  * heroTitle tests — the white → gradient headline split.
  * ============================================================================
  * src/lib/heroTitle.ts decides where the hero headline stops being white and
- * starts flowing into the brand gradient. The rule is copy-driven (line break,
- * then sentence, then clause, then an even word split), so these cases pin the
- * copy shapes the CMS actually produces — including the punctuation that has to
- * stay in the white run.
+ * starts flowing into the brand gradient. The boundary must be punctuation (or
+ * an explicit line break) so the two colours meet at a hard edge and never
+ * blend; these cases pin the copy shapes the CMS actually produces, including
+ * the punctuation that has to stay in the white run.
  *
  * Exercised against the real module the same way test-value-text does it:
  * esbuild transpiles it, no test framework is added for one file.
@@ -37,26 +37,42 @@ const eq = (label, got, want) => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${ok ? '' : ` — got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`);
 };
 
-console.log('heroTitleParts');
-eq('first sentence stays white, punctuation included', heroTitleParts('Eat fresh. Feel the fire.'),
+console.log('heroTitleParts — punctuation boundary');
+eq('full stop stays white, gradient starts on the next word', heroTitleParts('Eat fresh. Feel the fire.'),
   { lead: 'Eat fresh.', tail: 'Feel the fire.' });
+eq('comma is the boundary too', heroTitleParts('Good food, good mood'),
+  { lead: 'Good food,', tail: 'good mood' });
+eq('earliest punctuation wins over a later one', heroTitleParts('Eat, drink, repeat.'),
+  { lead: 'Eat,', tail: 'drink, repeat.' });
 eq('question mark stays white', heroTitleParts('Hungry? We deliver.'),
   { lead: 'Hungry?', tail: 'We deliver.' });
+eq('exclamation mark stays white', heroTitleParts('Fire! Fresh plates daily.'),
+  { lead: 'Fire!', tail: 'Fresh plates daily.' });
 eq('ellipsis stays white', heroTitleParts('Still hungry… Then order.'),
   { lead: 'Still hungry…', tail: 'Then order.' });
-eq('explicit line break wins over the sentence rule', heroTitleParts("Fresh off the grill\nToday's specials."),
+eq('colon stays white', heroTitleParts('Two rules: eat well, eat often.'),
+  { lead: 'Two rules:', tail: 'eat well, eat often.' });
+eq('multi-punctuation cluster stays together', heroTitleParts('Really?! Yes, really.'),
+  { lead: 'Really?!', tail: 'Yes, really.' });
+
+console.log('\nheroTitleParts — line break and no-boundary fallbacks');
+eq('a line break is a clean boundary', heroTitleParts("Fresh off the grill\nToday's specials."),
   { lead: 'Fresh off the grill', tail: "Today's specials." });
-eq('multi-line copy joins the rest into one gradient run', heroTitleParts('Line one\nLine two\nLine three'),
+eq('multi-line copy joins into one gradient run', heroTitleParts('Line one\nLine two\nLine three'),
   { lead: 'Line one', tail: 'Line two\nLine three' });
-eq('first clause when there is no sentence stop', heroTitleParts('Good food, good mood'),
-  { lead: 'Good food,', tail: 'good mood' });
-eq('even word split when there is no punctuation', heroTitleParts('Fire grilled flavour'),
-  { lead: 'Fire grilled', tail: 'flavour' });
-eq('only the first word stays white in a two-word title', heroTitleParts('Holy Grills'),
-  { lead: 'Holy', tail: 'Grills' });
+eq('punctuation beats a line break', heroTitleParts('Eat well.\nThen rest'),
+  { lead: 'Eat well.', tail: 'Then rest' });
+eq('no punctuation at all keeps the whole title white', heroTitleParts('Fire grilled flavour'),
+  { lead: 'Fire grilled flavour', tail: '' });
+eq('trailing full stop means everything is white', heroTitleParts('Holy Grills.'),
+  { lead: 'Holy Grills.', tail: '' });
 eq('single word is all white', heroTitleParts('Fire'), { lead: 'Fire', tail: '' });
 eq('surrounding whitespace is trimmed', heroTitleParts('  Big flavours.  Bigger portions.  '),
   { lead: 'Big flavours.', tail: 'Bigger portions.' });
+eq('punctuation without following copy stays white', heroTitleParts('Served hot, '),
+  { lead: 'Served hot,', tail: '' });
+
+console.log('\nheroTitleParts — input handling');
 eq('empty copy is empty', heroTitleParts(''), { lead: '', tail: '' });
 eq('whitespace-only copy is empty', heroTitleParts('   \n  '), { lead: '', tail: '' });
 eq('null is empty', heroTitleParts(null), { lead: '', tail: '' });
