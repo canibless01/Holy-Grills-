@@ -158,7 +158,16 @@ async function request(path: string, options: RequestOptions = {}) {
   const adminCampusId = storedToken && !adminAll && localStore.getItem('hg_admin_campus_id');
   const userCampusId = storedToken && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
   const guestCampusId = !storedToken && localStore.getItem('hg_campus_id');
-  const campusHeader = adminCampusId || userCampusId || guestCampusId;
+  // Public reads strip the auth token, so the backend treats a logged-in
+  // super_admin as a guest.  Without a campus header the backend's campus
+  // filter resolves to NULL and only global rows are returned — campus-
+  // scoped sections (testimonials, how_its_made, etc.) vanish.  For public
+  // reads, fall back to the guest campus gate selection or the profile
+  // campus so the storefront is scoped identically to any guest visitor.
+  const publicReadCampus = publicRead && isSuperAdmin && !adminCampusId
+    ? (localStore.getItem('hg_campus_id') || localStore.getItem('hg_user_campus_id'))
+    : null;
+  const campusHeader = adminCampusId || userCampusId || guestCampusId || publicReadCampus;
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
