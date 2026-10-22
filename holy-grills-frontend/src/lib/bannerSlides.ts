@@ -1,5 +1,5 @@
-export type BannerSlide = { image_url: string; mobile_image_url: string; eyebrow: string; title: string; subtitle: string; cta_text: string; cta_url: string };
-export const blankBannerSlide = (): BannerSlide => ({ image_url: '', mobile_image_url: '', eyebrow: '', title: '', subtitle: '', cta_text: '', cta_url: '' });
+export type BannerSlide = { image_url: string; mobile_image_url: string; eyebrow: string; title: string; subtitle: string; cta_text: string; cta_url: string; display_mode?: 'image' | 'text' };
+export const blankBannerSlide = (): BannerSlide => ({ image_url: '', mobile_image_url: '', eyebrow: '', title: '', subtitle: '', cta_text: '', cta_url: '', display_mode: 'image' });
 
 // Persist slide copy in the existing metadata JSON. Older rows keep their
 // shared copy until an administrator edits them; no database backfill needed.
@@ -16,7 +16,7 @@ export function bannerSlides(b: any): BannerSlide[] {
 
 export function bannerSlidePayload(slides: BannerSlide[], metadata = {}) {
   const first = slides[0] || blankBannerSlide();
-  return { metadata: { ...metadata, slides }, images: slides.map(s => s.image_url),
+  return { metadata: { ...metadata, slides }, images: slides.map(s => s.image_url).filter(Boolean),
     image_url: first.image_url, mobile_image_url: first.mobile_image_url,
     title: first.title, subtitle: first.subtitle, eyebrow: first.eyebrow,
     cta_text: first.cta_text, cta_url: first.cta_url };

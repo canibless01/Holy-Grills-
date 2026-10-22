@@ -6,9 +6,12 @@ import { X } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { openCmsDestination } from '@/lib/safeNavigation';
+import { popupDue, popupReceiptKey, popupRevision } from '@/lib/popupReceipt';
+
+const memoryReceipts = new Map<string, { revision: string; shownAt: number }>();
 
 /**
- * PromoFlyerPopup — a flyer popup shown once per visit/login session on its selected page.
+ * PromoFlyerPopup — a flyer popup shown at most once per 24 hours per campus/page/artwork revision.
  *
  * The flyer image IS the call-to-action: the entire rectangle is the uploaded
  * image, and tapping anywhere on it navigates to the destination. A small CTA
@@ -36,29 +39,41 @@ export default function PromoFlyerPopup() {
     setOpen(false);
     setSection(null);
     if (!campusId || !placement) return;
-    (async () => {
+    const refresh = async () => {
       try {
         const list = await getStorefrontSections('popup');
         if (cancelled) return;
         const active = list.filter((s) => s.is_active !== false && (s.content?.placement || s.placement || 'home') === placement)
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0];
         if (!active) return;
-        let sessionId = sessionStorage.getItem('hg_login_session') || sessionStorage.getItem('hg_storefront_visit');
-        if (!sessionId) {
-          sessionId = crypto.randomUUID();
-          sessionStorage.setItem('hg_storefront_visit', sessionId);
-        }
-        const seenKey = `hg_popup_seen_${sessionId}_${campusId}_${active.id}`;
-        if (sessionStorage.getItem(seenKey)) return;
-        setSection(active);
+        const key = popupReceiptKey(campusId, placement, active.id);
+        const revision = popupRevision(active);
+        let receipt: unknown = memoryReceipts.get(key);
+        try { receipt = JSON.parse(localStorage.getItem(key) || 'null') || receipt; } catch { /* Private-mode storage may be unavailable. */ }
+        if (!popupDue(receipt, revision)) return;
+        if (timer) clearTimeout(timer);
         timer = setTimeout(() => {
           if (cancelled) return;
-          sessionStorage.setItem(seenKey, '1');
+          const shown = { revision, shownAt: Date.now() };
+          memoryReceipts.set(key, shown);
+          try { localStorage.setItem(key, JSON.stringify(shown)); } catch { /* In-memory receipt still protects this visit. */ }
+          setSection(active);
           setOpen(true);
         }, 600);
       } catch { /* Unavailable content does not create a popup. */ }
-    })();
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    };
+    void refresh();
+    const onFocus = () => { if (document.visibilityState === 'visible') void refresh(); };
+    const interval = setInterval(onFocus, 60000);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [campusId, placement]);
 
   useEffect(() => {

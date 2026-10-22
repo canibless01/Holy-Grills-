@@ -197,6 +197,18 @@ def _cms_destination_valid(dest):
         return False
 
 
+def _supporter_links_valid(links):
+    if not isinstance(links, dict):
+        return False
+    for key in ('url', 'link'):
+        value = links.get(key)
+        if value in (None, ''):
+            continue
+        if not isinstance(value, str) or not value.startswith(('https://', 'http://')) or not _cms_destination_valid(value):
+            return False
+    return True
+
+
 def _section_validation(content, section_type):
     """Validate fields consumed by the storefront; unrelated JSON metadata survives."""
     text_fields = ("subtitle", "subheadline", "body", "image_url", "base_image_url",
@@ -347,17 +359,22 @@ def _banner_fields(data, placement=None):
             return None, _bad_request()
         clean = []
         fields = ("image_url", "mobile_image_url", "eyebrow", "title", "subtitle", "cta_text", "cta_url")
+        compact = data.get("placement", placement) in ("menu", "checkout")
         for slide in slides:
             if not isinstance(slide, dict):
                 return None, _bad_request()
             if any(not isinstance(slide.get(k, ""), str) for k in fields):
                 return None, _bad_request()
             row = {k: slide.get(k, "").strip() for k in fields}
-            if (not row["title"] and data.get("placement", placement) != "menu") or not row["image_url"] or len(row["eyebrow"]) > 240:
+            mode = slide.get("display_mode", "image")
+            if mode not in ("image", "text") or (mode == "text" and not compact):
+                return None, _bad_request()
+            row["display_mode"] = mode
+            if len(row["eyebrow"]) > 240 or (compact and mode == "text" and not row["title"]) or (not (compact and mode == "text") and not row["image_url"]) or (not compact and not row["title"]):
                 return None, _bad_request()
             if any(row[k] and not is_cms_image_url(row[k]) for k in ("image_url", "mobile_image_url")):
                 return None, (jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400)
-            if bool(row["cta_text"]) != bool(row["cta_url"]):
+            if (row["cta_text"] and not row["cta_url"]) or (not (compact and mode == "image") and bool(row["cta_text"]) != bool(row["cta_url"])):
                 return None, (jsonify({"error": MSG.FE_CMS_CTA_PAIR}), 400)
             # A destination must be an app path or an explicit web URL.
             dest = row["cta_url"]
@@ -414,7 +431,7 @@ def _banner_fields(data, placement=None):
         slides = out["metadata"]["slides"]
         first = slides[0] if slides else {}
         # One authoritative slide set, mirrored to existing legacy columns.
-        out.update(images=[row["image_url"] for row in slides],
+        out.update(images=[row["image_url"] for row in slides if row["image_url"]],
                    image_url=first.get("image_url", ""), mobile_image_url=first.get("mobile_image_url", ""),
                    title=first.get("title", ""), subtitle=first.get("subtitle", ""),
                    action_label=first.get("cta_text", ""), action_url=first.get("cta_url", ""))
@@ -1091,7 +1108,7 @@ def create_early_supporter():
         return _field_required("name")
     name = name.strip()
     social_links = data.get("social_links") or {}
-    if not isinstance(social_links, dict):
+    if not _supporter_links_valid(social_links):
         return _bad_request()
     if data.get("photo_url") and not is_cms_image_url(data["photo_url"]):
         return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
@@ -1159,7 +1176,7 @@ def update_early_supporter(section_id):
             if field in data:
                 content[field] = data[field]
         if "social_links" in data:
-            if data["social_links"] is not None and not isinstance(data["social_links"], dict):
+            if data["social_links"] is not None and not _supporter_links_valid(data["social_links"]):
                 return _bad_request()
             content["social_links"] = data["social_links"] or {}
         if "sort_order" in data:
@@ -1320,16 +1337,18 @@ def create_banner():
     data = _json_body()
     if data is None:
         return _bad_request()
-    for f in (("image_url",) if data.get("placement") == "menu" else ("title", "image_url")):
-        if not isinstance(data.get(f), str) or not data[f].strip():
-            return _field_required(f)
-    if "title" in data and not isinstance(data["title"], str):
-        return _bad_request()
     safe, err = _banner_fields(data)
     if err:
         return err
-    if not safe.get("image_url"):
-        return _field_required("image_url")
+    slides = (safe.get("metadata") or {}).get("slides")
+    if slides is not None:
+        if not slides:
+            return _bad_request()
+    else:
+        required = ("image_url",) if data.get("placement") in ("menu", "checkout") else ("title", "image_url")
+        for field in required:
+            if not isinstance(safe.get(field), str) or not safe[field].strip():
+                return _field_required(field)
     err = _banner_window_error(safe)
     if err:
         return err

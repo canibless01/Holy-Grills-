@@ -2,6 +2,7 @@ import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
 import { getEarlySupporters } from '@/lib/storefrontMockData';
+import { msg } from '@/lib/messages';
 
 // Compact supporter cards — small square photo on top, name + note + social
 // link below in a clean bordered card. No gradient overlays; cards are small
@@ -88,7 +89,12 @@ export default function EarlySupportersSlider({ eyebrow = 'Since day one', headl
           const note = s.note || content.note || s.subtitle || '';
           const photo = s.photo_url || content.photo_url || content.photo || '';
           const social = s.social_links || content.social_links || '';
-          const socialUrl = typeof social === 'string' ? social : (social?.url || social?.link || '');
+          const rawSocialUrl = typeof social === 'string' ? social : (social?.url || social?.link || '');
+          let socialUrl = '';
+          try {
+            const parsed = new URL(rawSocialUrl);
+            if (['https:', 'http:'].includes(parsed.protocol) && !parsed.username && !parsed.password) socialUrl = parsed.href;
+          } catch { /* Empty/invalid links do not create an action. */ }
           return (
             <div
               key={s.id || i}
@@ -107,8 +113,8 @@ export default function EarlySupportersSlider({ eyebrow = 'Since day one', headl
                   <h3 className="font-heading font-bold text-xs text-foreground truncate leading-tight">{name}</h3>
                   {note && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">{note}</p>}
                   {socialUrl && (
-                    <a href={socialUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 mt-1.5 text-[10px] font-bold text-primary">
-                      <ExternalLink className="w-3 h-3" /> Follow
+                    <a href={socialUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-1.5 mt-2 px-3 py-1.5 rounded-full border border-primary text-[11px] font-bold text-primary hover:bg-primary/10">
+                      {msg('FE_SUPPORTER_CONNECT', 'Connect')} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>

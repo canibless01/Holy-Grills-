@@ -15,7 +15,7 @@ import { openCmsDestination } from '@/lib/safeNavigation';
 //   poster    — 3:2, text below image in a card, 2-up      (Catering)
 const VARIANTS = {
   banner: { aspect: '4 / 1', cardClass: 'w-full', maxW: undefined, textBelow: true },
-  compact: { aspect: '3 / 1', cardClass: 'w-[72vw] sm:w-[280px]', maxW: 320, textBelow: true },
+  compact: { aspect: '3 / 1', cardClass: 'w-full', maxW: undefined, textBelow: true },
   portrait: {
     aspect: '4 / 5',
     cardClass: 'w-[68vw] sm:w-[calc((100%-1.5rem)/3)]',
@@ -98,7 +98,8 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
   const handleTap = (slide) => {
     // Section rows keep cta_url inside `content` (aliased to cta_link); the
     // legacy `destination` key is still honoured last.
-    const dest = slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination || '/menu';
+    const dest = slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination;
+    if (!dest) return;
     // Route guards enforce authentication only where the destination needs it.
     openCmsDestination(dest, navigate);
   };
@@ -136,8 +137,8 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
           const img = s.image_url || s.content?.image_url || '';
           const title = s.title || s.content?.title || '';
           const line = s.subtitle || s.content?.line || s.content?.subtitle || '';
-          const imageOnly = variant === 'banner' || s.content?.display_mode === 'image';
-          const compact = variant === 'compact';
+          const imageOnly = s.content?.display_mode === 'image' || (variant === 'banner' && !s.content?.display_mode);
+          const compact = variant === 'compact' || variant === 'banner';
           const badge = s.content?.badge || s.badge || '';
           return (
             <button
@@ -150,14 +151,14 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
               {imageOnly ? (
                 <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-full object-contain" style={{ aspectRatio: v.aspect }} />
               ) : compact ? (
-                <div className="p-3 flex items-start gap-3 min-h-[88px]">
+                <div className="p-3 flex items-center gap-3 min-h-[104px] w-full">
                   {img ? <img src={img} alt="" className="w-9 h-9 object-contain shrink-0" loading="lazy" /> : <Sparkles className="w-9 h-9 text-primary shrink-0" aria-hidden="true" />}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     {s.content?.eyebrow && <span className="block text-[10px] font-bold text-primary mb-1">{s.content.eyebrow}</span>}
                     {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight line-clamp-1">{title}</h3>}
                     {line && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{line}</p>}
-                    {s.content?.cta_text && <span className="block text-xs text-primary font-bold mt-2">{s.content.cta_text}</span>}
                   </div>
+                  {s.content?.cta_text && (s.content?.cta_url || s.content?.cta_link) && <span className="shrink-0 px-3 py-1.5 rounded-full border border-primary text-xs text-primary font-bold">{s.content.cta_text}</span>}
                 </div>
               ) : v.textBelow ? (
                 <>

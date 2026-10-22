@@ -1,3 +1,4 @@
+import CompactBannerCarousel from '@/components/storefront/CompactBannerCarousel';
 import { bannerSlides } from '@/lib/bannerSlides';
 import { msg } from '@/lib/messages';
 import { useCampus } from '@/lib/campusContext';
@@ -8,6 +9,7 @@ import { liveApi } from '@/lib/liveApi';
 import { openCmsDestination } from '@/lib/safeNavigation';
 
 interface HeroSlide {
+  display_mode?: 'image' | 'text';
   eyebrow?: string;
   mobileImage?: string;
   image: string;
@@ -27,9 +29,9 @@ function buildSlidesFromBanners(banners: unknown, placement = 'hero'): HeroSlide
   const slides: HeroSlide[] = [];
   for (const b of active) {
     for (const slide of bannerSlides(b)) {
-      if (!slide.image_url) continue;
+      if (!slide.image_url && slide.display_mode !== 'text') continue;
       slides.push({ image: slide.image_url, mobileImage: slide.mobile_image_url || undefined,
-        eyebrow: slide.eyebrow, tag: slide.title, sub: slide.subtitle,
+        display_mode: slide.display_mode, eyebrow: slide.eyebrow, tag: slide.title, sub: slide.subtitle,
         cta: slide.cta_text, cta_url: slide.cta_url });
     }
   }
@@ -58,7 +60,7 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
 export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) {
   const navigate = useNavigate();
   const SlideHeading = placement === 'hero' ? 'h1' : 'h2';
-  const artworkOnly = placement === 'menu';
+  const artworkOnly = placement === 'menu' || placement === 'checkout';
   const { campusId } = useCampus();
   const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [i, setI] = useState(0);
@@ -99,7 +101,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   }, []);
 
   useEffect(() => {
-    if (slides.length <= 1 || paused) return;
+    if (artworkOnly || slides.length <= 1 || paused) return;
     autoTimer.current = setInterval(() => {
       setI((p) => {
         const next = (p + 1) % slides.length;
@@ -109,7 +111,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
       });
     }, 5000);
     return () => clearInterval(autoTimer.current);
-  }, [slides.length, paused]);
+  }, [slides.length, paused, artworkOnly]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -119,6 +121,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   }, [slides.length, i]);
 
   if (!slides.length) return null;
+  if (artworkOnly) return <CompactBannerCarousel slides={slides} />;
   const s = slides[i % slides.length];
   const go = () => {
     const dest = s.cta_url || '/menu';
@@ -154,7 +157,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
             </picture>
             {/* Legibility scrim only — a plain dark gradient, never a blur or
                 frosted glass over the hero image. */}
-            {!artworkOnly && <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />}
+            {!artworkOnly && <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.88)_0%,rgba(0,0,0,0.6)_36%,rgba(0,0,0,0.16)_72%,transparent_100%)]" />}
             {artworkOnly && slide.cta_url && <button type="button" onClick={() => openCmsDestination(slide.cta_url, navigate)} aria-label={slide.tag || msg('FE_MENU_BANNER_OPEN', 'Open banner')} className="absolute inset-0 w-full h-full" />}
           </div>
         ))}
@@ -173,7 +176,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           >
-            <SlideHeading className="font-heading font-extrabold text-4xl sm:text-5xl text-white leading-[1.05] mb-2 text-balance">{s.tag}</SlideHeading>
+            <SlideHeading className={`font-heading font-extrabold text-4xl sm:text-5xl ${placement === 'hero' ? 'text-transparent bg-clip-text bg-gradient-to-r from-[#f01408] via-[#f97316] to-[#f6bd4f]' : 'text-white'} leading-[1.05] mb-2 text-balance`}>{s.tag}</SlideHeading>
             <p className="text-base text-white/85 mb-5 max-w-md">{s.sub}</p>
           </motion.div>
         </>}

@@ -27,7 +27,7 @@ const dateValue = (value) => value ? new Date(value).toISOString() : null;
 
 export default function AdminBanners({ placement = 'home' }) {
   useMessages();
-  const artworkOnly = placement === 'menu';
+  const compactPlacement = placement === 'menu' || placement === 'checkout';
   const createIntent = useCmsCreateIntent();
   const isSuperAdmin = useIsSuperAdmin();
   const { campusId, adminCampusId, campuses } = useCampus();
@@ -37,7 +37,7 @@ export default function AdminBanners({ placement = 'home' }) {
   const [addOpen, setAddOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [draft, setDraft] = useState<{ title: string; eyebrow: string; subtitle: string; cta_text: string; cta_url: string; placement: string; sort_order: number | string; image_url: string; starts_at: string; ends_at: string }>({ title: '', eyebrow: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '', starts_at: '', ends_at: '' });
+  const [draft, setDraft] = useState<{ display_mode: 'image' | 'text'; title: string; eyebrow: string; subtitle: string; cta_text: string; cta_url: string; placement: string; sort_order: number | string; image_url: string; starts_at: string; ends_at: string }>({ display_mode: 'image', title: '', eyebrow: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '', starts_at: '', ends_at: '' });
 
   const load = useCallback(async () => {
     const current = ++loadGeneration.current;
@@ -62,8 +62,8 @@ export default function AdminBanners({ placement = 'home' }) {
   const upd = (id, patch) => setBanners((arr) => arr.map((b) => (b.id === id ? { ...b, ...patch } : b)));
 
   const save = async (b) => {
-    if (b.slides.some((s) => !s.image_url || (!artworkOnly && !s.title.trim()) || (!!s.cta_text !== !!s.cta_url))) {
-      toast({ title: msg('FE_CMS_SLIDE_REQUIRED', 'Each slide needs an image and title. Set both CTA text and destination, or leave both empty.'), variant: 'destructive' }); return;
+    if (b.slides.some((s) => (compactPlacement && s.display_mode === 'text' ? !s.title.trim() : !s.image_url || (!compactPlacement && !s.title.trim())) || (s.cta_text && !s.cta_url) || (!(compactPlacement && s.display_mode !== 'text') && (!!s.cta_text !== !!s.cta_url)))) {
+      toast({ title: compactPlacement ? msg('FE_COMPACT_BANNER_REQUIRED', 'Text slides need a title. Artwork slides need an image. Text actions need both a label and destination.') : msg('FE_CMS_SLIDE_REQUIRED', 'Each slide needs an image and title. Set both CTA text and destination, or leave both empty.'), variant: 'destructive' }); return;
     }
     setBusy(b.id);
     try {
@@ -120,7 +120,7 @@ export default function AdminBanners({ placement = 'home' }) {
     upd(b.id, { slides: next });
   };
 
-  const blankDraft = () => ({ title: '', eyebrow: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '', starts_at: '', ends_at: '' });
+  const blankDraft = () => ({ display_mode: 'image' as const, title: '', eyebrow: '', subtitle: '', cta_text: '', cta_url: '', placement, sort_order: 0, image_url: '', starts_at: '', ends_at: '' });
 
   const create = async () => {
     // POST /storefront/banners requires BOTH `title` and `image_url` as
@@ -128,15 +128,15 @@ export default function AdminBanners({ placement = 'home' }) {
     // dropped when blank, image_url was never sent at all), so creating a
     // banner failed with "title is required" / "image_url is required" and the
     // only way through was to know to type a title.
-    if (!artworkOnly && !draft.title.trim()) {
+    if ((!compactPlacement || draft.display_mode === 'text') && !draft.title.trim()) {
       toast({ title: msg('FE_ADMIN_BANNERS_TITLE_REQUIRED', 'Title is required'), description: msg('FE_ADMIN_BANNERS_GIVE_THE_BANNER_A_TITLE_SO_YOU_CAN', 'Give the banner a title so you can tell it apart in this list.'), variant: 'destructive' });
       return;
     }
-    if (!draft.image_url.trim()) {
+    if (!(compactPlacement && draft.display_mode === 'text') && !draft.image_url.trim()) {
       toast({ title: msg('FE_ADMIN_BANNERS_IMAGE_REQUIRED', 'An image is required'), description: msg('FE_ADMIN_BANNERS_UPLOAD_THE_MAIN_IMAGE_OR_PASTE_AN_IMAGE', 'Upload the main image or paste an image URL before creating.'), variant: 'destructive' });
       return;
     }
-    if (!!draft.cta_text !== !!draft.cta_url) { toast({ title: msg('FE_CMS_CTA_PAIR', 'Set both CTA text and destination, or leave both empty.'), variant: 'destructive' }); return; }
+    if ((draft.cta_text && !draft.cta_url) || (!(compactPlacement && draft.display_mode !== 'text') && !!draft.cta_text !== !!draft.cta_url)) { toast({ title: msg('FE_CMS_CTA_PAIR', 'Set both CTA text and destination, or leave both empty.'), variant: 'destructive' }); return; }
     setBusy('create');
     try {
       await liveApi.admin.createBanner(createIntent.body({
@@ -193,7 +193,7 @@ export default function AdminBanners({ placement = 'home' }) {
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground mb-3">{artworkOnly ? msg('FE_MENU_BANNER_DESIGN_HELP', 'Menu artwork: 4:1 ratio, 1600 × 400 px recommended. Upload the complete design; no extra headline is displayed.') : msg('FE_CMS_SLIDE_HELP', 'Each slide has its own image, eyebrow, text and action. Save the carousel to publish your changes.')}</p>
+            <p className="text-xs text-muted-foreground mb-3">{compactPlacement ? msg('FE_COMPACT_BANNER_HELP', 'Use a complete 4:1 design (1600 × 400 px), or an icon with a title, short description and optional action. Each slide rotates independently.') : msg('FE_CMS_SLIDE_HELP', 'Each slide has its own image, eyebrow, text and action. Save the carousel to publish your changes.')}</p>
             <div className="space-y-4">
               {b.slides.map((slide, index) => <section key={index} aria-label={msg('FE_CMS_SLIDE_NUMBER', 'Slide {number}', { number: index + 1 })} className="rounded-xl border border-border p-3 space-y-2">
                 <div className="flex items-center gap-2">
@@ -202,11 +202,12 @@ export default function AdminBanners({ placement = 'home' }) {
                   <button onClick={() => moveSlide(b, index, 1)} disabled={index === b.slides.length - 1} aria-label={msg('FE_CMS_MOVE_SLIDE_DOWN', 'Move slide down')} className="p-2 disabled:opacity-30">↓</button>
                   <button onClick={() => upd(b.id, { slides: b.slides.filter((_, i) => i !== index) })} aria-label={msg('FE_CMS_REMOVE_SLIDE', 'Remove slide')} className="p-2 text-destructive"><Trash2 className="w-4 h-4" /></button>
                 </div>
-                <ImageUploader value={slide.image_url} onChange={(url) => editSlide(b, index, { image_url: url })} folder={`banners/${placement}`} label={msg('FE_CMS_SLIDE_IMAGE', 'Slide image')} />
-                {!artworkOnly && <details><summary className="text-xs text-muted-foreground cursor-pointer">{msg('FE_CMS_MOBILE_CROP', 'Optional crop for phones')}</summary>
+                {compactPlacement && <CompactModeSelect value={slide.display_mode || 'image'} onChange={display_mode => editSlide(b, index, { display_mode })} />}
+                <ImageUploader value={slide.image_url} onChange={(url) => editSlide(b, index, { image_url: url })} folder={`banners/${placement}`} label={compactPlacement && slide.display_mode === 'text' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : msg('FE_CMS_SLIDE_IMAGE', 'Slide image')} />
+                {!compactPlacement && <details><summary className="text-xs text-muted-foreground cursor-pointer">{msg('FE_CMS_MOBILE_CROP', 'Optional crop for phones')}</summary>
                   <ImageUploader value={slide.mobile_image_url} onChange={(url) => editSlide(b, index, { mobile_image_url: url })} folder={`banners/${placement}`} label={msg('FE_CMS_MOBILE_CROP', 'Optional crop for phones')} />
                 </details>}
-                {(!artworkOnly ? ['eyebrow', 'title', 'subtitle', 'cta_text', 'cta_url'] as const : [] as const).map((field) => <Field key={field} label={slideLabel(field)}><TextInput value={slide[field]} onChange={(e) => editSlide(b, index, { [field]: e.target.value })} /></Field>)}
+                {(!compactPlacement ? ['eyebrow', 'title', 'subtitle', 'cta_text', 'cta_url'] as const : slide.display_mode === 'text' ? ['title', 'subtitle', 'cta_text', 'cta_url'] as const : ['cta_url'] as const).map((field) => <Field key={field} label={slideLabel(field)}><TextInput value={slide[field]} onChange={(e) => editSlide(b, index, { [field]: e.target.value })} /></Field>)}
               </section>)}
               <button onClick={() => upd(b.id, { slides: [...b.slides, blankBannerSlide()] })} className="flex items-center gap-1 px-3 py-2 rounded-full border border-primary text-primary text-xs font-bold"><Plus className="w-4 h-4" />{msg('FE_CMS_ADD_SLIDE', 'Add slide')}</button>
             </div>
@@ -231,18 +232,19 @@ export default function AdminBanners({ placement = 'home' }) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={msg('FE_CMS_ADD_PLACEMENT_BANNER', 'Add {placement} banner', { placement })}>
         <div className="space-y-3">
-          {artworkOnly && <p className="text-xs text-muted-foreground">{msg('FE_MENU_BANNER_DESIGN_HELP', 'Menu artwork: 4:1 ratio, 1600 × 400 px recommended. Upload the complete design; no extra headline is displayed.')}</p>}
-          {!artworkOnly && <Field label={msg('FE_CMS_BANNER_OVERLAY_TITLE_REQUIRED', 'Overlay title (required)')}><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder={msg('FE_CMS_BANNER_FLAME_GRILLED_CAMPUS_FRESH', 'Flame-Grilled, Campus-Fresh')} /></Field>}
-          <Field label={msg('FE_CMS_BANNER_MAIN_IMAGE_REQUIRED', 'Main image (required)')}>
+          {compactPlacement && <><p className="text-xs text-muted-foreground">{msg('FE_COMPACT_BANNER_HELP', 'Use a complete 4:1 design (1600 × 400 px), or an icon with a title, short description and optional action. Each slide rotates independently.')}</p><CompactModeSelect value={draft.display_mode} onChange={display_mode => setDraft({ ...draft, display_mode })} /></>}
+          {(!compactPlacement || draft.display_mode === 'text') && <Field label={compactPlacement ? msg('FE_CMS_SLIDE_TITLE', 'Slide title') : msg('FE_CMS_BANNER_OVERLAY_TITLE_REQUIRED', 'Overlay title (required)')}><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder={msg('FE_CMS_BANNER_FLAME_GRILLED_CAMPUS_FRESH', 'Flame-Grilled, Campus-Fresh')} /></Field>}
+          <Field label={compactPlacement && draft.display_mode === 'text' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : msg('FE_CMS_BANNER_MAIN_IMAGE_REQUIRED', 'Main image (required)')}>
             <ImageUploader value={draft.image_url} onChange={(url) => setDraft({ ...draft, image_url: url })} folder={`banners/${placement}`} label={msg('FE_CMS_BANNER_MAIN_IMAGE', 'main image')} />
           </Field>
-          {!artworkOnly && <><Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', "Eyebrow text")}><TextInput value={draft.eyebrow} onChange={(e) => setDraft({ ...draft, eyebrow: e.target.value })} placeholder={msg('FE_ADMIN_BANNERS_FRESH_FROM_YOUR_CAMPUS_GRILL', "Fresh from your campus grill")} maxLength={240} /></Field>
-          <Field label={msg('FE_CMS_BANNER_OVERLAY_SUBTITLE', 'Overlay subtitle')}><TextInput value={draft.subtitle} onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })} placeholder={msg('FE_CMS_BANNER_ORDER_FRESH_MEALS_IN_MINUTES', 'Order fresh meals in minutes')} /></Field>
+          {(!compactPlacement || draft.display_mode === 'text') && <>{!compactPlacement && <Field label={msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', "Eyebrow text")}><TextInput value={draft.eyebrow} onChange={(e) => setDraft({ ...draft, eyebrow: e.target.value })} placeholder={msg('FE_ADMIN_BANNERS_FRESH_FROM_YOUR_CAMPUS_GRILL', "Fresh from your campus grill")} maxLength={240} /></Field>}
+          <Field label={compactPlacement ? msg('FE_CMS_SLIDE_SUBTITLE', 'Slide subtitle') : msg('FE_CMS_BANNER_OVERLAY_SUBTITLE', 'Overlay subtitle')}><TextInput value={draft.subtitle} onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })} placeholder={msg('FE_CMS_BANNER_ORDER_FRESH_MEALS_IN_MINUTES', 'Order fresh meals in minutes')} /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label={msg('FE_CMS_BANNER_CTA_TEXT', 'CTA text')}><TextInput value={draft.cta_text} onChange={(e) => setDraft({ ...draft, cta_text: e.target.value })} placeholder={msg('FE_CMS_BANNER_ORDER_NOW', 'Order now')} /></Field>
             <Field label={msg('FE_CMS_BANNER_CTA_URL', 'CTA URL')}><TextInput value={draft.cta_url} onChange={(e) => setDraft({ ...draft, cta_url: e.target.value })} placeholder={msg('FE_CMS_BANNER_MENU', '/menu')} /></Field>
           </div>
           </>}
+          {compactPlacement && draft.display_mode !== 'text' && <Field label={msg('FE_CMS_SLIDE_DESTINATION', 'CTA URL')}><TextInput value={draft.cta_url} onChange={e => setDraft({ ...draft, cta_url: e.target.value })} /></Field>}
           <div className="grid grid-cols-2 gap-2">
             <Field label={msg('FE_ADMIN_BANNERS_STARTS_AT', 'Starts at')}><TextInput type="datetime-local" value={draft.starts_at} onChange={(e) => setDraft({ ...draft, starts_at: e.target.value })} /></Field>
             <Field label={msg('FE_ADMIN_BANNERS_ENDS_AT', 'Ends at')}><TextInput type="datetime-local" value={draft.ends_at} onChange={(e) => setDraft({ ...draft, ends_at: e.target.value })} /></Field>
@@ -255,4 +257,11 @@ export default function AdminBanners({ placement = 'home' }) {
       </Modal>
     </div>
   );
+}
+
+function CompactModeSelect({ value, onChange }: { value: 'image' | 'text'; onChange: (value: 'image' | 'text') => void }) {
+  return <Field label={msg('FE_SF_DISPLAY_MODE', 'Card design')}><select value={value} onChange={event => onChange(event.target.value as 'image' | 'text')} className="w-full p-2 rounded-xl border border-border bg-card text-sm">
+    <option value="image">{msg('FE_SF_MODE_IMAGE', 'Full design image only')}</option>
+    <option value="text">{msg('FE_SF_MODE_TEXT', 'Image or icon with text')}</option>
+  </select></Field>;
 }
