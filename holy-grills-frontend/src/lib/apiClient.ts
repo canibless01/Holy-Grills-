@@ -14,7 +14,7 @@ let sessionVersion = 0;
 // "Remember me" — when the user leaves the checkbox unchecked, tokens are
 // stored in sessionStorage so they are cleared when the browser closes.
 // When checked, tokens persist in localStorage across sessions.
-const isRemember = () => localStore.getItem('hg_remember') === '1';
+const isRemember = () => localStore.getItem('hg_remember') !== '0';
 const storage = () => isRemember() ? localStore : sessionStore;
 
 export class ApiError extends Error {
@@ -86,10 +86,11 @@ async function performRefresh() {
   }
 
   if (res.status === 401 || res.status === 403) {
-    // Don't clear tokens — a cold/slow backend can return 401 transiently even
-    // for a valid session. Surface a retryable error so the page can retry
-    // without losing the session. The user can still manually re-login.
-    throw new ApiError(0, 'Session refresh failed — please retry, or re-login if the issue persists.');
+    // The backend reserves these statuses for an actual rejected refresh;
+    // provider outages use 429/5xx. Stop retrying invalid/revoked credentials.
+    const detail = await res.json().catch(() => null);
+    if (getRefreshToken() === refresh) clearTokens();
+    throw new ApiError(res.status, detail?.error || 'Session refresh failed — please retry, or re-login if the issue persists.', detail);
   }
   if (!res.ok) {
     // 5xx or other — keep tokens; this is likely a transient backend issue.
@@ -119,8 +120,20 @@ async function refreshToken(rejectedToken: string) {
 /** fetch options plus the internal single-retry flag. */
 type RequestOptions = RequestInit & { _retried?: boolean };
 
+const PUBLIC_STOREFRONT_READS = new Set([
+  '/storefront/sections', '/storefront/banners', '/storefront/early-supporters',
+  '/storefront/config/public', '/storefront/feature-flags',
+]);
+
 async function request(path: string, options: RequestOptions = {}) {
-  const token = getToken();
+  const storedToken = getToken();
+  const parsedPath = new URL(path, 'https://app.invalid');
+  const publicRead = (!options.method || options.method === 'GET') && PUBLIC_STOREFRONT_READS.has(parsedPath.pathname)
+    && !['1', 'true', 'yes'].includes((parsedPath.searchParams.get('include_inactive') || '').toLowerCase());
+  // Published content has the same public access regardless of saved session.
+  // Do not make every banner wait for Auth verification/token recovery. The
+  // stored campus remains a presentation hint; management reads still verify.
+  const token = publicRead ? null : storedToken;
   const version = sessionVersion;
   // NOTE: a 401 on a data fetch must NOT log the user out. The refresh attempt
   // below recovers a valid session whose access token expired; if refresh also
@@ -139,12 +152,12 @@ async function request(path: string, options: RequestOptions = {}) {
   // platform-wide. Sending their profile campus here would silently scope
   // them to one campus — which is exactly the bug the switcher was supposed
   // to fix, inverted.
-  const role = token ? localStore.getItem('hg_user_role') : null;
+  const role = storedToken ? localStore.getItem('hg_user_role') : null;
   const isSuperAdmin = role === 'super_admin';
-  const adminAll = token && localStore.getItem('hg_admin_scope_all') === '1';
-  const adminCampusId = token && !adminAll && localStore.getItem('hg_admin_campus_id');
-  const userCampusId = token && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
-  const guestCampusId = !token && localStore.getItem('hg_campus_id');
+  const adminAll = storedToken && localStore.getItem('hg_admin_scope_all') === '1';
+  const adminCampusId = storedToken && !adminAll && localStore.getItem('hg_admin_campus_id');
+  const userCampusId = storedToken && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
+  const guestCampusId = !storedToken && localStore.getItem('hg_campus_id');
   const campusHeader = adminCampusId || userCampusId || guestCampusId;
   const headers = {
     'Content-Type': 'application/json',

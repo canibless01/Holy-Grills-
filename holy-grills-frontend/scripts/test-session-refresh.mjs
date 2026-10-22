@@ -31,4 +31,14 @@ globalThis.fetch=async()=>{calls++;return new Promise(resolve=>{rejectOld=()=>re
 const oldAction=api.apiClient.post('/order',{item:'old-account'});while(!rejectOld) await new Promise(r=>setTimeout(r,1));
 api.setTokens('new-account','new-refresh');rejectOld();
 await assert.rejects(oldAction,e=>e.status===0);assert.equal(calls,1,'old action must never retry under a newly signed-in identity');
-console.log('PASS session refresh concurrency, late 401 reuse, outages, malformed replies and logout race');
+api.setTokens('expired-public','refresh-public');stores.localStore.setItem('hg_user_campus_id','saved-campus');stores.localStore.setItem('hg_user_role','student');
+let publicCalls=0;
+globalThis.fetch=async(url,opts)=>{publicCalls++;assert.equal(opts.headers.Authorization,undefined);assert.equal(opts.headers['X-Campus-ID'],'saved-campus');return json(200,[]);};
+await api.apiClient.get('/storefront/banners',{placement:'hero'});assert.equal(publicCalls,1);assert.equal(api.getToken(),'expired-public');
+globalThis.fetch=async(url,opts)=>{assert.equal(opts.headers.Authorization,'Bearer expired-public');return json(200,[]);};
+await api.apiClient.get('/storefront/sections',{include_inactive:'1'});
+globalThis.fetch=async url=>url.endsWith('/auth/refresh')?json(401,{error:'Session invalid'}):json(401,{error:'expired'});
+await assert.rejects(api.apiClient.get('/auth/me'),e=>e.status===401);assert.equal(api.getToken(),null);assert.equal(api.getRefreshToken(),null);
+api.setTokens('persistent','persistent-refresh');assert.equal(stores.localStore.getItem('hg_access_token'),'persistent');
+stores.localStore.setItem('hg_remember','0');api.setTokens('private-browser','private-refresh');assert.equal(stores.sessionStore.getItem('hg_access_token'),'private-browser');assert.equal(stores.localStore.getItem('hg_access_token'),null);
+console.log('PASS refresh concurrency, outages/revocation, public CMS isolation and explicit persistence choice');

@@ -292,7 +292,7 @@ def refresh_token(refresh_token: str) -> dict:
     try:
         result = db.auth_refresh(refresh_token)
     except SupabaseError as e:
-        if (getattr(e, "status_code", 500) or 500) >= 500:
+        if getattr(e, "status_code", None) == 429 or (getattr(e, "status_code", 500) or 500) >= 500:
             raise            # provider-side failure, not the caller's token: let the app's SupabaseError handler answer it
         logger.info("refresh_token: refresh rejected by provider (status %s)", getattr(e, "status_code", None))
         raise ValueError(MSG.SESSION_INVALID)

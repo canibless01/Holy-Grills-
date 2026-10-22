@@ -142,9 +142,11 @@ export const HolyGrillProvider = ({ children }) => {
   const welcomeRecoveryUser = useRef(null);
   const restoreVersion = useRef(0);
   const recoverWelcome = (profile) => {
-    if (!profile?.id || profile.role !== 'student' || welcomeRecoveryUser.current === profile.id) return;
+    if (!profile?.id || welcomeRecoveryUser.current === profile.id) return;
     welcomeRecoveryUser.current = profile.id;
-    void apiClient.post('/auth/welcome-credit', {}).catch(() => {});
+    // Token delivery and verified identity must not wait for loyalty work.
+    void apiClient.post('/auth/session-activity', {}).then(() => liveApi.auth.getStreak()).then(setStreak).catch(() => {});
+    if (profile.role === 'student') void apiClient.post('/auth/welcome-credit', {}).catch(() => {});
   };
   const [cart, setCart] = useState(EMPTY_CART);
   const cartRequestVersion = useRef(0);

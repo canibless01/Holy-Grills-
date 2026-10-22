@@ -45,7 +45,7 @@ export default function Login() {
   const { login, user, isLoading } = useHolyGrill();
   const [email, setEmail] = useState(() => localStore.getItem(REMEMBER_EMAIL) || '');
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(() => localStore.getItem(REMEMBER_FLAG) === '1');
+  const [remember, setRemember] = useState(() => localStore.getItem(REMEMBER_FLAG) !== '0');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showPw, setShowPw] = useState(false);
@@ -80,7 +80,7 @@ export default function Login() {
       localStore.setItem(REMEMBER_FLAG, '1');
       if (emailVal) localStore.setItem(REMEMBER_EMAIL, emailVal.trim());
     } else {
-      localStore.removeItem(REMEMBER_FLAG);
+      localStore.setItem(REMEMBER_FLAG, '0');
       localStore.removeItem(REMEMBER_EMAIL);
     }
   };
@@ -103,7 +103,7 @@ export default function Login() {
     // Switching it off must forget the stored identity immediately — otherwise
     // the address is still pre-filled on the next visit.
     if (!next) {
-      localStore.removeItem(REMEMBER_FLAG);
+      localStore.setItem(REMEMBER_FLAG, '0');
       localStore.removeItem(REMEMBER_EMAIL);
     } else {
       localStore.setItem(REMEMBER_FLAG, '1');

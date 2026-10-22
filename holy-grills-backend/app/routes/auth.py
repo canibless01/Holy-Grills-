@@ -279,7 +279,8 @@ def login():
         if prof.get("is_active") is False:
             get_db().auth_sign_out(result.get("access_token"), scope="local")   # drop the session just issued
             return jsonify({"error": MSG.ACCOUNT_DEACTIVATED}), 403
-        _streak_checkin(user_id)
+        # Loyalty work runs after authenticated profile hydration. Never delay
+        # delivery of newly issued credentials behind optional streak queries.
 
     result["message"] = MSG.LOGIN_SUCCESS
     return jsonify(result), 200
@@ -375,9 +376,6 @@ def refresh():
         result = auth_service.refresh_token(data["refresh_token"])
         result["rotated"] = True
         result["message"] = MSG.SESSION_REFRESHED
-        refreshed_user_id = (result.get("user") or {}).get("id")
-        if refreshed_user_id:
-            _streak_checkin(refreshed_user_id)
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 401
@@ -400,6 +398,14 @@ def me():
     except Exception as e:
         logger.exception("me: failed for %s: %s", g.user_id, e)
         return jsonify({"error": MSG.AUTH_ME_FAILED}), 500
+
+
+@auth_bp.route("/session-activity", methods=["POST"])
+@require_auth
+def recover_session_activity():
+    """Idempotent daily attendance after hydration, outside token rotation."""
+    _streak_checkin(g.user_id)
+    return jsonify({"success": True}), 200
 
 
 @auth_bp.route("/welcome-credit", methods=["POST"])
