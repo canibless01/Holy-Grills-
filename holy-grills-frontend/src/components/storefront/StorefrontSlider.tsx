@@ -95,10 +95,21 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
     if (idx !== active && idx >= 0 && idx < slides.length) setActive(idx);
   }, [slides, active]);
 
+  // What's Inside is a guest-only pitch ("The perks behind the login"), so its
+  // action defaults to the sign-up page. A CMS row that sets its own
+  // destination or label still wins — nothing is hardcoded for other sections.
+  const guestAction = sectionType === 'whats_inside';
+  const defaultDestination = guestAction ? '/register' : '';
+  const defaultActionLabel = guestAction ? msg('FE_SF_SIGN_UP', 'Sign up') : '';
+
+  const destinationOf = (slide) => (
+    slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination || defaultDestination
+  );
+
   const handleTap = (slide) => {
     // Section rows keep cta_url inside `content` (aliased to cta_link); the
     // legacy `destination` key is still honoured last.
-    const dest = slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination;
+    const dest = destinationOf(slide);
     if (!dest) return;
     // Route guards enforce authentication only where the destination needs it.
     openCmsDestination(dest, navigate);
@@ -139,26 +150,51 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
           const line = s.subtitle || s.content?.line || s.content?.subtitle || '';
           const imageOnly = s.content?.display_mode === 'image' || (variant === 'banner' && !s.content?.display_mode);
           const compact = variant === 'compact' || variant === 'banner';
+          // What's Inside (the only compact row) frames its artwork inside the
+          // card instead of bleeding it to the edges.
+          const insetArtwork = variant === 'compact';
           const badge = s.content?.badge || s.badge || '';
+          const destination = destinationOf(s);
+          const actionLabel = s.content?.cta_text || s.cta_text || defaultActionLabel;
+          const cardLabel = title && actionLabel ? `${title} — ${actionLabel}` : (title || msg('FE_STOREFRONT_EXPLORE', 'Explore'));
           return (
             <button
               key={s.id || i}
               onClick={() => handleTap(s)}
-              aria-label={title || msg('FE_STOREFRONT_EXPLORE', 'Explore')}
+              aria-label={cardLabel}
               className={`relative shrink-0 snap-start overflow-hidden rounded-2xl text-left group ${v.cardClass} ${v.textBelow ? 'flex flex-col bg-card border border-border' : 'bg-foreground'}`}
               style={{ maxWidth: v.maxW, aspectRatio: v.textBelow ? undefined : v.aspect, scrollSnapAlign: 'start' }}
             >
               {imageOnly ? (
-                <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-full object-contain" style={{ aspectRatio: v.aspect }} />
+                insetArtwork ? (
+                  // Artwork sits in its own rounded frame with real margins to
+                  // the card edge, and `contain` keeps the whole design visible.
+                  <div className="w-full p-2.5 sm:p-3 flex justify-center">
+                    <div className="w-full max-w-[420px] rounded-xl overflow-hidden bg-muted/40 border border-border/60 p-1.5 sm:p-2">
+                      <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-auto object-contain" style={{ aspectRatio: v.aspect }} />
+                    </div>
+                  </div>
+                ) : (
+                  <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-full object-contain" style={{ aspectRatio: v.aspect }} />
+                )
               ) : compact ? (
                 <div className="p-3 flex items-center gap-3 min-h-[104px] w-full">
-                  {img ? <img src={img} alt="" className="w-9 h-9 object-contain shrink-0" loading="lazy" /> : <Sparkles className="w-9 h-9 text-primary shrink-0" aria-hidden="true" />}
+                  <div className="shrink-0 w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-xl overflow-hidden bg-muted/50 border border-border/60 p-1.5 flex items-center justify-center">
+                    {img
+                      ? <img src={img} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain" />
+                      : <Sparkles className="w-7 h-7 text-primary" aria-hidden="true" />}
+                  </div>
                   <div className="min-w-0 flex-1">
                     {s.content?.eyebrow && <span className="block text-[10px] font-bold text-primary mb-1">{s.content.eyebrow}</span>}
                     {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight line-clamp-1">{title}</h3>}
                     {line && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{line}</p>}
                   </div>
-                  {s.content?.cta_text && (s.content?.cta_url || s.content?.cta_link) && <span className="shrink-0 px-3 py-1.5 rounded-full border border-primary text-xs text-primary font-bold">{s.content.cta_text}</span>}
+                  {actionLabel && destination && (
+                    <span className="shrink-0 inline-flex items-center gap-0.5 px-3.5 py-2 rounded-full bg-gradient-cta text-white text-xs font-extrabold whitespace-nowrap shadow-sm">
+                      {actionLabel}
+                      <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+                    </span>
+                  )}
                 </div>
               ) : v.textBelow ? (
                 <>

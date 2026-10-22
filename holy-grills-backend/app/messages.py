@@ -157,7 +157,7 @@ class MSG:
 
     FE_ORDER_GIFT_INCLUDED = "Gift included"
     FE_SF_PLACEMENT = "Show on page"
-    FE_SF_INSIDE_HELP = "Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended)."
+    FE_SF_INSIDE_HELP = "Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended). The action button defaults to Sign up unless you choose a destination."
     FE_SF_POPUP_HELP = "Transparent PNG artwork keeps its original shape and full content. Any aspect ratio; 1200 px on the longest edge recommended. Text is part of your artwork."
     ORDER_DELIVERY_ADDRESS_INVALID = "Enter a valid delivery address of at most 1,000 characters."
     FE_SF_DESTINATION = "Destination page"
@@ -170,6 +170,7 @@ class MSG:
     FE_SF_DISPLAY_MODE = "Card design"
     FE_SF_MODE_TEXT = "Image or icon with text"
     FE_SF_MODE_IMAGE = "Full design image only"
+    FE_SF_SIGN_UP = "Sign up"
     FE_SF_PLAY = "Resume carousel"
     FE_SF_PAUSE = "Pause carousel"
     ORDER_SAVED_NOTIFICATION_TITLE = "Order saved"

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { liveApi } from '@/lib/liveApi';
 import { openCmsDestination } from '@/lib/safeNavigation';
+import { heroTitleParts } from '@/lib/heroTitle';
 
 interface HeroSlide {
   display_mode?: 'image' | 'text';
@@ -123,6 +124,9 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   if (!slides.length) return null;
   if (artworkOnly) return <CompactBannerCarousel slides={slides} />;
   const s = slides[i % slides.length];
+  // The hero keeps its first phrase white and lets the rest of the headline
+  // run into the brand gradient. Other placements stay plain white.
+  const title = placement === 'hero' ? heroTitleParts(s.tag) : { lead: s.tag, tail: '' };
   const go = () => {
     const dest = s.cta_url || '/menu';
     if (onCta && dest === '/menu') onCta();
@@ -176,7 +180,10 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           >
-            <SlideHeading className={`font-heading font-extrabold text-4xl sm:text-5xl ${placement === 'hero' ? 'text-transparent bg-clip-text bg-gradient-to-r from-[#f01408] via-[#f97316] to-[#f6bd4f]' : 'text-white'} leading-[1.05] mb-2 text-balance`}>{s.tag}</SlideHeading>
+            <SlideHeading className="font-heading font-extrabold text-4xl sm:text-5xl text-white leading-[1.05] mb-2 text-balance">
+              {title.lead}
+              {title.tail && <>{' '}<span className="hero-title-gradient">{title.tail}</span></>}
+            </SlideHeading>
             <p className="text-base text-white/85 mb-5 max-w-md">{s.sub}</p>
           </motion.div>
         </>}

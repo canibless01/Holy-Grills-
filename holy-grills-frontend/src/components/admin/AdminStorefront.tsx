@@ -63,7 +63,7 @@ const TAB_GROUPS: Array<{ label: string; tabs: StorefrontTab[] }> = [
       { id: 'promo', label: 'Promos', icon: Tag, kind: 'section', desc: 'Promo blocks — single image + text + CTA.' },
       { id: 'testimonial', label: 'Testimonials', icon: Quote, kind: 'section', desc: 'Student reviews shown on the homepage.' },
       { id: 'share_template', label: 'Share Templates', icon: Share2, kind: 'section', desc: 'Base images students overlay their name + HP on.' },
-      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended).') },
+      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended). The action button defaults to Sign up unless you choose a destination.') },
       { id: 'how_its_made', label: "How It's Made", icon: Flame, kind: 'section', desc: 'Process-stage slider — each slide is a step from raw to door.' },
       { id: 'catering', label: 'Catering', icon: Utensils, kind: 'section', desc: 'Catering card — single image + text + CTA on the homepage.' },
       { id: 'our_story', label: 'Our Story', icon: BookOpen, kind: 'section', desc: 'Our Story page — hero image + title + caption.' },
@@ -448,8 +448,8 @@ export default function AdminStorefront() {
                     <input value={s.content?.badge || ''} onChange={(e) => upd(s.id, { content: { ...s.content, badge: e.target.value } })} className="w-full mt-2 p-2 rounded-lg border border-border text-sm" placeholder="Optional badge (e.g. Opening soon)" />
                   )}
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    <input value={sectionField(s, 'cta_text')} onChange={(e) => upd(s.id, sectionPatch(s, 'cta_text', e.target.value))} className="p-2 rounded-lg border border-border text-sm" placeholder="CTA text" />
-                    <input value={sectionField(s, 'cta_url')} onChange={(e) => upd(s.id, sectionPatch(s, 'cta_url', e.target.value))} className="p-2 rounded-lg border border-border text-sm" placeholder="CTA URL" />
+                    <input value={sectionField(s, 'cta_text')} onChange={(e) => upd(s.id, sectionPatch(s, 'cta_text', e.target.value))} className="p-2 rounded-lg border border-border text-sm" placeholder={s.section_type === 'whats_inside' ? msg('FE_SF_SIGN_UP', 'Sign up') : 'CTA text'} />
+                    <input value={sectionField(s, 'cta_url')} onChange={(e) => upd(s.id, sectionPatch(s, 'cta_url', e.target.value))} className="p-2 rounded-lg border border-border text-sm" placeholder={s.section_type === 'whats_inside' ? '/register' : 'CTA URL'} />
                   </div>
                 </>
               )}
@@ -608,8 +608,8 @@ export default function AdminStorefront() {
                 <Field label="Optional badge (e.g. Opening soon)"><TextInput value={newSection.badge} onChange={(e) => setNewSection({ ...newSection, badge: e.target.value })} /></Field>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <Field label="CTA text"><TextInput value={newSection.cta_text} onChange={(e) => setNewSection({ ...newSection, cta_text: e.target.value })} placeholder="Order now" /></Field>
-                <Field label="Destination page"><TextInput value={newSection.cta_url} onChange={(e) => setNewSection({ ...newSection, cta_url: e.target.value })} placeholder="/menu" /></Field>
+                <Field label="CTA text"><TextInput value={newSection.cta_text} onChange={(e) => setNewSection({ ...newSection, cta_text: e.target.value })} placeholder={newSection.section_type === 'whats_inside' ? msg('FE_SF_SIGN_UP', 'Sign up') : 'Order now'} /></Field>
+                <Field label="Destination page"><TextInput value={newSection.cta_url} onChange={(e) => setNewSection({ ...newSection, cta_url: e.target.value })} placeholder={newSection.section_type === 'whats_inside' ? '/register' : '/menu'} /></Field>
               </div>
             </>
           )}
