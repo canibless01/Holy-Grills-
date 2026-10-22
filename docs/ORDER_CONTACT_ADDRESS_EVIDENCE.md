@@ -4,7 +4,7 @@ Checkout asks guests and signed-in customers to confirm a phone they can answer 
 
 The normalized number is stored in the existing `orders.delivery_address_snapshot.contact_phone` JSON field. Rider secure-call reads that order snapshot first and preserves historical profile/guest fallbacks for older orders. An optional profile-read outage cannot block a rider from using a valid saved contact snapshot. No telephone call is made by the audit.
 
-Off-campus final submission requires a human-readable street/junction/address, even when coordinates exist. Quotes still work before those details are complete. Checkout can save the address name, city, readable address, landmark, hostel/gate and coordinates through the existing address API. Selecting a saved address restores its text and landmark even when it has no coordinates. Editing the saved selection clears its binding; the server re-reads an owned saved address's canonical details and clears stale incoming coordinates when none were saved.
+Off-campus final submission requires a human-readable street/junction/address, even when coordinates exist. Quotes still work before those details are complete. Checkout can save the address name, city, readable address, landmark, hostel/gate and coordinates through the existing address API. Selecting a saved address restores its gate ID, text and landmark even when it has no coordinates. The routed browser exposed an existing gate-ref-only restore bug that made saving that address fail; the actual selection state is now restored too. Editing the saved selection clears its binding; the server re-reads an owned saved address's canonical details and clears stale incoming coordinates when none were saved.
 
 ## Verification
 

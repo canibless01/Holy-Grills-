@@ -831,6 +831,7 @@ export default function Checkout() {
                     const type = addr.delivery_type
                       || ((addr.latitude ?? addr.lat) != null ? 'off_campus' : 'on_campus');
                     if (type) setDeliveryType(type);
+                    setAddressNeedsReselect(null);
                     setDeliveryAddress(addr.line1 || addr.description || addr.address || '');
                     setLandmark(addr.landmark || '');
                     if (type === 'on_campus') {
@@ -844,6 +845,7 @@ export default function Checkout() {
                       if (!hid) { setAddressNeedsReselect(addr); return; }
                     }
                     if (type === 'off_campus') {
+                      setGateId(addr.delivery_location_id || null);
                       const lat = addr.latitude ?? addr.lat;
                       const lng = addr.longitude ?? addr.lng;
                       const savedPin = (lat != null && lng != null) ? { lat: Number(lat), lng: Number(lng) } : null;
