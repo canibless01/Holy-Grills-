@@ -44,7 +44,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     # DOB validation — user must meet minimum age
     if date_of_birth:
         try:
-            dob = date.fromisoformat(str(date_of_birth)[:10])
+            dob = date.fromisoformat(date_of_birth)
             today = today_wat()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
             minimum_age = config.get("MINIMUM_AGE", 16)
@@ -168,7 +168,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     try:
         existing_profile = db.table("profiles").select("id").eq("id", user_id).execute()
         if not (existing_profile and len(existing_profile) > 0):
-            db.table("profiles").insert(profile_data)
+            saved_profile = db.table("profiles").insert(profile_data)
         else:
             # Profile created by Supabase trigger — patch referral/personal fields
             patch = {
@@ -192,13 +192,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
                     patch["faculty"] = dept_faculty
             if level_value:
                 patch["academic_level"] = level_value
-            try:
-                db.table("profiles").eq("id", user_id).update(patch)
-            except SupabaseError as e:
-                # B5: never swallow silently — a lost patch means no campus / phone / DOB / referral link.
-                logger.error("register: profile patch failed for user %s: %s", user_id, e)
-    except SupabaseError:
-        raise ValueError(MSG.REGISTER_FAILED_RETRY)
+            saved_profile = db.table("profiles").eq("id", user_id).update(patch)
+        if not saved_profile:
+            raise ValueError(MSG.REGISTER_FAILED_RETRY)
+    except SupabaseError as exc:
+        logger.error("register: required profile persistence failed for %s: %s", user_id, exc)
+        raise ValueError(MSG.REGISTER_FAILED_RETRY) from exc
 
     if referred_by_user_id:
         try:
@@ -221,6 +220,13 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
             )
         except Exception as e:
             logger.error("register: referral signup notification failed for referrer %s: %s", referred_by_user_id, e)
+
+    try:
+        from app.services.welcome_credit_service import grant_signup_credit
+        grant_signup_credit(user_id)
+    except Exception as exc:
+        # The atomic grant has a deterministic receipt. /auth/me retries safely.
+        logger.error("register: welcome credit unavailable for %s: %s", user_id, exc)
 
     try:
         hp_service.award_signup_bonus(user_id)
@@ -247,24 +253,26 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         logger.warning("register: retroactive guest-order HP backfill failed for %s: %s", email, e)
 
     try:
-        db.table("squad_roster").eq("email", email).update({"user_id": user_id})
+        db.table("squad_roster").eq("email", email).update({"user_id": user_id}).execute()
         pending = db.table("pending_squad_hp").select("id,order_id,hp_amount,campus_id").eq("email", email).eq("status", "pending").execute() or []
         if pending:
             from app.services.hp_service import award_active_hp
             for p in pending:
                 try:
                     award_active_hp(
-                        user_id=user_id, amount=p["hp_amount"], source_type="squad_bonus_claimed",
+                        user_id=user_id, amount=p["hp_amount"], source_type="squad_split_claimed",
                         # B8: a reference makes the award idempotent (unique index + RPC replay check
                         # both require reference_type AND reference_id to be non-null).
-                        reference_type="squad_bonus_claimed", reference_id=p["order_id"],
+                        reference_type="squad_split_claimed", reference_id=p["order_id"],
                         notes=f"Squad HP claimed from order {p['order_id'][:8]}",
+                        apply_multiplier=False,
+                        campus_id=p.get("campus_id") or campus_id,
                     )
-                    db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"})
+                    db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"}).execute()
                     send_notification(user_id=user_id, notif_type="squad_hp_share", template_data={"hp": p["hp_amount"]}, campus_id=p.get("campus_id") or campus_id)
                 except Exception as e:
                     logger.error("register: squad HP claim failed for user %s, pending row %s: %s", user_id, p.get("id"), e)
-        db.table("squad_members").eq("email", email).update({"user_id": user_id, "is_registered": True})
+        db.table("squad_members").eq("email", email).update({"user_id": user_id, "is_registered": True}).execute()
     except Exception as e:
         logger.warning("register: squad backfill failed for %s: %s", email, e)
 
@@ -284,7 +292,7 @@ def refresh_token(refresh_token: str) -> dict:
     try:
         result = db.auth_refresh(refresh_token)
     except SupabaseError as e:
-        if (getattr(e, "status_code", 500) or 500) >= 500:
+        if getattr(e, "status_code", None) == 429 or (getattr(e, "status_code", 500) or 500) >= 500:
             raise            # provider-side failure, not the caller's token: let the app's SupabaseError handler answer it
         logger.info("refresh_token: refresh rejected by provider (status %s)", getattr(e, "status_code", None))
         raise ValueError(MSG.SESSION_INVALID)
@@ -293,10 +301,10 @@ def refresh_token(refresh_token: str) -> dict:
     return result
 
 
-def get_current_user(access_token: str) -> dict:
+def get_current_user(access_token: str, *, verified_auth_user=None, recover_welcome=True, include_balances=True) -> dict:
     db = get_user_client()
 
-    auth_user = db.auth_get_user(access_token)
+    auth_user = verified_auth_user if verified_auth_user is not None else db.auth_get_user(access_token)
     user_id = auth_user.get("id")
 
     if not user_id:
@@ -310,13 +318,25 @@ def get_current_user(access_token: str) -> dict:
         .execute()
     )
 
-    wallet = (
-        db.table("wallets")
-        .select("balance,currency")
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-    )
+    wallet = None
+    try:
+        if include_balances:
+            wallet = (
+                db.table("wallets").select("balance,currency")
+                .eq("user_id", user_id).single().execute()
+            )
+    except Exception:
+        # The wallet screen retries its own authoritative balance. A wallet
+        # outage must not make a verified application profile unavailable.
+        logger.warning("get_current_user: wallet unavailable for %s", user_id)
+        wallet = None
+
+    if recover_welcome and profile and profile.get('is_active', True):
+        try:
+            from app.services.welcome_credit_service import grant_signup_credit
+            grant_signup_credit(user_id)
+        except Exception as exc:
+            logger.warning("get_current_user: welcome credit recovery unavailable for %s: %s", user_id, exc)
 
     _profile = profile or {}
     for _internal in ("is_fraud_flagged", "jwt_version", "deactivation_reason", "deactivated_by"):
@@ -327,13 +347,19 @@ def get_current_user(access_token: str) -> dict:
         # Top-level aliases so mobile clients don't need to dig into profile{}
         "full_name": _profile.get("full_name"),
         "role": _profile.get("role"),
+        # The user's campus. Without this top-level alias the client cannot scope
+        # itself: it reads `campus_id` off the session user, gets undefined, sends
+        # no X-Campus-ID, and every campus-scoped read (menu availability, gates,
+        # hostels, delivery-window status) falls back to global/unscoped data —
+        # which is also what made logged-in users get asked to pick a campus.
+        "campus_id": _profile.get("campus_id"),
         "referral_code": _profile.get("referral_code"),
         "profile": profile,
         "wallet": {
             "balance": float(wallet.get("balance", 0)) if wallet else 0.0,
             "currency": wallet.get("currency", "NGN") if wallet else "NGN",
-        },
-        "tier": _get_tier(user_id),
+        } if wallet is not None else None,
+        "tier": _get_tier(user_id, _profile) if include_balances else None,
     }
 
 
@@ -370,7 +396,7 @@ def update_profile(user_id: str, data: dict) -> dict:
 
     if update_data.get("date_of_birth"):
         try:
-            dob = date.fromisoformat(str(update_data["date_of_birth"])[:10])
+            dob = date.fromisoformat(update_data["date_of_birth"])
         except ValueError:
             raise ValueError(MSG.DOB_FORMAT_INVALID)
         today = today_wat()
@@ -452,18 +478,19 @@ def _generate_referral_code(full_name: str) -> str:
     return f"{prefix}{suffix}"
 
 
-def _get_tier(user_id: str) -> dict | None:
+def _get_tier(user_id: str, profile=None) -> dict | None:
     db = get_user_client()
     try:
-        profile_rows = (
-            db.table("profiles")
-            .select("current_tier_id,tier_grace_ends_at")
-            .eq("id", user_id)
-            .execute()
-        )
-        if not profile_rows:
-            return None
-        profile = profile_rows[0]
+        if profile is None:
+            profile_rows = (
+                db.table("profiles")
+                .select("current_tier_id,tier_grace_ends_at")
+                .eq("id", user_id)
+                .execute()
+            )
+            if not profile_rows:
+                return None
+            profile = profile_rows[0]
         tier_id = profile.get("current_tier_id")
         if not tier_id:
             return None

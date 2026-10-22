@@ -1,0 +1,9 @@
+# Live personal rank and full tier artwork — 22 October 2026
+
+The personal-rank endpoint previously looked for a current-period snapshot that cannot exist until the period ends. Home/dashboard also expected a flat rank while the endpoint returned rank_entry, and homepage rank waited behind the menu query. Personal rank now aggregates the current WAT period live, excludes HP transfers, restricts participants to active students in the verified campus, uses stable tie ordering and reads beyond one Data API page. It returns only the caller’s rank/statistics. No new function/table/migration is needed.
+
+A shared hook requests rank after verified identity independently of menu/orders loading, updates after HP changes and on focus, and safely ignores stale responses. It does not invent a rank for an account without period earnings. Five focused backend tests pass, including no snapshot, transfer/campus/date exclusions, all-time balance behavior and pagination. Actual backend/Test Two proof read personal rank before opening the board: rank 1 and 1,475 current-month HP, then confirmed agreement with the board.
+
+Tier marks use a non-shrinking box and contained artwork. The shared admin upload preview previously used object-cover and cut off uploaded icons/designs; it now shows the complete asset with containment and padding. Small tier previews also preserve the full image rather than clipping the image corners. Profile-photo cropping and hero proportions are unchanged.
+
+Four actual routed controlled browser cases pass: dashboard rank without board navigation, home rank without depending on menu/board navigation, wide tier artwork contained in its stable slot, and full admin preview. API/media responses were intercepted for this browser proof; no real Cloudinary upload is claimed. See [browser results](RANK_TIER_BROWSER_RESULTS.json).

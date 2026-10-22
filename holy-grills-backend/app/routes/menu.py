@@ -10,8 +10,9 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_role, optional_auth, resolve_scoped_campus_id, update_or_403, fetch_or_403
 from app.db import get_db, get_user_client, SupabaseError
 from app.utils.tz import today_wat, WAT_OFFSET, is_within_availability_window
-from app.utils.upload_urls import is_trusted_upload_url
-from datetime import datetime, timezone
+from app.utils.upload_urls import is_cms_image_url
+from datetime import datetime, timezone, timedelta
+import math
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -22,6 +23,36 @@ def _json_body() -> dict:
     """The request's JSON body as a dict; anything else (missing, invalid, a list) becomes {}."""
     data = request.get_json(force=True, silent=True)
     return data if isinstance(data, dict) else {}
+
+
+def _validate_item_fields(data):
+    if 'name' in data:
+        if not isinstance(data['name'], str) or not data['name'].strip():
+            return MSG.MENU_ITEM_NAME_REQUIRED
+        data['name'] = data['name'].strip()
+    for field in ('price', 'hp_earn_value', 'daily_limit'):
+        if field not in data or (field == 'daily_limit' and data[field] is None):
+            continue
+        try:
+            number = float(data[field])
+            if isinstance(data[field], bool) or not math.isfinite(number) or number < 0 or (field != 'price' and number != int(number)):
+                raise ValueError()
+            data[field] = number if field == 'price' else int(number)
+        except (ValueError, TypeError, OverflowError):
+            return (MSG.MENU_FIELD_NONNEGATIVE_NUMBER if field == 'price' else MSG.MENU_FIELD_NONNEGATIVE_INTEGER).format(field=field)
+    for field in ('is_available', 'is_featured', 'is_secret'):
+        if field in data and not isinstance(data[field], bool):
+            return MSG.MENU_FIELD_BOOLEAN_REQUIRED.format(field=field)
+    return None
+
+
+def _category_matches_scope(db, category_id, campus_id):
+    category, err = fetch_or_403(db, 'menu_categories', category_id, select='id,campus_id', not_found_msg=MSG.MENU_CATEGORY_NOT_FOUND)
+    if err:
+        return err
+    if category.get('campus_id') not in (None, campus_id):
+        return jsonify({'error': MSG.MENU_CATEGORY_SCOPE_INVALID}), 400
+    return None
 
 
 def _log_menu_admin_action(actor_id, entity_type, entity_id, action, before_data=None, after_data=None):
@@ -86,6 +117,13 @@ def _today_start_iso():
     return utc_midnight.replace(tzinfo=timezone.utc).isoformat()
 
 
+def _today_fulfilment_filter():
+    start = _today_start_iso()
+    end = (datetime.fromisoformat(start) + timedelta(days=1)).isoformat()
+    return (f'and(is_scheduled.eq.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),'
+            f'and(is_scheduled.eq.false,created_at.gte.{start},created_at.lt.{end})')
+
+
 def _kitchen_stats(db, campus_id=None):
     """
     Return (capacity, orders_today_count, is_at_capacity).
@@ -104,7 +142,7 @@ def _kitchen_stats(db, campus_id=None):
 
     orders_q = (
         db.table("orders").select("id,is_squad_order,squad_item_count")
-        .gte("created_at", _today_start_iso())
+        .or_(_today_fulfilment_filter())
         .not_.in_("status", ["cancelled", "refunded"])
     )
     if campus_id:
@@ -125,7 +163,7 @@ def _daily_item_counts(db):
     db = get_db()  # see _kitchen_stats: the user client only sees the caller's own orders
     orders_q = (
         db.table("orders").select("id")
-        .gte("created_at", _today_start_iso())
+        .or_(_today_fulfilment_filter())
         .not_.in_("status", ["cancelled", "refunded"])
     )
     if campus_id:
@@ -170,6 +208,20 @@ def _enrich_item(item, counts, at_capacity):
     else:
         item["daily_remaining"] = None
         item["is_sold_out"] = False
+    return item
+
+
+def _apply_campus_availability(db, item, campus_id):
+    if not campus_id:
+        return item
+    availability = db.table('menu_item_availability').select('is_available,daily_limit,price_override,opens_at,closes_at').eq('menu_item_id', item['id']).eq('campus_id', campus_id).single().execute()
+    if availability:
+        item['campus_availability'] = availability
+        item['is_available'] = bool(item.get('is_available')) and bool(availability.get('is_available')) and is_within_availability_window(availability.get('opens_at'), availability.get('closes_at'))
+        if availability.get('price_override') is not None:
+            item['price'] = availability['price_override']
+        if availability.get('daily_limit') is not None:
+            item['daily_limit'] = availability['daily_limit']
     return item
 
 
@@ -295,7 +347,7 @@ def create_category():
     elif not isinstance(is_active, bool):
         is_active = True
 
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(data.get('campus_id'))
     record = {
         "name": data["name"],
         "slug": slug,
@@ -416,9 +468,13 @@ def list_categories():
         description: List of categories
     """
     from app.routes.events import _get_campus_id
-    db = get_user_client()
-    q = db.table("menu_categories").select("*").eq("is_active", "true")
+    db = get_user_client() if getattr(g, 'user_id', None) else get_db()
+    q = db.table("menu_categories").select("*")
+    if not (request.args.get("include_inactive") == "1" and getattr(g, "user_role", None) in ("admin", "super_admin")):
+        q = q.eq("is_active", "true")
     campus_id = _get_campus_id()
+    if not campus_id and getattr(g, "user_role", None) != "super_admin":
+        return jsonify({"code": "CAMPUS_SELECTION_REQUIRED", "error": MSG.CAMPUS_REQUIRED}), 400
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     cats = q.order("sort_order").execute() or []
@@ -458,9 +514,11 @@ def list_items():
           { items: [...], kitchen: { daily_order_capacity, orders_today, is_at_capacity } }
     """
     from app.routes.events import _get_campus_id
-    db = get_user_client()
+    db = get_user_client() if getattr(g, 'user_id', None) else get_db()
     campus_id = _get_campus_id()
     q = db.table("menu_items").select("*,menu_categories(name,slug)").is_("deleted_at", "null")
+    if not campus_id and getattr(g, "user_role", None) != "super_admin":
+        return jsonify({"code": "CAMPUS_SELECTION_REQUIRED", "error": MSG.CAMPUS_REQUIRED}), 400
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
 
@@ -479,7 +537,7 @@ def list_items():
     search = request.args.get("q")
     if search:
         q = q.ilike("name", f"%{search}%")
-    else:
+    elif not (request.args.get('include_secret') == '1' and getattr(g, 'user_role', None) in ('admin', 'super_admin')):
         q = q.eq("is_secret", "false")
 
     available_only = request.args.get("available_only", "true").lower() != "false"
@@ -491,7 +549,7 @@ def list_items():
     if is_featured is not None and is_featured.lower() == "true":
         q = q.eq("is_featured", "true")
 
-    items = q.order("name").execute() or []
+    items = q.order("price").order("name").execute() or []
 
     item_ids = [item["id"] for item in items]
     availability_rows = (
@@ -506,6 +564,7 @@ def list_items():
     filtered_items = []
     for item in items:
         avail = availability_by_item.get(item["id"])
+        item['campus_availability'] = avail
         if avail:
             item["is_available"] = (
                 bool(item.get("is_available")) and bool(avail.get("is_available"))
@@ -513,16 +572,14 @@ def list_items():
             )
             if avail.get("price_override") is not None:
                 item["price"] = avail["price_override"]
-            item["daily_limit"] = avail.get("daily_limit")
-        elif item.get("campus_id") is None:
-            # Global item with no availability row yet for this campus — fail closed
-            item["is_available"] = False
-            item["daily_limit"] = 0
+            if avail.get('daily_limit') is not None:
+                item['daily_limit'] = avail['daily_limit']
 
         if available_only and not item["is_available"]:
             continue
         filtered_items.append(item)
     items = filtered_items
+    items.sort(key=lambda x: (float(x.get("price") or 0), (x.get("name") or "").lower()))
 
     capacity, orders_today, at_capacity = _kitchen_stats(db, campus_id)
     counts = _daily_item_counts(db)
@@ -540,6 +597,7 @@ def list_items():
 
 
 @menu_bp.route("/items/<item_id>", methods=["GET"])
+@optional_auth
 def get_item(item_id):
     """
     Get single menu item detail including variation groups, options, and daily stock.
@@ -557,7 +615,7 @@ def get_item(item_id):
       404:
         description: Not found
     """
-    db = get_user_client()
+    db = get_user_client() if getattr(g, 'user_id', None) else get_db()
     item, err = fetch_or_403(db, "menu_items", item_id, select="*,menu_categories(name,slug)", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
     if err:
         return err
@@ -566,9 +624,12 @@ def get_item(item_id):
 
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
+    if not campus_id and getattr(g, "user_role", None) != "super_admin":
+        return jsonify({"code": "CAMPUS_SELECTION_REQUIRED", "error": MSG.CAMPUS_REQUIRED}), 400
     # same rule as the list: with no campus in the request (guest browsing) nothing is hidden
     if campus_id and item.get("campus_id") and item.get("campus_id") != campus_id:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
+    _apply_campus_availability(db, item, campus_id)
 
     groups = (
         db.table("menu_item_variation_groups")
@@ -597,6 +658,7 @@ def get_item(item_id):
 
 
 @menu_bp.route("/items/<item_id>/addons", methods=["GET"])
+@optional_auth
 def get_item_addons(item_id):
     """
     Get add-on groups (e.g. "Sides", "Sauces") for a menu item, each with its
@@ -616,8 +678,8 @@ def get_item_addons(item_id):
       404:
         description: Menu item not found
     """
-    db = get_user_client()
-    existing, err = fetch_or_403(db, "menu_items", item_id, select="id,deleted_at", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
+    db = get_user_client() if getattr(g, 'user_id', None) else get_db()
+    existing, err = fetch_or_403(db, "menu_items", item_id, select="id,deleted_at,campus_id", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
     if err:
         return err
     if existing.get("deleted_at"):
@@ -625,7 +687,15 @@ def get_item_addons(item_id):
 
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
+    if not campus_id and getattr(g, 'user_role', None) != 'super_admin':
+        return jsonify({'code': 'CAMPUS_SELECTION_REQUIRED', 'error': MSG.CAMPUS_REQUIRED}), 400
+    if existing.get('campus_id') and existing['campus_id'] != campus_id and getattr(g, 'user_role', None) != 'super_admin':
+        return jsonify({'error': MSG.MENU_ITEM_NOT_FOUND}), 404
     groups_q = db.table("menu_addon_groups").select("*").eq("menu_item_id", item_id)
+    if not campus_id and getattr(g, 'user_role', None) != 'super_admin':
+        return jsonify({'code': 'CAMPUS_SELECTION_REQUIRED', 'error': MSG.CAMPUS_REQUIRED}), 400
+    if existing.get('campus_id') and existing['campus_id'] != campus_id and getattr(g, 'user_role', None) != 'super_admin':
+        return jsonify({'error': MSG.MENU_ITEM_NOT_FOUND}), 404
     groups_q = groups_q.or_(f"campus_id.eq.{campus_id},campus_id.is.null") if campus_id else groups_q.is_("campus_id", "null")
     groups = groups_q.order("sort_order").execute() or []
     for group in groups:
@@ -674,7 +744,7 @@ def create_addon_group(item_id):
         description: Menu item not found
     """
     db = get_user_client()
-    existing, err = fetch_or_403(db, "menu_items", item_id, select="id", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
+    existing, err = fetch_or_403(db, "menu_items", item_id, select="id,campus_id", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
     if err:
         return err
 
@@ -690,7 +760,7 @@ def create_addon_group(item_id):
     if max_select < min_select:
         return jsonify({"error": MSG.MENU_ADDON_MAX_SELECT_INVALID}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = existing.get("campus_id")
     record = {
         "menu_item_id": item_id,
         "name": data["name"],
@@ -830,6 +900,9 @@ def create_item():
         if data.get(f) is None:
             return jsonify({"error": f"'{f}' is required"}), 400
 
+    validation_error = _validate_item_fields(data)
+    if validation_error:
+        return jsonify({'error': validation_error}), 400
     data["is_available"] = data.get("is_available", True)
     if "hp_multiplier" in data:
         try:
@@ -849,9 +922,12 @@ def create_item():
         "hp_multiplier", "is_secret",
     }
     safe = {k: v for k, v in data.items() if k in MENU_ITEM_COLUMNS}
-    if safe.get("image_url") and not is_trusted_upload_url(safe["image_url"]):
+    if safe.get("image_url") and not is_cms_image_url(safe["image_url"]):
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = resolve_scoped_campus_id(data.get('campus_id'))
+    category_error = _category_matches_scope(db, data['category_id'], campus_id)
+    if category_error:
+        return category_error
     if campus_id and "campus_id" not in safe:
         safe["campus_id"] = campus_id
     try:
@@ -871,7 +947,7 @@ def update_menu_item_image(item_id):
     image_url = data.get("image_url")
     if not image_url:
         return jsonify({"error": "image_url is required"}), 400
-    if not is_trusted_upload_url(image_url):
+    if not is_cms_image_url(image_url):
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
 
     db = get_user_client()
@@ -923,7 +999,14 @@ def update_item(item_id):
     if err:
         return err
     safe_data = {k: v for k, v in data.items() if k in MENU_ITEM_UPDATE_COLUMNS}
-    if safe_data.get("image_url") and not is_trusted_upload_url(safe_data["image_url"]):
+    validation_error = _validate_item_fields(safe_data)
+    if validation_error:
+        return jsonify({'error': validation_error}), 400
+    if 'category_id' in safe_data:
+        category_error = _category_matches_scope(db, safe_data['category_id'], before.get('campus_id'))
+        if category_error:
+            return category_error
+    if safe_data.get("image_url") and not is_cms_image_url(safe_data["image_url"]):
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
     if "hp_multiplier" in safe_data:
         try:
@@ -941,6 +1024,8 @@ def update_item(item_id):
         raise
     if err:
         return err
+    if 'is_available' in safe_data and before.get('campus_id'):
+        db.table('menu_item_availability').upsert({'menu_item_id': item_id, 'campus_id': before['campus_id'], 'is_available': safe_data['is_available'], 'updated_at': safe_data['updated_at']}, on_conflict='menu_item_id,campus_id').execute()
     data = safe_data  # use safe_data for audit below
     updated = result[0] if isinstance(result, list) else result
     # Audit log
@@ -968,6 +1053,26 @@ def update_item_availability(item_id):
     if not campus_id:
         return jsonify({"error": "campus_id is required"}), 400
 
+    parent, err = fetch_or_403(db, 'menu_items', item_id, select='id,campus_id,deleted_at', not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
+    if err:
+        return err
+    if parent.get('deleted_at') or parent.get('campus_id') not in (None, campus_id):
+        return jsonify({'error': MSG.MENU_ITEM_NOT_FOUND}), 404
+    validation_error = _validate_item_fields(data)
+    if validation_error:
+        return jsonify({'error': validation_error}), 400
+    if data.get('price_override') is not None:
+        try:
+            value = float(data['price_override'])
+            if isinstance(data['price_override'], bool) or not math.isfinite(value) or value < 0:
+                raise ValueError()
+            data['price_override'] = value
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({'error': MSG.MENU_PRICE_OVERRIDE_INVALID}), 400
+    import re
+    for field in ('opens_at', 'closes_at'):
+        if data.get(field) is not None and not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?', str(data[field])):
+            return jsonify({'error': MSG.MENU_TIME_FIELD_INVALID.format(field=field)}), 400
     AVAILABILITY_FIELDS = {"is_available", "daily_limit", "price_override", "opens_at", "closes_at"}
     safe = {k: v for k, v in data.items() if k in AVAILABILITY_FIELDS}
     if not safe:
@@ -996,7 +1101,7 @@ def bulk_update_availability():
     Use during a rush when multiple items sell out simultaneously.
     """
     db = get_user_client()
-    data = request.get_json(force=True)
+    data = _json_body()
     item_ids = data.get("item_ids")
     if not item_ids or not isinstance(item_ids, list):
         return jsonify({"error": MSG.MENU_ITEM_IDS_REQUIRED}), 400
@@ -1007,12 +1112,20 @@ def bulk_update_availability():
     if not campus_id:
         return jsonify({"error": "campus_id is required"}), 400
 
-    is_available = bool(data["is_available"])
+    if not isinstance(data['is_available'], bool):
+        return jsonify({'error': MSG.MENU_AVAILABILITY_BOOLEAN_REQUIRED}), 400
+    is_available = data['is_available']
     updated = []
     failed = []
     now_ts = datetime.now(timezone.utc).isoformat()
     for item_id in item_ids:
         try:
+            parent, err = fetch_or_403(db, 'menu_items', item_id, select='id,campus_id,deleted_at', not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
+            if err or parent.get('deleted_at') or parent.get('campus_id') not in (None, campus_id):
+                failed.append({'id': item_id, 'error': MSG.MENU_ITEM_NOT_FOUND})
+                continue
+            if parent.get('campus_id') == campus_id and getattr(g, 'user_role', None) in ('admin', 'super_admin'):
+                db.table('menu_items').eq('id', item_id).update({'is_available': is_available, 'updated_at': now_ts}).execute()
             db.table("menu_item_availability").upsert({
                 "menu_item_id": item_id,
                 "campus_id": campus_id,
@@ -1100,7 +1213,7 @@ def create_variation_group(item_id):
         description: Missing required field
     """
     db = get_user_client()
-    existing, err = fetch_or_403(db, "menu_items", item_id, select="id", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
+    existing, err = fetch_or_403(db, "menu_items", item_id, select="id,campus_id", not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
     if err:
         return err
     data = _json_body()
@@ -1115,7 +1228,7 @@ def create_variation_group(item_id):
     if max_selections < min_selections:
         return jsonify({"error": MSG.MENU_ADDON_MAX_SELECT_INVALID}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = existing.get("campus_id")
     record = {
         "menu_item_id": item_id,
         "name": data["name"],
@@ -1215,7 +1328,7 @@ def create_variation_option(item_id, group_id):
         description: Missing required field
     """
     db = get_user_client()
-    existing, err = fetch_or_403(db, "menu_item_variation_groups", group_id, select="id,menu_item_id", not_found_msg="Variation group not found")
+    existing, err = fetch_or_403(db, "menu_item_variation_groups", group_id, select="id,menu_item_id,campus_id", not_found_msg="Variation group not found")
     if err:
         return err
     if str(existing.get("menu_item_id")) != str(item_id):
@@ -1229,7 +1342,7 @@ def create_variation_option(item_id, group_id):
     except (TypeError, ValueError):
         return jsonify({"error": "'price_delta'/'sort_order' must be numbers"}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    campus_id = existing.get("campus_id")
     record = {
         "variation_group_id": group_id,
         "name": data["name"],
@@ -1388,7 +1501,10 @@ def list_addons():
         description: List of add-ons
     """
     from app.routes.events import _get_campus_id
-    db = get_user_client()
+    campus_id = _get_campus_id()
+    if not campus_id and getattr(g, 'user_role', None) != 'super_admin':
+        return jsonify({'code': 'CAMPUS_SELECTION_REQUIRED', 'error': MSG.CAMPUS_REQUIRED}), 400
+    db = get_user_client() if getattr(g, 'user_id', None) else get_db()
     addons = (
         db.table("menu_addons")
         .select("*")
@@ -1443,11 +1559,11 @@ def create_addon():
     except (TypeError, ValueError):
         return jsonify({"error": "'price' must be a number and 'sort_order' an integer"}), 400
     if data.get("group_id"):
-        group_existing, err = fetch_or_403(db, "menu_addon_groups", data["group_id"], select="id", not_found_msg="Add-on group not found")
+        group_existing, err = fetch_or_403(db, "menu_addon_groups", data["group_id"], select="id,campus_id", not_found_msg="Add-on group not found")
         if err:
             return err
 
-    campus_id = getattr(g, 'campus_id', None)
+    campus_id = group_existing.get('campus_id') if data.get('group_id') else resolve_scoped_campus_id(data.get('campus_id'))
     record = {
         "name": data["name"],
         "description": data.get("description", ""),

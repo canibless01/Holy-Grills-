@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from app.middleware.auth import require_auth, resolve_scoped_campus_id
+from app.middleware.auth import require_auth, optional_auth, resolve_scoped_campus_id
 from app.db import get_db, get_user_client
 from datetime import timedelta, datetime, timezone
 from app.utils.tz import today_wat
@@ -33,6 +33,7 @@ def _period_start_utc_iso(period_type: str):
 
 
 @leaderboard_bp.route("", methods=["GET"])
+@optional_auth
 def get_leaderboard():
     """
     Get leaderboard. period_type: monthly | weekly | all_time.
@@ -65,7 +66,17 @@ def get_leaderboard():
     limit = max(1, min(limit, max_limit))
     period_key = _period_key_for(period_type)
 
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    # Same three sources, same priority as events._get_campus_id(): ?campus_id=,
+    # then the X-Campus-ID header the campus gate sends, then the signed-in
+    # session. Reading only the query param meant a guest's header was ignored and
+    # campus_id came back None -- and `if campus_id:` below applies no filter for
+    # None, so the board was silently platform-wide across every campus. With no
+    # campus resolvable at all it is refused, exactly as /delivery/hostels,
+    # /delivery/gates and /delivery/calculate-fee already refuse.
+    from app.routes.events import _require_campus_selection
+    campus_id, _err = _require_campus_selection()
+    if _err:
+        return _err
 
     if period_type != "all_time":
         # Snapshots (leaderboard_snapshots) only ever hold ALREADY-COMPLETED periods --
@@ -96,13 +107,13 @@ def get_leaderboard():
 
         # Overfetch candidates before the is_active/role=student filter below, so removing
         # an inactive top-earner doesn't leave fewer than `limit` entries in the result.
-        candidate_ids = sorted(totals, key=totals.get, reverse=True)[: limit * 3]
+        candidate_ids = sorted(totals, key=lambda uid: (-totals[uid], uid))[: limit * 3]
         profile_data = []
         if candidate_ids:
             prof_q = (
                 db.table("profiles")
                 .select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
-                .eq("is_active", "true").eq("role", "student")
+                .eq("is_active", "true").eq("role", "student").eq("campus_id", campus_id)
                 .in_("id", candidate_ids)
             )
             profile_data = prof_q.execute() or []
@@ -121,7 +132,6 @@ def get_leaderboard():
         }), 200
 
     q = db.table("profiles").select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name,hp_balance").eq("is_active", "true").eq("role", "student")
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     profile_data = q.order("hp_balance", ascending=False).limit(limit).execute()
@@ -295,86 +305,60 @@ def my_rank():
       200:
         description: User's rank and stats
     """
-    db = get_user_client()
+    # Current-period rank is live, like the public board. Period-end snapshots
+    # cannot describe the still-open week/month and must not gate these tiles.
+    db = get_db()
     period_type = request.args.get("period_type", "monthly")
     if period_type not in ("monthly", "weekly", "all_time"):
         period_type = "monthly"
-    period_key = _period_key_for(period_type)
-
     campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
-    snap_q = (
-        db.table("leaderboard_snapshots")
-        .select("*")
-        .eq("ranking_type", period_type)
-        .eq("period_key", period_key)
-    )
-    if campus_id:
-        snap_q = snap_q.eq("campus_id", campus_id)
-    snapshot_rows = snap_q.order("created_at", ascending=False).limit(1).execute()
-
-    # Only trust snapshot when it is ≤24 hours old
+    profile = db.table("profiles").select("hp_balance").eq("id", g.user_id).single().execute() or {}
+    hp_balance = profile.get("hp_balance", 0)
     user_rank = None
-    if snapshot_rows:
-        snap_created = snapshot_rows[0].get("created_at", "")
-        try:
-            snap_dt = datetime.fromisoformat(snap_created.replace("Z", "+00:00"))
-            _fresh = (datetime.now(timezone.utc) - snap_dt).total_seconds() < 86400
-        except Exception:
-            _fresh = False
-        if _fresh:
-            entries = snapshot_rows[0].get("entries") or []
-            if isinstance(entries, list):
-                for entry in entries:
-                    if isinstance(entry, dict) and entry.get("user_id") == g.user_id:
-                        user_rank = entry
-                        break
-
-    profile_rows = db.table("profiles").select("hp_balance").eq("id", g.user_id).execute()
-    profile = profile_rows[0] if profile_rows else {}
-    hp_balance = profile.get("hp_balance", 0) if profile else 0
-
-    if user_rank is None:
-        if period_type != "all_time":
-            return jsonify({
-                "rank_entry": None,
-                "hp_balance": hp_balance,
-                "period_key": period_key,
-                "period_type": period_type,
-                "snapshot_pending": True,
-                "message": "Rankings for this period are being calculated — check back shortly.",
-            }), 200
-
-        all_q = (
-            db.table("profiles")
-            .select("id,hp_balance")
-            .eq("is_active", "true")
-            .eq("role", "student")
-        )
-        if campus_id:
-            all_q = all_q.eq("campus_id", campus_id)
-        all_profiles = all_q.order("hp_balance", ascending=False).execute()
-        for i, p in enumerate(all_profiles or []):
-            if p.get("id") == g.user_id:
-                user_rank = {
-                    "rank": i + 1,
-                    "user_id": g.user_id,
-                    "hp_total": p.get("hp_balance", 0) or 0,
-                    "source": "live",
-                }
+    if campus_id and getattr(g, "user_role", None) == "student":
+        profiles = _rank_pages(lambda: db.table("profiles").select("id,hp_balance")
+                               .eq("is_active", True).eq("role", "student").eq("campus_id", campus_id).order("id"))
+        valid = {row["id"] for row in profiles}
+        if period_type == "all_time":
+            totals = {row["id"]: row.get("hp_balance") or 0 for row in profiles}
+        else:
+            transactions = _rank_pages(lambda: db.table("hp_transactions").select("id,user_id,amount")
+                                       .eq("type", "earn").neq("reference_type", "hp_transfer")
+                                       .eq("campus_id", campus_id).gte("created_at", _period_start_utc_iso(period_type)).order("id"))
+            totals = {}
+            for transaction in transactions:
+                uid = transaction.get("user_id")
+                if uid in valid:
+                    totals[uid] = totals.get(uid, 0) + (transaction.get("amount") or 0)
+        for index, uid in enumerate(sorted(totals, key=lambda uid: (-totals[uid], uid))):
+            if uid == g.user_id:
+                user_rank = {"rank": index + 1, "user_id": uid, "hp_total": totals[uid], "source": "live"}
                 break
+    return jsonify({"rank_entry": user_rank, "rank": user_rank["rank"] if user_rank else None,
+                    "hp_balance": hp_balance, "period_key": _period_key_for(period_type),
+                    "period_type": period_type, "computed_live": True}), 200
 
-    return jsonify({
-        "rank_entry": user_rank,
-        "hp_balance": hp_balance,
-        "period_key": period_key,
-        "period_type": period_type,
-    }), 200
+
+def _rank_pages(query_factory):
+    # The Data API caps one response; do not silently rank only the first page.
+    rows = []
+    offset = 0
+    while True:
+        page = query_factory().offset(offset).limit(1000).execute() or []
+        rows.extend(page)
+        if len(page) < 1000:
+            return rows
+        offset += len(page)
 
 
 @leaderboard_bp.route("/squad", methods=["GET"])
+@optional_auth
 def squad_leaderboard():
     db = get_db()
-    campus_id = request.args.get("campus_id") or getattr(g, 'campus_id', None)
+    from app.routes.events import _require_campus_selection
+    campus_id, _err = _require_campus_selection()
+    if _err:
+        return _err
     orders_q = db.table("orders").select("squad_id,hp_earned").eq("is_squad_order", "true").eq("status", "delivered")
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)

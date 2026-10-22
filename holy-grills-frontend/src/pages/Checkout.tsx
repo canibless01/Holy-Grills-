@@ -1,0 +1,1125 @@
+import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
+import { localStore } from '@/lib/storage';
+import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
+import HeroCarousel from '@/components/HeroCarousel';
+import StorefrontSlider from '@/components/storefront/StorefrontSlider';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame } from 'lucide-react';
+import { mockApi } from '@/lib/mockApi';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
+import { formatNaira } from '@/lib/hgUtils';
+import { squadOrderDiscountEnabled, squadOrderDiscountPct, squadDeliveryDiscountEnabled, squadDeliveryDiscountPct } from '@/lib/appConfig';
+import { toast } from '@/components/ui/use-toast';
+import { msg, useMessages } from '@/lib/messages';
+import FreeSideCreditModal from '@/components/FreeSideCreditModal';
+import SquadOrderButton from '@/components/checkout/SquadOrderButton';
+import OffCampusMap from '@/components/OffCampusMap';
+import CheckoutKitchenClosedPopup from '@/components/CheckoutKitchenClosedPopup';
+import DeliveryZonesInfo from '@/components/DeliveryZonesInfo';
+import { useSound } from '@/lib/SoundProvider';
+import Skeleton from '@/components/Skeleton';
+import { readFeeCache, writeFeeCache } from '@/lib/deliveryUtils';
+import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } from '@/types/orders';
+import type { FreeSideItem } from '@/types/free-sides';
+import { checkoutIntent } from '@/lib/checkoutIntent';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+
+function CheckoutSkeleton() {
+  return (
+    <div className="space-y-4 pb-24">
+      <Skeleton className="h-5 w-24" />
+      <Skeleton className="h-8 w-40" />
+      {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}
+    </div>
+  );
+}
+
+export default function Checkout() {
+  useMessages();
+  useFeatureFlags();
+  const freeSidesReleased = isFeatureEnabled('free_side_credits');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const passed = location.state || {};
+  const redemptionId = new URLSearchParams(location.search).get('reward') || passed.reward_redemption_id || null;
+  const rewardOnly = !!redemptionId;
+  const { cart, wallet, user, refreshUser, refreshCart, clearCart, isAuthenticated } = useHolyGrill();
+  const orderRequest = useRef<Promise<any> | null>(null);
+  const { campus, openGate } = useCampus();
+  const { play } = useSound();
+  const rewardStateKey = user?.id && campus?.id ? `hg_checkout_rewards:${user.id}:${campus.id}` : null;
+  const pendingKey = campus?.id ? `hg_pending_checkout:${user?.id || 'guest'}:${campus.id}` : null;
+  const [rewardSelection, setRewardSelection] = useState({ key: null as string | null, hp: 'none', delivery: 'none' });
+  const [pendingCheckout, setPendingCheckout] = useState<any>(null);
+  const [rewardOptions, setRewardOptions] = useState<{ hp: any[]; delivery: any[] }>({ hp: [], delivery: [] });
+  useEffect(() => {
+    let saved;
+    try { saved = JSON.parse(rewardStateKey ? localStore.getItem(rewardStateKey) || 'null' : 'null'); } catch { saved = null; }
+    setRewardSelection({ key: rewardStateKey, hp: typeof saved?.hp === 'string' ? saved.hp : 'none', delivery: typeof saved?.delivery === 'string' ? saved.delivery : 'none' });
+    try { setPendingCheckout(pendingKey ? JSON.parse(localStore.getItem(pendingKey) || 'null') : null); } catch { setPendingCheckout(null); }
+  }, [rewardStateKey, pendingKey]);
+  const hpRewardId = rewardSelection.key === rewardStateKey ? rewardSelection.hp : 'none';
+  const deliveryRewardId = rewardSelection.key === rewardStateKey ? rewardSelection.delivery : 'none';
+  const rewardChoicesReady = !isAuthenticated || (!!rewardStateKey && rewardSelection.key === rewardStateKey);
+  const chooseReward = (kind: 'hp' | 'delivery', value: string) => {
+    const next = { ...rewardSelection, key: rewardStateKey, [kind]: value };
+    if (rewardStateKey) localStore.setItem(rewardStateKey, JSON.stringify(next));
+    setRewardSelection(next);
+  };
+  const clearPendingCheckout = () => { if (pendingKey) localStore.removeItem(pendingKey); setPendingCheckout(null); };
+
+  const [loading, setLoading] = useState(true);
+  const [placing, setPlacing] = useState(false);
+  const [windowStatus, setWindowStatus] = useState(null);
+  // Closed-kitchen popup. Raised from two places: the status read on load, and a
+  // Place Order the backend refused because the window closed in between (a
+  // race, or the status call never returned). Either way the guest gets the same
+  // offer — schedule for the next opening, or cancel.
+  const [showClosedPopup, setShowClosedPopup] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleRequested, setScheduleRequested] = useState(false);
+  const [hostels, setHostels] = useState([]);
+  const [gates, setGates] = useState([]);
+  const [addresses, setAddresses] = useState([]);
+
+  const [deliveryType, setDeliveryType] = useState(null);
+  const [hostelId, setHostelId] = useState(null);
+  const [gateId, setGateId] = useState(null);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [deliveryPin, setDeliveryPin] = useState(null);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [landmark, setLandmark] = useState('');
+  const [feePreview, setFeePreview] = useState(null);
+  const [radiusError, setRadiusError] = useState(null);
+  // The saved address the guest picked, if any. Sent with the order as
+  // `delivery_address_id` so the backend re-reads the stored
+  // delivery_type/delivery_location_id/coordinates instead of trusting what we
+  // replayed client-side.
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+  // A saved address whose hostel/gate no longer resolves — shown as needing a
+  // re-pick rather than failing the order.
+  const [addressNeedsReselect, setAddressNeedsReselect] = useState(null);
+  // Exactly the three methods the picker below offers (wallet/card/split).
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
+  const [walletAmount, setWalletAmount] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const confirmedContact = useRef('');
+  const contactSubmitting = useRef(false);
+  useEffect(() => { confirmedContact.current = ''; }, [user?.id, campus?.id]);
+  const [contactAction, setContactAction] = useState<'order' | 'schedule' | null>(null);
+  const [contactDraft, setContactDraft] = useState('');
+  const [contactError, setContactError] = useState('');
+  const [saveAddressOpen, setSaveAddressOpen] = useState(false);
+  const [addressLabel, setAddressLabel] = useState('');
+  const [addressCity, setAddressCity] = useState('');
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [addressSaveError, setAddressSaveError] = useState('');
+  const askForContact = (action: 'order' | 'schedule') => {
+    setContactDraft(confirmedContact.current || user?.phone || user?.profile?.phone || guestPhone || '');
+    setContactError(''); setContactAction(action);
+  };
+
+  const [error, setError] = useState(null);
+  // `available_sides` are the backend's curated free-side items — the only
+  // things a credit can be spent on (GET /free-sides).
+  const [freeSideCredits, setFreeSideCredits] = useState<{
+    count: number;
+    expires_at: string | null;
+    available_sides: FreeSideItem[];
+  }>({ count: 0, expires_at: null, available_sides: [] });
+  const [showFreeSide, setShowFreeSide] = useState(false);
+  const [freeSideChoice, setFreeSideChoice] = useState<FreeSideItem | null>(null);
+  // The cart_free_side_selections row created by POST /free-sides/select — kept
+  // so changing the choice can replace it instead of stacking selections.
+  const [freeSideSelectionId, setFreeSideSelectionId] = useState<string | number | null>(null);
+  const [freeSideBusy, setFreeSideBusy] = useState(false);
+  const freeSideBusyRef = useRef(false);
+  const [freeSideSelections, setFreeSideSelections] = useState<any[]>([]);
+  const [freeSideLoadError, setFreeSideLoadError] = useState('');
+  const applyFreeSideStatus = (value) => {
+    setFreeSideCredits(value);
+    const selections = value.active_selections || [];
+    setFreeSideSelections(selections);
+    setFreeSideSelectionId(selections.length === 1 ? selections[0].id : null);
+    setFreeSideChoice(selections.length === 1 ? selections[0].free_side_items : null);
+    setFreeSideLoadError('');
+  };
+  const refreshFreeSides = async () => {
+    try { const value = await mockApi.rewards.getFreeSideCredits(); applyFreeSideStatus(value); return value; }
+    catch (e) { setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); }
+  };
+  const [showGateSelector, setShowGateSelector] = useState(true);
+  const [globalAddons, setGlobalAddons] = useState([]);
+  const [selectedGlobalAddonIds, setSelectedGlobalAddonIds] = useState([]);
+  const [scheduledWindow, setScheduledWindow] = useState(null);
+  // E3: this used to be seeded from location.state.squadId, which the cart could
+  // never set (its squad switch was unreachable). Squad selection is made here.
+  const [squadSelection, setSquadSelection] = useState(null);
+  const [reschedule, setReschedule] = useState(null); // { date, payload } — today full, awaiting schedule confirm
+  // Promo code is now managed here (moved from the cart page) so the cart stays
+  // a pure review of items and checkout owns all order-level adjustments.
+  const [promoCode, setPromoCode] = useState('');
+  const [promoResult, setPromoResult] = useState(null);
+  const [promoError, setPromoError] = useState(null);
+  const [validatingPromo, setValidatingPromo] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      if (!campus?.id) { setLoading(false); return; }
+      setLoading(true);
+      try {
+        const [status, h, g, ga] = await Promise.all([
+          // The campus id is passed explicitly, so the status is read for THIS
+          // campus even before apiClient's persisted header is in place. No
+          // campus yet is a real state and must come back as is_open: null —
+          // never as "closed".
+          mockApi.orders.getDeliveryWindowStatus(campus?.id),
+          mockApi.delivery.getHostels(),
+          mockApi.delivery.getGates(),
+          mockApi.menu.getGlobalAddons().catch(() => []),
+        ]);
+        if (!active) return;
+        setWindowStatus(status);
+        setHostels(h || []);
+        setGates(g || []);
+        setGlobalAddons(Array.isArray(ga) ? ga : (ga?.addons || ga?.global_addons || []));
+      } catch (e) { console.error(e); }
+      if (active) setLoading(false);
+    };
+    load();
+    try { setScheduledWindow(JSON.parse(sessionStorage.getItem('hg_scheduled_window') || 'null')); } catch { /* ignore */ }
+    return () => { active = false; };
+  }, [campus?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Closed kitchen on load. Only an EXPLICIT is_open === false counts: `null`
+  // means the campus is not resolved yet, which is "unknown", not "closed" —
+  // showing the popup then would tell a guest who has not picked a campus that
+  // the kitchen is shut.
+  useEffect(() => {
+    if (windowStatus?.is_open === false && !scheduledWindow && !scheduleRequested && !pendingCheckout) setShowClosedPopup(true);
+  }, [windowStatus, scheduledWindow, scheduleRequested, pendingCheckout]);
+
+  // Addresses + free side credits are auth-scoped. The auth state resolves
+  // AFTER mount, so this has to react to it — a mount-only fetch left both
+  // stuck at their defaults (free sides always read 0).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let live = true;
+    (async () => {
+      try { const a = await mockApi.addresses.list(); if (live) setAddresses(a || []); } catch { /* ignore */ }
+      if (freeSidesReleased) {
+        try { const c = await mockApi.rewards.getFreeSideCredits(); if (live) applyFreeSideStatus(c); }
+        catch (e) { if (live) setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); }
+      }
+    })();
+    return () => { live = false; };
+  }, [isAuthenticated, freeSidesReleased]);
+
+  const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
+  const [quoteRetry, setQuoteRetry] = useState(0);
+  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady });
+  const quote = quoteState?.key === quoteKey ? quoteState.data : null;
+  useEffect(() => {
+    if (quote) setRewardOptions({ hp: quote.available_hp_rewards || [], delivery: quote.available_delivery_rewards || [] });
+  }, [quote]);
+  const quoteReady = !!quote;
+  const quoteError = quoteState?.key === quoteKey ? quoteState.error : null;
+  const subtotal = quote?.subtotal ?? (rewardOnly ? 0 : (cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0)));
+  const promoDiscount = quote?.promo_discount ?? (promoResult?.calculated_discount || 0);
+  const squadSubPct = squadSelection?.squad_id && squadOrderDiscountEnabled() ? squadOrderDiscountPct() : 0;
+  const squadDelEnabled = squadSelection?.squad_id && squadDeliveryDiscountEnabled();
+  const squadDeliveryPct = squadDelEnabled ? squadDeliveryDiscountPct() : 0;
+  const squadDiscount = quote?.squad_discount ?? (squadSubPct > 0 ? subtotal * (squadSubPct / 100) : 0);
+  const squadItemCount = (cart?.items || []).reduce((s, ci) => s + (ci.quantity || 1), 0);
+  const selectedGlobalAddons = globalAddons.filter((a) => selectedGlobalAddonIds.includes(a.id));
+  const globalAddonsTotal = selectedGlobalAddons.reduce((s, a) => s + (Number(a.price) || 0), 0);
+  const effectiveDeliveryFee = quote?.delivery_fee ?? Math.round(deliveryFee * (1 - squadDeliveryPct / 100));
+  const total = quote?.total_amount ?? (Math.max(0, subtotal - promoDiscount - squadDiscount) + effectiveDeliveryFee + globalAddonsTotal);
+  const hpPreview = quote?.hp_preview?.total_hp || 0;
+
+  const effectivePayment = isAuthenticated ? paymentMethod : 'card';
+
+  const calcOnCampusFee = async (id) => {
+    if (!id) { setDeliveryFee(0); setFeePreview(null); return; }
+    try {
+      const res = await mockApi.delivery.calculateFee({ delivery_type: 'on_campus', delivery_location_id: id });
+      setDeliveryFee(res.delivery_fee ?? res.fee ?? 0);
+    } catch { setDeliveryFee(0); }
+    setFeePreview(null);
+  };
+
+  const pinRef = useRef(null);
+  const gateRef = useRef(null);
+  const feeTimer = useRef(null);
+  const feeRequestId = useRef(0);
+  useEffect(() => {
+    feeRequestId.current += 1;
+    if (feeTimer.current) clearTimeout(feeTimer.current);
+    pinRef.current = null; gateRef.current = null;
+    setHostelId(null); setGateId(null); setDeliveryPin(null); setFeePreview(null);
+    setSelectedAddressId(null); setRewardOptions({ hp: [], delivery: [] });
+    return () => { feeRequestId.current += 1; if (feeTimer.current) clearTimeout(feeTimer.current); };
+  }, [campus?.id]);
+
+  // Off-campus fee: when the pin moves we ask the backend for the nearest gate
+  // (no delivery_location_id) and adopt the gate object it returns. A manually
+  // chosen gate overrides that for the calc (keepGate) so its fee is used.
+  const runFeeCalc = async ({ keepGate = false, sequence = feeRequestId.current } = {}) => {
+    const ll = pinRef.current;
+    if (!ll || ll.lat == null || ll.lng == null) { setDeliveryFee(0); setFeePreview(null); setRadiusError(null); return; }
+    // delivery_location_id is attached below once a gate is pinned/kept.
+    const body: CalculateDeliveryFeePayload = { delivery_type: 'off_campus', lat: ll.lat, lon: ll.lng };
+    if (keepGate && gateRef.current) body.delivery_location_id = gateRef.current;
+    setRadiusError(null);
+    // A re-drop on the same spot answers from cache. calculate-fee makes several
+    // database calls in a row, and on a cold or idle backend the first one is the
+    // slow one — dragging the pin around should not re-pay that cost every time.
+    const cached = readFeeCache(ll.lat, ll.lng, campus?.id);
+    if (cached && !keepGate) {
+      setDeliveryFee(cached.fee);
+      if (cached.gateId) { gateRef.current = cached.gateId; setGateId(cached.gateId); }
+      setFeePreview({ fee: cached.fee, km: cached.km, gateName: cached.gateName });
+      return;
+    }
+    try {
+      const res = await mockApi.delivery.calculateFee(body);
+      if (sequence !== feeRequestId.current) return;
+      const fee = res.delivery_fee ?? res.fee ?? 0;
+      setDeliveryFee(fee);
+      const returnedGate = res.gate || null;
+      if (!keepGate && returnedGate?.id) {
+        gateRef.current = returnedGate.id;
+        setGateId(returnedGate.id);
+      }
+      const preview = { fee, km: res.distance_km ?? null, gateName: returnedGate?.name || returnedGate?.id || 'nearest gate' };
+      setFeePreview(preview);
+      if (!keepGate) writeFeeCache(ll.lat, ll.lng, { ...preview, gateId: returnedGate?.id ?? null }, campus?.id);
+    } catch (e) {
+      if (sequence !== feeRequestId.current) return;
+      setDeliveryFee(0); setFeePreview(null);
+      // Backend rejects pins outside the delivery area — surface its message as-is.
+      if (e?.message && /outside|delivery area|radius/i.test(e.message)) { setRadiusError(e.message); return; }
+      // The backend now refuses to price an off-campus fee it cannot scope to a
+      // campus (it used to pick the nearest gate from every campus and quote a fee
+      // against it). Leaving the fee at 0 would read as free delivery, so ask for
+      // the campus instead of guessing.
+      if (e?.message && /campus/i.test(e.message)) {
+        setError(msg('FE_CHECKOUT_CAMPUS_NEEDED_FOR_FEE',
+          'Choose your campus so we can price delivery to your location.'));
+        openGate('price your delivery', 'blocking');
+      }
+    }
+  };
+
+  const calcOffCampusFee = (gid, ll, { keepGate = false } = {}) => {
+    if (gid !== undefined && gid !== null) gateRef.current = gid;
+    if (ll && ll.lat != null) pinRef.current = ll;
+    if (feeTimer.current) clearTimeout(feeTimer.current);
+    const sequence = ++feeRequestId.current;
+    feeTimer.current = setTimeout(() => runFeeCalc({ keepGate, sequence }), 350);
+  };
+
+  const friendlyPromoError = (msg = '') => {
+    if (msg.includes('Promo code has expired')) return 'This promo code has expired.';
+    if (msg.includes('not yet active')) return "This code isn't active yet. Check its start date.";
+    if (msg.includes('reached its usage limit')) return 'This code has been fully claimed.';
+    if (msg.includes('maximum number of times')) return "You've hit the per-user limit for this code.";
+    if (msg.includes('Minimum order value')) return msg;
+    if (msg.includes('not valid')) return "That code isn't valid for your order.";
+    return msg;
+  };
+
+  const handleValidatePromo = async () => {
+    if (!promoCode) return;
+    setValidatingPromo(true);
+    setPromoError(null);
+    try {
+      const result = await mockApi.orders.validatePromo({ code: promoCode, order_subtotal: subtotal });
+      setPromoResult(result);
+    } catch (e) { setPromoError(friendlyPromoError(e.message)); setPromoResult(null); }
+    setValidatingPromo(false);
+  };
+
+  /**
+   * Confirming a free side records a cart-stage selection — that is what the
+   * backend consumes at order creation (it decrements a credit and inserts the
+   * ₦0 line). Sending it in the order body did nothing: nothing server-side
+   * reads free_side_credit/free_side_choice (docs/WIRING_AUDIT.md §3.1).
+   */
+  const handleUseFreeSide = async (item: FreeSideItem) => {
+    if (freeSideBusyRef.current) return;
+    freeSideBusyRef.current = true; setFreeSideBusy(true);
+    const key = `hg_free_side_selection:${user?.id}`;
+    let intentKey;
+    try {
+      const payload = { free_side_item_id: item.id, replace_selection_id: freeSideSelectionId || undefined };
+      const fingerprint = JSON.stringify(payload);
+      let pending;
+      try { pending = JSON.parse(localStore.getItem(key) || 'null'); } catch { pending = null; }
+      if (!pending || pending.fingerprint !== fingerprint) { pending = { fingerprint, intent_key: crypto.randomUUID() }; localStore.setItem(key, JSON.stringify(pending)); }
+      intentKey = pending.intent_key;
+      await mockApi.rewards.selectFreeSide({ ...payload, intent_key: pending.intent_key });
+      localStore.removeItem(key);
+      await refreshFreeSides();
+      setShowFreeSide(false);
+      toast({ title: msg('FE_CHECKOUT_FREE_SIDE_ADDED_TITLE', '🏆 Free side added'), description: msg('FE_CHECKOUT_FREE_SIDE_ADDED_BODY', '{item} is added to this order at ₦0. The credit is used when you place the order.', { item: item.name }) });
+    } catch (e) {
+      const recovered = await refreshFreeSides();
+      if (intentKey && recovered?.active_selections?.some(row => row.id === intentKey && row.free_side_item_id === item.id)) {
+        localStore.removeItem(key); setShowFreeSide(false);
+        toast({ title: msg('FE_CHECKOUT_FREE_SIDE_ADDED_TITLE', '🏆 Free side added') });
+        return;
+      }
+      toast({ title: msg('FE_CHECKOUT_FREE_SIDE_FAILED_TITLE', 'Could not add the free side'), description: e.message, variant: 'destructive' });
+    } finally { freeSideBusyRef.current = false; setFreeSideBusy(false); }
+  };
+  const removeFreeSide = async (selectionId) => {
+    if (freeSideBusyRef.current) return;
+    freeSideBusyRef.current = true; setFreeSideBusy(true);
+    try { await mockApi.rewards.deselectFreeSide(selectionId); await refreshFreeSides(); }
+    catch (e) { await refreshFreeSides(); toast({ title: msg('FE_CHECKOUT_FREE_SIDE_FAILED_TITLE', 'Could not add the free side'), description: e.message, variant: 'destructive' }); }
+    finally { freeSideBusyRef.current = false; setFreeSideBusy(false); }
+  };
+
+  // One payload builder for both order paths. The normal Place Order and the
+  // closed-kitchen popup's "Schedule my order" send the same cart; they differ
+  // only by the `accept_next_available_date` flag the schedule path adds.
+  // The body is an optional-field bag by design (only items + payment_method
+  // are always present); CreateOrderPayload describes it.
+  const buildPayload = (): CreateOrderPayload => {
+    // The kitchen is closed and a window was picked earlier in the session
+    // (home page / menu radar): attach it so the order is booked into that
+    // window. Otherwise the backend picks the next available one.
+    const scheduled = !windowStatus?.is_open ? scheduledWindow : null;
+    return {
+        items: (rewardOnly ? [] : (cart?.items || [])).map((ci) => ({
+          menu_item_id: ci.menu_item_id,
+          quantity: ci.quantity,
+          notes: ci.notes || undefined,
+          selected_variations: (ci.selected_variations || []).map((v) => ({ option_id: v.option_id || v.id || v })),
+          selected_addons: (ci.selected_addons || []).map((a) => ({ addon_id: a.addon_id || a.id || a, quantity: a.quantity || 1 })),
+        })),
+        ...(redemptionId ? { redemption_id: redemptionId } : {}),
+        expected_reward_claims: quote?.reward_claims,
+        payment_method: effectivePayment,
+        expected_free_sides: quote?.free_sides || [],
+        delivery_reward_id: deliveryRewardId,
+        hp_reward_id: hpRewardId,
+        expected_hp_bonus_plan: quote?.hp_bonus_plan,
+        expected_food_hp_plan: quote?.food_hp_plan,
+        order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
+        delivery_type: deliveryType,
+        promo_code: promoResult?.code,
+        ...(!rewardOnly && squadSelection?.squad_id ? {
+          squad_id: squadSelection.squad_id,
+          ...(squadSelection.excluded_member_ids?.length ? { excluded_member_ids: squadSelection.excluded_member_ids } : {}),
+          ...(squadSelection.extra_members?.length ? { extra_members: squadSelection.extra_members } : {}),
+        } : {}),
+        notes,
+        contact_phone: confirmedContact.current || user?.phone || user?.profile?.phone || guestPhone || '',
+        ...(paymentMethod === 'split' && isAuthenticated ? { wallet_amount: walletAmount } : {}),
+        ...(!isAuthenticated ? { guest_name: guestName, guest_phone: guestPhone, guest_email: guestEmail } : {}),
+        // A saved address the guest picked: the backend re-reads its stored
+        // delivery_type / delivery_location_id / coordinates and overrides
+        // whatever we send alongside. Only signed-in guests can have one.
+        ...(selectedAddressId && isAuthenticated ? { delivery_address_id: selectedAddressId } : {}),
+        ...(deliveryType === 'on_campus'
+          ? { delivery_location_id: hostelId }
+          : {
+            ...(gateId ? { delivery_location_id: gateId } : {}),
+            ...(deliveryPin && deliveryPin.lat != null ? { delivery_location_lat: deliveryPin.lat, delivery_location_lon: deliveryPin.lng } : {}),
+            delivery_address: { line1: deliveryAddress, landmark },
+          }),
+        ...(!rewardOnly && selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
+        ...((scheduled || scheduleRequested) ? { accept_next_available_date: true } : {}),
+    };
+  };
+
+  useEffect(() => {
+    let active = true;
+    const hasLocation = deliveryType === 'on_campus' ? !!hostelId : deliveryType === 'off_campus' && (!!gateId || deliveryPin?.lat != null);
+    if (!campus?.id || (!cart?.items?.length && !redemptionId) || !hasLocation || addressNeedsReselect || !rewardChoicesReady || pendingCheckout) return;
+    const timer = setTimeout(async () => {
+      try {
+        // Quoting never reserves stock, claims rewards, or authorizes a payment.
+        const payload = { ...buildPayload(), payment_method: 'card' as PaymentMethod };
+        delete payload.wallet_amount;
+        const data = await mockApi.orders.quote(payload);
+        if (active) setQuoteState({ key: quoteKey, data });
+      } catch (e) {
+        if (active) setQuoteState({ key: quoteKey, error: e.message || msg('FE_CHECKOUT_QUOTE_FAILED', 'We could not verify your total. Please retry.') });
+      }
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [quoteKey, quoteRetry, addressNeedsReselect]);
+
+  const validateCheckout = () => {
+    setError(null);
+    // The backend is the source of truth for whether ordering is allowed —
+    // never hard-block on the frontend's read of kitchen status. If the
+    // kitchen is closed but the user scheduled a window, send it through; if
+    // no window was picked, still attempt and surface the backend's own error.
+    if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose on-campus or off-campus delivery')); return false; }
+    if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return false; }
+    if (addressNeedsReselect) { setError(msg('FE_CHECKOUT_ADDRESS_NEEDS_RESELECT', 'Pick your delivery location again — the saved one can no longer be found.')); return false; }
+    if (deliveryType === 'off_campus') {
+      const hasPin = deliveryPin && deliveryPin.lat != null && deliveryPin.lng != null;
+      // Block only when there is no pin and no chosen gate. A pin is enough —
+      // the backend fills in the nearest gate from the coordinates.
+      if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return false; }
+      if (radiusError) { setError(radiusError); return false; }
+      if (!deliveryAddress.trim()) { setError(msg('FE_CHECKOUT_READABLE_ADDRESS', 'Enter a street, junction or clear delivery address so your rider can find you.')); return false; }
+    }
+    if (!isAuthenticated) {
+      if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return false; }
+      if (!guestPhone.match(/^(0|\+234)\d{10}$/)) { setError(msg('FE_CHECKOUT_INVALID_PHONE', 'Phone must be 11 digits (080...) or +234 + 10 digits')); return false; }
+      if (!guestEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail)) { setError(msg('FE_CHECKOUT_INVALID_EMAIL', 'Please enter a valid email')); return false; }
+    }
+    if (effectivePayment === 'split' && isAuthenticated) {
+      if (walletAmount <= 0) { setError(msg('FE_CHECKOUT_SPLIT_AMOUNT_REQUIRED', 'Enter a wallet amount for your split payment.')); return false; }
+    }
+
+    if (!quoteReady) { setError(msg('FE_CHECKOUT_QUOTE_REQUIRED', 'Verify your order total before placing your order.')); return false; }
+    return true;
+  };
+
+  const handlePlaceOrder = async () => {
+    if (pendingCheckout) { await recoverCheckout(); return; }
+    if (!validateCheckout()) return;
+    if (!confirmedContact.current) { askForContact('order'); return; }
+    setPlacing(true);
+    const payload = buildPayload();
+    try {
+      await submitOrder(payload);
+    } catch (e) {
+      // Read the backend's stable code — never its message text.
+      const detail = e.detail || {};
+      const code = detail.code || e.code;
+      if (code === 'PRICE_CHANGED') {
+        setQuoteState({ key: quoteKey, data: detail.quote });
+        setError(e.message); setPlacing(false); return;
+      }
+      // "Today's orders are full" — ORDERING_WINDOW_AT_CAPACITY carries a
+      // next_available_date. Offer exactly one reschedule, never a loop.
+      if (code === 'ORDERING_WINDOW_AT_CAPACITY' && detail.next_available_date && !payload.accept_next_available_date) {
+        setReschedule({ date: detail.next_available_date, payload });
+        setPlacing(false);
+        return;
+      }
+      // The kitchen is closed. Either a race with the status read on load, or
+      // that read never came back — so answer with the same popup the status
+      // would have raised, carrying the next slot the backend just told us
+      // about. A red error box here left the guest with no way forward.
+      if (code === 'ORDERING_WINDOW_CLOSED' || detail.error === 'ORDERING_WINDOW_CLOSED') {
+        setWindowStatus((prev) => ({
+          ...(prev || {}),
+          is_open: false,
+          reason: detail.reason || prev?.reason,
+          next_available_date: detail.next_available_date ?? prev?.next_available_date ?? null,
+          next_opens_at: detail.next_opens_at ?? prev?.next_opens_at ?? null,
+        }));
+        setShowClosedPopup(true);
+        setPlacing(false);
+        return;
+      }
+      setError(e.message);
+    }
+    setPlacing(false);
+  };
+
+  /**
+   * "Schedule my order" from the closed-kitchen popup. Resubmits the same cart
+   * with `accept_next_available_date: true` — the backend's own automatic
+   * scheduling path, which finds the next bookable slot (today, if the kitchen
+   * has not opened yet; otherwise the next open day) and marks the order
+   * scheduled. `report` hands the confirmation back to the popup so it can show
+   * the date and delivery window the order actually landed in.
+   */
+  const handleScheduleOrder = async () => {
+    if (pendingCheckout) { await recoverCheckout(); return; }
+    setScheduleRequested(true);
+    setShowClosedPopup(false);
+    if (!validateCheckout()) return;
+    if (!confirmedContact.current) { askForContact('schedule'); return; }
+    setScheduling(true);
+    setError(null);
+    try {
+      await submitOrder({ ...buildPayload(), accept_next_available_date: true });
+    } catch (e) {
+      setShowClosedPopup(false);
+      if (e.detail?.code === 'PRICE_CHANGED') setQuoteState({ key: quoteKey, data: e.detail.quote });
+      setError(e.message || msg('FE_CHECKOUT_SCHEDULE_FAILED_BODY', "We couldn't schedule your order. Please try again."));
+    }
+    setScheduling(false);
+  };
+
+  // Shared submit — places the order and hands off to the confirmation screen.
+  // Throws so the caller can apply its own error handling (capacity reschedule).
+
+  const saveCheckoutAddress = async () => {
+    if (savingAddress) return;
+    const selectedLocation = deliveryType === 'on_campus' ? hostelId : gateId;
+    const line1 = deliveryType === 'on_campus' ? hostels.find(h => h.id === hostelId)?.name : deliveryAddress.trim();
+    if (!addressLabel.trim() || !addressCity.trim() || !selectedLocation || !line1 || addressNeedsReselect) {
+      setAddressSaveError(msg('FE_CHECKOUT_ADDRESS_SAVE_FIELDS', 'Enter an address name and city, and select a valid delivery location.')); return;
+    }
+    setSavingAddress(true); setAddressSaveError('');
+    try {
+      const saved = await mockApi.addresses.create({ label: addressLabel.trim(), line1, city: addressCity.trim(),
+        landmark: landmark.trim(), delivery_type: deliveryType, delivery_location_id: selectedLocation,
+        ...(deliveryPin?.lat != null && deliveryType === 'off_campus' ? { latitude: deliveryPin.lat, longitude: deliveryPin.lng } : {}) });
+      if (!saved?.id) throw new Error(msg('FE_CHECKOUT_ADDRESS_SAVE_FAILED', 'Could not save address'));
+      setAddresses(current => [...current, saved]); setSelectedAddressId(saved.id); setSaveAddressOpen(false);
+      toast({ title: msg('FE_CHECKOUT_ADDRESS_SAVED', 'Address saved') });
+    } catch (e) { setAddressSaveError(e.message || msg('FE_CHECKOUT_ADDRESS_SAVE_FAILED', 'Could not save address')); }
+    finally { setSavingAddress(false); }
+  };
+
+  const confirmContact = async () => {
+    if (contactSubmitting.current) return;
+    const phone = contactDraft.replace(/[\s()\-]/g, '');
+    if (!/^(?:0[789]\d{9}|\+?234[789]\d{9})$/.test(phone)) {
+      setContactError(msg('FE_CHECKOUT_CONTACT_INVALID', 'Enter a reachable Nigerian mobile number: 08012345678 or +2348012345678.')); return;
+    }
+    confirmedContact.current = phone;
+    const action = contactAction; setContactAction(null);
+    contactSubmitting.current = true;
+    try { if (action === 'schedule') await handleScheduleOrder(); else await handlePlaceOrder(); }
+    finally { contactSubmitting.current = false; }
+  };
+
+  const submitOrder = async (payload: CreateOrderPayload, recover = false) => {
+    if (!orderRequest.current) {
+      orderRequest.current = (async () => {
+        const base = { ...payload };
+        delete base.accept_next_available_date;
+        delete base.is_scheduled;
+        delete base.delivery_window_id;
+        delete base.expected_total;
+        delete base.expected_free_sides;
+        delete base.expected_hp_bonus_plan;
+        delete base.expected_food_hp_plan;
+        delete base.expected_reward_claims;
+        const idempotency_key = recover ? pendingCheckout.payload.idempotency_key : await checkoutIntent({
+          actor: user?.id || 'guest', campus: campus?.id,
+          cartRows: (cart?.items || []).map((item) => item.id), payload: base,
+        });
+        const requestPayload = recover ? pendingCheckout.payload : { ...payload, expected_total: quote.total_amount, idempotency_key };
+        const checkpoint = { payload: requestPayload, created_at: new Date().toISOString() };
+        if (pendingKey) localStore.setItem(pendingKey, JSON.stringify(checkpoint));
+        setPendingCheckout(checkpoint);
+        try { return await mockApi.orders.create(requestPayload); }
+        catch (e) {
+          if ([400, 401, 403, 404, 409, 422].includes(e.status)) clearPendingCheckout();
+          throw e;
+        }
+      })();
+    }
+    let result;
+    try { result = await orderRequest.current; }
+    finally { orderRequest.current = null; }
+    const order = result?.order || result;
+    if (!order?.id) throw new Error(msg('FE_CHECKOUT_CONFIRMATION_MISSING', 'We could not confirm the saved order. Recover this checkout before trying another order.'));
+    clearPendingCheckout();
+    if (rewardStateKey) localStore.removeItem(rewardStateKey);
+    let paymentError = '';
+    if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
+    try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
+    if (!isAuthenticated) {
+      await clearCart();
+      try {
+        const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+        guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
+        localStorage.setItem('hg_guest_orders', JSON.stringify(guestOrders.slice(0, 10)));
+      } catch { /* ignore */ }
+    }
+    if (payload.delivery_window_id) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
+    const cardPending = order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0;
+    if (cardPending) {
+      try {
+        const payment = await mockApi.orders.initializePayment(order.id, order.claim_token ? { claim_token: order.claim_token } : {});
+        if (payment.payment_status !== 'paid') {
+          if (!isAllowedPaymentUrl(payment.authorization_url)) throw new Error(msg('FE_ORDER_PAYMENT_INVALID_LINK', 'The payment link could not be verified. Please retry.'));
+          window.location.assign(payment.authorization_url);
+          return;
+        }
+        order.payment_status = 'paid';
+      } catch (e) {
+        paymentError = e.message || msg('FE_ORDER_PAYMENT_UNAVAILABLE', 'Payment is unavailable. Your order is saved; please retry here.');
+      }
+    }
+    if (order.payment_status === 'paid') play('order_placed');
+    setReschedule(null);
+    navigate(`/order-confirmation/${order?.id || 'pending'}`, {
+      state: {
+        startPayment: false,
+        paymentError,
+        claim_token: order?.claim_token,
+        guest: !isAuthenticated,
+        is_scheduled: order?.is_scheduled,
+        scheduled_for: order?.scheduled_for,
+        delivery_window_start: order?.delivery_window_start,
+        delivery_window_end: order?.delivery_window_end,
+      },
+    });
+  };
+
+  const recoverCheckout = async () => {
+    if (!pendingCheckout || placing || scheduling) return;
+    setPlacing(true); setError(null);
+    try { await submitOrder(pendingCheckout.payload, true); }
+    catch (e) { setError(e.message || msg('FE_CHECKOUT_RECOVERY_FAILED', 'Checkout recovery failed. Please retry.')); }
+    setPlacing(false);
+  };
+
+  // Confirm the "schedule for the next available day" offer — one extra attempt only.
+  const handleAcceptReschedule = async () => {
+    if (!reschedule) return;
+    // Retain the accepted schedule across a lost response and a normal retry.
+    setScheduleRequested(true);
+    setError(null);
+    setPlacing(true);
+    try {
+      await submitOrder({ ...reschedule.payload, accept_next_available_date: true });
+    } catch (e) {
+      setReschedule(null);
+      if (e.detail?.code === 'PRICE_CHANGED') setQuoteState({ key: quoteKey, data: e.detail.quote });
+      setError(e.message || msg('FE_CHECKOUT_SCHEDULE_FAILED_BODY', "We couldn't schedule your order. Please try again."));
+    }
+    setPlacing(false);
+  };
+
+  if (loading) return <CheckoutSkeleton />;
+
+  return (
+    <div className="space-y-4 animate-fade-in pb-24 max-w-2xl mx-auto">
+      <button onClick={() => navigate('/cart')} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <ChevronLeft className="w-4 h-4" /> Back to cart
+      </button>
+      <div>
+        <span className="hg-eyebrow">Almost there</span>
+        <HeroCarousel placement="checkout" />
+      <StorefrontSlider sectionType="promo" variant="poster" placement="checkout" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
+
+      <h1 className="font-heading font-bold text-xl text-foreground mt-0.5">Checkout</h1>
+        <p className="text-sm text-muted-foreground mt-1">One step to the table.</p>
+      </div>
+
+      {pendingCheckout && <section role="alert" className="rounded-2xl border border-primary/40 bg-primary/5 p-4 space-y-2">
+        <h2 className="font-bold">{msg('FE_CHECKOUT_RECOVER_TITLE', 'Recover your previous checkout')}</h2>
+        <p className="text-sm text-muted-foreground">{msg('FE_CHECKOUT_RECOVER_HELP', 'Your previous checkout did not return confirmation. Recover it before placing another order; this reuses the same request.')}</p>
+        <button disabled={placing || scheduling} onClick={recoverCheckout} className="rounded-full bg-gradient-cta text-white font-bold px-4 py-2 disabled:opacity-50">{msg('FE_CHECKOUT_RECOVER_ACTION', 'Recover checkout')}</button>
+      </section>}
+      {isAuthenticated && <section className="rounded-2xl border border-border bg-card p-4 space-y-3" aria-label={msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}>
+        <h2 className="font-bold">{msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}</h2>
+        <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARDS_HELP', 'Choose rewards for this order, or save them for later. An HP bonus is reserved for this order and used when it is delivered.')}</p>
+        <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')}
+          <select aria-label={msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+            <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
+            {deliveryRewardId !== 'none' && !rewardOptions.delivery.some(r => r.id === deliveryRewardId) && <option disabled value={deliveryRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
+            {rewardOptions.delivery.map(r => <option key={r.id} value={r.id}>{r.name} · {formatNaira(r.discount)} {msg('FE_CHECKOUT_REWARD_OFF', 'off delivery')}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')}
+          <select aria-label={msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+            <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
+            {hpRewardId !== 'none' && !rewardOptions.hp.some(r => r.id === hpRewardId) && <option disabled value={hpRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
+            {rewardOptions.hp.map(r => <option key={r.id} value={r.id}>{r.name} · {r.multiplier}× HP</option>)}
+          </select>
+        </label>
+        {!quote && <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARD_LOCATION', 'Choose your delivery location to load eligible rewards.')}</p>}
+      </section>}
+      {scheduleRequested && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_YOUR_ORDER_WILL_BE_SCHEDULED_FOR_THE_NEXT_AVAILA', "Your order will be scheduled for the next available opening. Wallet payment is charged when you place the order.")}</p>}
+
+      {!isAuthenticated && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/30">
+          <User className="w-4 h-4 text-primary shrink-0" />
+          <div className="text-xs text-primary">Guest checkout, pay by card. <button onClick={() => navigate('/login')} className="font-bold underline">Sign in</button> to use wallet and earn HP.</div>
+        </div>
+      )}
+
+      {isAuthenticated && (
+        <>
+          {/* Free side credit — sits at the top with the squad order entry point */}
+          {!rewardOnly && freeSidesReleased && <div className="rounded-2xl bg-primary/10 border border-primary/30 p-3 flex items-center gap-3">
+            <span className="text-xl">🏆</span>
+            <div className="flex-1 text-xs text-foreground">
+              {freeSideCredits.count > 0 ? (
+                <>You have <span className="font-bold text-primary">{freeSideCredits.count}</span> free side credit{freeSideCredits.count !== 1 ? 's' : ''}!{freeSideChoice && <span className="text-success font-semibold"> · {freeSideChoice.name} added at ₦0</span>}</>
+              ) : (
+                <>No free side credits yet. Earn them through rewards and challenges.</>
+              )}
+            </div>
+            {freeSideCredits.count > 0 && (
+              <button disabled={freeSideBusy || freeSideSelections.length > 1} onClick={() => setShowFreeSide(true)} className="px-3 py-1.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shrink-0 shadow-glow">
+                {freeSideChoice ? 'Change' : 'Use one'}
+              </button>
+            )}
+          </div>}
+          {!rewardOnly && freeSidesReleased && freeSideLoadError && <div role="alert" className="text-sm text-destructive">{freeSideLoadError} <button onClick={refreshFreeSides} className="underline">{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></div>}
+          {!rewardOnly && freeSidesReleased && freeSideSelections.map(selection => <div key={selection.id} className="flex justify-between items-center rounded-xl border border-border p-3 text-sm">
+            <span>{selection.free_side_items?.name || msg('FE_FREE_SIDE_UNAVAILABLE', 'Unavailable free side')}</span>
+            <button disabled={freeSideBusy} onClick={() => removeFreeSide(selection.id)} className="font-semibold text-destructive">{msg('FE_FREE_SIDE_REMOVE', 'Remove free side')}</button>
+          </div>)}
+          {!rewardOnly && <SquadOrderButton itemCount={squadItemCount} value={squadSelection} onChange={setSquadSelection} />}
+        </>
+      )}
+
+      {scheduledWindow && !windowStatus?.is_open && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-accent/20 border border-accent/40">
+          <Clock className="w-4 h-4 text-accent-foreground shrink-0" />
+          <div className="text-xs text-foreground flex-1">
+            Scheduled for <span className="font-bold">{scheduledWindow.label || 'next window'}</span>
+            {scheduledWindow.starts_at ? ` · ${new Date(scheduledWindow.starts_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
+          </div>
+          <button onClick={() => { setScheduledWindow(null); try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }} className="text-xs font-bold text-muted-foreground underline">Clear</button>
+        </div>
+      )}
+
+      {/* Guest details */}
+      {!isAuthenticated && (
+        <div className="hg-card space-y-2">
+          <h3 className="hg-section-title flex items-center gap-2"><User className="w-4 h-4 text-primary" /> Your Details</h3>
+          <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Full name" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+          <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} placeholder="08012345678" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+          <input value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="Email (for order confirmation)" className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+        </div>
+      )}
+
+      {/* Saved addresses */}
+      {isAuthenticated && (
+        <div className="hg-card">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="hg-section-title flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Saved Addresses</h3>
+            <Link to="/addresses" className="flex items-center gap-1 text-xs font-bold text-primary hover:underline">
+              <Plus className="w-3 h-3" /> Edit
+            </Link>
+          </div>
+          {addressNeedsReselect && (
+            <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-warn/10 border border-warn/40/30 animate-fade-in">
+              <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs text-warn dark:text-accent">
+                <span className="font-semibold">{addressNeedsReselect.label || 'That saved address'}</span> points at a hostel or gate we can no longer find, so it can't be priced. Pick the location again below, or edit the address.
+              </div>
+              <button type="button" onClick={() => setAddressNeedsReselect(null)} className="text-warn dark:text-accent text-xs font-bold">Dismiss</button>
+            </div>
+          )}
+          {addresses.length > 0 ? (
+            <div className="space-y-2">
+              {addresses.map((addr) => (
+                <button
+                  key={addr.id}
+                  onClick={() => {
+                    // Replay what was saved. `user_addresses` holds exactly two
+                    // columns for this: `delivery_type` ('on_campus' | 'off_campus')
+                    // and `delivery_location_id` — a hostel id for on_campus, a
+                    // gate id for off_campus, the same meaning
+                    // `orders.delivery_location_id` has. create_order re-reads both
+                    // from the saved address when the order carries
+                    // `delivery_address_id`, so we send that id too.
+                    //
+                    // Rows saved before these were written have neither. Those fall
+                    // back exactly as before: coordinates for off-campus, a hostel
+                    // name match for on-campus.
+                    const type = addr.delivery_type
+                      || ((addr.latitude ?? addr.lat) != null ? 'off_campus' : 'on_campus');
+                    if (type) setDeliveryType(type);
+                    setAddressNeedsReselect(null);
+                    setDeliveryAddress(addr.line1 || addr.description || addr.address || '');
+                    setLandmark(addr.landmark || '');
+                    if (type === 'on_campus') {
+                      const ref = addr.delivery_location_id || '';
+                      const hostelName = (addr.hostel || (addr.line1 || '').split(',')[0] || '').trim();
+                      const hid = ref
+                        || (hostelName ? (hostels.find((h) => h.name === hostelName)?.id ?? null) : null);
+                      if (hid) { setHostelId(hid); calcOnCampusFee(hid); }
+                      // A saved hostel we can no longer resolve must be re-picked,
+                      // not silently charged ₦0 delivery.
+                      if (!hid) { setAddressNeedsReselect(addr); return; }
+                    }
+                    if (type === 'off_campus') {
+                      setGateId(addr.delivery_location_id || null);
+                      const lat = addr.latitude ?? addr.lat;
+                      const lng = addr.longitude ?? addr.lng;
+                      const savedPin = (lat != null && lng != null) ? { lat: Number(lat), lng: Number(lng) } : null;
+                      if (savedPin) { setDeliveryPin(savedPin); setDeliveryAddress(addr.line1 || addr.description || addr.address || ''); }
+                      else {
+                        // A row saved without coordinates must not inherit the
+                        // previous pin — that would price this address against
+                        // wherever the guest dropped the last one.
+                        pinRef.current = null; setDeliveryPin(null); setFeePreview(null);
+                      }
+                      // The stored pin is a saved coordinate, NOT the guest's
+                      // current position — nothing reads the phone's location
+                      // here. The backend takes the pin, resolves the nearest
+                      // gate to it and prices the fee from that, which is why
+                      // the fee is correct wherever the guest is standing now.
+                      calcOffCampusFee(addr.delivery_location_id || null, savedPin, { keepGate: !!addr.delivery_location_id });
+                    }
+                    // Remember which row this was so the order can send
+                    // `delivery_address_id` and let the backend re-read the saved
+                    // values rather than trusting what we replayed client-side.
+                    setSelectedAddressId(addr.id);
+                  }}
+                  className="w-full flex items-center gap-2 p-3 rounded-xl border border-border text-left hover:border-primary transition-colors bg-card"
+                >
+                  <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-foreground truncate">{addr.label || addr.name || 'Saved address'}</div>
+                    <div className="text-xs text-muted-foreground truncate">{addr.description || addr.address || addr.line1 || ''}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <Link to="/addresses" className="text-xs text-primary font-semibold hover:underline">+ Add a saved address</Link>
+          )}
+        </div>
+      )}
+
+      {/* Delivery location */}
+      <div className="hg-card">
+        <h3 className="hg-section-title mb-3 flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Delivery Location</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={() => { setSelectedAddressId(null); setDeliveryType('on_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryPin(null); setDeliveryAddress(''); setLandmark(''); setFeePreview(null); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'on_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
+            <div className="text-xl mb-0.5">🏫</div><div className="text-xs font-semibold text-foreground">On Campus</div>
+          </button>
+          <button onClick={() => { setSelectedAddressId(null); setDeliveryType('off_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryAddress(''); setLandmark(''); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'off_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
+            <div className="text-xl mb-0.5">🏠</div><div className="text-xs font-semibold text-foreground">Off Campus</div>
+          </button>
+        </div>
+
+        {deliveryType === 'on_campus' && (
+          <div className="mt-3 animate-fade-in">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Select Hostel</label>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              {hostels.map((h) => (
+                <button key={h.id} onClick={() => { setSelectedAddressId(null); setHostelId(h.id); calcOnCampusFee(h.id); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${hostelId === h.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
+                  {h.name}
+                  <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(h.delivery_fee)}</div>
+                </button>
+              ))}
+              {hostels.length === 0 && <p className="text-xs text-muted-foreground col-span-2">No hostels available.</p>}
+            </div>
+          </div>
+        )}
+
+        {deliveryType === 'off_campus' && (
+          <div className="mt-3 animate-fade-in space-y-3">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Drop your delivery pin</label>
+            <OffCampusMap
+              gates={gates}
+              center={campus?.lat != null && campus?.lon != null ? [Number(campus.lat), Number(campus.lon)] : null}
+              pin={deliveryPin}
+              onPinChange={(ll) => { setSelectedAddressId(null); setDeliveryPin(ll); calcOffCampusFee(gateId, ll); }}
+              selectedGateId={gateId}
+              onGateSelect={(g) => { setSelectedAddressId(null); setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }}
+              feePreview={feePreview}
+            />
+
+            {radiusError && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/30 animate-fade-in">
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                <div className="text-xs text-destructive">{radiusError}</div>
+              </div>
+            )}
+
+            <div>
+              <button type="button" onClick={() => setShowGateSelector((v) => !v)} className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showGateSelector ? 'rotate-180' : ''}`} />
+                {showGateSelector ? 'Hide gate selector' : 'Can\'t see your location? Select closest gate'}
+              </button>
+              {showGateSelector && (
+                <div className="grid grid-cols-2 gap-2 mt-1.5 animate-fade-in">
+                  {gates.map((g) => (
+                    <button key={g.id} onClick={() => { setSelectedAddressId(null); setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${gateId === g.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
+                      {g.name}
+                      <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(g.base_fee)}</div>
+                    </button>
+                  ))}
+                  {gates.length === 0 && <p className="text-xs text-muted-foreground col-span-2">No gates available.</p>}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Exact address / description</label>
+              <input value={deliveryAddress} onChange={(e) => { setSelectedAddressId(null); setDeliveryAddress(e.target.value); }} placeholder="e.g. Behind the market, near the blue gate" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Landmark (optional)</label>
+              <input value={landmark} onChange={(e) => { setSelectedAddressId(null); setLandmark(e.target.value); }} placeholder="e.g. Behind the market" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+            </div>
+          </div>
+        )}
+        {isAuthenticated && deliveryType && <div className="mt-3 border-t border-border pt-3 space-y-2">
+          <button type="button" onClick={() => setSaveAddressOpen(value => !value)} className="text-sm font-bold text-primary">{msg('FE_CHECKOUT_SAVE_ADDRESS', 'Save this address')}</button>
+          {saveAddressOpen && <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_ADDRESS_SAVE_HINT', 'Save the address, landmark, gate and map pin for your next checkout.')}</p>
+            <input aria-label={msg('FE_CHECKOUT_ADDRESS_LABEL', 'Address name')} value={addressLabel} onChange={e => setAddressLabel(e.target.value)} className="w-full p-3 rounded-xl border border-border text-sm" placeholder={msg('FE_CHECKOUT_ADDRESS_LABEL', 'Address name')} />
+            <input aria-label={msg('FE_CHECKOUT_ADDRESS_CITY', 'City / town')} value={addressCity} onChange={e => setAddressCity(e.target.value)} className="w-full p-3 rounded-xl border border-border text-sm" placeholder={msg('FE_CHECKOUT_ADDRESS_CITY', 'City / town')} />
+            {addressSaveError && <p role="alert" className="text-sm text-destructive">{addressSaveError}</p>}
+            <button type="button" disabled={savingAddress} onClick={saveCheckoutAddress} className="px-4 py-2 rounded-full bg-primary text-white text-sm font-bold disabled:opacity-50">{msg('FE_CHECKOUT_SAVE_ADDRESS', 'Save this address')}</button>
+          </div>}
+        </div>}
+        <DeliveryZonesInfo />
+      </div>
+
+      {/* Payment method */}
+      <div className="hg-card">
+        <h3 className="hg-section-title mb-2 flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" /> Payment Method</h3>
+        <div className="space-y-2">
+          {[
+            { id: 'wallet' as PaymentMethod, label: 'Wallet', icon: Wallet, desc: wallet ? `Balance: ${formatNaira(wallet.balance)}` : '', authOnly: true },
+            { id: 'card' as PaymentMethod, label: 'Card', icon: CreditCard, desc: 'Paystack secure payment' },
+            { id: 'split' as PaymentMethod, label: 'Split (Wallet + Card)', icon: Split, desc: 'Pay part with wallet, rest with card', authOnly: true },
+          ].filter((pm) => !pm.authOnly || isAuthenticated).map((pm) => {
+            const Icon = pm.icon;
+            return (
+              <button key={pm.id} onClick={() => setPaymentMethod(pm.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${effectivePayment === pm.id ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
+                <Icon className="w-5 h-5 text-muted-foreground" />
+                <div className="flex-1 text-left"><div className="text-sm font-semibold text-foreground">{pm.label}</div>{pm.desc && <div className="text-xs text-muted-foreground">{pm.desc}</div>}</div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${effectivePayment === pm.id ? 'border-primary bg-primary' : 'border-border'}`}>{effectivePayment === pm.id && <Check className="w-3 h-3 text-white" />}</div>
+              </button>
+            );
+          })}
+        </div>
+        {effectivePayment === 'split' && (
+          <div className="mt-3 animate-slide-up">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Wallet Amount (max {formatNaira(Math.min(wallet?.balance || 0, total))})</label>
+            <input type="number" value={walletAmount} onChange={(e) => setWalletAmount(Math.min(wallet?.balance || 0, total, Math.max(0, parseInt(e.target.value) || 0)))} max={Math.min(wallet?.balance || 0, total)} className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+            <p className="text-xs text-muted-foreground mt-1">Card portion: {formatNaira(Math.max(0, total - walletAmount))}</p>
+          </div>
+        )}
+        {effectivePayment === 'wallet' && wallet && wallet.balance < total && (
+          <div className="mt-3 flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/30">
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+            <div className="flex-1 text-xs text-destructive">Insufficient balance. Need {formatNaira(total - wallet.balance)} more.</div>
+            <button onClick={() => navigate('/wallet')} className="text-xs font-bold text-destructive underline">Fund</button>
+          </div>
+        )}
+      </div>
+
+      {/* Notes */}
+      <div className="hg-card">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Order Notes</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Call before delivery, extra packaging, etc." className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm resize-none focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" rows={2} />
+      </div>
+
+      {/* Global add-ons — the single, admin-managed add-on system */}
+      {!rewardOnly && globalAddons.length > 0 && (
+        <div className="hg-card">
+          <h3 className="hg-section-title mb-2 flex items-center gap-2"><Plus className="w-4 h-4 text-primary" /> Add extras to your order</h3>
+          <div className="space-y-2">
+            {globalAddons.filter((a) => a.is_available !== false).map((a) => {
+              const on = selectedGlobalAddonIds.includes(a.id);
+              return (
+                <button key={a.id} onClick={() => setSelectedGlobalAddonIds((ids) => (on ? ids.filter((x) => x !== a.id) : [...ids, a.id]))} className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all ${on ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
+                  <span className="text-sm font-medium text-foreground">{a.name}</span>
+                  <span className="text-xs font-bold text-muted-foreground">+{formatNaira(a.price)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Promo code — moved from the cart page so all order adjustments live here */}
+      <div className="hg-card">
+        <h3 className="hg-section-title mb-2 flex items-center gap-2"><Tag className="w-4 h-4 text-primary" /> Promo Code</h3>
+        <div className="flex gap-2">
+          <input type="text" value={promoCode} onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); setPromoError(null); }} placeholder="Try SAVE10 or WELCOME50" className="flex-1 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+          <button onClick={handleValidatePromo} disabled={!promoCode || validatingPromo} className="px-4 rounded-xl bg-brand-brown text-white text-xs font-bold disabled:opacity-40 hover:opacity-90 transition-opacity">{validatingPromo ? '...' : 'Apply'}</button>
+        </div>
+        {promoResult && <div className="mt-2 flex items-center gap-2 text-xs text-success font-semibold"><Check className="w-3.5 h-3.5" /> {promoResult.code} applied. You save {formatNaira(promoResult.calculated_discount)}</div>}
+        {promoError && <div className="mt-2 flex items-center gap-2 text-xs text-destructive font-semibold"><AlertTriangle className="w-3.5 h-3.5" /> {promoError}</div>}
+      </div>
+
+      {rewardOnly && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_REWARD_ONLY', 'Your redeemed reward is free. Review the delivery fee below. Items already in your cart will stay saved.')}</p>}
+
+      {/* Order summary */}
+      <div className="rounded-2xl bg-card border border-border p-4 space-y-1.5 text-sm shadow-card">
+        <div className="font-heading font-bold text-base text-foreground mb-2">Order Summary</div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-semibold text-foreground">{formatNaira(subtotal)}</span></div>
+        {promoDiscount > 0 && <div className="flex justify-between text-success"><span>Promo ({promoResult?.code})</span><span>-{formatNaira(promoDiscount)}</span></div>}
+        {squadDiscount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DISCOUNT', 'Squad discount')}</span><span>-{formatNaira(squadDiscount)}</span></div>}
+        {quote?.order_lock_hp_reward > 0 && <div className="flex justify-between text-accent-foreground"><span>{msg('FE_CHECKOUT_LOCK_HP_DELIVERY', 'Lock reward after delivery')}</span><span>+{quote.order_lock_hp_reward} HP</span></div>}
+        {quote?.order_lock_discount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_LOCK_DISCOUNT', 'Order lock discount')}</span><span>-{formatNaira(quote.order_lock_discount)}</span></div>}
+        {(quote?.reward_items || []).map(item => <div key={item.redemption_id} className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_REDEEMED_ITEM', 'Redeemed reward: {name}', { name: item.name })}</span><span>₦0</span></div>)}
+        {(quote?.free_sides || []).map(side => <div key={side.selection_id} className="flex justify-between text-success"><span>{msg('FE_FREE_SIDE_SUMMARY', 'Free side: {name}', { name: side.name })}</span><span>₦0</span></div>)}
+        <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{(quote?.delivery_fee_original ?? deliveryFee) > 0 ? formatNaira(quote?.delivery_fee_original ?? deliveryFee) : <span className="text-success">FREE</span>}</span></div>
+        {quote?.delivery_benefit?.discount > 0 && <div className="flex justify-between text-success"><span>{quote.delivery_benefit.source === 'monthly' ? msg('FE_CHECKOUT_MONTHLY_DELIVERY', 'Monthly free-delivery perk') : msg('FE_CHECKOUT_SPIN_DELIVERY', 'Spin delivery credit')}</span><span>-{formatNaira(quote.delivery_benefit.discount)}</span></div>}
+        {(quote?.squad_delivery_discount_amount ?? (squadDeliveryPct > 0 ? deliveryFee - effectiveDeliveryFee : 0)) > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DELIVERY_DISCOUNT', 'Squad delivery discount')}</span><span>-{formatNaira(quote?.squad_delivery_discount_amount ?? (deliveryFee - effectiveDeliveryFee))}</span></div>}
+        {!quote && globalAddonsTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extras</span><span className="font-semibold">{formatNaira(globalAddonsTotal)}</span></div>}
+        {hpPreview > 0 && <div className="flex justify-between text-accent-foreground"><span className="flex items-center gap-1"><Flame className="w-3.5 h-3.5 text-primary" /> You'll earn</span><span className="font-semibold">+{hpPreview} HP</span></div>}
+        <div className="border-t border-border pt-1.5 flex justify-between"><span className="font-semibold text-foreground">Total</span><span className="font-heading font-bold text-lg text-foreground">{formatNaira(total)}</span></div>
+      </div>
+
+      {reschedule && (
+        <div className="p-3.5 rounded-xl bg-accent/15 border border-accent/40 space-y-2.5">
+          <div className="text-sm font-semibold text-foreground">Today's orders are full. Schedule for {reschedule.date} instead?</div>
+          <button
+            onClick={handleAcceptReschedule}
+            disabled={placing}
+            className="px-4 py-2.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shadow-glow disabled:opacity-50 active:scale-95 transition"
+          >
+            Schedule for {reschedule.date}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/30">
+          <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+          <span className="text-sm text-destructive">{error}</span>
+        </div>
+      )}
+
+      {quoteError && <div role="alert" className="p-3 rounded-xl bg-destructive/10 text-sm text-destructive">{quoteError} <button onClick={() => { setQuoteState(null); setQuoteRetry((value) => value + 1); }} className="font-bold underline">{msg('FE_CHECKOUT_QUOTE_RETRY', 'Retry total')}</button></div>}
+      {!quoteReady && !quoteError && deliveryType && <p role="status" className="text-sm text-muted-foreground">{msg('FE_CHECKOUT_QUOTE_PENDING', 'Your total will be verified after selecting your delivery location.')}</p>}
+
+      <motion.button whileTap={{ scale: 0.97 }} onClick={handlePlaceOrder} disabled={placing || !quoteReady} className="w-full py-4 rounded-xl bg-gradient-cta text-white font-bold shadow-glow disabled:opacity-50 transition-opacity">
+        {placing ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Placing order...</span> : `Place Order · ${formatNaira(total)}`}
+      </motion.button>
+
+      <Dialog open={!!contactAction} onOpenChange={open => { if (!open) setContactAction(null); }}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader className=""><DialogTitle>{msg('FE_CHECKOUT_CONTACT_TITLE', 'Can your rider reach you?')}</DialogTitle>
+            <DialogDescription>{msg('FE_CHECKOUT_CONTACT_HELP', 'Confirm a number you can answer for offline calls during this delivery. You can use a different number for this order without changing your account.')}</DialogDescription></DialogHeader>
+          <label className="text-sm font-semibold" htmlFor="checkout-contact-phone">{msg('FE_CHECKOUT_CONTACT_NUMBER', 'Phone number for this order')}</label>
+          <input id="checkout-contact-phone" type="tel" autoComplete="tel" value={contactDraft} onChange={e => setContactDraft(e.target.value)} className="w-full p-3 rounded-xl border border-border bg-background" />
+          {contactError && <p role="alert" className="text-sm text-destructive">{contactError}</p>}
+          <button type="button" onClick={confirmContact} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold">{msg('FE_CHECKOUT_CONTACT_CONTINUE', 'Confirm number and continue')}</button>
+          <button type="button" onClick={() => setContactAction(null)} className="text-sm font-semibold text-muted-foreground">{msg('FE_CHECKOUT_CONTACT_CANCEL', 'Back to checkout')}</button>
+        </DialogContent>
+      </Dialog>
+      <FreeSideCreditModal
+        open={showFreeSide}
+        count={freeSideCredits.count}
+        sides={freeSideCredits.available_sides}
+        busy={freeSideBusy}
+        onClose={() => setShowFreeSide(false)}
+        onUse={handleUseFreeSide}
+      />
+
+      {/* Closed kitchen. Only an explicit is_open === false opens it — `null`
+          (no campus resolved yet) is "unknown", never "closed", so a guest who
+          has not picked a campus is never told the kitchen is shut. */}
+      <CheckoutKitchenClosedPopup
+        open={showClosedPopup}
+        status={windowStatus}
+        busy={scheduling}
+        onSchedule={handleScheduleOrder}
+        onClose={() => setShowClosedPopup(false)}
+      />
+    </div>
+  );
+}

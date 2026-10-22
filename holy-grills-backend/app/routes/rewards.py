@@ -109,8 +109,11 @@ def _with_flash_status(reward: dict, flash: dict = None) -> dict:
     return result
 
 
-def _flash_for_rewards(rewards: list) -> dict:
+def _flash_for_rewards(rewards: list, campus_id: str = None) -> dict:
     """{reward_id: available flash row} for a list of rewards, in one windows query. Never raises."""
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("flash_redemptions", campus_id or getattr(g, "campus_id", None)):
+        return {}
     try:
         db = get_db()
         windows = _active_flash_windows(db, [r["id"] for r in rewards if r.get("id")])
@@ -158,6 +161,8 @@ def list_rewards():
     campus_id = _get_campus_id()
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    elif getattr(g, "user_role", None) != "super_admin":
+        q = q.is_("campus_id", "null")
 
     reward_type = request.args.get("category") or request.args.get("reward_type")
     if reward_type:
@@ -174,11 +179,12 @@ def list_rewards():
         if expires_at and expires_at < now:
             continue
         result.append(r)
-    flash_by_reward = _flash_for_rewards(result)
+    flash_by_reward = _flash_for_rewards(result, campus_id=campus_id)
     return jsonify([_with_flash_status(r, flash_by_reward.get(r.get("id"))) for r in result]), 200
 
 
 @rewards_bp.route("/<reward_id>", methods=["GET"])
+@optional_auth
 def get_reward(reward_id):
     """
     Get reward detail.
@@ -200,11 +206,12 @@ def get_reward(reward_id):
     reward = db.table("rewards").select("*,hp_tiers(name,slug)").eq("id", reward_id).single().execute()
     if not reward:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
-    try:
-        _, flash = _is_flash_active(get_db(), reward["id"])
-    except Exception:
-        logger.warning("flash status lookup failed for reward %s", reward_id, exc_info=True)
-        flash = None
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
+    if reward.get("campus_id") not in (campus_id, None) and not (
+            getattr(g, "user_role", None) == "super_admin" and not campus_id):
+        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+    flash = _flash_for_rewards([reward], campus_id=campus_id).get(reward["id"])
     return jsonify(_with_flash_status(reward, flash)), 200
 
 
@@ -289,7 +296,7 @@ def redeem_reward(reward_id):
             return jsonify({"error": MSG.REWARD_EXPIRED}), 400
         return jsonify({"error": err_str}), 400
 
-    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "pending"}
+    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "fulfilled"}
     redemption_id = redemption_row.get("id") or redemption_row.get("redemption_id") or str(rpc_res)
 
     try:
@@ -759,6 +766,18 @@ def my_redemptions():
         .order("created_at", ascending=False)
         .execute()
     )
+    # Catalog RLS can hide an inactive reward, but an earned entitlement must
+    # retain its name in the owner's history and delivery chooser. Only hydrate
+    # public display fields for reward IDs obtained from the authorized rows.
+    hidden_ids = sorted({row['reward_id'] for row in (redemptions or [])
+                         if row.get('reward_id') and not row.get('rewards')})
+    if hidden_ids:
+        display_rows = (get_db().table('rewards').select('id,name,reward_type,hp_cost,image_url')
+                        .in_('id', hidden_ids).execute()) or []
+        display_by_id = {row['id']: row for row in display_rows}
+        for row in redemptions or []:
+            if not row.get('rewards') and row.get('reward_id') in display_by_id:
+                row['rewards'] = display_by_id[row['reward_id']]
     return jsonify(redemptions), 200
 
 
@@ -869,7 +888,7 @@ def choose_redemption_delivery(redemption_id):
       200:
         description: Choice saved
       400:
-        description: Invalid mode, reward not fulfilled yet, or delivery already chosen
+        description: Invalid mode, reward not ready yet, or reward already attached
       404:
         description: Redemption not found
     """
@@ -882,7 +901,7 @@ def choose_redemption_delivery(redemption_id):
     # Ownership is checked with the user's own session (RLS + explicit user_id filter).
     row = (
         db.table("reward_redemptions")
-        .select("id,user_id,status,reward_id,delivery_mode,attached_order_id")
+        .select("id,user_id,status,reward_id,delivery_mode,attached_order_id,used_at")
         .eq("id", redemption_id).eq("user_id", g.user_id)
         .single().execute()
     )
@@ -890,9 +909,9 @@ def choose_redemption_delivery(redemption_id):
         return jsonify({"error": MSG.REWARD_REDEMPTION_NOT_FOUND}), 404
     if row.get("status") != "fulfilled":
         return jsonify({"error": MSG.REWARD_NOT_READY_FOR_DELIVERY}), 400
-    # 'instant' is the column default, so it means "not chosen yet"; anything else, or an order already
-    # holding this reward, means the choice is made.
-    if row.get("attached_order_id") or row.get("delivery_mode") != "instant":
+    # Choices remain editable until an order claims the entitlement. Retrying a
+    # saved choice after a lost response succeeds through the same compare-and-set.
+    if row.get("attached_order_id") or row.get("used_at"):
         return jsonify({"error": MSG.DELIVERY_ALREADY_CHOSEN}), 400
 
     # reward_redemptions has no UPDATE policy for the owner (only admins), so a write through the user's
@@ -901,7 +920,8 @@ def choose_redemption_delivery(redemption_id):
     updated = (
         get_db().table("reward_redemptions")
         .eq("id", redemption_id).eq("user_id", g.user_id)
-        .eq("status", "fulfilled").eq("delivery_mode", row["delivery_mode"]).eq("attached_order_id", None)
+        .eq("status", "fulfilled").eq("delivery_mode", row["delivery_mode"])
+        .is_("attached_order_id", "null").is_("used_at", "null")
         .update({"delivery_mode": mode})
     )
     if not updated:

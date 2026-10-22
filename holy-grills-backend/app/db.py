@@ -267,7 +267,8 @@ class TableQuery:
 
     def order(self, column: str, ascending: bool = True) -> "TableQuery":
         direction = "asc" if ascending else "desc"
-        self._order = f"{column}.{direction}"
+        term = f"{column}.{direction}"
+        self._order = f"{self._order},{term}" if self._order else term
         return self
 
     def limit(self, n: int) -> "TableQuery":

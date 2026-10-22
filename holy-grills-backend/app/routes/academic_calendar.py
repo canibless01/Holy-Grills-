@@ -29,7 +29,7 @@ academic_calendar_bp = Blueprint("academic_calendar", __name__)
 admin_academic_calendar_bp = Blueprint("admin_academic_calendar", __name__)
 
 # Mirrors the DB CHECK academic_calendar_period_type_check. Keep in sync.
-PERIOD_TYPES = ("semester", "exam", "break", "holiday", "orientation")
+PERIOD_TYPES = ("semester", "exam", "break", "holiday", "orientation", "graduation")
 
 
 def _requested_campus():
@@ -50,6 +50,14 @@ def _parse_date(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+
+
+def _description(value):
+    if value is None:
+        return ""
+    if not isinstance(value, str) or len(value) > 2000:
+        raise ValueError("invalid description")
+    return value.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +166,7 @@ def create_academic_calendar_entry():
         start_date = _parse_date(as_text(data["start_date"], 10))
         end_date = _parse_date(as_text(data["end_date"], 10))
         is_active = as_bool(data.get("is_active", True))
-        description = str(data.get("description") or "").strip()
+        description = _description(data.get("description"))
     except ValueError:
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     ok, message = validate_choice(period_type, PERIOD_TYPES, "period_type")
@@ -174,6 +182,8 @@ def create_academic_calendar_entry():
     except ValueError:
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
     campus_id = resolve_write_campus(requested_campus)  # 403 if a campus admin names another campus; None = global for super_admin
+    if "campus_id" in data and requested_campus is None and getattr(g, "user_role", None) == "super_admin":
+        campus_id = None
 
     now = datetime.now(timezone.utc).isoformat()
     payload = {
@@ -230,7 +240,7 @@ def update_academic_calendar_entry(entry_id):
             if key in payload:
                 payload[key] = as_text(payload[key], limit)
         if "description" in payload:
-            payload["description"] = str(payload["description"] or "").strip()
+            payload["description"] = _description(payload["description"])
         if "is_active" in payload:
             payload["is_active"] = as_bool(payload["is_active"])
         for key in ("start_date", "end_date"):

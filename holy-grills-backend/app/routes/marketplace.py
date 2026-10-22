@@ -3,8 +3,9 @@ from app.middleware.auth import require_auth, require_role, resolve_scoped_campu
 from app.services.hp_service import get_hp_balance, award_active_hp
 from app.services.wallet_service import debit_wallet
 from app.constants import ADMIN_ROLES
-from app.db import get_db, get_user_client
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from app.services.feature_flags import is_feature_enabled
 from app.utils.upload_urls import is_trusted_upload_url
 from app.utils.validators import validate_choice
@@ -20,6 +21,45 @@ PURCHASE_ADMIN_SELECT = (
 )
 
 
+def _resolve_marketplace_transaction(purchase_id, action, report_id=None, admin_note=None):
+    """Bind actor identity on the server; the RPC rechecks fresh role/campus."""
+    try:
+        result = get_db().rpc("hg_admin_marketplace_resolve", {
+            "p_purchase_id": purchase_id, "p_actor_id": g.user_id,
+            "p_action": action, "p_report_id": report_id, "p_admin_note": admin_note,
+        })
+        if not isinstance(result, dict) or not result.get("status"):
+            raise RuntimeError("Missing marketplace transaction receipt")
+        return result, None
+    except SupabaseError as exc:
+        detail = str(exc) + " " + str(exc.details.get("message", ""))
+        for marker, message, status in (
+            ("marketplace_forbidden", MSG.RESOURCE_ACCESS_DENIED, 403),
+            ("marketplace_not_found", MSG.PURCHASE_NOT_FOUND, 404),
+            ("marketplace_conflict", MSG.MARKETPLACE_RESOLUTION_CONFLICT, 409),
+            ("marketplace_no_codes", MSG.LISTING_NO_CODES, 409),
+            ("marketplace_code_delivered", MSG.PURCHASE_CODE_DELIVERED_NO_REFUND, 409),
+            ("marketplace_legacy_refund_review", MSG.MARKETPLACE_LEGACY_REFUND_REVIEW, 409),
+            ("marketplace_invalid", MSG.INVALID_INPUT, 400),
+        ):
+            if marker in detail:
+                return None, (jsonify({"error": message}), status)
+        current_app.logger.exception("marketplace transaction failed purchase=%s", purchase_id)
+    except Exception:
+        current_app.logger.exception("marketplace transaction receipt unavailable purchase=%s", purchase_id)
+    return None, (jsonify({"error": MSG.MARKETPLACE_RESOLUTION_UNAVAILABLE}), 503)
+
+
+def _resolution_body():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return None
+    note = data.get("admin_note")
+    if note is not None and (not isinstance(note, str) or len(note) > 1000):
+        return None
+    return data
+
+
 def _non_negative_number(value):
     """True for a real number that is 0 or more (rejects bool, NaN, infinity and text)."""
     if isinstance(value, bool) or value is None:
@@ -29,6 +69,37 @@ def _non_negative_number(value):
     except (TypeError, ValueError):
         return False
     return number == number and number != float("inf") and number >= 0
+
+
+def _validate_listing_fields(data, existing=None):
+    """Validate fields before PostgREST coercion; compare the final saved window."""
+    for field in ("is_featured", "is_out_of_stock"):
+        if field in data and not isinstance(data[field], bool):
+            return MSG.FIELD_MUST_BE_BOOLEAN.format(field=field)
+    if "sort_order" in data:
+        value = data["sort_order"]
+        if isinstance(value, bool) or not isinstance(value, int):
+            return MSG.FIELD_MUST_BE_INTEGER.format(field="sort_order")
+    window = {}
+    for field in ("available_from", "available_until"):
+        value = data.get(field, (existing or {}).get(field))
+        if value is None or value == "":
+            if field in data:
+                data[field] = None
+            window[field] = None
+            continue
+        try:
+            if not isinstance(value, str):
+                raise ValueError()
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError()
+            window[field] = parsed
+        except (ValueError, TypeError):
+            return MSG.PROMO_DATE_INVALID.format(field=field)
+    if window.get("available_from") and window.get("available_until") and window["available_until"] <= window["available_from"]:
+        return MSG.INVALID_INPUT
+    return None
 
 
 def _page_args(default_limit, max_limit):
@@ -227,10 +298,28 @@ def purchase(listing_id):
     Purchase a marketplace listing. Uses atomic hg_purchase_marketplace_item RPC.
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or ("use_hp" in data and not isinstance(data["use_hp"], bool)) or data.get("payment_method", "wallet") not in ("wallet", "card", "split"):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     buyer_campus_id = getattr(g, "campus_id", None)
     if not is_feature_enabled("marketplace_general", buyer_campus_id):
         return jsonify({"error": MSG.MARKETPLACE_NOT_OPEN}), 403
+    idempotency_key = str(data.get("idempotency_key") or "").strip()[:100] or None
+    if idempotency_key:
+        existing = db.table("marketplace_purchases").select("*").eq("user_id", g.user_id).eq("payment_reference", idempotency_key).limit(1).execute() or []
+        if existing:
+            receipt = existing[0]
+            if receipt.get("listing_id") != listing_id:
+                return jsonify({"error": MSG.MARKETPLACE_INTENT_CONFLICT}), 409
+            return jsonify({
+                "purchase": receipt,
+                "code": (receipt.get("metadata") or {}).get("code"),
+                "hp_earned": 0,
+                "paid_with_hp": bool(receipt.get("pay_with_hp")),
+                "cash_charged": float(receipt.get("wallet_amount") or 0) + float(receipt.get("card_amount") or 0),
+                "already_purchased": True,
+                "message": MSG.MARKETPLACE_PURCHASE_SUCCESS,
+            }), 200
     listing = db.table("marketplace_listings").select("*").eq("id", listing_id).eq("status", "active").single().execute()
     if not listing:
         hidden = (
@@ -312,7 +401,6 @@ def purchase(listing_id):
             "paid_with_hp": use_hp,
             "hp_fallback": hp_fallback,
         }), 200
-    idempotency_key = str(data.get("idempotency_key") or "").strip()[:100] or None
     try:
         purchase_row, code_value, marketplace_hp = _complete_marketplace_purchase(
             user_id=g.user_id,
@@ -325,6 +413,8 @@ def purchase(listing_id):
         )
     except Exception as exc:
         err = str(exc).lower()
+        if "purchase intent conflict" in err:
+            return jsonify({"error": MSG.MARKETPLACE_INTENT_CONFLICT}), 409
         if "no_codes" in err:
             get_db().table("marketplace_listings").eq("id", listing_id).update({"is_out_of_stock": True}).execute()
             return jsonify({"error": MSG.LISTING_NO_CODES}), 400
@@ -466,9 +556,11 @@ def admin_update_purchase(purchase_id):
         description: Purchase not found
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
-    new_status = (data.get("status") or "").strip()
-    if new_status not in PURCHASE_STATUSES:
+    data = _resolution_body()
+    if data is None:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    new_status = data.get("status")
+    if not isinstance(new_status, str) or new_status not in PURCHASE_STATUSES:
         return jsonify({"error": MSG.PURCHASE_STATUS_INVALID}), 400
     purchase = (
         db.table("marketplace_purchases")
@@ -480,30 +572,12 @@ def admin_update_purchase(purchase_id):
     if not purchase:
         return jsonify({"error": MSG.PURCHASE_NOT_FOUND}), 404
     old_status = purchase.get("status")
-    if old_status == new_status:
-        return jsonify({"message": MSG.PURCHASE_NO_CHANGE, "status": new_status}), 200
-    if old_status in ("refunded", "cancelled"):
-        return jsonify({"error": MSG.PURCHASE_STATUS_FINAL}), 400
     listing_info = purchase.get("marketplace_listings") or {}
-
-    if new_status in ("refunded", "cancelled"):
-        guard_err = guard_refund_eligibility(db, purchase, jsonify)
-        if guard_err:
-            return guard_err
-        failure = _refund_marketplace_purchase(db, purchase, purchase_id, new_status)
-        if failure:
-            return jsonify(failure[0]), failure[1]
-
-    update_payload = {"status": new_status}
-    if data.get("admin_note"):
-        update_payload["admin_note"] = str(data["admin_note"])[:1000]
-    if new_status == "completed" and not purchase.get("is_fulfilled"):
-        fulfill_marketplace_purchase(purchase_id)
-    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload).execute()
-    _log_marketplace_admin_action(
-        "marketplace_purchase", purchase_id, "status_change",
-        before={"status": old_status}, after={"status": new_status},
-    )
+    receipt, failure = _resolve_marketplace_transaction(purchase_id, new_status, admin_note=data.get("admin_note"))
+    if failure:
+        return failure
+    if receipt.get("replayed"):
+        return jsonify({"message": MSG.PURCHASE_NO_CHANGE, "status": receipt["status"], "replayed": True}), 200
 
     try:
         from app.services.notification_service import send_notification
@@ -631,9 +705,11 @@ def admin_resolve_report(report_id):
       200: {description: Report resolved}
     """
     db = get_user_client()
-    data = request.get_json(force=True, silent=True) or {}
-    action = (data.get("action") or "").strip()
-    if action not in ("replace", "refund", "reject"):
+    data = _resolution_body()
+    if data is None:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    action = data.get("action")
+    if not isinstance(action, str) or action not in ("replace", "refund", "reject"):
         return jsonify({"error": MSG.PURCHASE_REPORT_ACTION_INVALID}), 400
     report = (
         db.table("marketplace_purchase_reports")
@@ -644,8 +720,6 @@ def admin_resolve_report(report_id):
     )
     if not report:
         return jsonify({"error": MSG.PURCHASE_REPORT_NOT_FOUND}), 404
-    if report.get("status") != "open":
-        return jsonify({"error": MSG.PURCHASE_REPORT_CLOSED}), 400
     purchase = (
         db.table("marketplace_purchases")
         .select(PURCHASE_ADMIN_SELECT)
@@ -656,61 +730,13 @@ def admin_resolve_report(report_id):
     if not purchase:
         return jsonify({"error": MSG.PURCHASE_NOT_FOUND}), 404
     title = (purchase.get("marketplace_listings") or {}).get("title") or "your purchase"
-    svc = get_db()
-    now_iso = datetime.now(timezone.utc).isoformat()
-    old_code_id = (purchase.get("metadata") or {}).get("code_id")
-    new_code = None
-
-    if action in ("replace", "refund"):
-        if action == "replace":
-            fresh = (
-                svc.table("marketplace_access_codes")
-                .select("id,code")
-                .eq("listing_id", purchase["listing_id"])
-                .eq("status", "available")
-                .limit(1)
-                .execute()
-            )
-            if not fresh:
-                return jsonify({"error": MSG.LISTING_NO_CODES}), 400
-            new_code = fresh[0]
-            svc.table("marketplace_access_codes").eq("id", new_code["id"]).update({
-                "status": "assigned",
-                "assigned_purchase_id": purchase["id"],
-                "assigned_at": now_iso,
-            }).execute()
-            codes_left = (
-                svc.table("marketplace_access_codes").select("id")
-                .eq("listing_id", purchase["listing_id"]).eq("status", "available").limit(1).execute()
-            )
-            if not codes_left:
-                svc.table("marketplace_listings").eq("id", purchase["listing_id"]).update({"is_out_of_stock": True}).execute()
-        if old_code_id:
-            svc.table("marketplace_access_codes").eq("id", old_code_id).update({
-                "status": "revoked",
-                "assigned_purchase_id": None,
-            }).execute()
-        if action == "replace":
-            svc.table("marketplace_purchases").eq("id", purchase["id"]).update({
-                "metadata": {"code": new_code["code"], "code_id": new_code["id"], "replaced_code_id": old_code_id},
-            }).execute()
-        else:
-            failure = _refund_marketplace_purchase(db, purchase, purchase["id"], "refunded", restock=False)
-            if failure:
-                return jsonify(failure[0]), failure[1]
-            db.table("marketplace_purchases").eq("id", purchase["id"]).update({"status": "refunded"}).execute()
-
+    receipt, failure = _resolve_marketplace_transaction(purchase["id"], action, report_id=report_id, admin_note=data.get("admin_note"))
+    if failure:
+        return failure
+    if receipt.get("replayed"):
+        return jsonify({"message": MSG.PURCHASE_REPORT_RESOLVED, "status": receipt["status"], "replayed": True}), 200
     status_map = {"replace": "replaced", "refund": "refunded", "reject": "rejected"}
-    db.table("marketplace_purchase_reports").eq("id", report_id).update({
-        "status": status_map[action],
-        "admin_note": (str(data.get("admin_note") or "")[:1000] or None),
-        "resolved_by": g.user_id,
-        "resolved_at": now_iso,
-    }).execute()
-    _log_marketplace_admin_action(
-        "marketplace_report", report_id, action,
-        before={"status": "open"}, after={"status": status_map[action], "purchase_id": purchase["id"]},
-    )
+    new_code = {"code": receipt.get("code")}
 
     try:
         from app.services.notification_service import send_notification
@@ -844,7 +870,12 @@ def admin_create_listing():
         description: Validation error
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    error = _validate_listing_fields(data)
+    if error:
+        return jsonify({"error": error}), 400
     for f in ["title", "listing_type", "price"]:
         if not data.get(f) and data.get(f) != 0:
             return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
@@ -870,6 +901,8 @@ def admin_create_listing():
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
     for int_field in ("hp_price", "inventory_count", "low_inventory_threshold"):
         if safe.get(int_field) is not None:
+            if not float(safe[int_field]).is_integer():
+                return jsonify({"error": MSG.FIELD_MUST_BE_INTEGER.format(field=int_field)}), 400
             safe[int_field] = int(float(safe[int_field]))
     safe["campus_id"] = resolve_scoped_campus_id(data.get("campus_id"))
     safe.setdefault("status", "active")
@@ -989,10 +1022,15 @@ def admin_update_listing(listing_id):
         description: Not found
     """
     db = get_user_client()
-    listing = db.table("marketplace_listings").select("id,title,status").eq("id", listing_id).single().execute()
+    listing = db.table("marketplace_listings").select("id,title,status,available_from,available_until").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    error = _validate_listing_fields(data, listing)
+    if error:
+        return jsonify({"error": error}), 400
     ALLOWED = {
         "status", "title", "description", "price", "hp_price",
         "cash_price", "total_value", "image_url", "is_featured", "sort_order",
@@ -1016,6 +1054,8 @@ def admin_update_listing(listing_id):
             return jsonify({"error": MSG.LISTING_INVALID_NUMBER.format(field=numeric_field)}), 400
     for int_field in ("hp_price", "inventory_count", "low_inventory_threshold"):
         if safe.get(int_field) is not None:
+            if not float(safe[int_field]).is_integer():
+                return jsonify({"error": MSG.FIELD_MUST_BE_INTEGER.format(field=int_field)}), 400
             safe[int_field] = int(float(safe[int_field]))
     for bool_field in ("is_featured", "is_out_of_stock"):
         if bool_field in safe and not isinstance(safe[bool_field], bool):
@@ -1298,9 +1338,11 @@ def upload_codes(listing_id):
         cleaned = raw.strip()
         if cleaned not in codes:
             codes.append(cleaned)
-    listing = db.table("marketplace_listings").select("id,listing_type").eq("id", listing_id).single().execute()
+    listing = db.table("marketplace_listings").select("id,listing_type,campus_id").eq("id", listing_id).single().execute()
     if not listing:
         return jsonify({"error": MSG.LISTING_NOT_FOUND}), 404
+    from app.utils.campus_scope import assert_can_modify
+    assert_can_modify(listing.get("campus_id"))
     if listing.get("listing_type") not in CODE_LISTING_TYPES:
         return jsonify({"error": MSG.LISTING_NOT_CODE_TYPE}), 400
     existing_codes = set()
@@ -1317,7 +1359,7 @@ def upload_codes(listing_id):
     new_codes = [c for c in codes if c not in existing_codes]
     skipped_codes = [c for c in codes if c in existing_codes]
     if not new_codes:
-        return jsonify({"error": MSG.LISTING_CODES_ALL_EXIST, "skipped": skipped_codes}), 400
+        return jsonify({"uploaded": 0, "skipped_duplicates": skipped_codes, "already_uploaded": True}), 200
     records = [{"listing_id": listing_id, "code": c, "status": "available"} for c in new_codes]
     try:
         db.table("marketplace_access_codes").insert(records).execute()
@@ -1332,118 +1374,6 @@ def upload_codes(listing_id):
         "marketplace_codes", listing_id, "upload", after={"uploaded": len(records), "skipped": len(skipped_codes)},
     )
     return jsonify({"uploaded": len(records), "skipped_duplicates": skipped_codes}), 201
-
-
-def guard_refund_eligibility(db, purchase, jsonify):
-    """
-    Call this FIRST in admin_update_purchase(), before any wallet/HP
-    refund, when the target status is 'refunded' or 'cancelled'.
-    """
-    listing_id = purchase.get("listing_id")
-    listing = db.table("marketplace_listings").select("listing_type").eq("id", listing_id).single().execute()
-    is_code_listing = listing and listing.get("listing_type") in ("code", "digital_code", "voucher", "subscription")
-
-    if is_code_listing:
-        code_row = (
-            db.table("marketplace_access_codes")
-            .select("id, status").eq("assigned_purchase_id", purchase.get("id")).single().execute()
-        )
-        if code_row and code_row.get("status") == "assigned":
-            return jsonify({"error": MSG.PURCHASE_CODE_DELIVERED_NO_REFUND}), 400
-    return None
-
-
-def _refund_marketplace_purchase(db, purchase, purchase_id, new_status, restock=True):
-    """
-    Pay a purchase back: wallet portion, the exact HP spent (no multiplier), then the card
-    portion (all refunds go to the wallet), then restore stock. Every leg is safe to repeat.
-    Returns None on success, or (json_body, status_code) on failure.
-    """
-    listing_info = purchase.get("marketplace_listings") or {}
-    user_id = purchase.get("user_id")
-    short_id = purchase_id[:8].upper()
-    wallet_amt = float(purchase.get("wallet_amount") or 0)
-    card_amt = float(purchase.get("card_amount") or 0)
-    hp_refund = 0
-    if purchase.get("pay_with_hp"):
-        if purchase.get("hp_tx_id"):
-            spent = get_db().table("hp_transactions").select("amount").eq("id", purchase["hp_tx_id"]).single().execute()
-            hp_refund = int((spent or {}).get("amount") or 0)
-        else:
-            hp_refund = int(listing_info.get("hp_price") or 0)
-    hp_already_refunded = False
-    if hp_refund > 0 and user_id:
-        done = (
-            get_db().table("hp_transactions").select("id")
-            .eq("user_id", user_id).eq("reference_type", "marketplace_refund").eq("reference_id", purchase_id)
-            .limit(1).execute()
-        )
-        hp_already_refunded = bool(done)
-
-    # 1. wallet portion
-    if wallet_amt > 0 and user_id:
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=user_id,
-                amount=wallet_amt,
-                payment_reference=f"REFUND-MKT-{short_id}",
-                reference_id=purchase_id,
-                reference_type="marketplace_refund",
-                notes=f"Refund for marketplace purchase #{short_id}",
-            )
-        except Exception:
-            current_app.logger.exception("marketplace wallet refund failed purchase=%s", purchase_id)
-            return {"error": MSG.PURCHASE_REFUND_FAILED}, 400
-    # 2. HP portion
-    if hp_refund > 0 and user_id and not hp_already_refunded:
-        try:
-            award_active_hp(
-                user_id=user_id,
-                amount=hp_refund,
-                txn_type="earn",
-                reference_id=purchase_id,
-                reference_type="marketplace_refund",
-                source_type="marketplace",
-                notes=f"HP refund for marketplace purchase #{short_id}",
-                apply_multiplier=False,
-            )
-        except Exception:
-            current_app.logger.exception("marketplace HP refund failed purchase=%s", purchase_id)
-            if wallet_amt > 0 and user_id:
-                try:
-                    debit_wallet(
-                        user_id=user_id,
-                        amount=wallet_amt,
-                        reference_id=purchase_id,
-                        reference_type="marketplace_refund_reversal",
-                        notes=f"Reversing wallet refund - HP refund leg failed for purchase #{short_id}",
-                    )
-                except Exception:
-                    current_app.logger.error(
-                        "marketplace refund reversal ALSO failed purchase=%s user=%s wallet_amt=%s",
-                        purchase_id, user_id, wallet_amt, exc_info=True,
-                    )
-                    return {"error": MSG.PURCHASE_REFUND_MANUAL}, 500
-            return {"error": MSG.PURCHASE_REFUND_FAILED}, 400
-    # 3. card portion: all refunds credit the wallet
-    if card_amt > 0 and user_id:
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=user_id,
-                amount=card_amt,
-                payment_reference=f"REFUND-MKT-CARD-{short_id}",
-                reference_id=purchase_id,
-                reference_type="marketplace_refund_card",
-                notes=f"Refund (card portion) for marketplace purchase #{short_id}: {new_status}",
-            )
-        except Exception:
-            current_app.logger.exception("marketplace card-portion refund failed purchase=%s", purchase_id)
-            return {"error": MSG.PURCHASE_REFUND_PARTIAL}, 500
-    if restock:
-        restore_inventory_on_refund(db, purchase, current_app.logger)
-    return None
 
 
 def _complete_marketplace_purchase(
@@ -1466,6 +1396,8 @@ def _complete_marketplace_purchase(
             .eq("user_id", user_id).eq("payment_reference", payment_reference).limit(1).execute()
         )
         if existing:
+            if existing[0].get("listing_id") != listing_id:
+                raise ValueError("purchase intent conflict")
             return existing[0], (existing[0].get("metadata") or {}).get("code"), 0
     purchase_row = db.rpc("hg_purchase_marketplace_item", {
         "p_user_id": user_id,
@@ -1485,7 +1417,10 @@ def _complete_marketplace_purchase(
     from flask import current_app
     from app.services.notification_service import send_notification
 
-    marketplace_hp = int(current_app.config.get("MARKETPLACE_PURCHASE_HP", 50))
+    marketplace_hp = int(setting_or_config(
+        db, "marketplace_purchase_hp", current_app.config.get("MARKETPLACE_PURCHASE_HP", 50),
+        minimum=0, maximum=100000,
+    ))
     if marketplace_hp > 0:
         try:
             award_active_hp(
@@ -1526,101 +1461,16 @@ def _complete_marketplace_purchase(
             )
         if listing and listing.get("listing_type") in CODE_LISTING_TYPES:
             codes_left = db.table("marketplace_access_codes").select("id").eq("listing_id", listing_id).eq("status", "available").execute()
-            if len(codes_left or []) <= current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5):
+            if len(codes_left or []) <= setting_or_config(
+                db, "low_code_inventory_threshold",
+                current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5),
+                minimum=0, maximum=10000,
+            ):
                 _alert_admin_low_inventory(listing_id, listing_title, len(codes_left or []))
     except Exception:
         current_app.logger.exception("marketplace purchase side effects failed purchase=%s", purchase_id)
 
     return purchase_row, code_value, marketplace_hp
-
-
-def fulfill_marketplace_purchase(purchase_id: str, reference: str = None):
-    db = get_db()
-    purchase = db.table("marketplace_purchases").select("id,listing_id,is_fulfilled,status").eq("id", purchase_id).single().execute()
-    if not purchase or purchase.get("is_fulfilled"):
-        return purchase
-
-    update_payload = {
-        "status": "completed",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if reference:
-        update_payload["payment_reference"] = reference
-
-    code_row = (
-        db.table("marketplace_access_codes")
-        .select("id,code")
-        .eq("listing_id", purchase["listing_id"])
-        .eq("status", "available")
-        .limit(1)
-        .execute()
-    )
-    code_row = code_row[0] if code_row else None
-    if code_row:
-        db.table("marketplace_access_codes").eq("id", code_row["id"]).update({
-            "status": "assigned",
-            "assigned_purchase_id": purchase_id,
-            "assigned_at": datetime.now(timezone.utc).isoformat(),
-        }).execute()
-        update_payload["metadata"] = {"code": code_row["code"], "code_id": code_row["id"]}
-
-    update_payload["is_fulfilled"] = True
-    update_payload["fulfilled_at"] = datetime.now(timezone.utc).isoformat()
-
-    db.table("marketplace_purchases").eq("id", purchase_id).update(update_payload).execute()
-    return db.table("marketplace_purchases").eq("id", purchase_id).single().execute()
-
-
-def restore_inventory_on_refund(db, purchase, logger):
-    """
-    Give stock back after a refund/cancel: the listing's own count (only when it has one),
-    the buyer campus's availability count (only when it has one), and any code still tied
-    to the purchase. Never marks a listing in stock just because a refund happened.
-    """
-    listing_id = purchase.get("listing_id")
-    purchase_id = purchase.get("id")
-    quantity = purchase.get("quantity", 1)
-    if not listing_id:
-        return
-    listing = db.table("marketplace_listings").select("inventory_count,status").eq("id", listing_id).single().execute()
-    if listing and listing.get("inventory_count") is not None:
-        restored = {
-            "inventory_count": listing["inventory_count"] + quantity,
-            "is_out_of_stock": False,
-        }
-        # the database pauses a listing when its stock reaches 0; bring it back when stock returns
-        if listing["inventory_count"] <= 0 and listing.get("status") == "paused":
-            restored["status"] = "active"
-        db.table("marketplace_listings").eq("id", listing_id).update(restored).execute()
-    campus_id = purchase.get("campus_id")
-    if campus_id:
-        avail = (
-            db.table("marketplace_listing_availability")
-            .select("id,inventory_count")
-            .eq("listing_id", listing_id)
-            .eq("campus_id", campus_id)
-            .single()
-            .execute()
-        )
-        if avail and avail.get("inventory_count") is not None:
-            db.table("marketplace_listing_availability").eq("id", avail["id"]).update({
-                "inventory_count": avail["inventory_count"] + quantity,
-                "is_out_of_stock": False,
-            }).execute()
-    if purchase_id:
-        code_row = (
-            db.table("marketplace_access_codes")
-            .select("id")
-            .eq("assigned_purchase_id", purchase_id)
-            .single()
-            .execute()
-        )
-        if code_row:
-            db.table("marketplace_access_codes").eq("id", code_row["id"]).update({
-                "status": "available",
-                "assigned_purchase_id": None,
-                "assigned_at": None,
-            }).execute()
 
 
 def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):

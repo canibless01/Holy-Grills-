@@ -1,15 +1,17 @@
 """
 Notification Service — dispatches in-app, email, and push notifications.
 All notification records written to the notifications table.
-Throttling via notification_log (daily cap + 6-hour same-type gap for non-critical types).
+Throttling via notification_log (configured daily cap and same-type gap).
 Email and push dispatch via OneSignal (fire-and-forget, never raises).
 """
 
 import os
+import uuid
 import threading
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
-from app.db import get_db, get_user_client
+from app.db import get_db, get_user_client, SupabaseError
+from app.services.notification_preferences import effective_preferences, permitted_channels, REQUEST_TYPES
 from flask import current_app
 from app.utils.logger import get_logger
 from app.utils.retry import with_retry
@@ -22,13 +24,18 @@ def _onesignal_post(url: str, headers: dict, payload: dict) -> "http_requests.Re
     return http_requests.post(url, headers=headers, json=payload, timeout=10)
 
 
+def _onesignal_email_post(url: str, headers: dict, payload: dict):
+    """One email attempt; uncertain outcomes must not be retried implicitly."""
+    return http_requests.post(url, headers=headers, json=payload, timeout=10)
+
+
 _ONESIGNAL_BASE = os.environ.get("ONESIGNAL_BASE_URL", "https://api.onesignal.com")
 
 # Critical notification types — operational / transactional: never throttled.
 # Everything else is subject to the 6-hour same-type gap and daily cap.
 _CRITICAL_NOTIF_TYPES = frozenset({
     # Order
-    "order_confirmed", "order_preparing", "order_ready", "order_assigned",
+    "order_placed", "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
     "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
     "order_refunded", "order_unclaimed",
@@ -50,6 +57,8 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "birthday_bonus", "graduation_hp", "hall_of_fame", "prize_fulfilment_update",
     "membership_anniversary", "order_lock_redeemed",
     "flash_sale_redeemed", "exclusive_spin_won",
+    "free_side_credits_granted", "exclusive_spin_granted",
+    "catering_request", "marketplace_request", "admin_catering_request", "admin_vendor_request", "vendor_request_submitted",
     # Milestones / badges: several can be awarded in one go (e.g. referral 5 and 10), each must arrive
     "milestone_achieved",
     # Streaks
@@ -220,6 +229,76 @@ def _fetch_user_name(user_id: str) -> str:
         return ""
 
 
+
+# Where a notification opens, by type, when the caller did not say. Most
+# callers pass template_data and nothing else, so without this every in-app row
+# and every push was a dead end. A caller's explicit action_url always wins.
+#
+# Order matters: the first prefix that matches wins, so `squad_order_ready`
+# (an order) is listed before `squad_` (the squad page), and `order_streak` /
+# `order_lock*` before `order_`.
+_ACTION_URL_PREFIXES = (
+    ("catering_request", "/admin?section=catering"),
+    ("admin_catering_request", "/admin?section=catering"),
+    ("marketplace_request", "/admin?section=marketplace"),
+    ("admin_vendor_request", "/admin?section=marketplace"),
+    ("rider_", "/rider"),
+    ("kitchen_", "/kitchen"),
+    ("squad_order", "/orders/{order_id}"),
+    ("guest_order", "/orders/{order_id}"),
+    ("scheduled_order", "/orders/{order_id}"),
+    ("order_streak", "/streak"),
+    ("order_lock", "/order-locks"),
+    ("order_", "/orders/{order_id}"),
+    ("review_", "/orders/{order_id}"),
+    ("share_", "/orders/{order_id}"),
+    ("abandoned_cart", "/cart"),
+    ("wallet_", "/wallet"),
+    ("hp_transfer", "/rewards"),
+    ("hp_gift", "/rewards"),
+    ("hp_", "/rewards"),
+    ("referral_", "/referrals"),
+    ("reward_", "/rewards"),
+    ("flash_sale_", "/rewards"),
+    ("exclusive_spin", "/rewards"),
+    ("free_side", "/rewards"),
+    ("prize_fulfilment", "/rewards"),
+    ("tier_", "/rewards"),
+    ("birthday_", "/rewards"),
+    ("winback_", "/rewards"),
+    ("login_streak", "/streak"),
+    ("checkin_", "/streak"),
+    ("event_", "/events"),
+    ("catering_", "/events"),
+    ("vendor_", "/marketplace"),
+    ("marketplace_", "/marketplace"),
+    ("squad_", "/squads"),
+    ("leaderboard", "/leaderboard"),
+    ("hall_of_fame", "/hall-of-fame"),
+    ("account_", "/profile"),
+    ("welcome", "/profile"),
+    ("email_verification", "/profile"),
+    ("password_", "/profile"),
+)
+
+
+def default_action_url(notif_type: str, data: dict = None) -> str:
+    """Path a notification should open, or None when the type has no page.
+
+    A placeholder that the caller did not supply degrades to the section root
+    (`/orders/{order_id}` -> `/orders`) rather than to a dead end.
+    """
+    data = data or {}
+    for prefix, template in _ACTION_URL_PREFIXES:
+        if not notif_type.startswith(prefix):
+            continue
+        try:
+            return template.format(**data)
+        except (KeyError, IndexError):
+            return template.split("{", 1)[0].rstrip("/") or "/"
+    return None
+
+
 def send_notification(
     user_id: str,
     notif_type: str,
@@ -234,6 +313,7 @@ def send_notification(
     metadata: dict = None,
     campus_id: str = None,
     email_provider: str = None,
+    strict: bool = False,
 ) -> list:
     """
     Write notification record(s) for each channel and dispatch externally.
@@ -292,6 +372,10 @@ def send_notification(
         if channels is None and channels_override is not None:
             channels = channels_override
 
+    # Where a tap should land: callers may state it, the type otherwise decides.
+    if not action_url:
+        action_url = default_action_url(notif_type, template_data or {})
+
     # Guard: if neither mode supplied title/body, skip to avoid blank notifications
     if not title or not body:
         logger.error(
@@ -321,28 +405,19 @@ def send_notification(
 
     db = get_db()
 
-    # One profile read serves both the user's channel switches and the campus default below.
-    _profile = {}
-    if notif_type not in _CRITICAL_NOTIF_TYPES or campus_id is None:
-        try:
-            _profile = (
-                db.table("profiles")
-                .select("campus_id,push_enabled,email_notifications")
-                .eq("id", user_id)
-                .single()
-                .execute()
-            ) or {}
-        except Exception as e:
-            logger.warning("send_notification: profile lookup failed for %s: %s", user_id, e)
-
-    # User channel switches (Settings). Critical / security types always go through.
-    if notif_type not in _CRITICAL_NOTIF_TYPES:
-        if _profile.get("push_enabled") is False:
-            channels = [c for c in channels if c != "push"]
-        if _profile.get("email_notifications") is False:
-            channels = [c for c in channels if c != "email"]
-        if not channels:
-            return []
+    # Read both persisted controls for every category, including transactional
+    # types. A read outage must not turn an opt-out into an external send.
+    try:
+        _profile = db.table("profiles").select("campus_id,push_enabled,email_notifications").eq("id",user_id).single().execute() or {}
+        prefs = effective_preferences(db,user_id,_profile)
+        channels = permitted_channels(notif_type,channels,prefs)
+    except Exception:
+        logger.exception("Notification preferences unavailable for %s; dispatch skipped",user_id)
+        if strict:
+            raise
+        return []
+    if not channels:
+        return []
 
     # ── Throttle check (non-critical types only, fails open) ──────────────────
     if _is_throttled(db, user_id, notif_type):
@@ -353,6 +428,7 @@ def send_notification(
         return []
 
     records = []
+    created_records = 0
 
     # Build merged metadata: internal fields + any caller-supplied extras
     merged_meta = {
@@ -384,10 +460,20 @@ def send_notification(
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
+        if (notif_type in REQUEST_TYPES and reference_id) or notif_type.startswith("blast_"):
+            # Existing primary-key uniqueness serializes retries per recipient,
+            # request and channel, without another ledger/index/table.
+            record["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                f"holy-grills:request-notification:{user_id}:{notif_type}:{reference_type}:{reference_id}:{channel}"))
+        if notif_type.startswith("blast_"):
+            prior = db.table("notifications").select("id").eq("user_id", user_id).eq("type", notif_type).eq("channel", channel).limit(1).execute() or []
+            if prior:
+                continue
         try:
             result = db.table("notifications").insert(record)
             saved = result[0] if isinstance(result, list) else result
             records.append(saved)
+            created_records += 1
 
             if channel == "email":
                 t = threading.Thread(
@@ -404,11 +490,18 @@ def send_notification(
                 )
                 t.start()
         except Exception as e:
+            if record.get('id') and isinstance(e,SupabaseError) and str(e.details.get('code'))=='23505':
+                existing=db.table('notifications').select('*').eq('id',record['id']).eq('user_id',user_id).single().execute()
+                if existing:
+                    records.append(existing)
+                    continue  # Saved receipt replay never dispatches externally again.
             logger.error("Error saving %s notification for %s: %s", channel, user_id, e)
+            if strict:
+                raise
 
     # Log to notification_log for throttle tracking (one entry per send call,
     # regardless of how many channels were used).
-    if records:
+    if created_records:
         _log_notification(db, user_id, notif_type)
 
     return records
@@ -710,18 +803,36 @@ def send_blast(blast_id: str) -> dict:
 
     Title/body may use {name} — it is substituted with the recipient's first name.
     """
-    db = get_user_client()
+    db = get_db()
     blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
     if not blast:
         raise ValueError("Blast not found")
 
     # Only a blast that is waiting to go out can be sent (scheduled = cron, pending = immediate send from the route).
-    if blast.get("status") not in ("scheduled", "pending"):
+    metadata = dict(blast.get("metadata") or {})
+    now = datetime.now(timezone.utc)
+    previous_token = metadata.get("worker_token")
+    if blast.get("status") == "sending":
+        claimed_at = metadata.get("worker_claimed_at") or blast.get("created_at")
+        try:
+            claimed_at = datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
+            if now - claimed_at < timedelta(minutes=15):
+                return {"sent_to": 0, "skipped": "worker lease active"}
+        except (AttributeError, TypeError, ValueError):
+            return {"sent_to": 0, "skipped": "invalid worker lease"}
+    elif blast.get("status") not in ("scheduled", "pending", "failed"):
         return {"sent_to": 0, "skipped": "not in a sendable state"}
+    if blast.get("status") == "scheduled" and blast.get("scheduled_at"):
+        if datetime.fromisoformat(blast["scheduled_at"].replace("Z", "+00:00")) > now:
+            return {"sent_to": 0, "skipped": "not due"}
 
     segment = blast.get("segment") or {}
     campus_id = segment.get("campus_id") or segment.get("campus") or blast.get("campus_id")
     user_ids = resolve_segment_user_ids(segment, campus_id=campus_id, db=db)
+    if isinstance(metadata.get("recipient_ids"), list):
+        user_ids &= set(metadata["recipient_ids"])
+    token = str(uuid.uuid4())
+    metadata.update({"recipient_ids": sorted(user_ids), "recipient_count": len(user_ids), "worker_token": token, "worker_claimed_at": now.isoformat()})
 
     # Claim the blast atomically before sending. The update only matches while the status is still what we read,
     # so of two runs racing on the same blast (two cron jobs, or a manual re-trigger during a scheduled run)
@@ -730,7 +841,8 @@ def send_blast(blast_id: str) -> dict:
         db.table("notification_blasts")
         .eq("id", blast_id)
         .eq("status", blast.get("status"))
-        .update({"status": "sending"})
+        .eq("metadata->>worker_token", previous_token)
+        .update({"status": "sending", "metadata": metadata})
     )
     if not claimed:
         return {"sent_to": 0, "skipped": "already claimed by another run"}
@@ -743,7 +855,7 @@ def send_blast(blast_id: str) -> dict:
     count = 0
 
     try:
-        for uid in user_ids:
+        for uid in sorted(user_ids):
             notif_title = title_tpl
             notif_body = body_tpl
             if has_name:
@@ -758,18 +870,27 @@ def send_blast(blast_id: str) -> dict:
                 body=notif_body,
                 channels=channels,
                 email_provider=blast.get("email_provider"),  # Part B4 — per-blast provider override
+                action_url=blast.get("action_url"),
+                reference_id=blast_id,
+                reference_type="notification_blast",
+                strict=True,
             )
             count += 1
+            metadata["processed_count"] = count
+            if not db.table("notification_blasts").eq("id", blast_id).eq("status", "sending").eq("metadata->>worker_token", token).update({"metadata": metadata}):
+                return {"sent_to": count, "skipped": "worker lease lost"}
     except Exception:
         # Do not leave the blast stuck in 'sending'; do not put it back to 'scheduled' either (that would resend
         # to everyone already notified). 'failed' makes it visible and needs an explicit decision.
         try:
-            db.table("notification_blasts").eq("id", blast_id).update({"status": "failed"})
+            db.table("notification_blasts").eq("id", blast_id).eq("metadata->>worker_token", token).update({"status": "failed"})
         except Exception as ue:
             logger.error("send_blast: could not mark blast %s failed: %s", blast_id, ue)
         raise
 
-    db.table("notification_blasts").eq("id", blast_id).update({"status": "sent"})
+    records = db.table("notifications").select("id").eq("type", f"blast_{blast_id}").execute() or []
+    metadata["notification_records"] = len(records)
+    db.table("notification_blasts").eq("id", blast_id).eq("status", "sending").eq("metadata->>worker_token", token).update({"status": "sent", "metadata": metadata})
     return {"sent_to": count}
 
 
@@ -831,33 +952,9 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
 
 
 def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
-    """
-    Send email via OneSignal's email channel. Returns True on success, False
-    on failure (never raises) — same contract as send_email_raw.
-    """
-    try:
-        app_id, api_key = _get_onesignal_creds()
-        if not app_id or not api_key:
-            return False
-        payload = {
-            "app_id": app_id,
-            "target_channel": "email",
-            "include_email_tokens": [to_email],
-            "email_subject": subject,
-            "email_body": html_body,
-        }
-        resp = _onesignal_post(
-            f"{_ONESIGNAL_BASE}/notifications",
-            headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
-            payload=payload,
-        )
-        if resp.status_code not in (200, 202):
-            logger.warning("OneSignal email error %s for %s: %s", resp.status_code, to_email, resp.text[:200])
-            return False
-        return True
-    except Exception as e:
-        logger.error("OneSignal email dispatch error for %s: %s", to_email, e)
-        return False
+    """Preferred OneSignal email, with bounded quota-only alternate routing."""
+    from app.utils.email import send_email_routed
+    return send_email_routed(to_email, to_name, subject, html_body, provider="onesignal")
 
 
 def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None):
@@ -866,7 +963,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
     whichever provider get_email_provider resolves to.
     """
     try:
-        from app.utils.email import get_user_email_and_name, send_email_raw, _build_html
+        from app.utils.email import get_user_email_and_name, send_email_routed, _build_html
         email, name = get_user_email_and_name(user_id)
         if not email:
             return
@@ -875,13 +972,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
         app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
         html_body = _build_html(name or "there", body, app_tagline)
 
-        if chosen == "onesignal":
-            _dispatch_email_via_onesignal(email, name or "there", subject, html_body)
-        else:
-            api_key = os.environ.get("RESEND_API_KEY", "")
-            if not api_key:
-                return
-            send_email_raw(email, name or "there", subject, html_body)
+        send_email_routed(email, name or "there", subject, html_body, provider=chosen)
     except Exception as e:
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 

@@ -8,7 +8,7 @@ PATCH  /admin/settings/<key>             — update a system setting
 """
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role, resolve_scoped_campus_id
-from app.db import get_user_client
+from app.db import get_user_client, get_db, SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -100,6 +100,30 @@ def update_first_order_gift(gift_id):
 
 # ── System Settings ───────────────────────────────────────────────────────────
 
+def _validator_refusal(exc):
+    """The sentence from the database validator, or None if this wasn't it.
+
+    `hg_validate_system_setting` (BEFORE INSERT OR UPDATE on system_settings) is
+    the range check for every numeric setting. When it refuses a value it RAISEs
+    with a message written for the person editing it ("... must be between 0 and
+    1"), which Postgres reports as code P0001 — and the app-wide error handler can
+    only turn that into a generic 400/500, so the admin sees "Something went
+    wrong" instead of the reason. The settings routes catch it here and hand the
+    sentence through verbatim.
+
+    Everything else — RLS denial, a missing column, the network — returns None and
+    falls through to the global handler unchanged, so this cannot become a way to
+    surface arbitrary database text.
+    """
+    details = exc.details if isinstance(getattr(exc, "details", None), dict) else {}
+    code = str(details.get("code") or "")
+    message = str(exc) or ""
+    hint = str(details.get("hint") or "")
+    if code == "P0001" or "hg_validate_system_setting" in message or "hg_validate_system_setting" in hint:
+        return message or MSG.SETTING_VALUE_REJECTED
+    return None
+
+
 def require_settings_write_permission(g, jsonify, campus_id):
     """Insert after reading campus_id from the request body, at the top of any
     system_settings admin-write route. Global settings (campus_id is None) stay
@@ -142,7 +166,9 @@ def list_settings():
 @require_role("admin")
 def update_setting(key):
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or ("is_public" in data and not isinstance(data["is_public"], bool)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = data.get("campus_id")
     auth_err = require_settings_write_permission(g, jsonify, campus_id)
     if auth_err:
@@ -165,6 +191,29 @@ def update_setting(key):
                 return jsonify({"error": MSG.HP_MULTIPLIER_INVALID}), 400
         except (TypeError, ValueError):
             return jsonify({"error": MSG.HP_MULTIPLIER_INVALID}), 400
+    if key == "squad_hp_bonus_pct":
+        try:
+            iv = int(str(value))
+            if iv < 0 or iv > 100:
+                return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "squad_hp_bonus_pct must be an integer between 0 and 100"}), 400
+
+    if key == 'global_social_links':
+        from app.utils.social_links import validate_social_links
+        if campus_id:
+            return jsonify({'error': MSG.SOCIAL_LINKS_GLOBAL_ONLY}), 400
+        try:
+            value = validate_social_links(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    if key == 'signup_free_side_config':
+        from app.services.welcome_credit_service import validate_config
+        try:
+            value = validate_config(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
 
     update_payload = {
         "value": value,
@@ -173,10 +222,23 @@ def update_setting(key):
     }
     if "description" in data:
         update_payload["description"] = data["description"]
+    # is_public decides whether students can read this key at all: the public
+    # config route (GET /storefront/config/public) is the ONLY settings source
+    # available to a signed-out visitor, and it filters on this flag. The admin
+    # screen shows a Public/Private badge per row and toggles it here.
+    if "is_public" in data:
+        update_payload["is_public"] = data["is_public"]
 
     q = db.table("system_settings").eq("key", key)
     q = q.is_("campus_id", "null") if not campus_id else q.eq("campus_id", campus_id)
-    q.update(update_payload)
+    try:
+        q.update(update_payload)
+    except SupabaseError as exc:
+        refusal = _validator_refusal(exc)
+        if refusal is None:
+            raise
+        logger.warning("settings: %s refused by hg_validate_system_setting: %s", key, refusal)
+        return jsonify({"error": refusal}), 400
 
     # When hp_multiplier is set above 1, broadcast to the affected users immediately
     # (that campus's users for a per-campus change, everyone for a global one)
@@ -197,14 +259,22 @@ def update_setting(key):
 def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
     """Send a push + in-app notification to active users when a multiplier event goes live.
     Scoped to campus_id when the multiplier change was per-campus; global when it wasn't."""
+    from app.services.feature_flags import is_feature_enabled
+    from app.services.hp_service import _get_hp_multiplier
+    if not is_feature_enabled("hp_multiplier", campus_id) or _get_hp_multiplier(campus_id) != multiplier:
+        return
     try:
         from app.services.notification_service import send_notification
         from app.messages import MSG
-        q = db.table("profiles").select("id").eq("is_active", True)
+        q = db.table("profiles").select("id,campus_id").eq("is_active", True).eq("role", "student")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         users = q.execute() or []
         for user in users:
+            # A global event must still respect a legacy campus-specific pause.
+            user_campus = user.get("campus_id") if not campus_id else campus_id
+            if not is_feature_enabled("hp_multiplier", user_campus) or _get_hp_multiplier(user_campus) != multiplier:
+                continue
             try:
                 send_notification(
                     user_id=user["id"],
@@ -226,7 +296,9 @@ def _broadcast_multiplier_event(db, multiplier: float, campus_id: str = None):
 @require_role("admin")
 def create_setting():
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("key"), str) or ("is_public" in data and not isinstance(data["is_public"], bool)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     key = (data.get("key") or "").strip()
     value = data.get("value")
     campus_id = data.get("campus_id")
@@ -236,18 +308,109 @@ def create_setting():
     if not key or value is None:
         return jsonify({"error": MSG.SETTING_KEY_VALUE_REQUIRED}), 400
 
+    if key == 'global_social_links':
+        from app.utils.social_links import validate_social_links
+        if campus_id:
+            return jsonify({'error': MSG.SOCIAL_LINKS_GLOBAL_ONLY}), 400
+        try:
+            value = validate_social_links(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    if key == 'signup_free_side_config':
+        from app.services.welcome_credit_service import validate_config
+        try:
+            value = validate_config(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
     existing = read_percampus_setting(db, key, campus_id) if campus_id else read_global_setting(db, key)
     if existing:
         return jsonify({"error": MSG.SETTING_KEY_EXISTS}), 409
 
     now = datetime.now(timezone.utc).isoformat()
-    result = db.table("system_settings").insert({
+    payload = {
         "key": key,
         "value": value,
         "description": data.get("description", ""),
         "campus_id": campus_id,
         "updated_at": now,
         "updated_by": g.user_id,
-    })
+    }
+    # New keys are public unless the caller says otherwise. A private row is
+    # invisible to the app it is meant to configure (students read settings
+    # only through the public config), which is exactly the trap the WhatsApp
+    # number fell into: saved, listed for admins, never used by the button.
+    payload["is_public"] = data.get("is_public") is not False
+    try:
+        try:
+            result = db.table("system_settings").insert(payload)
+        except SupabaseError as exc:
+            # Schema without the column — retry without it rather than failing
+            # the create.
+            if "is_public" in str(exc) and "is_public" in payload:
+                logger.warning("settings: system_settings has no is_public column — creating %s without it", key)
+                payload.pop("is_public")
+                result = db.table("system_settings").insert(payload)
+            else:
+                raise
+    except SupabaseError as exc:
+        refusal = _validator_refusal(exc)
+        if refusal is None:
+            raise
+        logger.warning("settings: new key %s refused by hg_validate_system_setting: %s", key, refusal)
+        return jsonify({"error": refusal}), 400
     row = result[0] if isinstance(result, list) else result
     return jsonify({"message": MSG.SETTING_CREATED, "setting": row}), 201
+
+
+@admin_gifts_bp.route('/welcome-credit', methods=['GET', 'PATCH'])
+@require_role('admin')
+def welcome_credit_settings():
+    from app.services.welcome_credit_service import read_config, validate_config, CONFIG_KEY
+    from app.utils.validators import validate_uuid
+    data = request.get_json(silent=True) if request.method == 'PATCH' else {}
+    if request.method == 'PATCH' and not isinstance(data, dict):
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    global_scope = (data or {}).get('scope') == 'global' or request.args.get('scope') == 'global'
+    if global_scope and g.user_role != 'super_admin':
+        return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+    campus_id = None if global_scope else resolve_scoped_campus_id((data or {}).get('campus_id') or request.args.get('campus_id'))
+    if campus_id and not validate_uuid(campus_id):
+        return jsonify({'error': MSG.INVALID_CAMPUS_ID}), 400
+    if not campus_id and g.user_role != 'super_admin':
+        return jsonify({'error': MSG.ACCOUNT_NO_CAMPUS}), 400
+    if request.method == 'GET':
+        try:
+            config, inherited = read_config(get_db(), campus_id)
+        except Exception:
+            return jsonify({'error': MSG.WELCOME_CREDIT_UNAVAILABLE}), 503
+        return jsonify({'config': config, 'campus_id': campus_id, 'inherited': inherited}), 200
+    try:
+        config = validate_config(data.get('config'))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db = get_user_client()
+    try:
+        query = db.table('system_settings').eq('key', CONFIG_KEY)
+        query = query.eq('campus_id', campus_id) if campus_id else query.is_('campus_id', 'null')
+        existing = query.select('key').single().execute()
+        payload = {'value': config, 'is_public': True, 'updated_at': datetime.now(timezone.utc).isoformat(), 'updated_by': g.user_id}
+        if existing:
+            written = query.update(payload)
+        else:
+            written = db.table('system_settings').insert({'key': CONFIG_KEY, 'campus_id': campus_id, 'description': MSG.WELCOME_CREDIT_SETTING_DESCRIPTION, **payload})
+    except SupabaseError as exc:
+        code = str((getattr(exc, 'details', None) or {}).get('code') or '')
+        if code == '23505' or '23505' in str(exc):
+            return jsonify({'error': MSG.WELCOME_CREDIT_SETTING_CHANGED}), 409
+        if code == '42501' or getattr(exc, 'status_code', None) == 403:
+            return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+        logger.warning('Welcome configuration save failed: %s', type(exc).__name__)
+        return jsonify({'error': MSG.WELCOME_CREDIT_SAVE_FAILED}), 503
+    except Exception as exc:
+        logger.warning('Welcome configuration save failed: %s', type(exc).__name__)
+        return jsonify({'error': MSG.WELCOME_CREDIT_SAVE_FAILED}), 503
+    if not written:
+        return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+    return jsonify({'config': config, 'campus_id': campus_id, 'inherited': False}), 200

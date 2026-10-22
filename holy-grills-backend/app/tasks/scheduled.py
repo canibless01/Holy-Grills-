@@ -987,7 +987,8 @@ def process_scheduled_orders(self):
                     db.table("orders")
                     .select("id,scheduled_for,delivery_window_id")
                     .eq("is_scheduled", "true")
-                    .eq("status", "received")
+                    .in_("status", ["received", "paid"])
+                    .eq("payment_status", "paid")
                     .eq("campus_id", campus_id)
                     .lte("scheduled_for", now.isoformat())
                     .execute()
@@ -1352,11 +1353,10 @@ def check_order_locks(self):
                 days_until = (locked_date - today).days
 
                 if days_until < 0:
-                    db.table("order_locks").eq("id", lock["id"]).update({
-                        "status": "expired",
-                        "updated_at": now.isoformat(),
+                    changed = db.table('order_locks').eq('id', lock['id']).eq('status', 'active').eq('locked_date', lock['locked_date']).update({
+                        'status': 'expired', 'updated_at': now.isoformat(),
                     })
-                    expired += 1
+                    expired += len(changed or [])
                     continue
 
                 user_id = lock.get("user_id")
@@ -1599,7 +1599,7 @@ def membership_anniversary_awards(self):
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_blasts", bind=True, max_retries=3)
 @with_cron_logging("send-scheduled-blasts")
-def send_scheduled_blasts(self):
+def send_scheduled_blasts(self, campus_id=None):
     """
     Runs: Every 15 minutes.
     System 1 Scheduled Marketing Engine:
@@ -1617,13 +1617,17 @@ def send_scheduled_blasts(self):
 
     try:
         now = datetime.now(timezone.utc).isoformat()
-        blasts = (
+        query = (
             db.table("notification_blasts")
             .select("id")
-            .eq("status", "scheduled")
-            .lte("scheduled_at", now)
-            .execute()
-        ) or []
+            .in_("status", ["scheduled", "failed", "sending"])
+        )
+        if campus_id:
+            from app.utils.validators import validate_uuid
+            if not validate_uuid(campus_id):
+                raise ValueError("Invalid campus_id")
+            query = query.eq("campus_id", campus_id)
+        blasts = query.execute() or []
 
         processed = 0
         from app.services.notification_service import send_blast
@@ -1632,12 +1636,13 @@ def send_scheduled_blasts(self):
             if not blast_id:
                 continue
             try:
-                send_blast(blast_id)
-                processed += 1
+                outcome = send_blast(blast_id)
+                if not outcome.get("skipped"):
+                    processed += 1
             except Exception as e:
                 logger.error("send_scheduled_blasts: blast %s failed: %s", blast_id, e)
 
-        return {"processed": processed, "checked_at": now}
+        return {"processed": processed, "checked_at": now, "campus_id": campus_id}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})
@@ -2102,6 +2107,42 @@ def grant_monthly_tier_perks(self):
             # The job stays locked, so its next scheduled run may skip itself.
             logger.warning("cron: could not release the job lock after this "
                            "run (%s) — the job may be skipped next time", exc)
+
+
+@celery_app.task(name="app.tasks.scheduled.sweep_pending_squad_hp", bind=True, max_retries=3)
+@with_cron_logging("sweep-pending-squad-hp")
+def sweep_pending_squad_hp(self):
+    """
+    Runs: Daily.
+    B-7b: Pays any pending_squad_hp row whose email now matches an existing account,
+    so a stuck row heals itself. Same claim logic as sign-up claim in auth_service.register.
+    """
+    db = get_db()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "sweep_pending_squad_hp"})
+    except Exception as e:
+        logger.error("sweep_pending_squad_hp: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
+
+    try:
+        from app.services.squad_service import sweep_pending_squad_hp as _sweep
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            res = _sweep(campus_id=campus_id)
+            results[campus_id] = res
+        # Also sweep global (no campus filter) for any rows without campus_id
+        res_global = _sweep(campus_id=None)
+        results["global"] = res_global
+        return results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "sweep_pending_squad_hp"})
+        except Exception as exc:
+            logger.warning("cron: could not release the job lock after this run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_newsletter_campaigns", bind=True, max_retries=3)

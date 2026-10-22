@@ -19,6 +19,25 @@ from app.services.notification_service import send_notification
 webhooks_bp = Blueprint("webhooks", __name__)
 
 
+def _claim_provider_event(provider, event_type, reference, payload):
+    """A failed delivery can retry; an in-flight delivery is not acknowledged as done."""
+    db = get_db()
+    try:
+        db.table("webhook_events").insert({"provider": provider, "event_type": event_type,
+            "reference": reference, "payload": payload, "status": "processing"})
+        return "claimed"
+    except SupabaseError as exc:
+        text = str(exc).lower()
+        if not any(marker in text for marker in ("23505", "duplicate", "unique")):
+            raise
+    query = lambda: db.table("webhook_events").eq("provider", provider).eq("event_type", event_type).eq("reference", reference)
+    claimed = query().eq("status", "failed").update({"status": "processing", "error": None, "processed_at": None, "payload": payload})
+    if claimed:
+        return "claimed"
+    row = query().select("status").single().execute() or {}
+    return "processed" if row.get("status") == "processed" else "busy"
+
+
 @webhooks_bp.route("/paystack", methods=["POST"])
 def paystack_webhook():
     """
@@ -70,20 +89,11 @@ def paystack_webhook():
             # Fallback to stable SHA-256 hash of raw payload bytes to ensure idempotency when all references are missing
             reference = "hash_" + hashlib.sha256(payload_bytes).hexdigest()
 
-    # Atomic Idempotency Claim
-    try:
-        get_db().table("webhook_events").insert({
-            "provider": "paystack",
-            "event_type": event_type,
-            "reference": reference,
-            "payload": payload,
-            "status": "processing",
-        }).execute()
-    except SupabaseError as err:
-        err_str = str(err)
-        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-        raise
+    claim = _claim_provider_event("paystack", event_type, reference, payload)
+    if claim == "processed":
+        return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
+    if claim == "busy":
+        return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 503
 
     try:
         resolved_campus_id = None
@@ -168,20 +178,11 @@ def flutterwave_webhook():
             # Fallback to stable SHA-256 hash of raw payload bytes to ensure idempotency when all references are missing
             reference = "hash_" + hashlib.sha256(payload_bytes).hexdigest()
 
-    # Atomic Idempotency Claim
-    try:
-        get_db().table("webhook_events").insert({
-            "provider": "flutterwave",
-            "event_type": event_type,
-            "reference": reference,
-            "payload": payload,
-            "status": "processing",
-        }).execute()
-    except SupabaseError as err:
-        err_str = str(err)
-        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
-        raise
+    claim = _claim_provider_event("flutterwave", event_type, reference, payload)
+    if claim == "processed":
+        return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED}), 200
+    if claim == "busy":
+        return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 503
 
     try:
         resolved_campus_id = None
@@ -218,6 +219,7 @@ def _handle_flutterwave_charge_success(data: dict):
     Handle a successful Flutterwave charge. Routes to:
     - Order payment confirmation if meta.type == 'order_payment'
     - Wallet top-up if meta.type == 'wallet_topup'
+    - HP bundle isolation (must not be credited as order/wallet)
     """
     currency = data.get("currency")
     if currency and str(currency).upper() != "NGN":
@@ -230,37 +232,32 @@ def _handle_flutterwave_charge_success(data: dict):
         raise ValueError("Invalid payment amount")
 
     payment_type = meta.get("type")
+    purpose = meta.get("purpose")
     user_id = meta.get("user_id")
 
     db = get_db()
+
+    # B-4 isolation: HP bundle references must not be credited as order or wallet
+    if purpose == "hp_bundle" or payment_type == "hp_bundle":
+        # Treat as already handled or handle via same logic as Paystack if needed
+        # Since Flutterwave is not currently used for HP bundles, just return campus to mark processed
+        # and ensure it doesn't fall through to wallet top-up.
+        try:
+            profile = db.table("profiles").select("campus_id").eq("id", user_id).single().execute() if user_id else None
+            return (profile or {}).get("campus_id")
+        except Exception:
+            return None
 
     if payment_type == "order_payment":
         order_id = meta.get("order_id")
         if not order_id:
             raise ValueError("Missing order_id in metadata")
-
-        order = db.table("orders").select("id,user_id,total_amount,status,payment_status,campus_id").eq("id", order_id).single().execute()
+        order = db.table("orders").select("*").eq("id", order_id).single().execute()
         if not order:
-            raise ValueError(f"Order {order_id} not found")
-
-        if order.get("user_id") and str(order.get("user_id")) != str(user_id):
-            raise ValueError("Order user mismatch")
-
-        if order.get("payment_status") == "paid":
-            current_app.logger.warning(
-                "Duplicate payment webhook for already-paid order %s (ref %s) — skipping",
-                order_id, reference,
-            )
-            return order.get("campus_id")
-
-        expected_amount = float(order.get("total_amount") or 0)
-        if abs(amount_naira - expected_amount) > 0.01:
-            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
-
-        if order.get("status") in ("cancelled", "refunded"):
-            raise ValueError(f"Order is already {order.get('status')}")
-
-        confirm_order_payment(order_id, reference, provider_response=data)
+            raise ValueError("Order not found")
+        # Confirmation validates currency, owner, campus, reference and the card
+        # remainder (not the full basket when a wallet contribution exists).
+        confirm_order_payment(order_id, reference, provider_response=data, provider="flutterwave")
         return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":
@@ -341,6 +338,7 @@ def _handle_charge_success(data: dict):
     Handle successful card charge. Routes to:
     - Order payment confirmation if metadata.type == 'order_payment'
     - Wallet top-up if metadata.type == 'wallet_topup'
+    - HP bundle purchase if metadata.purpose == 'hp_bundle' or type == 'hp_bundle' (isolated)
     """
     currency = data.get("currency")
     if currency and str(currency).upper() != "NGN":
@@ -359,37 +357,72 @@ def _handle_charge_success(data: dict):
         raise ValueError("Invalid payment amount")
 
     payment_type = metadata.get("type")
+    purpose = metadata.get("purpose")
     user_id = metadata.get("user_id")
 
     db = get_db()
+
+    # B-4: HP bundle isolation — a reference created for HP bundle must never be credited as order or wallet top-up
+    if purpose == "hp_bundle" or payment_type == "hp_bundle":
+        # Ensure this reference is not processed as order or wallet elsewhere; handle as HP bundle
+        try:
+            hp_amount = int(metadata.get("hp_amount") or 0)
+        except (TypeError, ValueError):
+            hp_amount = 0
+        if not user_id or hp_amount <= 0:
+            raise ValueError("Invalid HP bundle metadata in webhook")
+
+        # Idempotency: if already recorded in hp_bundle_purchases, skip
+        try:
+            existing = db.table("hp_bundle_purchases").select("id").eq("provider", "paystack").eq("provider_reference", reference).execute()
+            if existing:
+                # Already processed via purchase endpoint or previous webhook
+                profile = db.table("profiles").select("campus_id").eq("id", user_id).single().execute()
+                return (profile or {}).get("campus_id")
+        except Exception:
+            pass  # proceed to attempt credit; RPC will handle duplicate
+
+        # Price check: ensure amount matches expected (exact)
+        try:
+            from flask import current_app as _capp
+            price_per_hp = float(_capp.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
+            expected_naira = hp_amount * price_per_hp
+            # Allow tiny floating tolerance for webhook (Paystack sends integer kobo)
+            if abs(amount_naira - expected_naira) > 0.01:
+                raise ValueError(f"HP bundle amount mismatch: webhook {amount_naira}, expected {expected_naira}")
+        except Exception as e:
+            # If price check fails, raise to mark webhook failed
+            if "mismatch" in str(e).lower():
+                raise
+
+        try:
+            from app.services.hp_service import process_hp_bundle_purchase
+            process_hp_bundle_purchase(
+                event_host_id=user_id,
+                hp_amount=hp_amount,
+                naira_paid=amount_naira,
+                provider="paystack",
+                provider_reference=reference,
+            )
+            profile = db.table("profiles").select("campus_id").eq("id", user_id).single().execute()
+            return (profile or {}).get("campus_id")
+        except Exception as e:
+            # If already processed race, treat as success
+            if "already processed" in str(e).lower():
+                profile = db.table("profiles").select("campus_id").eq("id", user_id).single().execute()
+                return (profile or {}).get("campus_id")
+            raise
 
     if payment_type == "order_payment":
         order_id = metadata.get("order_id")
         if not order_id:
             raise ValueError("Missing order_id in metadata")
-
-        order = db.table("orders").select("id,user_id,total_amount,status,payment_status,campus_id").eq("id", order_id).single().execute()
+        order = db.table("orders").select("*").eq("id", order_id).single().execute()
         if not order:
-            raise ValueError(f"Order {order_id} not found")
-
-        if order.get("user_id") and str(order.get("user_id")) != str(user_id):
-            raise ValueError("Order user mismatch")
-
-        if order.get("payment_status") == "paid":
-            current_app.logger.warning(
-                "Duplicate payment webhook for already-paid order %s (ref %s) — skipping",
-                order_id, reference,
-            )
-            return order.get("campus_id")
-
-        expected_amount = float(order.get("total_amount") or 0)
-        if abs(amount_naira - expected_amount) > 0.01:
-            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Order: {expected_amount}")
-
-        if order.get("status") in ("cancelled", "refunded"):
-            raise ValueError(f"Order is already {order.get('status')}")
-
-        confirm_order_payment(order_id, reference, provider_response=data)
+            raise ValueError("Order not found")
+        # Confirmation validates currency, owner, campus, reference and the card
+        # remainder (not the full basket when a wallet contribution exists).
+        confirm_order_payment(order_id, reference, provider_response=data, provider="paystack")
         return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":

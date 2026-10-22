@@ -64,12 +64,12 @@ def maybe_grant_first_order_gift(user_id: str, order_id: str, campus_id: str = N
         end_date_str = _get_setting(db, "launch_window_end_date", "")
         if end_date_str:
             try:
-                end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00")).date() if "T" in end_date_str else date.fromisoformat(end_date_str[:10])
+                end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00")).date() if "T" in end_date_str else date.fromisoformat(end_date_str)
                 if today_wat() > end_date:
                     return {"granted": False, "reason": "launch_window_closed"}
             except ValueError as exc:
-                logger.warning("first_order_gift: launch window end date unreadable (%r) — the window check is skipped and the gift is granted: %s",
-                                end_date_str, exc)
+                logger.warning("first_order_gift: invalid launch end date; grant refused: %s", exc)
+                return {"granted": False, "reason": "launch_window_invalid"}
 
         # Check if user already has a gift record
         existing_gift = (

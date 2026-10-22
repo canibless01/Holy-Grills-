@@ -30,6 +30,7 @@ from app.utils.validators import (
     validate_choice, validate_datetime_order, validate_uuid, validate_hp_amount,
 )
 from app.services.order_service import _order_capacity_weight
+from app.services.exclusive_spin_service import validate_spin_prize
 from app.constants import VALID_ROLES
 
 logger = get_logger(__name__)
@@ -192,7 +193,7 @@ def list_all_orders():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = resolve_scoped_campus_id(requested_campus)
     try:
-        q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
+        q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         if status:
@@ -235,7 +236,7 @@ def user_order_history(user_id):
             return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
         assert_can_modify(profile.get("campus_id"))  # RLS already blocks this; app-level backup (NULL-campus = super_admin accounts, off-limits to campus admins)
         q = (
-            db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total)")
+            db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
             .eq("user_id", user_id)
         )
         if status:
@@ -1131,7 +1132,7 @@ def get_batch(batch_id):
         orders = db.table("orders").select(
             "id,status,delivery_address_snapshot,total_amount,created_at,"
             "delivery_location_lat,delivery_location_lon,"
-            "order_items(name_snapshot,quantity)"
+            "order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         ).eq("batch_id", batch_id).execute() or []
         gate = None
         if batch.get("gate_id"):
@@ -1157,244 +1158,163 @@ def get_batch(batch_id):
     return jsonify(batch), 200
 
 
-@admin_bp.route("/delivery-batches", methods=["POST"])
-@require_role("admin")
-def create_batch():
-    # ADM-31. Only orders that are "ready" can be batched (that is the only status the state machine lets become "assigned").
-    data = get_json_object()
-    if data is None:
-        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+def _batch_mutation_body(action, data):
+    """Validate transport values before the database checks locked business rows."""
+    allowed = {'rider_id', 'zone', 'notes', 'status'} if action == 'update' else {'rider_id', 'zone', 'notes', 'order_ids', 'idempotency_key'}
+    if action == 'create':
+        allowed.add('window_id')
+    if any(key not in allowed for key in data):
+        raise ValueError()
+    clean = {}
+    for key in ('rider_id', 'window_id', 'idempotency_key'):
+        if key in data:
+            clean[key] = as_uuid(data[key])
+            if not clean[key]:
+                raise ValueError()
+    for key, maximum in (('zone', 100), ('notes', 500)):
+        if key in data:
+            if data[key] is not None and not isinstance(data[key], str):
+                raise ValueError()
+            clean[key] = as_text(data[key], maximum) if data[key] else ('' if key == 'zone' else None)
+    if action in ('create', 'split'):
+        raw_ids = data.get('order_ids')
+        if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= _MAX_BATCH_ORDERS:
+            raise ValueError()
+        clean['order_ids'] = [as_uuid(value) for value in raw_ids]
+        if None in clean['order_ids'] or len(set(clean['order_ids'])) != len(clean['order_ids']):
+            raise ValueError()
+        if not clean.get('rider_id') or (action == 'create' and not clean.get('window_id')):
+            raise ValueError()
+        clean.setdefault('idempotency_key', str(uuid.uuid4()))
+    if 'status' in data:
+        if data['status'] not in ('assigned', 'completed'):
+            raise ValueError()
+        clean['status'] = data['status']
+    if action == 'update' and not clean:
+        raise ValueError()
+    return clean
+
+
+def _batch_transaction(action, batch_id, body):
     try:
-        window_id = as_uuid(data.get("window_id"))
-        rider_id = as_uuid(data.get("rider_id"))
-        zone = as_text(data["zone"], 100) if data.get("zone") else ""
-        raw_ids = data.get("order_ids") or []
-        if not isinstance(raw_ids, list) or len(raw_ids) > _MAX_BATCH_ORDERS:
-            raise ValueError("order_ids")
-        order_ids = list(dict.fromkeys(as_uuid(x) for x in raw_ids))
-        if None in order_ids:
-            raise ValueError("order_ids")
-    except ValueError:
-        return jsonify({"error": MSG.INVALID_INPUT}), 400
-    if not window_id or not rider_id:
-        return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
-    db = get_user_client()
-    try:
-        window = db.table("delivery_windows").select("id,campus_id").eq("id", window_id).single().execute()
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "create_batch.window")
-    if not window:
-        return jsonify({"error": MSG.ADMIN_WINDOW_NOT_FOUND}), 404
-    assert_can_modify(window.get("campus_id"))
-    campus_id = window["campus_id"]
-    error = _check_rider(db, rider_id, campus_id)
-    if error:
-        return error
-    if order_ids:
-        try:
-            orders = db.table("orders").select("id,delivery_window_id,status,batch_id,campus_id").in_("id", order_ids).execute() or []
-        except (SupabaseError, requests.RequestException) as e:
-            return db_error_response(e, "create_batch.orders")
-        found = {o["id"]: o for o in orders}
-        missing = [i for i in order_ids if i not in found]
-        if missing:
-            return jsonify({"error": MSG.BATCH_ORDERS_NOT_FOUND, "orders": missing}), 404
-        problems = []
-        for o in orders:
-            if o.get("delivery_window_id") and o["delivery_window_id"] != window_id:
-                problems.append({"id": o["id"], "reason": "other_window"})
-            elif o.get("campus_id") != campus_id:
-                problems.append({"id": o["id"], "reason": "other_campus"})
-            elif o.get("batch_id"):
-                problems.append({"id": o["id"], "reason": "already_batched"})
-            elif o.get("status") != "ready":
-                problems.append({"id": o["id"], "reason": "not_ready", "status": o.get("status")})
-        if problems:
-            return jsonify({"error": MSG.BATCH_ORDERS_NOT_ELIGIBLE, "orders": problems}), 409
-    try:
-        created = db.table("delivery_batches").insert({
-            "window_id": window_id, "rider_id": rider_id, "zone": zone, "status": "assigned", "campus_id": campus_id,
+        receipt = get_db().rpc('hg_manage_delivery_batch_atomic', {
+            'p_actor_id': g.user_id, 'p_action': action,
+            'p_batch_id': batch_id, 'p_body': body,
         })
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "create_batch")
-    batch_row = created[0] if isinstance(created, list) and created else created
-    batch_id = batch_row["id"]
-
-    assigned, failed = [], []
-    if order_ids:
-        try:
-            # One conditional write: only orders that are still ready and unbatched are taken.
-            taken = db.table("orders").in_("id", order_ids).eq("status", "ready").is_("batch_id", "null").update({"batch_id": batch_id})
-        except (SupabaseError, requests.RequestException) as e:
-            db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
-            return db_error_response(e, "create_batch.attach")
-        taken_ids = [o["id"] for o in (taken or [])]
-        if len(taken_ids) != len(order_ids):
-            # Another admin changed one of the orders in the meantime: undo and report.
-            if taken_ids:
-                db.table("orders").in_("id", taken_ids).update({"batch_id": None})
-            db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
-            return jsonify({"error": MSG.BATCH_ORDERS_CHANGED}), 409
-        from app.services.order_service import update_order_status
-        for oid in taken_ids:
-            try:
-                update_order_status(oid, "assigned", changed_by=g.user_id)
-                assigned.append(oid)
-            except Exception as e:  # broad on purpose: isolate one bad order from the rest
-                logger.error("create_batch: assigning order %s failed: %s", oid, e)
-                now_status = db.table("orders").select("status").eq("id", oid).single().execute() or {}
-                if now_status.get("status") == "assigned":
-                    assigned.append(oid)  # the change did go through; keep it in the batch
-                else:
-                    db.table("orders").eq("id", oid).update({"batch_id": None})
-                    failed.append(oid)
-    _notify_rider_of_batch(rider_id, batch_id, campus_id)
-    audit_ok = _audit(g.user_id, "delivery_batches", batch_id, "create_batch",
-                      after_data={"window_id": window_id, "rider_id": rider_id, "orders": assigned},
-                      target_campus_id=campus_id)
-    body = dict(batch_row, orders_assigned=len(assigned), orders_failed=failed)
-    if not audit_ok:
-        body["audit_logged"] = False
-    return jsonify(body), 201
+    except (SupabaseError, requests.RequestException) as exc:
+        detail = getattr(exc, 'details', {}) or {}
+        marker = str(detail.get('message') or exc) if isinstance(detail, dict) else str(exc)
+        failures = (
+            ('batch_forbidden', MSG.ORDER_ACCESS_DENIED, 403),
+            ('batch_not_found', MSG.ADMIN_BATCH_NOT_FOUND, 404),
+            ('batch_rider_invalid', MSG.RIDER_CAMPUS_MISMATCH, 400),
+            ('batch_invalid', MSG.INVALID_INPUT, 400),
+            ('batch_conflict', MSG.BATCH_ACTION_CONFLICT, 409),
+        )
+        for code, message, status in failures:
+            if code in marker:
+                return None, (jsonify({'error': message}), status)
+        logger.error('Atomic batch %s failed: %s', action, exc)
+        return None, (jsonify({'error': MSG.BATCH_ACTION_UNAVAILABLE}), 503)
+    if not isinstance(receipt, dict) or not receipt.get('id'):
+        return None, (jsonify({'error': MSG.BATCH_ACTION_UNAVAILABLE}), 503)
+    return receipt, None
 
 
-@admin_bp.route("/delivery-batches/<batch_id>", methods=["PATCH"])
-@require_role("admin")
-def update_batch(batch_id):
-    # ADM-32. Cancelling goes through DELETE (it must release the orders). completed needs every order finished.
-    if not validate_uuid(batch_id):
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
+def _batch_saved_effects(action, receipt, body):
+    if receipt.get('replayed'):
+        return
+    app = current_app._get_current_object()
+    def notify():
+        with app.app_context():
+            if receipt.get('notify_rider') and receipt.get('rider_id'):
+                _notify_rider_of_batch(receipt['rider_id'], receipt['id'], receipt.get('campus_id'))
+            for order_id in receipt.get('newly_assigned') or []:
+                try:
+                    order = get_db().table('orders').select('*').eq('id', order_id).single().execute()
+                    if order:
+                        from app.services.order_service import _send_status_notification
+                        _send_status_notification(order, 'assigned')
+                        if order.get('user_id'):
+                            from app.services.gift_service import notify_gift_rider_assigned
+                            notify_gift_rider_assigned(order['user_id'], order_id)
+                except Exception as exc:
+                    logger.warning('Batch order %s saved; assignment notification failed: %s', order_id, exc)
+    # Notification delivery does not hold a bulk assignment response open.
+    threading.Thread(target=notify, daemon=True).start()
+    if not _audit(g.user_id, 'delivery_batches', receipt['id'], action + '_batch',
+                  after_data=body, target_campus_id=receipt.get('campus_id')):
+        receipt['audit_logged'] = False
+
+
+@admin_bp.route('/delivery-batches', methods=['POST'])
+@require_role('admin')
+def create_batch():
     data = get_json_object()
     if data is None:
-        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
-    db = get_user_client()
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        existing = db.table("delivery_batches").select("id,status,rider_id,campus_id").eq("id", batch_id).single().execute()
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "update_batch.lookup")
-    if not existing:
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-    assert_can_modify(existing.get("campus_id"))
-    sent = {k: v for k, v in data.items() if k in {"status", "rider_id", "zone", "notes"}}
-    if not sent:
-        return jsonify({"error": MSG.ADMIN_BATCH_NO_FIELDS}), 400
-    safe = {}
-    try:
-        if "zone" in sent:
-            safe["zone"] = as_text(sent["zone"], 100) if sent["zone"] else ""
-        if "notes" in sent:
-            safe["notes"] = as_text(sent["notes"], 500) if sent["notes"] else None
-        new_rider = as_uuid(sent["rider_id"]) if "rider_id" in sent else None
-        if "rider_id" in sent and not new_rider:
-            raise ValueError("rider_id")
+        body = _batch_mutation_body('create', data)
     except ValueError:
-        return jsonify({"error": MSG.INVALID_INPUT}), 400
-    current = existing.get("status")
-    if "status" in sent:
-        new_status = sent["status"]
-        if new_status not in ("assigned", "completed", "cancelled"):
-            return jsonify({"error": MSG.ADMIN_BATCH_INVALID_STATUS}), 400
-        if new_status == "cancelled":
-            return jsonify({"error": MSG.BATCH_USE_DELETE}), 409
-        if new_status != current:
-            if new_status not in _BATCH_FLOW.get(current, ()):
-                return jsonify({"error": MSG.BATCH_STATUS_INVALID_TRANSITION.format(current=current, new=new_status)}), 409
-            if new_status == "completed":
-                try:
-                    open_rows = (
-                        db.table("orders").select("id").eq("batch_id", batch_id)
-                        .not_.in_("status", list(_ORDER_DONE)).limit(1).execute()
-                    )
-                except (SupabaseError, requests.RequestException) as e:
-                    return db_error_response(e, "update_batch.orders")
-                if open_rows:
-                    return jsonify({"error": MSG.BATCH_HAS_OPEN_ORDERS}), 409
-                safe["completed_at"] = datetime.now(timezone.utc).isoformat()
-            safe["status"] = new_status
-    if new_rider and new_rider != existing.get("rider_id"):
-        if current in ("completed", "cancelled"):
-            return jsonify({"error": MSG.BATCH_ALREADY_FINISHED}), 409
-        error = _check_rider(db, new_rider, existing.get("campus_id"))
-        if error:
-            return error
-        safe["rider_id"] = new_rider
-    if not safe:
-        return jsonify(existing), 200
-    try:
-        result = db.table("delivery_batches").eq("id", batch_id).update(safe)
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "update_batch")
-    if not result:
-        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
-    if "rider_id" in safe:
-        _notify_rider_of_batch(safe["rider_id"], batch_id, existing.get("campus_id"))
-    audit_ok = _audit(g.user_id, "delivery_batches", batch_id, "update_batch", after_data=safe,
-                      before_data={k: existing.get(k) for k in safe if k in existing},
-                      target_campus_id=existing.get("campus_id"))
-    body = dict(result[0] if isinstance(result, list) else result)
-    if not audit_ok:
-        body["audit_logged"] = False
-    return jsonify(body), 200
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    receipt, failure = _batch_transaction('create', None, body)
+    if failure:
+        return failure
+    _batch_saved_effects('create', receipt, body)
+    return jsonify(receipt), 201
 
 
-def _unassign_order(db, order_id):
-    """assigned -> ready and detach from the batch, logged. True if the order was released."""
-    from app.services.order_service import _log_status_change
-    res = db.table("orders").eq("id", order_id).eq("status", "assigned").update(
-        {"status": "ready", "batch_id": None, "assigned_at": None}
-    )
-    if not res:
-        return False
-    _log_status_change(order_id, "assigned", "ready", g.user_id, "Delivery batch cancelled")
-    return True
-
-
-@admin_bp.route("/delivery-batches/<batch_id>", methods=["DELETE"])
-@require_role("admin")
-def cancel_batch(batch_id):
-    # ADM-33. Orders still "assigned" go back to "ready". A batch with orders already out for delivery
-    # (or finished) cannot be cancelled.
+@admin_bp.route('/delivery-batches/<batch_id>', methods=['PATCH'])
+@require_role('admin')
+def update_batch(batch_id):
     if not validate_uuid(batch_id):
-        return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-    db = get_user_client()
+        return jsonify({'error': MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    if data.get('status') == 'cancelled':
+        return jsonify({'error': MSG.BATCH_USE_DELETE}), 409
     try:
-        existing = db.table("delivery_batches").select("id,status,campus_id").eq("id", batch_id).single().execute()
-        if not existing:
-            return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
-        assert_can_modify(existing.get("campus_id"))
-        if existing.get("status") == "cancelled":
-            return jsonify({"message": MSG.ADMIN_BATCH_CANCELLED, "batch_id": batch_id, "orders_unassigned": 0}), 200
-        if existing.get("status") == "completed":
-            return jsonify({"error": MSG.BATCH_ALREADY_FINISHED}), 409
-        orders = db.table("orders").select("id,status").eq("batch_id", batch_id).execute() or []
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "cancel_batch")
-    on_the_road = [o["id"] for o in orders if o.get("status") != "assigned"]
-    if on_the_road:
-        return jsonify({"error": MSG.BATCH_IN_PROGRESS, "orders": on_the_road}), 409
-    released, failed = 0, []
-    for o in orders:
-        try:
-            if _unassign_order(db, o["id"]):
-                released += 1
-            else:
-                failed.append(o["id"])
-        except (SupabaseError, requests.RequestException) as e:
-            logger.error("cancel_batch: releasing order %s failed: %s", o["id"], e)
-            failed.append(o["id"])
-    if failed:
-        return jsonify({"error": MSG.BATCH_RELEASE_FAILED, "orders": failed, "orders_unassigned": released}), 409
+        body = _batch_mutation_body('update', data)
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    receipt, failure = _batch_transaction('update', batch_id, body)
+    if failure:
+        return failure
+    _batch_saved_effects('update', receipt, body)
+    return jsonify(receipt), 200
+
+
+@admin_bp.route('/delivery-batches/<batch_id>', methods=['DELETE'])
+@require_role('admin')
+def cancel_batch(batch_id):
+    if not validate_uuid(batch_id):
+        return jsonify({'error': MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    receipt, failure = _batch_transaction('cancel', batch_id, {})
+    if failure:
+        return failure
+    _batch_saved_effects('cancel', receipt, {})
+    receipt['message'] = MSG.ADMIN_BATCH_CANCELLED
+    return jsonify(receipt), 200
+
+
+@admin_bp.route('/delivery-batches/<batch_id>/split', methods=['POST'])
+@require_role('admin')
+def split_batch(batch_id):
+    if not validate_uuid(batch_id):
+        return jsonify({'error': MSG.ADMIN_BATCH_NOT_FOUND}), 404
+    data = get_json_object()
+    if data is None:
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        db.table("delivery_batches").eq("id", batch_id).update({"status": "cancelled"})
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "cancel_batch.status")
-    audit_ok = _audit(g.user_id, "delivery_batches", batch_id, "cancel_batch",
-                      after_data={"orders_unassigned": released}, before_data={"status": existing.get("status")},
-                      target_campus_id=existing.get("campus_id"))
-    body = {"message": MSG.ADMIN_BATCH_CANCELLED, "batch_id": batch_id, "orders_unassigned": released}
-    if not audit_ok:
-        body["audit_logged"] = False
-    return jsonify(body), 200
+        body = _batch_mutation_body('split', data)
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    receipt, failure = _batch_transaction('split', batch_id, body)
+    if failure:
+        return failure
+    _batch_saved_effects('split', receipt, {**body, 'source_batch_id': batch_id})
+    return jsonify(receipt), 201
 
 
 @admin_bp.route("/delivery-batches/<batch_id>/orders", methods=["GET"])
@@ -1411,7 +1331,7 @@ def list_batch_orders(batch_id):
         assert_can_modify(batch.get("campus_id"))  # RLS already scopes this; app-level backup
         orders = db.table("orders").select(
             "id,status,delivery_address_snapshot,total_amount,created_at,"
-            "order_items(name_snapshot,quantity)"
+            "order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         ).eq("batch_id", batch_id).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_batch_orders")
@@ -2269,6 +2189,149 @@ def hp_report():
     }), 200
 
 
+@admin_bp.route("/hp/pending-squad", methods=["GET"])
+@require_role("admin")
+def hp_pending_squad():
+    """
+    Admin: unclaimed squad HP report (A9). Campus admin sees own campus, super_admin sees all.
+    Uses authenticated RPC `public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14)` — test-2 contract.
+    ---
+    tags: [Admin]
+    parameters:
+      - in: query
+        name: campus_id
+        type: string
+        description: Optional campus filter (super_admin only)
+      - in: query
+        name: stale_days
+        type: integer
+        default: 14
+        description: Age threshold for report (p_stale_days)
+    responses:
+      200:
+        description: Pending squad HP report
+    """
+    from app.middleware.auth import resolve_scoped_campus_id
+    from app.services.squad_service import get_pending_squad_hp_report as fallback_report
+
+    # Campus scoping is enforced inside the RPC via auth.uid() -> profiles role/campus_id.
+    # We still resolve for fallback path and for validation of super_admin ?campus_id= override.
+    scoped_campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    # p_stale_days is the only argument on test-2, defaults to 14
+    stale_days_raw = request.args.get("stale_days", "14")
+    try:
+        stale_days = int(stale_days_raw)
+        if stale_days < 0 or stale_days > 365:
+            raise ValueError()
+    except ValueError:
+        return jsonify({"error": "stale_days must be an integer between 0 and 365"}), 400
+
+    db = get_user_client()  # authenticated RPC per spec — required so auth.uid() resolves
+    try:
+        # Exact test-2 signature: public.get_pending_squad_hp_report(p_stale_days integer DEFAULT 14) RETURNS jsonb
+        # SECURITY DEFINER, EXECUTE granted to authenticated/service_role.
+        # Scoping (confirmed on test-2): looks up caller's role and campus_id from profiles using auth.uid().
+        # If caller isn't admin/super_admin → insufficient_privilege. super_admin sees all campuses.
+        # admin sees only rows where pending_squad_hp.campus_id = own campus. Only status='pending' included.
+        # Because it returns JSONB and already scopes, route must return it unchanged — no Flask campus filtering.
+        try:
+            rpc_result = db.rpc("get_pending_squad_hp_report", {"p_stale_days": stale_days})
+            if rpc_result is not None:
+                # Return JSONB as-is per requirement — do NOT mutate structure for campus filtering.
+                return jsonify(rpc_result), 200
+        except Exception as rpc_exc:
+            import logging
+            logging.getLogger(__name__).warning("hp_pending_squad: RPC get_pending_squad_hp_report failed, falling back: %s", rpc_exc)
+
+        # Fallback service-client report (used when RPC unavailable offline) — mimics same scoping logic
+        report = fallback_report(campus_id=scoped_campus_id, p_stale_days=stale_days)
+        # Fallback already includes p_stale_days, but ensure
+        report["p_stale_days"] = stale_days
+        return jsonify(report), 200
+    except Exception as e:
+        return db_error_response(e, "hp_pending_squad")
+
+
+def _campus_setup_fields(data, creating=False):
+    import re
+    result = {}
+    for field, limit in (("name", 128), ("slug", 80)):
+        if field in data or creating:
+            result[field] = as_text(data.get(field), limit)
+    if "slug" in result and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", result["slug"]):
+        raise ValueError("Invalid slug")
+    if "is_active" in data:
+        if not isinstance(data["is_active"], bool):
+            raise ValueError("Invalid active flag")
+        result["is_active"] = data["is_active"]
+    return result
+
+
+@admin_bp.route("/campuses", methods=["POST"])
+@require_role("super_admin")
+def create_campus():
+    import uuid
+    data = get_json_object()
+    try:
+        if data is None:
+            raise ValueError
+        row = _campus_setup_fields(data, creating=True)
+        request_id = data.get("request_id") or str(uuid.uuid4())
+        if not isinstance(request_id, str) or not validate_uuid(request_id):
+            raise ValueError
+        request_id = str(uuid.UUID(request_id))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    row.update({"id": request_id, "is_active": row.get("is_active", True), "is_default": False})
+    db = get_db()  # campuses intentionally has read-only client policies; fresh super-admin middleware authorizes writes.
+    try:
+        saved = db.table("campuses").insert(row).execute()
+    except SupabaseError as exc:
+        if str((exc.details or {}).get("code")) == "23505":
+            existing = db.table("campuses").select("*").eq("id", request_id).single().execute()
+            if existing and all(existing.get(k) == v for k, v in row.items()):
+                return jsonify(existing), 200
+            return jsonify({"error": MSG.CAMPUS_WRITE_CONFLICT}), 409
+        return db_error_response(exc, "create_campus")
+    campus = saved[0] if isinstance(saved, list) else saved
+    _audit(g.user_id, "campuses", request_id, "create_campus", row, target_campus_id=request_id)
+    return jsonify(campus), 201
+
+
+@admin_bp.route("/campuses/<campus_id>", methods=["PATCH"])
+@require_role("super_admin")
+def update_campus(campus_id):
+    if not validate_uuid(campus_id):
+        return jsonify({"error": MSG.CAMPUS_NOT_FOUND}), 404
+    data = get_json_object()
+    try:
+        if data is None:
+            raise ValueError
+        patch = _campus_setup_fields(data)
+        if not patch:
+            raise ValueError
+        expected_updated_at = as_instant(data.get("expected_updated_at"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    db = get_db()
+    existing = db.table("campuses").select("*").eq("id", campus_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.CAMPUS_NOT_FOUND}), 404
+    if existing.get("is_default") and patch.get("is_active") is False:
+        return jsonify({"error": MSG.CAMPUS_DEFAULT_ACTIVE_REQUIRED}), 409
+    try:
+        patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+        saved = db.table("campuses").eq("id", campus_id).eq("updated_at", expected_updated_at).update(patch)
+    except SupabaseError as exc:
+        if str((exc.details or {}).get("code")) == "23505":
+            return jsonify({"error": MSG.CAMPUS_WRITE_CONFLICT}), 409
+        return db_error_response(exc, "update_campus")
+    if not saved:
+        return jsonify({"error": MSG.CAMPUS_EDIT_CONFLICT}), 409
+    _audit(g.user_id, "campuses", campus_id, "update_campus", patch, before_data=existing, target_campus_id=campus_id)
+    return jsonify(saved[0] if isinstance(saved, list) else saved), 200
+
+
 @admin_bp.route("/campuses", methods=["GET"])
 @require_role("admin")
 def list_campuses():
@@ -2359,6 +2422,12 @@ def list_reviews():
 # admin_bp blueprint block. The doc explicitly scopes their fix to 3 small patches
 # (B-34/B-35/B-36), not a full rewrite, so the rest of each handler is left as it was.
 
+def _exclusive_spin_validity_days():
+    row = (get_db().table('system_settings').select('value')
+           .eq('key', 'exclusive_spin_validity_days').is_('campus_id', 'null').single().execute())
+    raw = row.get('value') if row and row.get('value') is not None else current_app.config['EXCLUSIVE_SPIN_VALIDITY_DAYS']
+    return as_int(raw, 1, 365)
+
 @admin_bp.route("/exclusive-spin-pool", methods=["GET"])
 @require_role("admin")
 def list_spin_pool():
@@ -2370,7 +2439,12 @@ def list_spin_pool():
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
     prizes = q.execute() or []
-    return jsonify({"prizes": prizes}), 200
+    try:
+        validity_days = _exclusive_spin_validity_days()
+    except Exception:
+        logger.exception('list_spin_pool: credit validity unavailable')
+        return jsonify({'error': MSG.SPIN_GRANT_SERVICE_UNAVAILABLE}), 503
+    return jsonify({"prizes": prizes, 'credit_validity_days': validity_days}), 200
 
 
 @admin_bp.route("/exclusive-spin-pool", methods=["POST"])
@@ -2378,27 +2452,21 @@ def list_spin_pool():
 def create_spin_pool_prize():
     """Create a new exclusive spin prize-pool entry."""
     db = get_user_client()
-    data = request.get_json(force=True) or {}
-
-    if not data.get("name"):
-        return jsonify({"error": MSG.SPIN_POOL_NAME_REQUIRED}), 400
-
-    weight = data.get("weight", 1)
-    if not isinstance(weight, int) or weight <= 0:
-        return jsonify({"error": MSG.SPIN_POOL_WEIGHT_INVALID}), 400
-
-    # B-35: a super_admin's own campus_id is None, so before this fix every prize they
-    # created was global regardless of intent — let them name a specific campus instead.
-    if getattr(g, "user_role", None) == "super_admin" and data.get("campus_id"):
-        campus_id = as_campus_id(data.get("campus_id"))
+    data = get_json_object()
+    try:
+        safe = validate_spin_prize(data)
+        requested = as_campus_id(data.get('campus_id'))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    if getattr(g, 'user_role', None) == 'super_admin':
+        campus_id = requested  # Explicit NULL means global even with a selected header.
     else:
-        campus_id = getattr(g, "campus_id", None)
-    result = db.table("exclusive_spin_prizes").insert({
-        "name": data["name"],
-        "weight": weight,
-        "is_active": bool(data.get("is_active", True)),
-        "campus_id": campus_id,
-    }).execute()
+        if requested and requested != getattr(g, 'campus_id', None):
+            return jsonify({'error': MSG.RESOURCE_ACCESS_DENIED}), 403
+        campus_id = getattr(g, 'campus_id', None)
+    if campus_id and not get_db().table('campuses').select('id').eq('id', campus_id).eq('is_active', True).single().execute():
+        return jsonify({'error': MSG.CAMPUS_NOT_FOUND}), 400
+    result = db.table('exclusive_spin_prizes').insert({**safe, 'is_active': safe.get('is_active', True), 'campus_id': campus_id}).execute()
 
     row = result[0] if isinstance(result, list) else result
     return jsonify(row), 201
@@ -2443,11 +2511,9 @@ def grant_exclusive_spins():
     if not user_id:
         return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="user_id")}), 400
     try:
-        spins = int(data.get("spins", 1))
-    except (TypeError, ValueError):
-        return jsonify({"error": "spins must be a whole number"}), 400
-    if not 1 <= spins <= 10:
-        return jsonify({"error": "spins must be between 1 and 10"}), 400
+        spins = as_int(data.get('spins', 1), 1, 10)
+    except ValueError:
+        return jsonify({'error': MSG.SPIN_GRANT_COUNT_INVALID}), 400
 
     target, err = fetch_or_403(db, "profiles", user_id, select="id,campus_id",
                                not_found_msg=MSG.RESOURCE_NOT_FOUND)
@@ -2457,53 +2523,51 @@ def grant_exclusive_spins():
     validity_days = data.get("validity_days")
     if validity_days is None:
         try:
-            row = db.table("system_settings").select("value").eq("key", "exclusive_spin_validity_days").is_("campus_id", "null").single().execute()
-            validity_days = int((row or {}).get("value") or 60)
-        except Exception:                                    # noqa: BLE001 - a setting, not a guard
-            validity_days = 60
+            validity_days = _exclusive_spin_validity_days()
+        except Exception:
+            logger.exception('grant_exclusive_spins: credit validity unavailable')
+            return jsonify({'error': MSG.SPIN_GRANT_SERVICE_UNAVAILABLE}), 503
     try:
-        validity_days = int(validity_days)
-    except (TypeError, ValueError):
-        return jsonify({"error": "validity_days must be a whole number"}), 400
-    if not 1 <= validity_days <= 365:
-        return jsonify({"error": "validity_days must be between 1 and 365"}), 400
-
-    reason = as_text(data.get("reason"), 200) or "Admin grant"
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
-
-    # source='admin_grant' is accepted on read (see SPIN_GRANT_SOURCES in
-    # app/routes/exclusive_spin.py) — without that entry this row would be invisible.
-    result = db.table("exclusive_spins").insert({
-        "user_id": user_id,
-        "spin_count": spins,
-        "source": "admin_grant",
-        "month": month,
-        "expires_at": expires_at,
-        "campus_id": target.get("campus_id") or getattr(g, "campus_id", None),
-    }).execute()
-    row = result[0] if isinstance(result, list) else result
-
-    _audit(g.user_id, "exclusive_spins", (row or {}).get("id"), "grant",
-           after_data={"user_id": user_id, "spins": spins, "expires_at": expires_at, "reason": reason},
-           target_campus_id=target.get("campus_id"))
+        validity_days = as_int(validity_days, 1, 365)
+    except ValueError:
+        return jsonify({'error': MSG.SPIN_GRANT_VALIDITY_INVALID}), 400
     try:
-        send_notification(
-            user_id=user_id,
-            notif_type="exclusive_spin_granted",
-            template_data={"spins": spins, "expires_at": expires_at[:10]},
-            campus_id=target.get("campus_id") or getattr(g, "campus_id", None),
-        )
-    except Exception as exc:                                 # noqa: BLE001 - the grant already happened
-        logger.warning("grant_exclusive_spins: notify failed for %s: %s", user_id, exc)
+        reason = as_text(data.get('reason'), 200) if data.get('reason') is not None else None
+    except ValueError:
+        return jsonify({'error': MSG.ADMIN_REQUEST_BODY_INVALID}), 400
 
-    return jsonify({
-        "message": "Exclusive spins granted",
-        "spin_id": (row or {}).get("id"),
-        "user_id": user_id,
-        "spins": spins,
-        "expires_at": expires_at,
-    }), 201
+    try:
+        intent = as_uuid(data.get('intent_key'))
+    except ValueError:
+        intent = None
+    if not intent:
+        return jsonify({'error': MSG.SPIN_INTENT_REQUIRED}), 400
+    try:
+        result = get_db().rpc('hg_grant_exclusive_spins_atomic', {
+            'p_actor_id': g.user_id, 'p_user_id': user_id, 'p_intent_key': intent,
+            'p_spins': spins, 'p_validity_days': validity_days, 'p_reason': reason,
+        })
+    except Exception:
+        logger.exception('grant_exclusive_spins: atomic grant unavailable')
+        return jsonify({'error': MSG.SPIN_GRANT_SERVICE_UNAVAILABLE}), 503
+    if result.get('error'):
+        messages = {'forbidden': (MSG.RESOURCE_ACCESS_DENIED, 403),
+                    'target_unavailable': (MSG.RESOURCE_NOT_FOUND, 404),
+                    'invalid_grant': (MSG.ADMIN_REQUEST_BODY_INVALID, 400),
+                    'intent_conflict': (MSG.SPIN_GRANT_INTENT_CONFLICT, 409)}
+        message, status = messages.get(result['error'], (MSG.SPIN_GRANT_SERVICE_UNAVAILABLE, 503))
+        return jsonify({'error': message}), status
+    if not result.get('idempotent'):
+        _audit(g.user_id, 'exclusive_spins', result['spin_id'], 'grant',
+               after_data={'user_id': user_id, 'spins': spins, 'expires_at': result['expires_at'], 'reason': reason},
+               target_campus_id=target.get('campus_id'))
+        try:
+            send_notification(user_id=user_id, notif_type='exclusive_spin_granted',
+                              template_data={'spins': spins, 'expires_at': result['expires_at'][:10]},
+                              campus_id=target.get('campus_id'))
+        except Exception:
+            logger.exception('grant_exclusive_spins: grant saved but notification failed')
+    return jsonify({**result, 'message': MSG.SPIN_GRANTED}), 200 if result.get('idempotent') else 201
 
 
 @admin_bp.route("/exclusive-spin-pool/<prize_id>", methods=["PATCH"])
@@ -2511,25 +2575,22 @@ def grant_exclusive_spins():
 def update_spin_pool_prize(prize_id):
     """Update an exclusive spin prize-pool entry."""
     db = get_user_client()
-    data = request.get_json(force=True) or {}
-
-    # B-34: the pre-check had no campus filter, so a campus admin was told a prize
-    # "exists" even when it belonged to another campus (the write was still RLS-blocked,
-    # but the response was a misleading "found, then update failed" instead of not-found).
-    campus_id = getattr(g, "campus_id", None)
-    existing_q = db.table("exclusive_spin_prizes").select("id")
-    if campus_id:
-        existing_q = existing_q.eq("campus_id", campus_id)
-    existing = existing_q.eq("id", prize_id).single().execute()
+    data = get_json_object()
+    try:
+        safe = validate_spin_prize(data, partial=True)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    existing = db.table('exclusive_spin_prizes').select('id,campus_id').eq('id', prize_id).single().execute()
     if not existing:
-        return jsonify({"error": MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
-
-    allowed = {"name", "weight", "is_active"}
-    safe = {k: v for k, v in data.items() if k in allowed}
-    if "weight" in safe and (not isinstance(safe["weight"], int) or safe["weight"] <= 0):
-        return jsonify({"error": MSG.SPIN_POOL_WEIGHT_INVALID}), 400
-    if not safe:
-        return jsonify({"error": MSG.SPIN_POOL_NO_VALID_FIELDS}), 400
+        return jsonify({'error': MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
+    assert_can_modify(existing.get('campus_id'))
+    if 'campus_id' in data:
+        try:
+            requested = as_campus_id(data['campus_id'])
+        except ValueError:
+            return jsonify({'error': MSG.CAMPUS_NOT_FOUND}), 400
+        if requested != existing.get('campus_id'):
+            return jsonify({'error': MSG.SPIN_POOL_SCOPE_IMMUTABLE}), 400
 
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = db.table("exclusive_spin_prizes").eq("id", prize_id).update(safe).execute()
@@ -2546,14 +2607,10 @@ def delete_spin_pool_prize(prize_id):
     """Soft-delete (deactivate) an exclusive spin prize-pool entry."""
     db = get_user_client()
 
-    # B-34 (see update_spin_pool_prize above for the same fix, applied here too)
-    campus_id = getattr(g, "campus_id", None)
-    existing_q = db.table("exclusive_spin_prizes").select("id")
-    if campus_id:
-        existing_q = existing_q.eq("campus_id", campus_id)
-    existing = existing_q.eq("id", prize_id).single().execute()
+    existing = db.table('exclusive_spin_prizes').select('id,campus_id').eq('id', prize_id).single().execute()
     if not existing:
-        return jsonify({"error": MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
+        return jsonify({'error': MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
+    assert_can_modify(existing.get('campus_id'))
 
     result = db.table("exclusive_spin_prizes").eq("id", prize_id).update({
         "is_active": False,
@@ -2562,7 +2619,7 @@ def delete_spin_pool_prize(prize_id):
     if not result:
         return jsonify({"error": MSG.SPIN_POOL_DEACTIVATION_FAILED}), 404
 
-    return jsonify({"message": "Prize deactivated"}), 200
+    return jsonify({"message": MSG.SPIN_POOL_DEACTIVATED}), 200
 
 
 # ---------------------------------------------------------------------------
