@@ -25,6 +25,7 @@ import { readFeeCache, writeFeeCache } from '@/lib/deliveryUtils';
 import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } from '@/types/orders';
 import type { FreeSideItem } from '@/types/free-sides';
 import { checkoutIntent } from '@/lib/checkoutIntent';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 function CheckoutSkeleton() {
   return (
@@ -108,6 +109,22 @@ export default function Checkout() {
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const confirmedContact = useRef('');
+  const contactSubmitting = useRef(false);
+  useEffect(() => { confirmedContact.current = ''; }, [user?.id, campus?.id]);
+  const [contactAction, setContactAction] = useState<'order' | 'schedule' | null>(null);
+  const [contactDraft, setContactDraft] = useState('');
+  const [contactError, setContactError] = useState('');
+  const [saveAddressOpen, setSaveAddressOpen] = useState(false);
+  const [addressLabel, setAddressLabel] = useState('');
+  const [addressCity, setAddressCity] = useState('');
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [addressSaveError, setAddressSaveError] = useState('');
+  const askForContact = (action: 'order' | 'schedule') => {
+    setContactDraft(confirmedContact.current || user?.phone || user?.profile?.phone || guestPhone || '');
+    setContactError(''); setContactAction(action);
+  };
+
   const [error, setError] = useState(null);
   // `available_sides` are the backend's curated free-side items — the only
   // things a credit can be spent on (GET /free-sides).
@@ -406,6 +423,7 @@ export default function Checkout() {
           ...(squadSelection.extra_members?.length ? { extra_members: squadSelection.extra_members } : {}),
         } : {}),
         notes,
+        contact_phone: confirmedContact.current || user?.phone || user?.profile?.phone || guestPhone || '',
         ...(paymentMethod === 'split' && isAuthenticated ? { wallet_amount: walletAmount } : {}),
         ...(!isAuthenticated ? { guest_name: guestName, guest_phone: guestPhone, guest_email: guestEmail } : {}),
         // A saved address the guest picked: the backend re-reads its stored
@@ -457,6 +475,7 @@ export default function Checkout() {
       // the backend fills in the nearest gate from the coordinates.
       if (!hasPin && !gateId) { setError(msg('FE_CHECKOUT_SELECT_GATE', 'Please select your nearest gate')); return false; }
       if (radiusError) { setError(radiusError); return false; }
+      if (!deliveryAddress.trim()) { setError(msg('FE_CHECKOUT_READABLE_ADDRESS', 'Enter a street, junction or clear delivery address so your rider can find you.')); return false; }
     }
     if (!isAuthenticated) {
       if (!guestName.trim()) { setError(msg('FE_CHECKOUT_ENTER_NAME', 'Please enter your name')); return false; }
@@ -474,6 +493,7 @@ export default function Checkout() {
   const handlePlaceOrder = async () => {
     if (pendingCheckout) { await recoverCheckout(); return; }
     if (!validateCheckout()) return;
+    if (!confirmedContact.current) { askForContact('order'); return; }
     setPlacing(true);
     const payload = buildPayload();
     try {
@@ -527,6 +547,7 @@ export default function Checkout() {
     setScheduleRequested(true);
     setShowClosedPopup(false);
     if (!validateCheckout()) return;
+    if (!confirmedContact.current) { askForContact('schedule'); return; }
     setScheduling(true);
     setError(null);
     try {
@@ -541,6 +562,39 @@ export default function Checkout() {
 
   // Shared submit — places the order and hands off to the confirmation screen.
   // Throws so the caller can apply its own error handling (capacity reschedule).
+
+  const saveCheckoutAddress = async () => {
+    if (savingAddress) return;
+    const selectedLocation = deliveryType === 'on_campus' ? hostelId : gateId;
+    const line1 = deliveryType === 'on_campus' ? hostels.find(h => h.id === hostelId)?.name : deliveryAddress.trim();
+    if (!addressLabel.trim() || !addressCity.trim() || !selectedLocation || !line1 || addressNeedsReselect) {
+      setAddressSaveError(msg('FE_CHECKOUT_ADDRESS_SAVE_FIELDS', 'Enter an address name and city, and select a valid delivery location.')); return;
+    }
+    setSavingAddress(true); setAddressSaveError('');
+    try {
+      const saved = await mockApi.addresses.create({ label: addressLabel.trim(), line1, city: addressCity.trim(),
+        landmark: landmark.trim(), delivery_type: deliveryType, delivery_location_id: selectedLocation,
+        ...(deliveryPin?.lat != null && deliveryType === 'off_campus' ? { latitude: deliveryPin.lat, longitude: deliveryPin.lng } : {}) });
+      if (!saved?.id) throw new Error(msg('FE_CHECKOUT_ADDRESS_SAVE_FAILED', 'Could not save address'));
+      setAddresses(current => [...current, saved]); setSelectedAddressId(saved.id); setSaveAddressOpen(false);
+      toast({ title: msg('FE_CHECKOUT_ADDRESS_SAVED', 'Address saved') });
+    } catch (e) { setAddressSaveError(e.message || msg('FE_CHECKOUT_ADDRESS_SAVE_FAILED', 'Could not save address')); }
+    finally { setSavingAddress(false); }
+  };
+
+  const confirmContact = async () => {
+    if (contactSubmitting.current) return;
+    const phone = contactDraft.replace(/[\s()\-]/g, '');
+    if (!/^(?:0[789]\d{9}|\+?234[789]\d{9})$/.test(phone)) {
+      setContactError(msg('FE_CHECKOUT_CONTACT_INVALID', 'Enter a reachable Nigerian mobile number: 08012345678 or +2348012345678.')); return;
+    }
+    confirmedContact.current = phone;
+    const action = contactAction; setContactAction(null);
+    contactSubmitting.current = true;
+    try { if (action === 'schedule') await handleScheduleOrder(); else await handlePlaceOrder(); }
+    finally { contactSubmitting.current = false; }
+  };
+
   const submitOrder = async (payload: CreateOrderPayload, recover = false) => {
     if (!orderRequest.current) {
       orderRequest.current = (async () => {
@@ -777,6 +831,8 @@ export default function Checkout() {
                     const type = addr.delivery_type
                       || ((addr.latitude ?? addr.lat) != null ? 'off_campus' : 'on_campus');
                     if (type) setDeliveryType(type);
+                    setDeliveryAddress(addr.line1 || addr.description || addr.address || '');
+                    setLandmark(addr.landmark || '');
                     if (type === 'on_campus') {
                       const ref = addr.delivery_location_id || '';
                       const hostelName = (addr.hostel || (addr.line1 || '').split(',')[0] || '').trim();
@@ -830,10 +886,10 @@ export default function Checkout() {
       <div className="hg-card">
         <h3 className="hg-section-title mb-3 flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Delivery Location</h3>
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => { setDeliveryType('on_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryPin(null); setDeliveryAddress(''); setLandmark(''); setFeePreview(null); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'on_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
+          <button onClick={() => { setSelectedAddressId(null); setDeliveryType('on_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryPin(null); setDeliveryAddress(''); setLandmark(''); setFeePreview(null); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'on_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
             <div className="text-xl mb-0.5">🏫</div><div className="text-xs font-semibold text-foreground">On Campus</div>
           </button>
-          <button onClick={() => { setDeliveryType('off_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryAddress(''); setLandmark(''); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'off_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
+          <button onClick={() => { setSelectedAddressId(null); setDeliveryType('off_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryAddress(''); setLandmark(''); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'off_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
             <div className="text-xl mb-0.5">🏠</div><div className="text-xs font-semibold text-foreground">Off Campus</div>
           </button>
         </div>
@@ -843,7 +899,7 @@ export default function Checkout() {
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Select Hostel</label>
             <div className="grid grid-cols-2 gap-2 mt-1.5">
               {hostels.map((h) => (
-                <button key={h.id} onClick={() => { setHostelId(h.id); calcOnCampusFee(h.id); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${hostelId === h.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
+                <button key={h.id} onClick={() => { setSelectedAddressId(null); setHostelId(h.id); calcOnCampusFee(h.id); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${hostelId === h.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
                   {h.name}
                   <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(h.delivery_fee)}</div>
                 </button>
@@ -860,9 +916,9 @@ export default function Checkout() {
               gates={gates}
               center={campus?.lat != null && campus?.lon != null ? [Number(campus.lat), Number(campus.lon)] : null}
               pin={deliveryPin}
-              onPinChange={(ll) => { setDeliveryPin(ll); calcOffCampusFee(gateId, ll); }}
+              onPinChange={(ll) => { setSelectedAddressId(null); setDeliveryPin(ll); calcOffCampusFee(gateId, ll); }}
               selectedGateId={gateId}
-              onGateSelect={(g) => { setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }}
+              onGateSelect={(g) => { setSelectedAddressId(null); setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }}
               feePreview={feePreview}
             />
 
@@ -881,7 +937,7 @@ export default function Checkout() {
               {showGateSelector && (
                 <div className="grid grid-cols-2 gap-2 mt-1.5 animate-fade-in">
                   {gates.map((g) => (
-                    <button key={g.id} onClick={() => { setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${gateId === g.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
+                    <button key={g.id} onClick={() => { setSelectedAddressId(null); setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${gateId === g.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
                       {g.name}
                       <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(g.base_fee)}</div>
                     </button>
@@ -893,15 +949,25 @@ export default function Checkout() {
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Exact address / description</label>
-              <input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="e.g. Behind the market, near the blue gate" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+              <input value={deliveryAddress} onChange={(e) => { setSelectedAddressId(null); setDeliveryAddress(e.target.value); }} placeholder="e.g. Behind the market, near the blue gate" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
             </div>
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Landmark (optional)</label>
-              <input value={landmark} onChange={(e) => setLandmark(e.target.value)} placeholder="e.g. Behind the market" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+              <input value={landmark} onChange={(e) => { setSelectedAddressId(null); setLandmark(e.target.value); }} placeholder="e.g. Behind the market" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
             </div>
           </div>
         )}
+        {isAuthenticated && deliveryType && <div className="mt-3 border-t border-border pt-3 space-y-2">
+          <button type="button" onClick={() => setSaveAddressOpen(value => !value)} className="text-sm font-bold text-primary">{msg('FE_CHECKOUT_SAVE_ADDRESS', 'Save this address')}</button>
+          {saveAddressOpen && <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_ADDRESS_SAVE_HINT', 'Save the address, landmark, gate and map pin for your next checkout.')}</p>
+            <input aria-label={msg('FE_CHECKOUT_ADDRESS_LABEL', 'Address name')} value={addressLabel} onChange={e => setAddressLabel(e.target.value)} className="w-full p-3 rounded-xl border border-border text-sm" placeholder={msg('FE_CHECKOUT_ADDRESS_LABEL', 'Address name')} />
+            <input aria-label={msg('FE_CHECKOUT_ADDRESS_CITY', 'City / town')} value={addressCity} onChange={e => setAddressCity(e.target.value)} className="w-full p-3 rounded-xl border border-border text-sm" placeholder={msg('FE_CHECKOUT_ADDRESS_CITY', 'City / town')} />
+            {addressSaveError && <p role="alert" className="text-sm text-destructive">{addressSaveError}</p>}
+            <button type="button" disabled={savingAddress} onClick={saveCheckoutAddress} className="px-4 py-2 rounded-full bg-primary text-white text-sm font-bold disabled:opacity-50">{msg('FE_CHECKOUT_SAVE_ADDRESS', 'Save this address')}</button>
+          </div>}
+        </div>}
         <DeliveryZonesInfo />
       </div>
 
@@ -1022,6 +1088,17 @@ export default function Checkout() {
         {placing ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Placing order...</span> : `Place Order · ${formatNaira(total)}`}
       </motion.button>
 
+      <Dialog open={!!contactAction} onOpenChange={open => { if (!open) setContactAction(null); }}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader className=""><DialogTitle>{msg('FE_CHECKOUT_CONTACT_TITLE', 'Can your rider reach you?')}</DialogTitle>
+            <DialogDescription>{msg('FE_CHECKOUT_CONTACT_HELP', 'Confirm a number you can answer for offline calls during this delivery. You can use a different number for this order without changing your account.')}</DialogDescription></DialogHeader>
+          <label className="text-sm font-semibold" htmlFor="checkout-contact-phone">{msg('FE_CHECKOUT_CONTACT_NUMBER', 'Phone number for this order')}</label>
+          <input id="checkout-contact-phone" type="tel" autoComplete="tel" value={contactDraft} onChange={e => setContactDraft(e.target.value)} className="w-full p-3 rounded-xl border border-border bg-background" />
+          {contactError && <p role="alert" className="text-sm text-destructive">{contactError}</p>}
+          <button type="button" onClick={confirmContact} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold">{msg('FE_CHECKOUT_CONTACT_CONTINUE', 'Confirm number and continue')}</button>
+          <button type="button" onClick={() => setContactAction(null)} className="text-sm font-semibold text-muted-foreground">{msg('FE_CHECKOUT_CONTACT_CANCEL', 'Back to checkout')}</button>
+        </DialogContent>
+      </Dialog>
       <FreeSideCreditModal
         open={showFreeSide}
         count={freeSideCredits.count}

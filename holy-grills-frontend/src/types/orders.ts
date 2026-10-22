@@ -152,6 +152,8 @@ export interface CreateOrderPayload {
   wallet_amount?: number;
   guest_name?: string;
   guest_phone?: string;
+  /** Reachable phone for this delivery only; does not change account details. */
+  contact_phone?: string;
   guest_email?: string;
   delivery_location_id?: Uuid;
   delivery_location_lat?: number;

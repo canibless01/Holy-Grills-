@@ -845,6 +845,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     delivery_location_lat = payload.get("delivery_location_lat")
     delivery_location_lon = payload.get("delivery_location_lon")
 
+    saved_delivery_address = None
     # If delivery_address_id is provided, verify ownership and retrieve coordinates
     delivery_address_id = payload.get("delivery_address_id")
     if delivery_address_id and user_id:
@@ -853,11 +854,14 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             if not addr:
                 raise ValueError(MSG.ADDRESS_ACCESS_UNAUTHORIZED)
             if addr:
+                saved_delivery_address = addr
                 if addr.get("user_id") != user_id or addr.get('campus_id') not in (None, campus_id):
                     raise ValueError(MSG.ADDRESS_ACCESS_UNAUTHORIZED)
                 if addr.get("latitude") is not None and addr.get("longitude") is not None:
                     delivery_location_lat = float(addr["latitude"])
                     delivery_location_lon = float(addr["longitude"])
+                else:
+                    delivery_location_lat = delivery_location_lon = None
                 if addr.get("delivery_location_id"):
                     delivery_location_id = addr["delivery_location_id"]
                 if addr.get("delivery_type"):
@@ -1003,7 +1007,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     # Calculate variables for RPC payload
     total_discount = round(promo_discount + squad_discount + order_lock_discount, 2)
-    address_input = payload.get('delivery_address') or {}
+    address_input = ({'line1': saved_delivery_address.get('line1') or '',
+                      'landmark': saved_delivery_address.get('landmark') or ''}
+                     if saved_delivery_address else payload.get('delivery_address') or {})
     if isinstance(address_input, str):
         address_input = {'line1': address_input}
     if not isinstance(address_input, dict):
@@ -1011,6 +1017,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     line1 = address_input.get('line1') or address_input.get('address') or ''
     if not isinstance(line1, str) or len(line1) > 1000:
         raise ValueError(MSG.ORDER_DELIVERY_ADDRESS_INVALID)
+    if not quote_only and delivery_type == 'off_campus' and not line1.strip():
+        raise ValueError(MSG.ORDER_READABLE_ADDRESS_REQUIRED)
     landmark = address_input.get('landmark') or ''
     if not isinstance(landmark, str) or len(landmark) > 500:
         raise ValueError(MSG.ORDER_DELIVERY_ADDRESS_INVALID)
@@ -1021,6 +1029,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     location = hostel if delivery_type == 'on_campus' else gate
     delivery_address_snapshot = {
         'line1': line1.strip() or location.get('name') or '',
+        'landmark': landmark.strip(),
         'location_name': location.get('name'), 'delivery_type': delivery_type,
         'location_id': delivery_location_id,
         'latitude': delivery_location_lat, 'longitude': delivery_location_lon,
@@ -1154,6 +1163,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         if not wallet or float(wallet.get("balance", 0)) < wallet_amount_used:
             raise ValueError(MSG.ORDER_WALLET_INSUFFICIENT.format(need=wallet_amount_used))
 
+
+    from app.services.order_contact import resolve_order_phone
+    delivery_address_snapshot['contact_phone'] = resolve_order_phone(db, user_id, payload)
 
     # A reward may ride exactly one order. Check before anything is charged; the
     # authoritative claim happens after the order exists (see below).

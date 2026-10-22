@@ -33,7 +33,7 @@ class Query:
 class Db:
     def __init__(self):
         self.fail=set()
-        self.rows={'profiles':[{'id':'student','campus_id':CAMPUS,'is_active':True,'next_order_free_delivery_cap':0}], 'menu_items':[{'id':MEAL,'campus_id':CAMPUS,'name':'Meal','price':2050,'hp_multiplier':0.5,'is_available':True}],
+        self.rows={'profiles':[{'id':'student','phone':'08012345678','campus_id':CAMPUS,'is_active':True,'next_order_free_delivery_cap':0}], 'menu_items':[{'id':MEAL,'campus_id':CAMPUS,'name':'Meal','price':2050,'hp_multiplier':0.5,'is_available':True}],
                    'hostels':[{'id':HOSTEL,'campus_id':CAMPUS,'delivery_fee':250,'is_active':'true'}],
                    'order_locks':[{'id':'lock','user_id':'student','campus_id':CAMPUS,'status':'active','locked_date':today_wat().isoformat(),'reward_type':'discount','discount_pct':10}]}
     def table(self,name):return Query(self,name)
