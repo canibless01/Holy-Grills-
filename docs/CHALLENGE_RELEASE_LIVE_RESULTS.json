@@ -1,0 +1,23 @@
+[
+  {
+    "case": "existing_release_off_hides_flash_and_refuses_spend",
+    "rewards": 0,
+    "flags_mutated": false
+  },
+  {
+    "case": "admin_create_reads_back_and_appears_in_student_challenges",
+    "passed": true
+  },
+  {
+    "case": "invalid_edit_cannot_replace_saved_reward",
+    "passed": true
+  },
+  {
+    "case": "native_delivery_automatically_awards_weekly_challenge_once_and_three_claim_replays_do_not_change_receipts_or_month_counter",
+    "active_hp": 25,
+    "one_completion": true,
+    "one_ledger_receipt": true,
+    "replay_count": 3,
+    "passed": true
+  }
+]

@@ -237,8 +237,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 7. What's inside — the published CMS row is visible to every visitor. */}
+      {/* 7. What's inside — guest-only introduction. */}
+      {!isAuthenticated && (
         <StorefrontSlider sectionType="whats_inside" variant="compact" eyebrow="What's inside" headline="A lot to show up for." subline="The perks behind the login." />
+      )}
 
       {/* 8. The First Believers — early supporters slider */}
       <EarlySupportersSlider />

@@ -20,4 +20,4 @@ The Cloudinary signature endpoint returned **503** because this audit backend st
 
 Only the isolated audit campus was used. All journaled fixture rows remain because cleanup is paused; no customer content was edited or deleted.
 
-The editor now uses one stable unique key per draft, preserving retries while allowing same-title cards. What’s Inside is no longer hidden after login. How It’s Made and What’s Inside accept multiple entries; each is a separate scrolling card. Menu artwork uses 4:1 (1600 × 400 px recommended), with no overlay title requirement. Image/text mode controls are limited to consumers that support those modes.
+The editor now uses one stable unique key per draft, preserving retries while allowing same-title cards. What’s Inside remains guest-only per the user’s corrected requirement; current guest/signed-in browser checks supersede the earlier visibility experiment. How It’s Made and What’s Inside accept multiple entries; each is a separate scrolling card. Menu artwork uses 4:1 (1600 × 400 px recommended), with no overlay title requirement. Image/text mode controls are limited to consumers that support those modes.

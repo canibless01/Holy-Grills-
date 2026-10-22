@@ -13,7 +13,7 @@ This is the outstanding checklist, including explicit user requests and the broa
 ## Delivery, checkout and money
 
 - Automatic campus/gate/window ready-order groups: finish multi-campus bulk/concurrency and assignment-race proof. Manual create/reassign/split/cancel transaction and admin UI cases already pass.
-- Complete native kitchen preparation → ready group → assignment → rider pickup → delivery, including partial batch splits, attempted delivery/unclaimed resolution and assigned-rider-only ticket access.
+- The normal native kitchen → group → assign → partial split → two riders → delivery and food/add-on HP loop passed. Remaining: attempted delivery/unclaimed/cancellation combinations, physical reward items and rider payout settlement.
 - Prove final food/add-on HP payout, physical rewards and delivery summaries at handover. Synthetic paid-order history is not payment/delivery evidence.
 - Native off-campus map/pin, nearest-gate, gate-only fallback, unknown-location/radius and address/window receipt combinations for guests and accounts.
 - Real Paystack card/split/funding transactions, cancellation/redirect/reload/webhook response loss and reconciliation. Saved unpaid orders must remain unfulfillable.
@@ -23,7 +23,7 @@ This is the outstanding checklist, including explicit user requests and the broa
 
 - Native automatic redemption → deliver now with fee checkout or attach to next paid order → kitchen/rider handover. Explicit selection and fee-only checkout have evidence; full physical fulfillment remains.
 - Immutable earned reward snapshots after admin edits; individually verified legacy pending redemptions and historical multiplier reconciliation.
-- Signup credit grant/scope/replay/concurrency pass. Native selection/consumption on a paid order remains.
+- Signup credit grant/scope/replay/concurrency pass. Native free-side selection/consumption on a paid order remains.
 - General time-based multi-benefit campaigns and corresponding homepage promotion artwork. This is separate from signup welcome credits; exclusive spins stay exclusive.
 - Live challenge creation/display/completion/claim, milestones and badge-free rewards/streak pages. Complete recipient suggestions, transfer eligibility and admin-grant loops.
 - Real-device install → push permission → bonus claim progression, permission denial and exact-once bonus.

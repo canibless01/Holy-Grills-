@@ -133,6 +133,7 @@ const orders = {
   },
   async list(params = {}) { return unwrap(await apiClient.get('/orders', params), 'orders'); },
   async get(id, params = {}) { return normOrder(await apiClient.get(`/orders/${id}`, params)); },
+  async track(params) { return normOrder(await apiClient.get('/orders/track', params)); },
   async updateStatus(id, body) { return apiClient.patch(`/orders/${id}/status`, body); },
   async walk(id, body) { return apiClient.post(`/orders/${id}/walk`, body); },
   async cancel(id, body) { return apiClient.post(`/orders/${id}/cancel`, body); },
