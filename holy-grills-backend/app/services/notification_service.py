@@ -24,6 +24,11 @@ def _onesignal_post(url: str, headers: dict, payload: dict) -> "http_requests.Re
     return http_requests.post(url, headers=headers, json=payload, timeout=10)
 
 
+def _onesignal_email_post(url: str, headers: dict, payload: dict):
+    """One email attempt; uncertain outcomes must not be retried implicitly."""
+    return http_requests.post(url, headers=headers, json=payload, timeout=10)
+
+
 _ONESIGNAL_BASE = os.environ.get("ONESIGNAL_BASE_URL", "https://api.onesignal.com")
 
 # Critical notification types — operational / transactional: never throttled.
@@ -947,33 +952,9 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
 
 
 def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
-    """
-    Send email via OneSignal's email channel. Returns True on success, False
-    on failure (never raises) — same contract as send_email_raw.
-    """
-    try:
-        app_id, api_key = _get_onesignal_creds()
-        if not app_id or not api_key:
-            return False
-        payload = {
-            "app_id": app_id,
-            "target_channel": "email",
-            "include_email_tokens": [to_email],
-            "email_subject": subject,
-            "email_body": html_body,
-        }
-        resp = _onesignal_post(
-            f"{_ONESIGNAL_BASE}/notifications",
-            headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
-            payload=payload,
-        )
-        if resp.status_code not in (200, 202):
-            logger.warning("OneSignal email error %s for %s: %s", resp.status_code, to_email, resp.text[:200])
-            return False
-        return True
-    except Exception as e:
-        logger.error("OneSignal email dispatch error for %s: %s", to_email, e)
-        return False
+    """Preferred OneSignal email, with bounded quota-only alternate routing."""
+    from app.utils.email import send_email_routed
+    return send_email_routed(to_email, to_name, subject, html_body, provider="onesignal")
 
 
 def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None):
@@ -982,7 +963,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
     whichever provider get_email_provider resolves to.
     """
     try:
-        from app.utils.email import get_user_email_and_name, send_email_raw, _build_html
+        from app.utils.email import get_user_email_and_name, send_email_routed, _build_html
         email, name = get_user_email_and_name(user_id)
         if not email:
             return
@@ -991,13 +972,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
         app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
         html_body = _build_html(name or "there", body, app_tagline)
 
-        if chosen == "onesignal":
-            _dispatch_email_via_onesignal(email, name or "there", subject, html_body)
-        else:
-            api_key = os.environ.get("RESEND_API_KEY", "")
-            if not api_key:
-                return
-            send_email_raw(email, name or "there", subject, html_body)
+        send_email_routed(email, name or "there", subject, html_body, provider=chosen)
     except Exception as e:
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 
