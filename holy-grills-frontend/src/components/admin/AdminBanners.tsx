@@ -11,6 +11,8 @@ import ImageUploader from './ImageUploader';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
+import { bannerPlacementSpecId } from '@/lib/bannerSpec';
+import BannerSpecNote from './BannerSpecNote';
 
 const slideLabel = (field) => ({
   eyebrow: msg('FE_ADMIN_BANNERS_EYEBROW_TEXT', 'Eyebrow text'),
@@ -194,6 +196,7 @@ export default function AdminBanners({ placement = 'home' }) {
             </div>
 
             <p className="text-xs text-muted-foreground mb-3">{compactPlacement ? msg('FE_COMPACT_BANNER_HELP', 'Use a complete 4:1 design (1600 × 400 px), or an icon with a title, short description and optional action. Each slide rotates independently.') : msg('FE_CMS_SLIDE_HELP', 'Each slide has its own image, eyebrow, text and action. Save the carousel to publish your changes.')}</p>
+            <div className="mb-3"><BannerSpecNote rows={[{ spec: bannerPlacementSpecId(placement) }]} /></div>
             <div className="space-y-4">
               {b.slides.map((slide, index) => <section key={index} aria-label={msg('FE_CMS_SLIDE_NUMBER', 'Slide {number}', { number: index + 1 })} className="rounded-xl border border-border p-3 space-y-2">
                 <div className="flex items-center gap-2">
@@ -232,7 +235,7 @@ export default function AdminBanners({ placement = 'home' }) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={msg('FE_CMS_ADD_PLACEMENT_BANNER', 'Add {placement} banner', { placement })}>
         <div className="space-y-3">
-          {compactPlacement && <><p className="text-xs text-muted-foreground">{msg('FE_COMPACT_BANNER_HELP', 'Use a complete 4:1 design (1600 × 400 px), or an icon with a title, short description and optional action. Each slide rotates independently.')}</p><CompactModeSelect value={draft.display_mode} onChange={display_mode => setDraft({ ...draft, display_mode })} /></>}
+          {compactPlacement && <><p className="text-xs text-muted-foreground">{msg('FE_COMPACT_BANNER_HELP', 'Use a complete 4:1 design (1600 × 400 px), or an icon with a title, short description and optional action. Each slide rotates independently.')}</p><BannerSpecNote rows={[{ spec: bannerPlacementSpecId(placement) }]} /><CompactModeSelect value={draft.display_mode} onChange={display_mode => setDraft({ ...draft, display_mode })} /></>}
           {(!compactPlacement || draft.display_mode === 'text') && <Field label={compactPlacement ? msg('FE_CMS_SLIDE_TITLE', 'Slide title') : msg('FE_CMS_BANNER_OVERLAY_TITLE_REQUIRED', 'Overlay title (required)')}><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder={msg('FE_CMS_BANNER_FLAME_GRILLED_CAMPUS_FRESH', 'Flame-Grilled, Campus-Fresh')} /></Field>}
           <Field label={compactPlacement && draft.display_mode === 'text' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : msg('FE_CMS_BANNER_MAIN_IMAGE_REQUIRED', 'Main image (required)')}>
             <ImageUploader value={draft.image_url} onChange={(url) => setDraft({ ...draft, image_url: url })} folder={`banners/${placement}`} label={msg('FE_CMS_BANNER_MAIN_IMAGE', 'main image')} />

@@ -1,42 +1,30 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { ChevronRight, Sparkles, Pause, Play } from 'lucide-react';
+import { useReducedMotion } from 'framer-motion';
+import { Pause, Play } from 'lucide-react';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useCampus } from '@/lib/campusContext';
 import { msg } from '@/lib/messages';
 import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
+import { bannerSpec, storefrontSpecId } from '@/lib/bannerSpec';
+import BannerCard from './BannerCard';
 
-// Each homepage slider gets its own visual identity so the page doesn't feel
-// like the same card repeated four times. Images are power-clipped via
-// object-cover so any upload dimensions fill the card cleanly.
-//   portrait  — 4:5, text overlaid on image, 3-up desktop  (What's Inside)
-//   landscape — 3:2, text overlaid on image, 2-up desktop  (How It's Made)
-//   poster    — 3:2, text below image in a card, 2-up      (Catering)
+// One card shell for every storefront row — the frame (shape + suggested design
+// size) comes from lib/bannerSpec so the admin help text and the rendered card
+// can never disagree.
+//   compact   → What's Inside (row cards, 3:1 artwork frame)
+//   banner    → Promos on the menu page (row cards, 4:1 artwork strip)
+//   landscape → How It's Made (stacked cards, 3:2 picture)
+//   poster    → Promos on home/checkout (stacked cards, 3:2 picture)
 const VARIANTS = {
-  banner: { aspect: '4 / 1', cardClass: 'w-full', maxW: undefined, textBelow: true },
-  compact: { aspect: '3 / 1', cardClass: 'w-full', maxW: undefined, textBelow: true },
-  portrait: {
-    aspect: '4 / 5',
-    cardClass: 'w-[68vw] sm:w-[calc((100%-1.5rem)/3)]',
-    maxW: 300,
-    textBelow: false,
-  },
-  landscape: {
-    aspect: '3 / 2',
-    cardClass: 'w-[80vw] sm:w-[calc((100%-0.75rem)/2)]',
-    maxW: 440,
-    textBelow: false,
-  },
-  poster: {
-    aspect: '3 / 2',
-    cardClass: 'w-[80vw] sm:w-[calc((100%-0.75rem)/2)]',
-    maxW: 440,
-    textBelow: true,
-  },
+  banner: { cardClass: 'w-full', maxW: undefined },
+  compact: { cardClass: 'w-full', maxW: undefined },
+  landscape: { cardClass: 'w-[80vw] sm:w-[calc((100%-0.75rem)/2)]', maxW: 440 },
+  poster: { cardClass: 'w-[80vw] sm:w-[calc((100%-0.75rem)/2)]', maxW: 440 },
+  portrait: { cardClass: 'w-[68vw] sm:w-[calc((100%-1.5rem)/3)]', maxW: 300 },
 };
 
-export default function StorefrontSlider({ sectionType, variant = 'portrait', eyebrow = '', headline = '', subline = '', placement = 'home' }) {
+export default function StorefrontSlider({ sectionType, variant = 'poster', eyebrow = '', headline = '', subline = '', placement = 'home' }) {
   const navigate = useNavigate();
   const { campusId } = useCampus();
   const [slides, setSlides] = useState(null);
@@ -47,7 +35,8 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
   const reducedMotion = useReducedMotion();
   const scrollRef = useRef(null);
 
-  const v = VARIANTS[variant] || VARIANTS.portrait;
+  const v = VARIANTS[variant] || VARIANTS.poster;
+  const spec = bannerSpec(storefrontSpecId(variant));
 
   useEffect(() => {
     let live = true;
@@ -95,10 +84,21 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
     if (idx !== active && idx >= 0 && idx < slides.length) setActive(idx);
   }, [slides, active]);
 
+  // What's Inside is a guest-only pitch ("The perks behind the login"), so its
+  // action defaults to the sign-up page. A CMS row that sets its own
+  // destination or label still wins — nothing is hardcoded for other sections.
+  const guestAction = sectionType === 'whats_inside';
+  const defaultDestination = guestAction ? '/register' : '';
+  const defaultActionLabel = guestAction ? msg('FE_SF_SIGN_UP', 'Sign up') : '';
+
+  const destinationOf = (slide) => (
+    slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination || defaultDestination
+  );
+
   const handleTap = (slide) => {
     // Section rows keep cta_url inside `content` (aliased to cta_link); the
     // legacy `destination` key is still honoured last.
-    const dest = slide.content?.cta_url || slide.content?.cta_link || slide.cta_url || slide.content?.destination;
+    const dest = destinationOf(slide);
     if (!dest) return;
     // Route guards enforce authentication only where the destination needs it.
     openCmsDestination(dest, navigate);
@@ -110,7 +110,7 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
         <Header eyebrow={eyebrow} headline={headline} subline={subline} />
         <div className="flex gap-3 overflow-hidden">
           {[0, 1, 2].map((i) => (
-            <div key={i} className={`rounded-2xl bg-card border border-border animate-pulse ${v.cardClass}`} style={{ aspectRatio: v.aspect, maxWidth: v.maxW }} />
+            <div key={i} className={`rounded-2xl bg-card border border-border animate-pulse ${v.cardClass}`} style={{ aspectRatio: spec.aspect, maxWidth: v.maxW }} />
           ))}
         </div>
       </section>
@@ -137,58 +137,34 @@ export default function StorefrontSlider({ sectionType, variant = 'portrait', ey
           const img = s.image_url || s.content?.image_url || '';
           const title = s.title || s.content?.title || '';
           const line = s.subtitle || s.content?.line || s.content?.subtitle || '';
-          const imageOnly = s.content?.display_mode === 'image' || (variant === 'banner' && !s.content?.display_mode);
-          const compact = variant === 'compact' || variant === 'banner';
-          const badge = s.content?.badge || s.badge || '';
+          // Artwork-only sections carry no extra copy: the design is the message.
+          const artworkOnly = s.content?.display_mode === 'image' || (variant === 'banner' && !s.content?.display_mode);
+          const destination = artworkOnly ? '' : destinationOf(s);
+          const actionLabel = artworkOnly ? '' : (
+            s.content?.cta_text || s.cta_text || defaultActionLabel || (destination ? msg('FE_STOREFRONT_EXPLORE', 'Explore') : '')
+          );
+          const label = artworkOnly
+            ? (title || msg('FE_MENU_BANNER_OPEN', 'Open banner'))
+            : (title && actionLabel ? `${title} — ${actionLabel}` : (title || msg('FE_STOREFRONT_EXPLORE', 'Explore')));
           return (
-            <button
+            <BannerCard
               key={s.id || i}
-              onClick={() => handleTap(s)}
-              aria-label={title || msg('FE_STOREFRONT_EXPLORE', 'Explore')}
-              className={`relative shrink-0 snap-start overflow-hidden rounded-2xl text-left group ${v.cardClass} ${v.textBelow ? 'flex flex-col bg-card border border-border' : 'bg-foreground'}`}
-              style={{ maxWidth: v.maxW, aspectRatio: v.textBelow ? undefined : v.aspect, scrollSnapAlign: 'start' }}
-            >
-              {imageOnly ? (
-                <img src={img} alt={title} loading="lazy" decoding="async" className="w-full h-full object-contain" style={{ aspectRatio: v.aspect }} />
-              ) : compact ? (
-                <div className="p-3 flex items-center gap-3 min-h-[104px] w-full">
-                  {img ? <img src={img} alt="" className="w-9 h-9 object-contain shrink-0" loading="lazy" /> : <Sparkles className="w-9 h-9 text-primary shrink-0" aria-hidden="true" />}
-                  <div className="min-w-0 flex-1">
-                    {s.content?.eyebrow && <span className="block text-[10px] font-bold text-primary mb-1">{s.content.eyebrow}</span>}
-                    {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight line-clamp-1">{title}</h3>}
-                    {line && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{line}</p>}
-                  </div>
-                  {s.content?.cta_text && (s.content?.cta_url || s.content?.cta_link) && <span className="shrink-0 px-3 py-1.5 rounded-full border border-primary text-xs text-primary font-bold">{s.content.cta_text}</span>}
-                </div>
-              ) : v.textBelow ? (
-                <>
-                  <div className="relative overflow-hidden" style={{ aspectRatio: v.aspect }}>
-                    {img && <img src={img} alt={title} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />}
-                  </div>
-                  <div className="p-3 flex-1">
-                    {s.content?.eyebrow && <span className="block text-xs font-bold mb-1">{s.content.eyebrow}</span>}
-                    {badge && <span className="inline-block mb-1 px-2 py-0.5 rounded-full bg-accent/20 text-accent-foreground text-[9px] font-extrabold uppercase tracking-wide">{badge}</span>}
-                    {title && <h3 className="font-heading font-extrabold text-sm text-foreground leading-tight line-clamp-2">{title}</h3>}
-                    {line && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{line}</p>}
-                    <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold text-primary">{s.content?.cta_text || s.cta_text || msg('FE_STOREFRONT_EXPLORE', 'Explore')} <ChevronRight className="w-3.5 h-3.5" /></span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {img && <img src={img} alt={title} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
-                  <div className="absolute inset-0 p-4 flex flex-col justify-end">
-                    {s.content?.eyebrow && <span className="block text-xs font-bold mb-1">{s.content.eyebrow}</span>}
-                    {badge && <span className="self-start mb-2 px-2.5 py-1 rounded-full bg-accent text-accent-foreground text-[10px] font-extrabold uppercase tracking-wide">{badge}</span>}
-                    <motion.div key={i} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4 }}>
-                      {title && <h3 className="font-heading font-extrabold text-base sm:text-lg text-white leading-tight line-clamp-2">{title}</h3>}
-                      {line && <p className="text-xs text-white/80 mt-0.5 line-clamp-2">{line}</p>}
-                    </motion.div>
-                    <span className="inline-flex items-center gap-1 mt-2 text-[11px] font-bold text-accent">{s.content?.cta_text || s.cta_text || msg('FE_STOREFRONT_EXPLORE', 'Explore')} <ChevronRight className="w-3.5 h-3.5" /></span>
-                  </div>
-                </>
-              )}
-            </button>
+              spec={spec}
+              mode={artworkOnly ? 'artwork' : 'text'}
+              image={img}
+              title={title}
+              line={line}
+              eyebrow={s.content?.eyebrow || ''}
+              badge={s.content?.badge || s.badge || ''}
+              actionLabel={actionLabel}
+              label={label}
+              onAction={artworkOnly
+                ? (s.content?.cta_url || s.content?.cta_link || s.cta_url || s.content?.destination ? () => handleTap(s) : undefined)
+                : (destination ? () => handleTap(s) : undefined)}
+              eager={i < 3}
+              className={`shrink-0 snap-start ${v.cardClass}`}
+              style={{ maxWidth: v.maxW, scrollSnapAlign: 'start' }}
+            />
           );
         })}
       </div>
