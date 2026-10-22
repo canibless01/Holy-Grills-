@@ -2,10 +2,12 @@ import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
 import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect } from 'react';
-import { Utensils, ChevronRight } from 'lucide-react';
+import BannerCard from '@/components/storefront/BannerCard';
+import { bannerSpec } from '@/lib/bannerSpec';
 import CateringRequestModal from '@/components/events/CateringRequestModal';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { msg } from '@/lib/messages';
 
 /**
  * CateringCard — storefront-driven Catering card on the Home page, visible to
@@ -52,31 +54,23 @@ export default function CateringCard() {
 
   return (
     <>
-      <div id="catering" className="rounded-2xl bg-card border border-border overflow-hidden hover:border-primary/20 hover:shadow-glow transition-all">
-        {image && (
-          <div className="relative h-32 sm:h-40 bg-secondary overflow-hidden">
-            <img src={image} alt={title} loading="lazy" className="w-full h-full object-cover" />
-          </div>
-        )}
-        <div className="p-4">
-          {!image && (
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl bg-primary/5 flex items-center justify-center"><Utensils className="w-4 h-4 text-primary" /></div>
-              <span className="text-[10px] font-bold uppercase tracking-wide text-primary">Catering</span>
-            </div>
-          )}
-          <h3 className="font-heading font-bold text-base text-foreground">{title}</h3>
-          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{description}</p>
-          <button
-            onClick={() => { const destination = content.cta_url || content.cta_link || section?.cta_url; if (destination) openCmsDestination(destination, navigate); else setShowForm(true); }}
-            className="mt-3 w-full py-2.5 rounded-full bg-gradient-cta text-white text-xs font-bold flex items-center justify-center gap-1.5"
-          >
-            {cta} <ChevronRight className="w-4 h-4" />
-          </button>
-          {!isAuthenticated && (
-            <p className="text-[10px] text-muted-foreground mt-2 text-center">No account needed.</p>
-          )}
-        </div>
+      <div id="catering" className="rounded-2xl overflow-hidden hover:shadow-glow transition-shadow">
+        <BannerCard
+          spec={bannerSpec('feature')}
+          mode="text"
+          image={image || ''}
+          eyebrow={msg('FE_CATERING_EYEBROW', 'Catering')}
+          title={title}
+          line={description}
+          actionLabel={cta}
+          label={cta}
+          onAction={() => {
+            const destination = content.cta_url || content.cta_link || section?.cta_url;
+            if (destination) openCmsDestination(destination, navigate);
+            else setShowForm(true);
+          }}
+          footer={!isAuthenticated ? msg('FE_CATERING_NO_ACCOUNT_NEEDED', 'No account needed.') : null}
+        />
       </div>
 
       <CateringRequestModal open={showForm} onClose={() => setShowForm(false)} />

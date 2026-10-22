@@ -60,8 +60,8 @@ function buildSlidesFromSections(sections: unknown): HeroSlide[] | null {
 
 export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) {
   const navigate = useNavigate();
-  const SlideHeading = placement === 'hero' ? 'h1' : 'h2';
-  const artworkOnly = placement === 'menu' || placement === 'checkout';
+  const SlideHeading = 'h1';
+  const isHero = placement === 'hero';
   const { campusId } = useCampus();
   const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [i, setI] = useState(0);
@@ -102,7 +102,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   }, []);
 
   useEffect(() => {
-    if (artworkOnly || slides.length <= 1 || paused) return;
+    if (!isHero || slides.length <= 1 || paused) return;
     autoTimer.current = setInterval(() => {
       setI((p) => {
         const next = (p + 1) % slides.length;
@@ -112,7 +112,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
       });
     }, 5000);
     return () => clearInterval(autoTimer.current);
-  }, [slides.length, paused, artworkOnly]);
+  }, [slides.length, paused, isHero]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -122,11 +122,21 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   }, [slides.length, i]);
 
   if (!slides.length) return null;
-  if (artworkOnly) return <CompactBannerCarousel slides={slides} />;
+  // Every banner placement except the immersive homepage hero renders through
+  // the same card shell as the CMS sections: a rounded frame that holds either
+  // inset picture + copy + CTA, or a complete design filling the whole frame.
+  if (!isHero) {
+    // Home banners are photo + copy in the admin (no card-design switch), so
+    // they always render as text cards.
+    const railSlides = placement === 'home'
+      ? slides.map((slide) => ({ ...slide, display_mode: 'text' as const }))
+      : slides;
+    return <CompactBannerCarousel slides={railSlides} spec={placement === 'home' ? 'wide' : 'strip'} />;
+  }
   const s = slides[i % slides.length];
   // The hero keeps its first phrase white and lets the rest of the headline
-  // run into the brand gradient. Other placements stay plain white.
-  const title = placement === 'hero' ? heroTitleParts(s.tag) : { lead: s.tag, tail: '' };
+  // run into the brand gradient.
+  const title = heroTitleParts(s.tag);
   const go = () => {
     const dest = s.cta_url || '/menu';
     if (onCta && dest === '/menu') onCta();
@@ -135,7 +145,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   };
 
   return (
-    <div className={placement === 'hero' ? 'relative bg-foreground -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[78vh] min-h-[480px] overflow-hidden' : artworkOnly ? 'relative rounded-xl aspect-[4/1] overflow-hidden' : 'relative bg-foreground rounded-2xl h-72 sm:h-80 overflow-hidden'}>
+    <div className="relative bg-foreground -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 h-[78vh] min-h-[480px] overflow-hidden">
       {/* Swipeable image carousel — CSS scroll-snap for native touch swipe */}
       <div
         ref={scrollRef}
@@ -156,13 +166,12 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
               loading={idx === 0 ? 'eager' : 'lazy'}
               decoding="async"
               {...({ fetchpriority: idx === 0 ? 'high' : 'auto' } as { fetchpriority: string })}
-              className={`absolute inset-0 w-full h-full ${artworkOnly ? 'object-contain' : `object-cover ${idx === i ? 'animate-ken-burns' : ''}`}`}
+              className={`absolute inset-0 w-full h-full object-cover ${idx === i ? 'animate-ken-burns' : ''}`}
             />
             </picture>
             {/* Legibility scrim only — a plain dark gradient, never a blur or
                 frosted glass over the hero image. */}
-            {!artworkOnly && <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.88)_0%,rgba(0,0,0,0.6)_36%,rgba(0,0,0,0.16)_72%,transparent_100%)]" />}
-            {artworkOnly && slide.cta_url && <button type="button" onClick={() => openCmsDestination(slide.cta_url, navigate)} aria-label={slide.tag || msg('FE_MENU_BANNER_OPEN', 'Open banner')} className="absolute inset-0 w-full h-full" />}
+            <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.88)_0%,rgba(0,0,0,0.6)_36%,rgba(0,0,0,0.16)_72%,transparent_100%)]" />
           </div>
         ))}
       </div>
@@ -172,9 +181,8 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
         {/* The one glass surface on the hero — the eyebrow pill. Fully
             transparent with a light backdrop blur + hairline border: no
             colour fill, only the hero image shows through it. */}
-        {!artworkOnly && s.eyebrow && <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">{s.eyebrow}</span>}
-        {!artworkOnly && <>
-          <motion.div
+        {s.eyebrow && <span className="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full bg-transparent backdrop-blur-md border border-white/25 text-white text-xs font-bold mb-3 pointer-events-auto">{s.eyebrow}</span>}
+        <motion.div
             key={i}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -186,8 +194,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
             </SlideHeading>
             <p className="text-base text-white/85 mb-5 max-w-md">{s.sub}</p>
           </motion.div>
-        </>}
-        {!artworkOnly && s.cta && s.cta_url && <button
+        {s.cta && s.cta_url && <button
           onClick={go}
           className="self-start px-5 py-2.5 rounded-full bg-gradient-cta text-white font-bold text-sm shadow-lg hover:scale-105 transition-transform pointer-events-auto"
         >

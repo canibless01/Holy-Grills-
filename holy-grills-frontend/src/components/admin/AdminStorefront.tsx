@@ -15,6 +15,8 @@ import { useIsSuperAdmin } from './SuperAdminGate';
 import { useCampus } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { promoSpecId } from '@/lib/bannerSpec';
+import BannerSpecNote from './BannerSpecNote';
 
 // The storefront CMS is split into clear groups so admins always know which
 // surface they're editing. Two APIs back it:
@@ -63,7 +65,7 @@ const TAB_GROUPS: Array<{ label: string; tabs: StorefrontTab[] }> = [
       { id: 'promo', label: 'Promos', icon: Tag, kind: 'section', desc: 'Promo blocks — single image + text + CTA.' },
       { id: 'testimonial', label: 'Testimonials', icon: Quote, kind: 'section', desc: 'Student reviews shown on the homepage.' },
       { id: 'share_template', label: 'Share Templates', icon: Share2, kind: 'section', desc: 'Base images students overlay their name + HP on.' },
-      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:1 design image (960 × 320 recommended). The action button defaults to Sign up unless you choose a destination.') },
+      { id: 'whats_inside', label: "What's Inside", icon: Sparkles, kind: 'section', desc: msg('FE_SF_INSIDE_HELP', 'Compact feature cards. Use a square icon with text, or a complete 3:1 design image (1200 × 400 px). The action button defaults to Sign up unless you choose a destination.') },
       { id: 'how_its_made', label: "How It's Made", icon: Flame, kind: 'section', desc: 'Process-stage slider — each slide is a step from raw to door.' },
       { id: 'catering', label: 'Catering', icon: Utensils, kind: 'section', desc: 'Catering card — single image + text + CTA on the homepage.' },
       { id: 'our_story', label: 'Our Story', icon: BookOpen, kind: 'section', desc: 'Our Story page — hero image + title + caption.' },
@@ -88,6 +90,19 @@ const TAB_GROUPS: Array<{ label: string; tabs: StorefrontTab[] }> = [
 
 const ALL_TABS = TAB_GROUPS.flatMap((g) => g.tabs);
 const SECTION_TAB_IDS = ['promo', 'testimonial', 'share_template', 'whats_inside', 'how_its_made', 'catering', 'our_story', 'popup'];
+
+// Frames that carry an uploaded picture, per editor tab. `promo` changes shape
+// with the page it is shown on; everything else has one frame.
+const specRowsForTab = (tab: string, placement = 'home') => {
+  if (tab === 'whats_inside') return [{ spec: 'compact' as const }];
+  if (tab === 'how_its_made') return [{ spec: 'feature' as const }];
+  if (tab === 'promo') {
+    return [
+      { spec: promoSpecId(placement), when: placement === 'menu' ? msg('FE_SF_PAGE_MENU', 'Menu') : msg('FE_SF_PAGE_HOME', 'Home') },
+    ];
+  }
+  return [];
+};
 // Slider section types — each slide is an image + overlaid title + line +
 // destination + optional badge, rendered by StorefrontSlider.
 const SLIDER_TAB_IDS = ['whats_inside', 'how_its_made'];
@@ -390,6 +405,9 @@ export default function AdminStorefront() {
       {activeTab?.kind === 'tier_icons' && <AdminTierIcons />}
 
       {isSectionType && SLIDER_TAB_IDS.includes(tab) && <p className="text-xs text-muted-foreground">{msg('FE_SF_MULTI_CARD_HELP', 'Each entry is one card in the automatic scrolling row. Add more entries for more cards; each keeps its own image, text and destination.')}</p>}
+      {isSectionType && ['whats_inside', 'how_its_made', 'promo'].includes(tab) && (
+        <BannerSpecNote rows={specRowsForTab(tab, visible[0] ? placementOf(visible[0]) : 'home')} />
+      )}
       {isSectionType && (
         <div className="space-y-3">
           {activeTab?.desc && <p className="text-xs text-muted-foreground">{activeTab.desc}</p>}
@@ -606,6 +624,9 @@ export default function AdminStorefront() {
               <Field label={newSection.section_type === 'whats_inside' && newSection.display_mode !== 'image' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : (newSection.section_type === 'popup' || newSection.section_type === 'how_its_made' || newSection.display_mode === 'image') ? msg('FE_SF_IMAGE_REQUIRED', 'Image (required)') : msg('FE_SF_IMAGE_OPTIONAL', 'Image (optional)')}><ImageUploader value={newSection.image_url} onChange={(url) => setNewSection({ ...newSection, image_url: url })} folder="banners" /></Field>
               {SLIDER_TAB_IDS.includes(newSection.section_type) && newSection.display_mode !== 'image' && (
                 <Field label="Optional badge (e.g. Opening soon)"><TextInput value={newSection.badge} onChange={(e) => setNewSection({ ...newSection, badge: e.target.value })} /></Field>
+              )}
+              {['whats_inside', 'how_its_made', 'promo'].includes(newSection.section_type) && (
+                <BannerSpecNote rows={specRowsForTab(newSection.section_type, newSection.placement)} />
               )}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="CTA text"><TextInput value={newSection.cta_text} onChange={(e) => setNewSection({ ...newSection, cta_text: e.target.value })} placeholder={newSection.section_type === 'whats_inside' ? msg('FE_SF_SIGN_UP', 'Sign up') : 'Order now'} /></Field>
