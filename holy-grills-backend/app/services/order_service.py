@@ -1547,7 +1547,13 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         raise ValueError(MSG.RIDER_ORDER_NOT_FOUND)
 
     from app.services.order_payments import validate_provider_payment, card_due
-    validate_provider_payment(order, payment_reference, provider_response, provider)
+    amount_breakdown = validate_provider_payment(order, payment_reference, provider_response, provider)
+    
+    # Merge amount breakdown into metadata if present
+    metadata = provider_response or {}
+    if amount_breakdown and isinstance(amount_breakdown, dict):
+        # Store paid, fees, net in metadata for reconciliation
+        metadata = {**metadata, 'amount_breakdown': amount_breakdown}
 
     current_pay_status = order.get("payment_status")
     if current_pay_status in ("paid", "partially_refunded"):
@@ -1567,7 +1573,7 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
             "p_provider": provider,
             "p_provider_reference": payment_reference,
             "p_amount": float(card_due(order)),
-            "p_metadata": provider_response or {},
+            "p_metadata": metadata,
         })
     except Exception as exc:
         logger.error("confirm_order_payment: RPC call failed for order %s: %s", order_id, exc)
