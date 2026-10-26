@@ -1349,6 +1349,7 @@ class MSG:
     FE_ADMIN_SCOPE_SAVE_GLOBAL_ANYWAY      = "Save global anyway"
     FE_ADMIN_HOURS_GLOBAL_SCOPE_WARNING    = "Operating hours are per-campus. Pick a campus in the header switcher to edit hours — \"All Campuses\" has no schedule row to save to."
     FE_ADMIN_HOURS_PICK_A_CAMPUS_TO_EDIT   = "Pick a campus in the header switcher to edit hours"
+    FE_ADMIN_REWARD_GLOBAL_VISIBILITY_NOTE = "Global rewards are saved with no campus (campus_id NULL). The hg_campus_visible database policy hides campus-less rows from student accounts, so only admins will see this reward. To make it visible to students, pick a campus in the header switcher and create it there instead."
     FE_ADMIN_TIER_ICONS_LOADING           = "Loading tier icons…"
     STOREFRONT_HOURS_FIELDS_REQUIRED       = "At least one of open_time, close_time, is_closed is required"
     STOREFRONT_HOURS_CREATE_REQUIRES_TIMES = "open_time and close_time are required to create hours for this campus/weekday"

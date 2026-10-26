@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban, EyeOff } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import ImageUploader from './ImageUploader';
-import AdminScopeBadge from './AdminScopeBadge';
+import AdminScopeBadge, { useAdminWriteScope } from './AdminScopeBadge';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
@@ -87,6 +87,7 @@ const FLASH_BADGE = {
 } as const;
 
 export default function AdminRewards() {
+  const writeScope = useAdminWriteScope();
   const [tab, setTab] = useState('rewards');
   const [rewards, setRewards] = useState([]);
   const [redemptions, setRed] = useState([]);
@@ -242,6 +243,12 @@ export default function AdminRewards() {
         {modal && (
           <div className="space-y-3">
             {modal.isNew && <AdminScopeBadge />}
+            {modal.isNew && writeScope.isGlobal && (
+              <div className="flex gap-2 rounded-xl border border-warn/40 bg-warn/10 p-3 text-[11px] font-semibold text-warn">
+                <EyeOff className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{msg('FE_ADMIN_REWARD_GLOBAL_VISIBILITY_NOTE', 'Global rewards are saved with no campus (campus_id NULL). The hg_campus_visible database policy hides campus-less rows from student accounts, so only admins will see this reward. To make it visible to students, pick a campus in the header switcher and create it there instead.')}</span>
+              </div>
+            )}
             <Field label="Name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, isNew: modal.isNew })} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Stock"><TextInput type="number" value={modal.item.stock_quantity ?? ''} onChange={(e) => setModal({ item: { ...modal.item, stock_quantity: e.target.value }, isNew: modal.isNew })} /></Field>
