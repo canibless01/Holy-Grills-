@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Plus, X, Image as ImageIcon, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

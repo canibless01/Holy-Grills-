@@ -1,6 +1,6 @@
 # Launch audit checkpoint — 26 October 2026
 
-This is a current checkpoint, not complete A–Z sign-off. Older progress documents contain both completed work and open items. An inventory, code fix, simulated provider result and live provider transaction are different levels of evidence.
+Later same-day updates: [small launch batches](LAUNCH_BATCHES_2026_10_26.md) close the install-entry recovery, ordering-streak display, sidebar, icon safe-zone, event gate and progressive challenge work. The user confirms actual storefront Cloudinary uploads work. Chrome native-menu visibility on both Android and desktop remains under verification. This is not complete A–Z sign-off. Older progress documents contain both completed work and open items. An inventory, code fix, simulated provider result and live provider transaction are different levels of evidence.
 
 ## Current main integrated
 
@@ -52,7 +52,7 @@ Reproduce local guest checks from the frontend: `node scripts/test-guest-orders.
 5. **Durable email dispatch:** finish reviewed queue/reservation/circuit/reset RPCs, application integration and worker retries using existing tables. Prove quota exhaustion, reset, known rejection, crash recovery, zero recipients, uncertain outcomes and no duplicates. The saved SQL draft alone is not implementation. Verify new main's analytics and email schema separately. Auth SMTP is independent; SES approval remains external.
 6. **Storefront/provider verification:** actual Cloudinary byte upload and decoded artwork for every channel; independent multiple slides/copy/CTA, image-only fields and full save/reload/public reflection; signed-in/returning-session performance on the deployed domain. Existing implemented controls and previous proofs are not every possible content/role variant.
 7. **Push/automation:** real-device installation/permission/bonus once-only, denied permission, real provider receipt and deep links; actual Celery/Redis schedules, disabled-at-launch multiplier/flash generation, staff advance notices and user blasts. A local SDK stub does not prove provider subscription/delivery.
-8. **PWA artwork:** existing maskable assets show a cropped/oversized gold S instead of a complete safe-zone mark. This is a visual/safe-zone defect, distinct from installability; original user artwork was not regenerated in this checkpoint. Verify installed Android/iOS icon after the next deployment.
+8. **PWA artwork — repaired in batch 4:** complete supplied gold S regenerated with safe-zone tests. Remaining: verify installed-device appearance and the reported missing Chrome native-menu entry on Android and desktop; normal-profile local Chromium reports no installability errors.
 9. **Remaining admin A loops:** every relevant order/menu/reward/promo/storefront/kitchen/rider field and action still needs role/campus/global, invalid input, retry, concurrency, persistence and consumer evidence. Inventory is not sign-off. Track open cases in the existing admin coverage/evidence matrices.
 
 ## Remaining / coordinated Workstream B

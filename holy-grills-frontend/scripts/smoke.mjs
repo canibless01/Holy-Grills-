@@ -12,6 +12,7 @@
  * Exits non-zero on the first failed assertion group, so CI can gate a deploy.
  */
 import { createHash } from 'node:crypto';
+import { loadEnv } from 'vite';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +50,8 @@ const rootMarkup = (html) => {
 // campus-less pass-through) instead of the picker fails here.
 // Must match APP_CONFIG.domain in src/config/app.config.ts — the canonical
 // links in the built HTML are generated from it.
-const SITE_ORIGIN = 'https://holy-grills.vercel.app';
+const SITE_ORIGIN = process.env.VITE_SITE_URL || loadEnv('production', root, 'VITE_').VITE_SITE_URL;
+if (!SITE_ORIGIN || !/^https?:\/\//.test(SITE_ORIGIN)) throw new Error('Set VITE_SITE_URL to the public production origin before building and running smoke.');
 
 // Campus-scoped routes render a compact placeholder instead of their content
 // until a campus is chosen (src/components/CampusScope.tsx). It still has to
