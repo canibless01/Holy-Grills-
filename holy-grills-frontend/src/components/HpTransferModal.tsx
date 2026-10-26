@@ -8,6 +8,7 @@ import ModalPortal from '@/components/ModalPortal';
 import { msg } from '@/lib/messages';
 import { apiClient } from '@/lib/apiClient';
 import { displayName, displayInitial } from '@/lib/displayName';
+import { haptic } from '@/lib/haptic';
 
 const DEFAULT_MIN_TRANSFER = 10;
 
@@ -67,12 +68,14 @@ export default function HpTransferModal({ open, onClose }) {
       const res = await liveApi.hp.transfer({ recipient_id: selected.id, amount: amt, notes: notes.trim() || undefined });
       await refreshHp();
       setDone({ amount: amt, name: res?.recipient_name || displayName(selected), newBalance: res?.new_balance });
+      haptic('success');
       toast({
         title: msg('FE_HP_TRANSFER_MODAL_AMOUNT_HP_SENT', '🔥 {amount} HP sent!', { amount: amt }),
         description: msg('FE_HP_TRANSFER_MODAL_SENT_TO_NAME', 'Sent to {name}.', { name: res?.recipient_name || displayName(selected) }),
         sound: 'hp_transfer_sent',
       });
     } catch (e) {
+      haptic('error');
       const failure = e?.message || 'Transfer failed.';
       setError(failure);
     }

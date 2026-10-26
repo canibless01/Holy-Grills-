@@ -8,6 +8,7 @@ import { getStoredCampusId } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 import AuthShell from '@/components/auth/AuthShell';
 import AuthField from '@/components/auth/AuthField';
+import { haptic } from '@/lib/haptic';
 
 const ROLE_HOME = { admin: '/admin', super_admin: '/admin', kitchen: '/kitchen', rider: '/rider', student: '/' };
 const STUDENT_HOME = '/';
@@ -106,6 +107,7 @@ export default function Register() {
       // Supabase email confirmation is OFF — if session exists, navigate to home
       const hasSession = data?.session || data?.access_token;
       if (hasSession) {
+        haptic('success');
         toast({ title: msg('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: msg('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
         const role = data?.role || data?.user?.role || 'student';
         const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
@@ -116,6 +118,7 @@ export default function Register() {
       setInfo(data?.message || 'Account created. You can now log in.');
       setLoading(false);
     } catch (err) {
+      haptic('error');
       setError(err.message);
     }
     setLoading(false);

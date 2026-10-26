@@ -15,9 +15,14 @@ export default function Layout() {
   // Preserve contact controls while the saved campus resolves after a reload.
   const staticPage = ['/faq', '/contact', '/terms', '/newsletter/unsubscribe'].includes(pathname);
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-[100dvh] bg-background flex flex-col">
       <TopNav />
-      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:pb-10 min-h-[calc(100vh-4rem)] flex-1">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:pb-10 min-h-[calc(100dvh-4rem)] flex-1" style={{
+        paddingTop: 'calc(1.5rem + env(safe-area-inset-top, 0px))',
+        paddingBottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+        paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+      }}>
         <Outlet key={staticPage ? 'static' : campusId || 'global'} />
       </main>
       <Footer />

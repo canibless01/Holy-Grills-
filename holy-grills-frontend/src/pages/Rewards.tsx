@@ -18,6 +18,7 @@ import ModalPortal from '@/components/ModalPortal';
 import InstallPushBonuses from '@/components/challenges/InstallPushBonuses';
 import SocialFollowChallenge from '@/components/challenges/SocialFollowChallenge';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import { haptic } from '@/lib/haptic';
 import { triggerMascotCelebration } from '@/lib/mascots';
 import type { MyChallengesEnvelope } from '@/types/challenges';
 import { msg, useMessages } from '@/lib/messages';
@@ -173,9 +174,11 @@ export default function Rewards() {
       const saved = res?.redemption || res;
       setSelectedReward(null);
       if (saved?.id && saved.status === 'fulfilled') setDeliveryRedemption({ ...saved, reward: chosen });
+      haptic('success');
       toast({ title: msg('FE_REWARDS_REWARD_REDEEMED', '🎉 Reward redeemed!'), description: msg('FE_REWARDS_CHOOSE_DELIVERY', 'Your reward is ready. Choose how to receive it.') });
       try { await refreshHp(); await loadRedemptions(); } catch { /* a read failure does not undo the saved redemption */ }
     } catch (e) {
+      haptic('error');
       toast({ title: msg('FE_REWARDS_REDEMPTION_FAILED', 'Redemption failed'), description: e.message, variant: 'destructive' });
     }
     setRedeeming(false);

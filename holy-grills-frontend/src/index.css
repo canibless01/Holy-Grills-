@@ -14,6 +14,143 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 @layer base {
+  /* ═══ SKILLS-BASED UX ENHANCEMENTS ═══ */
+  /* From mobile-native skill: make web app feel native on mobile */
+  
+  /* Remove tap highlight flash on iOS/Android */
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Prevent pull-to-refresh from hijacking app scroll */
+  html, body {
+    overscroll-behavior: none;
+  }
+  
+  /* Prevent text selection on buttons and interactive elements */
+  button, [role="button"], a, input[type="button"], input[type="submit"] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Allow text selection on form inputs */
+  input, textarea {
+    -webkit-user-select: auto;
+    user-select: auto;
+  }
+  
+  /* Prevent iOS zoom on input focus (requires font-size >= 16px) */
+  input, select, textarea {
+    font-size: 16px;
+  }
+  
+  /* Instant tap feedback - remove 300ms delay */
+  button, [role="button"], a, input[type="button"], input[type="submit"] {
+    touch-action: manipulation;
+  }
+  
+  /* Button press feedback - consistent across entire site */
+  button:not(:disabled), 
+  [role="button"]:not([aria-disabled="true"]), 
+  a:not([aria-disabled="true"]),
+  .clickable:not([aria-disabled="true"]) {
+    transition: transform 0.1s ease-out, opacity 0.1s ease-out;
+  }
+  
+  button:not(:disabled):active, 
+  [role="button"]:not([aria-disabled="true"]):active, 
+  a:not([aria-disabled="true"]):active,
+  .clickable:not([aria-disabled="true"]):active {
+    transform: scale(0.98);
+  }
+  
+  /* Gate hover states to devices that support hover (no sticky hover on touch) */
+  @media (hover: hover) and (pointer: fine) {
+    button:not(:disabled):hover,
+    [role="button"]:not([aria-disabled="true"]):hover,
+    a:not([aria-disabled="true"]):hover,
+    .clickable:not([aria-disabled="true"]):hover {
+      opacity: 0.9;
+    }
+  }
+  
+  /* Respect user's motion preferences (accessibility) */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  
+  /* List item animations - consistent fade + slide for all lists */
+  @keyframes listItemEnter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .list-item-enter {
+    animation: listItemEnter 0.2s ease-out;
+  }
+  
+  /* Toast notification animations */
+  @keyframes toastSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-100%) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  
+  @keyframes toastSlideOut {
+    from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+  }
+  
+  /* Modal/Drawer animations */
+  @keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes modalSlideUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes modalScaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
   :root {
     /* ── FONT ── */
     /* 'Nunito Variable' is self-hosted via @fontsource-variable/nunito (S9);

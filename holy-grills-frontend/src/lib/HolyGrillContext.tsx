@@ -9,6 +9,7 @@ import { loadTiers } from './hgUtils';
 import { msg, useMessages } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
 import { initOneSignal, logoutOneSignal } from './onesignal';
+import { haptic } from './haptic';
 
 // Holy Grills app context — real JWT auth against the live backend.
 // No demo auto-login. Authenticated users hit the server-side cart; guests
@@ -440,6 +441,7 @@ export const HolyGrillProvider = ({ children }) => {
       writeGuestCart(items);
       loadGuestCart();
     }
+    haptic('tap');
   };
 
   const updateCartItem = async (itemId, body) => {

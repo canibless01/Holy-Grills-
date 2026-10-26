@@ -4,6 +4,7 @@ import { Package } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
+import Skeleton from '@/components/ui/Skeleton';
 
 /**
  * ActiveOrderCard — compact horizontal stat card for the Home quick-stats grid.
@@ -32,18 +33,25 @@ export default function ActiveOrderCard() {
 
   if (!isAuthenticated) return null;
 
-  const value = loading
-    ? '—'
-    : active
-      ? (ORDER_STATUS_LABELS[active.status] || 'Active')
-      : 'No order';
+  if (loading) {
+    return (
+      <div className="flex flex-col items-start gap-1 rounded-xl bg-card border border-border px-2.5 py-2.5">
+        <Skeleton height="h-3.5 w-3.5" rounded="full" animate={false} />
+        <Skeleton height="h-4 w-12" rounded="md" />
+        <Skeleton height="h-2 w-16" rounded="md" />
+      </div>
+    );
+  }
+
   const label = active ? 'Track Order' : 'Start one →';
   const to = active ? '/track-orders' : '/menu';
 
   return (
-    <Link to={to} className="flex flex-col items-start gap-1 rounded-xl bg-card border border-border px-2.5 py-2.5 hover:border-primary/40 active:scale-95 transition">
+    <Link to={to} className="flex flex-col items-start gap-1 rounded-xl bg-card border border-border px-2.5 py-2.5 hover:border-primary/40 transition">
       <Package className="w-3.5 h-3.5 text-primary" />
-      <div className="font-heading font-extrabold text-base text-foreground leading-none truncate w-full">{value}</div>
+      <div className="font-heading font-extrabold text-base text-foreground leading-none truncate w-full">
+        {active ? (ORDER_STATUS_LABELS[active.status] || 'Active') : 'No order'}
+      </div>
       <div className="text-[10px] text-muted-foreground font-medium leading-tight truncate w-full">{label}</div>
     </Link>
   );
