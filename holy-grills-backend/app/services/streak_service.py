@@ -507,10 +507,46 @@ def _build_week_progress(week_state: dict, week_start: date, today: date) -> dic
     return {"week_start": week_start.isoformat(), "days": days}
 
 
-def get_streak(user_id: str) -> dict:
+def order_streak_rewards(db, campus_id=None):
+    """Effective configured milestones: a campus row overrides the same global week."""
+    rows = db.table("order_streak_rewards").select("weeks,hp_awarded,is_active,campus_id").execute() or []
+    effective = {}
+    for row in sorted(rows, key=lambda r: r.get("campus_id") is not None):
+        if row.get("campus_id") not in (None, campus_id):
+            continue
+        effective[int(row["weeks"])] = row
+    return [{"weeks": week, "hp_awarded": int(row.get("hp_awarded") or 0)}
+            for week, row in sorted(effective.items()) if row.get("is_active") and int(row.get("hp_awarded") or 0) > 0]
+
+
+def get_order_streak(user_id, campus_id=None, db=None):
+    """Read order consistency independently of daily check-ins; never award from a GET."""
+    db = db or get_user_client()
+    today = today_wat()
+    current_week = _week_key(today)
+    previous_week = _week_key(today - timedelta(weeks=1))
+    row = db.table("order_streaks").select("streak_weeks,longest_streak,last_order_week").eq("user_id", user_id).single().execute() or {}
+    weeks = int(row.get("streak_weeks") or 0) if row.get("last_order_week") in (current_week, previous_week) else 0
+    milestones = order_streak_rewards(db, campus_id)
+    return {
+        "streak_weeks": weeks, "longest_streak": int(row.get("longest_streak") or 0),
+        "current_week": current_week, "week_start": _monday_of_week(today).isoformat(),
+        "counted_this_week": row.get("last_order_week") == current_week,
+        "last_order_week": row.get("last_order_week"), "rewards": milestones,
+        "next_reward": next((reward for reward in milestones if reward["weeks"] > weeks), None),
+        "repeat_after_week": milestones[-1]["weeks"] if milestones else None,
+    }
+
+
+def get_streak(user_id: str, campus_id: str = None) -> dict:
     """Return the user's current login streak info."""
     db = get_user_client()
     today = today_wat()
+    try:
+        order_summary = get_order_streak(user_id, campus_id, db)
+    except Exception:
+        logger.warning("Order streak summary unavailable for %s", user_id, exc_info=True)
+        order_summary = None
     try:
         row = (
             db.table("login_streaks")
@@ -520,7 +556,7 @@ def get_streak(user_id: str) -> dict:
             .execute()
         )
         if not row:
-            return {"streak_count": 0, "last_login_date": None, "cycle_week_number": 1}
+            return {"streak_count": 0, "last_login_date": None, "cycle_week_number": 1, "order_streak": order_summary}
 
         # Build week progress if we have week data
         week_progress = None
@@ -534,6 +570,7 @@ def get_streak(user_id: str) -> dict:
                 pass
 
         return {
+            "order_streak": order_summary,
             "streak_count": row.get("streak_count") or 0,
             "last_login_date": row.get("last_login_date"),
             "cycle_week_number": row.get("cycle_week_number") or 1,
@@ -610,7 +647,7 @@ def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> 
                     return {"streak_weeks": int(existing.get("streak_weeks") or 1), "hp_awarded": 0, "new_week": False}
             logger.warning("process_order_streak: insert failed for %s: %s", user_id, e)
             return {"streak_weeks": 1, "hp_awarded": 0, "new_week": True}
-        hp = _award_order_streak_hp(db, user_id, 1, current_week)
+        hp = _award_order_streak_hp(db, user_id, 1, current_week, campus_id)
         return {"streak_weeks": 1, "hp_awarded": hp, "new_week": True}
 
     last_week = streak.get("last_order_week")
@@ -645,12 +682,12 @@ def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> 
     except Exception as e:
         logger.warning("process_order_streak: update failed for %s: %s", user_id, e)
 
-    hp = _award_order_streak_hp(db, user_id, new_streak, current_week)
+    hp = _award_order_streak_hp(db, user_id, new_streak, current_week, campus_id)
 
     return {"streak_weeks": new_streak, "hp_awarded": hp, "new_week": True}
 
 
-def _award_order_streak_hp(db, user_id: str, streak_weeks: int, current_week: str) -> int:
+def _award_order_streak_hp(db, user_id: str, streak_weeks: int, current_week: str, campus_id: str = None) -> int:
     """
     Award HP for hitting an order streak milestone.
     Reads from order_streak_rewards (capped at week 12 so week 13+ plateaus at 350 HP).
@@ -661,17 +698,10 @@ def _award_order_streak_hp(db, user_id: str, streak_weeks: int, current_week: st
     first payout and silently receive nothing the second time. The ISO week is unique per delivery
     regardless of how the streak count moves.
     """
-    lookup_weeks = min(streak_weeks, 12)
     try:
-        row = (
-            db.table("order_streak_rewards")
-            .select("hp_awarded")
-            .eq("weeks", lookup_weeks)
-            .eq("is_active", "true")
-            .single()
-            .execute()
-        )
-        hp = int(row.get("hp_awarded", 0)) if row else 0
+        milestones = order_streak_rewards(db, campus_id)
+        lookup_weeks = min(streak_weeks, milestones[-1]["weeks"]) if milestones else streak_weeks
+        hp = next((row["hp_awarded"] for row in milestones if row["weeks"] == lookup_weeks), 0)
     except Exception:
         hp = 0
 
@@ -680,23 +710,29 @@ def _award_order_streak_hp(db, user_id: str, streak_weeks: int, current_week: st
 
     from app.services.hp_service import award_active_hp
     try:
-        award_active_hp(
+        award = award_active_hp(
             user_id=user_id,
             amount=hp,
+            campus_id=campus_id,
             source_type="streak",
             reference_type="streak",
             reference_id=_streak_reference_id(user_id, "order_streak", current_week),
             notes=f"Order streak milestone — {streak_weeks} consecutive week(s) → {hp} HP active",
         )
+        if award.get("replayed"):
+            return 0
+        awarded_hp = int(award.get("awarded") or 0)
         from app.services.notification_service import send_notification
         _plural = "s" if streak_weeks != 1 else ""
         send_notification(
             user_id=user_id,
             notif_type="order_streak",
-            template_data={"weeks": streak_weeks, "plural": _plural, "hp": hp},
+            template_data={"weeks": streak_weeks, "plural": _plural, "hp": awarded_hp},
+            reference_id=_streak_reference_id(user_id, "order_streak", current_week),
+            reference_type="streak",
         )
     except Exception as e:
         logger.warning("_award_order_streak_hp: failed for %s: %s", user_id, e)
         return 0
 
-    return hp
+    return awarded_hp

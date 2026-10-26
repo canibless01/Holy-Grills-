@@ -1,3 +1,4 @@
+import { msg } from '@/lib/messages';
 import { useCurrentRank } from '@/hooks/useCurrentRank';
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -57,8 +58,7 @@ export default function Dashboard() {
   const completedThisWeek = weekStrip.filter((d) => isDone(d.status)).length;
   const missedThisWeek = weekStrip.filter((d) => d.status === 'missed').length;
   const remainingThisWeek = weekStrip.filter((d) => d.status === 'today' || d.status === 'upcoming').length;
-  const weeklyOrders = streak?.weekly_order_count ?? streak?.order_streak ?? 0;
-  const orderStreakWeeks = streak?.consecutive_weeks ?? streak?.order_streak_weeks ?? weeklyOrders ?? 0;
+  const orderStreakWeeks = streak?.order_streak?.streak_weeks ?? null;
   const myRank = rank?.rank ?? '—';
   // GET /hp/balance returns this at the top level, exact name. No fallbacks —
   // they only ever masked the real value as 0 and froze the tier ring.
@@ -286,19 +286,19 @@ export default function Dashboard() {
       </div>
 
       {/* Order streak — weeks of consistency */}
-      <div className={`rounded-2xl ${accent.light} border ${accent.lightBorder} p-4`}>
+      <Link to="/streak#ordering-streak" className={`block rounded-2xl ${accent.light} border ${accent.lightBorder} p-4`}>
         <div className="flex items-center gap-2 mb-2">
           <Flame className={`w-4 h-4 ${accent.text} shrink-0`} />
           <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Order Streak</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="font-heading font-extrabold text-2xl text-foreground tabular-nums"><CountUp value={orderStreakWeeks} /></span>
+          <span className="font-heading font-extrabold text-2xl text-foreground tabular-nums">{orderStreakWeeks == null ? '—' : <CountUp value={orderStreakWeeks} />}</span>
           <span className="text-xs text-muted-foreground">week{orderStreakWeeks !== 1 ? 's' : ''} of consistency</span>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          {orderStreakWeeks > 0 ? 'Order this week to keep your streak alive' : 'Place an order this week to start your order streak'}
+          {msg('FE_ORDER_STREAK_OPEN', 'See your ordering streak and HP rewards')}
         </p>
-      </div>
+      </Link>
 
       {/* Quick-action grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

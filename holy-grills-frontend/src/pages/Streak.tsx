@@ -61,13 +61,6 @@ export default function Streak() {
     if (key) checkinByDay.set(key, h);
   });
 
-  // The current run started this many days back, so days before it never read
-  // as "missed" — a brand-new member starts on a clean week.
-  const cycleStart = new Date();
-  cycleStart.setHours(0, 0, 0, 0);
-  cycleStart.setDate(cycleStart.getDate() - Math.max(0, currentStreak - 1));
-  const cycleStartStr = toDayKey(cycleStart);
-
   const monday = new Date();
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
@@ -79,10 +72,9 @@ export default function Streak() {
     let status = 'pending';
     if (checkinByDay.has(key)) {
       status = checkinByDay.get(key).reclaimed ? 'reclaimed' : 'checked_in';
-    } else if (key >= cycleStartStr && key <= todayStr) {
-      // Inside the current streak run — the streak counter confirms these days
-      // were checked in, even when the history endpoint hasn't recorded them yet.
-      status = 'checked_in';
+    } else {
+      const authoritative = streak?.week_progress?.days?.[day];
+      status = authoritative === 'checked' ? 'checked_in' : authoritative || (key < todayStr ? 'missed' : 'pending');
     }
     return { day, status, date: key };
   });
@@ -133,12 +125,26 @@ export default function Streak() {
         <p className="text-sm text-muted-foreground mt-1">Log in daily to keep your streak alive. Miss a day? Order or top up ₦1,000+ to reclaim it.</p>
       </div>
 
+      <h2 className="font-heading font-bold text-lg">{msg('FE_LOGIN_STREAK_TITLE', 'Login streak')}</h2>
       <StreakHero
         currentStreak={currentStreak}
         cycleDays={cycleDays}
         completedThisWeek={completedThisWeek}
         gradient={tierGradient}
       />
+
+      <section id="ordering-streak" className="rounded-3xl border border-primary/20 bg-card p-5 space-y-3 scroll-mt-24">
+        <h2 className="font-heading font-bold text-lg">{msg('FE_ORDER_STREAK_TITLE', 'Ordering streak')}</h2>
+        {streak.order_streak ? <>
+          <div className="flex items-baseline gap-2"><strong className="text-3xl text-primary">{streak.order_streak.streak_weeks}</strong><span>{msg('FE_ORDER_STREAK_WEEKS', 'consecutive weeks')}</span></div>
+          <p className="text-sm text-muted-foreground">{msg('FE_ORDER_STREAK_RULE', 'Have at least one paid food order delivered each week, Monday–Sunday in Nigeria time. A week without a qualifying delivery resets the streak.')}</p>
+          <p className="text-sm font-semibold">{streak.order_streak.counted_this_week ? msg('FE_ORDER_STREAK_COUNTED', 'This week is counted.') : msg('FE_ORDER_STREAK_WAITING', 'This week is waiting for a qualifying delivery.')}</p>
+          <div className="flex flex-wrap gap-2">{streak.order_streak.rewards.map(reward => <div key={reward.weeks} className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-sm"><span>{msg('FE_ORDER_STREAK_REWARD', 'Week {week}: {hp} HP', { week: reward.weeks, hp: reward.hp_awarded })}</span></div>)}</div>
+          {streak.order_streak.repeat_after_week != null && <p className="text-xs text-muted-foreground">{msg('FE_ORDER_STREAK_REPEAT', 'After week {week}, the final configured HP reward repeats for each further consecutive week.', { week: streak.order_streak.repeat_after_week })}</p>}
+          {!streak.order_streak.rewards.length && <p className="text-sm text-muted-foreground">{msg('FE_ORDER_STREAK_NO_REWARDS', 'No ordering-streak HP rewards are configured yet.')}</p>}
+          <Link to="/menu" className="inline-flex rounded-full bg-gradient-cta text-white text-sm font-bold px-4 py-2">{msg('FE_ORDER_STREAK_MENU', 'Browse menu')}</Link>
+        </> : <><p role="status" className="text-sm text-muted-foreground">{msg('FE_ORDER_STREAK_UNAVAILABLE', 'Your ordering streak could not be loaded.')}</p><button onClick={refreshStreak} className="text-primary text-sm font-bold">{msg('FE_LOOKUP_RETRY', 'Retry')}</button></>}
+      </section>
 
       <StreakWeekCalendar
         week={week}

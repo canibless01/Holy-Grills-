@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { subscribeToWebPush, isWebPushSupported } from '@/lib/webPush';
-import { isStandalone, hasInstallPrompt, triggerInstall } from '@/lib/installPromptStore';
+import { isStandalone, hasInstallPrompt, triggerInstall, subscribeInstallPrompt } from '@/lib/installPromptStore';
 import StreakPwaBonus from '@/components/streak/StreakPwaBonus';
 
 /** Each step records a real browser action; the server owns eligibility/HP. */
@@ -25,13 +25,12 @@ export default function InstallPushBonuses() {
       .then((value) => { if (active) setStatus(value); })
       .catch((failure) => { if (active) setError(failure.message); });
     const onInstalled = () => { setInstalled(true); setInstallAvailable(false); };
-    const onPrompt = () => setInstallAvailable(true);
+    const unsubscribe = subscribeInstallPrompt(() => setInstallAvailable(hasInstallPrompt()));
     window.addEventListener('appinstalled', onInstalled);
-    window.addEventListener('beforeinstallprompt', onPrompt);
     return () => {
       active = false;
       window.removeEventListener('appinstalled', onInstalled);
-      window.removeEventListener('beforeinstallprompt', onPrompt);
+      unsubscribe();
     };
   }, []);
 

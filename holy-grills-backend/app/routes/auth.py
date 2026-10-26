@@ -1240,7 +1240,7 @@ def get_login_streak():
             last_updated: {type: string, format: date-time}
     """
     from app.services.streak_service import get_streak
-    return jsonify(get_streak(g.user_id)), 200
+    return jsonify(get_streak(g.user_id, getattr(g, "campus_id", None))), 200
 
 
 @auth_bp.route("/logout-all-devices", methods=["POST"])

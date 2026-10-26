@@ -1956,7 +1956,8 @@ def _handle_delivery_rewards(order: dict):
     try:
         from app.services.streak_service import try_reclaim_checkin, process_order_streak
         try_reclaim_checkin(user_id)
-        process_order_streak(user_id, order_id)
+        if subtotal > 0:
+            process_order_streak(user_id, order_id, campus_id=order.get("campus_id"))
     except Exception as _se:
         logger.warning("_handle_delivery_rewards: streak hooks failed for %s: %s", user_id, _se)
 

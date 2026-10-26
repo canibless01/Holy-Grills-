@@ -17,6 +17,18 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_LOGIN_STREAK_TITLE = "Login streak"
+    FE_ORDER_STREAK_TITLE = "Ordering streak"
+    FE_ORDER_STREAK_WEEKS = "consecutive weeks"
+    FE_ORDER_STREAK_RULE = "Have at least one paid food order delivered each week, Monday–Sunday in Nigeria time. A week without a qualifying delivery resets the streak."
+    FE_ORDER_STREAK_COUNTED = "This week is counted."
+    FE_ORDER_STREAK_WAITING = "This week is waiting for a qualifying delivery."
+    FE_ORDER_STREAK_REWARD = "Week {week}: {hp} HP"
+    FE_ORDER_STREAK_REPEAT = "After week {week}, the final configured HP reward repeats for each further consecutive week."
+    FE_ORDER_STREAK_NO_REWARDS = "No ordering-streak HP rewards are configured yet."
+    FE_ORDER_STREAK_MENU = "Browse menu"
+    FE_ORDER_STREAK_UNAVAILABLE = "Your ordering streak could not be loaded."
+    FE_ORDER_STREAK_OPEN = "See your ordering streak and HP rewards"
     FE_INSTALL_TITLE = "Install Holy Grills"
     FE_INSTALL_SUBTITLE = "Add to your home screen for the full experience"
     FE_INSTALL_ACTION = "Install"
