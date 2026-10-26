@@ -16,7 +16,7 @@ import hashlib
 import json
 import requests
 from flask import Blueprint, request, jsonify, g, current_app, has_request_context
-from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_owns_campus, fetch_or_403, update_or_403
+from app.middleware.auth import require_role, resolve_scoped_campus_id, assert_owns_campus, fetch_or_403, update_or_403, header_campus_id
 from app.services.notification_service import send_notification
 from app.routes.auth import _revoke_supabase_sessions
 from app.db import get_db, get_user_client, SupabaseError
@@ -570,11 +570,14 @@ def _clean_window_fields(data, delivery):
 
 def _window_campus(data):
     """Campus a new window belongs to. Campus admin: their own (403 if they name another).
-    super_admin: must name one. Raises ValueError for a bad campus id."""
+    super_admin: an explicit body campus, else the campus selected in the header
+    switcher (X-Campus-ID). Windows have no global variant, so "All Campuses" —
+    no header, or the X-Campus-Scope: global marker — resolves to None and the
+    caller answers CAMPUS_ID_REQUIRED. Raises ValueError for a bad campus id."""
     requested = as_campus_id(data.get("campus_id"))
     assert_owns_campus(requested)
     if getattr(g, "user_role", None) == "super_admin":
-        return requested
+        return requested or header_campus_id()
     return getattr(g, "campus_id", None)
 
 

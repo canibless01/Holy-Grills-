@@ -2,6 +2,8 @@ import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin } from './SuperAdminGate';
+import AdminScopeBadge, { useAdminWriteScope } from './AdminScopeBadge';
+import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
 import { Save, Award } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -24,12 +26,16 @@ const TIER_SLOTS = [
 
 export default function AdminTierIcons() {
   const createIntent = useCmsCreateIntent();
-  const { campusId, adminCampusId } = useCampus();
+  const { campusId, adminCampusId, campuses } = useCampus();
   const isSuperAdmin = useIsSuperAdmin();
+  const writeScope = useAdminWriteScope();
   const targetScope = isSuperAdmin ? (adminCampusId || null) : campusId;
   const [loadError, setLoadError] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [rows, setRows] = useState({});
+  // Unfiltered tier rows across every scope — powers the global-save warning
+  // when a campus already has its own icon for the same tier.
+  const [allRows, setAllRows] = useState([]);
   const loadGeneration = useRef(0);
   const [busy, setBusy] = useState(null);
 
@@ -47,6 +53,7 @@ export default function AdminTierIcons() {
         }
       });
       if (current !== loadGeneration.current) return;
+      setAllRows(Array.isArray(list) ? list : []);
       setRows(map);
       setLoadError(false);
     } catch { if (current !== loadGeneration.current) return; setLoadError(true); }
@@ -60,6 +67,27 @@ export default function AdminTierIcons() {
     const row = rows[slot.slug] || {};
     const url = row.image_url || row.content?.image_url || '';
     if (!url) { toast({ title: msg('FE_ADMIN_TIER_ICONS_UPLOAD_AN_IMAGE_FIRST', 'Upload an image first'), variant: 'destructive' }); return; }
+    // Creating a global icon while one or more campuses already override this
+    // tier: those campuses keep their own artwork, so make that explicit.
+    if (!row.id && writeScope.isGlobal) {
+      const overrides = allRows.filter((s) => {
+        const slug = String(s.content?.tier_slug || s.content?.slug || String(s.key || '').replace(/^tier[_-]icon[_-]/, '')).toLowerCase();
+        return slug === slot.slug && s.campus_id;
+      });
+      if (overrides.length) {
+        const names = [...new Set(overrides.map((s) => campuses.find((c) => c.id === s.campus_id)?.name).filter(Boolean))];
+        const proceed = await confirmAction({
+          title: msg('FE_ADMIN_SCOPE_GLOBAL_OVERRIDE_TITLE', 'Campus-specific version exists'),
+          body: msg(
+            'FE_ADMIN_SCOPE_TIER_GLOBAL_OVERRIDE_BODY',
+            '{names} already has its own {tier} icon and keeps showing it. This global icon only applies where no campus icon exists. Save globally anyway?',
+            { names: names.join(', ') || msg('FE_ADMIN_SCOPE_ANOTHER_CAMPUS', 'Another campus'), tier: slot.name },
+          ),
+          confirmLabel: msg('FE_ADMIN_SCOPE_SAVE_GLOBAL_ANYWAY', 'Save global anyway'),
+        });
+        if (!proceed) return;
+      }
+    }
     setBusy(slot.slug);
     try {
       const content = { ...(row.content || {}), tier_slug: slot.slug, image_url: url };
@@ -89,6 +117,7 @@ export default function AdminTierIcons() {
 
   return (
     <div className="space-y-3">
+      <AdminScopeBadge />
       <p className="text-[11px] text-muted-foreground">
         Each tier has its own image. Upload one per tier — Ember's mark only ever changes Ember.
         Every tier shown across the app (HP card, dashboard, leaderboard, account menu, HP education)

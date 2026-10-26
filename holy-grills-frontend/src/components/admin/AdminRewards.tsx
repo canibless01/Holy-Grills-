@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban, EyeOff } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import ImageUploader from './ImageUploader';
+import AdminScopeBadge, { useAdminWriteScope } from './AdminScopeBadge';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
@@ -86,6 +87,7 @@ const FLASH_BADGE = {
 } as const;
 
 export default function AdminRewards() {
+  const writeScope = useAdminWriteScope();
   const [tab, setTab] = useState('rewards');
   const [rewards, setRewards] = useState([]);
   const [redemptions, setRed] = useState([]);
@@ -174,7 +176,10 @@ export default function AdminRewards() {
       </div>
       {tab === 'rewards' ? (
         <div className="space-y-2">
-          <div className="flex justify-end"><button onClick={() => setModal({ item: { ...BLANK, min_tier_id: tierList[0]?.id || null }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Reward</button></div>
+          <div className="flex justify-end items-center gap-2">
+            <AdminScopeBadge />
+            <button onClick={() => setModal({ item: { ...BLANK, min_tier_id: tierList[0]?.id || null }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Reward</button>
+          </div>
           {rewards.map((r) => {
             const fs = flashStatus(r);
             const badge = fs ? FLASH_BADGE[fs] : null;
@@ -237,6 +242,13 @@ export default function AdminRewards() {
       <Modal open={!!modal} onClose={() => { setModal(null); setSaveError(null); setSaveConflict(false); }} title={modal?.isNew ? 'New Reward' : 'Edit Reward'}>
         {modal && (
           <div className="space-y-3">
+            {modal.isNew && <AdminScopeBadge />}
+            {modal.isNew && writeScope.isGlobal && (
+              <div className="flex gap-2 rounded-xl border border-warn/40 bg-warn/10 p-3 text-[11px] font-semibold text-warn">
+                <EyeOff className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{msg('FE_ADMIN_REWARD_GLOBAL_VISIBILITY_NOTE', 'Global rewards are saved with no campus (campus_id NULL). The hg_campus_visible database policy hides campus-less rows from student accounts, so only admins will see this reward. To make it visible to students, pick a campus in the header switcher and create it there instead.')}</span>
+              </div>
+            )}
             <Field label="Name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, isNew: modal.isNew })} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Stock"><TextInput type="number" value={modal.item.stock_quantity ?? ''} onChange={(e) => setModal({ item: { ...modal.item, stock_quantity: e.target.value }, isNew: modal.isNew })} /></Field>

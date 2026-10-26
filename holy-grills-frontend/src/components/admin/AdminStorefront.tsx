@@ -13,6 +13,7 @@ import AdminBanners from './AdminBanners';
 import AdminTierIcons from './AdminTierIcons';
 import { useIsSuperAdmin } from './SuperAdminGate';
 import { useCampus } from '@/lib/campusContext';
+import AdminScopeBadge, { useAdminWriteScope } from './AdminScopeBadge';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 import { promoSpecId } from '@/lib/bannerSpec';
@@ -186,6 +187,7 @@ export default function AdminStorefront() {
   const { campuses, campusId, adminCampusId } = useCampus();
   const loadGeneration = useRef(0);
   const isSuperAdmin = useIsSuperAdmin();
+  const writeScope = useAdminWriteScope();
   const [campaigns, setCampaigns] = useState([]);
   const [campaignForm, setCampaignForm] = useState(null); // { subject, body, campusId, allCampuses }
   const [campaignBusy, setCampaignBusy] = useState(null);
@@ -270,6 +272,25 @@ export default function AdminStorefront() {
     else if (t === 'share_template' || artworkOnly) { if (!newSection.image_url) { toast({ title: msg('FE_ADMIN_STOREFRONT_BASE_IMAGE_REQUIRED', 'Base image required'), variant: 'destructive' }); return; } }
     else if ((SLIDER_TAB_IDS.includes(t) && !newSection.title.trim()) || (t === 'how_its_made' && !newSection.image_url) || (!SLIDER_TAB_IDS.includes(t) && ![newSection.title, newSection.subtitle, newSection.image_url].some(value => value.trim()))) {
       toast({ title: msg('FE_SF_SECTION_CONTENT_REQUIRED', 'Add content for this section. Text cards need a title; process cards also need an image. Artwork-only sections need just an image.'), variant: 'destructive' }); return;
+    }
+    const createKey = t === 'share_template' ? (newSection.share_key || 'share_template') : `${t}-${newSection.draft_key}`;
+    // Global save warning: a campus-specific row with the same key keeps
+    // overriding the new global row on that campus, so name the campuses.
+    if (writeScope.isGlobal) {
+      const overrides = sections.filter((s) => s.key === createKey && s.campus_id);
+      if (overrides.length) {
+        const names = [...new Set(overrides.map((s) => campuses.find((c) => c.id === s.campus_id)?.name).filter(Boolean))];
+        const proceed = await confirmAction({
+          title: msg('FE_ADMIN_SCOPE_GLOBAL_OVERRIDE_TITLE', 'Campus-specific version exists'),
+          body: msg(
+            'FE_ADMIN_SCOPE_GLOBAL_OVERRIDE_BODY',
+            '{names} already has a campus-specific section with this key. It keeps overriding this global row on that campus — the global row only applies where no campus version exists. Save globally anyway?',
+            { names: names.join(', ') || msg('FE_ADMIN_SCOPE_ANOTHER_CAMPUS', 'Another campus') },
+          ),
+          confirmLabel: msg('FE_ADMIN_SCOPE_SAVE_GLOBAL_ANYWAY', 'Save global anyway'),
+        });
+        if (!proceed) return;
+      }
     }
     setBusy('create');
     try {
@@ -411,9 +432,10 @@ export default function AdminStorefront() {
       {isSectionType && (
         <div className="space-y-3">
           {activeTab?.desc && <p className="text-xs text-muted-foreground">{activeTab.desc}</p>}
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center gap-2 flex-wrap">
             <p className="text-[11px] text-muted-foreground capitalize">{tab.replace(/_/g, ' ')} sections — render on the live homepage in sort order.</p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <AdminScopeBadge />
               <button onClick={() => { setNewSection(blankSection(tab)); setAddOpen(true); }} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add</button>
             </div>
           </div>
@@ -594,6 +616,7 @@ export default function AdminStorefront() {
 
       <Modal open={addOpen && isSectionType} onClose={() => setAddOpen(false)} title={`Create ${tab.replace(/_/g, ' ')} section`}>
         <div className="space-y-3">
+          <AdminScopeBadge />
           {newSection.section_type === 'testimonial' ? (
             <>
               <Field label="Customer name (required)"><TextInput value={newSection.testimonial_name} onChange={(e) => setNewSection({ ...newSection, testimonial_name: e.target.value })} placeholder="Omoayena A" /></Field>
