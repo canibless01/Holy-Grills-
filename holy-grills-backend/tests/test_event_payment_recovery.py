@@ -7,6 +7,7 @@ EVENT = 'bbbb0000-0000-4000-8000-000000000004'
 TICKET = 'bbbb0000-0000-4000-8000-000000000005'
 class EventPaymentRecoveryTests(unittest.TestCase):
     def setUp(self):
+        release=patch.object(events,'is_feature_enabled',return_value=True);release.start();self.addCleanup(release.stop)
         self.app = Flask(__name__)
         self.app.config['PAYSTACK_SECRET_KEY'] = 'test-only'
     def db(self, **details):

@@ -13,6 +13,7 @@ class ServiceDB(DB):
   return query
 class EventGuestOwnershipTests(unittest.TestCase):
  def setUp(self):
+  release=patch.object(events,'is_feature_enabled',return_value=True);release.start();self.addCleanup(release.stop)
   self.app=Flask(__name__)
   self.event={'id':EVENT,'campus_id':A,'is_published':True,'hp_per_attendee':50}
   self.ticket={'id':TICKET,'event_id':EVENT,'user_id':None,'is_guest':True,'guest_email':'owned@example.invalid','status':'confirmed','payment_status':'not_required'}

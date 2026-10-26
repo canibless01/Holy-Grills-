@@ -1,3 +1,5 @@
+from functools import wraps
+from app.services.feature_flags import is_feature_enabled
 from flask import Blueprint, request, jsonify, g, current_app, abort
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.middleware.rate_limit import rate_limit
@@ -19,6 +21,18 @@ import math
 logger = get_logger(__name__)
 
 events_bp = Blueprint("events", __name__)
+
+def require_event_release(fn):
+    @wraps(fn)
+    def gated(*args, **kwargs):
+        # Staff can prepare unpublished content while the customer release is off.
+        # Admission/check-in are still gated for every role.
+        staff_preview = getattr(g, "user_role", None) in ADMIN_ROLES and request.method == "GET"
+        if not staff_preview and not is_feature_enabled("events", getattr(g, "campus_id", None) or _get_campus_id()):
+            return jsonify({"error": MSG.EVENT_RELEASE_CLOSED}), 403
+        return fn(*args, **kwargs)
+    return gated
+
 
 def _get_campus_id():
     """
@@ -87,6 +101,7 @@ def catering_customer_status(request_id):
 
 @events_bp.route("", methods=["GET"])
 @optional_auth
+@require_event_release
 def list_events():
     """
     List published upcoming events for the selected campus (or all if unspecified).
@@ -117,6 +132,7 @@ def list_events():
 
 @events_bp.route("/<event_id>", methods=["GET"])
 @optional_auth
+@require_event_release
 def get_event(event_id):
     """
     Get event detail.
@@ -161,6 +177,7 @@ def get_event(event_id):
 
 @events_bp.route("/<event_id>/checkin", methods=["POST"])
 @optional_auth
+@require_event_release
 def checkin(event_id):
     """
     Check in to a Holy Grills event using QR token or ticket ID / guest email.
@@ -571,6 +588,7 @@ def generate_event_qr(event_id):
 
 @events_bp.route("/<event_id>/register", methods=["POST"])
 @optional_auth
+@require_event_release
 def register_for_event(event_id):
     """
     Register for an event. Supports ticket tiers, an optional HP discount
@@ -1346,6 +1364,7 @@ def create_event():
 
 @events_bp.route("/<event_id>/tiers", methods=["GET"])
 @optional_auth
+@require_event_release
 def list_event_tiers(event_id):
     """
     List ticket tiers for an event (public).
@@ -1881,6 +1900,7 @@ def send_registrants_to_host(event_id):
 
 @events_bp.route("/<event_id>/tiers/comparison", methods=["GET"])
 @optional_auth
+@require_event_release
 def get_tier_comparison(event_id):
     """Fetch tier comparison view for an event (public)."""
     db = get_user_client()
@@ -1946,6 +1966,7 @@ def get_tier_comparison(event_id):
 
 @events_bp.route("/tiers/<tier_id>/detail", methods=["GET"])
 @optional_auth
+@require_event_release
 def get_tier_detail(tier_id):
     """Return full tier detail with event info."""
     db = get_user_client()

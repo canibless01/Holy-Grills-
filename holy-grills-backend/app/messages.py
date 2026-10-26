@@ -17,6 +17,12 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_EVENTS_COMING_SOON = "Events are coming soon"
+    FE_EVENTS_RELEASE_BODY = "We are getting our events ready. Food ordering is open while we prepare."
+    FE_EVENT_FLAG_LABEL = "Events"
+    FE_EVENT_FLAG_WHEN = "When event admission and rewards are ready"
+    FE_EVENT_FLAG_IMPACT = "Shows Coming Soon and blocks new event registrations while disabled"
+    EVENT_RELEASE_CLOSED = "Events are not available yet. Please check back later."
     FE_LOGIN_STREAK_TITLE = "Login streak"
     FE_ORDER_STREAK_TITLE = "Ordering streak"
     FE_ORDER_STREAK_WEEKS = "consecutive weeks"

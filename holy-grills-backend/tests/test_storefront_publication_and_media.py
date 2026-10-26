@@ -145,6 +145,7 @@ class StorefrontContractTests(unittest.TestCase):
         mail_headers={'List-Unsubscribe':'<https://example.test/unsubscribe>', 'List-Unsubscribe-Post':'List-Unsubscribe=One-Click'}
         with patch('app.utils.email._resend_api_key',return_value='test-key'),patch('app.utils.email.requests.post') as post:
             post.return_value.status_code=200
+            post.return_value.json.return_value={"id":"controlled-message"}
             self.assertTrue(send_email_raw('audit@example.invalid','Audit','Subject','<p>Body</p>',headers=mail_headers))
             sent=post.call_args.kwargs
             self.assertEqual(sent['json']['headers'],mail_headers)

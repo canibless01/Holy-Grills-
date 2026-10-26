@@ -33,6 +33,7 @@ class DB:
 
 class PlatformBoundaryTests(unittest.TestCase):
     def setUp(self):
+        release=patch.object(events,'is_feature_enabled',return_value=True);release.start();self.addCleanup(release.stop)
         self.app = Flask(__name__)
         self.app.config['PHONE_REGEX_PATTERN'] = r'^(\+?234|0)[789]\d{9}$'
     def identity(self, role='student', campus=A):

@@ -1,3 +1,4 @@
+import EventReleaseGate from '@/components/EventReleaseGate';
 import { lazy, Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -84,9 +85,11 @@ const AppRoutes = () => {
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route element={<EventReleaseGate />}>
           <Route path="/events" element={<Events />} />
           <Route path="/events/tiers/:tierId" element={<TierDetail />} />
           <Route path="/events/:id" element={<EventDetail />} />
+          </Route>
           <Route path="/catering/:requestId" element={<CateringStatus />} />
           <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/marketplace/:id" element={<MarketplaceDetail />} />
