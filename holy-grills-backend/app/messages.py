@@ -17,6 +17,18 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_INSTALL_TITLE = "Install Holy Grills"
+    FE_INSTALL_SUBTITLE = "Add to your home screen for the full experience"
+    FE_INSTALL_ACTION = "Install"
+    FE_INSTALL_CLOSE = "Close"
+    FE_INSTALL_RETRY_HELP = "The install prompt could not open. Use your browser menu or try again later."
+    FE_INSTALL_IOS_SHARE = "In Safari, tap Share."
+    FE_INSTALL_IOS_ADD = "Choose Add to Home Screen, then tap Add."
+    FE_INSTALL_OPEN_APP = "Open Holy Grills from your home screen to continue."
+    FE_INSTALL_BROWSER_HELP = "Open this site in Chrome or Edge, open the browser menu and choose Install app or Add to Home Screen. If it is already installed, open Holy Grills from your home screen."
+    FE_INSTALL_GOT_IT = "Got it"
+    FE_INSTALL_HOME_SCREEN = "Add to your Home Screen"
+    FE_INSTALL_PROFILE_ACTION = "Install Holy Grills on this device"
     FE_KITCHEN_DELIVERY_HOURS = "Delivery {start}–{end}"
     FE_KITCHEN_DELIVERY_UNCONFIGURED = "Delivery time not configured"
     FE_TX_HP_RECEIVED = "HP received"

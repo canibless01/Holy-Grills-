@@ -11,53 +11,61 @@
 import { useEffect, useState } from 'react';
 import { Download, X, Share2, Plus, Flame } from 'lucide-react';
 import ModalPortal from '@/components/ModalPortal';
+import { hasInstallPrompt, isStandalone, triggerInstall, subscribeInstallPrompt } from '@/lib/installPromptStore';
+import { localStore } from '@/lib/storage';
+import { msg, useMessages } from '@/lib/messages';
 
 const DISMISS_KEY = 'hg_install_dismissed';
 
 export default function InstallPrompt() {
-  const [deferred, setDeferred] = useState(null);
+  useMessages();
   const [show, setShow] = useState(false);
   const [showIOS, setShowIOS] = useState(false);
-
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const isIOS = typeof navigator !== 'undefined' && (/iphone|ipad|ipod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+  const recentlyDismissed = () => {
+    const saved = Number(localStore.getItem(DISMISS_KEY));
+    return saved > 1 && Date.now() >= saved && Date.now() - saved < 7 * 86400000;
+  };
   useEffect(() => {
-    if (localStorage.getItem(DISMISS_KEY) === '1') return;
-    if (window.matchMedia('(display-mode: standalone)').matches) return; // already installed
-
-    const onBIP = (e) => {
-      e.preventDefault();
-      setDeferred(e);
-      setShow(true);
+    const update = () => setShow(!isStandalone() && hasInstallPrompt() && !recentlyDismissed());
+    const manual = () => {
+      if (isStandalone()) return;
+      setError(false);
+      if (hasInstallPrompt()) setShow(true);
+      else setShowIOS(true);
     };
-    window.addEventListener('beforeinstallprompt', onBIP);
-    return () => window.removeEventListener('beforeinstallprompt', onBIP);
+    const installed = () => { setShow(false); setShowIOS(false); };
+    update();
+    const unsubscribe = subscribeInstallPrompt(update);
+    window.addEventListener('hg:install-help', manual);
+    window.addEventListener('appinstalled', installed);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('hg:install-help', manual);
+      window.removeEventListener('appinstalled', installed);
+    };
   }, []);
 
-  // iOS Safari has no beforeinstallprompt — detect and offer instructions.
   useEffect(() => {
-    if (localStorage.getItem(DISMISS_KEY) === '1') return;
-    const isIOS = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
-    const isSafari = /safari/.test(navigator.userAgent.toLowerCase()) && !/crios|fxios/.test(navigator.userAgent.toLowerCase());
-    if (isIOS && isSafari && !window.navigator.standalone) {
-      const t = setTimeout(() => setShowIOS(true), 4000);
-      return () => clearTimeout(t);
-    }
-  }, []);
+    if (!isIOS || isStandalone() || recentlyDismissed()) return;
+    const timer = setTimeout(() => setShowIOS(true), 4000);
+    return () => clearTimeout(timer);
+  }, [isIOS]);
 
   const handleInstall = async () => {
-    if (!deferred) return;
-    deferred.prompt();
-    const { outcome } = await deferred.userChoice;
-    setDeferred(null);
-    setShow(false);
-    if (outcome === 'accepted' || outcome === 'dismissed') {
-      localStorage.setItem(DISMISS_KEY, '1');
-    }
+    if (busy) return;
+    setBusy(true); setError(false);
+    const result = await triggerInstall();
+    setBusy(false); setShow(false);
+    if (result?.outcome === 'accepted' || result?.outcome === 'dismissed') {
+      localStore.setItem(DISMISS_KEY, String(Date.now()));
+    } else { setError(result?.outcome === 'error'); setShowIOS(true); }
   };
-
   const dismiss = () => {
-    setShow(false);
-    setShowIOS(false);
-    localStorage.setItem(DISMISS_KEY, '1');
+    setShow(false); setShowIOS(false);
+    localStore.setItem(DISMISS_KEY, String(Date.now()));
   };
 
   if (!show && !showIOS) return null;
@@ -71,13 +79,13 @@ export default function InstallPrompt() {
               <Flame className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-heading font-bold text-sm">Install Holy Grill</div>
-              <div className="text-xs text-white/80 truncate">Add to your home screen for the full experience</div>
+              <div className="font-heading font-bold text-sm">{msg('FE_INSTALL_TITLE', 'Install Holy Grills')}</div>
+              <div className="text-xs text-white/80 truncate">{msg('FE_INSTALL_SUBTITLE', 'Add to your home screen for the full experience')}</div>
             </div>
-            <button onClick={handleInstall} className="shrink-0 px-3 py-2 rounded-full bg-card text-primary text-xs font-bold flex items-center gap-1.5 hover:bg-white/90 transition-colors">
-              <Download className="w-3.5 h-3.5" /> Install
+            <button onClick={handleInstall} disabled={busy} className="shrink-0 px-3 py-2 rounded-full bg-card text-primary text-xs font-bold flex items-center gap-1.5 hover:bg-white/90 transition-colors">
+              <Download className="w-3.5 h-3.5" /> {msg('FE_INSTALL_ACTION', 'Install')}
             </button>
-            <button onClick={dismiss} className="shrink-0 p-1.5 rounded-full hover:bg-white/20 transition-colors" aria-label="Dismiss">
+            <button onClick={dismiss} className="shrink-0 p-1.5 rounded-full hover:bg-white/20 transition-colors" aria-label={msg('FE_PUSH_SOFT_DISMISS', 'Dismiss')}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -93,29 +101,21 @@ export default function InstallPrompt() {
                 <Flame className="w-6 h-6 text-white" />
               </div>
               <div>
-                <div className="font-heading font-extrabold text-lg text-foreground">Install Holy Grill</div>
-                <div className="text-xs text-muted-foreground">Add to your Home Screen</div>
+                <div className="font-heading font-extrabold text-lg text-foreground">{msg('FE_INSTALL_TITLE', 'Install Holy Grills')}</div>
+                <div className="text-xs text-muted-foreground">{msg('FE_INSTALL_HOME_SCREEN', 'Add to your Home Screen')}</div>
               </div>
-              <button onClick={dismiss} className="ml-auto p-2 rounded-full hover:bg-secondary" aria-label="Close">
+              <button onClick={dismiss} className="ml-auto p-2 rounded-full hover:bg-secondary" aria-label={msg('FE_INSTALL_CLOSE', 'Close')}>
                 <X className="w-5 h-5 text-muted-foreground" />
               </button>
             </div>
-            <ol className="space-y-3 text-sm text-foreground">
-              <li className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-primary/15 text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">1</span>
-                <span>Tap the <strong>Share</strong> button in Safari's toolbar <Share2 className="inline w-3.5 h-3.5 mx-0.5 text-primary" /></span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-primary/15 text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">2</span>
-                <span>Scroll down and tap <strong>Add to Home Screen</strong> <Plus className="inline w-3.5 h-3.5 mx-0.5 text-primary" /></span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-primary/15 text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">3</span>
-                <span>Tap <strong>Add</strong> — Holy Grill will appear on your home screen</span>
-              </li>
-            </ol>
+            {error && <p role="alert" className="text-sm text-destructive mb-3">{msg('FE_INSTALL_RETRY_HELP', 'The install prompt could not open. Use your browser menu or try again later.')}</p>}
+            {isIOS ? <ol className="space-y-3 text-sm text-foreground">
+              <li><Share2 className="inline w-4 h-4 mr-2" />{msg('FE_INSTALL_IOS_SHARE', 'In Safari, tap Share.')}</li>
+              <li><Plus className="inline w-4 h-4 mr-2" />{msg('FE_INSTALL_IOS_ADD', 'Choose Add to Home Screen, then tap Add.')}</li>
+              <li>{msg('FE_INSTALL_OPEN_APP', 'Open Holy Grills from your home screen to continue.')}</li>
+            </ol> : <p className="text-sm text-foreground">{msg('FE_INSTALL_BROWSER_HELP', 'Open this site in Chrome or Edge, open the browser menu and choose Install app or Add to Home Screen. If it is already installed, open Holy Grills from your home screen.')}</p>}
             <button onClick={dismiss} className="mt-5 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">
-              Got it
+              {msg('FE_INSTALL_GOT_IT', 'Got it')}
             </button>
           </div>
         </div>

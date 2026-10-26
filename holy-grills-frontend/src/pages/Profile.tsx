@@ -1,3 +1,4 @@
+import { openInstallHelp, isStandalone } from '@/lib/installPromptStore';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -141,6 +142,7 @@ export default function Profile() {
   if (!user) return <LoadingSpinner label={msg('FE_PROFILE_LOADING', 'Loading profile…')} />;
   return (
     <div className="space-y-4 animate-fade-in">
+      {!isStandalone() && <button onClick={openInstallHelp} className="w-full rounded-2xl border border-primary/20 bg-primary/5 p-4 text-left text-primary font-bold text-sm">{msg('FE_INSTALL_PROFILE_ACTION', 'Install Holy Grills on this device')}</button>}
       {referenceError && <div className="rounded-xl border border-border p-3 space-y-2"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={loadReferences} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>}
       <h1 className="font-heading font-extrabold text-2xl text-foreground">Profile</h1>
 
