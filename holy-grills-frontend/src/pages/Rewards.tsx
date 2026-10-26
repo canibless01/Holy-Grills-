@@ -1,8 +1,9 @@
+import { nextChallengeSteps } from '@/lib/challengeProgression';
 import GraduationClaimButton from '@/components/GraduationClaimButton';
 import { formatNaira } from '@/lib/hgUtils';
 import { useState, useEffect } from 'react';
 import { Flame, Lock, Gift, Target, X, Check, History, Sparkles, Crown, Zap, Clock, ChevronRight, Award, Download } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { getTierProgress, getTierProgressGradient, getTierOverallProgress } from '@/lib/hgUtils';
@@ -65,7 +66,8 @@ export default function Rewards() {
   const flashReleased = isFeatureEnabled('flash_redemptions');
   const { hpBalance, refreshHp, streak, user } = useHolyGrill();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('redeem');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => searchParams.get('tab') === 'challenges' ? 'challenges' : 'redeem');
   const [rewards, setRewards] = useState([]);
   const [redemptions, setRedemptions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -487,8 +489,8 @@ export default function Rewards() {
             const available = [...(challenges?.milestones_available || []), ...(challenges?.challenges_available || [])];
             const completed = [...(challenges?.milestones_completed || []), ...(challenges?.challenges_completed || [])];
             // Lifetime HP milestones and recurring challenges share progress cards.
-            const all = [...available, ...completed];
-            if (all.length === 0) {
+            const all = nextChallengeSteps(available, completed);
+            if (all.length === 0 && completed.length === 0) {
               return <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border"><p className="text-sm text-muted-foreground">Nothing here yet.</p></div>;
             }
             return (
@@ -535,6 +537,7 @@ export default function Rewards() {
                     </div>
                   );
                 })}
+                {completed.length > 0 && <details className="rounded-2xl border border-border bg-card p-4"><summary className="cursor-pointer text-xs font-bold text-muted-foreground">{msg('FE_CHALLENGES_COMPLETED_HISTORY', 'Completed ({count})', { count: completed.length })}</summary><div className="space-y-2 mt-3">{completed.map(ch => <div key={ch.id} className="flex items-center justify-between gap-3 text-xs"><span>{ch.title || ch.name}</span><span className="text-success font-bold">{msg('FE_CHALLENGES_CLAIMED_HP', '{hp} HP claimed', { hp: ch.hp_awarded ?? ch.hp_award ?? 0 })}</span></div>)}</div></details>}
               </>
             );
           })()}
