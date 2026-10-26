@@ -171,41 +171,89 @@ export default function AdminNotifications() {
   };
 
   const testDeliverability = async () => {
-    // Prompt user for spam testing service email (e.g., mail-tester.com)
-    const testEmail = prompt(
-      'Enter the email address from your spam testing service:\n\n' +
-      'Popular options:\n' +
-      '• Mail-Tester.com (get unique email from their site)\n' +
-      '• GlockApps.com\n' +
-      '• Litmus.com\n\n' +
-      'The test email will be sent to this address for spam scoring.'
+    // Prompt admin for email addresses to test with
+    const testEmails = prompt(
+      'Enter email addresses to test deliverability (comma-separated):\n\n' +
+      'Examples:\n' +
+      '• your-email@gmail.com (check your own inbox)\n' +
+      '• staff1@gmail.com, staff2@yahoo.com (test multiple providers)\n' +
+      '• test@hotmail.com, test@outlook.com (test Microsoft providers)\n\n' +
+      'The email will be sent to these addresses. You can then check:\n' +
+      '• Did it land in Primary or Spam?\n' +
+      '• Did it arrive quickly?\n' +
+      '• Does it render correctly?'
     );
     
-    if (!testEmail) return;
+    if (!testEmails) return;
+    
+    // Parse and validate email addresses
+    const emails = testEmails.split(',').map(e => e.trim()).filter(e => e);
+    
+    if (emails.length === 0) {
+      toast({ title: 'No valid emails', description: 'Please enter at least one email address.', variant: 'destructive' });
+      return;
+    }
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalidEmails = emails.filter(e => !emailRegex.test(e));
+    
+    if (invalidEmails.length > 0) {
+      toast({ 
+        title: 'Invalid email addresses', 
+        description: `Please check: ${invalidEmails.join(', ')}`, 
+        variant: 'destructive' 
+      });
+      return;
+    }
     
     setSendingTest(true);
     try {
-      const result = await apiClient.post('/notifications/blasts/test-deliverability', {
-        test_email: testEmail,
-        title: title.trim(),
-        body: body.trim() || bodyHtml.trim(),
-      });
+      // Send test email to each address
+      const results = await Promise.allSettled(
+        emails.map(email => 
+          apiClient.post('/notifications/blasts/test', {
+            ...buildPayload(),
+            test_email: email,
+          })
+        )
+      );
       
-      toast({
-        title: '✅ Deliverability test sent',
-        description: result.message,
-      });
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
       
-      // Show recommendations
-      if (result.recommendations && result.recommendations.length > 0) {
-        alert(
-          'Email sent! Check your spam testing service for results.\n\n' +
-          'Deliverability Best Practices:\n\n' +
-          result.recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n')
-        );
+      if (successful > 0) {
+        toast({
+          title: '✅ Test emails sent',
+          description: `Sent to ${successful} address${successful > 1 ? 'es' : ''}. Check your inboxes to see where they land!${failed > 0 ? ` (${failed} failed)` : ''}`,
+        });
+        
+        // Show helpful tips
+        setTimeout(() => {
+          alert(
+            'Test emails sent! Now check the inboxes:\n\n' +
+            'What to look for:\n' +
+            '1. Primary vs Spam folder\n' +
+            '2. How quickly it arrived\n' +
+            '3. Does it render correctly?\n' +
+            '4. Are links working?\n\n' +
+            'Tips for better deliverability:\n' +
+            '• Use a clear, non-spammy subject line\n' +
+            '• Avoid excessive capitalization or exclamation marks\n' +
+            '• Include a clear unsubscribe link for marketing emails\n' +
+            '• Send from a consistent email address\n' +
+            '• Keep your sender reputation good'
+          );
+        }, 500);
+      } else {
+        toast({ 
+          title: 'Failed to send tests', 
+          description: 'All test emails failed to send.', 
+          variant: 'destructive' 
+        });
       }
     } catch (e) {
-      toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
+      toast({ title: 'Failed to send tests', description: e.message, variant: 'destructive' });
     }
     setSendingTest(false);
   };
@@ -358,10 +406,10 @@ export default function AdminNotifications() {
               onClick={testDeliverability}
               disabled={sendingTest || (!title.trim() && !bodyHtml.trim())}
               className="flex-1 py-3 rounded-full border border-amber-500 text-amber-500 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-amber-500/10 transition"
-              title="Test email deliverability (send to spam testing service)"
+              title="Send test email to specific addresses to check if it lands in Primary or Spam"
             >
-              <AlertCircle className="w-4 h-4" />
-              Spam Test
+              <Mail className="w-4 h-4" />
+              Test Deliverability
             </button>
           </div>
 
