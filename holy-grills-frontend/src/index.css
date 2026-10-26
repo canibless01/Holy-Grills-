@@ -22,9 +22,10 @@
     -webkit-tap-highlight-color: transparent;
   }
   
-  /* Prevent pull-to-refresh from hijacking app scroll */
+  /* Keep native vertical pull-to-refresh available in browsers and the PWA. */
   html, body {
-    overscroll-behavior: none;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: auto;
   }
   
   /* Prevent text selection on buttons and interactive elements */

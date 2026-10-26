@@ -76,7 +76,7 @@ export default function Streak() {
   return <div className="space-y-5 animate-fade-in max-w-3xl mx-auto">
     <div><span className="hg-eyebrow">{msg('FE_STREAK_EYEBROW', 'Your consistency, rewarded')}</span><h1 className="font-heading font-extrabold text-2xl mt-1">{msg('FE_STREAK_PAGE_TITLE', 'Keep your fire going.')}</h1></div>
     <div className="grid gap-4 md:grid-cols-2">
-      <StreakHero currentStreak={currentStreak} cycleDays={cycleDays} completedThisWeek={completedThisWeek} gradient={tierGradient} cycleWeek={streak.cycle_week_number || 1} />
+      <StreakHero currentStreak={currentStreak} cycleDays={cycleDays} completedThisWeek={completedThisWeek} gradient={tierGradient} cycleWeek={streak.cycle_week_number || 1} week={week} />
       <OrderStreakCard summary={streak.order_streak} onRetry={refreshStreak} />
     </div>
     <StreakWeekCalendar week={week} completedThisWeek={completedThisWeek} cycleDays={cycleDays} missedThisWeek={missedThisWeek} allowedMisses={allowedMisses} />

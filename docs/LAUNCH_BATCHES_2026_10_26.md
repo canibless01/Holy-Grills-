@@ -67,3 +67,11 @@ Confirmed the deployed preview endpoint is active (401 for unauthenticated reque
 An empty catalogue can create its first reward instead of spinning forever. Read failures show Retry. Stale edits include the saved timestamp, receive an actionable conflict and can reload; server compare-and-set also guards a race after its read. No customer catalogue row was modified in this verification.
 
 Five native form scenarios plus clearing/conflict assertions pass, including 40% → 0.40, actual tier UUID, no client-computed HP/unknown fields, saved-price retention, cost-preview refresh and reload after 409. Full backend 542 tests, TypeScript, full frontend lint, production build and built-site smoke pass. All checks use existing schema; no new migration/table or customer financial transaction.
+
+## Batch 9 — restore daily flames and native pull-to-refresh
+
+Restored the dashboard-style login-streak treatment on Streak: flame header, seven Mon–Sun flame markers, checked/reclaimed illumination, weekly completion count and configured HP summary. Uses the same authoritative week data as the calendar; missed/upcoming days are not filled from the raw streak number. The ordering card and challenge sequencing are unchanged.
+
+Removed the global vertical `overscroll-behavior: none` restriction introduced by the native-style CSS changes. Root/body vertical overscroll is now auto, allowing the browser's native pull-to-refresh; horizontal behavior and contained drawer scrolling remain as configured. No custom touch interception or duplicate reload handler was added.
+
+Extended native routed browser checks pass for seven markers, two checked/reclaimed examples, an unlit missed day and root/body computed vertical overscroll. Mobile screenshot inspected. TypeScript, full frontend lint and complete production build pass. Native browser chrome/gesture behavior on physical devices is not simulated by the DOM test. No payment, auth-login or reward-accounting logic changed.

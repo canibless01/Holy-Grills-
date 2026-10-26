@@ -17,6 +17,15 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_LOGIN_STREAK_WEEK_PROGRESS = "{done}/{total} this week"
+    FE_LOGIN_STREAK_DAY_COUNT = "day streak"
+    FE_LOGIN_STREAK_DAILY_FLAMES = "Daily check-in flames"
+    FE_LOGIN_STREAK_DAY_STATUS = "{day}: {status}"
+    FE_LOGIN_STREAK_CHECKED = "checked in"
+    FE_LOGIN_STREAK_MISSED = "missed"
+    FE_LOGIN_STREAK_UPCOMING = "not checked in"
+    FE_LOGIN_STREAK_WEEK_COMPLETE = "Week complete — {hp} HP toward your pending balance."
+    FE_LOGIN_STREAK_REWARD_PROGRESS = "Complete this week for {hp} HP · {days} days to go"
     REWARD_EDIT_CONFLICT = "This reward changed while you were editing it. Reload it before saving again."
     FE_REWARD_RELOAD = "Reload rewards"
     FE_REWARD_EDIT_ACTION = "Edit reward"
