@@ -485,9 +485,14 @@ def send_notification(
                 if merged_meta.get("cta_blocks"):
                     rich_content["cta_blocks"] = merged_meta["cta_blocks"]
                 
+                # Pass blast_id for tracking if this is a blast
+                blast_id_for_tracking = None
+                if notif_type.startswith("blast_"):
+                    blast_id_for_tracking = reference_id
+                
                 t = threading.Thread(
                     target=_dispatch_email_async,
-                    args=(user_id, title, body, saved.get("id", ""), email_provider, rich_content if rich_content else None),
+                    args=(user_id, title, body, saved.get("id", ""), email_provider, rich_content if rich_content else None, blast_id_for_tracking),
                     daemon=True,
                 )
                 t.start()
@@ -985,12 +990,13 @@ def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, htm
     return send_email_routed(to_email, to_name, subject, html_body, provider="onesignal")
 
 
-def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None, rich_content: dict = None):
+def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None, rich_content: dict = None, blast_id: str = None):
     """
     Send a transactional email to the user's registered email address, via
     whichever provider get_email_provider resolves to.
     
     rich_content: optional dict with body_html, images, cta_blocks for rich email content
+    blast_id: optional blast ID for tracking opens/clicks
     """
     try:
         from app.utils.email import get_user_email_and_name, send_email_routed, _build_html, _build_rich_html
@@ -1011,7 +1017,23 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
                 app_tagline,
             )
         else:
-            html_body = _build_html(name or "there", body, app_tagline)
+            # Pass blast_id for tracking if provided
+            track_links = False
+            if blast_id:
+                try:
+                    db = get_db()
+                    blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+                    track_links = blast.get("tracking_enabled", False) if blast else False
+                except Exception:
+                    track_links = False
+            
+            html_body = _build_html(
+                name or "there",
+                body,
+                app_tagline,
+                blast_id=blast_id,
+                track_links=track_links,
+            )
 
         send_email_routed(email, name or "there", subject, html_body, provider=chosen)
     except Exception as e:

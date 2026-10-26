@@ -164,6 +164,26 @@ def _resend_api_key() -> str:
 
 import html as _html
 
+def _wrap_url_with_tracking(url: str, blast_id: str, label: str = "") -> str:
+    """Wrap a URL with tracking redirect if blast_id is provided."""
+    if not blast_id or not url:
+        return url
+    
+    # Get API base URL
+    api_base = os.environ.get("API_PUBLIC_URL", "https://holygrills.online/api")
+    if api_base.endswith("/"):
+        api_base = api_base[:-1]
+    
+    # Don't track mailto: or tel: links
+    if url.startswith("mailto:") or url.startswith("tel:"):
+        return url
+    
+    # Wrap URL with tracking endpoint
+    import urllib.parse
+    tracking_url = f"{api_base}/notifications/tracking/click?blast_id={blast_id}&url={urllib.parse.quote(url, safe='')}&label={urllib.parse.quote(label, safe='')}"
+    return tracking_url
+
+
 def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
     """Build a branded responsive HTML email with inline CSS."""
     safe_name = _html.escape(str(name or "there"))
@@ -181,6 +201,10 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
     skip_greeting = kwargs.get("skip_greeting", False)
     skip_signoff = kwargs.get("skip_signoff", False)
     skip_thank_you = kwargs.get("skip_thank_you", False)  # For transactional emails
+    
+    # Email tracking parameters
+    blast_id = kwargs.get("blast_id")  # For tracking opens/clicks
+    track_links = kwargs.get("track_links", False)  # Whether to wrap links with tracking
     
     # Brand colors
     brand_red = "#E01616"
@@ -333,12 +357,17 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
             btn_color = "#FFFFFF" if is_primary else brand_red
             btn_border = f"2px solid {brand_red}" if not is_primary else "none"
             
+            # Wrap URL with tracking if enabled
+            btn_url = btn.get("url", "")
+            if track_links and blast_id:
+                btn_url = _wrap_url_with_tracking(btn_url, blast_id, btn.get("label", ""))
+            
             html += f"""
                                                 <td style="padding: 0 8px 8px 0;">
                                                     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                                                         <tr>
                                                             <td style="border-radius: 12px; background-color: {btn_bg}; border: {btn_border};">
-                                                                <a href="{_html.escape(btn['url'])}" style="display: inline-block; padding: 14px 28px; font-size: 16px; font-weight: 600; color: {btn_color}; text-decoration: none; border-radius: 12px;" target="_blank">{_html.escape(btn['label'])}</a>
+                                                                <a href="{_html.escape(btn_url)}" style="display: inline-block; padding: 14px 28px; font-size: 16px; font-weight: 600; color: {btn_color}; text-decoration: none; border-radius: 12px;" target="_blank">{_html.escape(btn['label'])}</a>
                                                             </td>
                                                         </tr>
                                                     </table>
@@ -427,7 +456,22 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
                                 </tr>
                             </table>
                         </td>
-                    </tr>
+                    </tr>"""
+    
+    # Add tracking pixel if blast_id is provided
+    if blast_id:
+        api_base = os.environ.get("API_PUBLIC_URL", "https://holygrills.online/api")
+        if api_base.endswith("/"):
+            api_base = api_base[:-1]
+        tracking_pixel_url = f"{api_base}/notifications/tracking/open/{blast_id}.png"
+        html += f"""
+                    <tr>
+                        <td style="padding: 0;">
+                            <img src="{tracking_pixel_url}" width="1" height="1" style="display: block; width: 1px; height: 1px;" alt="" />
+                        </td>
+                    </tr>"""
+    
+    html += f"""
                 </table>
             </td>
         </tr>
@@ -645,12 +689,15 @@ def _build_rich_html(name: str, body_html: str, images: list, cta_blocks: list, 
     return html
 
 
-def send_email(to_email: str, to_name: str, template_key: str, data: dict = None, provider: str = None) -> bool:
+def send_email(to_email: str, to_name: str, template_key: str, data: dict = None, provider: str = None, blast_id: str = None) -> bool:
     """
     Send a transactional email via whichever provider get_email_provider
     resolves to. Template resolution: email_templates DB row (admin-edited)
     takes precedence; falls back to the hardcoded TEMPLATES dict if no row
     exists for this template_key.
+    
+    Args:
+        blast_id: Optional blast ID for tracking opens/clicks (for notification blasts)
     """
     data = data or {}
     data.setdefault("name", to_name)
@@ -703,6 +750,17 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         subject = subject.replace("{platform}", _app_name).replace("{currency}", _currency)
     body_text = body_text.replace("{platform}", _app_name).replace("{currency}", _currency)
 
+    # Determine if we should track links (only for notification blasts with tracking enabled)
+    track_links = False
+    if blast_id:
+        try:
+            from app.db import get_db
+            db = get_db()
+            blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+            track_links = blast.get("tracking_enabled", False) if blast else False
+        except Exception:
+            track_links = False
+    
     html_body = _build_html(
         to_name or "there",
         body_text,
@@ -711,6 +769,8 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         skip_greeting=skip_greeting,
         skip_signoff=skip_signoff,
         skip_thank_you=skip_thank_you,
+        blast_id=blast_id,
+        track_links=track_links,
     )
 
     from app.services.notification_service import get_email_provider

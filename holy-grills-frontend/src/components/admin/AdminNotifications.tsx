@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, Image as ImageIcon } from 'lucide-react';
+import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, Image as ImageIcon, TrendingUp } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -14,6 +14,7 @@ import RichTextEditor from './RichTextEditor';
 import CTABlockEditor, { type CTABlock } from './CTABlockEditor';
 import ImageStackEditor, { type ImageBlock } from './ImageStackEditor';
 import EmailPreviewModal from './EmailPreviewModal';
+import BlastAnalyticsModal from './BlastAnalyticsModal';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 const ROLES = [
@@ -67,6 +68,10 @@ export default function AdminNotifications() {
   const intent = useCmsCreateIntent();
   const [previewCount, setPreviewCount] = useState(null);
   const [pushImage, setPushImage] = useState(''); // Image for push/in-app notifications
+  const [trackingEnabled, setTrackingEnabled] = useState(false); // Enable open/click tracking
+  const [selectedBlastAnalytics, setSelectedBlastAnalytics] = useState(null); // Analytics data for selected blast
+  const [analyticsBlastId, setAnalyticsBlastId] = useState<string | null>(null); // Blast ID for analytics modal
+  const [analyticsBlastTitle, setAnalyticsBlastTitle] = useState<string>(''); // Blast title for analytics modal
   const preview = async () => {
     try { const result = await apiClient.post('/notifications/blasts/preview', buildPayload()); setPreviewCount(result.recipient_count); }
     catch { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), variant: 'destructive' }); }
@@ -113,6 +118,7 @@ export default function AdminNotifications() {
     if (images.length > 0) payload.images = images;
     if (ctaBlocks.length > 0) payload.cta_blocks = ctaBlocks;
     if (pushImage.trim()) payload.push_image = pushImage.trim();
+    if (trackingEnabled) payload.tracking_enabled = trackingEnabled;
     return payload;
   };
 
@@ -158,6 +164,46 @@ export default function AdminNotifications() {
         test_email: user.email,
       });
       toast({ title: '✅ Test sent', description: `Test notification sent to ${user.email}` });
+    } catch (e) {
+      toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
+    }
+    setSendingTest(false);
+  };
+
+  const testDeliverability = async () => {
+    // Prompt user for spam testing service email (e.g., mail-tester.com)
+    const testEmail = prompt(
+      'Enter the email address from your spam testing service:\n\n' +
+      'Popular options:\n' +
+      '• Mail-Tester.com (get unique email from their site)\n' +
+      '• GlockApps.com\n' +
+      '• Litmus.com\n\n' +
+      'The test email will be sent to this address for spam scoring.'
+    );
+    
+    if (!testEmail) return;
+    
+    setSendingTest(true);
+    try {
+      const result = await apiClient.post('/notifications/blasts/test-deliverability', {
+        test_email: testEmail,
+        title: title.trim(),
+        body: body.trim() || bodyHtml.trim(),
+      });
+      
+      toast({
+        title: '✅ Deliverability test sent',
+        description: result.message,
+      });
+      
+      // Show recommendations
+      if (result.recommendations && result.recommendations.length > 0) {
+        alert(
+          'Email sent! Check your spam testing service for results.\n\n' +
+          'Deliverability Best Practices:\n\n' +
+          result.recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n')
+        );
+      }
     } catch (e) {
       toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
     }
@@ -225,6 +271,24 @@ export default function AdminNotifications() {
             )}
           </Field>
 
+          {/* Email Tracking Toggle */}
+          {channels.includes('email') && (
+            <Field label="Email Analytics" hint="Track opens and clicks for this email blast">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={trackingEnabled}
+                  onChange={(e) => setTrackingEnabled(e.target.checked)}
+                  className="w-5 h-5 rounded border-border text-primary focus:ring-primary/40"
+                />
+                <div>
+                  <div className="text-sm font-medium text-foreground">Enable open & click tracking</div>
+                  <div className="text-xs text-muted-foreground">Track how many recipients open the email and click links</div>
+                </div>
+              </label>
+            </Field>
+          )}
+
           {/* Segment builder — role + tier */}
           <Field label="Target Segment" hint="Filter who receives this campaign. Defaults to everyone.">
             <div className="grid grid-cols-2 gap-2 mt-1">
@@ -290,6 +354,15 @@ export default function AdminNotifications() {
               <Mail className="w-4 h-4" />
               {sendingTest ? 'Sending...' : 'Test to Me'}
             </button>
+            <button
+              onClick={testDeliverability}
+              disabled={sendingTest || (!title.trim() && !bodyHtml.trim())}
+              className="flex-1 py-3 rounded-full border border-amber-500 text-amber-500 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-amber-500/10 transition"
+              title="Test email deliverability (send to spam testing service)"
+            >
+              <AlertCircle className="w-4 h-4" />
+              Spam Test
+            </button>
           </div>
 
           <button
@@ -316,11 +389,27 @@ export default function AdminNotifications() {
               const status = b.status || (b.send_at && new Date(b.send_at) > new Date() ? 'scheduled' : 'sent');
               const st = STATUS_STYLE[status] || STATUS_STYLE.pending;
               const StIcon = st.icon;
+              const hasTracking = b.tracking_enabled && b.channels?.includes('email') && status === 'sent';
               return (
                 <div key={b.id} className="rounded-2xl bg-card border border-border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-sm text-foreground truncate">{b.title}</span>
-                    <Pill tone={st.tone}><StIcon className="w-2.5 h-2.5" /> {st.label}</Pill>
+                    <div className="flex items-center gap-2">
+                      {hasTracking && (
+                        <button
+                          onClick={() => {
+                            setAnalyticsBlastId(b.id);
+                            setAnalyticsBlastTitle(b.title);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition flex items-center gap-1"
+                          title="View analytics"
+                        >
+                          <TrendingUp className="w-3 h-3" />
+                          Analytics
+                        </button>
+                      )}
+                      <Pill tone={st.tone}><StIcon className="w-2.5 h-2.5" /> {st.label}</Pill>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{b.body}</p>
                   {['pending', 'scheduled'].includes(b.status) && <button onClick={() => cancelCampaign(b.id)} className="text-destructive font-bold text-xs">{msg('FE_BLAST_CANCEL', 'Cancel campaign')}</button>}
@@ -348,6 +437,17 @@ export default function AdminNotifications() {
         bodyHtml={bodyHtml}
         images={images}
         ctaBlocks={ctaBlocks}
+      />
+
+      {/* Blast Analytics Modal */}
+      <BlastAnalyticsModal
+        open={!!analyticsBlastId}
+        onClose={() => {
+          setAnalyticsBlastId(null);
+          setAnalyticsBlastTitle('');
+        }}
+        blastId={analyticsBlastId || ''}
+        blastTitle={analyticsBlastTitle}
       />
 
       {/* Immediate-send confirm dialog */}

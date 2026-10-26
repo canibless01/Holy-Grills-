@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, Response, redirect
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.services.notification_service import send_blast, resolve_segment_user_ids
 from app.db import get_user_client, SupabaseError
@@ -10,6 +10,7 @@ from app.utils.logger import get_logger
 from datetime import datetime, timezone
 from app.utils.campus_scope import resolve_write_campus
 from app.utils.admin_helpers import as_instant
+import base64
 
 logger = get_logger(__name__)
 
@@ -677,4 +678,285 @@ def send_test_blast():
         
     except Exception as e:
         logger.exception("Failed to send test blast")
+        return jsonify({"error": f"Failed to send test: {str(e)}"}), 503
+
+
+# ── Email Analytics Tracking Endpoints ────────────────────────────────────────
+
+@notifications_bp.route("/tracking/open/<blast_id>.png", methods=["GET"])
+def track_email_open(blast_id):
+    """
+    Track email open via 1x1 transparent pixel.
+    Called when email client loads the tracking pixel.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: path
+        name: blast_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: 1x1 transparent PNG pixel
+    """
+    try:
+        db = get_db()
+        
+        # Get blast to check if tracking is enabled
+        blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+        if not blast or not blast.get("tracking_enabled"):
+            # Return pixel anyway to avoid broken images, but don't track
+            pass
+        else:
+            # Record the open event
+            # Using metadata JSONB field to store analytics
+            current_metadata = blast.get("metadata") or {}
+            open_events = current_metadata.get("open_events", [])
+            
+            # Add open event with timestamp
+            open_events.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "ip": request.remote_addr,
+                "user_agent": request.headers.get("User-Agent", "")[:200]
+            })
+            
+            # Keep only last 1000 opens to avoid bloat
+            open_events = open_events[-1000:]
+            
+            current_metadata["open_events"] = open_events
+            current_metadata["open_count"] = len(open_events)
+            current_metadata["last_opened_at"] = datetime.now(timezone.utc).isoformat()
+            
+            db.table("notification_blasts").update({
+                "metadata": current_metadata
+            }).eq("id", blast_id).execute()
+            
+    except Exception as e:
+        # Never fail the pixel request - just log the error
+        logger.warning(f"Failed to track email open for blast {blast_id}: {e}")
+    
+    # Return 1x1 transparent PNG pixel (smallest valid PNG)
+    pixel_data = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    return Response(
+        pixel_data,
+        mimetype="image/png",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@notifications_bp.route("/tracking/click", methods=["GET"])
+def track_email_click():
+    """
+    Track email link click and redirect to destination.
+    Called when user clicks a tracked link in email.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: query
+        name: blast_id
+        type: string
+        required: true
+      - in: query
+        name: url
+        type: string
+        required: true
+      - in: query
+        name: label
+        type: string
+    responses:
+      302:
+        description: Redirect to destination URL
+      400:
+        description: Missing required parameters
+    """
+    blast_id = request.args.get("blast_id")
+    destination_url = request.args.get("url")
+    link_label = request.args.get("label", "Unknown")
+    
+    if not blast_id or not destination_url:
+        return jsonify({"error": "Missing blast_id or url parameter"}), 400
+    
+    try:
+        db = get_db()
+        
+        # Get blast to check if tracking is enabled
+        blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+        if not blast or not blast.get("tracking_enabled"):
+            # Just redirect without tracking
+            pass
+        else:
+            # Record the click event
+            current_metadata = blast.get("metadata") or {}
+            click_events = current_metadata.get("click_events", [])
+            
+            # Add click event
+            click_events.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "url": destination_url,
+                "label": link_label,
+                "ip": request.remote_addr,
+                "user_agent": request.headers.get("User-Agent", "")[:200]
+            })
+            
+            # Keep only last 1000 clicks to avoid bloat
+            click_events = click_events[-1000:]
+            
+            # Track clicks per link
+            link_clicks = current_metadata.get("link_clicks", {})
+            if destination_url not in link_clicks:
+                link_clicks[destination_url] = {
+                    "url": destination_url,
+                    "label": link_label,
+                    "count": 0
+                }
+            link_clicks[destination_url]["count"] += 1
+            
+            current_metadata["click_events"] = click_events
+            current_metadata["link_clicks"] = link_clicks
+            current_metadata["click_count"] = len(click_events)
+            
+            db.table("notification_blasts").update({
+                "metadata": current_metadata
+            }).eq("id", blast_id).execute()
+            
+    except Exception as e:
+        # Log error but still redirect
+        logger.warning(f"Failed to track email click for blast {blast_id}: {e}")
+    
+    # Redirect to destination
+    return redirect(destination_url, code=302)
+
+
+@notifications_bp.route("/blasts/<blast_id>/analytics", methods=["GET"])
+@require_role("admin")
+def get_blast_analytics(blast_id):
+    """
+    Get analytics data for a specific email blast.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: path
+        name: blast_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Analytics data
+      404:
+        description: Blast not found
+    """
+    try:
+        db = get_db()
+        blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+        
+        if not blast:
+            return jsonify({"error": "Blast not found"}), 404
+        
+        metadata = blast.get("metadata") or {}
+        
+        # Calculate analytics
+        recipient_count = blast.get("recipient_count", 0)
+        open_count = metadata.get("open_count", 0)
+        click_count = metadata.get("click_count", 0)
+        
+        open_rate = (open_count / recipient_count * 100) if recipient_count > 0 else 0
+        click_rate = (click_count / recipient_count * 100) if recipient_count > 0 else 0
+        click_to_open_rate = (click_count / open_count * 100) if open_count > 0 else 0
+        
+        analytics = {
+            "blast_id": blast_id,
+            "recipient_count": recipient_count,
+            "open_count": open_count,
+            "click_count": click_count,
+            "open_rate": round(open_rate, 2),
+            "click_rate": round(click_rate, 2),
+            "click_to_open_rate": round(click_to_open_rate, 2),
+            "last_opened_at": metadata.get("last_opened_at"),
+            "link_clicks": metadata.get("link_clicks", {}),
+            "recent_opens": metadata.get("open_events", [])[-10:],  # Last 10 opens
+            "recent_clicks": metadata.get("click_events", [])[-10:]  # Last 10 clicks
+        }
+        
+        return jsonify(analytics), 200
+        
+    except Exception as e:
+        logger.exception(f"Failed to get analytics for blast {blast_id}")
+        return jsonify({"error": f"Failed to get analytics: {str(e)}"}), 500
+
+
+@notifications_bp.route("/blasts/test-deliverability", methods=["POST"])
+@require_role("admin")
+def test_email_deliverability():
+    """
+    Test email deliverability by sending a test email to a spam testing service.
+    Returns recommendations for improving deliverability.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            test_email: {type: string, description: "Email address to send test to (e.g., mail-tester address)"}
+            title: {type: string}
+            body: {type: string}
+    responses:
+      200:
+        description: Test email sent
+      400:
+        description: Invalid input
+    """
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    
+    test_email = data.get("test_email")
+    title = data.get("title", "Test Email")
+    body = data.get("body", "This is a test email for deliverability checking.")
+    
+    if not test_email:
+        return jsonify({"error": "test_email is required"}), 400
+    
+    try:
+        from app.utils.email import send_email_raw, _build_html
+        
+        # Build a test email with typical content
+        html_body = _build_html(
+            "Test User",
+            body,
+            os.environ.get("APP_TAGLINE", "The Holy Grills Team"),
+        )
+        
+        # Send the test email
+        send_email_raw(
+            to_email=test_email,
+            to_name="Test User",
+            subject=f"[DELIVERABILITY TEST] {title}",
+            html_body=html_body,
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": f"Test email sent to {test_email}. Check the spam testing service for results.",
+            "recommendations": [
+                "Ensure SPF, DKIM, and DMARC records are properly configured",
+                "Avoid using spam trigger words in subject lines",
+                "Include a clear unsubscribe link for marketing emails",
+                "Use a consistent sender name and email address",
+                "Monitor your sender reputation regularly",
+                "Keep your email list clean and engaged",
+                "Test emails before sending to large lists",
+                "Use double opt-in for new subscribers",
+            ]
+        }), 200
+        
+    except Exception as e:
+        logger.exception("Failed to send deliverability test email")
         return jsonify({"error": f"Failed to send test: {str(e)}"}), 503
