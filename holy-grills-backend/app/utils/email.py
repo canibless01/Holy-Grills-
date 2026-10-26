@@ -484,6 +484,191 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
     return html
 
 
+def _build_rich_html(name: str, body_html: str, images: list, cta_blocks: list, app_tagline: str) -> str:
+    """
+    Build a branded responsive HTML email with rich content (images, CTA buttons).
+    
+    Args:
+        name: Recipient's name
+        body_html: Rich HTML content (already formatted)
+        images: List of image blocks {url, alt, link?}
+        cta_blocks: List of CTA blocks {label, url, style}
+        app_tagline: App tagline for footer
+    
+    Returns:
+        Complete HTML email string
+    """
+    safe_name = _html.escape(str(name or "there"))
+    safe_tagline = _html.escape(str(app_tagline or "The Holy Grills Team"))
+    
+    # Brand colors
+    brand_red = "#E01616"
+    brand_red_hover = "#B81212"
+    
+    # Wordmark URL (absolute)
+    wordmark_url = "https://holygrills.online/brand/wordmark.png"
+    
+    # Build images section
+    images_html = ""
+    if images:
+        images_html = '<div style="padding: 24px 40px 0;">'
+        for img in images:
+            img_url = img.get("url", "")
+            img_alt = _html.escape(img.get("alt", ""))
+            img_link = img.get("link")
+            
+            if img_link:
+                images_html += f'''
+                <div style="margin-bottom: 16px;">
+                    <a href="{_html.escape(img_link)}" target="_blank" rel="noopener noreferrer">
+                        <img src="{_html.escape(img_url)}" alt="{img_alt}" style="width: 100%; height: auto; border-radius: 12px; display: block;" />
+                    </a>
+                </div>
+                '''
+            else:
+                images_html += f'''
+                <div style="margin-bottom: 16px;">
+                    <img src="{_html.escape(img_url)}" alt="{img_alt}" style="width: 100%; height: auto; border-radius: 12px; display: block;" />
+                </div>
+                '''
+        images_html += '</div>'
+    
+    # Build CTA buttons section
+    cta_html = ""
+    if cta_blocks:
+        cta_html = '<table style="margin: 0 0 24px 0;"><tbody><tr>'
+        for cta in cta_blocks:
+            label = _html.escape(cta.get("label", "Click here"))
+            url = _html.escape(cta.get("url", "#"))
+            style = cta.get("style", "primary")
+            is_primary = style == "primary"
+            
+            bg_color = brand_red if is_primary else "transparent"
+            text_color = "#FFFFFF" if is_primary else brand_red
+            border = "none" if is_primary else f"2px solid {brand_red}"
+            
+            cta_html += f'''
+            <td style="padding: 0 8px 8px 0;">
+                <table>
+                    <tbody>
+                        <tr>
+                            <td style="border-radius: 12px; background-color: {bg_color}; border: {border};">
+                                <a href="{url}" style="display: inline-block; padding: 14px 28px; font-size: 16px; font-weight: 600; color: {text_color}; text-decoration: none; border-radius: 12px;" target="_blank" rel="noopener noreferrer">
+                                    {label}
+                                </a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </td>
+            '''
+        cta_html += '</tr></tbody></table>'
+    
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Holy Grills</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset */
+        body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+        table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
+        img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
+        
+        /* Mobile */
+        @media only screen and (max-width: 600px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px !important; }}
+            .email-header {{ padding: 24px 20px 16px !important; }}
+            .email-footer {{ padding: 24px 20px !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #FFF5F0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; border: 0; border-spacing: 0; background-color: #FFF5F0;">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <table role="presentation" class="email-container" style="width: 600px; max-width: 600px; border-collapse: collapse; border: 0; border-spacing: 0; background-color: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                    
+                    <!-- Header with wordmark -->
+                    <tr>
+                        <td class="email-header" style="padding: 32px 40px 24px; text-align: center;">
+                            <img src="{wordmark_url}" alt="Holy Grills" style="max-width: 180px; height: auto;" />
+                        </td>
+                    </tr>
+                    
+                    <!-- Divider -->
+                    <tr>
+                        <td style="padding: 0 40px;">
+                            <div style="height: 1px; background: linear-gradient(to right, transparent, rgba(0,0,0,0.1), transparent);"></div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Images -->
+                    {images_html}
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td class="email-padding" style="padding: 32px 40px;">
+                            <!-- Greeting -->
+                            <p style="margin: 0 0 16px 0; font-size: 18px; color: #1A1A1A;">
+                                Hello {safe_name} 👋
+                            </p>
+                            
+                            <!-- Body HTML -->
+                            <div style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #1A1A1A;">
+                                {body_html}
+                            </div>
+                            
+                            <!-- CTA Buttons -->
+                            {cta_html}
+                            
+                            <!-- Sign-off -->
+                            <p style="margin: 32px 0 8px 0; font-size: 15px; color: #666666;">
+                                With love,
+                            </p>
+                            <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1A1A1A;">
+                                {safe_tagline}
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="email-footer" style="background-color: #F5F5F5; border-top: 1px solid rgba(0,0,0,0.08); padding: 32px 40px; text-align: center;">
+                            <p style="margin: 0 0 12px 0; font-size: 14px; color: #666666;">
+                                Thank you for being part of our community!
+                            </p>
+                            <p style="margin: 0 0 12px 0; font-size: 14px; color: #666666;">
+                                <a href="mailto:support@holygrills.online" style="color: {brand_red}; text-decoration: none;">support@holygrills.online</a>
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #666666;">
+                                Copyright © 2026 Holy Grills. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>'''
+    
+    return html
+
+
 def send_email(to_email: str, to_name: str, template_key: str, data: dict = None, provider: str = None) -> bool:
     """
     Send a transactional email via whichever provider get_email_provider

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, Image as ImageIcon } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -10,6 +10,11 @@ import type { NotificationBlastPayload } from '@/types/notifications';
 import { msg } from '@/lib/messages';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { apiClient } from '@/lib/apiClient';
+import RichTextEditor from './RichTextEditor';
+import CTABlockEditor, { type CTABlock } from './CTABlockEditor';
+import ImageStackEditor, { type ImageBlock } from './ImageStackEditor';
+import EmailPreviewModal from './EmailPreviewModal';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 const ROLES = [
   { id: 'all', label: 'All roles' },
@@ -40,8 +45,12 @@ const STATUS_STYLE = {
 };
 
 export default function AdminNotifications() {
+  const { user } = useHolyGrill();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [bodyHtml, setBodyHtml] = useState('');
+  const [images, setImages] = useState<ImageBlock[]>([]);
+  const [ctaBlocks, setCtaBlocks] = useState<CTABlock[]>([]);
   const [channels, setChannels] = useState(['push', 'in_app']);
   const [role, setRole] = useState('all');
   const [tier, setTier] = useState('all');
@@ -49,12 +58,15 @@ export default function AdminNotifications() {
   const [actionUrl, setActionUrl] = useState('');
   const [emailProvider, setEmailProvider] = useState('default');
   const [sending, setSending] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [blasts, setBlasts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const intent = useCmsCreateIntent();
   const [previewCount, setPreviewCount] = useState(null);
+  const [pushImage, setPushImage] = useState(''); // Image for push/in-app notifications
   const preview = async () => {
     try { const result = await apiClient.post('/notifications/blasts/preview', buildPayload()); setPreviewCount(result.recipient_count); }
     catch { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), variant: 'destructive' }); }
@@ -79,7 +91,7 @@ export default function AdminNotifications() {
   useEffect(() => { load(); }, []);
 
   const toggleChannel = (id, checked) => setChannels(checked ? [...channels, id] : channels.filter((x) => x !== id));
-  const valid = title.trim() && body.trim() && channels.length > 0;
+  const valid = title.trim() && (body.trim() || bodyHtml.trim()) && channels.length > 0;
   const isScheduled = !!sendAt;
 
   const buildPayload = () => {
@@ -96,6 +108,11 @@ export default function AdminNotifications() {
       const d = new Date(sendAt);
       payload.send_at = d.toISOString();
     }
+    // Add rich content fields
+    if (bodyHtml.trim()) payload.body_html = bodyHtml.trim();
+    if (images.length > 0) payload.images = images;
+    if (ctaBlocks.length > 0) payload.cta_blocks = ctaBlocks;
+    if (pushImage.trim()) payload.push_image = pushImage.trim();
     return payload;
   };
 
@@ -117,7 +134,8 @@ export default function AdminNotifications() {
         const sentTo = res?.sent_to ?? res?.recipients ?? res?.recipient_count;
         toast({ title: msg('FE_BLAST_PROCESSED', 'Processed'), description: sentTo != null ? msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: sentTo }) : undefined });
       }
-      setTitle(''); setBody(''); setSendAt(''); setRole('all'); setTier('all'); setActionUrl('');
+      // Reset form
+      setTitle(''); setBody(''); setBodyHtml(''); setImages([]); setCtaBlocks([]); setSendAt(''); setRole('all'); setTier('all'); setActionUrl(''); setPushImage('');
       setConfirmOpen(false);
       await load();
     } catch (e) {
@@ -126,6 +144,24 @@ export default function AdminNotifications() {
       await load();
     }
     setSending(false);
+  };
+
+  const sendTest = async () => {
+    if (!user?.email) {
+      toast({ title: 'Cannot send test', description: 'Your email address is not available.', variant: 'destructive' });
+      return;
+    }
+    setSendingTest(true);
+    try {
+      await apiClient.post('/notifications/blasts/test', {
+        ...buildPayload(),
+        test_email: user.email,
+      });
+      toast({ title: '✅ Test sent', description: `Test notification sent to ${user.email}` });
+    } catch (e) {
+      toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
+    }
+    setSendingTest(false);
   };
 
   const handleSubmit = () => {
@@ -149,7 +185,44 @@ export default function AdminNotifications() {
             <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New menu drop is live 🔥" />
           </Field>
           <Field label="Body (required)">
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40" placeholder="Write the notification message..." />
+            <RichTextEditor
+              value={bodyHtml}
+              onChange={setBodyHtml}
+              placeholder="Write your notification message with rich formatting..."
+            />
+            {/* Keep plain text body for backward compatibility */}
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={2}
+              className="w-full mt-2 p-2.5 rounded-xl border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder="Plain text fallback (auto-generated from rich text if empty)"
+            />
+          </Field>
+
+          {/* Image Stack */}
+          <ImageStackEditor value={images} onChange={setImages} />
+
+          {/* CTA Blocks */}
+          <CTABlockEditor value={ctaBlocks} onChange={setCtaBlocks} />
+
+          {/* Push/In-App Image */}
+          <Field label="Push/In-App Image (optional)" hint="Image to show in push notifications and in-app notifications">
+            <div className="flex items-center gap-2 mt-1">
+              <ImageIcon className="w-4 h-4 text-muted-foreground" />
+              <input
+                type="url"
+                value={pushImage}
+                onChange={(e) => setPushImage(e.target.value)}
+                placeholder="https://example.com/push-image.jpg"
+                className="flex-1 p-2.5 rounded-xl border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
+            {pushImage && (
+              <div className="mt-2 rounded-lg overflow-hidden border border-border">
+                <img src={pushImage} alt="Push preview" className="w-full h-auto max-h-32 object-cover" />
+              </div>
+            )}
           </Field>
 
           {/* Segment builder — role + tier */}
@@ -200,6 +273,25 @@ export default function AdminNotifications() {
             </select>
           </Field>
 
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPreviewOpen(true)}
+              disabled={!title.trim() && !bodyHtml.trim()}
+              className="flex-1 py-3 rounded-full border border-border text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-secondary transition"
+            >
+              <Eye className="w-4 h-4" />
+              Preview
+            </button>
+            <button
+              onClick={sendTest}
+              disabled={sendingTest || (!title.trim() && !bodyHtml.trim())}
+              className="flex-1 py-3 rounded-full border border-primary text-primary font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-primary/10 transition"
+            >
+              <Mail className="w-4 h-4" />
+              {sendingTest ? 'Sending...' : 'Test to Me'}
+            </button>
+          </div>
+
           <button
             onClick={handleSubmit}
             disabled={sending || !valid}
@@ -247,6 +339,16 @@ export default function AdminNotifications() {
           </div>
         )}
       </div>
+
+      {/* Email Preview Modal */}
+      <EmailPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={title}
+        bodyHtml={bodyHtml}
+        images={images}
+        ctaBlocks={ctaBlocks}
+      />
 
       {/* Immediate-send confirm dialog */}
       <Modal open={confirmOpen} onClose={() => !sending && setConfirmOpen(false)} title="Send to everyone now?">
