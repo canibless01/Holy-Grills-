@@ -476,9 +476,18 @@ def send_notification(
             created_records += 1
 
             if channel == "email":
+                # Extract rich content from metadata if present
+                rich_content = {}
+                if merged_meta.get("body_html"):
+                    rich_content["body_html"] = merged_meta["body_html"]
+                if merged_meta.get("images"):
+                    rich_content["images"] = merged_meta["images"]
+                if merged_meta.get("cta_blocks"):
+                    rich_content["cta_blocks"] = merged_meta["cta_blocks"]
+                
                 t = threading.Thread(
                     target=_dispatch_email_async,
-                    args=(user_id, title, body, saved.get("id", ""), email_provider),
+                    args=(user_id, title, body, saved.get("id", ""), email_provider, rich_content if rich_content else None),
                     daemon=True,
                 )
                 t.start()
@@ -851,18 +860,36 @@ def send_blast(blast_id: str) -> dict:
     channels = blast.get("channels", ["in_app"])
     title_tpl = blast.get("title", "")
     body_tpl = blast.get("body", "")
-    has_name = "{name}" in title_tpl or "{name}" in body_tpl
+    body_html_tpl = blast.get("body_html", "")
+    images = blast.get("images", [])
+    cta_blocks = blast.get("cta_blocks", [])
+    push_image = blast.get("push_image", "")
+    has_name = "{name}" in title_tpl or "{name}" in body_tpl or "{name}" in body_html_tpl
     count = 0
 
     try:
         for uid in sorted(user_ids):
             notif_title = title_tpl
             notif_body = body_tpl
+            notif_body_html = body_html_tpl
             if has_name:
                 full_name = _fetch_user_name(uid)
                 first = (full_name or "").split()[0] if full_name else "there"
                 notif_title = title_tpl.replace("{name}", first)
                 notif_body = body_tpl.replace("{name}", first)
+                notif_body_html = body_html_tpl.replace("{name}", first)
+            
+            # Pass rich content through metadata
+            rich_metadata = {}
+            if notif_body_html:
+                rich_metadata["body_html"] = notif_body_html
+            if images:
+                rich_metadata["images"] = images
+            if cta_blocks:
+                rich_metadata["cta_blocks"] = cta_blocks
+            if push_image:
+                rich_metadata["push_image"] = push_image
+            
             send_notification(
                 user_id=uid,
                 notif_type=f"blast_{blast_id}",
@@ -873,6 +900,7 @@ def send_blast(blast_id: str) -> dict:
                 action_url=blast.get("action_url"),
                 reference_id=blast_id,
                 reference_type="notification_blast",
+                metadata=rich_metadata,
                 strict=True,
             )
             count += 1
@@ -957,20 +985,33 @@ def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, htm
     return send_email_routed(to_email, to_name, subject, html_body, provider="onesignal")
 
 
-def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None):
+def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None, rich_content: dict = None):
     """
     Send a transactional email to the user's registered email address, via
     whichever provider get_email_provider resolves to.
+    
+    rich_content: optional dict with body_html, images, cta_blocks for rich email content
     """
     try:
-        from app.utils.email import get_user_email_and_name, send_email_routed, _build_html
+        from app.utils.email import get_user_email_and_name, send_email_routed, _build_html, _build_rich_html
         email, name = get_user_email_and_name(user_id)
         if not email:
             return
 
         chosen = get_email_provider(scope="transactional", override=provider)
         app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
-        html_body = _build_html(name or "there", body, app_tagline)
+        
+        # Use rich HTML builder if rich content is provided
+        if rich_content and (rich_content.get("body_html") or rich_content.get("images") or rich_content.get("cta_blocks")):
+            html_body = _build_rich_html(
+                name or "there",
+                rich_content.get("body_html", body),
+                rich_content.get("images", []),
+                rich_content.get("cta_blocks", []),
+                app_tagline,
+            )
+        else:
+            html_body = _build_html(name or "there", body, app_tagline)
 
         send_email_routed(email, name or "there", subject, html_body, provider=chosen)
     except Exception as e:

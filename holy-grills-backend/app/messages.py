@@ -316,9 +316,9 @@ class MSG:
     ORDER_DELIVERED_TITLE        = "Order Delivered!"
     ORDER_DELIVERED_BODY         = "Your order has been delivered. Enjoy your meal!"
     ORDER_THANK_YOU_TITLE        = "Thanks for dining with us! 🙏"
-    ORDER_THANK_YOU_BODY         = "We hope you loved your {platform} meal. Looking forward to serving you again!"
+    ORDER_THANK_YOU_BODY         = "We hope you loved your {brand} meal. Looking forward to serving you again!"
     SATISFACTION_CHECK_TITLE     = "How was your meal? 😊"
-    SATISFACTION_CHECK_BODY      = "We'd love your feedback — rate your {platform} experience and help us improve."
+    SATISFACTION_CHECK_BODY      = "We'd love your feedback — rate your {brand} experience and help us improve."
     REENGAGEMENT_NUDGE_TITLE     = "Ready for another round? 🍖"
     REENGAGEMENT_NUDGE_BODY      = "It's been a day since your last order. Come back and earn {currency} with every bite!"
 
@@ -417,12 +417,12 @@ class MSG:
     SECTION_DEACTIVATED           = "Storefront section deactivated"
 
     # ── Email subjects ────────────────────────────────────────────────────────
-    EMAIL_ORDER_CONFIRMED    = "Your {platform} order is confirmed!"
+    EMAIL_ORDER_CONFIRMED    = "Your {brand} order is confirmed!"
     EMAIL_HP_EARNED          = "You just earned {currency}!"
-    EMAIL_TIER_UPGRADE       = "You levelled up on {platform}!"
+    EMAIL_TIER_UPGRADE       = "You levelled up on {brand}!"
     EMAIL_WALLET_FUNDED      = "Wallet funded successfully"
-    EMAIL_PASSWORD_RESET     = "Reset your {platform} password"
-    EMAIL_BIRTHDAY_BONUS     = "Happy Birthday from {platform}! \U0001f382"
+    EMAIL_PASSWORD_RESET     = "Reset your {brand} password"
+    EMAIL_BIRTHDAY_BONUS     = "Happy Birthday from {brand}! \U0001f382"
     EMAIL_REFERRAL_COMPLETED = "Your referral earned you {currency}!"
     EMAIL_ABANDONED_CART     = "Your cart is waiting for you"
     EMAIL_REWARD_REDEEMED    = "Reward redemption confirmed"
@@ -848,7 +848,7 @@ class MSG:
 
     # ── Hall of Fame ──────────────────────────────────────────────────────────
     HALL_OF_FAME_TITLE           = "🏛️ Hall of Fame!"
-    HALL_OF_FAME_BODY            = "Congratulations! You've reached the top 3 in three different months — you've been inducted into the {platform} Hall of Fame!"
+    HALL_OF_FAME_BODY            = "Congratulations! You've reached the top 3 in three different months — you've been inducted into the {brand} Hall of Fame!"
 
     # ── Phase 3 notification titles/bodies ────────────────────────────────────
     LEADERBOARD_PRIZE_TITLE      = "🎁 Your Leaderboard Prize is Ready!"
@@ -915,9 +915,9 @@ class MSG:
     NOTIF_PASSWORD_CHANGED_TITLE    = "Security Alert — Password Changed"
     NOTIF_PASSWORD_CHANGED_BODY     = "Your password was just changed, {name}. If this wasn't you, contact us immediately."
     NOTIF_ACCOUNT_DEACTIVATED_TITLE = "Account Deactivated"
-    NOTIF_ACCOUNT_DEACTIVATED_BODY  = "Hi {name}, your {platform} account has been deactivated. Contact support if this was a mistake."
+    NOTIF_ACCOUNT_DEACTIVATED_BODY  = "Hi {name}, your {brand} account has been deactivated. Contact support if this was a mistake."
     NOTIF_ACCOUNT_REACTIVATED_TITLE = "You're Back, {name}!"
-    NOTIF_ACCOUNT_REACTIVATED_BODY  = "Your {platform} account is active again. Welcome back!"
+    NOTIF_ACCOUNT_REACTIVATED_BODY  = "Your {brand} account is active again. Welcome back!"
     NOTIF_ACCOUNT_DELETED_TITLE     = "Account Deleted"
     NOTIF_ACCOUNT_DELETED_BODY      = "Hi {name}, your account has been deleted. Your data will be purged within 30 days."
 
@@ -938,7 +938,7 @@ class MSG:
     # HP Earned — source-specific (personalized)
     HP_EARNED_FOOD_BODY        = "You earned {hp} {currency} from your food order, {name}. Keep ordering to unlock more!"
     HP_EARNED_WELCOME_TITLE    = "Welcome Bonus!"
-    HP_EARNED_WELCOME_BODY     = "You earned {hp} {currency} for your first order delivery. Welcome to {platform}, {name}!"
+    HP_EARNED_WELCOME_BODY     = "You earned {hp} {currency} for your first order delivery. Welcome to {brand}, {name}!"
     HP_EARNED_TOPUP_TITLE      = "+{hp} {currency} Earned!"
     HP_EARNED_TOPUP_BODY       = "You earned {hp} {currency} for topping up your wallet, {name}."
     HP_EARNED_ANNIVERSARY_BODY = "Membership anniversary bonus — {hp} {currency} added to your account, {name}!"
@@ -1062,16 +1062,19 @@ class MSG:
     SCHEDULED_ORDER_CANCELLED_BODY  = "Hi {name}, your scheduled order #{order_id} has been cancelled."
 
     # Non-personalized notifications (include_name=False)
-    NOTIF_WELCOME_TITLE            = "Welcome to {platform}!"
+    NOTIF_WELCOME_TITLE            = "Welcome to {brand}!"
     NOTIF_WELCOME_BODY             = "You're in! Start exploring the menu and earn {currency} with every order."
+    NOTIF_WELCOME_BODY_HP          = "You're in! You've earned {welcome_hp} {currency}. Start exploring the menu and earn more with every order."
+    NOTIF_WELCOME_BODY_SIDES       = "You're in! You've got {free_side_credits} free side credit(s) waiting. Start exploring the menu and earn {currency} with every order."
+    NOTIF_WELCOME_BODY_BOTH        = "You're in! You've earned {welcome_hp} {currency} + {free_side_credits} free side credit(s). Start exploring the menu and earn more with every order."
     NOTIF_EMAIL_VERIFY_TITLE       = "Verify Your Email"
-    NOTIF_EMAIL_VERIFY_BODY        = "Click the link in your email to activate your {platform} account."
+    NOTIF_EMAIL_VERIFY_BODY        = "Click the link in your email to activate your {brand} account."
     NOTIF_PASSWORD_RESET_TITLE     = "Password Reset Request"
     NOTIF_PASSWORD_RESET_BODY      = "We received a request to reset your password. Check your email for the reset link. If you didn't request this, ignore this message."
     NOTIF_SYSTEM_TITLE             = "\U0001f4e2 System Announcement"
-    NOTIF_SYSTEM_BODY              = "An important update from {platform}. Check the app for details."
+    NOTIF_SYSTEM_BODY              = "An important update from {brand}. Check the app for details."
     NOTIF_SQUAD_INVITE_TITLE       = "You've Been Invited!"
-    NOTIF_SQUAD_INVITE_BODY        = "You've been invited to join a {platform} squad order. Check the app to join."
+    NOTIF_SQUAD_INVITE_BODY        = "You've been invited to join a {brand} squad order. Check the app to join."
     NOTIF_SQUAD_MEMBER_ADDED_TITLE = "You're in a Squad Order!"
 
     # ── Challenges / Gamification (personalized) ─────────────────────────────
@@ -1088,7 +1091,7 @@ class MSG:
     EVENT_DELETED                  = "Event '{title}' deleted"
 
     # ── Phase 2 Success Messages ──────────────────────────────────────────────
-    REGISTER_SUCCESS               = "Welcome to {platform}! Your account is ready."
+    REGISTER_SUCCESS               = "Welcome to {brand}! Your account is ready."
     LOGIN_SUCCESS                  = "Welcome back!"
     SESSION_REFRESHED              = "Session refreshed"
     PROFILE_PHOTO_UPDATED          = "Profile photo updated"
@@ -2827,15 +2830,16 @@ class _PassthroughDict(dict):
 
 
 def env_defaults() -> dict:
-    """The environment-provided placeholders ({currency}, {platform})."""
+    """The environment-provided placeholders ({currency}, {platform}, {brand})."""
     return {
         'currency': _os.environ.get('HP_CURRENCY_NAME', 'HP'),
         'platform': _os.environ.get('APP_NAME', 'Holy Grills'),
+        'brand': _os.environ.get('APP_NAME', 'Holy Grills'),
     }
 
 
 def resolve_env_only(text: str) -> str:
-    """Replace ONLY the environment placeholders, leaving every other {token} —
+    """Replace ONLY the environment placeholders ({currency}, {platform}, {brand}), leaving every other {token} —
     and any format spec — untouched.
 
     Used by the copy catalog (GET /api/messages): values there are whole strings
@@ -2848,7 +2852,7 @@ def resolve_env_only(text: str) -> str:
 
 
 def resolve_msg(text: str, **kwargs) -> str:
-    """Resolve {currency} and {platform} from env, plus caller-supplied kwargs.
+    """Resolve {currency}, {platform}, and {brand} from env, plus caller-supplied kwargs.
 
     Unknown placeholders (e.g. {order_id}, {name}) are left as-is so the
     caller doesn't need to supply every placeholder in advance.

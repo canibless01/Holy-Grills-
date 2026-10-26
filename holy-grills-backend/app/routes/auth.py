@@ -100,11 +100,11 @@ def _streak_checkin(user_id: str) -> None:
         logger.warning("streak check-in failed for %s: %s", user_id, e)
 
 
-def _notify_security(user_id: str, notif_type: str) -> None:
+def _notify_security(user_id: str, notif_type: str, template_data: dict = None) -> None:
     """In-app + email for account-security events (password_changed, welcome_email)."""
     try:
         from app.services.notification_service import send_notification
-        send_notification(user_id=user_id, notif_type=notif_type, template_data={}, channels=["in_app", "email"])
+        send_notification(user_id=user_id, notif_type=notif_type, template_data=template_data or {}, channels=["in_app", "email"])
     except Exception as e:
         logger.warning("security notification %s failed for %s: %s", notif_type, user_id, e)
 
@@ -215,7 +215,44 @@ def register():
 
     user_id = ((result.get("user") or {}).get("id")) or result.get("id")
     if user_id:
-        _notify_security(user_id, "welcome_email")
+        # Fetch welcome bonuses for the notification
+        from app.db import get_db
+        db = get_db()
+        welcome_hp = "50"
+        free_side_credits = "1"
+        try:
+            row = db.table("system_settings").select("value").eq("key", "welcome_bonus_hp").is_("campus_id", "null").single().execute()
+            if row:
+                welcome_hp = str(row.get("value", "50"))
+        except Exception:
+            pass
+        try:
+            from app.services.welcome_credit_service import read_config
+            config, _ = read_config(db)
+            if config.get("enabled"):
+                free_side_credits = str(config.get("credits", 1))
+            else:
+                free_side_credits = "0"
+        except Exception:
+            pass
+        
+        # Select the right welcome message variant based on bonuses
+        has_hp = int(welcome_hp) > 0
+        has_sides = int(free_side_credits) > 0
+        if has_hp and has_sides:
+            welcome_body = MSG.NOTIF_WELCOME_BODY_BOTH
+        elif has_hp:
+            welcome_body = MSG.NOTIF_WELCOME_BODY_HP
+        elif has_sides:
+            welcome_body = MSG.NOTIF_WELCOME_BODY_SIDES
+        else:
+            welcome_body = MSG.NOTIF_WELCOME_BODY
+        
+        _notify_security(user_id, "welcome_email", template_data={
+            "welcome_hp": welcome_hp, 
+            "free_side_credits": free_side_credits,
+            "welcome_body": welcome_body
+        })
     # Always return the same ambiguous shape so the response does not reveal whether the email exists
     return jsonify({"status": "check_email", "message": MSG.REGISTER_EMAIL_AMBIGUOUS}), 200
 

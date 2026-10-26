@@ -26,6 +26,7 @@ import type { CalculateDeliveryFeePayload, CreateOrderPayload, PaymentMethod } f
 import type { FreeSideItem } from '@/types/free-sides';
 import { checkoutIntent } from '@/lib/checkoutIntent';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { haptic } from '@/lib/haptic';
 
 function CheckoutSkeleton() {
   return (
@@ -615,8 +616,13 @@ export default function Checkout() {
         const checkpoint = { payload: requestPayload, created_at: new Date().toISOString() };
         if (pendingKey) localStore.setItem(pendingKey, JSON.stringify(checkpoint));
         setPendingCheckout(checkpoint);
-        try { return await mockApi.orders.create(requestPayload); }
+        try { 
+          const result = await mockApi.orders.create(requestPayload);
+          haptic('success'); // Haptic feedback on successful order creation
+          return result;
+        }
         catch (e) {
+          haptic('error'); // Haptic feedback on order creation failure
           if ([400, 401, 403, 404, 409, 422].includes(e.status)) clearPendingCheckout();
           throw e;
         }

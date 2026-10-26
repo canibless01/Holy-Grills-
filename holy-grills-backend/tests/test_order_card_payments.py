@@ -87,3 +87,98 @@ class CardPaymentTests(unittest.TestCase):
         with self.app.app_context(),patch.object(order_service,'get_db',return_value=db),patch.object(order_service,'_on_order_paid'):
             result=order_service.confirm_order_payment(OID,service.reference_for(self.order),self.transaction())
         self.assertEqual(result['payment_status'],'paid');self.assertEqual(db.rpc.call_args.args[1]['p_amount'],1800)
+
+    # ── Paystack amount validation tests (customer vs merchant fee) ──
+
+    def test_exact_amount_merchant_bears_fee(self):
+        """paid == expected: merchant bears fee, should accept."""
+        # card_amount_used = 1800 Naira = 180000 kobo
+        result = service.validate_paystack_amount(180000, 180000, 0)
+        self.assertEqual(result['paid'], 180000)
+        self.assertEqual(result['fees'], 0)
+        self.assertEqual(result['net'], 180000)
+
+    def test_amount_plus_fee_customer_bears_fee(self):
+        """paid - fees == expected: customer bears fee, should accept."""
+        # Customer paid 182000 kobo, fee was 2000 kobo, so net = 180000 kobo
+        result = service.validate_paystack_amount(180000, 182000, 2000)
+        self.assertEqual(result['paid'], 182000)
+        self.assertEqual(result['fees'], 2000)
+        self.assertEqual(result['net'], 180000)
+
+    def test_underpayment_rejected(self):
+        """paid < expected: should reject."""
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(180000, 179999, 0)
+
+    def test_overpayment_beyond_cap_rejected(self):
+        """paid > expected + tolerance: should reject."""
+        # Tolerance = max(15000, 180000 * 0.02) = max(15000, 3600) = 15000
+        # Max acceptable = 180000 + 15000 = 195000
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(180000, 195001, None)
+
+    def test_missing_fees_within_tolerance(self):
+        """fees is null, paid within tolerance: should accept."""
+        # Tolerance = max(15000, 180000 * 0.02) = 15000
+        # paid = 190000, expected = 180000, within tolerance
+        result = service.validate_paystack_amount(180000, 190000, None)
+        self.assertEqual(result['paid'], 190000)
+        self.assertIsNone(result['fees'])
+        self.assertIsNone(result['net'])
+
+    def test_missing_fees_exact_amount(self):
+        """fees is null, paid == expected: should accept."""
+        result = service.validate_paystack_amount(180000, 180000, None)
+        self.assertEqual(result['paid'], 180000)
+        self.assertEqual(result['fees'], 0)
+        self.assertEqual(result['net'], 180000)
+
+    def test_missing_fees_at_tolerance_boundary(self):
+        """fees is null, paid at exact tolerance boundary: should accept."""
+        # Tolerance = 15000, max_acceptable = 195000
+        result = service.validate_paystack_amount(180000, 195000, None)
+        self.assertEqual(result['paid'], 195000)
+        self.assertIsNone(result['fees'])
+        self.assertIsNone(result['net'])
+
+    def test_missing_fees_just_over_tolerance_rejected(self):
+        """fees is null, paid just over tolerance: should reject."""
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(180000, 195001, None)
+
+    def test_tolerance_scales_with_amount(self):
+        """For large amounts, 2% tolerance should exceed 15000 kobo."""
+        # expected = 10000000 kobo (100000 Naira)
+        # tolerance = max(15000, 10000000 * 0.02) = max(15000, 200000) = 200000
+        # max_acceptable = 10200000
+        result = service.validate_paystack_amount(10000000, 10150000, None)
+        self.assertEqual(result['paid'], 10150000)
+        self.assertIsNone(result['fees'])
+        # Just over tolerance should reject
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(10000000, 10200001, None)
+
+    def test_negative_fees_rejected(self):
+        """Negative fees should be rejected."""
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(180000, 182000, -2000)
+
+    def test_zero_expected_rejected(self):
+        """Zero or negative expected amount should be rejected."""
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(0, 180000, 0)
+        with self.assertRaises(service.OrderPaymentError):
+            service.validate_paystack_amount(-100, 180000, 0)
+
+    def test_provider_payment_with_fee_breakdown_stored(self):
+        """validate_provider_payment should attach amount breakdown to data."""
+        txn = self.transaction(amount=182000, fees=2000)
+        result = service.validate_provider_payment(self.order, service.reference_for(self.order), txn)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['paid'], 182000)
+        self.assertEqual(result['fees'], 2000)
+        self.assertEqual(result['net'], 180000)
+        # Breakdown should be attached to data dict
+        self.assertIn('_amount_breakdown', txn)
+        self.assertEqual(txn['_amount_breakdown']['paid'], 182000)

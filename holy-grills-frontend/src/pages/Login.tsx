@@ -7,6 +7,7 @@ import { msg } from '@/lib/messages';
 import { localStore } from '@/lib/storage';
 import AuthShell from '@/components/auth/AuthShell';
 import AuthField from '@/components/auth/AuthField';
+import { haptic } from '@/lib/haptic';
 
 // Role-based login — after POST /api/auth/login the user's role routes them:
 // admin/super_admin → /admin, kitchen → /kitchen, rider → /rider, student → /.
@@ -65,9 +66,11 @@ export default function Login() {
     try {
       const data = await login(emailVal, passwordVal);
       const role = data?.role || data?.user?.role || 'student';
+      haptic('success');
       toast({ title: msg('FE_LOGIN_WELCOME_TITLE', '🔥 Welcome back!'), description: msg('FE_LOGIN_WELCOME_BODY', 'Good to see you again, {name}.', { name: data?.user?.full_name?.split(' ')[0] || 'griller' }) });
       navigate(loginDestination(role, location.state?.from), { replace: true });
     } catch (err) {
+      haptic('error');
       setError(err.message || msg('FE_LOGIN_FAILED', 'Login failed'));
     }
     setLoading(false);

@@ -8,6 +8,7 @@ import { getStoredCampusId } from '@/lib/campusContext';
 import { toast } from '@/components/ui/use-toast';
 import AuthShell from '@/components/auth/AuthShell';
 import AuthField from '@/components/auth/AuthField';
+import { haptic } from '@/lib/haptic';
 
 const ROLE_HOME = { admin: '/admin', super_admin: '/admin', kitchen: '/kitchen', rider: '/rider', student: '/' };
 const STUDENT_HOME = '/';
@@ -103,18 +104,21 @@ export default function Register() {
         academic_level: (() => { const l = academicLevels.find((x) => x.id === form.academic_level_id); return l ? (l.value || l.name || l.label || l.level) : undefined; })(),
         referred_by_code: form.referred_by || undefined,
       });
-      // check_email — account created, email verification required. Show as
-      // info (not an error) with login + reset-password links beneath it.
-      if (data?.status === 'check_email') {
-        setInfo(data.message || 'Check your email to verify your account, then log in.');
-        setLoading(false);
+      // Supabase email confirmation is OFF — if session exists, navigate to home
+      const hasSession = data?.session || data?.access_token;
+      if (hasSession) {
+        haptic('success');
+        toast({ title: msg('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: msg('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
+        const role = data?.role || data?.user?.role || 'student';
+        const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
+        window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : (guestOrderReturn || STUDENT_HOME);
         return;
       }
-      toast({ title: msg('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: msg('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
-      const role = data?.role || data?.user?.role || 'student';
-      const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
-      window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : (guestOrderReturn || STUDENT_HOME);
+      // No session returned — show generic notice (anti-enumeration: don't reveal if email confirmation is required)
+      setInfo(data?.message || 'Account created. You can now log in.');
+      setLoading(false);
     } catch (err) {
+      haptic('error');
       setError(err.message);
     }
     setLoading(false);

@@ -8,7 +8,8 @@ import { loadSystemSettings, loadFeatureFlags, useFeatureFlags, getSetting, getS
 import { loadTiers } from './hgUtils';
 import { msg, useMessages } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
-import { initOneSignal } from './onesignal';
+import { initOneSignal, logoutOneSignal } from './onesignal';
+import { haptic } from './haptic';
 
 // Holy Grills app context — real JWT auth against the live backend.
 // No demo auto-login. Authenticated users hit the server-side cart; guests
@@ -405,6 +406,9 @@ export const HolyGrillProvider = ({ children }) => {
     localStore.removeItem('hg_admin_scope_all');
     localStore.removeItem('hg_user_campus_id');
     localStore.removeItem('hg_user_role');
+    // Unlink the OneSignal external_id so the push subscription becomes
+    // anonymous again — the next login will re-attach it to the new user.
+    logoutOneSignal().catch(() => {});
     setUser(null); setHpBalance(null); setWallet(null);
     setNotifications([]); setUnreadCount(0); setStreak(null); setSavedItems([]);
     setAuthed(false);
@@ -437,6 +441,7 @@ export const HolyGrillProvider = ({ children }) => {
       writeGuestCart(items);
       loadGuestCart();
     }
+    haptic('tap');
   };
 
   const updateCartItem = async (itemId, body) => {

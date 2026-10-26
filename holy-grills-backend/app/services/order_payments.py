@@ -71,6 +71,53 @@ def allowed_payment_url(raw):
         return False
 
 
+def validate_paystack_amount(expected_kobo, paid_kobo, fees):
+    """
+    Validate Paystack payment amount whether customer or merchant bears the fee.
+    
+    Rules (all in kobo integers):
+    - Accept if paid == expected (merchant bears fee)
+    - Accept if paid - fees == expected (customer bears fee)
+    - If fees is null: accept if expected <= paid <= expected + max(15000, expected * 0.02)
+    
+    Returns dict with paid, fees, net if valid.
+    Raises OrderPaymentError if invalid.
+    """
+    if not isinstance(expected_kobo, int) or expected_kobo <= 0:
+        raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
+    if not isinstance(paid_kobo, int) or paid_kobo < 0:
+        raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
+    
+    # Convert fees to int or None
+    if fees is not None:
+        try:
+            fees = int(fees)
+            if fees < 0:
+                raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
+        except (TypeError, ValueError):
+            raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
+    
+    # Case 1: Merchant bears fee (paid == expected)
+    if paid_kobo == expected_kobo:
+        return {'paid': paid_kobo, 'fees': fees or 0, 'net': paid_kobo - (fees or 0)}
+    
+    # Case 2: Customer bears fee (paid - fees == expected)
+    if fees is not None and paid_kobo - fees == expected_kobo:
+        return {'paid': paid_kobo, 'fees': fees, 'net': expected_kobo}
+    
+    # Case 3: Fees unknown — accept within tolerance
+    if fees is None:
+        # Tolerance: max(15000 kobo = ₦150, 2% of expected)
+        tolerance = max(15000, int(expected_kobo * 0.02))
+        max_acceptable = expected_kobo + tolerance
+        if expected_kobo <= paid_kobo <= max_acceptable:
+            # Accept but fees unknown (will be re-read via verify endpoint)
+            return {'paid': paid_kobo, 'fees': None, 'net': None}
+    
+    # Rejected
+    raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
+
+
 def validate_provider_payment(order, reference, data, provider='paystack'):
     """Called only on server-verified data or authenticated provider webhooks."""
     if not isinstance(data, dict) or not reference:
@@ -92,9 +139,17 @@ def validate_provider_payment(order, reference, data, provider='paystack'):
     if provider == 'paystack':
         if amount != amount.to_integral_value():
             raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
-        amount /= 100
+        # Use the shared Paystack amount validation helper
+        paid_kobo = int(amount)
+        fees = data.get('fees')
+        expected_kobo = int(expected * 100)
+        result = validate_paystack_amount(expected_kobo, paid_kobo, fees)
+        # Attach the amount breakdown to data so callers can store it
+        data['_amount_breakdown'] = result
+        return result
     if expected <= 0 or amount != expected:
         raise OrderPaymentError(MSG.ORDER_PAYMENT_INVALID)
+    return None
 
 
 def initialize(order):

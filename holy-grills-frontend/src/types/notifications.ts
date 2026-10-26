@@ -76,6 +76,24 @@ export interface NotificationBlastPayload {
   notify_new_matches_only?: boolean;
   /** When omitted the blast sends immediately. */
   send_at?: string;
+  /** Rich HTML content for emails (optional, falls back to body if not provided). */
+  body_html?: string;
+  /** Image stack for emails (2-6 images with alt text and optional links). */
+  images?: Array<{
+    id: string;
+    url: string;
+    alt: string;
+    link?: string;
+  }>;
+  /** CTA blocks for emails (multiple buttons with labels and URLs). */
+  cta_blocks?: Array<{
+    id: string;
+    label: string;
+    url: string;
+    style: 'primary' | 'secondary';
+  }>;
+  /** Image for push/in-app notifications (optional). */
+  push_image?: string;
   [key: string]: unknown;
 }
 
