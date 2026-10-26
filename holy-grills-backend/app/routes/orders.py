@@ -268,20 +268,37 @@ def track_guest_order():
     import re
     number = (request.args.get('order_number') or '').strip().lstrip('#')
     token = request.args.get('claim_token')
+    
+    # Validate claim token format
     try:
         _uuid.UUID(token or '')
     except (ValueError, TypeError, AttributeError):
         return jsonify({'error': MSG.ORDER_INVALID_CLAIM}), 403
+    
     if not number or len(number)>80 or not re.fullmatch(r'[A-Za-z0-9-]+',number):
         return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+    
+    # Try to parse as UUID first
     try:
         oid = str(_uuid.UUID(number))
+        # For UUID format, we still need to validate the token
+        row = (get_db().table('orders').select('id,user_id,claim_token')
+               .eq('id', oid).limit(1).single().execute())
+        if not row:
+            return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+        if row.get('user_id'):
+            # Order already claimed by registered user
+            return jsonify({'error': MSG.ORDER_ACCESS_DENIED}), 403
+        if not hmac.compare_digest(str(row.get('claim_token') or ''), str(token)):
+            return jsonify({'error': MSG.ORDER_INVALID_CLAIM}), 403
     except ValueError:
+        # Not a UUID, try as order_number
         row = (get_db().table('orders').select('id,user_id,claim_token')
                .ilike('order_number',number).limit(1).single().execute())
         if not row or row.get('user_id') or not hmac.compare_digest(str(row.get('claim_token') or ''),str(token)):
             return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
         oid = row['id']
+    
     return get_order.__wrapped__(oid)
 
 

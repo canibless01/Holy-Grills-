@@ -60,6 +60,16 @@ export default function OrderDetail() {
   const resolveClaimToken = useCallback(() => {
     if (claimToken) return claimToken;
     try {
+      // Search through all session-scoped guest order keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('hg_guest_orders_')) {
+          const saved = JSON.parse(localStorage.getItem(key) || '[]');
+          const found = Array.isArray(saved) ? saved.find((g: any) => g?.id === id)?.claim_token : null;
+          if (found) return found;
+        }
+      }
+      // Fallback: try legacy unscoped key (for orders placed before session-scoping)
       const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
       return Array.isArray(saved) ? saved.find(g => g?.id === id)?.claim_token || null : null;
     } catch { return null; }
@@ -128,6 +138,17 @@ export default function OrderDetail() {
       // Saved ownership is authoritative even if optional account hydration fails.
       setOrder(current => current ? { ...current, user_id: user.id, claim_token: null } : current);
       try {
+        // Remove from all session-scoped guest order keys
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('hg_guest_orders_')) {
+            const saved = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(saved)) {
+              localStorage.setItem(key, JSON.stringify(saved.filter((g: any) => g?.id !== id)));
+            }
+          }
+        }
+        // Also try legacy unscoped key
         const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
         if (Array.isArray(saved)) localStorage.setItem('hg_guest_orders', JSON.stringify(saved.filter(g => g?.id !== id)));
       } catch { /* Device storage cannot undo ownership. */ }
