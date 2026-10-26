@@ -17,6 +17,14 @@ Rules for editing this file:
 """
 
 class MSG:
+    REWARD_EDIT_CONFLICT = "This reward changed while you were editing it. Reload it before saving again."
+    FE_REWARD_RELOAD = "Reload rewards"
+    FE_REWARD_EDIT_ACTION = "Edit reward"
+    FE_REWARD_PRICE_LOAD_FAILED = "Rewards could not be loaded."
+    FE_REWARD_PRICE_LOADING = "Calculating…"
+    FE_REWARD_PRICE_AFTER_INPUTS = "Enter cost inputs to preview"
+    FE_REWARD_PRICE_LIABILITY = "Liability per reward"
+    FE_REWARD_PRICE_NOTE = "Calculated by the backend. Saving confirms the final price."
     FE_STREAK_EYEBROW = "Your consistency, rewarded"
     FE_STREAK_PAGE_TITLE = "Keep your fire going."
     FE_STREAK_RECLAIM_TITLE = "Missed a day? Reclaim it."

@@ -539,6 +539,26 @@ def admin_update_redemption(redemption_id):
 _ECONOMICS_FIELDS = ("food_cost", "packaging_cost", "menu_price", "production_cost", "perceived_value", "margin_share_pct")
 
 
+def _validate_reward_fields(data):
+    for alias, canonical in (("quantity_available", "stock_quantity"), ("category", "reward_type")):
+        if alias in data:
+            if canonical in data and data[canonical] != data[alias]:
+                return MSG.INVALID_INPUT
+            data[canonical] = data.pop(alias)
+    if "name" in data and (not isinstance(data["name"], str) or not data["name"].strip()):
+        return MSG.INVALID_INPUT
+    if "reward_type" in data and data["reward_type"] not in ("food", "merch", "event"):
+        return MSG.INVALID_INPUT
+    for key in ("stock_quantity", "hp_cost"):
+        if key not in data or (key == "stock_quantity" and data[key] is None):
+            continue
+        value = data[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or int(value) != value or value < (1 if key == "hp_cost" else 0) or value > 2147483647:
+            return MSG.INVALID_INPUT
+        data[key] = int(value)
+    return None
+
+
 def _apply_reward_economics(db, data: dict):
     """
     When a cost basis is supplied, derive reward_value (and hp_cost, if the admin didn't set one) with
@@ -548,6 +568,8 @@ def _apply_reward_economics(db, data: dict):
     try:
         for field in _ECONOMICS_FIELDS:
             if data.get(field) is not None:
+                if isinstance(data[field], bool):
+                    raise ValueError
                 data[field] = float(data[field])
                 if not math.isfinite(data[field]) or data[field] < 0:
                     raise ValueError
@@ -557,10 +579,11 @@ def _apply_reward_economics(db, data: dict):
         return MSG.REWARD_ECONOMICS_INVALID
 
     packaging = data.get("packaging_cost") or 0.0
-    if data.get("food_cost") is not None and data.get("menu_price") is not None:
+    reward_type = data.get("reward_type")
+    if reward_type in (None, "food") and data.get("food_cost") is not None and data.get("menu_price") is not None:
         from app.services.economics_service import calculate_food_reward_value
         value = calculate_food_reward_value(db, data["food_cost"], packaging, data["menu_price"], data.get("margin_share_pct"))
-    elif data.get("production_cost") is not None and data.get("perceived_value") is not None:
+    elif reward_type in (None, "merch") and data.get("production_cost") is not None and data.get("perceived_value") is not None:
         from app.services.economics_service import calculate_merch_reward_value
         value = calculate_merch_reward_value(db, data["production_cost"], packaging, data["perceived_value"], data.get("margin_share_pct"))
     else:
@@ -569,7 +592,37 @@ def _apply_reward_economics(db, data: dict):
     if not data.get("hp_cost"):
         from app.services.economics_service import calculate_hp_price
         data["hp_cost"] = calculate_hp_price(db, value)
+    if data["hp_cost"] <= 0 or data["hp_cost"] > 2147483647:
+        return MSG.REWARD_ECONOMICS_INVALID
+    from app.services.economics_service import calculate_hp_liability
+    data["hp_liability"] = calculate_hp_liability(db, data["hp_cost"])
     return None
+
+
+@rewards_bp.route("/admin/economics-preview", methods=["POST"])
+@require_role("admin")
+def preview_reward_economics():
+    """Read-only preview using exactly the create/update pricing functions."""
+    raw = request.get_json(silent=True)
+    if not isinstance(raw, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if raw.get("reward_type") not in (None, "food", "merch"):
+        return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+    data = {key: raw[key] for key in (*_ECONOMICS_FIELDS, "reward_type") if key in raw}
+    try:
+        error = _apply_reward_economics(get_user_client(), data)
+        if error:
+            return jsonify({"error": error}), 400
+        if data.get("hp_cost") is None:
+            return jsonify({"complete": False}), 200
+        if data["hp_cost"] <= 0:
+            return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+        return jsonify({"complete": True, "hp_cost": data["hp_cost"],
+                        "reward_value": data["reward_value"],
+                        "hp_liability": data["hp_liability"]}), 200
+    except Exception:
+        logger.exception("Reward price preview unavailable")
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @rewards_bp.route("", methods=["POST"])
@@ -598,13 +651,22 @@ def create_reward():
         description: Reward created
     """
     db = get_user_client()
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     if data.get("name") is None:
         return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="name")}), 400
+    field_error = _validate_reward_fields(data)
+    if field_error:
+        return jsonify({"error": field_error}), 400
     if data.get("fulfillment_type") is not None and data["fulfillment_type"] not in _FULFILLMENT_TYPES:
         return jsonify({"error": MSG.REWARD_FULFILLMENT_TYPE_INVALID}), 400
     # hp_cost may be left out when a cost basis is given: it is then derived from the economics settings.
-    economics_error = _apply_reward_economics(db, data)
+    try:
+        economics_error = _apply_reward_economics(db, data)
+    except Exception:
+        logger.exception("Reward creation pricing unavailable")
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     if economics_error:
         return jsonify({"error": economics_error}), 400
     if data.get("hp_cost") is None:
@@ -697,17 +759,58 @@ def update_reward(reward_id):
         description: Reward updated
     """
     db = get_user_client()
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    field_error = _validate_reward_fields(data)
+    if field_error:
+        return jsonify({"error": field_error}), 400
     if data.get("fulfillment_type") is not None and data["fulfillment_type"] not in _FULFILLMENT_TYPES:
         return jsonify({"error": MSG.REWARD_FULFILLMENT_TYPE_INVALID}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    existing = db.table("rewards").select("*").eq("id", reward_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+    expected_version = data.pop("expected_updated_at", None)
+    if expected_version is not None and expected_version != existing.get("updated_at"):
+        return jsonify({"error": MSG.REWARD_EDIT_CONFLICT}), 409
+    for key in _ECONOMICS_FIELDS:
+        if key not in data or data[key] is None:
+            continue
+        try:
+            if isinstance(data[key], bool) or not math.isfinite(float(data[key])) or float(data[key]) < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+    try:
+        changed = ("reward_type" in data and data["reward_type"] != existing.get("reward_type")) or any(key in data and (None if data[key] is None else float(data[key])) !=
+                      (None if existing.get(key) is None else float(existing[key])) for key in _ECONOMICS_FIELDS)
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+    if changed:
+        pricing = {"reward_type": data.get("reward_type", existing.get("reward_type")), **{key: data.get(key, existing.get(key)) for key in _ECONOMICS_FIELDS}}
+        try:
+            error = _apply_reward_economics(db, pricing)
+            if error or pricing.get("hp_cost", 0) <= 0:
+                return jsonify({"error": error or MSG.REWARD_ECONOMICS_INVALID}), 400
+            data.update({key: pricing[key] for key in ("hp_cost", "reward_value", "hp_liability")})
+            for key in _ECONOMICS_FIELDS:
+                if key in data:
+                    data[key] = pricing.get(key)
+        except Exception:
+            logger.exception("Reward repricing unavailable")
+            return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     q = db.table("rewards").eq("id", reward_id)
     campus_id = getattr(g, "campus_id", None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
+    if "updated_at" in existing:
+        q = q.eq("updated_at", existing["updated_at"]) if existing["updated_at"] is not None else q.is_("updated_at", "null")
     result = q.update(data)
     if not result:
-        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+        return jsonify({"error": MSG.REWARD_EDIT_CONFLICT}), 409
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
