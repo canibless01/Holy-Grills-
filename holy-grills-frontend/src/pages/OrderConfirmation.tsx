@@ -50,9 +50,30 @@ export default function OrderConfirmation() {
         if (id && id !== 'pending') {
           const o = await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {});
           setOrder(o);
-          if (o?.payment_status === 'paid') playSound('order_placed');
+          
+          // Check if we're returning from Paystack payment
+          const urlParams = new URLSearchParams(window.location.search);
+          const isPaymentReturn = urlParams.get('payment_return') === '1';
+          
+          if (isPaymentReturn && o?.payment_status === 'pending') {
+            // Verify payment with backend
+            try {
+              const verifyResult = await mockApi.orders.verifyPayment(id, claimToken ? { claim_token: claimToken } : {});
+              if (verifyResult?.payment_status === 'paid') {
+                o.payment_status = 'paid';
+                setOrder(o);
+              }
+            } catch (e) {
+              console.error('Payment verification failed:', e);
+              // Payment might still be processing, don't show error
+            }
+          }
+          
+          if (o?.payment_status === 'paid') {
+            playSound('order_placed');
+            setTimeout(() => triggerMascotCelebration('cheering'), 900);
+          }
           if (o?.hp_earned > 0) setTimeout(() => playSound('hp_earned'), 700);
-          if (o?.payment_status === 'paid') setTimeout(() => triggerMascotCelebration('cheering'), 900);
         }
       } catch (e) { console.error(e); }
       setLoading(false);

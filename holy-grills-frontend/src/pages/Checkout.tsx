@@ -638,14 +638,16 @@ export default function Checkout() {
     let paymentError = '';
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
+    
+    // Save guest order to localStorage BEFORE payment (so they can track it even if payment fails)
     if (!isAuthenticated) {
-      await clearCart();
       try {
         const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
         guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
         localStorage.setItem('hg_guest_orders', JSON.stringify(guestOrders.slice(0, 10)));
       } catch { /* ignore */ }
     }
+    
     if (payload.delivery_window_id) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
     const cardPending = order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0;
     if (cardPending) {
@@ -653,6 +655,7 @@ export default function Checkout() {
         const payment = await mockApi.orders.initializePayment(order.id, order.claim_token ? { claim_token: order.claim_token } : {});
         if (payment.payment_status !== 'paid') {
           if (!isAllowedPaymentUrl(payment.authorization_url)) throw new Error(msg('FE_ORDER_PAYMENT_INVALID_LINK', 'The payment link could not be verified. Please retry.'));
+          // DON'T clear cart yet - user might navigate back from payment
           window.location.assign(payment.authorization_url);
           return;
         }
@@ -661,6 +664,12 @@ export default function Checkout() {
         paymentError = e.message || msg('FE_ORDER_PAYMENT_UNAVAILABLE', 'Payment is unavailable. Your order is saved; please retry here.');
       }
     }
+    
+    // Only clear cart AFTER payment is confirmed (or if no payment was needed)
+    if (!isAuthenticated && order?.payment_status === 'paid') {
+      await clearCart();
+    }
+    
     if (order.payment_status === 'paid') play('order_placed');
     setReschedule(null);
     navigate(`/order-confirmation/${order?.id || 'pending'}`, {
@@ -1098,8 +1107,8 @@ export default function Checkout() {
 
       <Dialog open={!!contactAction} onOpenChange={open => { if (!open) setContactAction(null); }}>
         <DialogContent className="bg-card border-border">
-          <DialogHeader className=""><DialogTitle>{msg('FE_CHECKOUT_CONTACT_TITLE', 'Can your rider reach you?')}</DialogTitle>
-            <DialogDescription>{msg('FE_CHECKOUT_CONTACT_HELP', 'Confirm a number you can answer for offline calls during this delivery. You can use a different number for this order without changing your account.')}</DialogDescription></DialogHeader>
+          <DialogHeader className=""><DialogTitle>{msg('FE_CHECKOUT_CONTACT_TITLE', 'Please use a phone number you can answer')}</DialogTitle>
+            <DialogDescription>{msg('FE_CHECKOUT_CONTACT_HELP', 'Make sure this number is active and available to receive calls if our delivery team needs to contact you about your order. You can use a different number for this order without changing your account.')}</DialogDescription></DialogHeader>
           <label className="text-sm font-semibold" htmlFor="checkout-contact-phone">{msg('FE_CHECKOUT_CONTACT_NUMBER', 'Phone number for this order')}</label>
           <input id="checkout-contact-phone" type="tel" autoComplete="tel" value={contactDraft} onChange={e => setContactDraft(e.target.value)} className="w-full p-3 rounded-xl border border-border bg-background" />
           {contactError && <p role="alert" className="text-sm text-destructive">{contactError}</p>}

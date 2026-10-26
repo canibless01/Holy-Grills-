@@ -104,13 +104,26 @@ export default function TrackOrders() {
     let saved = [];
     try { saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]'); } catch { saved = []; }
     const claimedIds = new Set(mine.map(o => o.id));
+    
+    // Only fetch guest orders that have valid claim tokens
     const fetched = await Promise.all((Array.isArray(saved) ? saved : []).slice(0, 10).map(async g => {
-      if (!g?.id || claimedIds.has(g.id)) return null;
+      if (!g?.id || !g?.claim_token || claimedIds.has(g.id)) return null;
       try {
-        const order = await mockApi.orders.get(g.id, g.claim_token ? { claim_token: g.claim_token } : {});
+        // Always require claim_token for guest orders
+        const order = await mockApi.orders.get(g.id, { claim_token: g.claim_token });
         return order ? { order: { ...order, claim_token: g.claim_token } } : null;
       } catch (error) {
-        return error.status === 403 || error.status === 404 ? null : { unavailable: g.id };
+        // If we can't fetch the order (403/404), remove it from localStorage
+        // This handles cases where the order was claimed or deleted
+        if (error.status === 403 || error.status === 404) {
+          try {
+            const current = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+            const filtered = current.filter((o: any) => o?.id !== g.id);
+            localStorage.setItem('hg_guest_orders', JSON.stringify(filtered));
+          } catch { /* ignore */ }
+          return null;
+        }
+        return { unavailable: g.id };
       }
     }));
     if (current !== generation.current) return;
