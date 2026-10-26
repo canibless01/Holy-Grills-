@@ -2077,12 +2077,30 @@ def _send_guest_status_email(order: dict, new_status: str):
     if not template or not email:
         return
     try:
-        import html as _html
-        from app.utils.email import send_email_raw
+        from app.utils.email import _build_html, send_email_raw
         number = order.get("order_number") or str(order["id"])[:8]
         subject, body = template
-        text = _html.escape(body.format(order_number=number))
-        html_body = f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'><p>Hi {_html.escape(order.get('guest_name') or 'there')},</p><p>{text}</p></body></html>"
+        body_text = body.format(order_number=number)
+        
+        # Build CTA buttons based on status
+        cta_buttons = []
+        if new_status == "out_for_delivery":
+            cta_buttons = [{"label": "Track Your Order", "url": f"https://holygrills.online/track-orders?order_number={number}&claim_token={order.get('claim_token', '')}", "primary": True}]
+        elif new_status == "delivered":
+            cta_buttons = [{"label": "Order Again", "url": "https://holygrills.online/menu", "primary": True}]
+        elif new_status == "delivery_attempted":
+            cta_buttons = [
+                {"label": "Contact Support", "url": "mailto:support@holygrills.online", "primary": True},
+                {"label": "Track Your Order", "url": f"https://holygrills.online/track-orders?order_number={number}&claim_token={order.get('claim_token', '')}", "primary": False},
+            ]
+        
+        html_body = _build_html(
+            order.get("guest_name") or "there",
+            body_text,
+            os.environ.get("APP_TAGLINE", "The Holy Grills Team"),
+            cta_buttons=cta_buttons,
+            skip_thank_you=True,  # Transactional email
+        )
         send_email_raw(email, order.get("guest_name") or "", subject.format(order_number=number), html_body)
     except Exception:
         logger.warning("_send_guest_status_email failed for order %s", order.get("id"), exc_info=True)

@@ -18,189 +18,117 @@ RESEND_BASE = "https://api.resend.com"
 TEMPLATES = {
     "order_confirmed": {
         "subject": MSG.EMAIL_ORDER_CONFIRMED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Your order #{d.get('order_id','')[:8].upper()} has been received and is heading to the kitchen.
+        "body": lambda d: f"""Your order #{d.get('order_id','')[:8].upper()} has been received and is heading to the kitchen.
 
 Total: ₦{d.get('total', 0):,.0f}
-Estimated delivery: {d.get('window_label', 'your selected window')}
-
-Track your order in the app.
-
-— {d.get('app_tagline', '')}
-""",
+Estimated delivery: {d.get('window_label', 'your selected window')}""",
+        "cta_buttons": lambda d: [{"label": "Track Your Order", "url": f"https://holygrills.online/orders/{d.get('order_id', '')}", "primary": True}],
     },
     "hp_earned": {
         "subject": MSG.EMAIL_HP_EARNED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""You earned {d.get('hp', 0)} {d.get('currency', 'HP')} on your recent order. Keep ordering to build your {d.get('currency', 'HP')} balance and unlock rewards!
 
-You earned {d.get('hp', 0)} {d.get('currency', 'HP')} on your recent order. Keep ordering to build your {d.get('currency', 'HP')} balance and unlock rewards!
-
-Your balance: {d.get('active_hp', 0)} {d.get('currency', 'HP')} active | {d.get('pending_hp', 0)} {d.get('currency', 'HP')} pending
-
-— {d.get('app_tagline', '')}
-""",
+Your balance: {d.get('active_hp', 0)} {d.get('currency', 'HP')} active | {d.get('pending_hp', 0)} {d.get('currency', 'HP')} pending""",
+        "cta_buttons": lambda d: [{"label": "See What You Can Unlock", "url": "https://holygrills.online/rewards", "primary": True}],
     },
     "tier_upgrade": {
         "subject": MSG.EMAIL_TIER_UPGRADE,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Congratulations — you've reached {d.get('tier_name', '')} tier!
+        "body": lambda d: f"""Congratulations — you've reached {d.get('tier_name', '')} tier!
 
 Your new benefits:
 {d.get('perks', '')}
 
-Keep earning to maintain your status.
-
-— {d.get('app_tagline', '')}
-""",
+Enjoy your new perks!""",
+        "cta_buttons": lambda d: [{"label": "View Your Perks", "url": "https://holygrills.online/rewards", "primary": True}],
     },
     "wallet_funded": {
-        "subject": MSG.EMAIL_WALLET_FUNDED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": "Your Wallet is Funded! 🎉",
+        "body": lambda d: f"""Your {d.get('app_name', '')} wallet has been credited with ₦{d.get('amount', 0):,.0f}.
 
-Your {d.get('app_name', '')} wallet has been credited with ₦{d.get('amount', 0):,.0f}.
-
-New balance: ₦{d.get('new_balance', 0):,.0f}
-
-— {d.get('app_tagline', '')}
-""",
+New balance: ₦{d.get('new_balance', 0):,.0f}""",
+        "cta_buttons": lambda d: [{"label": "Treat Yourself", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "password_reset": {
         "subject": MSG.EMAIL_PASSWORD_RESET,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""We received a request to reset your password.
 
-We received a request to reset your password. Click the link below:
-
-{d.get('reset_link', '')}
-
-This link expires in 1 hour. If you didn't request this, ignore this email.
-
-— {d.get('app_tagline', '')}
-""",
+This link expires in 1 hour. If you didn't request this, you can safely ignore this email.""",
+        "cta_buttons": lambda d: [{"label": "Reset Password", "url": d.get('reset_link', ''), "primary": True}],
     },
     "birthday_bonus": {
         "subject": MSG.EMAIL_BIRTHDAY_BONUS,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""Happy Birthday! As a gift, we've added {d.get('hp', 150)} {d.get('currency', 'HP')} to your account.
 
-Happy Birthday! As a gift, we've added {d.get('hp', 150)} {d.get('currency', 'HP')} to your account.
-
-Head to the app and treat yourself on us!
-
-— {d.get('app_tagline', '')}
-""",
+Treat yourself on us!""",
+        "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "referral_completed": {
         "subject": MSG.EMAIL_REFERRAL_COMPLETED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""Great news — a friend you referred just placed their first order on {d.get('app_name', '')}.
 
-Great news — a friend you referred just placed their first order on {d.get('app_name', '')}.
-
-You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} (active, no monthly cap). Spend it on your next order!
-
-— {d.get('app_tagline', '')}
-""",
+You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} (active, no monthly cap). Spend it on your next order!""",
+        "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "abandoned_cart": {
         "subject": MSG.EMAIL_ABANDONED_CART,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""You left some items in your cart. Come back and complete your order — your {d.get('currency', 'HP')} is waiting!
 
-You left some items in your cart. Come back and complete your order — your {d.get('currency', 'HP')} is waiting!
-
-{d.get('items_summary', '')}
-
-— {d.get('app_tagline', '')}
-""",
+{d.get('items_summary', '')}""",
+        "cta_buttons": lambda d: [{"label": "Complete Your Order", "url": "https://holygrills.online/checkout", "primary": True}],
     },
     "reward_redeemed": {
-        "subject": MSG.EMAIL_REWARD_REDEEMED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": "Your Reward is Confirmed! 🎁",
+        "body": lambda d: f"""You redeemed: {d.get('reward_name', '')} for {d.get('hp_spent', 0)} {d.get('currency', 'HP')}.
 
-You redeemed: {d.get('reward_name', '')} for {d.get('hp_spent', 0)} {d.get('currency', 'HP')}.
-
-Our team will fulfil your reward within {d.get('fulfilment_time', '24 hours')}.
-
-— {d.get('app_tagline', '')}
-""",
+Our team will fulfil your reward within {d.get('fulfilment_time', '24 hours')}.""",
     },
     "tier_grace_period": {
         "subject": MSG.EMAIL_TIER_GRACE,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Your {d.get('currency', 'HP')} activity has dipped below the {d.get('tier_name', 'your tier')} threshold.
+        "body": lambda d: f"""Your {d.get('currency', 'HP')} activity has dipped below the {d.get('tier_name', 'your tier')} threshold.
 You have {d.get('grace_days', 7)} days to place an order and keep your tier status.
 
-— {d.get('app_tagline', '')}
-""",
+You've got this!""",
+        "cta_buttons": lambda d: [{"label": "Place an Order", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "tier_dropped": {
-        "subject": MSG.EMAIL_TIER_DROPPED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": "Your Tier Status Updated",
+        "body": lambda d: f"""Your grace period has ended and your tier has been updated.
 
-Your grace period has ended and your tier has been updated.
-Keep ordering to climb back up!
-
-— {d.get('app_tagline', '')}
-""",
+Start earning to climb back — we're rooting for you!""",
+        "cta_buttons": lambda d: [{"label": "Start Climbing", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "hp_expired": {
         "subject": MSG.EMAIL_HP_EXPIRED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""{d.get('amount', 0)} {d.get('currency', 'HP')} has decayed due to {d.get('inactivity_days', 120)} days of inactivity.
 
-{d.get('amount', 0)} {d.get('currency', 'HP')} has decayed due to {d.get('inactivity_days', 120)} days of inactivity.
-Place an order to protect your remaining balance!
-
-— {d.get('app_tagline', '')}
-""",
+Order now to protect your remaining balance!""",
+        "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "monthly_birthday_report": {
         "subject": lambda d: f"🎂 Birthday Report — {d.get('month', 'This Month')} ({d.get('count', 0)} users)",
-        "body": lambda d: f"""
-Hi {d.get('name', 'Admin')},
-
-Here are the {d.get('app_name', '')} users with birthdays in {d.get('month', 'this month')}:
+        "body": lambda d: f"""Here are the {d.get('app_name', '')} users with birthdays in {d.get('month', 'this month')}:
 
 {d.get('summary_text', 'No birthdays this month.')}
 
 Total: {d.get('count', 0)} user{'s' if d.get('count', 0) != 1 else ''}
 
-You can use this list to send birthday wishes, create flyers, or DM them directly.
-
-— {d.get('app_tagline', '')}
-""",
+Use this list for birthday outreach.""",
+        "skip_greeting": True,
+        "skip_signoff": True,
     },
     "event_tickets_export": {
         "subject": lambda d: f"Event Registrants — {d.get('event_title', 'Event')}",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Please find attached the registrant list for {d.get('event_title', 'your event')}.
+        "body": lambda d: f"""Please find attached the registrant list for {d.get('event_title', 'your event')}.
 
 Total registrants: {d.get('count', 0)}
 
-{d.get('registrant_table', '')}
-
-— {d.get('app_tagline', '')}
-""",
+{d.get('registrant_table', '')}""",
+        "skip_greeting": True,
+        "skip_signoff": True,
     },
     "event_ticket_qr": {
         "subject": lambda d: f"🎟️ Your Ticket for {d.get('event_title', 'Event')}",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Here is your ticket for {d.get('event_title', '')}!
+        "body": lambda d: f"""Here is your ticket for {d.get('event_title', '')}!
 
 Date: {d.get('event_date', 'TBA')}
 Location: {d.get('event_location', 'TBA')}
@@ -208,38 +136,23 @@ Ticket ID: {d.get('ticket_id', '')}
 
 Please show your QR code at the door to check in.
 
-Create an account to earn HP for this event!
-
-— {d.get('app_tagline', '')}
-""",
+Create an account to earn HP for this event!""",
     },
     "squad_invite": {
         "subject": lambda d: f"You've been invited to join a squad order on {d.get('app_name', 'Holy Grills')}!",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""{d.get('organizer', 'A friend')} added you to a squad order on {d.get('app_name', 'Holy Grills')}!
 
-{d.get('organizer', 'A friend')} added you to a squad order on {d.get('app_name', 'Holy Grills')}!
-
-Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.
-
-Sign up here to join and earn HP: {d.get('invite_link', '')}
-
-— {d.get('app_tagline', '')}
-""",
+Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.""",
+        "cta_buttons": lambda d: [{"label": "Accept Invitation", "url": d.get('invite_link', ''), "primary": True}],
     },
     "guest_order_confirmed": {
-        "subject": lambda d: f"Guest Order Confirmed — {d.get('app_name', 'Holy Grills')}",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": lambda d: f"Your Order #{d.get('order_id', '')[:8].upper()} is Confirmed!",
+        "body": lambda d: f"""Your order #{d.get('order_id', '')[:8].upper()} has been placed successfully!
 
-Your order #{d.get('order_id', '')} has been placed successfully!
+Tracking code: {d.get('claim_token', '')}
 
-Claim token: {d.get('claim_token', '')}
-
-Create an account or log in with this email to claim your order and earn {d.get('currency', 'HP')}.
-
-— {d.get('app_tagline', '')}
-""",
+You can use this code to track your order or create an account with this email to claim your order and earn {d.get('currency', 'HP')}.""",
+        "cta_buttons": lambda d: [{"label": "Track Your Order", "url": f"https://holygrills.online/track-orders?order_number={d.get('order_id', '')}&claim_token={d.get('claim_token', '')}", "primary": True}],
     },
 }
 
@@ -263,6 +176,11 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
     secondary_section = kwargs.get("secondary_section")  # {"title": "...", "text": "...", "link": "...", "link_text": "..."}
     social_links = kwargs.get("social_links", {})  # {"whatsapp": "...", "tiktok": "...", etc.}
     unsubscribe_url = kwargs.get("unsubscribe_url")
+    
+    # Control greeting/sign-off visibility (prevents duplication when templates include their own)
+    skip_greeting = kwargs.get("skip_greeting", False)
+    skip_signoff = kwargs.get("skip_signoff", False)
+    skip_thank_you = kwargs.get("skip_thank_you", False)  # For transactional emails
     
     # Brand colors
     brand_red = "#E01616"
@@ -300,11 +218,39 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
         table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
         img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
         
-        /* Mobile */
-        @media only screen and (max-width: 620px) {{
+        /* All-screen responsive — ensures proper rendering on all devices */
+        @media only screen and (max-width: 768px) {{
             .email-container {{ width: 100% !important; max-width: 100% !important; }}
             .fluid {{ max-width: 100% !important; height: auto !important; }}
             .stack-column {{ display: block !important; width: 100% !important; max-width: 100% !important; }}
+        }}
+        
+        /* Tablet responsive */
+        @media only screen and (min-width: 621px) and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 600px !important; }}
+        }}
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 620px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px 16px !important; }}
+            .email-header {{ padding: 24px 20px 16px !important; }}
+            .email-footer {{ padding: 24px 20px !important; }}
+            .fluid {{ max-width: 100% !important; height: auto !important; }}
+            .stack-column {{ display: block !important; width: 100% !important; max-width: 100% !important; }}
+            h1 {{ font-size: 24px !important; }}
+            h2 {{ font-size: 18px !important; }}
+            p {{ font-size: 15px !important; }}
+            .cta-button {{ padding: 12px 24px !important; font-size: 15px !important; }}
+        }}
+        
+        /* Small mobile */
+        @media only screen and (max-width: 400px) {{
+            .email-padding {{ padding: 16px 12px !important; }}
+            .email-header {{ padding: 20px 16px 12px !important; }}
+            .email-footer {{ padding: 20px 16px !important; }}
+            h1 {{ font-size: 22px !important; }}
+            p {{ font-size: 14px !important; }}
         }}
         
         /* Dark mode */
@@ -360,8 +306,9 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
                                 <tr>
                                     <td style="padding: 32px 40px;">"""
     
-    # Greeting
-    html += f"""
+    # Greeting (optional — skip for emails that have their own greeting in body)
+    if not skip_greeting:
+        html += f"""
                                         <p style="margin: 0 0 16px 0; font-size: 18px; color: {text_color};" class="email-text">Hello {safe_name} 👋</p>"""
     
     # Headline (optional)
@@ -413,10 +360,15 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
                                             </tr>
                                         </table>"""
     
-    # Sign-off
-    html += f"""
+    # Sign-off (optional — skip for emails that have their own sign-off in body)
+    if not skip_signoff:
+        html += f"""
                                         <p style="margin: 32px 0 8px 0; font-size: 15px; color: {muted_color};" class="email-muted">With love,</p>
-                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_tagline}</p>
+                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_tagline}</p>"""
+    else:
+        # Still need to close the content table cell
+        html += ""
+    html += """
                                     </td>
                                 </tr>
                             </table>"""
@@ -452,9 +404,11 @@ def _build_html(name: str, body_text: str, app_tagline: str, **kwargs) -> str:
                                             </tr>
                                         </table>"""
     
-    # Thank you line
+    # Thank you line (optional — skip for transactional emails where it's not relevant)
+    if not skip_thank_you:
+        html += f"""
+                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">Thank you for being part of our community!</p>"""
     html += f"""
-                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">Thank you for being part of our community!</p>
                                         <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">
                                             <a href="mailto:support@holygrills.online" style="color: {brand_red}; text-decoration: none;">support@holygrills.online</a>
                                         </p>"""
@@ -586,12 +540,34 @@ def _build_rich_html(name: str, body_html: str, images: list, cta_blocks: list, 
         table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
         img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
         
-        /* Mobile */
-        @media only screen and (max-width: 600px) {{
+        /* All-screen responsive — ensures proper rendering on all devices */
+        @media only screen and (max-width: 768px) {{
             .email-container {{ width: 100% !important; max-width: 100% !important; }}
-            .email-padding {{ padding: 20px !important; }}
+        }}
+        
+        /* Tablet responsive */
+        @media only screen and (min-width: 621px) and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 600px !important; }}
+        }}
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 620px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px 16px !important; }}
             .email-header {{ padding: 24px 20px 16px !important; }}
             .email-footer {{ padding: 24px 20px !important; }}
+            h1 {{ font-size: 24px !important; }}
+            h2 {{ font-size: 18px !important; }}
+            p {{ font-size: 15px !important; }}
+        }}
+        
+        /* Small mobile */
+        @media only screen and (max-width: 400px) {{
+            .email-padding {{ padding: 16px 12px !important; }}
+            .email-header {{ padding: 20px 16px 12px !important; }}
+            .email-footer {{ padding: 20px 16px !important; }}
+            h1 {{ font-size: 22px !important; }}
+            p {{ font-size: 14px !important; }}
         }}
     </style>
 </head>
@@ -709,6 +685,17 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         subject_tpl = template["subject"]
         subject = subject_tpl(data) if callable(subject_tpl) else subject_tpl
         body_text = template["body"](data)
+        # Extract optional template parameters
+        cta_buttons_tpl = template.get("cta_buttons")
+        cta_buttons = cta_buttons_tpl(data) if callable(cta_buttons_tpl) else cta_buttons_tpl or []
+        skip_greeting = template.get("skip_greeting", False)
+        skip_signoff = template.get("skip_signoff", False)
+        skip_thank_you = template.get("skip_thank_you", False)
+    else:
+        cta_buttons = []
+        skip_greeting = False
+        skip_signoff = False
+        skip_thank_you = False
 
     _app_name = data.get("app_name", os.environ.get("APP_NAME", "Holy Grills"))
     _currency = data.get("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
@@ -716,7 +703,15 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         subject = subject.replace("{platform}", _app_name).replace("{currency}", _currency)
     body_text = body_text.replace("{platform}", _app_name).replace("{currency}", _currency)
 
-    html_body = _build_html(to_name or "there", body_text, data.get("app_tagline", ""))
+    html_body = _build_html(
+        to_name or "there",
+        body_text,
+        data.get("app_tagline", ""),
+        cta_buttons=cta_buttons,
+        skip_greeting=skip_greeting,
+        skip_signoff=skip_signoff,
+        skip_thank_you=skip_thank_you,
+    )
 
     from app.services.notification_service import get_email_provider
     chosen = get_email_provider(scope="transactional", override=provider)
@@ -860,40 +855,132 @@ def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str
         buffered = io.BytesIO()
         img.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px 0;" />'
+        qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px auto;" />'
     except Exception as e:
         logger.error("send_qr_ticket_email: Failed to generate local base64 QR code for ticket %s: %s", ticket_id, e)
         # Fail closed instead of leaking ticket_id to third-party external server
         return False
 
     safe_title = _html.escape(str(event_title or ""))
-    safe_name = _html.escape(str(name or "there"))
     safe_date = _html.escape(str(event_date or "TBA"))
     safe_location = _html.escape(str(event_location or "TBA"))
     safe_ticket_id = _html.escape(str(ticket_id or ""))
-    safe_email = _html.escape(str(email or ""))
 
-    app_tagline = _html.escape(os.environ.get("APP_TAGLINE", "The Holy Grills Team"))
+    app_tagline = os.environ.get("APP_TAGLINE", "The Holy Grills Team")
     subject = f"🎟️ Your Ticket for {event_title}"
 
-    html_body = (
-        f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
-        f"<h2>🎟️ Your Ticket for {safe_title}</h2>"
-        f"<p>Hi {safe_name},</p>"
-        f"<p>Thank you for registering! Here are your official ticket details:</p>"
-        f"<ul>"
-        f"<li><strong>Event:</strong> {safe_title}</li>"
-        f"<li><strong>Date:</strong> {safe_date}</li>"
-        f"<li><strong>Location:</strong> {safe_location}</li>"
-        f"<li><strong>Ticket ID:</strong> <code>{safe_ticket_id}</code></li>"
-        f"</ul>"
-        f"<p>Present this QR code at the door for check-in:</p>"
-        f"{qr_img_tag}"
-        f"<div style='background-color:#f0f8ff;border-left:4px solid #0080ff;padding:12px;margin:20px 0;'>"
-        f"<strong>Earn Rewards!</strong> Create an account with {safe_email} to earn HP for this event and unlock exclusive perks!"
-        f"</div>"
-        f"<br><p style='color:#888;font-size:12px'>— {app_tagline}</p>"
-        f"</body></html>"
-    )
+    body_text = f"""Here is your ticket for {safe_title}!
+
+Date: {safe_date}
+Location: {safe_location}
+Ticket ID: {safe_ticket_id}
+
+Your QR code is shown below — please show it at the door for check-in.
+
+Create an account to earn HP for this event!"""
+
+    # Build HTML with shared layout, but we need to embed the QR code
+    # So we'll build a custom HTML that uses the shared layout structure
+    brand_red = "#E01616"
+    bg_color = "#FFF5F0"
+    card_bg = "#FFFFFF"
+    text_color = "#1A1A1A"
+    muted_color = "#666666"
+    wordmark_url = "https://holygrills.online/brand/wordmark.png"
+    safe_name = _html.escape(str(name or "there"))
+    safe_tagline = _html.escape(app_tagline)
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Holy Grills</title>
+    <style>
+        body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+        table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
+        img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
+        @media only screen and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+        }}
+        @media only screen and (max-width: 620px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px 16px !important; }}
+            .email-header {{ padding: 24px 20px 16px !important; }}
+            .email-footer {{ padding: 24px 20px !important; }}
+            h1 {{ font-size: 24px !important; }}
+            p {{ font-size: 15px !important; }}
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .email-bg {{ background-color: #1A1A1A !important; }}
+            .email-card {{ background-color: #2A2A2A !important; }}
+            .email-text {{ color: #F5F5F5 !important; }}
+            .email-muted {{ color: #AAAAAA !important; }}
+            .email-footer {{ background-color: #1F1F1F !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: {bg_color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;" class="email-bg">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: {bg_color};" class="email-bg">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px;" class="email-container">
+                    <tr>
+                        <td style="background-color: {card_bg}; border-radius: 16px; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);" class="email-card">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 32px 40px 24px 40px; text-align: center;" class="email-header">
+                                        <a href="https://holygrills.online" style="text-decoration: none;">
+                                            <img src="{wordmark_url}" alt="Holy Grills" width="180" style="display: block; margin: 0 auto; max-width: 180px; height: auto;">
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0 40px;">
+                                        <div style="height: 1px; background: linear-gradient(to right, transparent, rgba(0,0,0,0.1), transparent);"></div>
+                                    </td>
+                                </tr>
+                            </table>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 32px 40px;" class="email-padding">
+                                        <p style="margin: 0 0 16px 0; font-size: 18px; color: {text_color};" class="email-text">Hello {safe_name} 👋</p>
+                                        <h1 style="margin: 0 0 20px 0; font-size: 28px; font-weight: 700; color: {text_color}; line-height: 1.3;" class="email-text">🎟️ Your Ticket for {safe_title}</h1>
+                                        <div style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: {text_color};" class="email-text">
+                                            <p style="margin: 0 0 12px 0;"><strong>Date:</strong> {safe_date}</p>
+                                            <p style="margin: 0 0 12px 0;"><strong>Location:</strong> {safe_location}</p>
+                                            <p style="margin: 0 0 12px 0;"><strong>Ticket ID:</strong> <code>{safe_ticket_id}</code></p>
+                                        </div>
+                                        <div style="text-align: center; margin: 24px 0;">
+                                            <p style="margin: 0 0 12px 0; font-size: 15px; color: {text_color};" class="email-text">Show this QR code at the door for check-in:</p>
+                                            {qr_img_tag}
+                                        </div>
+                                        <div style="margin: 24px 0; padding: 20px; background-color: #FFF5F0; border-radius: 12px; border-left: 4px solid {brand_red};">
+                                            <p style="margin: 0; font-size: 15px; color: {text_color};" class="email-text"><strong>Earn Rewards!</strong> Create an account with this email to earn HP for this event and unlock exclusive perks!</p>
+                                        </div>
+                                        <p style="margin: 32px 0 8px 0; font-size: 15px; color: {muted_color};" class="email-muted">With love,</p>
+                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_tagline}</p>
+                                    </td>
+                                </tr>
+                            </table>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #F5F5F5; border-top: 1px solid rgba(0,0,0,0.08);" class="email-footer">
+                                <tr>
+                                    <td style="padding: 32px 40px; text-align: center;" class="email-footer">
+                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">
+                                            <a href="mailto:support@holygrills.online" style="color: {brand_red}; text-decoration: none;">support@holygrills.online</a>
+                                        </p>
+                                        <p style="margin: 0; font-size: 12px; color: {muted_color};" class="email-muted">Copyright © 2026 Holy Grills. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>"""
 
     return send_email_raw(to_email=email, to_name=name, subject=subject, html_body=html_body)
