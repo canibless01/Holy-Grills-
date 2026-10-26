@@ -18,7 +18,7 @@
 try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js'); } catch (e) { /* no-op */ }
 
 // Bumping the version makes the activate handler purge every older cache.
-const CACHE_VERSION = 'hg-v3';
+const CACHE_VERSION = 'hg-v4';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const OFFLINE_URL = '/offline.html';

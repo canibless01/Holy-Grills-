@@ -206,7 +206,11 @@ export function buildConfig() {
     installCommand: 'npm ci',
     buildCommand: 'npm run build',
     outputDirectory: 'dist',
-    headers: securityHeaders(),
+    headers: [...securityHeaders(),
+      { source: '/manifest.json', headers: [{ key: 'Content-Type', value: 'application/manifest+json' }, { key: 'Cache-Control', value: 'no-cache' }] },
+      { source: '/service-worker.js', headers: [{ key: 'Content-Type', value: 'application/javascript' }, { key: 'Cache-Control', value: 'no-cache' }, { key: 'Service-Worker-Allowed', value: '/' }] },
+      { source: '/icons/(.*)', headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }] },
+    ],
     routes,
   };
 }

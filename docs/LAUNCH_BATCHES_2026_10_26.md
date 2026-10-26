@@ -23,3 +23,11 @@ Checks: 37 focused backend regressions pass; four controlled routed browser case
 User clarified two separate issues: Chrome's native browser menu lacks an installation entry; the website account sidebar remains over the destination page. No install button was added to the website sidebar. The Profile install action from batch 1 is separate from Chrome-menu eligibility.
 
 Reproduced the desktop Profile & Settings menu remaining visible after navigation. Immediate unmount now removes the blocking account panel without depending on its exit animation completing through a lazy route transition. Route changes, same-page selection, browser history, Escape and resize clear open state; desktop also gets the existing close control. Four native browser assertions run at both desktop and mobile sizes pass for destination navigation, same-page selection, Escape and close. TypeScript, changed-file lint and full production build pass.
+
+## Batch 4 — PWA artwork and update delivery
+
+Regenerated launcher/favicons from the user's supplied complete gold S on brand red. No replacement artwork was invented. The old generator used the wrong fallback/compositing path; maskable artwork is now visibly complete and contained inside the central 80%-diameter safe circle. PNG dimensions/opacity/safe-zone tests pass. SVG embeds the same supplied artwork.
+
+Manifest has a stable root identity. Canonical hosting configuration serves manifest/worker with explicit types and revalidation, and icons revalidate. The worker cache version is advanced so existing sessions replace the old cached icons/manifest. Header changes live in the routes generator as well as generated vercel.json, keeping the build guard authoritative.
+
+Latest production build in a normal persistent Chromium profile: secure context, parsed manifest/icons returning 200 at their declared dimensions, active controlling root worker, no Chrome installability errors. Native beforeinstallprompt was not observed in that headless diagnostic; the controlled event tests are separately labelled. This does not reproduce or explain the user's missing install entry in Chrome's own menu. Device-specific follow-up is pending; do not call the website Profile action a fix for Chrome's menu.
