@@ -554,10 +554,11 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             if not slot or (requested_date and slot.get("date") != requested_date and not payload.get("accept_next_available_date")):
                 raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
             ordering_window_id = slot.get("window_id")
+            linked_delivery_window_id = slot.get("delivery_window_id")
             scheduled_for = f"{slot['date']}T{slot.get('opens_at') or '08:00:00'}+01:00"
             if datetime.fromisoformat(scheduled_for) < datetime.now(timezone.utc):
                 scheduled_for = datetime.now(timezone.utc).isoformat()
-            if ordering_window_id:
+            if ordering_window_id and not linked_delivery_window_id:
                 win = get_db().table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute() or {}
                 linked_delivery_window_id = win.get("linked_delivery_window_id")
 
@@ -579,8 +580,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                     raise
                 is_scheduled = True
                 ordering_window_id = next_slot.get("window_id")
+                linked_delivery_window_id = next_slot.get("delivery_window_id")
                 scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}+01:00"
-                if ordering_window_id:
+                if ordering_window_id and not linked_delivery_window_id:
                     ow_row = db.table("ordering_windows").select("linked_delivery_window_id").eq("id", ordering_window_id).single().execute()
                     if ow_row:
                         linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
@@ -1336,17 +1338,18 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         delivery_start = delivery_end = None
         if linked_delivery_window_id:
             try:
-                dw = db.table("delivery_windows").select("opens_at,closes_at").eq("id", linked_delivery_window_id).single().execute()
+                dw = db.table("delivery_windows").select("opens_at,closes_at,starts_at,ends_at").eq("id", linked_delivery_window_id).single().execute()
                 if dw:
-                    delivery_start = dw.get("opens_at")
-                    delivery_end = dw.get("closes_at")
+                    from app.services.delivery_window_schedule import delivery_clock
+                    delivery_start = delivery_clock(dw)
+                    delivery_end = delivery_clock(dw, False)
             except Exception as exc:
-                logger.warning("create_order: delivery window %s unreadable — the customer sees the 18:00-19:00 default: %s",
+                logger.warning("create_order: delivery window %s unreadable — delivery hours remain unavailable: %s",
                                 linked_delivery_window_id, exc)
-        order["delivery_window_start"] = delivery_start or "18:00"
-        order["delivery_window_end"] = delivery_end or "19:00"
+        order["delivery_window_start"] = delivery_start
+        order["delivery_window_end"] = delivery_end
 
-        if is_scheduled and payload.get("accept_next_available_date") and user_id:
+        if is_scheduled and payload.get("accept_next_available_date") and user_id and delivery_start and delivery_end:
             try:
                 scheduled_date_display = (scheduled_for or "")[:10]
                 send_notification(
@@ -1354,8 +1357,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                     notif_type="order_scheduled_deferred",
                     template_data={
                         "scheduled_date": scheduled_date_display,
-                        "delivery_window_start": delivery_start or "18:00",
-                        "delivery_window_end": delivery_end or "19:00",
+                        "delivery_window_start": delivery_start,
+                        "delivery_window_end": delivery_end,
                     },
                     reference_id=result["order_id"],
                     reference_type="order",
@@ -1370,7 +1373,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                     to_email=payload["guest_email"],
                     to_name=payload.get("guest_name", ""),
                     template_key="guest_order_confirmed",
-                    data={"order_id": result["order_id"][:8].upper(), "claim_token": claim_token},
+                    data={"order_id": result["order_id"], "claim_token": claim_token},
                 )
             except Exception as _ge:
                 logger.warning("create_order: guest email failed: %s", _ge)
@@ -2188,6 +2191,8 @@ def resolve_ordering_window(db, campus_id):
     # reading as permanently closed while checkout would have accepted the order.
     candidates, _source = effective_windows_with_config(db, campus_id, _today_iso, _weekday)
 
+    from app.services.delivery_window_schedule import bind_ordering_delivery
+    candidates = [bind_ordering_delivery(db, row, campus_id, _today_iso) for row in candidates]
     open_rows = [r for r in candidates if not r.get("is_closed") and r.get("opens_at") and r.get("closes_at")]
     if not open_rows:
         raise OrderingWindowUnavailable(
@@ -2277,6 +2282,8 @@ def get_ordering_window_status(db, campus_id, for_date=None):
     # config-only campus reading the same hours here as checkout enforces.
     candidates, _source = effective_windows_with_config(db, campus_id, _today_iso, _weekday)
 
+    from app.services.delivery_window_schedule import delivery_clock, bind_ordering_delivery
+    candidates = [bind_ordering_delivery(db, row, campus_id, _today_iso) for row in candidates]
     windows_out = []
     any_capacity = False
     any_open_now = False
@@ -2284,7 +2291,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
         deliv = None
         if row.get("linked_delivery_window_id"):
             try:
-                deliv = db.table("delivery_windows").select("opens_at,closes_at").eq("id", row["linked_delivery_window_id"]).single().execute()
+                deliv = db.table("delivery_windows").select("opens_at,closes_at,starts_at,ends_at").eq("id", row["linked_delivery_window_id"]).single().execute()
             except Exception:
                 deliv = None
 
@@ -2382,6 +2389,7 @@ def find_next_available_ordering_slot(db, campus_id, start_date, max_days_ahead=
             return {
                 "date": status["date"],
                 "window_id": first["id"],
+                "delivery_window_id": first.get("linked_delivery_window_id"),
                 "opens_at": first.get("delivery_starts_at") or first.get("opens_at"),
             }
         curr = curr + _td(days=1)

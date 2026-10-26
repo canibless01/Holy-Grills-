@@ -1,3 +1,4 @@
+import { guestOrders as readGuestOrders, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { localStore } from '@/lib/storage';
 import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
@@ -49,6 +50,31 @@ export default function Checkout() {
   const rewardOnly = !!redemptionId;
   const { cart, wallet, user, refreshUser, refreshCart, clearCart, isAuthenticated } = useHolyGrill();
   const orderRequest = useRef<Promise<any> | null>(null);
+  // Some Paystack methods finish in another tab without returning this one.
+  // Resume only this tab's unpaid receipt; verify server-side, never from URL flags.
+  useEffect(() => {
+    if (isAuthenticated) return;
+    let active = true, busy = false, attempts = 0;
+    const recoverPayment = async () => {
+      const receipt = readGuestOrders().find(row => row.payment_status === 'pending');
+      if (!active || busy || !receipt || attempts >= 12) return;
+      busy = true; attempts++;
+      try {
+        const result = await mockApi.orders.verifyPayment(receipt.id, { claim_token: receipt.claim_token });
+        if (active && result?.payment_status === 'paid') {
+          saveGuestOrder({ ...receipt, payment_status: 'paid' }, receipt.claim_token);
+          if (settleGuestCart({ ...receipt, payment_status: 'paid' })) await refreshCart();
+          navigate(`/order-confirmation/${receipt.id}`, { replace: true, state: { claim_token: receipt.claim_token } });
+        }
+      } catch { /* Keep the unpaid cart and its existing order available to retry. */ }
+      finally { busy = false; }
+    };
+    void recoverPayment();
+    const timer = setInterval(recoverPayment, 15000);
+    const onFocus = () => { attempts = 0; void recoverPayment(); };
+    window.addEventListener('focus', onFocus);
+    return () => { active = false; clearInterval(timer); window.removeEventListener('focus', onFocus); };
+  }, [isAuthenticated, navigate, refreshCart]);
   const { campus, openGate } = useCampus();
   const { play } = useSound();
   const rewardStateKey = user?.id && campus?.id ? `hg_checkout_rewards:${user.id}:${campus.id}` : null;
@@ -616,8 +642,11 @@ export default function Checkout() {
         const checkpoint = { payload: requestPayload, created_at: new Date().toISOString() };
         if (pendingKey) localStore.setItem(pendingKey, JSON.stringify(checkpoint));
         setPendingCheckout(checkpoint);
-        try { 
-          const result = await mockApi.orders.create(requestPayload);
+        try {
+          const existing = !isAuthenticated && readGuestOrders().find(row => row.payment_status === 'pending' && JSON.stringify(row.cart_items) === JSON.stringify(cart?.items || []));
+          const result = existing
+            ? { ...await mockApi.orders.get(existing.id, { claim_token: existing.claim_token }), claim_token: existing.claim_token }
+            : await mockApi.orders.create(requestPayload);
           haptic('success'); // Haptic feedback on successful order creation
           return result;
         }
@@ -639,22 +668,8 @@ export default function Checkout() {
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
     
-    // Save guest order to localStorage BEFORE payment (so they can track it even if payment fails)
-    // Use session-scoped storage to prevent cross-session leakage on shared devices
-    if (!isAuthenticated) {
-      try {
-        let sessionId = sessionStorage.getItem('hg_checkout_session');
-        if (!sessionId) {
-          sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          sessionStorage.setItem('hg_checkout_session', sessionId);
-        }
-        const sessionKey = `hg_guest_orders_${sessionId}`;
-        const guestOrders = JSON.parse(localStorage.getItem(sessionKey) || '[]');
-        guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
-        localStorage.setItem(sessionKey, JSON.stringify(guestOrders.slice(0, 10)));
-      } catch { /* ignore */ }
-    }
-    
+    if (!isAuthenticated) saveGuestOrder(order, order.claim_token, cart?.items || []);
+
     if (payload.delivery_window_id) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
     const cardPending = order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0;
     if (cardPending) {
@@ -674,7 +689,7 @@ export default function Checkout() {
     
     // Only clear cart AFTER payment is confirmed (or if no payment was needed)
     if (!isAuthenticated && order?.payment_status === 'paid') {
-      await clearCart();
+      if (settleGuestCart(order)) await refreshCart();
     }
     
     if (order.payment_status === 'paid') play('order_placed');

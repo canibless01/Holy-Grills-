@@ -420,7 +420,7 @@ export default function Rewards() {
                       <h3 className="font-bold text-sm text-foreground truncate">{reward.name}</h3>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      {flash?.normalHpCost && flash.normalHpCost > effectiveHpCost && (
+                      {Boolean(flash?.normalHpCost) && flash.normalHpCost > effectiveHpCost && (
                         <span className="text-xs font-medium text-muted-foreground line-through tabular-nums">{flash.normalHpCost}</span>
                       )}
                       <span className="flex items-center gap-1 text-sm font-bold text-primary">

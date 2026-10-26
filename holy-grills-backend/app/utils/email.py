@@ -825,7 +825,11 @@ def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None
             if accepted:
                 try:
                     detail = response.json()
-                    accepted = not (isinstance(detail, dict) and detail.get("errors"))
+                    accepted = (isinstance(detail, dict) and bool(detail.get("id"))
+                                and not detail.get("errors")
+                                and isinstance(detail.get("recipients"), (int, float))
+                                and not isinstance(detail.get("recipients"), bool)
+                                and detail["recipients"] > 0)
                 except (ValueError, TypeError):
                     accepted = False
         else:
@@ -841,6 +845,12 @@ def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None
                                      headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                                      json=payload, timeout=10)
             accepted = response.status_code in (200, 201)
+            if accepted:
+                try:
+                    detail = response.json()
+                    accepted = isinstance(detail, dict) and bool(detail.get("id")) and not detail.get("error")
+                except (ValueError, TypeError):
+                    accepted = False
         if accepted:
             return True, False
         quota = _email_quota_rejection(response)

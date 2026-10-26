@@ -185,6 +185,11 @@ def initialize(order):
     if not email:
         raise OrderPaymentError(MSG.ORDER_PAYMENT_EMAIL_REQUIRED)
     callback = current_app.config['FRONTEND_URL'].split(',')[0].rstrip('/') + '/order-confirmation/' + order['id'] + '?payment_return=1'
+    if not order.get('user_id') and order.get('claim_token'):
+        # Fragment stays out of HTTP requests/referrers; new browser contexts
+        # still need proof for this specific order after payment.
+        from urllib.parse import urlencode
+        callback += '#' + urlencode({'claim_token': order['claim_token']})
     try:
         result = payment_service.initialize_payment(email, float(due), reference,
             metadata={'type': 'order_payment', 'order_id': order['id'], 'user_id': order.get('user_id'), 'campus_id': order.get('campus_id')},

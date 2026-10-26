@@ -278,27 +278,24 @@ def track_guest_order():
     if not number or len(number)>80 or not re.fullmatch(r'[A-Za-z0-9-]+',number):
         return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
     
-    # Try to parse as UUID first
-    try:
-        oid = str(_uuid.UUID(number))
-        # For UUID format, we still need to validate the token
+    # Tracking emails previously used an eight-character UUID prefix. Resolve
+    # that legacy identifier only WITH its full private token, never by prefix.
+    if re.fullmatch(r'[A-Fa-f0-9]{8}', number):
         row = (get_db().table('orders').select('id,user_id,claim_token')
-               .eq('id', oid).limit(1).single().execute())
-        if not row:
-            return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
-        if row.get('user_id'):
-            # Order already claimed by registered user
-            return jsonify({'error': MSG.ORDER_ACCESS_DENIED}), 403
-        if not hmac.compare_digest(str(row.get('claim_token') or ''), str(token)):
-            return jsonify({'error': MSG.ORDER_INVALID_CLAIM}), 403
-    except ValueError:
-        # Not a UUID, try as order_number
-        row = (get_db().table('orders').select('id,user_id,claim_token')
-               .ilike('order_number',number).limit(1).single().execute())
-        if not row or row.get('user_id') or not hmac.compare_digest(str(row.get('claim_token') or ''),str(token)):
+               .eq('claim_token', token).limit(1).single().execute())
+        if not row or row.get('user_id') or not str(row['id']).lower().startswith(number.lower()):
             return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
         oid = row['id']
-    
+    else:
+        try:
+            oid = str(_uuid.UUID(number))
+        except ValueError:
+            row = (get_db().table('orders').select('id,user_id,claim_token')
+                   .ilike('order_number',number).limit(1).single().execute())
+            if not row or row.get('user_id') or not hmac.compare_digest(str(row.get('claim_token') or ''), str(token)):
+                return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+            oid = row['id']
+
     return get_order.__wrapped__(oid)
 
 
@@ -946,10 +943,11 @@ def list_delivery_windows():
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
     now = datetime.now(timezone.utc).isoformat()
-    q = db.table("delivery_windows").select("*").gte("ends_at", now).eq("status", "open")
+    q = db.table("delivery_windows").select("*").eq("status", "open")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    windows = q.order("starts_at").execute() or []
+    from app.services.delivery_window_schedule import upcoming_delivery_windows
+    windows = upcoming_delivery_windows(q.execute() or [])
     return jsonify(windows), 200
 
 

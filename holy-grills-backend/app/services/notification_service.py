@@ -499,7 +499,7 @@ def send_notification(
             elif channel == "push":
                 t = threading.Thread(
                     target=_dispatch_push_async,
-                    args=(user_id, title, body, action_url, saved.get("id", ""), urgency),
+                    args=(user_id, title, body, action_url, saved.get("id", ""), urgency, merged_meta.get("push_image")),
                     daemon=True,
                 )
                 t.start()
@@ -532,7 +532,8 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     if db is None:
         db = get_db()  # the scheduled-task caller has no request/user JWT to scope with
 
-    segment = segment or {}
+    from app.services.blast_contracts import validate_segment
+    segment = validate_segment(segment or {})
 
     # ── Step 1: DB-level filters on profiles ────────────────────────────────
     profiles_q = (
@@ -581,10 +582,29 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
             .single()
             .execute()
         )
-        if tier_row:
-            profiles_q = profiles_q.eq("current_tier_id", tier_row["id"])
+        if not tier_row:
+            return set()
+        profiles_q = profiles_q.eq("current_tier_id", tier_row["id"])
 
-    profiles = profiles_q.execute() or []
+    if segment.get('user_ids'):
+        profiles_q = profiles_q.in_('id', segment['user_ids'])
+    def _read_all(query):
+        rows, offset = [], 0
+        while True:
+            page = query.offset(offset).limit(500).execute() or []
+            rows.extend(page)
+            if len(page)<500:return rows
+            offset+=len(page)
+
+    def _related(table, fields, key, ids, refine=lambda q:q):
+        rows=[]
+        ordered=sorted(ids)
+        for start in range(0,len(ordered),100):
+            query=refine(db.table(table).select(fields).in_(key,ordered[start:start+100])).order('id')
+            rows.extend(_read_all(query))
+        return rows
+
+    profiles = _read_all(profiles_q.order('id'))
 
     # ── Step 2: In-Python filters (require cross-table lookups) ─────────────
     user_ids: set = {p["id"] for p in profiles}
@@ -610,13 +630,7 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     # Pending HP — check hp_transactions with status='pending'
     if segment.get("has_pending_hp") is not None and user_ids:
         want = bool(segment["has_pending_hp"])
-        pending_rows = (
-            db.table("hp_transactions")
-            .select("user_id, amount")
-            .in_("user_id", list(user_ids))
-            .eq("status", "pending")
-            .execute() or []
-        )
+        pending_rows = _related('hp_transactions','user_id,amount','user_id',user_ids,lambda q:q.eq('status','pending'))
         # Aggregate pending HP per user
         pending_agg = {}
         for r in pending_rows:
@@ -646,16 +660,7 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     last_order_days = segment.get("last_order_days")
     if last_order_days and str(last_order_days) != "any" and user_ids:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=int(last_order_days))).isoformat()
-        recent_uids = {
-            r["user_id"]
-            for r in (
-                db.table("orders")
-                .select("user_id")
-                .in_("user_id", list(user_ids))
-                .gte("created_at", cutoff)
-                .execute() or []
-            )
-        }
+        recent_uids = {r['user_id'] for r in _related('orders','user_id','user_id',user_ids,lambda q:q.gte('created_at',cutoff))}
         _shrink(recent_uids)
 
     # Has an order currently in progress right now -- distinct from last_order_days (recency) and
@@ -666,26 +671,18 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     if has_active_order is not None and user_ids:
         want = bool(has_active_order)
         TERMINAL = ["delivered", "cancelled", "refunded"]
-        active_uids = {
-            r["user_id"]
-            for r in (
-                db.table("orders")
-                .select("user_id")
-                .in_("user_id", list(user_ids))
-                .not_.in_("status", TERMINAL)
-                .execute() or []
-            )
-        }
+        active_uids = {r['user_id'] for r in _related('orders','user_id','user_id',user_ids,lambda q:q.not_.in_('status',TERMINAL))}
         _shrink(active_uids if want else user_ids - active_uids)
+
+    if segment.get('has_cart') is not None and user_ids:
+        carts = _related('cart_items','user_id','user_id',user_ids)
+        cart_uids={row['user_id'] for row in carts}
+        _shrink(cart_uids if segment['has_cart'] else user_ids-cart_uids)
 
     # Total orders band
     total_orders_filter = segment.get("total_orders")
     if total_orders_filter and str(total_orders_filter) != "any" and user_ids:
-        order_rows = (
-            db.table("orders").select("user_id")
-            .in_("user_id", list(user_ids))
-            .execute() or []
-        )
+        order_rows = _related('orders','user_id','user_id',user_ids)
         counts: dict = {}
         for r in order_rows:
             uid = r["user_id"]
@@ -704,55 +701,26 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     # Has referral
     if segment.get("has_referral") is not None and user_ids:
         want = bool(segment["has_referral"])
-        ref_uids = {
-            r["referrer_id"]
-            for r in (
-                db.table("referrals").select("referrer_id")
-                .in_("referrer_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        ref_uids = {r['referrer_id'] for r in _related('referrals','referrer_id','referrer_id',user_ids)}
         _shrink(ref_uids if want else user_ids - ref_uids)
 
     # Has squad order — no squad_orders table; squad orders are in orders where is_squad_order=True
     # organizer = orders.user_id
     if segment.get("has_squad_order") is not None and user_ids:
         want = bool(segment["has_squad_order"])
-        squad_uids = {
-            r["user_id"]
-            for r in (
-                db.table("orders").select("user_id")
-                .eq("is_squad_order", True)
-                .in_("user_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        squad_uids = {r['user_id'] for r in _related('orders','user_id','user_id',user_ids,lambda q:q.eq('is_squad_order',True))}
         _shrink(squad_uids if want else user_ids - squad_uids)
 
     # Has reviewed — real table is order_reviews (no reviews table in live DB)
     if segment.get("has_reviewed") is not None and user_ids:
         want = bool(segment["has_reviewed"])
-        rev_uids = {
-            r["user_id"]
-            for r in (
-                db.table("order_reviews").select("user_id")
-                .in_("user_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        rev_uids = {r['user_id'] for r in _related('order_reviews','user_id','user_id',user_ids)}
         _shrink(rev_uids if want else user_ids - rev_uids)
 
     # Has shared — real table is order_share_events (no social_shares table)
     if segment.get("has_shared") is not None and user_ids:
         want = bool(segment["has_shared"])
-        share_uids = {
-            r["user_id"]
-            for r in (
-                db.table("order_share_events").select("user_id")
-                .in_("user_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        share_uids = {r['user_id'] for r in _related('order_share_events','user_id','user_id',user_ids)}
         _shrink(share_uids if want else user_ids - share_uids)
 
     # Event attendance band
@@ -760,18 +728,10 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     event_attendance = segment.get("event_attendance")
     if event_attendance and str(event_attendance) != "any" and user_ids:
         # Step A: get ticket_id → user_id for users in our set
-        ticket_rows = (
-            db.table("event_tickets").select("id,user_id")
-            .in_("user_id", list(user_ids))
-            .execute() or []
-        )
+        ticket_rows = _related('event_tickets','id,user_id','user_id',user_ids)
         ticket_to_user = {r["id"]: r["user_id"] for r in ticket_rows}
         # Step B: count check-ins per user via ticket ownership
-        checkin_rows = (
-            db.table("event_checkins").select("ticket_id")
-            .in_("ticket_id", list(ticket_to_user.keys()))
-            .execute() or []
-        ) if ticket_to_user else []
+        checkin_rows = _related('event_checkins','ticket_id','ticket_id',set(ticket_to_user))
         att: dict = {}
         for r in checkin_rows:
             uid = ticket_to_user.get(r["ticket_id"])
@@ -822,6 +782,9 @@ def send_blast(blast_id: str) -> dict:
     if not blast:
         raise ValueError("Blast not found")
 
+    from app.services.blast_contracts import rich_fields
+    rich, _ = rich_fields({**blast, 'body_html':blast.get('body_html') or '', 'push_image':blast.get('push_image') or ''})
+
     # Only a blast that is waiting to go out can be sent (scheduled = cron, pending = immediate send from the route).
     metadata = dict(blast.get("metadata") or {})
     now = datetime.now(timezone.utc)
@@ -865,10 +828,10 @@ def send_blast(blast_id: str) -> dict:
     channels = blast.get("channels", ["in_app"])
     title_tpl = blast.get("title", "")
     body_tpl = blast.get("body", "")
-    body_html_tpl = blast.get("body_html", "")
-    images = blast.get("images", [])
-    cta_blocks = blast.get("cta_blocks", [])
-    push_image = blast.get("push_image", "")
+    body_html_tpl = rich.get('body_html', '')
+    images = rich.get('images', [])
+    cta_blocks = rich.get('cta_blocks', [])
+    push_image = rich.get('push_image', '')
     has_name = "{name}" in title_tpl or "{name}" in body_tpl or "{name}" in body_html_tpl
     count = 0
 
@@ -882,7 +845,8 @@ def send_blast(blast_id: str) -> dict:
                 first = (full_name or "").split()[0] if full_name else "there"
                 notif_title = title_tpl.replace("{name}", first)
                 notif_body = body_tpl.replace("{name}", first)
-                notif_body_html = body_html_tpl.replace("{name}", first)
+                import html as _html
+                notif_body_html = body_html_tpl.replace("{name}", _html.escape(first))
             
             # Pass rich content through metadata
             rich_metadata = {}
@@ -901,7 +865,7 @@ def send_blast(blast_id: str) -> dict:
                 title=notif_title,
                 body=notif_body,
                 channels=channels,
-                email_provider=blast.get("email_provider"),  # Part B4 — per-blast provider override
+                email_provider=get_email_provider(scope="blast", override=blast.get("email_provider")),
                 action_url=blast.get("action_url"),
                 reference_id=blast_id,
                 reference_type="notification_blast",
@@ -1040,7 +1004,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 
 
-def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None):
+def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None, push_image: str = None):
     """
     Send a push notification via OneSignal using user_id as external_id.
     Requires user to have a registered push subscription with their user_id as external_id.
@@ -1063,6 +1027,11 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
         }
         if action_url:
             payload["url"] = action_url
+        if push_image:
+            from app.utils.upload_urls import is_cms_image_url
+            if is_cms_image_url(push_image):
+                payload['chrome_web_image'] = push_image
+                payload['big_picture'] = push_image
         if urgency == "high":
             payload["priority"] = 10                          # Android: max priority
             payload["ios_interruption_level"] = "time-sensitive"  # iOS 15+: breaks Focus

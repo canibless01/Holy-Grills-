@@ -1,3 +1,4 @@
+import { guestOrderToken, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { confirmAction } from '@/lib/confirmAction';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
@@ -38,7 +39,7 @@ export default function OrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { refreshUser, user } = useHolyGrill();
+  const { refreshUser, refreshCart, user } = useHolyGrill();
   const { play } = useSound();
   const claimToken = new URLSearchParams(location.search).get('claim_token');
   const [order, setOrder] = useState(null);
@@ -59,20 +60,7 @@ export default function OrderDetail() {
   // alone does not make an unclaimed guest order visible through account RLS.
   const resolveClaimToken = useCallback(() => {
     if (claimToken) return claimToken;
-    try {
-      // Search through all session-scoped guest order keys
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('hg_guest_orders_')) {
-          const saved = JSON.parse(localStorage.getItem(key) || '[]');
-          const found = Array.isArray(saved) ? saved.find((g: any) => g?.id === id)?.claim_token : null;
-          if (found) return found;
-        }
-      }
-      // Fallback: try legacy unscoped key (for orders placed before session-scoping)
-      const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
-      return Array.isArray(saved) ? saved.find(g => g?.id === id)?.claim_token || null : null;
-    } catch { return null; }
+    return guestOrderToken(id) || null;
   }, [claimToken, id]);
 
   useEffect(() => {
@@ -85,6 +73,7 @@ export default function OrderDetail() {
         const token = resolveClaimToken();
         const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
         if (!active) return;
+        if (settleGuestCart(o)) await refreshCart();
         setOrder(o);
         setReviewSubmitted(Boolean(o.review));
         if (o.review) setReviewAward(Number(o.review.hp_awarded) || 0);
@@ -137,21 +126,7 @@ export default function OrderDetail() {
       await mockApi.orders.claim(id, { claim_token: token });
       // Saved ownership is authoritative even if optional account hydration fails.
       setOrder(current => current ? { ...current, user_id: user.id, claim_token: null } : current);
-      try {
-        // Remove from all session-scoped guest order keys
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('hg_guest_orders_')) {
-            const saved = JSON.parse(localStorage.getItem(key) || '[]');
-            if (Array.isArray(saved)) {
-              localStorage.setItem(key, JSON.stringify(saved.filter((g: any) => g?.id !== id)));
-            }
-          }
-        }
-        // Also try legacy unscoped key
-        const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
-        if (Array.isArray(saved)) localStorage.setItem('hg_guest_orders', JSON.stringify(saved.filter(g => g?.id !== id)));
-      } catch { /* Device storage cannot undo ownership. */ }
+      forgetGuestOrder(id);
       const params = new URLSearchParams(location.search);
       params.delete('claim_token');
       navigate({ pathname: location.pathname, search: params.toString() ? '?' + params.toString() : '' }, { replace: true });

@@ -6,7 +6,7 @@ from app.services import notification_service as notifications
 
 class EmailQuotaFallback(unittest.TestCase):
  def reply(self,status,body=None):
-  r=MagicMock();r.status_code=status;r.json.return_value=body or {};return r
+  r=MagicMock();r.status_code=status;r.json.return_value=({'id':'controlled-message','recipients':1} if body is None else body);return r
  def run_send(self,resend,onesignal,*,provider='resend',headers=None):
   with patch.object(email,'_resend_api_key',return_value='test-resend'),patch.object(notifications,'_get_onesignal_creds',return_value=('test-app','test-key')),patch.object(email.requests,'post',side_effect=resend) as first,patch.object(notifications,'_onesignal_email_post',side_effect=onesignal) as second:
    result=email.send_email_routed('audit@example.invalid','Audit','Subject','<p>Body</p>',provider=provider,headers=headers)
@@ -39,3 +39,11 @@ class EmailQuotaFallback(unittest.TestCase):
  def test_one_signal_direct_wrapper_uses_router_without_recursion(self):
   with patch.object(email,'send_email_routed',return_value=True) as route:
    self.assertTrue(notifications._dispatch_email_via_onesignal('audit@example.invalid','Audit','Subject','Body'));self.assertEqual(route.call_args.kwargs['provider'],'onesignal')
+
+ def test_zero_recipient_or_missing_message_id_is_not_success(self):
+  for payload in ({'id':'message','recipients':0},{'recipients':1},{'id':'message'},{}):
+   ok,first,second=self.run_send([],[self.reply(200,payload)],provider='onesignal')
+   self.assertFalse(ok);first.assert_not_called();self.assertEqual(second.call_count,1)
+ def test_resend_success_requires_message_id(self):
+  ok,first,second=self.run_send([self.reply(200,{})],[])
+  self.assertFalse(ok);second.assert_not_called()

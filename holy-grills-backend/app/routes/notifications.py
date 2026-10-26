@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from app.utils.campus_scope import resolve_write_campus
 from app.utils.admin_helpers import as_instant
 import base64
+from app.services.blast_contracts import rich_fields, validate_segment
 
 logger = get_logger(__name__)
 
@@ -413,6 +414,11 @@ def create_blast():
     data = request.get_json(force=True, silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
+    try:
+        rich, rich_plain = rich_fields(data)
+        data = {**data, "body": data.get("body") or rich_plain}
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     required = ["title", "body", "channels"]
     for f in required:
         if not data.get(f):
@@ -435,7 +441,9 @@ def create_blast():
             if not decoded.startswith("/") or decoded.startswith("//") or "\\" in decoded or any(ord(c) < 32 for c in decoded):
                 return jsonify({"error": MSG.INVALID_INPUT}), 400
     segment = data.get("target_segment", data.get("segment", {}))
-    if not isinstance(segment, dict):
+    try:
+        segment = validate_segment(segment)
+    except (ValueError, TypeError):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     if campus_id:
         if any(segment.get(k) not in (None, "", campus_id) for k in ("campus", "campus_id")):
@@ -461,33 +469,8 @@ def create_blast():
             "campus_id": campus_id, "created_by": g.user_id, "scheduled_at": scheduled_at,
             "email_provider": email_provider, "action_url": action_url}
     
-    # Handle rich content fields
-    if "body_html" in data and data["body_html"]:
-        if not isinstance(data["body_html"], str) or len(data["body_html"]) > 50000:
-            return jsonify({"error": MSG.INVALID_INPUT}), 400
-        data["body_html"] = data["body_html"].strip()
-    
-    if "images" in data and data["images"]:
-        if not isinstance(data["images"], list) or len(data["images"]) > 6:
-            return jsonify({"error": MSG.INVALID_INPUT}), 400
-        for img in data["images"]:
-            if not isinstance(img, dict) or "url" not in img or "alt" not in img:
-                return jsonify({"error": MSG.INVALID_INPUT}), 400
-        data["images"] = data["images"]
-    
-    if "cta_blocks" in data and data["cta_blocks"]:
-        if not isinstance(data["cta_blocks"], list) or len(data["cta_blocks"]) > 10:
-            return jsonify({"error": MSG.INVALID_INPUT}), 400
-        for cta in data["cta_blocks"]:
-            if not isinstance(cta, dict) or "label" not in cta or "url" not in cta:
-                return jsonify({"error": MSG.INVALID_INPUT}), 400
-        data["cta_blocks"] = data["cta_blocks"]
-    
-    if "push_image" in data and data["push_image"]:
-        if not isinstance(data["push_image"], str) or len(data["push_image"]) > 1000:
-            return jsonify({"error": MSG.INVALID_INPUT}), 400
-        data["push_image"] = data["push_image"].strip()
-    
+    data.update(rich)
+
     if request_id:
         data["id"] = request_id
 
@@ -547,7 +530,9 @@ def preview_blast():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus = resolve_write_campus(data.get("campus_id"))
     segment = data.get("target_segment", data.get("segment", {}))
-    if not isinstance(segment, dict):
+    try:
+        segment = validate_segment(segment)
+    except (ValueError, TypeError):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     if campus and any(segment.get(k) not in (None, "", campus) for k in ("campus", "campus_id")):
         return jsonify({"error": MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}), 403
@@ -589,96 +574,55 @@ def send_test_blast():
     if not isinstance(data, dict):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     
-    title = data.get("title", "Test Notification").strip()
-    body = data.get("body", "This is a test notification.").strip()
-    channels = data.get("channels", ["in_app"])
-    test_email = data.get("test_email")
-    
-    if not test_email:
-        return jsonify({"error": "test_email is required"}), 400
-    
+    # A preview may only target the authenticated administrator, never an
+    # arbitrary email/account submitted in the body. Reuse campaign dispatch.
+    try:
+        rich, rich_plain = rich_fields(data)
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    title, body = data.get('title',''), data.get('body') or rich_plain
+    channels = data.get('channels',['in_app'])
+    if (not isinstance(title,str) or not title.strip() or len(title)>200 or
+        not isinstance(body,str) or not body.strip() or len(body)>10000 or
+        not isinstance(channels,list) or not channels or any(c not in ('in_app','email','push') for c in channels)):
+        return jsonify({'error':MSG.INVALID_INPUT}),400
     db = get_user_client()
-    
-    # Get current user
+    profile = db.table('profiles').select('email,campus_id').eq('id',g.user_id).single().execute()
+    if not profile:
+        return jsonify({'error':MSG.NOTIF_BLAST_NOT_FOUND}),404
+    if data.get('test_email') and data['test_email'] != profile.get('email'):
+        return jsonify({'error':MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}),403
+    provider = data.get('email_provider')
+    if provider not in (None,'resend','onesignal'):
+        return jsonify({'error':MSG.INVALID_INPUT}),400
+    action_url = data.get('action_url') or None
+    if action_url:
+        from app.services.blast_contracts import web_url
+        if not web_url(action_url) or not action_url.startswith('/'):
+            return jsonify({'error':MSG.INVALID_INPUT}),400
+    payload = {'title':title.strip(), 'body':body.strip(),'channels':list(dict.fromkeys(channels)),
+               'segment':{'user_ids':[g.user_id]}, 'campus_id':profile.get('campus_id'),
+               'created_by':g.user_id,'status':'pending','action_url':action_url,
+               'email_provider':provider,**rich}
+    request_id=data.get('request_id')
+    if request_id is not None:
+        if not isinstance(request_id,str) or not validate_uuid(request_id):
+            return jsonify({'error':MSG.INVALID_INPUT}),400
+        payload['id']=request_id
     try:
-        user = db.auth.admin.get_user_by_email(test_email)
-        if not user:
-            return jsonify({"error": "Test user not found"}), 404
-        user_id = user.id
+        try:
+            result=db.table('notification_blasts').insert(payload).execute()
+            blast=result[0] if isinstance(result,list) else result
+        except SupabaseError as exc:
+            if not request_id or str((exc.details or {}).get('code'))!='23505':raise
+            blast=db.table('notification_blasts').select('*').eq('id',request_id).single().execute()
+            if not blast or any(blast.get(k)!=v for k,v in payload.items() if k!='status'):
+                return jsonify({'error':MSG.INVALID_INPUT}),409
+        result=send_blast(blast['id'])
+        return jsonify({'blast_id':blast['id'],'sent_to':result['sent_to'],'channels':channels,'test_user_id':g.user_id}),200
     except Exception:
-        return jsonify({"error": "Failed to find test user"}), 503
-    
-    # Create a test blast record
-    blast_data = {
-        "title": f"[TEST] {title}",
-        "body": body,
-        "channels": channels,
-        "status": "pending",
-        "created_by": g.user_id,
-        "segment": {},
-        "body_html": data.get("body_html"),
-        "images": data.get("images", []),
-        "cta_blocks": data.get("cta_blocks", []),
-        "push_image": data.get("push_image"),
-    }
-    
-    try:
-        blast = db.table("notification_blasts").insert(blast_data).execute()
-        blast_row = blast[0] if isinstance(blast, list) else blast
-        blast_id = blast_row["id"]
-        
-        # Send to only the test user
-        notifications_sent = []
-        
-        if "in_app" in channels:
-            notif_data = {
-                "user_id": user_id,
-                "title": f"[TEST] {title}",
-                "body": body,
-                "type": "blast",
-                "channel": "in_app",
-                "action_url": data.get("action_url"),
-                "metadata": {
-                    "blast_id": blast_id,
-                    "is_test": True,
-                }
-            }
-            try:
-                db.table("notifications").insert(notif_data).execute()
-                notifications_sent.append(f"in_app:{user_id}")
-            except Exception as e:
-                logger.warning(f"Failed to create in_app notification: {e}")
-        
-        if "push" in channels:
-            try:
-                tokens = db.table("push_subscriptions").select("*").eq("user_id", user_id).execute()
-                for sub in tokens:
-                    endpoint = sub.get("endpoint") or sub.get("token")
-                    if not endpoint:
-                        continue
-                    title_to_send = f"[TEST] {title}"
-                    body_to_send = body
-                    send_push_notification(endpoint, sub, title_to_send, body_to_send)
-                    notifications_sent.append(f"push:{endpoint[:20]}...")
-            except Exception as e:
-                logger.warning(f"Failed to send push notification: {e}")
-        
-        # Update blast record
-        db.table("notification_blasts").update({
-            "status": "sent",
-            "recipient_count": len(notifications_sent),
-        }).eq("id", blast_id).execute()
-        
-        return jsonify({
-            "blast_id": blast_id,
-            "sent_to": len(notifications_sent),
-            "channels": channels,
-            "test_user": test_email,
-        }), 200
-        
-    except Exception as e:
-        logger.exception("Failed to send test blast")
-        return jsonify({"error": f"Failed to send test: {str(e)}"}), 503
+        logger.exception('Self-only notification preview failed')
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503
 
 
 # ── Email Analytics Tracking Endpoints ────────────────────────────────────────
@@ -960,3 +904,4 @@ def test_email_deliverability():
     except Exception as e:
         logger.exception("Failed to send deliverability test email")
         return jsonify({"error": f"Failed to send test: {str(e)}"}), 503
+

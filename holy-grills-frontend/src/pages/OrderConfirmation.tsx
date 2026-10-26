@@ -1,3 +1,5 @@
+import { guestOrderToken, paymentReturnToken, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
@@ -30,20 +32,8 @@ export default function OrderConfirmation() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [shareOpen, setShareOpen] = useState(false);
-  const guestSessionId = location.state?.guest_session_id;
-  const claimToken = location.state?.claim_token || (() => {
-    try {
-      // Try session-scoped key first (new approach)
-      if (guestSessionId) {
-        const sessionKey = `hg_guest_orders_${guestSessionId}`;
-        const found = JSON.parse(localStorage.getItem(sessionKey) || '[]').find(saved => saved.id === id)?.claim_token;
-        if (found) return found;
-      }
-      // Fallback: try legacy unscoped key (for orders placed before this fix)
-      return JSON.parse(localStorage.getItem('hg_guest_orders') || '[]').find(saved => saved.id === id)?.claim_token;
-    }
-    catch { return undefined; }
-  })();
+  const { refreshCart } = useHolyGrill();
+  const claimToken = location.state?.claim_token || paymentReturnToken(location.search, location.hash) || guestOrderToken(id);
   // "Today is full" reschedule — the order landed on the next available day.
   const isScheduled = order?.is_scheduled || location.state?.is_scheduled;
   const scheduledFor = order?.scheduled_for || location.state?.scheduled_for;
@@ -51,7 +41,12 @@ export default function OrderConfirmation() {
   const winEnd = order?.delivery_window_end || location.state?.delivery_window_end;
   const closed = ['cancelled', 'refunded'].includes(order?.status);
   const paid = order?.payment_status === 'paid' || order?.payment_status === 'partially_refunded';
-  const reloadOrder = async () => setOrder(await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {}));
+  const reloadOrder = async () => {
+    const updated = await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {});
+    if (claimToken) saveGuestOrder(updated, claimToken);
+    if (settleGuestCart(updated)) await refreshCart();
+    setOrder(updated);
+  };
   const giftItemName = order?.order_items?.find(item => item.options_snapshot?.is_gift === true)?.name_snapshot;
 
   useEffect(() => {
@@ -60,26 +55,10 @@ export default function OrderConfirmation() {
         if (id && id !== 'pending') {
           const o = await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {});
           setOrder(o);
-          
-          // Check if we're returning from Paystack payment
-          const urlParams = new URLSearchParams(window.location.search);
-          const isPaymentReturn = urlParams.get('payment_return') === '1';
-          
-          if (isPaymentReturn && o?.payment_status === 'pending') {
-            // Verify payment with backend
-            try {
-              const verifyResult = await mockApi.orders.verifyPayment(id, claimToken ? { claim_token: claimToken } : {});
-              if (verifyResult?.payment_status === 'paid') {
-                o.payment_status = 'paid';
-                setOrder(o);
-              }
-            } catch (e) {
-              console.error('Payment verification failed:', e);
-              // Payment might still be processing, don't show error
-            }
-          }
+          if (claimToken) saveGuestOrder(o, claimToken);
           
           if (o?.payment_status === 'paid') {
+            if (settleGuestCart(o)) await refreshCart();
             playSound('order_placed');
             setTimeout(() => triggerMascotCelebration('cheering'), 900);
           }

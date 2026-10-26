@@ -527,10 +527,11 @@ def delivery_windows():
         return err
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
-    q = db.table("delivery_windows").select("id,label,starts_at,ends_at,status").gte("ends_at", now)
+    q = db.table("delivery_windows").select("*")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    windows = q.order("starts_at").execute() or []
+    from app.services.delivery_window_schedule import upcoming_delivery_windows
+    windows = upcoming_delivery_windows(q.execute() or [], open_only=False)
 
     window_ids = [w["id"] for w in windows]
     counts = {}

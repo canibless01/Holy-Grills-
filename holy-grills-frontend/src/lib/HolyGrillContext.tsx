@@ -278,6 +278,9 @@ export const HolyGrillProvider = ({ children }) => {
     try { setStreak(await liveApi.auth.getStreak()); } catch (e) { /* ignore */ }
   }, []);
 
+  // Identify every verified login/restore/signup, not only manual profile refresh.
+  useEffect(() => { if (user?.id) initOneSignal(user.id).catch(() => {}); }, [user?.id]);
+
   // Restore session on load — real token → fetch profile; no token → guest cart.
   useEffect(() => {
     const version = ++restoreVersion.current;

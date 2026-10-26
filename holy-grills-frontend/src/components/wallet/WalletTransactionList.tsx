@@ -1,5 +1,6 @@
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import FlameMark from '@/components/FlameMark';
+import { transactionIsCredit } from '@/lib/transactionDirection';
+import { msg } from '@/lib/messages';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { formatNaira, timeAgo, HP_SOURCE_LABELS } from '@/lib/hgUtils';
 
@@ -11,8 +12,6 @@ const WALLET_TX_TYPES = {
   bank_transfer: { label: 'Bank Transfer', isCredit: true },
 };
 
-const HP_DEBIT_SOURCES = ['redemption', 'redeem', 'transfer_out', 'transfer', 'spend', 'expire', 'expired', 'marketplace_purchase'];
-
 const normalizeWalletTx = (tx) => {
   const info = WALLET_TX_TYPES[tx.type] || { label: tx.reason || tx.type || 'Transaction', isCredit: tx.amount > 0 };
   return {
@@ -21,7 +20,7 @@ const normalizeWalletTx = (tx) => {
     label: tx.reason || info.label,
     sublabel: info.label,
     amount: Math.abs(Number(tx.amount) || 0),
-    isCredit: info.isCredit,
+    isCredit: transactionIsCredit(tx, 'cash'),
     date: tx.created_at,
     balanceAfter: tx.balance_after,
   };
@@ -30,14 +29,13 @@ const normalizeWalletTx = (tx) => {
 const normalizeHpTx = (tx) => {
   const rawAmount = Number(tx.amount ?? tx.hp_amount ?? tx.points ?? 0);
   const source = tx.source || tx.type || tx.reason || '';
-  const isDebit = rawAmount < 0 || HP_DEBIT_SOURCES.some((s) => source.toLowerCase().includes(s));
   return {
     id: tx.id,
     kind: 'hp',
-    label: HP_SOURCE_LABELS[source] || source || 'HP Transaction',
+    label: source.toLowerCase().includes('transfer') ? (transactionIsCredit(tx, 'hp') ? msg('FE_TX_HP_RECEIVED', 'HP received') : msg('FE_TX_HP_SENT', 'HP sent')) : HP_SOURCE_LABELS[source] || source || 'HP Transaction',
     sublabel: 'Holy Points',
     amount: Math.abs(rawAmount),
-    isCredit: !isDebit,
+    isCredit: transactionIsCredit(tx, 'hp'),
     date: tx.created_at,
     balanceAfter: null,
   };
@@ -100,11 +98,9 @@ export default function WalletTransactionList({ walletTxns, hpTxns, activeTab, o
           {filtered.map((tx) => (
             <div key={`${tx.kind}-${tx.id}`} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border transition-all hover:shadow-card">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                tx.kind === 'hp' ? (tx.isCredit ? 'tone-warn' : 'tone-warn') : (tx.isCredit ? 'bg-success/10' : 'bg-destructive/10')
+                tx.isCredit ? 'bg-success/10' : 'bg-destructive/10'
               }`}>
-                {tx.kind === 'hp'
-                  ? <FlameMark className="w-5 h-5" />
-                  : tx.isCredit ? <ArrowDownLeft className="w-5 h-5 text-success" /> : <ArrowUpRight className="w-5 h-5 text-destructive" />}
+                {tx.isCredit ? <ArrowDownLeft className="w-5 h-5 text-success" /> : <ArrowUpRight className="w-5 h-5 text-destructive" />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-foreground truncate">{tx.label}</div>

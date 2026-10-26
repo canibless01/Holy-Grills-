@@ -1,11 +1,12 @@
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Users, UserPlus, UserMinus, Mail, Loader2 } from 'lucide-react';
+import { ChevronLeft, Users, UserMinus, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDate, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import StudentPicker from '@/components/StudentPicker';
 
 export default function SquadDetail({ squadId, currentUserId, onBack }) {
   const navigate = useNavigate();
@@ -27,12 +28,12 @@ export default function SquadDetail({ squadId, currentUserId, onBack }) {
 
   const isOrganizer = squad && squad.creator_id === currentUserId;
 
-  const handleAddMember = async () => {
+  const handleAddMember = async (student = null) => {
     const email = newEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast({ title: msg('FE_SQUAD_DETAIL_ENTER_A_VALID_EMAIL_ADDRESS', 'Enter a valid email address') }); return; }
+    if (!student?.id && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast({ title: msg('FE_SQUAD_DETAIL_ENTER_A_VALID_EMAIL_ADDRESS', 'Enter a valid email address') }); return; }
     setAdding(true);
     try {
-      await liveApi.squads.addMember(squadId, { email });
+      await liveApi.squads.addMember(squadId, student?.id ? { user_id: student.id } : { email });
       setNewEmail('');
       toast({ title: msg('FE_SQUAD_DETAIL_MEMBER_ADDED', '👍 Member added'), description: email });
       load();
@@ -102,20 +103,9 @@ export default function SquadDetail({ squadId, currentUserId, onBack }) {
         </div>
 
         {isOrganizer && (
-          <div className="flex gap-2 mb-3">
-            <div className="relative flex-1">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMember(); } }}
-                placeholder="Add a friend by email"
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-              />
-            </div>
-            <button onClick={handleAddMember} disabled={adding} className="px-3.5 py-2.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shadow-glow disabled:opacity-60 shrink-0 flex items-center gap-1">
-              {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Add
-            </button>
+          <div className="mb-3">
+            <StudentPicker value={newEmail} onChange={setNewEmail} disabled={adding}
+              onSelect={handleAddMember} onInvite={() => handleAddMember()} />
           </div>
         )}
 

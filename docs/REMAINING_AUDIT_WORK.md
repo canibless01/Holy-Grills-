@@ -1,3 +1,5 @@
+> Current checkpoint: [26 October status, verified fixes and remaining A/B work](AUDIT_HANDOFF_2026_10_26.md). The dated list below is historical and must be reconciled with that checkpoint.
+
 # Remaining ecosystem work — 21 October 2026
 
 This is the outstanding checklist, including explicit user requests and the broader A–Z audit. An inventoried page or a “safe to test” designation is not a completed interaction test. Each closure needs its actual layer of evidence: service, transaction, browser or external provider. The chronological progress log also records completed fixes; it is not a list of unresolved defects.

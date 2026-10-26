@@ -6,6 +6,7 @@ import { formatNaira, timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, BreakdownTiles, body } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
 
 const num = (v) => (v == null || isNaN(Number(v)) ? 0 : Number(v));
 
@@ -186,13 +187,30 @@ function PromoModal({
     starts_at: promo.starts_at ? String(promo.starts_at).slice(0, 10) : '',
     ends_at: promo.ends_at ? String(promo.ends_at).slice(0, 10) : '',
     scope: promo.scope || 'cart',
-    applicable_item_ids: Array.isArray(promo.applicable_item_ids) ? promo.applicable_item_ids.join(', ') : (promo.applicable_item_ids || ''),
+    applicable_item_ids: Array.isArray(promo.applicable_item_ids) ? promo.applicable_item_ids : [],
   } : {
     code: '', description: '', discount_type: 'percentage', discount_value: 10,
     min_order_amount: 0, max_uses: '', max_uses_per_user: '', starts_at: '', ends_at: '',
-    scope: 'cart', applicable_item_ids: '',
+    scope: 'cart', applicable_item_ids: [],
   });
   const [submitting, setSubmitting] = useState(false);
+  const { campusId, adminCampusId } = useCampus();
+  const [menuItems, setMenuItems] = useState([]);
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuError, setMenuError] = useState('');
+  const [menuQuery, setMenuQuery] = useState('');
+  const [menuRevision, setMenuRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setMenuLoading(true); setMenuError('');
+    liveApi.admin.getMenuItems({ limit: 1000 }).then(rows => { if (active) setMenuItems(Array.isArray(rows) ? rows : []); })
+      .catch(error => { if (active) setMenuError(error.message); })
+      .finally(() => { if (active) setMenuLoading(false); });
+    return () => { active = false; };
+  }, [campusId, adminCampusId, menuRevision]);
+  const selectedIds = form.applicable_item_ids;
+  const visibleItems = menuItems.filter(item => (item.name || '').toLowerCase().includes(menuQuery.trim().toLowerCase()));
+
 
   const submit = async () => {
     const dv = Number(form.discount_value);
@@ -202,12 +220,12 @@ function PromoModal({
     // backend (admin.py update_promo / create_promo) and surface verbatim via
     // e.message below — no duplicated client wording to drift.
     if (Number(form.min_order_amount) < 0) { toast({ title: msg('FE_ADMIN_PROMOS_INVALID_MIN_ORDER', 'Invalid min order'), description: msg('FE_ADMIN_PROMOS_MINIMUM_ORDER_AMOUNT_CANNOT_BE_NEGATIVE', 'Minimum order amount cannot be negative.'), variant: 'destructive' }); return; }
+    if (form.scope === 'item' && (!selectedIds.length || menuLoading || menuError)) { toast({ title: msg('FE_PROMO_SELECT_ITEMS', 'Choose at least one menu item after the menu loads.'), variant: 'destructive' }); return; }
     setSubmitting(true);
     try {
       // scope & applicable IDs — the backend already accepts this full contract
       // (scope, applicable_item_ids, applicable_category_ids). Only send the
       // ID arrays when the scope actually targets them, so 'cart' stays clean.
-      const splitIds = (v) => (v ? String(v).split(/[\s,]+/).map((s) => s.trim()).filter(Boolean) : null);
       const payload = {
         code: form.code.trim().toUpperCase(),
         description: form.description.trim() || null,
@@ -219,7 +237,7 @@ function PromoModal({
         starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
         ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
         scope: form.scope,
-        ...(form.scope === 'item' ? { applicable_item_ids: splitIds(form.applicable_item_ids) || [] } : {}),
+        ...(form.scope === 'item' ? { applicable_item_ids: selectedIds } : {}),
       };
       if (promo) { await liveApi.admin.updatePromoCode(promo.id, payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_UPDATED', 'Promo updated'), description: payload.code }); }
       else { await liveApi.admin.createPromoCode(payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_CREATED', 'Promo created'), description: payload.code }); }
@@ -259,13 +277,20 @@ function PromoModal({
         <Field label="Ends At"><TextInput type="date" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} /></Field>
         <Field label="Scope" hint="cart = whole order · items = specific menu items · categories = whole categories">
           <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40">
-            <option value="cart">Cart — whole order</option>
+            <option value="cart">{msg('FE_PROMO_ALL_ITEMS', 'All menu items')}</option>
             <option value="item">Specific items</option>
           </select>
         </Field>
         {form.scope === 'item' && (
-          <Field label="Applicable item IDs" hint="Comma-separated menu item IDs the code applies to">
-            <TextInput value={form.applicable_item_ids} onChange={(e) => setForm({ ...form, applicable_item_ids: e.target.value })} placeholder="uuid1, uuid2, uuid3" />
+          <Field label={msg('FE_PROMO_MENU_ITEMS', 'Menu items')} hint={msg('FE_PROMO_MENU_ITEMS_HELP', 'Select the menu items this discount applies to.')}>
+            <TextInput value={menuQuery} onChange={e => setMenuQuery(e.target.value)} placeholder={msg('FE_PROMO_SEARCH_MENU', 'Search menu items')} />
+            {menuLoading ? <p role="status" className="text-xs text-muted-foreground mt-2">{msg('FE_LOOKUP_SEARCHING', 'Searching…')}</p> : menuError ? <button type="button" onClick={() => setMenuRevision(value => value + 1)} className="text-xs text-destructive mt-2">{menuError} · {msg('FE_LOOKUP_RETRY', 'Retry')}</button> : <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-border">
+              {visibleItems.map(item => <label key={item.id} className="flex items-center gap-2 px-3 py-2 text-sm border-b border-border last:border-0">
+                <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={e => setForm(current => ({ ...current, applicable_item_ids: e.target.checked ? [...current.applicable_item_ids, item.id] : current.applicable_item_ids.filter(id => id !== item.id) }))} />
+                <span className="flex-1">{item.name}</span><span className="text-xs text-muted-foreground">{formatNaira(item.price)}</span>
+              </label>)}
+              {!visibleItems.length && <p className="p-3 text-xs text-muted-foreground">{msg('FE_PROMO_NO_MENU_MATCH', 'No menu items match this search.')}</p>}
+            </div>}
           </Field>
         )}
         <button onClick={submit} disabled={submitting || !form.code.trim()} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold active:scale-95 transition disabled:opacity-50">

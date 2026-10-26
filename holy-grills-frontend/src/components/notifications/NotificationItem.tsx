@@ -5,6 +5,7 @@ import { timeAgo, NOTIFICATION_ICONS } from '@/lib/hgUtils';
 // A tap marks it read (handled by parent) and navigates to action_url if present.
 export default function NotificationItem({ notif, onClick }) {
   const isRead = !!(notif.read_at || notif.is_read);
+  const image = typeof notif.metadata?.push_image === 'string' && /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\//.test(notif.metadata.push_image) ? notif.metadata.push_image : null;
   const icon = NOTIFICATION_ICONS[notif.type] || '🔔';
 
   return (
@@ -32,6 +33,7 @@ export default function NotificationItem({ notif, onClick }) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notif.body}</p>
+          {image && <img src={image} alt="" loading="lazy" className="mt-3 w-full max-h-56 rounded-xl object-contain" />}
         </div>
         {!isRead && (
           <span className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-2 ring-2 ring-primary/20" />

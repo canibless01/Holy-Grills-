@@ -5,6 +5,8 @@ import { toast } from '@/components/ui/use-toast';
 import ModalBackdrop from '@/components/ModalBackdrop';
 import type { CreateSquadPayload } from '@/types/squads';
 import { msg } from '@/lib/messages';
+import StudentPicker from '@/components/StudentPicker';
+import { displayName } from '@/lib/displayName';
 
 // Parse the free-form emails field into a clean list — accepts newlines,
 // commas, and semicolons as separators.
@@ -16,6 +18,8 @@ const parseEmails = (raw = '') =>
 export default function CreateSquadModal({ open, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [emails, setEmails] = useState('');
+  const [query, setQuery] = useState('');
+  const [selectedStudents, setSelectedStudents] = useState([]);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
 
@@ -30,9 +34,10 @@ export default function CreateSquadModal({ open, onClose, onCreated }) {
     try {
       const body: CreateSquadPayload = { name: name.trim() };
       if (list.length) body.emails = list;
+      if (selectedStudents.length) body.member_user_ids = selectedStudents.map(student => student.id);
       await liveApi.squads.create(body);
-      toast({ title: msg('FE_CREATE_SQUAD_MODAL_SQUAD_CREATED', '🔥 Squad created'), description: list.length ? `Invites are on their way to ${list.length} friend${list.length !== 1 ? 's' : ''}.` : 'Add members from the squad page anytime.' });
-      setName(''); setEmails('');
+      toast({ title: msg('FE_CREATE_SQUAD_MODAL_SQUAD_CREATED', '🔥 Squad created'), description: msg('FE_CREATE_SQUAD_REVIEW_MEMBERS', 'Review your members on the squad page.') });
+      setName(''); setEmails(''); setQuery(''); setSelectedStudents([]);
       onCreated();
     } catch (err) {
       setError(err.message || 'Could not create the squad — try again.');
@@ -66,16 +71,15 @@ export default function CreateSquadModal({ open, onClose, onCreated }) {
 
         <div>
           <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Invite friends (optional)</label>
-          <textarea
-            value={emails}
-            onChange={(e) => setEmails(e.target.value)}
-            placeholder={'friend1@campus.edu.ng\nfriend2@campus.edu.ng'}
-            rows={3}
-            className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm resize-none focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-          />
-          <p className="text-[11px] text-muted-foreground mt-1">
-            {parseEmails(emails).length} email{parseEmails(emails).length !== 1 ? 's' : ''} — one per line, or separated by commas. Friends must be on the same campus.
-          </p>
+          <div className="mt-1.5">
+            <StudentPicker value={query} onChange={setQuery} disabled={creating}
+              onSelect={student => { setSelectedStudents(current => current.some(row => row.id === student.id) ? current : [...current, student]); setQuery(''); }}
+              onInvite={email => { setEmails(current => [...parseEmails(current), email].join('\n')); setQuery(''); }} />
+            <div className="flex gap-1.5 flex-wrap mt-2">
+              {selectedStudents.map(student => <button type="button" key={student.id} onClick={() => setSelectedStudents(current => current.filter(row => row.id !== student.id))} className="text-xs rounded-full px-3 py-1.5 bg-primary/10 text-primary">{displayName(student)} ×</button>)}
+              {parseEmails(emails).map(email => <button type="button" key={email} onClick={() => setEmails(parseEmails(emails).filter(value => value !== email).join('\n'))} className="text-xs rounded-full px-3 py-1.5 bg-muted">{email} ×</button>)}
+            </div>
+          </div>
         </div>
 
         {error && (

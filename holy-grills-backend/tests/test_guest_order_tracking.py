@@ -57,6 +57,7 @@ class GuestTrackingLookupTests(unittest.TestCase):
  def setUp(self):self.app=Flask(__name__);self.db=MagicMock()
  def call(self,number,token=TOKEN,row=None):
   self.db.table.return_value.select.return_value.ilike.return_value.limit.return_value.single.return_value.execute.return_value=row
+  self.db.table.return_value.select.return_value.eq.return_value.limit.return_value.single.return_value.execute.return_value=row
   detail=MagicMock(return_value=('detail',200))
   with self.app.test_request_context('/?order_number='+number+'&claim_token='+str(token)),patch.object(orders,'get_db',return_value=self.db),patch.object(orders,'get_order',SimpleNamespace(__wrapped__=detail)):
    g.user_id=None
@@ -75,3 +76,10 @@ class GuestTrackingLookupTests(unittest.TestCase):
    result,detail=self.call(number);self.assertEqual(result[1],404);detail.assert_not_called()
  def test_invalid_token_cannot_lookup_number(self):
   result,detail=self.call('HG-123',token='invalid');self.assertEqual(result[1],403);detail.assert_not_called()
+
+ def test_legacy_short_email_identifier_requires_matching_full_token(self):
+  row={'id':OID,'user_id':None,'claim_token':TOKEN}
+  result,detail=self.call(OID[:8].upper(),row=row)
+  self.assertEqual(result,('detail',200));detail.assert_called_once_with(OID)
+  for invalid in (None,{**row,'id':'ffffffff-ffff-4fff-8fff-ffffffffffff'},{**row,'user_id':USER}):
+   result,detail=self.call(OID[:8],row=invalid);self.assertEqual(result[1],404);detail.assert_not_called()

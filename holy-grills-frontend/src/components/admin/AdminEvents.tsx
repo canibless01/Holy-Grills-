@@ -16,6 +16,7 @@ export default function AdminEvents() {
   const { user } = useHolyGrill();
   const canManage = (event) => user?.role === 'super_admin' || !!event.campus_id;
   const [events, setEvents] = useState([]);
+  const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [regs, setRegs] = useState(null);

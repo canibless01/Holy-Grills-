@@ -55,6 +55,23 @@ export default function AdminNotifications() {
   const [channels, setChannels] = useState(['push', 'in_app']);
   const [role, setRole] = useState('all');
   const [tier, setTier] = useState('all');
+  const [audience, setAudience] = useState({ has_active_order: 'any', has_cart: 'any', last_order_days: 'any', last_login_days: 'any', hp_balance: 'all', total_orders: 'any', has_pending_hp: 'any', has_referral: 'any', has_reviewed: 'any', has_shared: 'any', has_squad_order: 'any', has_graduated: 'any', event_attendance: 'any', department: '', faculty: '', level: '' });
+  const [recipientQuery, setRecipientQuery] = useState('');
+  const [recipientResults, setRecipientResults] = useState<any[]>([]);
+  const [selectedRecipients, setSelectedRecipients] = useState<any[]>([]);
+  const [recipientError, setRecipientError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setRecipientResults([]); setRecipientError(false);
+    if (recipientQuery.trim().length < 2) return;
+    const timer = setTimeout(() => {
+      mockApi.admin.getUsers({ q: recipientQuery.trim(), limit: 10 })
+        .then(rows => { if (active) setRecipientResults((rows || []).filter(person => person.is_active !== false)); })
+        .catch(() => { if (active) setRecipientError(true); });
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [recipientQuery]);
+
   const [sendAt, setSendAt] = useState(''); // datetime-local string, '' = immediate
   const [actionUrl, setActionUrl] = useState('');
   const [emailProvider, setEmailProvider] = useState('default');
@@ -84,7 +101,7 @@ export default function AdminNotifications() {
     try { await apiClient.post(`/notifications/blasts/${id}/retry`, {}); await load(); }
     catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
   };
-  useEffect(() => { setPreviewCount(null); }, [role, tier]);
+  useEffect(() => { setPreviewCount(null); }, [role, tier, audience, selectedRecipients]);
 
   const load = async () => {
     setLoading(true);
@@ -96,18 +113,23 @@ export default function AdminNotifications() {
   useEffect(() => { load(); }, []);
 
   const toggleChannel = (id, checked) => setChannels(checked ? [...channels, id] : channels.filter((x) => x !== id));
-  const valid = title.trim() && (body.trim() || bodyHtml.trim()) && channels.length > 0;
+  const valid = title.trim() && (body.trim() || bodyHtml.replace(/<[^>]*>/g, ' ').trim()) && channels.length > 0 && (!recipientQuery.trim() || selectedRecipients.length > 0);
   const isScheduled = !!sendAt;
 
   const buildPayload = () => {
     const payload: NotificationBlastPayload = { title: title.trim(), body: body.trim(), channels };
     if (actionUrl.trim()) payload.action_url = actionUrl.trim();
     // Segment builder — always send target_segment; "all" means no filtering.
-    const segment = { role, tier };
+    const segment: Record<string, unknown> = { role, tier };
+    Object.entries(audience).forEach(([key, value]) => {
+      if (!value || value === 'all' || value === 'any') return;
+      segment[key] = key.endsWith('_days') ? Number(value) : value === 'yes' ? true : value === 'no' ? false : value;
+    });
+    if (selectedRecipients.length) segment.user_ids = selectedRecipients.map(person => person.id);
     payload.target_segment = segment;
     if (emailProvider !== 'default') payload.email_provider = emailProvider;
     // Keep legacy `segment` key for backward compat with the existing backend.
-    if (role !== 'all' || tier !== 'all') payload.segment = segment;
+    payload.segment = segment;
     // Only include send_at when a date/time is set — omitting it means "now".
     if (sendAt) {
       const d = new Date(sendAt);
@@ -142,6 +164,7 @@ export default function AdminNotifications() {
       }
       // Reset form
       setTitle(''); setBody(''); setBodyHtml(''); setImages([]); setCtaBlocks([]); setSendAt(''); setRole('all'); setTier('all'); setActionUrl(''); setPushImage('');
+      setRecipientQuery(''); setSelectedRecipients([]);
       setConfirmOpen(false);
       await load();
     } catch (e) {
@@ -160,9 +183,10 @@ export default function AdminNotifications() {
     setSendingTest(true);
     try {
       await apiClient.post('/notifications/blasts/test', {
-        ...buildPayload(),
+        ...intent.body(buildPayload()),
         test_email: user.email,
       });
+      intent.clear();
       toast({ title: '✅ Test sent', description: `Test notification sent to ${user.email}` });
     } catch (e) {
       toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
@@ -349,6 +373,28 @@ export default function AdminNotifications() {
             </div>
           </Field>
 
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ['has_active_order', msg('FE_BLAST_ACTIVE_ORDERS', 'Active orders')],
+              ['has_cart', msg('FE_BLAST_HAS_CART', 'Items in cart')],
+              ['has_pending_hp', msg('FE_BLAST_PENDING_HP', 'Pending HP')],
+              ['has_referral', msg('FE_BLAST_REFERRALS', 'Has referred someone')],
+              ['has_reviewed', msg('FE_BLAST_REVIEWS', 'Has reviewed an order')],
+              ['has_shared', msg('FE_BLAST_SHARES', 'Has shared an order')],
+              ['has_squad_order', msg('FE_BLAST_SQUAD', 'Has squad orders')],
+              ['has_graduated', msg('FE_BLAST_GRADUATED', 'Graduation claimed')],
+            ] as const).map(([key,label]) => <Field key={key} label={label}><select aria-label={label} value={audience[key]} onChange={e => setAudience({...audience,[key]:e.target.value})} className="w-full p-2.5 rounded-xl border border-border bg-card text-sm"><option value="any">{msg('FE_BLAST_ANY', 'Any')}</option><option value="yes">{msg('FE_BLAST_YES', 'Yes')}</option><option value="no">{msg('FE_BLAST_NO', 'No')}</option></select></Field>)}
+            {(['last_order_days','last_login_days'] as const).map(key => <Field key={key} label={key==='last_order_days' ? msg('FE_BLAST_RECENT_ORDERS', 'Ordered within') : msg('FE_BLAST_RECENT_LOGIN', 'Visited within')}><select aria-label={key==='last_order_days' ? msg('FE_BLAST_RECENT_ORDERS', 'Ordered within') : msg('FE_BLAST_RECENT_LOGIN', 'Visited within')} value={audience[key]} onChange={e=>setAudience({...audience,[key]:e.target.value})} className="w-full p-2.5 rounded-xl border border-border bg-card text-sm"><option value="any">{msg('FE_BLAST_ANY', 'Any')}</option>{[1,7,30,90].map(days=><option key={days} value={days}>{msg('FE_BLAST_DAYS', '{days} days', {days})}</option>)}</select></Field>)}
+            <Field label={msg('FE_BLAST_HP_BAND','HP balance')}><select aria-label={msg('FE_BLAST_HP_BAND','HP balance')} value={audience.hp_balance} onChange={e=>setAudience({...audience,hp_balance:e.target.value})} className="w-full p-2.5 rounded-xl border border-border bg-card text-sm"><option value="all">{msg('FE_BLAST_ANY','Any')}</option><option value="low">{'<100 HP'}</option><option value="medium">100–500 HP</option><option value="high">{' >500 HP'}</option></select></Field>
+            <Field label={msg('FE_BLAST_ORDER_BAND','Total orders')}><select aria-label={msg('FE_BLAST_ORDER_BAND','Total orders')} value={audience.total_orders} onChange={e=>setAudience({...audience,total_orders:e.target.value})} className="w-full p-2.5 rounded-xl border border-border bg-card text-sm"><option value="any">{msg('FE_BLAST_ANY','Any')}</option>{['0','1-5','6-20','20+'].map(value=><option key={value} value={value}>{value}</option>)}</select></Field>
+            {(['faculty','department','level'] as const).map(key=><Field key={key} label={key==='faculty'?msg('FE_BLAST_FACULTY','Faculty'):key==='department'?msg('FE_BLAST_DEPARTMENT','Department'):msg('FE_BLAST_LEVEL','Academic level')}><TextInput aria-label={key==='faculty'?msg('FE_BLAST_FACULTY','Faculty'):key==='department'?msg('FE_BLAST_DEPARTMENT','Department'):msg('FE_BLAST_LEVEL','Academic level')} value={audience[key]} onChange={e=>setAudience({...audience,[key]:e.target.value})} /></Field>)}
+          </div>
+          <Field label={msg('FE_BLAST_SPECIFIC_PEOPLE', 'Specific recipients (optional)')} hint={msg('FE_BLAST_RECIPIENT_HELP', 'Search and select people to intersect with the filters above. No selection uses the filtered audience.')}>
+            <TextInput value={recipientQuery} onChange={e=>setRecipientQuery(e.target.value)} placeholder={msg('FE_BLAST_SEARCH_PEOPLE','Search name, nickname or email')} />
+            {recipientError && <p role="alert" className="text-xs text-destructive">{msg('FE_BLAST_SEARCH_FAILED','Recipient search failed. Try again.')}</p>}
+            {recipientQuery.trim().length>=2 && !recipientError && <div className="max-h-40 overflow-y-auto">{recipientResults.map(person=><button type="button" key={person.id} className="block w-full text-left text-xs p-2 rounded-lg hover:bg-muted" onClick={()=>{setSelectedRecipients(rows=>rows.some(row=>row.id===person.id)?rows:[...rows,person]);setRecipientQuery('');}}>{person.full_name || person.nickname || person.email} · {person.email}</button>)}</div>}
+            <div className="flex flex-wrap gap-1 mt-2">{selectedRecipients.map(person=><button type="button" key={person.id} className="rounded-full px-2 py-1 text-xs bg-muted" onClick={()=>setSelectedRecipients(rows=>rows.filter(row=>row.id!==person.id))}>{person.full_name || person.email} ×</button>)}</div>
+          </Field>
           <Field label={msg('FE_BLAST_LINK', 'Destination path (optional)')}><TextInput value={actionUrl} onChange={e => setActionUrl(e.target.value)} placeholder="/events" /></Field>
           <Field label="Channels (at least one required)" hint="Push = mobile notification, In-App = the notifications inbox, Email = email to registered users.">
             <div className="flex gap-4 mt-1 flex-wrap">

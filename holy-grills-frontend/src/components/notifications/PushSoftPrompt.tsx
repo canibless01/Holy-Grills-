@@ -1,4 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { msg } from '@/lib/messages';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, Loader2 } from 'lucide-react';
 import { subscribeToWebPush } from '@/lib/webPush';
@@ -10,25 +13,24 @@ import { toast } from '@/components/ui/use-toast';
  * Only shows once per user (tracked via localStorage).
  */
 export default function PushSoftPrompt() {
+  const { pathname } = useLocation();
+  const { user } = useHolyGrill();
+  const previousPath = useRef(pathname);
+  const seenKey = user?.id ? `hg_push_soft_prompt_seen:${user.id}` : null;
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Check if already granted or dismissed
-    if (typeof Notification === 'undefined') return;
-    if (Notification.permission === 'granted') return;
-    
-    const hasSeenPrompt = localStorage.getItem('push_soft_prompt_seen');
-    if (hasSeenPrompt) return;
-
-    // Show after a short delay (not immediately)
-    const timer = setTimeout(() => {
-      setShow(true);
-    }, 3000);
-
+    const arrivedAfterCheckout = previousPath.current !== pathname && pathname.startsWith('/order-confirmation/');
+    previousPath.current = pathname;
+    // Browsing or reloading a page never triggers a permission/soft prompt.
+    // The optional suggestion follows an in-app checkout transition only.
+    if (!arrivedAfterCheckout || !seenKey || typeof Notification === 'undefined' || Notification.permission !== 'default') return;
+    if (localStorage.getItem(seenKey)) return;
+    const timer = setTimeout(() => setShow(true), 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [pathname, seenKey]);
 
   const handleEnable = async () => {
     setBusy(true);
@@ -36,26 +38,27 @@ export default function PushSoftPrompt() {
       const ok = await subscribeToWebPush();
       if (ok) {
         toast({
-          title: 'Push notifications enabled',
-          description: "You'll receive alerts for orders, HP, and delivery.",
+          title: msg('FE_INSTALL_PUSH_BONUSES_PUSH_ENABLED', '🔔 Push enabled!'),
+          description: msg('FE_INSTALL_PUSH_BONUSES_YOU_LL_RECEIVE_ALERTS_ON_THIS_DEVICE', "You'll receive alerts on this device."),
         });
-        localStorage.setItem('push_soft_prompt_seen', 'true');
-        setShow(false);
+
       }
     } catch (error) {
       toast({
-        title: 'Could not enable push',
-        description: 'You can enable it later in notification settings.',
+        title: msg('FE_INSTALL_PUSH_BONUSES_COULD_NOT_ENABLE_PUSH', 'Could not enable push'),
+        description: msg('FE_PUSH_SOFT_RETRY_SETTINGS', 'You can enable it later in notification settings.'),
         variant: 'destructive',
       });
-      localStorage.setItem('push_soft_prompt_seen', 'true');
-      setShow(false);
+
     }
-    setBusy(false);
+    finally {
+      if (seenKey) localStorage.setItem(seenKey, 'true');
+      setShow(false); setBusy(false);
+    }
   };
 
   const handleDismiss = () => {
-    localStorage.setItem('push_soft_prompt_seen', 'true');
+    if (seenKey) localStorage.setItem(seenKey, 'true');
     setDismissed(true);
     setTimeout(() => setShow(false), 300);
   };
@@ -78,7 +81,7 @@ export default function PushSoftPrompt() {
             <button
               onClick={handleDismiss}
               className="absolute top-3 right-3 p-1 rounded-full hover:bg-muted transition"
-              aria-label="Dismiss"
+              aria-label={msg('FE_PUSH_SOFT_DISMISS', 'Dismiss')}
             >
               <X className="w-4 h-4 text-muted-foreground" />
             </button>
@@ -90,10 +93,10 @@ export default function PushSoftPrompt() {
 
               <div className="flex-1 pr-6">
                 <h3 className="font-bold text-sm text-foreground mb-1">
-                  Never miss an update
+                  {msg('FE_PUSH_SOFT_TITLE', 'Never miss an update')}
                 </h3>
                 <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                  Get instant alerts when your order is on the way, when you earn HP, and when rewards are available.
+                  {msg('FE_PUSH_SOFT_BODY', 'Get instant alerts when your order is on the way, when you earn HP, and when rewards are available.')}
                 </p>
 
                 <div className="flex gap-2">
@@ -107,13 +110,13 @@ export default function PushSoftPrompt() {
                     ) : (
                       <Bell className="w-3.5 h-3.5" />
                     )}
-                    Enable Notifications
+                    {msg('FE_PUSH_SOFT_ENABLE', 'Enable notifications')}
                   </button>
                   <button
                     onClick={handleDismiss}
                     className="px-3.5 py-2 rounded-full text-xs font-bold text-muted-foreground hover:text-foreground transition"
                   >
-                    Maybe later
+                    {msg('FE_PUSH_SOFT_LATER', 'Maybe later')}
                   </button>
                 </div>
               </div>

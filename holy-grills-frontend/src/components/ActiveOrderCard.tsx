@@ -4,7 +4,7 @@ import { Package } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
-import Skeleton from '@/components/ui/Skeleton';
+import Skeleton from '@/components/ui/LoadingSkeleton';
 
 /**
  * ActiveOrderCard — compact horizontal stat card for the Home quick-stats grid.

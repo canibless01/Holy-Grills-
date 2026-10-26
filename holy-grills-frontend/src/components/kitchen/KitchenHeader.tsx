@@ -11,11 +11,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
 import PanelSwitcher from '@/components/PanelSwitcher';
+import { msg } from '@/lib/messages';
 
 // Sticky kitchen header with open/closed toggle (PATCH /kitchen/settings),
 // sound toggle, and navigation. The toggle maps to is_accepting_orders —
 // closing requires a confirmation dialog per the kitchen spec.
-export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
+export default function KitchenHeader({ accepting, open, onToggleAccepting, deliveryWindow = null }) {
   const navigate = useNavigate();
   const { soundOn, toggleSound } = useSound();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -34,6 +35,9 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
   };
 
   const dotColor = open && accepting ? 'bg-success' : accepting ? 'bg-warn' : 'bg-destructive';
+  const deliveryStart = deliveryWindow?.delivery_starts_at;
+  const deliveryEnd = deliveryWindow?.delivery_ends_at;
+  const deliveryLabel = deliveryStart && deliveryEnd ? msg('FE_KITCHEN_DELIVERY_HOURS', 'Delivery {start}–{end}', { start: deliveryStart, end: deliveryEnd }) : msg('FE_KITCHEN_DELIVERY_UNCONFIGURED', 'Delivery time not configured');
   const statusLabel = open && accepting ? 'Open' : accepting ? 'Paused — no window' : 'Closed';
 
   return (
@@ -52,6 +56,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting }) {
                 </span>
                 <span className="text-[11px] font-bold text-muted-foreground">{statusLabel}</span>
               </div>
+              <div className="text-[10px] text-muted-foreground truncate">{deliveryLabel}</div>
             </div>
           </div>
 

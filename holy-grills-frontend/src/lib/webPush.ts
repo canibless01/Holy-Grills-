@@ -17,7 +17,7 @@
  * the "set the VAPID public key" message was a dead end.
  */
 import APP_CONFIG from '@/config/app.config';
-import { initOneSignal, requestPushPermission, isPushSupported } from './onesignal';
+import { initOneSignal, requestPushPermission, isPushSupported, optOutOneSignal } from './onesignal';
 
 export const isWebPushSupported = isPushSupported;
 
@@ -54,10 +54,6 @@ export const subscribeToWebPush = async () => {
 export const unsubscribeFromWebPush = async () => {
   try {
     await initOneSignal(null);
-    if (window.OneSignal) {
-      window.OneSignal.push(() => {
-        try { window.OneSignal.setSubscription(false); } catch (e) { /* ignore */ }
-      });
-    }
+    await optOutOneSignal();
   } catch { /* non-fatal */ }
 };

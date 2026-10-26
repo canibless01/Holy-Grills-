@@ -1,5 +1,6 @@
+import { guestOrders as readGuestOrders, saveGuestOrder } from '@/lib/guestOrders';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Check, Package, Clock, Search, AlertCircle, Mail } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
@@ -42,7 +43,6 @@ function describeLookupError(e) {
 export default function TrackOrders() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const location = useLocation();
   const { isAuthenticated, user } = useHolyGrill();
   const generation = useRef(0);
   const [loadError, setLoadError] = useState(false);
@@ -55,10 +55,6 @@ export default function TrackOrders() {
   const [lookupError, setLookupError] = useState(null);
   const autoLookupAttempted = useRef(false);
   
-  // Get session ID from navigation state (passed from checkout/order-confirmation)
-  const guestSessionId = location.state?.guest_session_id;
-  const guestOrdersStorageKey = guestSessionId ? `hg_guest_orders_${guestSessionId}` : 'hg_guest_orders';
-
   // Auto-lookup when URL parameters are present (from email tracking link)
   useEffect(() => {
     const orderNumber = searchParams.get('order_number');
@@ -83,16 +79,7 @@ export default function TrackOrders() {
       const order = await mockApi.orders.track({ order_number: orderNumber, claim_token: claimToken });
       if (!order.user_id) {
         try {
-          // Ensure we have a session ID for this tracking session
-          let sessionId = sessionStorage.getItem('hg_checkout_session');
-          if (!sessionId) {
-            sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            sessionStorage.setItem('hg_checkout_session', sessionId);
-          }
-          const sessionKey = `hg_guest_orders_${sessionId}`;
-          const saved = JSON.parse(localStorage.getItem(sessionKey) || '[]');
-          const rest = Array.isArray(saved) ? saved.filter(g => g?.id !== order.id) : [];
-          localStorage.setItem(sessionKey, JSON.stringify([{ id: order.id, claim_token: claimToken }, ...rest].slice(0, 10)));
+          saveGuestOrder(order, claimToken);
         } catch { /* Tracking still works when device storage is unavailable. */ }
       }
       navigate(`/orders/${encodeURIComponent(order.id)}?claim_token=${encodeURIComponent(claimToken)}`);
@@ -114,7 +101,7 @@ export default function TrackOrders() {
       } catch { accountFailed = true; }
     }
     let saved = [];
-    try { saved = JSON.parse(localStorage.getItem(guestOrdersStorageKey) || '[]'); } catch { saved = []; }
+    saved = readGuestOrders();
     const claimedIds = new Set(mine.map(o => o.id));
     
     // Only fetch guest orders that have valid claim tokens
@@ -128,11 +115,6 @@ export default function TrackOrders() {
         // If we can't fetch the order (403/404), remove it from localStorage
         // This handles cases where the order was claimed or deleted
         if (error.status === 403 || error.status === 404) {
-          try {
-            const current = JSON.parse(localStorage.getItem(guestOrdersStorageKey) || '[]');
-            const filtered = current.filter((o: any) => o?.id !== g.id);
-            localStorage.setItem(guestOrdersStorageKey, JSON.stringify(filtered));
-          } catch { /* ignore */ }
           return null;
         }
         return { unavailable: g.id };
@@ -143,7 +125,7 @@ export default function TrackOrders() {
     setGuestOrders(previous => fetched.filter(Boolean).map(result => result.order || previous.find(o => o.id === result.unavailable)).filter(Boolean).filter(o => !DONE.includes(o.status)));
     setLoadError(accountFailed || fetched.some(result => result?.unavailable));
     setLoading(false);
-  }, [isAuthenticated, user?.id, guestOrdersStorageKey]);
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     load();
@@ -164,16 +146,7 @@ export default function TrackOrders() {
       const order = await mockApi.orders.track({ order_number: id, claim_token: token });
       if (!order.user_id) {
         try {
-          // Ensure we have a session ID for this tracking session
-          let sessionId = sessionStorage.getItem('hg_checkout_session');
-          if (!sessionId) {
-            sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            sessionStorage.setItem('hg_checkout_session', sessionId);
-          }
-          const sessionKey = `hg_guest_orders_${sessionId}`;
-          const saved = JSON.parse(localStorage.getItem(sessionKey) || '[]');
-          const rest = Array.isArray(saved) ? saved.filter(g => g?.id !== order.id) : [];
-          localStorage.setItem(sessionKey, JSON.stringify([{ id: order.id, claim_token: token }, ...rest].slice(0, 10)));
+          saveGuestOrder(order, token);
         } catch { /* Tracking still works when device storage is unavailable. */ }
       }
       navigate(`/orders/${encodeURIComponent(order.id)}?claim_token=${encodeURIComponent(token)}`);

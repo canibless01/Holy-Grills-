@@ -182,3 +182,14 @@ class CardPaymentTests(unittest.TestCase):
         # Breakdown should be attached to data dict
         self.assertIn('_amount_breakdown', txn)
         self.assertEqual(txn['_amount_breakdown']['paid'], 182000)
+
+    def test_guest_callback_carries_only_its_own_fragment_proof(self):
+        from urllib.parse import urlparse, parse_qs
+        self.order.update(user_id=None,guest_email='audit@example.com',claim_token='owned-guest-token')
+        ref=service.reference_for(self.order)
+        with self.app.app_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service.payment_service,'initialize_payment',return_value={'authorization_url':'https://checkout.paystack.com/audit','reference':ref}) as init:
+            service.initialize(self.order)
+        url=urlparse(init.call_args.kwargs['callback_url'])
+        self.assertEqual(url.path,'/order-confirmation/'+OID)
+        self.assertNotIn('claim_token',parse_qs(url.query))
+        self.assertEqual(parse_qs(url.fragment),{'claim_token':['owned-guest-token']})
