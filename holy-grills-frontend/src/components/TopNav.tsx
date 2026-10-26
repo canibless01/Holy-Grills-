@@ -46,6 +46,23 @@ export default function TopNav() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Close overlays for all route changes, including browser Back/Forward and
+  // navigation initiated outside this component. Same-page clicks close too.
+  useEffect(() => {
+    setDropdownOpen(false);
+    setDrawerOpen(false);
+  }, [location.key, location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    const escape = (event) => {
+      if (event.key === 'Escape') { setDropdownOpen(false); setDrawerOpen(false); }
+    };
+    const resized = () => { setDropdownOpen(false); setDrawerOpen(false); };
+    document.addEventListener('keydown', escape);
+    window.addEventListener('resize', resized);
+    return () => { document.removeEventListener('keydown', escape); window.removeEventListener('resize', resized); };
+  }, []);
+
   const isActive = (to) => (to === '/' ? location.pathname === '/' : location.pathname.startsWith(to));
 
   const tierInfo = hpBalance ? getTierProgress(hpBalance.hp_earned_120day) : null;
@@ -175,7 +192,6 @@ export default function TopNav() {
                 <ChevronDown className={`hidden md:block w-3.5 h-3.5 text-muted-foreground transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              <AnimatePresence>
                 {dropdownOpen && (
                   <motion.div
                     initial={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -190,10 +206,10 @@ export default function TopNav() {
                       tierInfo={tierInfo}
                       onNavigate={handleNavigate}
                       onLogout={handleLogout}
+                      onClose={closeMenus}
                     />
                   </motion.div>
                 )}
-              </AnimatePresence>
             </div>
           ) : (
             <button onClick={() => navigate('/login')} className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold shadow-glow hover:shadow-lg transition-shadow">Sign In</button>

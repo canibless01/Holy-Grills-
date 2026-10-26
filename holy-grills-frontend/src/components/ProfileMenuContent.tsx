@@ -118,7 +118,7 @@ export default function ProfileMenuContent({
             <button
               key={item.to}
               type="button"
-              onClick={() => onNavigate(item.to)}
+              onClick={() => { onClose?.(); onNavigate?.(item.to); }}
               className={`flex w-full items-center gap-4 px-4 py-3 rounded-xl text-left text-sm transition-colors ${
                 active ? 'bg-primary/10 text-primary font-extrabold' : 'text-foreground font-semibold hover:bg-muted'
               }`}

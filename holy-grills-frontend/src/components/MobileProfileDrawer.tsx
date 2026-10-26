@@ -16,6 +16,7 @@ import ModalPortal from '@/components/ModalPortal';
  * would squash the drawer into the 64px header instead of covering the screen.
  */
 export default function MobileProfileDrawer({ open, onClose, user, hpBalance, tierInfo, onNavigate, onLogout }) {
+  if (!open) return null;
   return (
     <ModalPortal>
     <AnimatePresence>
