@@ -30,8 +30,18 @@ export default function OrderConfirmation() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [shareOpen, setShareOpen] = useState(false);
+  const guestSessionId = location.state?.guest_session_id;
   const claimToken = location.state?.claim_token || (() => {
-    try { return JSON.parse(localStorage.getItem('hg_guest_orders') || '[]').find(saved => saved.id === id)?.claim_token; }
+    try {
+      // Try session-scoped key first (new approach)
+      if (guestSessionId) {
+        const sessionKey = `hg_guest_orders_${guestSessionId}`;
+        const found = JSON.parse(localStorage.getItem(sessionKey) || '[]').find(saved => saved.id === id)?.claim_token;
+        if (found) return found;
+      }
+      // Fallback: try legacy unscoped key (for orders placed before this fix)
+      return JSON.parse(localStorage.getItem('hg_guest_orders') || '[]').find(saved => saved.id === id)?.claim_token;
+    }
     catch { return undefined; }
   })();
   // "Today is full" reschedule — the order landed on the next available day.

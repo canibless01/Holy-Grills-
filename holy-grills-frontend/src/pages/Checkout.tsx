@@ -640,11 +640,18 @@ export default function Checkout() {
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
     
     // Save guest order to localStorage BEFORE payment (so they can track it even if payment fails)
+    // Use session-scoped storage to prevent cross-session leakage on shared devices
     if (!isAuthenticated) {
       try {
-        const guestOrders = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+        let sessionId = sessionStorage.getItem('hg_checkout_session');
+        if (!sessionId) {
+          sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          sessionStorage.setItem('hg_checkout_session', sessionId);
+        }
+        const sessionKey = `hg_guest_orders_${sessionId}`;
+        const guestOrders = JSON.parse(localStorage.getItem(sessionKey) || '[]');
         guestOrders.unshift({ id: order?.id, claim_token: order?.claim_token, created_at: new Date().toISOString(), total: order?.total_amount || total });
-        localStorage.setItem('hg_guest_orders', JSON.stringify(guestOrders.slice(0, 10)));
+        localStorage.setItem(sessionKey, JSON.stringify(guestOrders.slice(0, 10)));
       } catch { /* ignore */ }
     }
     
@@ -672,12 +679,15 @@ export default function Checkout() {
     
     if (order.payment_status === 'paid') play('order_placed');
     setReschedule(null);
+    // Get the session ID for guest orders tracking
+    const sessionId = !isAuthenticated ? sessionStorage.getItem('hg_checkout_session') : null;
     navigate(`/order-confirmation/${order?.id || 'pending'}`, {
       state: {
         startPayment: false,
         paymentError,
         claim_token: order?.claim_token,
         guest: !isAuthenticated,
+        guest_session_id: sessionId,
         is_scheduled: order?.is_scheduled,
         scheduled_for: order?.scheduled_for,
         delivery_window_start: order?.delivery_window_start,
