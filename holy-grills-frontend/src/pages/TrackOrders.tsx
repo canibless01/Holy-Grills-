@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Check, Package, Clock, Search, AlertCircle, Mail } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
@@ -41,6 +41,7 @@ function describeLookupError(e) {
 
 export default function TrackOrders() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isAuthenticated, user } = useHolyGrill();
   const generation = useRef(0);
   const [loadError, setLoadError] = useState(false);
@@ -51,6 +52,43 @@ export default function TrackOrders() {
   const [lookupToken, setLookupToken] = useState('');
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState(null);
+  const autoLookupAttempted = useRef(false);
+
+  // Auto-lookup when URL parameters are present (from email tracking link)
+  useEffect(() => {
+    const orderNumber = searchParams.get('order_number');
+    const claimToken = searchParams.get('claim_token');
+    
+    if (orderNumber && claimToken && !autoLookupAttempted.current) {
+      autoLookupAttempted.current = true;
+      setLookupId(orderNumber);
+      setLookupToken(claimToken);
+      
+      // Auto-trigger lookup after a short delay to allow state to settle
+      setTimeout(() => {
+        handleAutoLookup(orderNumber, claimToken);
+      }, 100);
+    }
+  }, [searchParams]);
+
+  const handleAutoLookup = async (orderNumber: string, claimToken: string) => {
+    setLookupBusy(true);
+    setLookupError(null);
+    try {
+      const order = await mockApi.orders.track({ order_number: orderNumber, claim_token: claimToken });
+      if (!order.user_id) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('hg_guest_orders') || '[]');
+          const rest = Array.isArray(saved) ? saved.filter(g => g?.id !== order.id) : [];
+          localStorage.setItem('hg_guest_orders', JSON.stringify([{ id: order.id, claim_token: claimToken }, ...rest].slice(0, 10)));
+        } catch { /* Tracking still works when device storage is unavailable. */ }
+      }
+      navigate(`/orders/${encodeURIComponent(order.id)}?claim_token=${encodeURIComponent(claimToken)}`);
+    } catch (err) {
+      setLookupError(describeLookupError(err));
+    }
+    setLookupBusy(false);
+  };
 
   // Collate EVERY undelivered order — not just the single "active" one —
   // so the page shows all in-progress orders and their timelines together.
