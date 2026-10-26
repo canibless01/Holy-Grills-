@@ -47,6 +47,20 @@ def header_campus_id():
     return raw.lower() if validate_uuid(raw) else None
 
 
+# Values the frontend sends in X-Campus-Scope (or a body `scope` field) when the
+# super-admin's campus switcher is on "All Campuses". An absent X-Campus-ID is
+# ambiguous on its own (old client, never-touched switcher), so global intent is
+# carried explicitly rather than inferred from the missing campus header.
+GLOBAL_SCOPE_MARKERS = frozenset({"global", "all", "all_campuses", "all-campuses"})
+
+
+def header_global_scope():
+    """True when an admin write explicitly targets the global ("All Campuses")
+    scope via X-Campus-Scope: global."""
+    raw = (request.headers.get("X-Campus-Scope") or "").strip().lower()
+    return raw in GLOBAL_SCOPE_MARKERS
+
+
 def resolve_scoped_campus_id(requested_campus_id=None):
     """
     For super_admin: the requested `campus_id` query/body value, else the campus
@@ -62,6 +76,30 @@ def resolve_scoped_campus_id(requested_campus_id=None):
         # single place every admin list route resolves its scope.
         return requested_campus_id or header_campus_id()
     return getattr(g, "campus_id", None)
+
+
+def resolve_admin_write_campus(requested_campus_id=None, global_scope=False):
+    """
+    The campus a NEW admin-written row belongs to.
+
+      non-super_admin : always their own campus (g.campus_id) — every supplied
+                        value, header and scope marker are ignored.
+      super_admin     : 1. an explicit body/query `campus_id` wins;
+                        2. an explicit global scope (X-Campus-Scope: global header,
+                           or global_scope=True from a body `scope` field) -> None,
+                           i.e. a global row (campus_id NULL);
+                        3. the campus selected in the header switcher (X-Campus-ID);
+                        4. with no selector signal at all (legacy/API clients),
+                           the admin's profile campus.
+    """
+    if getattr(g, "user_role", None) != "super_admin":
+        return getattr(g, "campus_id", None)
+    wanted = str(requested_campus_id or "").strip()
+    if wanted:
+        return wanted
+    if global_scope or header_global_scope():
+        return None
+    return header_campus_id() or getattr(g, "campus_id", None)
 
 
 def assert_owns_campus(record_campus_id):

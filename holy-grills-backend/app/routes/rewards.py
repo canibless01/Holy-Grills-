@@ -3,7 +3,10 @@
 import math
 from decimal import Decimal, ROUND_FLOOR
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id, optional_auth
+from app.middleware.auth import (
+    require_auth, require_role, resolve_scoped_campus_id, optional_auth,
+    resolve_admin_write_campus,
+)
 from app.services.hp_service import get_hp_balance
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
@@ -677,7 +680,10 @@ def create_reward():
     if "quantity_available" in data:
         data["stock_quantity"] = data.pop("quantity_available")
     data["is_active"] = data.get("is_active", True)
-    data["campus_id"] = data.get("campus_id") or getattr(g, "campus_id", None)
+    # Honour the admin campus switcher: super_admin writes land on the selected
+    # campus, or on NULL (global) when "All Campuses" is selected. Campus admins
+    # are always pinned to their own campus (any supplied value ignored).
+    data["campus_id"] = resolve_admin_write_campus(data.get("campus_id"))
     result = db.table("rewards").insert(data)
     created = result[0] if isinstance(result, list) else result
 
@@ -721,9 +727,12 @@ def update_reward_image(reward_id):
 
     db = get_user_client()
     q = db.table("rewards").eq("id", reward_id)
-    campus_id = getattr(g, "campus_id", None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    # Super admins manage every campus's and global rewards; only campus admins
+    # are pinned to their own campus (RLS enforces the same boundary).
+    if getattr(g, "user_role", None) != "super_admin":
+        campus_id = getattr(g, "campus_id", None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
     result = q.update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -803,9 +812,12 @@ def update_reward(reward_id):
             return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     q = db.table("rewards").eq("id", reward_id)
-    campus_id = getattr(g, "campus_id", None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    # Super admins edit global and any campus's rewards; campus admins stay
+    # pinned to their own campus (same role rule as the image route).
+    if getattr(g, "user_role", None) != "super_admin":
+        campus_id = getattr(g, "campus_id", None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
     if "updated_at" in existing:
         q = q.eq("updated_at", existing["updated_at"]) if existing["updated_at"] is not None else q.is_("updated_at", "null")
     result = q.update(data)
@@ -834,7 +846,10 @@ def delete_reward(reward_id):
     """
     db = get_user_client()
     q = db.table("rewards").select("id").eq("id", reward_id)
-    campus_id = getattr(g, "campus_id", None)
+    # Super admins may remove global and any campus's rewards; campus admins are
+    # restricted to their own campus. RLS applies the same boundary server-side.
+    is_super_admin = getattr(g, "user_role", None) == "super_admin"
+    campus_id = None if is_super_admin else getattr(g, "campus_id", None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     existing = q.limit(1).execute()
@@ -941,7 +956,11 @@ def create_flash_sale():
     if not (0 < discount_pct < 1):
         return jsonify({"error": MSG.FLASH_DISCOUNT_RANGE_INVALID}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    # The sale inherits the reward's own campus. Super admins may open a sale on
+    # any reward (global or another campus's); campus admins are limited to their
+    # own campus's rewards (plus global ones, which carry no campus_id).
+    is_super_admin = getattr(g, "user_role", None) == "super_admin"
+    campus_id = None if is_super_admin else getattr(g, "campus_id", None)
     reward = db.table("rewards").select("id,campus_id").eq("id", reward_id).single().execute()
     if not reward:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404

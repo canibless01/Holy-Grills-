@@ -5,6 +5,7 @@ import { formatNaira } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import ImageUploader from './ImageUploader';
+import AdminScopeBadge from './AdminScopeBadge';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 
@@ -174,7 +175,10 @@ export default function AdminRewards() {
       </div>
       {tab === 'rewards' ? (
         <div className="space-y-2">
-          <div className="flex justify-end"><button onClick={() => setModal({ item: { ...BLANK, min_tier_id: tierList[0]?.id || null }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Reward</button></div>
+          <div className="flex justify-end items-center gap-2">
+            <AdminScopeBadge />
+            <button onClick={() => setModal({ item: { ...BLANK, min_tier_id: tierList[0]?.id || null }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Reward</button>
+          </div>
           {rewards.map((r) => {
             const fs = flashStatus(r);
             const badge = fs ? FLASH_BADGE[fs] : null;
@@ -237,6 +241,7 @@ export default function AdminRewards() {
       <Modal open={!!modal} onClose={() => { setModal(null); setSaveError(null); setSaveConflict(false); }} title={modal?.isNew ? 'New Reward' : 'Edit Reward'}>
         {modal && (
           <div className="space-y-3">
+            {modal.isNew && <AdminScopeBadge />}
             <Field label="Name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, isNew: modal.isNew })} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Stock"><TextInput type="number" value={modal.item.stock_quantity ?? ''} onChange={(e) => setModal({ item: { ...modal.item, stock_quantity: e.target.value }, isNew: modal.isNew })} /></Field>

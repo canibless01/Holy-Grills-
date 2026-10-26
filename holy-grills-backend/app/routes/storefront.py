@@ -11,7 +11,10 @@ from urllib.parse import urlsplit
 
 from flask import Blueprint, request, jsonify, g
 
-from app.middleware.auth import require_auth, require_role, header_campus_id, optional_auth     # D17-B04 (validate_promo now requires login)
+from app.middleware.auth import (  # D17-B04 (validate_promo now requires login)
+    require_auth, require_role, optional_auth,
+    resolve_admin_write_campus, GLOBAL_SCOPE_MARKERS,
+)
 from app.middleware.rate_limit import rate_limit                                 # D17-B16: newsletter abuse guard
 from app.constants import ADMIN_ROLES
 from app.db import get_db, get_user_client, SupabaseError
@@ -111,7 +114,7 @@ def _insert_cms(db, table, payload, data):
             return jsonify(_row(db.table(table).insert(payload))), 201
         except SupabaseError as exc:
             if exc.details.get("code") == "23505":
-                return jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
+                return _key_conflict_response(db, table, payload.get("key"))
             raise
     try:
         if not isinstance(data["request_id"], str):
@@ -129,7 +132,7 @@ def _insert_cms(db, table, payload, data):
     existing = db.table(table).select("*").eq("id", intent).single().execute()
     if not existing:
         # A different row owns the section key: this is not a changed replay.
-        return jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
+        return _key_conflict_response(db, table, payload.get("key"))
     def same(key, value):
         saved = existing.get(key)
         if key in ("starts_at", "ends_at") and saved and value:
@@ -285,21 +288,74 @@ def _to_minutes(v):
     return int(parts[0]) * 60 + int(parts[1])
 
 
+def _body_global_scope():
+    """True when the JSON body explicitly asks for the global ("All Campuses")
+    scope via `scope`/`campus_scope`. The primary channel is the X-Campus-Scope
+    header (set by apiClient on every admin write); the body field is accepted
+    for API clients that cannot set headers."""
+    if not request.is_json:
+        return False
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return False
+    marker = str(body.get("scope") or body.get("campus_scope") or "").strip().lower()
+    return marker in GLOBAL_SCOPE_MARKERS
+
+
 def _write_campus_id(explicit=None):
     """
     Campus a write is aimed at (D17-B05, A12).
-      non-super_admin : always their own campus (g.campus_id) — a requested value is ignored
-      super_admin     : explicit body/query campus_id, else their own campus (None = global row)
+      non-super_admin : always their own campus (g.campus_id) — every supplied
+                        value, header and scope marker are ignored.
+      super_admin     : explicit body/query campus_id wins; otherwise the admin
+                        header switcher is honoured exactly: X-Campus-ID selects
+                        that campus, X-Campus-Scope: global (or a body
+                        scope="global") means a global row (campus_id NULL).
+                        Only with no selector signal at all does the profile
+                        campus remain the fallback (legacy/API callers).
     """
-    if getattr(g, "user_role", None) == "super_admin":
-        wanted = str(explicit or request.args.get("campus_id") or "").strip()
-        if wanted:
-            return wanted
-        # No explicit campus: follow the admin header switcher (X-Campus-ID) so
-        # a banner/section created while "Futa" is selected belongs to Futa
-        # instead of silently becoming a global row.
-        return header_campus_id() or getattr(g, "campus_id", None)
-    return getattr(g, "campus_id", None)
+    return resolve_admin_write_campus(
+        explicit or request.args.get("campus_id"),
+        global_scope=_body_global_scope(),
+    )
+
+
+def _campus_scope_label(db, campus_id):
+    """Human label for a row's scope in an error message: 'Global' or the campus name."""
+    if not campus_id:
+        return "Global"
+    try:
+        row = db.table("campuses").select("name").eq("id", campus_id).single().execute()
+        if row and row.get("name"):
+            return row["name"]
+    except SupabaseError:
+        logger.warning("scope label: campus name lookup failed for %s", campus_id, exc_info=True)
+    return "another campus"
+
+
+def _key_conflict_response(db, table, key):
+    """409 for a duplicate key that names the scope already owning it, so an admin
+    never has to guess whether 'key already exists' means the global row or a
+    campus row. Falls back to the generic message when the owner can't be read."""
+    generic = jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
+    if not key:
+        return generic
+    try:
+        # The unique constraint is on (key, campus_id) — key alone locates the
+        # owning row regardless of its section_type.
+        owners = db.table(table).select("campus_id").eq("key", key).limit(1).execute() or []
+    except SupabaseError:
+        logger.warning("key-conflict scope lookup failed for %s/%s", table, key, exc_info=True)
+        return generic
+    if not owners:
+        return generic
+    owner_campus = owners[0].get("campus_id")
+    label = _campus_scope_label(db, owner_campus)
+    return jsonify({
+        "error": MSG.STOREFRONT_KEY_EXISTS_SCOPE.format(scope=label),
+        "campus_id": owner_campus,
+        "scope": "global" if not owner_campus else "campus",
+    }), 409
 
 
 def _scoped(rows, campus_id, key_fn=None):
@@ -628,7 +684,7 @@ def update_section(section_id):
         updated = _row(db.table("storefront_sections").eq("id", section_id).update(update))
     except SupabaseError as exc:
         if exc.details.get("code") == "23505":
-            return jsonify({"error": MSG.STOREFRONT_KEY_EXISTS}), 409
+            return _key_conflict_response(db, "storefront_sections", update.get("key"))
         raise
     if updated is None:
         return _write_denied()

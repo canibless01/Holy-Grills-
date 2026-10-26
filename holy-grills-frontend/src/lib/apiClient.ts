@@ -125,6 +125,47 @@ const PUBLIC_STOREFRONT_READS = new Set([
   '/storefront/config/public', '/storefront/feature-flags',
 ]);
 
+/**
+ * Campus scope headers derived from the same localStorage state the admin
+ * campus switcher writes (hg_admin_campus_id / hg_admin_scope_all).
+ *
+ *  - A selected campus is sent as X-Campus-ID on EVERY request (reads + writes).
+ *  - "All Campuses" has no campus id to send, and an absent X-Campus-ID is
+ *    ambiguous server-side (old client vs. an explicit global choice). On
+ *    writes we therefore add X-Campus-Scope: global, so the backend stores
+ *    campus_id NULL instead of falling back to the super admin's profile
+ *    campus. Super admins never send their profile campus as a scope.
+ *  - Campus admins keep sending their own profile campus; guests send the
+ *    campus-gate selection.
+ */
+function campusScopeHeaders(
+  storedToken: string | null,
+  method?: string,
+  opts: { publicRead?: boolean } = {},
+): Record<string, string> {
+  const role = storedToken ? localStore.getItem('hg_user_role') : null;
+  const isSuperAdmin = role === 'super_admin';
+  const adminAll = !!storedToken && localStore.getItem('hg_admin_scope_all') === '1';
+  const adminCampusId = storedToken && !adminAll ? localStore.getItem('hg_admin_campus_id') : null;
+  const userCampusId = storedToken && !isSuperAdmin ? localStore.getItem('hg_user_campus_id') : null;
+  const guestCampusId = !storedToken ? localStore.getItem('hg_campus_id') : null;
+  // Public reads strip the auth token, so the backend treats a logged-in
+  // super_admin as a guest. Without a campus header the response would only
+  // contain global rows; fall back to the gate/profile selection for reads.
+  const publicReadCampus = opts.publicRead && isSuperAdmin && !adminCampusId
+    ? (localStore.getItem('hg_campus_id') || localStore.getItem('hg_user_campus_id'))
+    : null;
+  const campusHeader = adminCampusId || userCampusId || guestCampusId || publicReadCampus;
+  const headers: Record<string, string> = {};
+  if (campusHeader) headers['X-Campus-ID'] = campusHeader;
+  const verb = (method || 'GET').toUpperCase();
+  const isWrite = verb !== 'GET' && verb !== 'HEAD';
+  if (storedToken && isSuperAdmin && adminAll && isWrite) {
+    headers['X-Campus-Scope'] = 'global';
+  }
+  return headers;
+}
+
 async function request(path: string, options: RequestOptions = {}) {
   const storedToken = getToken();
   const parsedPath = new URL(path, 'https://app.invalid');
@@ -142,36 +183,15 @@ async function request(path: string, options: RequestOptions = {}) {
   // Domain 0 — campus scope. Guests send X-Campus-ID from the campus gate
   // (hg_campus_id). Authenticated super-admins send X-Campus-ID from the
   // admin campus selector (hg_admin_campus_id) so they can view/manage a
-  // campus other than their own. Regular authenticated users get
+  // campus other than their own, and X-Campus-Scope: global on writes when
+  // "All Campuses" is selected. Regular authenticated users get
   // X-Campus-ID from their persisted profile campus (hg_user_campus_id,
   // saved by HolyGrillContext) — the storefront/kitchen-status endpoints
   // need campus context even for signed-in users, not just guests.
-  //
-  // A super_admin who has NOT picked a campus (or picked "All Campuses")
-  // sends NO header, because the server's default for that role is
-  // platform-wide. Sending their profile campus here would silently scope
-  // them to one campus — which is exactly the bug the switcher was supposed
-  // to fix, inverted.
-  const role = storedToken ? localStore.getItem('hg_user_role') : null;
-  const isSuperAdmin = role === 'super_admin';
-  const adminAll = storedToken && localStore.getItem('hg_admin_scope_all') === '1';
-  const adminCampusId = storedToken && !adminAll && localStore.getItem('hg_admin_campus_id');
-  const userCampusId = storedToken && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
-  const guestCampusId = !storedToken && localStore.getItem('hg_campus_id');
-  // Public reads strip the auth token, so the backend treats a logged-in
-  // super_admin as a guest.  Without a campus header the backend's campus
-  // filter resolves to NULL and only global rows are returned — campus-
-  // scoped sections (testimonials, how_its_made, etc.) vanish.  For public
-  // reads, fall back to the guest campus gate selection or the profile
-  // campus so the storefront is scoped identically to any guest visitor.
-  const publicReadCampus = publicRead && isSuperAdmin && !adminCampusId
-    ? (localStore.getItem('hg_campus_id') || localStore.getItem('hg_user_campus_id'))
-    : null;
-  const campusHeader = adminCampusId || userCampusId || guestCampusId || publicReadCampus;
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(campusHeader ? { 'X-Campus-ID': campusHeader } : {}),
+    ...campusScopeHeaders(storedToken, options.method, { publicRead }),
     ...options.headers,
   };
 
@@ -223,29 +243,12 @@ async function request(path: string, options: RequestOptions = {}) {
 async function requestRaw(path: string, options: RequestOptions = {}) {
   const token = getToken();
   const version = sessionVersion;
-  // Domain 0 — campus scope. Guests send X-Campus-ID from the campus gate
-  // (hg_campus_id). Authenticated super-admins send X-Campus-ID from the
-  // admin campus selector (hg_admin_campus_id) so they can view/manage a
-  // campus other than their own. Regular authenticated users get
-  // X-Campus-ID from their persisted profile campus (hg_user_campus_id,
-  // saved by HolyGrillContext) — the storefront/kitchen-status endpoints
-  // need campus context even for signed-in users, not just guests.
-  //
-  // A super_admin who has NOT picked a campus (or picked "All Campuses")
-  // sends NO header, because the server's default for that role is
-  // platform-wide. Sending their profile campus here would silently scope
-  // them to one campus — which is exactly the bug the switcher was supposed
-  // to fix, inverted.
-  const role = token ? localStore.getItem('hg_user_role') : null;
-  const isSuperAdmin = role === 'super_admin';
-  const adminAll = token && localStore.getItem('hg_admin_scope_all') === '1';
-  const adminCampusId = token && !adminAll && localStore.getItem('hg_admin_campus_id');
-  const userCampusId = token && !isSuperAdmin && localStore.getItem('hg_user_campus_id');
-  const guestCampusId = !token && localStore.getItem('hg_campus_id');
-  const campusHeader = adminCampusId || userCampusId || guestCampusId;
+  // Same campus contract as request(): selected campus -> X-Campus-ID on
+  // every call; super-admin "All Campuses" -> X-Campus-Scope: global on
+  // writes so CSV-triggered exports/mutations carry the explicit scope.
   const headers = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(campusHeader ? { 'X-Campus-ID': campusHeader } : {}),
+    ...campusScopeHeaders(token, options.method),
     ...options.headers,
   };
 

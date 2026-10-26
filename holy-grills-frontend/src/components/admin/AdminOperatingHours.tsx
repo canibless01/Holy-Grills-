@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Clock, CalendarOff, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Card, Field, TextInput, Toggle, Pill } from './AdminShared';
+import AdminScopeBadge, { useAdminWriteScope } from './AdminScopeBadge';
 import { toast } from '@/components/ui/use-toast';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
@@ -29,6 +30,7 @@ const rowToForm = (r) => ({
 });
 
 export default function AdminOperatingHours() {
+  const writeScope = useAdminWriteScope();
   const [schedule, setSchedule] = useState(null); // array indexed by weekday
   const [override, setOverride] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -65,7 +67,7 @@ export default function AdminOperatingHours() {
     }
     setLoaded(true);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [writeScope.targetCampusId]);
 
   const patchDay = (idx, field, value) => {
     setSchedule((arr) => arr.map((r, i) => (i === idx ? { ...(r || {}), [field]: value } : r)));
@@ -114,13 +116,19 @@ export default function AdminOperatingHours() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${isOpen ? 'tone-success' : 'tone-error'}`}>
           <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-success' : 'bg-destructive'} animate-pulse`} />
           {isOpen ? 'Open now' : 'Closed now'}
         </span>
+        <AdminScopeBadge />
         <span className="text-[11px] text-muted-foreground">Storefront schedule (Africa/Lagos). Updates apply immediately.</span>
       </div>
+      {writeScope.isGlobal && (
+        <div role="alert" className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-[11px] text-warn font-semibold">
+          {msg('FE_ADMIN_HOURS_GLOBAL_SCOPE_WARNING', 'Operating hours are per-campus. Pick a campus in the header switcher to edit hours — "All Campuses" has no schedule row to save to.')}
+        </div>
+      )}
 
       <div className="space-y-2">
         {DAYS.map((d) => {
@@ -143,7 +151,7 @@ export default function AdminOperatingHours() {
                     <input type="time" value={row?.close_time || form.close_time} onChange={(e) => patchDay(d.idx, 'close_time', e.target.value)} className="p-2 rounded-lg border border-border text-sm" />
                   </div>
                 )}
-                <button onClick={() => saveDay(d.key)} disabled={busy === d.key} className="ml-auto flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
+                <button onClick={() => saveDay(d.key)} disabled={busy === d.key || writeScope.isGlobal} title={writeScope.isGlobal ? msg('FE_ADMIN_HOURS_PICK_A_CAMPUS_TO_EDIT', 'Pick a campus in the header switcher to edit hours') : undefined} className="ml-auto flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
                   {busy === d.key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
                 </button>
               </div>
@@ -173,7 +181,7 @@ export default function AdminOperatingHours() {
           )}
           <Field label="Reason (optional)"><TextInput value={ovReason} onChange={(e) => setOvReason(e.target.value)} placeholder="Public holiday" /></Field>
         </div>
-        <button onClick={saveOverride} disabled={busy === 'override'} className="mt-3 flex items-center gap-1 px-4 py-2.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50">
+        <button onClick={saveOverride} disabled={busy === 'override' || writeScope.isGlobal} title={writeScope.isGlobal ? msg('FE_ADMIN_HOURS_PICK_A_CAMPUS_TO_EDIT', 'Pick a campus in the header switcher to edit hours') : undefined} className="mt-3 flex items-center gap-1 px-4 py-2.5 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50">
           {busy === 'override' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save override
         </button>
       </Card>

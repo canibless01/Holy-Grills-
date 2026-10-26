@@ -8,6 +8,7 @@ import { Save, Plus, Trash2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { Field, TextInput, Card, Toggle, Pill, Modal } from './AdminShared';
 import ImageUploader from './ImageUploader';
+import AdminScopeBadge from './AdminScopeBadge';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
@@ -166,13 +167,16 @@ export default function AdminBanners({ placement = 'home' }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-2 flex-wrap">
         <p className="text-[11px] text-muted-foreground">
           {msg('FE_CMS_CAROUSEL_PLACEMENT', '{placement} carousels — swipeable on the live site.', { placement })}
         </p>
-        <button onClick={() => setAddOpen(true)} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold">
-          <Plus className="w-4 h-4" /> {msg('FE_CMS_ADD_BANNER', 'Add banner')}
-        </button>
+        <div className="flex gap-2 items-center">
+          <AdminScopeBadge />
+          <button onClick={() => setAddOpen(true)} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold">
+            <Plus className="w-4 h-4" /> {msg('FE_CMS_ADD_BANNER', 'Add banner')}
+          </button>
+        </div>
       </div>
 
       {banners.length === 0 ? (
@@ -235,6 +239,7 @@ export default function AdminBanners({ placement = 'home' }) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={msg('FE_CMS_ADD_PLACEMENT_BANNER', 'Add {placement} banner', { placement })}>
         <div className="space-y-3">
+          <AdminScopeBadge />
           {compactPlacement && <><p className="text-xs text-muted-foreground">{msg('FE_COMPACT_BANNER_HELP', 'Use a complete 4:1 design (1600 × 400 px), or an icon with a title, short description and optional action. Each slide rotates independently.')}</p><BannerSpecNote rows={[{ spec: bannerPlacementSpecId(placement) }]} /><CompactModeSelect value={draft.display_mode} onChange={display_mode => setDraft({ ...draft, display_mode })} /></>}
           {(!compactPlacement || draft.display_mode === 'text') && <Field label={compactPlacement ? msg('FE_CMS_SLIDE_TITLE', 'Slide title') : msg('FE_CMS_BANNER_OVERLAY_TITLE_REQUIRED', 'Overlay title (required)')}><TextInput value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder={msg('FE_CMS_BANNER_FLAME_GRILLED_CAMPUS_FRESH', 'Flame-Grilled, Campus-Fresh')} /></Field>}
           <Field label={compactPlacement && draft.display_mode === 'text' ? msg('FE_SF_ICON_OPTIONAL', 'Icon image (optional)') : msg('FE_CMS_BANNER_MAIN_IMAGE_REQUIRED', 'Main image (required)')}>
