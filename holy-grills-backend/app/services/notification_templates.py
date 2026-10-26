@@ -32,8 +32,11 @@ NON_CRITICAL_FALLBACKS: dict = {
     "streak_count":   "your streak",
     "gift_sender":    "someone",
     "batch_id":       "your batch",
-    "platform":       "social media",
+    "platform":       "Holy Grills",
+    "brand":          "Holy Grills",
     "currency":       os.environ.get("HP_CURRENCY_NAME", "HP"),
+    "welcome_hp":     os.environ.get("WELCOME_BONUS_HP", "50"),
+    "free_side_credits": "1",
     "referral_count": "your referrals",
     # Additional MSG-placeholder non-critical fallbacks
     "from_tier":      "your previous tier",
@@ -179,7 +182,7 @@ NOTIFICATION_TEMPLATES: dict = {
     # ── Non-personalized: Auth/Security ───────────────────────────────────────
     "welcome_email": {
         "title":        MSG.NOTIF_WELCOME_TITLE,
-        "body":         MSG.NOTIF_WELCOME_BODY,
+        "body":         MSG.NOTIF_WELCOME_BODY,  # Will be overridden dynamically based on bonuses
         "include_name": False,
         "channels":     None,
     },
@@ -1252,6 +1255,10 @@ def render_notification_template(
     body_tmpl: str = tmpl["body"]
     include_name: bool = tmpl.get("include_name", True)
     channels_override = tmpl.get("channels")  # None or explicit list
+    
+    # Special handling for welcome_email: select body variant based on bonuses
+    if notif_type == "welcome_email" and "welcome_body" in template_data:
+        body_tmpl = template_data["welcome_body"]
 
     # Collect all placeholder keys referenced in title + body
     all_keys = _placeholders(title_tmpl) | _placeholders(body_tmpl)

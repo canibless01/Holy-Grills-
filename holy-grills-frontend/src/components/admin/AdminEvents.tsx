@@ -23,12 +23,14 @@ export default function AdminEvents() {
   const [tiersModal, setTiersModal] = useState(null);
   const [salesModal, setSalesModal] = useState(null);
   const [emailModal, setEmailModal] = useState(null);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   const load = async () => { setLoading(true); setLoadError(false); try { setEvents(await mockApi.admin.getEvents()); } catch { setLoadError(true); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
 
   const save = async () => {
+    setBusy('save');
     const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_reward), max_attendees: Number(modal.item.max_attendees), capacity: Number(modal.item.max_attendees), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
     try {
       let savedEvent = null;
@@ -36,6 +38,7 @@ export default function AdminEvents() {
       else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
       setModal(null); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
+    setBusy(null);
   };
 
   const togglePub = async (id) => {
@@ -71,6 +74,7 @@ export default function AdminEvents() {
   };
 
   const exportRegs = async (eventId) => {
+    setBusy('export');
     try {
       // TODO(ts): the export endpoint's envelope varies (rows/data/registrants/array).
        
@@ -86,11 +90,18 @@ export default function AdminEvents() {
       URL.revokeObjectURL(url);
       toast({ title: msg('FE_ADMIN_EVENTS_CSV_EXPORTED', '✅ CSV exported'), description: `${rows.length} registrants downloaded.` });
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_EXPORT_FAILED', 'Export failed'), description: e.message, variant: 'destructive' }); }
+    setBusy(null);
   };
 
   const emailToHost = async (eventId, hostEmail) => {
-    try { await mockApi.admin.emailEventRegistrationsToHost(eventId, { host_email: hostEmail }); toast({ title: msg('FE_ADMIN_EVENTS_SENT_TO_HOST', '✅ Sent to host'), description: `Registrant list emailed to ${hostEmail}.` }); setEmailModal(null); }
+    setSendingEmail(true);
+    try {
+      await mockApi.admin.emailEventRegistrationsToHost(eventId, { host_email: hostEmail });
+      toast({ title: msg('FE_ADMIN_EVENTS_SENT_TO_HOST', '✅ Sent to host'), description: `Registrant list emailed to ${hostEmail}.` });
+      setEmailModal(null);
+    }
     catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SEND', 'Failed to send'), description: e.message, variant: 'destructive' }); }
+    setSendingEmail(false);
   };
 
   if (loading) return <StaffPanelSkeleton />;
@@ -157,7 +168,9 @@ export default function AdminEvents() {
               <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_paid} onChange={(v) => setModal({ item: { ...modal.item, is_paid: v }, isNew: modal.isNew })} /><span className="text-sm text-foreground font-semibold">Paid Event</span></div>
             </div>
             <p className="text-xs text-muted-foreground">Use the Ticket Tiers button on each event to add multiple ticket sizes (Regular, VIP, etc.)</p>
-            <button onClick={save} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">{modal.isNew ? 'Create Event' : 'Save Changes'}</button>
+            <button onClick={save} disabled={busy === 'save'} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+              {busy === 'save' ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Saving...</> : (modal.isNew ? 'Create Event' : 'Save Changes')}
+            </button>
           </div>
         )}
       </Modal>
@@ -166,7 +179,7 @@ export default function AdminEvents() {
         {regs && (
           <div className="space-y-3">
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => exportRegs(regs.eventId)} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-secondary text-foreground text-xs font-bold"><Download className="w-3.5 h-3.5" /> Export CSV</button>
+              <button onClick={() => exportRegs(regs.eventId)} disabled={busy === 'export'} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-secondary text-foreground text-xs font-bold disabled:opacity-50"><Download className="w-3.5 h-3.5" /> {busy === 'export' ? 'Exporting...' : 'Export CSV'}</button>
               <button onClick={() => setEmailModal({ eventId: regs.eventId, email: '' })} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Mail className="w-3.5 h-3.5" /> Send to Host</button>
             </div>
             <div className="flex gap-2">
@@ -242,7 +255,9 @@ export default function AdminEvents() {
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">The full registrant list (names, ticket IDs, tiers, check-in status) will be emailed to the host so they can manage entry at the venue.</p>
             <Field label="Host Email"><TextInput type="email" value={emailModal.email} onChange={(e) => setEmailModal({ ...emailModal, email: e.target.value })} placeholder="host@example.com" /></Field>
-            <button onClick={() => emailToHost(emailModal.eventId, emailModal.email)} disabled={!emailModal.email} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">Send Registrant List</button>
+            <button onClick={() => emailToHost(emailModal.eventId, emailModal.email)} disabled={!emailModal.email || sendingEmail} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+              {sendingEmail ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Sending...</> : 'Send Registrant List'}
+            </button>
           </div>
         )}
       </Modal>

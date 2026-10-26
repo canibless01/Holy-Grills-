@@ -24,12 +24,12 @@
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
     /* ── BRAND — warm food palette ── */
-    /* Primary Red #E70E0E */
-    --primary:             0 88% 48%;
+    /* Primary Red #E01616 */
+    --primary:             0 82% 48%;
     --primary-foreground:  0 0% 100%;
-    --primary-hover:       0 88% 42%;
-    --primary-50:          0 88% 48%;
-    --primary-100:         0 88% 48%;
+    --primary-hover:       0 82% 42%;
+    --primary-50:          0 82% 48%;
+    --primary-100:         0 82% 48%;
     --primary-200:         0 0% 100%;
 
     /* Accent Yellow #F2B84B */
@@ -141,9 +141,9 @@
     --card-foreground:     38 56% 95%;
     --popover:             18 80% 16%;
     --popover-foreground:  38 56% 95%;
-    --primary:             0 88% 48%;
+    --primary:             0 82% 48%;
     --primary-foreground:  0 0% 100%;
-    --primary-hover:       0 88% 42%;
+    --primary-hover:       0 82% 42%;
     --secondary:           18 80% 18%;
     --secondary-foreground: 38 56% 95%;
     --muted:               18 80% 18%;

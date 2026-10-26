@@ -102,7 +102,7 @@ Copy `.env.example` to `.env` and fill in every **REQUIRED** value before starti
 | `JWT_REFRESH_TOKEN_EXPIRES` | `2592000` | Refresh token TTL in seconds (30 days) |
 | `JWT_REFRESH_WINDOW_MINUTES` | `5` | Silent-rotation window — token is refreshed when fewer than this many minutes remain before expiry |
 | `PAYSTACK_PREFERRED_BANK` | `wema-bank` | Bank for dedicated virtual accounts |
-| `EMAIL_FROM` | `noreply@holygrills.ng` | Sender email address |
+| `EMAIL_FROM` | `noreply@holygrills.online` | Sender email address |
 | `EMAIL_FROM_NAME` | `Holy Grills` | Sender display name |
 | `HP_PER_NAIRA_FOOD` | `0.1` | HP earned per ₦1 spent on food (1 HP / ₦10) |
 | `HP_LIABILITY_VALUE` | `0.185` | ₦ value of 1 HP (used for HP-discount maths) |

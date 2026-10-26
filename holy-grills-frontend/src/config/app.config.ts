@@ -22,13 +22,14 @@ export const APP_CONFIG = {
   // canonical URLs, og:url and the JSON-LD `url`.
   // Canonical/origin for og:url, canonical links and JSON-LD. Must match the
   // host actually serving the site, or search results point at a dead domain.
-  domain: import.meta.env.VITE_SITE_URL || 'https://holy-grills.vercel.app',
+  // Production MUST set VITE_SITE_URL — no silent fallback to a retired domain.
+  domain: import.meta.env.VITE_SITE_URL || (import.meta.env.DEV ? 'http://localhost:5173' : ''),
 
   university: 'FUTA',
   currency: { code: 'NGN', symbol: '₦', locale: 'en-NG' },
 
   // Brand colors — mirror the `flame` scale in tailwind.config.js / src/index.css.
-  themeColor: '#FF4E2D',
+  themeColor: '#E01616',
   backgroundColor: '#FFF5F0',
   accentColor: '#FFB400',
 

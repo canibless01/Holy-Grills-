@@ -6,6 +6,7 @@ import BottomNav from './BottomNav';
 import Footer from './Footer';
 import { useCampus } from '@/lib/campusContext';
 import MascotCelebrationOverlay from './mascot/MascotCelebrationOverlay';
+import PushSoftPrompt from './notifications/PushSoftPrompt';
 
 export default function Layout() {
   useMessages();
@@ -23,6 +24,7 @@ export default function Layout() {
       <BottomNav />
       <MascotCelebrationOverlay />
       <PromoFlyerPopup />
+      <PushSoftPrompt />
     </div>
   );
 }

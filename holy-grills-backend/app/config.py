@@ -41,7 +41,20 @@ class Config:
 
     # Outbound links (password reset, verification) are built from this, so a
     # stale or unset value mails users a link that does not resolve.
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://holy-grills.vercel.app")
+    # Production MUST set FRONTEND_URL — no silent fallback to a retired domain.
+    _frontend_url_default = ""
+    if os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("NODE_ENV") == "production":
+        _raw = os.environ.get("FRONTEND_URL", "")
+        if not _raw.strip():
+            raise RuntimeError(
+                "FRONTEND_URL is not set. Production deployments must configure it "
+                "(e.g. https://holygrills.online). Password-reset emails, Paystack "
+                "callbacks, referral links, and newsletter unsubscribe URLs all "
+                "depend on this value. Set it on the host (Render → Environment) "
+                "and restart."
+            )
+        _frontend_url_default = _raw.strip()
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", _frontend_url_default)
     AUTH_RESET_REDIRECT_PATH = os.environ.get("AUTH_RESET_REDIRECT_PATH", "/reset-password")
     AUTH_VERIFY_REDIRECT_PATH = os.environ.get("AUTH_VERIFY_REDIRECT_PATH", "/login")
     APP_NAME = os.environ.get("APP_NAME", "Holy Grills")
@@ -64,9 +77,8 @@ class Config:
     # them is ignored — pinning the list is the point.
     #
     DEFAULT_CORS_ORIGINS = (
-        "https://holy-grills.vercel.app",
-        "https://holygrill.app",
-        "https://www.holygrill.app",
+        "https://holygrills.online",
+        "https://www.holygrills.online",
         # Local dev: vite dev server, vite preview, the static smoke server.
         "http://localhost:5173", "http://127.0.0.1:5173",
         "http://localhost:4173", "http://127.0.0.1:4173",
@@ -111,7 +123,7 @@ class Config:
 
     # Email — Resend (primary); OneSignal kept for push-only
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-    EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
+    EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@holygrills.online")
     EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
 
     # Push — OneSignal
