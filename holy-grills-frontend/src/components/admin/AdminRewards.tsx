@@ -12,9 +12,9 @@ import { msg } from '@/lib/messages';
 // POST /rewards/admin/flash-sales. The reward editor only owns the reward itself.
 const BLANK = {
   name: '',
-  reward_type: 'free_item',
+  reward_type: 'food',
   stock_quantity: 50,
-  min_tier_id: 'tier_ember',
+  min_tier_id: null,
   fulfillment_type: 'menu_item',
   image_url: '',
   // Stage 16 — HP Economics inputs. The server computes reward_value, hp_cost
@@ -31,22 +31,11 @@ const BLANK = {
 };
 
 const REWARD_TYPES = [
-  { value: 'voucher', label: 'Voucher' },
-  { value: 'free_item', label: 'Free Item' },
-  { value: 'discount', label: 'Discount' },
-  { value: 'experience', label: 'Experience' },
-  { value: 'product', label: 'Product' },
+  { value: 'food', label: 'Food' },
+  { value: 'merch', label: 'Merchandise' },
+  { value: 'event', label: 'Event' },
 ];
-
-// Stage 16 — HP Economics. Each reward type maps to a cost group; the server
-// computes reward_value / hp_cost / hp_liability from the group's inputs.
-const ECONOMICS_GROUP = {
-  free_item: 'food',
-  discount: 'food',
-  product: 'merch',
-  voucher: 'merch',
-  experience: 'event',
-};
+const ECONOMICS_GROUP = { food: 'food', merch: 'merch' };
 const ECONOMICS_FIELDS = {
   food: [
     { key: 'food_cost', label: 'Food cost (₦)' },
@@ -67,34 +56,14 @@ const ECONOMICS_FIELDS = {
   ],
 };
 
-// Live read-only summary — recalculates as the admin types. Falls back to the
-// server-computed values for legacy rewards whose cost inputs are still empty.
-const economicsSummary = (item) => {
-  const group = ECONOMICS_GROUP[item.reward_type];
-  if (!group) return null;
-  const n = (k) => Number(item[k]) || 0;
-  const hasInputs = ECONOMICS_FIELDS[group].some((f) => item[f.key] !== '' && item[f.key] != null);
-  const stock = Number(item.stock_quantity) || 0;
-  if (group === 'food') {
-    const margin = Math.max(0, n('menu_price') - n('food_cost') - n('packaging_cost'));
-    const hp = Math.round(margin * (n('margin_share_pct') / 100));
-    return { group, hasInputs, reward_value: n('menu_price'), hp_cost: hp, hp_liability: hp * stock, blocked: false };
+const economicsPayload = (item) => {
+  const group = ECONOMICS_GROUP[item?.reward_type];
+  const body: Record<string, number | string | null> = { reward_type: item.reward_type };
+  for (const field of group ? ECONOMICS_FIELDS[group] : []) {
+    const value = item[field.key];
+    body[field.key] = value === '' || value == null ? null : Number(value);
   }
-  if (group === 'merch') {
-    const margin = Math.max(0, n('perceived_value') - n('production_cost') - n('packaging_cost'));
-    const hp = Math.round(margin * (n('margin_share_pct') / 100));
-    return { group, hasInputs, reward_value: n('perceived_value'), hp_cost: hp, hp_liability: hp * stock, blocked: false };
-  }
-  const maxDiscount = Math.round(n('ticket_face_value') * (n('max_discount_pct') / 100));
-  const hp = Math.min(maxDiscount, n('available_margin'));
-  return {
-    group,
-    hasInputs,
-    reward_value: n('ticket_face_value'),
-    hp_cost: hp,
-    hp_liability: hp * stock,
-    blocked: n('available_margin') > 0 && maxDiscount > n('available_margin'),
-  };
+  return body;
 };
 
 // Flash status from the response the backend actually returns. _with_flash_status
@@ -120,15 +89,39 @@ export default function AdminRewards() {
   const [tab, setTab] = useState('rewards');
   const [rewards, setRewards] = useState([]);
   const [redemptions, setRed] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [modal, setModal] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [saveConflict, setSaveConflict] = useState(false);
+  const [pricePreview, setPricePreview] = useState<any>(null);
+  const [previewError, setPreviewError] = useState('');
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const savedReward = modal?.item.id ? rewards.find(reward => reward.id === modal.item.id) : null;
+  const pricingChanged = !!modal && (modal.isNew || JSON.stringify(economicsPayload(modal.item)) !== JSON.stringify(economicsPayload(savedReward || {})));
+  const priceKey = modal && pricingChanged && ECONOMICS_GROUP[modal.item.reward_type] ? JSON.stringify(economicsPayload(modal.item)) : '';
+  useEffect(() => {
+    let active = true;
+    setPricePreview(null); setPreviewError(''); setPreviewBusy(!!priceKey && priceKey !== '{}');
+    if (!priceKey || priceKey === '{}') return;
+    const timer = setTimeout(() => {
+      mockApi.admin.previewRewardEconomics(JSON.parse(priceKey)).then(result => { if (active) setPricePreview({ ...result, key: priceKey }); })
+        .catch(error => { if (active) setPreviewError(error.message); })
+        .finally(() => { if (active) setPreviewBusy(false); });
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [priceKey]);
   const [hpTiers, setHpTiers] = useState([]);
   const [flashModal, setFlashModal] = useState(null);
   const [actionModal, setActionModal] = useState(null);
 
   const load = async () => {
-    setRewards(await mockApi.admin.getRewards());
-    setRed(await mockApi.admin.getRedemptions());
+    setLoadError('');
+    try {
+      const [items, receipts] = await Promise.all([mockApi.admin.getRewards(), mockApi.admin.getRedemptions()]);
+      setRewards(items); setRed(receipts);
+    } catch (error) { setLoadError(error.message || msg('FE_REWARD_PRICE_LOAD_FAILED', 'Rewards could not be loaded.')); }
+    finally { setLoading(false); }
   };
   useEffect(() => {
     load();
@@ -138,20 +131,18 @@ export default function AdminRewards() {
   const tierList = hpTiers;
 
   const save = async () => {
-    setSaveError(null);
+    setSaveError(null); setSaveConflict(false);
     // hp_cost / reward_value / hp_liability are server-computed read-only
     // outputs — never submitted from the form.
-    const { hp_cost, reward_value, hp_liability, ...item } = { ...modal.item };
-    const body = {
-      ...item,
-      stock_quantity: Number(item.stock_quantity),
+    const item = modal.item;
+    const body: Record<string, any> = {
+      name: item.name, image_url: item.image_url || null,
+      reward_type: item.reward_type, min_tier_id: item.min_tier_id || null,
+      stock_quantity: item.stock_quantity === '' || item.stock_quantity == null ? null : Number(item.stock_quantity),
       fulfillment_type: item.fulfillment_type || 'menu_item',
+      ...economicsPayload(item),
+      ...(!modal.isNew && item.updated_at ? { expected_updated_at: item.updated_at } : {}),
     };
-    // Stage 16 — send the type-aware cost inputs as numbers.
-    const group = ECONOMICS_GROUP[item.reward_type];
-    if (group) for (const f of ECONOMICS_FIELDS[group]) {
-      if (item[f.key] !== '' && item[f.key] != null) body[f.key] = Number(item[f.key]);
-    }
     try {
       if (modal.isNew) await mockApi.admin.createReward(body);
       else await mockApi.admin.updateReward(modal.item.id, body);
@@ -160,27 +151,19 @@ export default function AdminRewards() {
       toast({ title: modal.isNew ? 'Reward created' : 'Reward updated' });
     } catch (e) {
       // Inline — the backend owns the message (e.g. economics validation).
-      setSaveError(e.message);
+      setSaveError(e.message); setSaveConflict(e.status === 409);
     }
   };
   const remove = async (id) => { await mockApi.admin.deleteReward(id); await load(); };
 
-  if (!rewards.length && !redemptions.length) return <StaffPanelSkeleton />;
+  if (loading) return <StaffPanelSkeleton />;
+  if (loadError) return <div role="alert" className="rounded-2xl border border-border p-4 text-sm">{loadError}<button onClick={load} className="ml-3 text-primary underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button></div>;
 
   // Stage 16 — active economics group + live summary for the open editor.
   const econGroup = modal ? ECONOMICS_GROUP[modal.item.reward_type] : null;
   const econFields = econGroup ? ECONOMICS_FIELDS[econGroup] : [];
-  const econRaw = modal ? economicsSummary(modal.item) : null;
-  const econSummary = econRaw
-    ? {
-        ...econRaw,
-        // Legacy rewards without cost inputs yet keep showing the server's values.
-        reward_value: !econRaw.hasInputs && modal.item.reward_value != null ? modal.item.reward_value : econRaw.reward_value,
-        hp_cost: !econRaw.hasInputs && modal.item.hp_cost != null ? modal.item.hp_cost : econRaw.hp_cost,
-        hp_liability: !econRaw.hasInputs && modal.item.hp_liability != null ? modal.item.hp_liability : econRaw.hp_liability,
-        blocked: econRaw.hasInputs ? econRaw.blocked : false,
-      }
-    : null;
+  const econSummary = pricePreview?.key === priceKey && pricePreview?.complete ? pricePreview : null;
+  const shownPrice = econSummary?.hp_cost ?? (pricingChanged && !!econGroup ? null : modal?.item.hp_cost ?? null);
 
   return (
     <div className="space-y-4">
@@ -191,7 +174,7 @@ export default function AdminRewards() {
       </div>
       {tab === 'rewards' ? (
         <div className="space-y-2">
-          <div className="flex justify-end"><button onClick={() => setModal({ item: { ...BLANK }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Reward</button></div>
+          <div className="flex justify-end"><button onClick={() => setModal({ item: { ...BLANK, min_tier_id: tierList[0]?.id || null }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Reward</button></div>
           {rewards.map((r) => {
             const fs = flashStatus(r);
             const badge = fs ? FLASH_BADGE[fs] : null;
@@ -217,7 +200,7 @@ export default function AdminRewards() {
                   )}
                 </div>
                 <button onClick={() => setFlashModal(r)} title="Open flash sale" className="p-2 rounded-lg hover:bg-primary/10"><Zap className="w-4 h-4 text-primary" /></button>
-                <button onClick={() => setModal({ item: { ...r }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+                <button onClick={() => setModal({ item: { ...r }, isNew: false })} aria-label={msg('FE_REWARD_EDIT_ACTION', 'Edit reward')} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
                 <button onClick={() => remove(r.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
               </div>
             );
@@ -251,18 +234,18 @@ export default function AdminRewards() {
           })}
         </div>
       )}
-      <Modal open={!!modal} onClose={() => { setModal(null); setSaveError(null); }} title={modal?.isNew ? 'New Reward' : 'Edit Reward'}>
+      <Modal open={!!modal} onClose={() => { setModal(null); setSaveError(null); setSaveConflict(false); }} title={modal?.isNew ? 'New Reward' : 'Edit Reward'}>
         {modal && (
           <div className="space-y-3">
             <Field label="Name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, isNew: modal.isNew })} /></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Stock"><TextInput type="number" value={modal.item.stock_quantity} onChange={(e) => setModal({ item: { ...modal.item, stock_quantity: e.target.value }, isNew: modal.isNew })} /></Field>
+              <Field label="Stock"><TextInput type="number" value={modal.item.stock_quantity ?? ''} onChange={(e) => setModal({ item: { ...modal.item, stock_quantity: e.target.value }, isNew: modal.isNew })} /></Field>
               <Field label="HP price" hint="Server-computed from the economics inputs — read-only">
-                <div className="mt-1 p-2.5 rounded-xl border border-border bg-muted text-sm font-bold text-foreground">{econSummary ? `${econSummary.hp_cost} HP` : '—'}</div>
+                <div className="mt-1 p-2.5 rounded-xl border border-border bg-muted text-sm font-bold text-foreground">{previewBusy ? msg('FE_REWARD_PRICE_LOADING', 'Calculating…') : shownPrice == null ? msg('FE_REWARD_PRICE_AFTER_INPUTS', 'Enter cost inputs to preview') : `${shownPrice} HP`}</div>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Type"><select value={modal.item.reward_type} onChange={(e) => setModal({ item: { ...modal.item, reward_type: e.target.value }, isNew: modal.isNew })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">{REWARD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></Field>
+              <Field label="Type"><select value={modal.item.reward_type} onChange={(e) => setModal({ item: { ...modal.item, reward_type: e.target.value }, isNew: modal.isNew })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">{REWARD_TYPES.filter(t => t.value !== 'event' || modal.item.reward_type === 'event').map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></Field>
               <Field label="Min Tier"><select value={modal.item.min_tier_id} onChange={(e) => setModal({ item: { ...modal.item, min_tier_id: e.target.value }, isNew: modal.isNew })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">{tierList.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
             </div>
 
@@ -283,10 +266,10 @@ export default function AdminRewards() {
                 <div className="flex items-center gap-2"><Flame className="w-4 h-4 text-primary" /><span className="text-sm font-bold text-foreground">HP Economics ({econGroup})</span></div>
                 <div className={`grid gap-3 ${econFields.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                   {econFields.map((f) => (
-                    <Field key={f.key} label={f.label}><TextInput type="number" value={modal.item[f.key] ?? ''} onChange={(e) => setModal({ item: { ...modal.item, [f.key]: e.target.value }, isNew: modal.isNew })} /></Field>
+                    <Field key={f.key} label={f.label}><TextInput type="number" value={modal.item[f.key] == null || modal.item[f.key] === '' ? '' : f.key === 'margin_share_pct' ? Number(modal.item[f.key]) * 100 : modal.item[f.key]} onChange={(e) => setModal({ item: { ...modal.item, [f.key]: e.target.value === '' ? '' : f.key === 'margin_share_pct' ? Number(e.target.value) / 100 : e.target.value }, isNew: modal.isNew })} /></Field>
                   ))}
                 </div>
-                <div className="rounded-xl bg-card border border-border p-3">
+                {econSummary && <div className="rounded-xl bg-card border border-border p-3">
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div>
                       <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Reward value</div>
@@ -297,22 +280,22 @@ export default function AdminRewards() {
                       <div className="font-heading font-extrabold text-sm text-primary">{econSummary.hp_cost} HP</div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Liability</div>
-                      <div className="font-heading font-extrabold text-sm text-foreground">{econSummary.hp_liability} HP</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{msg('FE_REWARD_PRICE_LIABILITY', 'Liability per reward')}</div>
+                      <div className="font-heading font-extrabold text-sm text-foreground">{formatNaira(econSummary.hp_liability)}</div>
                     </div>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-2 text-center">Read-only — computed live from the cost inputs; the server confirms final values on publish.</p>
-                </div>
-                {econSummary.blocked && (
-                  <p className="text-[11px] font-bold text-destructive">⚠ Available margin does not cover max HP discount — publish blocked</p>
-                )}
+                  <p className="text-[10px] text-muted-foreground mt-2 text-center">{msg('FE_REWARD_PRICE_NOTE', 'Calculated by the backend. Saving confirms the final price.')}</p>
+                </div>}
+                {previewError && <p role="alert" className="text-xs text-destructive">{previewError}</p>}
+
               </div>
             )}
 
             <Field label="Image"><ImageUploader value={modal.item.image_url} onChange={(url) => setModal({ item: { ...modal.item, image_url: url }, isNew: modal.isNew })} folder="rewards" /></Field>
 
+            {saveConflict && <button type="button" onClick={() => { setModal(null); setSaveConflict(false); setSaveError(null); void load(); }} className="text-primary underline text-sm font-bold">{msg('FE_REWARD_RELOAD', 'Reload rewards')}</button>}
             {saveError && <p className="text-[11px] font-bold text-destructive text-center">⚠ {saveError}</p>}
-            <button onClick={save} disabled={!!econSummary?.blocked} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">{modal.isNew ? 'Create Reward' : 'Save Changes'}</button>
+            <button onClick={save} disabled={previewBusy || !!previewError || (pricingChanged && !!econGroup && !econSummary)} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">{modal.isNew ? 'Create Reward' : 'Save Changes'}</button>
           </div>
         )}
       </Modal>

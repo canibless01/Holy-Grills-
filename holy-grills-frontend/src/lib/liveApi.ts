@@ -1052,6 +1052,7 @@ const admin = {
 
   // --- Rewards (verified: /rewards, /rewards/admin/redemptions) ---
   async getRewards() { return unwrap(await apiClient.get('/rewards'), 'rewards'); },
+  async previewRewardEconomics(body) { return apiClient.post('/rewards/admin/economics-preview', body); },
   async createReward(body) { return apiClient.post('/rewards', body); },
   async updateReward(id, body) { return apiClient.patch(`/rewards/${id}`, body); },
   async deleteReward(id) { return apiClient.delete(`/rewards/${id}`); },
