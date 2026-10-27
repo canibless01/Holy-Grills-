@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Pencil, BarChart3, Power, Tag, AlertCircle, Infinity as InfinityIcon } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -9,6 +9,7 @@ import { msg } from '@/lib/messages';
 import { useCampus } from '@/lib/campusContext';
 
 const num = (v) => (v == null || isNaN(Number(v)) ? 0 : Number(v));
+const localPromoTime = (value) => value ? new Date(value).toLocaleString('sv-SE', { timeZone: 'Africa/Lagos' }).replace(' ', 'T').slice(0, 16) : '';
 
 // Promo Codes — Domain 16. GET/POST /admin/promo-codes · PATCH /:id ·
 // GET /:id/uses. Cards render the real promo_codes columns (used_count,
@@ -17,22 +18,33 @@ const num = (v) => (v == null || isNaN(Number(v)) ? 0 : Number(v));
 // created_at). Server validation errors ("discount_value must not exceed 100
 // for a percentage discount", "is_active must be a boolean") surface as toasts.
 export default function AdminPromos() {
+  const { campusId, adminCampusId } = useCampus();
+  const generation = useRef(0);
   const [promos, setPromos] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
   const [usesFor, setUsesFor] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const requestId = ++generation.current;
+    setLoadError(false);
     try {
-      setPromos(await liveApi.admin.getPromoCodes());
+      const rows = await liveApi.admin.getPromoCodes();
+      if (requestId === generation.current) setPromos(rows);
     } catch (e) {
+      if (requestId !== generation.current) return;
       toast({ title: msg('FE_ADMIN_PROMOS_COULDN_T_LOAD_PROMO_CODES', "Couldn't load promo codes"), description: e.message, variant: 'destructive' });
-      setPromos([]);
+      setLoadError(true);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setPromos(null); setShowCreate(false); setEditing(null); setUsesFor(null);
+    load();
+    return () => { generation.current += 1; };
+  }, [load, campusId, adminCampusId]);
 
   // PATCH is_active directly — no extra list fetch to discover the current state.
   const toggle = async (p) => {
@@ -46,6 +58,8 @@ export default function AdminPromos() {
     }
     setBusy(null);
   };
+
+  if (loadError) return <div className="space-y-3 py-10 text-center"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   if (promos == null) {
     return (
@@ -184,8 +198,8 @@ function PromoModal({
     min_order_amount: promo.min_order_amount ?? 0,
     max_uses: promo.max_uses ?? '',
     max_uses_per_user: promo.max_uses_per_user ?? '',
-    starts_at: promo.starts_at ? String(promo.starts_at).slice(0, 10) : '',
-    ends_at: promo.ends_at ? String(promo.ends_at).slice(0, 10) : '',
+    starts_at: localPromoTime(promo.starts_at),
+    ends_at: localPromoTime(promo.ends_at),
     scope: promo.scope || 'cart',
     applicable_item_ids: Array.isArray(promo.applicable_item_ids) ? promo.applicable_item_ids : [],
   } : {
@@ -227,20 +241,20 @@ function PromoModal({
       // (scope, applicable_item_ids, applicable_category_ids). Only send the
       // ID arrays when the scope actually targets them, so 'cart' stays clean.
       const payload = {
-        code: form.code.trim().toUpperCase(),
+        ...(!promo ? { code: form.code.trim().toUpperCase() } : {}),
         description: form.description.trim() || null,
         discount_type: form.discount_type,
         discount_value: dv,
         min_order_amount: Number(form.min_order_amount) || 0,
         max_uses: form.max_uses === '' ? null : Number(form.max_uses),
         max_uses_per_user: form.max_uses_per_user === '' ? null : Number(form.max_uses_per_user),
-        starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
-        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
+        starts_at: promo && form.starts_at === localPromoTime(promo.starts_at) ? promo.starts_at : form.starts_at ? new Date(`${form.starts_at}+01:00`).toISOString() : null,
+        ends_at: promo && form.ends_at === localPromoTime(promo.ends_at) ? promo.ends_at : form.ends_at ? new Date(`${form.ends_at}+01:00`).toISOString() : null,
         scope: form.scope,
         ...(form.scope === 'item' ? { applicable_item_ids: selectedIds } : {}),
       };
-      if (promo) { await liveApi.admin.updatePromoCode(promo.id, payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_UPDATED', 'Promo updated'), description: payload.code }); }
-      else { await liveApi.admin.createPromoCode(payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_CREATED', 'Promo created'), description: payload.code }); }
+      if (promo) { await liveApi.admin.updatePromoCode(promo.id, payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_UPDATED', 'Promo updated'), description: form.code }); }
+      else { await liveApi.admin.createPromoCode(payload); toast({ title: msg('FE_ADMIN_PROMOS_PROMO_CREATED', 'Promo created'), description: form.code }); }
       onClose(); onSaved();
     } catch (e) {
       // Backend rejects >100 percentage discounts and non-boolean is_active —
@@ -253,7 +267,7 @@ function PromoModal({
   return (
     <Modal open onClose={onClose} title={promo ? `Edit — ${promo.code}` : 'Create Promo Code'}>
       <div className="space-y-3">
-        <Field label="Code"><TextInput value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="SAVE10" /></Field>
+        <Field label="Code"><TextInput disabled={!!promo} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="SAVE10" /></Field>
         <Field label="Description (optional)"><TextInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Launch week discount" /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Type">
@@ -272,9 +286,9 @@ function PromoModal({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Max Uses / User (blank = ∞)"><TextInput type="number" value={form.max_uses_per_user} onChange={(e) => setForm({ ...form, max_uses_per_user: e.target.value })} /></Field>
-          <Field label="Starts At"><TextInput type="date" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} /></Field>
+          <Field label="Starts At" hint={msg('FE_PROMO_TIMEZONE', 'Dates and times use Africa/Lagos (WAT).')}><TextInput type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} /></Field>
         </div>
-        <Field label="Ends At"><TextInput type="date" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} /></Field>
+        <Field label="Ends At"><TextInput type="datetime-local" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} /></Field>
         <Field label="Scope" hint="cart = whole order · items = specific menu items · categories = whole categories">
           <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40">
             <option value="cart">{msg('FE_PROMO_ALL_ITEMS', 'All menu items')}</option>

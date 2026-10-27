@@ -120,6 +120,7 @@ class MSG:
     FE_LOOKUP_NO_STUDENTS = "No matching campus students."
     FE_LOOKUP_INVITE_EMAIL = "Invite this email"
     FE_PROMO_SELECT_ITEMS = "Choose at least one menu item after the menu loads."
+    FE_PROMO_TIMEZONE = "Dates and times use Africa/Lagos (WAT)."
     FE_PROMO_ALL_ITEMS = "All menu items"
     FE_PROMO_MENU_ITEMS = "Menu items"
     FE_PROMO_MENU_ITEMS_HELP = "Select the menu items this discount applies to."
