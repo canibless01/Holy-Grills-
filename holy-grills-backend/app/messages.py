@@ -120,6 +120,11 @@ class MSG:
     FE_LOOKUP_NO_STUDENTS = "No matching campus students."
     FE_LOOKUP_INVITE_EMAIL = "Invite this email"
     FE_PROMO_SELECT_ITEMS = "Choose at least one menu item after the menu loads."
+    ORDER_MOVED_UP_TITLE = "Order moved earlier!"
+    ORDER_MOVED_UP_BODY = "Good news — your order has moved to {target_date}. Expect delivery between {deliv_start}–{deliv_end}."
+    FE_ITEM_ADDON_DECREASE = "Remove one {name}"
+    FE_ITEM_ADDON_INCREASE = "Add one {name}"
+    ORDER_CONFIRMED_WINDOW_PENDING_BODY = "Your order #{order_id} is confirmed. Your delivery details will appear in order tracking."
     FE_PROMO_TIMEZONE = "Dates and times use Africa/Lagos (WAT)."
     FE_PROMO_ALL_ITEMS = "All menu items"
     FE_PROMO_MENU_ITEMS = "Menu items"
@@ -405,10 +410,10 @@ class MSG:
 
     # ── Order status — notification titles & bodies ───────────────────────────
     ORDER_CONFIRMED_TITLE        = "Order Confirmed!"
-    ORDER_CONFIRMED_BODY         = "Your order #{order_id} is received! Expect delivery between {delivery_window_start}–{delivery_window_end}."
+    ORDER_CONFIRMED_BODY         = "Your order #{order_id} is received! Expect delivery on {delivery_date} between {delivery_window_start}–{delivery_window_end}."
 
     ORDER_SCHEDULED_DEFERRED_TITLE = "Order Scheduled"
-    ORDER_SCHEDULED_DEFERRED_BODY  = "Today's orders are full — your order is scheduled for {scheduled_date}, delivery between {delivery_window_start}–{delivery_window_end}."
+    ORDER_SCHEDULED_DEFERRED_BODY  = "Your requested day is full — your order is scheduled for {scheduled_date}, delivery between {delivery_window_start}–{delivery_window_end}."
 
     ORDER_PREPARING_TITLE        = "Your order is being prepared"
     ORDER_PREPARING_BODY         = "The kitchen is on it! Won't be long."

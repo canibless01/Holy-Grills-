@@ -5,6 +5,7 @@ Order service — order creation, status transitions, delivery rewards, payment 
 import uuid
 import hashlib
 import math
+import requests
 from datetime import datetime, timezone, timedelta
 
 # Stable machine-readable codes for the two ways ordering can be refused. The
@@ -176,34 +177,25 @@ def _today_start_iso():
     return utc_midnight.replace(tzinfo=timezone.utc).isoformat()
 
 
-def _check_kitchen_capacity(db):
-    """Raise ValueError if the kitchen's daily order cap has been reached."""
-    from flask import has_request_context, g
-    campus_id = getattr(g, 'campus_id', None) if has_request_context() else None
-    rows = (
-        db.table("kitchen_settings")
-        .select("value")
-        .eq("key", "daily_order_capacity")
-        .eq("campus_id", campus_id)
-        .execute()
-    ) or []
-    raw = rows[0].get("value") if rows else ""
-    if not raw or not str(raw).isdigit():
-        return  # no cap configured for this campus
-    capacity = int(raw)
-    orders_today = (
-        db.table("orders")
-        .select("id,is_squad_order,squad_item_count")
-        .eq("campus_id", campus_id)
-        .gte("created_at", _today_start_iso())
-        .not_.in_("status", ["cancelled", "refunded"])
-        .limit(1000)
-        .execute()
-    ) or []
-    used = sum(_order_capacity_weight(o) for o in orders_today)
-    if used >= capacity:
-        from app.messages import MSG
-        raise ValueError(MSG.ORDER_KITCHEN_AT_CAPACITY)
+def _daily_capacity_remaining(db, campus_id, date_iso):
+    """Use the delivery business date, including preorders booked earlier."""
+    rows = db.table("kitchen_settings").select("value").eq("key", "daily_order_capacity").eq("campus_id", campus_id).execute() or []
+    raw = rows[0].get("value") if rows else None
+    if raw is None or not str(raw).isdigit():
+        return None
+    day = datetime.fromisoformat(str(date_iso)).date()
+    start, end = f"{day.isoformat()}T00:00:00+01:00", f"{(day + timedelta(days=1)).isoformat()}T00:00:00+01:00"
+    orders = (db.table("orders").select("id,is_squad_order,squad_item_count")
+              .eq("campus_id", campus_id).not_.in_("status", ["cancelled", "refunded"])
+              .or_(f"and(is_scheduled.is.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),"
+                   f"and(or(is_scheduled.is.false,is_scheduled.is.null),created_at.gte.{start},created_at.lt.{end})").execute()) or []
+    return max(0, int(raw) - sum(_order_capacity_weight(row) for row in orders))
+
+
+def _check_kitchen_capacity(db, campus_id=None):
+    if _daily_capacity_remaining(db, campus_id, today_wat().isoformat()) == 0:
+        raise OrderingWindowUnavailable(MSG.ORDERING_WINDOW_AT_CAPACITY, code=ORDERING_WINDOW_AT_CAPACITY,
+            next_slot_resolver=lambda: find_next_available_ordering_slot(db, campus_id, today_wat()))
 
 
 def _count_item_today(db, menu_item_id: str, today_order_ids: set) -> int:
@@ -529,6 +521,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                 return existing
 
     is_scheduled = False
+    capacity_deferred = False
+    capacity_requested_date = today_wat()
     ordering_window_id = linked_delivery_window_id = scheduled_for = window_id = None
     if not quote_only:
         is_scheduled = bool(payload.get("is_scheduled", False))
@@ -554,6 +548,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             if not slot or (requested_date and slot.get("date") != requested_date and not payload.get("accept_next_available_date")):
                 raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
             ordering_window_id = slot.get("window_id")
+            if slot.get("date") != start_date.isoformat():
+                requested_state = get_ordering_window_status(get_db(), campus_id, for_date=start_date)
+                capacity_deferred = requested_state.get("reason") == "full"
+                capacity_requested_date = start_date
             linked_delivery_window_id = slot.get("delivery_window_id")
             scheduled_for = f"{slot['date']}T{slot.get('opens_at') or '08:00:00'}+01:00"
             if datetime.fromisoformat(scheduled_for) < datetime.now(timezone.utc):
@@ -565,9 +563,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         if not is_scheduled:
             try:
                 _win = resolve_ordering_window(get_db(), campus_id)
+                _check_kitchen_capacity(get_db(), campus_id)
                 ordering_window_id = _win.get("id")
                 linked_delivery_window_id = _win.get("linked_delivery_window_id")
-            except OrderingWindowUnavailable:
+            except OrderingWindowUnavailable as unavailable:
                 if not payload.get("accept_next_available_date"):
                     raise
                 # Search from TODAY, not tomorrow: before the kitchen opens, today's
@@ -579,6 +578,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                 if not next_slot or not next_slot.get("date"):
                     raise
                 is_scheduled = True
+                capacity_deferred = unavailable.code == ORDERING_WINDOW_AT_CAPACITY
                 ordering_window_id = next_slot.get("window_id")
                 linked_delivery_window_id = next_slot.get("delivery_window_id")
                 scheduled_for = f"{next_slot['date']}T{next_slot.get('opens_at') or '08:00:00'}+01:00"
@@ -588,8 +588,6 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
                         linked_delivery_window_id = ow_row.get("linked_delivery_window_id")
 
         window_id = linked_delivery_window_id
-        if not is_scheduled:
-            _check_kitchen_capacity(get_db())
 
     raw_items = payload.get("items", [])
     redemption_id = payload.get("redemption_id")
@@ -1221,8 +1219,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         "p_items": order_items,
         "p_order_lock_id": order_lock.get("id") if order_lock else None,
         "p_ordering_window_id": ordering_window_id,
-        "p_capacity_deferred": bool(payload.get("accept_next_available_date") and is_scheduled),
-        "p_originally_requested_date": today_wat().isoformat() if (payload.get("accept_next_available_date") and is_scheduled) else None,
+        "p_capacity_deferred": capacity_deferred,
+        "p_originally_requested_date": capacity_requested_date.isoformat() if capacity_deferred else None,
     }
 
     try:
@@ -1240,8 +1238,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             # Return a fresh, read-only quote rather than repeating stale totals.
             refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
             raise OrderPriceChanged(refreshed)
-        if result["error"] in (ORDERING_WINDOW_CLOSED, ORDERING_WINDOW_AT_CAPACITY):
-            code = result["error"]
+        if result["error"] in (ORDERING_WINDOW_CLOSED, ORDERING_WINDOW_AT_CAPACITY, "Kitchen capacity reached for this date"):
+            code = ORDERING_WINDOW_AT_CAPACITY if result["error"] == "Kitchen capacity reached for this date" else result["error"]
             raise OrderingWindowUnavailable(
                 MSG.ORDERING_WINDOW_AT_CAPACITY if code == ORDERING_WINDOW_AT_CAPACITY else MSG.ORDER_OUTSIDE_ORDERING_HOURS,
                 code=code, next_slot_resolver=lambda: find_next_available_ordering_slot(get_db(), campus_id, today_wat()))
@@ -1349,7 +1347,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         order["delivery_window_start"] = delivery_start
         order["delivery_window_end"] = delivery_end
 
-        if is_scheduled and payload.get("accept_next_available_date") and user_id and delivery_start and delivery_end:
+        if capacity_deferred and user_id and delivery_start and delivery_end:
             try:
                 scheduled_date_display = (scheduled_for or "")[:10]
                 send_notification(
@@ -1529,9 +1527,26 @@ def _on_order_paid(order: dict):
     except Exception as exc:
         logger.error("Referral completion failed for order %s: %s", order["id"], exc)
 
+    from app.services.delivery_window_schedule import delivery_clock, WAT
+    delivery = {}
+    try:
+        if order.get("delivery_window_id"):
+            delivery = db.table("delivery_windows").select("opens_at,closes_at,starts_at,ends_at").eq(
+                "id", order["delivery_window_id"]).single().execute() or {}
+        instant = order.get("scheduled_for") if order.get("is_scheduled") else order.get("created_at")
+        delivery_date = datetime.fromisoformat(str(instant).replace("Z", "+00:00")).astimezone(WAT).date().isoformat()
+    except (ValueError, TypeError, SupabaseError, requests.RequestException) as exc:
+        logger.warning("Order confirmation delivery details unavailable for %s: %s", order["id"], exc)
+        delivery_date = None
+    start, end = delivery_clock(delivery), delivery_clock(delivery, False)
+    template = {"order_id": order["id"][:8].upper(), "delivery_date": delivery_date,
+                "delivery_window_start": start, "delivery_window_end": end}
+    has_window = bool(start and end and delivery_date)
     send_notification(
         user_id=order["user_id"], notif_type="order_confirmed",
-        template_data={"order_id": order["id"][:8].upper()},
+        template_data=template if has_window else None,
+        **({} if has_window else {"title": MSG.ORDER_CONFIRMED_TITLE,
+            "body": MSG.ORDER_CONFIRMED_WINDOW_PENDING_BODY.format(order_id=order["id"][:8].upper())}),
         reference_id=order["id"], reference_type="order",
     )
 
@@ -2208,11 +2223,14 @@ def resolve_ordering_window(db, campus_id):
             MSG.ORDER_OUTSIDE_ORDERING_HOURS, code=ORDERING_WINDOW_CLOSED,
             next_slot_resolver=lambda: _next_available_slot(db, campus_id, _now_wat_dt))
 
+    daily_remaining = _daily_capacity_remaining(db, campus_id, _today_iso)
     any_time_eligible = False
     for row in open_rows:
         if _now_wat > _parse_hm(row["closes_at"], 23, 59):
             continue
         any_time_eligible = True
+        if daily_remaining == 0:
+            continue
         if row.get("capacity") is not None:
             _rows = _window_capacity_orders(db, campus_id, row["id"], _today_iso)
             if sum(_order_capacity_weight(o) for o in _rows) >= int(row["capacity"]):
@@ -2285,6 +2303,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
 
     from app.services.delivery_window_schedule import delivery_clock, bind_ordering_delivery
     candidates = [bind_ordering_delivery(db, row, campus_id, _today_iso) for row in candidates]
+    daily_remaining = _daily_capacity_remaining(db, campus_id, _today_iso)
     windows_out = []
     any_capacity = False
     any_open_now = False
@@ -2303,6 +2322,10 @@ def get_ordering_window_status(db, campus_id, for_date=None):
             used = sum(_order_capacity_weight(o) for o in _rows)
             remaining = max(0, int(row["capacity"]) - used)
             is_full = used >= int(row["capacity"])
+
+        if daily_remaining is not None:
+            remaining = daily_remaining if remaining is None else min(remaining, daily_remaining)
+            is_full = remaining <= 0
 
         # Clock check. For TODAY a window only counts as open while the current
         # WAT time is inside it — a window that opens at 08:00 is not "open" at

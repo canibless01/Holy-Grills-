@@ -21,7 +21,7 @@ from app.services.notification_service import send_notification
 from app.routes.auth import _revoke_supabase_sessions
 from app.db import get_db, get_user_client, SupabaseError
 from datetime import datetime, timezone, timedelta
-from app.utils.tz import today_wat, wat_day_bounds_utc, wat_iso
+from app.utils.tz import today_wat, wat_day_bounds_utc
 from app.messages import MSG
 from app.utils.logger import get_logger
 from app.utils.admin_helpers import get_json_object, as_text, as_date, as_int, as_time, as_uuid, as_instant, as_number, page_args, db_error_response
@@ -29,7 +29,6 @@ from app.utils.campus_scope import as_campus_id, assert_can_modify, campus_or_gl
 from app.utils.validators import (
     validate_choice, validate_datetime_order, validate_uuid, validate_hp_amount,
 )
-from app.services.order_service import _order_capacity_weight
 from app.services.exclusive_spin_service import validate_spin_prize
 from app.constants import VALID_ROLES
 
@@ -929,68 +928,47 @@ def create_ordering_window():
     return jsonify(created), 201
 
 
-def _move_up_deferred_orders(db, before, updated):
-    """After a capacity increase, move waiting orders from this campus into the window, oldest request first.
-    Never raises; returns how many orders were moved."""
+def _move_up_deferred_orders(db, before, updated, *, force=False, target_dates=None):
+    """Fill newly available dated/recurring slots through admission's atomic day lock."""
     moved = 0
     try:
-        old_cap = int(before.get("capacity") or 0)
-        new_cap = int(updated.get("capacity") or 0)
-        target_date = updated.get("date")
-        if new_cap <= old_cap or not target_date:
+        old_cap, new_cap = before.get("capacity"), updated.get("capacity")
+        if not force and (old_cap is None or (new_cap is not None and int(new_cap) <= int(old_cap))):
             return 0
-        candidates = (
-            db.table("orders")
-            .select("id,user_id,squad_item_count,is_squad_order,originally_requested_date")
-            .eq("campus_id", updated["campus_id"]).eq("capacity_deferred", True).eq("status", "received")
-            .lte("originally_requested_date", target_date)
-            .order("originally_requested_date", ascending=True).execute()
-        ) or []
-        deliv_start = updated.get("opens_at") or "18:00:00"
-        deliv_end = updated.get("closes_at") or "19:00:00"
-        if updated.get("linked_delivery_window_id"):
-            deliv = (
-                db.table("delivery_windows").select("opens_at,closes_at")
-                .eq("id", updated["linked_delivery_window_id"]).single().execute()
-            )
-            if deliv:
-                deliv_start = deliv.get("opens_at") or deliv_start
-                deliv_end = deliv.get("closes_at") or deliv_end
-        for c in candidates:
-            existing = (
-                db.table("orders").select("id,is_squad_order,squad_item_count")
-                .eq("ordering_window_id", updated["id"]).not_.in_("status", ["cancelled", "refunded"]).execute()
-            ) or []
-            room = new_cap - sum(_order_capacity_weight(o) for o in existing)
-            if room < _order_capacity_weight(c):
+        today = today_wat()
+        if target_dates is not None:
+            dates = target_dates
+        elif updated.get("date"):
+            dates = [as_date(str(updated["date"]))]
+        else:
+            dates = [today + timedelta(days=offset) for offset in range(14)
+                     if (today + timedelta(days=offset)).weekday() == updated.get("weekday")]
+        service = get_db()
+        for target in dates:
+            from app.utils.schedule import effective_windows_with_config
+            effective, _ = effective_windows_with_config(db, updated["campus_id"], target.isoformat(), target.weekday())
+            if not any(row.get("id") == updated["id"] for row in effective):
                 continue
-            # Conditional update: an order another admin already moved (or that changed state) is skipped.
-            result = (
-                db.table("orders").eq("id", c["id"]).eq("capacity_deferred", True).eq("status", "received")
-                .update({
-                    "ordering_window_id": updated["id"],
-                    "scheduled_for": wat_iso(target_date, str(deliv_start)),
-                    "capacity_deferred": False,
-                })
-            )
-            if not result:
-                continue
-            moved += 1
-            try:
-                send_notification(
-                    c["user_id"], "order_moved_up",
-                    template_data={
-                        "originally_requested_date": c.get("originally_requested_date"),
-                        "target_date": target_date,
-                        "deliv_start": str(deliv_start)[:5],
-                        "deliv_end": str(deliv_end)[:5],
-                    },
-                    reference_id=c["id"], reference_type="order",
-                )
-            except Exception as e:  # broad on purpose: the order is already moved; a failed message is logged
-                logger.error("update_ordering_window: order_moved_up notification failed for %s: %s", c["id"], e)
-    except Exception as e:  # broad on purpose: the window update already succeeded
-        logger.error("update_ordering_window: moving deferred orders failed: %s", e)
+            receipts = service.rpc("hg_move_deferred_orders_atomic", {
+                "p_actor_id": g.user_id, "p_window_id": updated["id"], "p_target_date": target.isoformat(),
+            }) or []
+            if not isinstance(receipts, list):
+                raise ValueError("Invalid capacity move-up receipt")
+            moved += len(receipts)
+            for receipt in receipts:
+                try:
+                    data = {key: receipt[key] for key in ("originally_requested_date", "target_date", "deliv_start", "deliv_end")}
+                    if receipt.get("user_id"):
+                        send_notification(receipt["user_id"], "order_moved_up", template_data=data,
+                                          reference_id=receipt["id"], reference_type="order")
+                    elif receipt.get("guest_email"):
+                        from app.utils.email import send_email
+                        send_email(receipt["guest_email"], receipt.get("guest_name") or "",
+                                   "guest_order_moved_up", data={**data, "order_id": receipt["id"]})
+                except Exception as exc:
+                    logger.error("Capacity move-up notification failed for %s: %s", receipt["id"], exc)
+    except Exception as exc:
+        logger.error("Moving deferred orders failed for window %s: %s", updated.get("id"), exc)
     return moved
 
 

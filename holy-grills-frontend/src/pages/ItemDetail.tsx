@@ -64,14 +64,22 @@ export default function ItemDetail() {
     });
   };
 
-  const toggleAddon = (groupId, addonId, maxSelect) => {
+  const changeAddonQuantity = (groupId, addonId, delta, maxSelect) => {
     setSelections((prev) => {
       const current = prev[groupId] || [];
-      if (current.includes(addonId)) return { ...prev, [groupId]: current.filter((x) => x !== addonId) };
-      if (current.length < maxSelect) return { ...prev, [groupId]: [...current, addonId] };
+      const count = current.filter(id => id === addonId).length;
+      if (delta > 0 && current.length < maxSelect && count < 50) return { ...prev, [groupId]: [...current, addonId] };
+      if (delta < 0 && count > 0) {
+        const next = [...current]; next.splice(next.indexOf(addonId), 1);
+        return { ...prev, [groupId]: next };
+      }
       return prev;
     });
   };
+  const addonPayload = () => addonGroups.flatMap(ag => {
+    const ids = selections[ag.id] || [];
+    return [...new Set(ids)].map(addonId => ({ addon_id: addonId, quantity: ids.filter(id => id === addonId).length }));
+  });
 
   const calculatePrice = () => {
     if (!item) return 0;
@@ -114,10 +122,7 @@ export default function ItemDetail() {
       (item.variation_groups || []).forEach((vg) => {
         (selections[vg.id] || []).forEach((optId) => selected_variations.push({ variation_group_id: vg.id, option_id: optId }));
       });
-      const selected_addons = [];
-      addonGroups.forEach((ag) => {
-        (selections[ag.id] || []).forEach((addonId) => selected_addons.push({ addon_id: addonId, quantity: 1 }));
-      });
+      const selected_addons = addonPayload();
       play('cart_add');
       await addToCart({ menu_item_id: item.id, quantity, notes, selected_variations, selected_addons });
       toast({ title: msg('FE_ITEM_DETAIL_ADDED_TO_YOUR_CART', '🔥 Added to your cart'), description: msg('FE_ITEM_DETAIL_QUANTITY_NAME_IS_IN_YOUR_CART', '{quantity}× {name} is in your cart.', { quantity: quantity, name: item.name }) });
@@ -138,10 +143,7 @@ export default function ItemDetail() {
       (item.variation_groups || []).forEach((vg) => {
         (selections[vg.id] || []).forEach((optId) => selected_variations.push({ variation_group_id: vg.id, option_id: optId }));
       });
-      const selected_addons = [];
-      addonGroups.forEach((ag) => {
-        (selections[ag.id] || []).forEach((addonId) => selected_addons.push({ addon_id: addonId, quantity: 1 }));
-      });
+      const selected_addons = addonPayload();
       play('cart_add');
       await addToCart({ menu_item_id: item.id, quantity, notes, selected_variations, selected_addons });
       navigate('/checkout');
@@ -348,22 +350,21 @@ export default function ItemDetail() {
           </p>
           <div className="space-y-2">
             {(ag.addons || []).map((ad) => {
-              const selected = (selections[ag.id] || []).includes(ad.id);
+              const count = (selections[ag.id] || []).filter(id => id === ad.id).length;
+              const unavailable = item.is_sold_out || ad.is_available === false;
+              const limitReached = (selections[ag.id] || []).length >= Number(ag.max_select ?? 1) || count >= 50;
               return (
-                <button
-                  key={ad.id}
-                  onClick={() => toggleAddon(ag.id, ad.id, ag.max_select)}
-                  disabled={item.is_sold_out || ad.is_available === false}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/50'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${selected ? 'border-primary bg-primary' : 'border-border'}`}>
-                      {selected && <Check className="w-3 h-3 text-white" />}
-                    </div>
+                <div key={ad.id} className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl border transition-all ${count ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                  <div className="min-w-0">
                     <span className="text-sm font-medium text-foreground">{ad.name}</span>
+                    {ad.price > 0 && <span className="block text-xs font-bold text-muted-foreground">+{formatNaira(ad.price)}</span>}
                   </div>
-                  {ad.price > 0 && <span className="text-xs font-bold text-muted-foreground">+{formatNaira(ad.price)}</span>}
-                </button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button type="button" aria-label={msg('FE_ITEM_ADDON_DECREASE', 'Remove one {name}', { name: ad.name })} disabled={count === 0} onClick={() => changeAddonQuantity(ag.id, ad.id, -1, Number(ag.max_select ?? 1))} className="w-9 h-9 rounded-full bg-muted flex items-center justify-center disabled:opacity-40"><Minus className="w-4 h-4" /></button>
+                    <output aria-label={ad.name} className="min-w-4 text-center text-sm font-bold" aria-live="polite">{count}</output>
+                    <button type="button" aria-label={msg('FE_ITEM_ADDON_INCREASE', 'Add one {name}', { name: ad.name })} disabled={unavailable || limitReached} onClick={() => changeAddonQuantity(ag.id, ad.id, 1, Number(ag.max_select ?? 1))} className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center disabled:opacity-40"><Plus className="w-4 h-4" /></button>
+                  </div>
+                </div>
               );
             })}
           </div>

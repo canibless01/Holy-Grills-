@@ -38,7 +38,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "order_placed", "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
     "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
-    "order_refunded", "order_unclaimed",
+    "order_refunded", "order_unclaimed", "order_moved_up", "order_scheduled_deferred",
     "order_thank_you", "satisfaction_check", "reengagement_nudge",
     # HP
     "hp_earned", "hp_unlocked", "hp_decay_applied", "hp_transfer_recipient", "hp_admin_grant",
@@ -189,7 +189,7 @@ def get_notification_channels(notif_type: str, extra: list = None) -> list:
         # Order (7)
         "order_confirmed", "order_delivered", "order_refunded",
         "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
-        "scheduled_order_cancelled",
+        "scheduled_order_cancelled", "order_moved_up", "order_scheduled_deferred",
         # Guest (1)
         "guest_order_claimed",
         # Wallet (2) — withdrawal types removed entirely

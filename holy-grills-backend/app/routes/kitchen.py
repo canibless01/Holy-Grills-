@@ -7,7 +7,7 @@ from app.middleware.auth import require_role, fetch_or_403
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.tz import today_wat, WAT_OFFSET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
@@ -459,6 +459,14 @@ def update_kitchen_settings():
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
+    previous_capacity = None
+    if "daily_order_capacity" in settings:
+        value = settings["daily_order_capacity"]
+        if isinstance(value, bool) or not str(value).isdigit():
+            return jsonify({"error": MSG.WINDOW_CAPACITY_INVALID}), 400
+        previous = db.table("kitchen_settings").select("value").eq("key", "daily_order_capacity").eq("campus_id", campus_id).single().execute()
+        if previous and str(previous.get("value", "")).isdigit():
+            previous_capacity = int(previous["value"])
     updated = {}
     for key, value in settings.items():
         payload = {
@@ -471,7 +479,21 @@ def update_kitchen_settings():
         result = db.table("kitchen_settings").upsert(payload, on_conflict="key,campus_id").execute()
         updated[key] = (result[0] if isinstance(result, list) and result else payload)
 
-    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+    moved = 0
+    if previous_capacity is not None and int(settings["daily_order_capacity"]) > previous_capacity:
+        try:
+            from app.routes.admin import _move_up_deferred_orders
+            rows = db.table("ordering_windows").select("*").eq("campus_id", campus_id).execute() or []
+            # Fill dates in chronological order before considering next week's slots.
+            for offset in range(14):
+                target = today_wat() + timedelta(days=offset)
+                dated = [row for row in rows if str(row.get("date")) == target.isoformat()]
+                candidates = dated or [row for row in rows if not row.get("date") and row.get("weekday") == target.weekday()]
+                for window in sorted(candidates, key=lambda row: str(row.get("opens_at") or "")):
+                    moved += _move_up_deferred_orders(db, {}, window, force=True, target_dates=[target])
+        except Exception as exc:
+            logger.error("Daily capacity saved, but deferred move-up failed for campus %s: %s", campus_id, exc)
+    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated, "orders_moved_up": moved}), 200
           
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")

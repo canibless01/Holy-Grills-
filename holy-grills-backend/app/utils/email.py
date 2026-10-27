@@ -145,6 +145,10 @@ Create an account to earn HP for this event!""",
 Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.""",
         "cta_buttons": lambda d: [{"label": "Accept Invitation", "url": d.get('invite_link', ''), "primary": True}],
     },
+    "guest_order_moved_up": {
+        "subject": lambda d: MSG.ORDER_MOVED_UP_TITLE,
+        "body": lambda d: MSG.ORDER_MOVED_UP_BODY.format(**d),
+    },
     "guest_order_confirmed": {
         "subject": lambda d: f"Your Order #{d.get('order_id', '')[:8].upper()} is Confirmed!",
         "body": lambda d: f"""Your order #{d.get('order_id', '')[:8].upper()} has been placed successfully!

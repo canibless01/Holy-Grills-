@@ -1190,8 +1190,8 @@ NOTIFICATION_TEMPLATES: dict = {
         "channels":     None,
     },
     "order_moved_up": {
-        "title":        "Order Moved Up!",
-        "body":         "Good news — your order originally requested for {originally_requested_date} has room today! Now scheduled for {target_date}, delivery between {deliv_start}–{deliv_end}.",
+        "title":        MSG.ORDER_MOVED_UP_TITLE,
+        "body":         MSG.ORDER_MOVED_UP_BODY,
         "include_name": True,
         "channels":     None,
     },
