@@ -1551,7 +1551,7 @@ def _on_order_paid(order: dict):
     )
 
 
-def confirm_order_payment(order_id: str, payment_reference: str, provider_response: dict = None, provider: str = 'paystack') -> dict:
+def confirm_order_payment(order_id: str, payment_reference: str, provider_response: dict = None, provider: str = 'paystack', *, _closed_race_retry=False) -> dict:
     """
     Called after card payment confirmed (webhook).
     Updates payment_status to paid. Order is already in 'received' state.
@@ -1574,6 +1574,28 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         metadata = {**metadata, 'amount_breakdown': amount_breakdown}
 
     current_pay_status = order.get("payment_status")
+    if order.get("status") in ("cancelled", "refunded"):
+        recovery = db.rpc("hg_reconcile_late_order_payment", {
+            "p_order_id": order_id, "p_provider": provider, "p_reference": payment_reference,
+            "p_amount": float(card_due(order)), "p_metadata": {**metadata,
+                "late_payment_wallet_reason": MSG.ORDER_LATE_PAYMENT_WALLET_REASON,
+                "late_payment_audit_note": MSG.ORDER_LATE_PAYMENT_AUDIT_NOTE},
+        })
+        if not isinstance(recovery, dict) or not recovery.get("success"):
+            raise ValueError(MSG.ORDER_PAYMENT_RECONCILIATION_UNAVAILABLE)
+        if recovery.get("manual_review"):
+            # Keep the webhook in the existing failed/review queue. The paid
+            # provider receipt is durably saved; retries never credit it again.
+            raise ValueError(MSG.ORDER_LATE_GUEST_PAYMENT_REVIEW)
+        if recovery.get("resolution") == "wallet_credited" and not recovery.get("idempotent"):
+            try:
+                send_notification(user_id=order["user_id"], notif_type="order_refunded",
+                    title=MSG.ORDER_LATE_PAYMENT_REFUND_TITLE,
+                    body=MSG.ORDER_LATE_PAYMENT_REFUND_BODY.format(amount=f"{float(recovery.get('amount') or 0):.2f}"),
+                    reference_id=order_id, reference_type="order")
+            except Exception as exc:
+                logger.warning("Late payment recovery notification failed for %s: %s", order_id, type(exc).__name__)
+        return db.table("orders").select("*").eq("id", order_id).single().execute()
     if current_pay_status in ("paid", "partially_refunded"):
         return order  # idempotent
 
@@ -1598,6 +1620,11 @@ def confirm_order_payment(order_id: str, payment_reference: str, provider_respon
         payment_result = {"error": str(exc)}
 
     if isinstance(payment_result, dict) and payment_result.get("error"):
+        if not _closed_race_retry and "order_payment_closed" in str(payment_result["error"]):
+            # Cancellation may win the order lock after our initial read.
+            # Re-read once so this same verified event reaches reconciliation.
+            return confirm_order_payment(order_id, payment_reference, provider_response, provider,
+                                         _closed_race_retry=True)
         raise ValueError(payment_result["error"])
 
     updated_order = (
