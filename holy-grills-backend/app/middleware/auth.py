@@ -283,7 +283,7 @@ def require_role(*roles):
             g.campus_id = profile.get("campus_id")
             # Campus-scoped staff must have a campus — silently defaulting them would show an
             # empty dashboard (RLS already scopes them to nothing) instead of a clear error.
-            if not g.campus_id and g.user_role in ("admin", "kitchen", "rider"):
+            if not g.campus_id and g.user_role in ("admin", "kitchen", "rider", "community_manager"):
                 abort(403, MSG.ACCOUNT_NO_CAMPUS)
             if not g.campus_id:
                 g.campus_id = _resolve_default_campus(db, g.user_role)

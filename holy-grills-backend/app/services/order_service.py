@@ -973,6 +973,29 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     if order_lock and order_lock.get('reward_type') == 'discount' and order_lock_discount_dec == 0:
         order_lock = None
     total_discount_dec = promo_discount_dec + squad_discount_dec + order_lock_discount_dec
+
+    # ── Ambassador meal discount (programme reward, NOT wallet credit) ──────
+    # Validated on every quote AND every order: ownership, active status, expiry
+    # and remaining uses are checked before pricing, then the bucket is consumed
+    # atomically once the order exists. It can only reduce food spend, never
+    # delivery, and can never drive the total below zero.
+    meal_discount = None
+    meal_discount_dec = Decimal('0.00')
+    meal_discount_item_id = None
+    if user_id and payload.get('meal_discount_id'):
+        from app.services import ambassador_service
+        meal_discount = ambassador_service.resolve_discount_for_checkout(
+            get_db(), user_id, str(payload['meal_discount_id']))
+        meal_discount_dec = ambassador_service.compute_discount_amount(
+            meal_discount, order_items, subtotal_dec, total_discount_dec)
+        if meal_discount_dec > 0:
+            priced = [
+                (Decimal(str(i.get('price_snapshot') or 0)), i.get('menu_item_id'))
+                for i in order_items
+            ]
+            meal_discount_item_id = max(priced, key=lambda pair: pair[0])[1] if priced else None
+            total_discount_dec = (total_discount_dec + meal_discount_dec).quantize(Decimal('0.01'))
+
     total_dec = (subtotal_dec-total_discount_dec+delivery_fee_dec).quantize(Decimal('0.01'))
     total = total_amount = float(total_dec)
 
@@ -1132,6 +1155,13 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         'squad_delivery_discount_amount':float(squad_delivery_discount_dec),
         'promo_discount':promo_discount,'squad_discount':squad_discount,
         'order_lock_discount':order_lock_discount,'total_amount':total,
+        'meal_discount': None if not meal_discount else {
+            'id': meal_discount['id'],
+            'code': meal_discount.get('code'),
+            'amount': float(meal_discount_dec),
+            'max_meal_value': float(meal_discount.get('max_meal_value') or 0),
+            'expires_at': meal_discount.get('expires_at'),
+        },
         'order_lock_hp_reward':int(order_lock.get('reward_hp_amount') or 0) if order_lock and order_lock.get('reward_type') == 'hp' else 0,
         'hp_preview':hp_preview if user_id else {**hp_preview, 'total_hp':0},
         'is_squad_order':is_squad_order,'squad_item_count':squad_item_count,
@@ -1275,6 +1305,19 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         except Exception as exc:                                    # noqa: BLE001
             logger.error("create_order: reward claim call failed for redemption %s / order %s: %s",
                          redemption_id, order_id, exc)
+
+    # ── Ambassador meal discount: consume the bucket exactly once ──────────
+    # The order was priced with this discount above; the SECURITY DEFINER RPC
+    # re-validates owner/expiry/uses under a row lock and records a redemption
+    # unique per order. A replay (same idempotency key) must not consume twice.
+    if order_id and meal_discount and meal_discount_dec > 0 and not result.get("idempotent"):
+        from app.services import ambassador_service
+        ambassador_service.redeem_discount(
+            get_db(), meal_discount["id"], str(order_id), user_id,
+            meal_discount_dec, meal_discount_item_id,
+        )
+        get_db().table("orders").eq("id", order_id).update(
+            {"ambassador_discount_id": meal_discount["id"]}).execute()
 
     if squad_id and order_id and not result.get("idempotent"):
         excluded_ids = set(payload.get("excluded_member_ids") or [])
@@ -1698,6 +1741,17 @@ def _restore_order_consumables(order: dict) -> None:
         logger.error("cancel: reward release failed for order %s — the reward stays used: %s",
                      order_id, exc)
 
+    # Ambassador meal discount: return the use ONLY on a pre-preparation cancel.
+    # The RPC is idempotent; later refunds deliberately do not restore, which
+    # blocks the cancel/reorder abuse of a single-use meal reward.
+    try:
+        from app.services import ambassador_service
+        restored = ambassador_service.restore_discount_for_order(get_db(), order_id)
+        if restored.get("restored"):
+            logger.info("cancel: restored ambassador meal discount for order %s", order_id)
+    except Exception as exc:
+        logger.error("cancel: meal discount restore failed for order %s: %s", order_id, exc)
+
 
 def update_order_status(order_id: str, new_status: str, changed_by: str = None, notes: str = "") -> dict:
     """
@@ -1763,6 +1817,10 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
             except Exception:
                 logger.exception("Delivery HP recovery remains pending for %s", order_id)
                 return {**order, "unchanged": True, "rewards_pending": True}
+        if new_status == "delivered" and order.get("user_id"):
+            # Idempotent: the RPC upserts on order_id, so a re-drive is safe.
+            from app.services import ambassador_service
+            ambassador_service.attribute_delivered_order(order_id)
         return {**order, "unchanged": True}
     allowed = VALID_TRANSITIONS.get(current_status, [])
     if new_status not in allowed:
@@ -1821,6 +1879,14 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
         except Exception:
             rewards_pending = True
             logger.exception("update_order_status: delivery rewards failed for order %s (status is already 'delivered')", order_id)
+        # Ambassador programme: credit the order under the customer's live
+        # 7-day last-click attribution. Independent of the referral HP above —
+        # the RPC no-ops when no attribution is live and is safe to re-drive.
+        try:
+            from app.services import ambassador_service
+            ambassador_service.attribute_delivered_order(order_id)
+        except Exception:
+            logger.exception("update_order_status: ambassador attribution failed for order %s", order_id)
 
     # Status notifications are fire-and-forget; run in a thread so the
     # response is not held up by sequential Supabase notification inserts.
