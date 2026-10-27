@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import { LocateFixed, MapPin, Search, X, Loader2 } from 'lucide-react';
 import { formatKm, etaLabel } from '@/lib/deliveryUtils';
 import type { DeliveryGate } from '@/types/delivery';
+import { msg } from '@/lib/messages';
 
 // Centroid of the gates — used as the map's initial view.
 const centroid = (gates?: DeliveryGate[]): [number, number] => {
@@ -73,7 +74,7 @@ function Recenter({ center, nonce }) {
   const map = useMap();
   useEffect(() => {
     if (center && center[0] != null) map.flyTo(center, 16, { duration: 0.8 });
-  }, [center, nonce, map]);
+  }, [center?.[0], center?.[1], nonce, map]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
 
@@ -87,9 +88,15 @@ function ResizeHandler() {
     // Staggered retries cover slow CSS transitions / lazy mount.
     const timers = [100, 300, 600, 1000].map((ms) => setTimeout(invalidate, ms));
     window.addEventListener('resize', invalidate);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(invalidate) : null;
+    observer?.observe(map.getContainer());
+    const visible = () => { if (!document.hidden) invalidate(); };
+    document.addEventListener('visibilitychange', visible);
     return () => {
       timers.forEach(clearTimeout);
       window.removeEventListener('resize', invalidate);
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', visible);
     };
   }, [map]);
   return null;
@@ -102,7 +109,7 @@ function ResizeHandler() {
 // meaningful Referer — the debounce below holds the rate down, and the requests
 // only fire while the guest is typing a query.
 const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
-const SEARCH_DEBOUNCE_MS = 700;
+const SEARCH_DEBOUNCE_MS = 1100;
 const SEARCH_MIN_CHARS = 3;
 
 type PlaceHit = { id: string; label: string; lat: number; lng: number };
@@ -112,9 +119,9 @@ const shortenLabel = (label: string) => {
   return parts.length > 1 ? `${parts[0]}, ${parts[parts.length - 1]}` : label;
 };
 
-const searchPlaces = async (query: string): Promise<PlaceHit[]> => {
+const searchPlaces = async (query: string, signal: AbortSignal): Promise<PlaceHit[]> => {
   const url = `${NOMINATIM_ENDPOINT}?format=jsonv2&limit=5&countrycodes=ng&addressdetails=0&q=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
   if (!res.ok) throw new Error(`search failed (${res.status})`);
   const rows = await res.json();
   if (!Array.isArray(rows)) return [];
@@ -162,6 +169,15 @@ export default function OffCampusMap({
   const [recenter, setRecenter] = useState(null);
   const [geoError, setGeoError] = useState('');
   const mapRef = useRef(null);
+  const [tilesFailed, setTilesFailed] = useState(false);
+  const [tileRevision, setTileRevision] = useState(0);
+  const loadedTile = useRef(false);
+  const failedTiles = useRef(0);
+  useEffect(() => {
+    loadedTile.current = false; failedTiles.current = 0; setTilesFailed(false);
+    const timer = setTimeout(() => { if (!loadedTile.current) setTilesFailed(true); }, 12000);
+    return () => clearTimeout(timer);
+  }, [tileRevision]);
 
   // Place search state
   const [query, setQuery] = useState('');
@@ -175,17 +191,17 @@ export default function OffCampusMap({
     if (q.length < SEARCH_MIN_CHARS) { setHits([]); setSearching(false); setSearchError(''); return; }
     setSearching(true);
     setSearchError('');
+    let alive = true;
+    const controller = new AbortController();
     // Nominatim's policy is one request/second — debounce to stay well under it
     // and to avoid a lookup for every keystroke.
     const t = setTimeout(() => {
-      let alive = true;
-      searchPlaces(q)
+      searchPlaces(q, controller.signal)
         .then((rows) => { if (alive) { setHits(rows); setSearchOpen(true); } })
         .catch(() => { if (alive) { setHits([]); setSearchError('Search is unavailable right now. Drop the pin manually instead.'); } })
         .finally(() => { if (alive) setSearching(false); });
-      return () => { alive = false; };
     }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(t);
+    return () => { alive = false; controller.abort(); clearTimeout(t); };
   }, [query]);
 
   const pickPlace = (hit: PlaceHit) => {
@@ -293,6 +309,7 @@ export default function OffCampusMap({
         {searchError && <p className="mt-1 text-[11px] text-primary font-semibold">{searchError}</p>}
       </div>
 
+      {tilesFailed && <div role="status" className="rounded-xl border border-border bg-muted p-3 text-xs space-y-2"><p>{msg('FE_MAP_TILES_UNAVAILABLE', 'The map could not load fully. Retry, use location search or GPS, or choose your gate and enter your address below.')}</p><button type="button" onClick={() => setTileRevision(value => value + 1)} className="font-bold text-primary">{msg('FE_MAP_RETRY', 'Reload map')}</button></div>}
       <div className="rounded-2xl overflow-hidden border border-border relative" style={{ height: 300 }}>
         <MapContainer
           center={view}
@@ -304,6 +321,8 @@ export default function OffCampusMap({
         >
           <ResizeHandler />
           <TileLayer
+            key={tileRevision}
+            eventHandlers={{ tileload: () => { loadedTile.current = true; }, tileerror: () => { failedTiles.current += 1; if (failedTiles.current >= 3) setTilesFailed(true); } }}
             attribution='&copy; OpenStreetMap contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
@@ -322,7 +341,7 @@ export default function OffCampusMap({
           })}
           {pin && <DraggablePin position={[pin.lat, pin.lng]} onDragEnd={handlePinMove} />}
           <ClickHandler onClick={handlePinMove} />
-          {recenter && <Recenter center={recenter} nonce={recenter.join(',')} />}
+          <Recenter center={recenter || (pin ? [pin.lat, pin.lng] : view)} nonce={recenter?.join(',')} />
         </MapContainer>
 
         {/* Use-my-location overlay button */}

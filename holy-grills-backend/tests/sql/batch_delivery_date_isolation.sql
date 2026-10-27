@@ -17,9 +17,9 @@ BEGIN
    INSERT INTO public.orders(guest_email,campus_id,status,payment_status,delivery_type,
       delivery_location_id,delivery_window_id,is_scheduled,scheduled_for,created_at)
    VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,true,
-      CASE WHEN i=3 THEN '2026-11-03T19:30:00+01:00'::timestamptz
-           ELSE '2026-10-27T19:30:00+01:00'::timestamptz END,
-      '2026-10-26T10:00:00+01:00') RETURNING id INTO a;
+      CASE WHEN i=3 THEN '2026-10-20T19:30:00+01:00'::timestamptz
+           ELSE '2026-10-13T19:30:00+01:00'::timestamptz END,
+      '2026-10-12T10:00:00+01:00') RETURNING id INTO a;
    ids:=array_append(ids,a);
  END LOOP;
  SELECT batch_id INTO b1 FROM public.orders WHERE id=ids[1];
@@ -28,22 +28,22 @@ BEGIN
    (SELECT batch_id FROM public.orders WHERE id=ids[2]) IS DISTINCT FROM b1 THEN
    RAISE EXCEPTION 'scheduled delivery-date isolation failed';
  END IF;
- IF (SELECT delivery_date FROM public.delivery_batches WHERE id=b1) IS DISTINCT FROM date '2026-10-27'
- OR (SELECT delivery_date FROM public.delivery_batches WHERE id=b2) IS DISTINCT FROM date '2026-11-03'
+ IF (SELECT delivery_date FROM public.delivery_batches WHERE id=b1) IS DISTINCT FROM date '2026-10-13'
+ OR (SELECT delivery_date FROM public.delivery_batches WHERE id=b2) IS DISTINCT FROM date '2026-10-20'
  THEN RAISE EXCEPTION 'saved batch dates failed'; END IF;
  -- An immediate order outside an ordering window joins its actual delivery day.
  INSERT INTO public.orders(guest_email,campus_id,status,payment_status,delivery_type,
    delivery_location_id,delivery_window_id,created_at)
- VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,'2026-10-27T23:00:00+01:00') RETURNING id INTO a;
+ VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,'2026-10-13T23:00:00+01:00') RETURNING id INTO a;
  IF (SELECT batch_id FROM public.orders WHERE id=a) IS DISTINCT FROM b1
  THEN RAISE EXCEPTION 'outside-ordering-window grouping failed'; END IF;
  -- UTC day differs from local business day: 23:30 UTC belongs to the next day.
  INSERT INTO public.orders(guest_email,campus_id,status,payment_status,delivery_type,
    delivery_location_id,delivery_window_id,created_at)
- VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,'2026-10-27T23:30:00Z') RETURNING id INTO a;
+ VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,'2026-10-13T23:30:00Z') RETURNING id INTO a;
  SELECT batch_id INTO b3 FROM public.orders WHERE id=a;
  IF b3 IS NULL OR b3 IN(b1,b2) OR
- (SELECT delivery_date FROM public.delivery_batches WHERE id=b3) IS DISTINCT FROM date '2026-10-28'
+ (SELECT delivery_date FROM public.delivery_batches WHERE id=b3) IS DISTINCT FROM date '2026-10-14'
  THEN RAISE EXCEPTION 'Lagos midnight boundary failed'; END IF;
  IF public.hg_auto_assign_order_to_batch(a) IS DISTINCT FROM b3
  THEN RAISE EXCEPTION 'staging replay changed batch'; END IF;
@@ -53,11 +53,14 @@ BEGIN
  VALUES('audit-batch@example.invalid',c,'received','pending','off_campus',g,w,false,null) RETURNING id INTO a;
  IF public.hg_auto_assign_order_to_batch(a) IS NOT NULL
  THEN RAISE EXCEPTION 'unpaid order staged'; END IF;
- INSERT INTO public.orders(guest_email,campus_id,status,payment_status,delivery_type,
-   delivery_location_id,delivery_window_id,is_scheduled,scheduled_for)
- VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,true,null) RETURNING id INTO a;
- IF (SELECT batch_id FROM public.orders WHERE id=a) IS NOT NULL
- THEN RAISE EXCEPTION 'unknown scheduled date staged'; END IF;
+ BEGIN
+   INSERT INTO public.orders(guest_email,campus_id,status,payment_status,delivery_type,
+     delivery_location_id,delivery_window_id,is_scheduled,scheduled_for)
+   VALUES('audit-batch@example.invalid',c,'ready','paid','off_campus',g,w,true,null);
+   RAISE EXCEPTION 'unknown scheduled date entered ready state';
+ EXCEPTION WHEN check_violation THEN
+   IF SQLERRM<>'order_preparation_day_not_due' THEN RAISE; END IF;
+ END;
  -- Explicit manual assignment also rejects dates that cannot share one run.
  UPDATE public.orders SET batch_id=null WHERE id=ANY(ids);
  SELECT id INTO actor FROM public.profiles WHERE role::text='super_admin' AND is_active LIMIT 1;

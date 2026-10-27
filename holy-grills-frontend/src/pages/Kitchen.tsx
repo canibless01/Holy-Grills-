@@ -9,10 +9,12 @@ import KitchenHeader from '@/components/kitchen/KitchenHeader';
 import KitchenOrderCard from '@/components/kitchen/KitchenOrderCard';
 import KitchenSettings from '@/components/kitchen/KitchenSettings';
 import KitchenCatering from '@/components/kitchen/KitchenCatering';
+import KitchenHandoff from '@/components/kitchen/KitchenHandoff';
 import { msg } from '@/lib/messages';
 
 const TABS = [
   { id: 'queue', label: 'Live Queue' },
+  { id: 'handoff', label: msg('FE_KITCHEN_HANDOFF', 'Handoff') },
   { id: 'scheduled', label: 'Scheduled' },
   { id: 'batch', label: 'Prep List' },
   { id: 'settings', label: 'Settings' },
@@ -28,7 +30,7 @@ const COLUMN_ACCENTS = {
 export default function Kitchen() {
   const [tab, setTab] = useState('queue');
   const {
-    authed, loading, error, queue, scheduled, windows, selectedWindow, batchSummary,
+    authed, loading, error, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary,
     settings, capacity, metrics, accepting, open, prepTarget, flashingIds, actionLoading,
     batchBusy, batchResult, selectWindow, handleStatusUpdate, handleToggleAccepting,
     handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
@@ -37,7 +39,7 @@ export default function Kitchen() {
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
   if (loading) return <StaffPanelSkeleton variant="kitchen" />;
 
-  const received = queue.filter((o) => o.status === 'received');
+  const received = queue.filter((o) => o.status === 'received' || o.status === 'paid');
   const preparing = queue.filter((o) => o.status === 'preparing');
   const ready = queue.filter((o) => o.status === 'ready');
 
@@ -102,6 +104,7 @@ export default function Kitchen() {
 
         {/* Live Queue — 3-column KDS board */}
         {tab === 'catering' && <KitchenCatering />}
+        {tab === 'handoff' && <KitchenHandoff />}
         {tab === 'queue' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
             {['received', 'preparing', 'ready'].map((status) => {
@@ -143,7 +146,8 @@ export default function Kitchen() {
         )}
 
         {/* Scheduled */}
-        {tab === 'scheduled' && scheduled && (
+        {tab === 'scheduled' && <div className="space-y-2"><label className="text-sm font-semibold">{msg('FE_KITCHEN_SCHEDULE_DATE', 'Preparation date')}<input type="date" value={scheduledDate} onChange={event => selectScheduledDate(event.target.value)} className="ml-3 rounded-xl border border-border bg-card p-2" /></label>{scheduledDate > new Date(Date.now() + 3600000).toISOString().slice(0, 10) && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_SCHEDULE_PREVIEW', 'Future orders are shown for planning only. Preparation opens on their scheduled day.')}</p>}{scheduledLoading && <p role="status">{msg('FE_LOOKUP_SEARCHING', 'Searching…')}</p>}{scheduled?.error && <button onClick={() => selectScheduledDate(scheduledDate)}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button>}</div>}
+        {tab === 'scheduled' && scheduled && !scheduled.error && (
           <div className="space-y-3">
             <div className="rounded-2xl bg-card border border-border p-3 text-xs text-foreground flex items-center gap-2">
               <Calendar className="w-4 h-4 text-primary" />
@@ -163,7 +167,7 @@ export default function Kitchen() {
                 <div className="text-xs text-muted-foreground mb-2.5">Window: {order.delivery_windows?.label || '—'}</div>
                 <button
                   onClick={() => handleStatusUpdate(order.id, 'preparing')}
-                  disabled={actionLoading === order.id}
+                  disabled={actionLoading === order.id || scheduledDate > new Date(Date.now() + 3600000).toISOString().slice(0, 10)}
                   className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
                 >
                   {actionLoading === order.id ? 'Promoting…' : 'Promote to Preparing'}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { safeCallHref } from '@/lib/safeNavigation';
+import { riderNavigationUrl } from '@/lib/riderNavigation';
 import { isAuthenticated, clearTokens } from '@/lib/apiClient';
 import { useSound } from '@/lib/SoundProvider';
 import { toast } from '@/components/ui/use-toast';
@@ -148,8 +149,9 @@ export function useRiderData() {
     setCalling(null);
   };
 
-  const navigateTo = (address) => {
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((address || '') + ', FUTA, Akure')}`, '_blank');
+  const navigateTo = (order) => {
+    const url = riderNavigationUrl(order);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const toggleOnline = async () => {

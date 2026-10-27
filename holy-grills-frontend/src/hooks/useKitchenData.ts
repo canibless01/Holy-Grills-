@@ -22,6 +22,9 @@ import { msg } from '@/lib/messages';
 export function useKitchenData() {
   const [queue, setQueue] = useState([]);
   const [scheduled, setScheduled] = useState(null);
+  const [scheduledDate, setScheduledDate] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 10));
+  const [scheduledLoading, setScheduledLoading] = useState(false);
+  const scheduleGeneration = useRef(0);
   const [windows, setWindows] = useState([]);
   const [selectedWindow, setSelectedWindow] = useState(null);
   const [batchSummary, setBatchSummary] = useState(null);
@@ -66,10 +69,12 @@ export function useKitchenData() {
   };
 
   const refreshQueue = async () => {
+    const generation = scheduleGeneration.current;
     try {
-      const [q, m] = await Promise.all([liveApi.kitchen.getQueue(), liveApi.kitchen.getMetrics()]);
+      const [q, m, s] = await Promise.all([liveApi.kitchen.getQueue(), liveApi.kitchen.getMetrics(), liveApi.kitchen.getScheduled({ date: scheduledDate })]);
       applyQueue(q);
       setMetrics(m);
+      if (generation === scheduleGeneration.current) setScheduled(s);
     } catch (e) { /* ignore poll errors */ }
   };
 
@@ -110,7 +115,19 @@ export function useKitchenData() {
     if (!authed) return;
     const interval = setInterval(refreshQueue, 10000);
     return () => clearInterval(interval);
-  }, [authed]);
+  }, [authed, scheduledDate]);
+
+  const selectScheduledDate = async (date) => {
+    if (!date) return;
+    const generation = ++scheduleGeneration.current;
+    setScheduledDate(date); setScheduledLoading(true); setScheduled(null);
+    try {
+      const value = await liveApi.kitchen.getScheduled({ date });
+      if (generation === scheduleGeneration.current) setScheduled(value);
+    } catch (exception) {
+      if (generation === scheduleGeneration.current) setScheduled({ date, scheduled_orders: [], count: 0, error: true });
+    } finally { if (generation === scheduleGeneration.current) setScheduledLoading(false); }
+  };
 
   const selectWindow = async (winId) => {
     setSelectedWindow(winId);
@@ -199,7 +216,7 @@ export function useKitchenData() {
 
   return {
     authed, loading, error,
-    queue, scheduled, windows, selectedWindow, batchSummary, metrics, settings, capacity, windowStatus,
+    queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, metrics, settings, capacity, windowStatus,
     accepting, open, prepTarget, flashingIds, actionLoading, batchBusy, batchResult,
     selectWindow, handleStatusUpdate, handleToggleAccepting, handleMarkUnavailable,
     handleMarkAvailable, handleBatchAdvance, clearBatchResult,

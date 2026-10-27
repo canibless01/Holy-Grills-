@@ -115,6 +115,8 @@ def _effective_rider_id(order: dict):
 def _map_db_error(exc):
     """Errors raised by the orders triggers (state machine / rider scoping) -> typed errors."""
     text = str(exc)
+    if "order_preparation_day_not_due" in text:
+        return OrderConflictError(MSG.ORDER_PREPARATION_DAY_NOT_DUE)
     if "payment_required_for_preparation" in text:
         return OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if "kitchen_preparation_only" in text:
@@ -1747,6 +1749,11 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 raise OrderForbiddenError(MSG.ORDER_ADMIN_CAMPUS_MISMATCH)
 
     current_status = order["status"]
+    if new_status != current_status and new_status in ("preparing", "ready") and order.get("is_scheduled"):
+        from app.services.delivery_window_schedule import WAT
+        scheduled = order.get("scheduled_for")
+        if not scheduled or datetime.fromisoformat(str(scheduled).replace("Z", "+00:00")).astimezone(WAT).date() > today_wat():
+            raise OrderConflictError(MSG.ORDER_PREPARATION_DAY_NOT_DUE)
     if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") not in ("paid", "partially_refunded"):
         raise OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if new_status == current_status:

@@ -1,5 +1,6 @@
 import { msg, useMessages } from '@/lib/messages';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
+import { riderNavigationUrl } from '@/lib/riderNavigation';
 import { useState } from 'react';
 import { Navigation, Phone, MapPin, Check, Clock, AlertCircle, Flag } from 'lucide-react';
 import { formatNaira, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
@@ -117,7 +118,8 @@ export default function RiderOrderCard({ order, onAction, onCall, onNavigate, ac
             <Phone className="w-3.5 h-3.5" /> {isCalling ? '…' : 'Call'}
           </button>
           <button
-            onClick={() => onNavigate(order.delivery_address)}
+            onClick={() => onNavigate(order)}
+            disabled={!riderNavigationUrl(order)}
             className="flex items-center gap-1 px-3 py-2 rounded-xl bg-cyan-50 text-cyan-600 text-xs font-bold hover:bg-cyan-100 transition-colors"
           >
             <MapPin className="w-3.5 h-3.5" /> Navigate

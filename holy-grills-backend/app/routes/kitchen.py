@@ -16,6 +16,49 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 kitchen_bp = Blueprint("kitchen", __name__)
+def _due_preparation(query):
+    tomorrow = (today_wat() + timedelta(days=1)).isoformat()
+    return (query.in_("payment_status", ["paid", "partially_refunded"])
+            .or_(f"is_scheduled.eq.false,scheduled_for.lt.{tomorrow}T00:00:00+01:00"))
+
+
+@kitchen_bp.route('/handoff', methods=['GET'])
+@require_role('kitchen', 'admin')
+def handoff_batches():
+    campus, error = _resolve_kitchen_campus_id()
+    if error: return error
+    if not campus: return jsonify({'error': MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
+    db = get_db()
+    batches = (db.table('delivery_batches').select('id,zone,status,rider_id,delivery_date,campus_id')
+               .eq('campus_id', campus).in_('status', ['open', 'assigned'])
+               .or_(f'delivery_date.lte.{today_wat().isoformat()},delivery_date.is.null')
+               .order('created_at').limit(100).execute()) or []
+    riders = (db.table('profiles').select('id,full_name').eq('campus_id', campus)
+              .eq('role', 'rider').eq('is_active', True).order('full_name').execute()) or []
+    orders = []
+    if batches:
+        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
+                 .eq('campus_id', campus).in_('batch_id', [batch['id'] for batch in batches])
+                 .in_('status', ['ready', 'assigned']))
+        orders = _attach_kitchen_customer_names(_due_preparation(query).execute() or [])
+    for batch in batches:
+        batch['orders'] = [order for order in orders if order.get('batch_id') == batch['id']]
+    return jsonify({'batches': [batch for batch in batches if batch['orders']], 'riders': riders}), 200
+
+
+@kitchen_bp.route('/handoff/<batch_id>/assign', methods=['POST'])
+@require_role('kitchen', 'admin')
+def assign_handoff_rider(batch_id):
+    body = request.get_json(silent=True)
+    if (not validate_uuid(batch_id) or not isinstance(body, dict) or set(body) != {'rider_id'}
+            or not validate_uuid(body.get('rider_id'))):
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    from app.routes.admin import _batch_transaction, _batch_saved_effects
+    receipt, error = _batch_transaction('update', batch_id, body)
+    if error: return error
+    _batch_saved_effects('update', receipt, body)
+    return jsonify({key: receipt.get(key) for key in ('id', 'status', 'rider_id', 'orders_assigned')}), 200
+
 units_bp = Blueprint("measurement_units", __name__)
 stock_bp = Blueprint("stock_items", __name__)
 
@@ -519,9 +562,8 @@ def live_queue():
         db.table("orders")
         .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .in_("status", ["received", "paid", "preparing", "ready"])
-        .in_("payment_status", ["paid", "partially_refunded"])
-        .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
     )
+    q = _due_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.order("received_at")
@@ -555,17 +597,23 @@ def delivery_windows():
     from app.services.delivery_window_schedule import upcoming_delivery_windows
     windows = upcoming_delivery_windows(q.execute() or [], open_only=False)
 
-    window_ids = [w["id"] for w in windows]
+    from app.services.delivery_window_schedule import WAT
+    window_ids = list({window["id"] for window in windows})
     counts = {}
-    for wid in window_ids:
-        oq = db.table("orders").select("id").eq("delivery_window_id", wid)
-        if campus_id:
-            oq = oq.eq("campus_id", campus_id)
-        rows = oq.execute() or []
-        counts[wid] = len(rows)
-
-    for w in windows:
-        w["order_count"] = counts.get(w["id"], 0)
+    if window_ids:
+        oq = (db.table("orders").select("id,delivery_window_id,is_scheduled,scheduled_for,created_at")
+              .in_("delivery_window_id", window_ids).in_("payment_status", ["paid", "partially_refunded"])
+              .not_.in_("status", ["cancelled", "refunded"]))
+        if campus_id: oq = oq.eq("campus_id", campus_id)
+        for order in oq.execute() or []:
+            stamp = order.get("scheduled_for") if order.get("is_scheduled") else order.get("created_at")
+            if stamp:
+                day = datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).astimezone(WAT).date().isoformat()
+                key = (order["delivery_window_id"], day)
+                counts[key] = counts.get(key, 0) + 1
+    for window in windows:
+        day = datetime.fromisoformat(window["starts_at"].replace("Z", "+00:00")).astimezone(WAT).date().isoformat()
+        window["order_count"] = counts.get((window["id"], day), 0)
 
     return jsonify(windows), 200
 
@@ -596,6 +644,11 @@ def scheduled_orders():
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
+    try:
+        from app.utils.admin_helpers import as_date
+        selected_date = as_date(request.args.get("date") or today_wat().isoformat())
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     db = get_user_client()
     # Scheduled orders: is_scheduled=True AND status='received' (not yet activated).
     # The DB enum does not include a 'scheduled' status value; the is_scheduled
@@ -609,6 +662,9 @@ def scheduled_orders():
             "order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         )
         .eq("is_scheduled", "true")
+        .in_("payment_status", ["paid", "partially_refunded"])
+        .gte("scheduled_for", f"{selected_date.isoformat()}T00:00:00+01:00")
+        .lt("scheduled_for", f"{(selected_date + timedelta(days=1)).isoformat()}T00:00:00+01:00")
         .in_("status", ["received", "paid"])
     )
     if campus_id:
@@ -619,7 +675,7 @@ def scheduled_orders():
         q = q.eq("delivery_window_id", window_id)
 
     orders = _attach_kitchen_customer_names(q.execute() or [])
-    return jsonify({"scheduled_orders": orders, "count": len(orders)}), 200
+    return jsonify({"scheduled_orders": orders, "count": len(orders), "date": selected_date.isoformat()}), 200
 
 
 @kitchen_bp.route("/metrics", methods=["GET"])
@@ -643,7 +699,9 @@ def kitchen_metrics():
         return err
     db = get_user_client()
     today_start = _today_start_iso()  # same WAT-midnight helper as menu.py/order_service.py
-    q = db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id").gte("created_at", today_start)
+    from app.routes.menu import _today_fulfilment_filter
+    q = (db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
+         .or_(_today_fulfilment_filter()).in_("payment_status", ["paid", "partially_refunded"]))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -655,7 +713,7 @@ def kitchen_metrics():
 
     prep_times = []
     for o in orders:
-        received = o.get("received_at") or o.get("preparing_at")
+        received = o.get("preparing_at") or o.get("received_at")
         ready = o.get("ready_at")
         if received and ready:
             try:
@@ -723,6 +781,7 @@ def batch_summary(window_id):
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
+    q = _due_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -793,7 +852,7 @@ def batch_advance(batch_id):
         .eq("delivery_window_id", batch_id)
         .in_("status", ["received", "paid", "preparing"])
         .in_("payment_status", ["paid", "partially_refunded"])
-        .or_(f"is_scheduled.eq.false,scheduled_for.lte.{datetime.now(timezone.utc).isoformat()}")
+        .or_(f"is_scheduled.eq.false,scheduled_for.lt.{(today_wat() + timedelta(days=1)).isoformat()}T00:00:00+01:00")
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)

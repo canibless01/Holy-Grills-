@@ -278,6 +278,8 @@ def my_batch():
             "notes": order.get("notes"),
             "customer_name": names.get(order.get("user_id")) or order.get("guest_name"),      # D08-B03: guest orders now show the guest's name
             "delivery_address": order.get("delivery_address_snapshot"),
+            "delivery_location_lat": order.get("delivery_location_lat"),
+            "delivery_location_lon": order.get("delivery_location_lon"),
             "items": items_by_order.get(order["id"], []),
             "delivery_rank": rank,
         } for rank, order in enumerate(pending + finished, 1)]

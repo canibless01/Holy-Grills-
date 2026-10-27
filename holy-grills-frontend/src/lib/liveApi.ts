@@ -444,6 +444,8 @@ const normKitchenOrder = (o) => {
 
 // ========== KITCHEN ==========
 const kitchen = {
+  async getHandoff() { return apiClient.get('/kitchen/handoff'); },
+  async assignHandoffRider(id, body) { return apiClient.post(`/kitchen/handoff/${id}/assign`, body); },
   // The campus-scoped queue is authoritative. An outage must remain visible
   // instead of looking like an empty kitchen or falling back to customer orders.
   async getQueue(params = {}) {
@@ -468,8 +470,8 @@ const kitchen = {
     arr.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || Number(new Date(a.received_at || a.created_at)) - Number(new Date(b.received_at || b.created_at)));
     return arr.map(normKitchenOrder);
   },
-  async getScheduled() {
-    const res = await apiClient.get('/kitchen/scheduled');
+  async getScheduled(params = {}) {
+    const res = await apiClient.get('/kitchen/scheduled', params);
     if (Array.isArray(res)) return { count: res.length, scheduled_orders: res.map(normKitchenOrder) };
     if (res && Array.isArray(res.scheduled_orders)) return { ...res, scheduled_orders: res.scheduled_orders.map(normKitchenOrder) };
     if (res && Array.isArray(res.orders)) return { count: res.count ?? res.orders.length, scheduled_orders: res.orders.map(normKitchenOrder) };
@@ -515,9 +517,11 @@ const riders = {
       customer_name: cust.display,
       customer_phone: cust.phone,
       customer_email: cust.email,
+      delivery_address_snapshot: o.delivery_address_snapshot || (typeof o.delivery_address === 'object' ? o.delivery_address : null),
       delivery_address: typeof o.delivery_address === 'string'
         ? o.delivery_address
-        : [o.delivery_address && o.delivery_address.hostel, o.delivery_address && o.delivery_address.room].filter(Boolean).join(' ') || o.delivery_location || '',
+        : [o.delivery_address?.line1, o.delivery_address?.address, o.delivery_address?.landmark,
+           o.delivery_address?.hostel, o.delivery_address?.room, o.delivery_address?.gate_name].filter(Boolean).join(', ') || o.delivery_location || '',
       items: (o.items || o.order_items || []).map((it) => ({ ...it, name_snapshot: it.name_snapshot || it.name })),
       distance_km: o.distance_km ?? '',
       delivery_rank: o.delivery_rank ?? '',
