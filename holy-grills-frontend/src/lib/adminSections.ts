@@ -11,10 +11,16 @@ import {
   BarChart3, TrendingUp, Coins, UtensilsCrossed, Layers, Flame, Gift, Zap, Target,
   Package, Calendar, CalendarDays, ShoppingBag, Tag, ShoppingCart, Star, Users, Truck, Lock,
   Bell, Trophy, School, Store, GraduationCap, ToggleRight, SlidersHorizontal, Server,
-  Boxes, Webhook, Wallet,
+  Boxes, Webhook, Wallet, Megaphone, UserCheck, ClipboardCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { msg } from '@/lib/messages';
+
+// Roles allowed inside the admin panel. Sections without an explicit `roles`
+// list stay admin/super-admin only — which is how the community_manager role
+// gets exactly three sections and nothing else.
+export const FINANCIAL_ADMIN_ROLES = ['admin', 'super_admin'];
+export const AMBASSADOR_STAFF_ROLES = ['admin', 'super_admin', 'community_manager'];
 
 export type AdminSection = {
   id: string;
@@ -24,6 +30,8 @@ export type AdminSection = {
   keywords: string[];
   /** Renders the "SA" badge — editing the section requires a super admin. */
   superAdminOnly?: boolean;
+  /** Roles that may see the section. Defaults to admin + super_admin. */
+  roles?: string[];
 };
 
 export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }> = [
@@ -61,6 +69,20 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
     { id: 'notifications', label: 'Campaigns', icon: Bell, desc: 'Blasts & scheduling', keywords: ['notification', 'blast', 'campaign', 'push', 'message', 'schedule', 'segment'] },
     { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, desc: 'Rankings & HoF', keywords: ['leaderboard', 'rank', 'hall of fame', 'hof', 'prize'] },
   ]},
+  { label: 'Ambassador Programme', items: [
+    { id: 'ambassadors', label: msg('FE_ADMIN_AMBASSADORS_TITLE', 'Campus Ambassadors'), icon: UserCheck,
+      desc: msg('FE_ADMIN_AMBASSADORS_DESC', 'Tag students, track referrals and review programme performance'),
+      keywords: ['ambassador', 'campus ambassador', 'referral', 'tag', 'tracking link', 'milestone'],
+      roles: AMBASSADOR_STAFF_ROLES },
+    { id: 'ambassadorpromo', label: msg('FE_ADMIN_AMBASSADOR_PROMO_TITLE', 'Promo Distribution'), icon: Megaphone,
+      desc: msg('FE_ADMIN_AMBASSADOR_PROMO_DESC', 'Create personalized promotional messages for ambassadors'),
+      keywords: ['ambassador', 'promo', 'promotion', 'whatsapp', 'graphic', 'caption', 'share', 'distribution'],
+      roles: AMBASSADOR_STAFF_ROLES },
+    { id: 'ambassadorreviews', label: msg('FE_ADMIN_AMBASSADOR_REVIEWS_TITLE', 'Monthly Reviews'), icon: ClipboardCheck,
+      desc: msg('FE_ADMIN_AMBASSADOR_REVIEWS_DESC', 'Activity, recommendations and reward decisions'),
+      keywords: ['ambassador', 'review', 'monthly', 'recommendation', 'approve', 'reward', 'grant', 'completion'],
+      roles: AMBASSADOR_STAFF_ROLES },
+  ]},
   { label: 'Config', items: [
     { id: 'campuses', label: msg('FE_CAMPUSES', 'Campuses'), icon: School, desc: msg('FE_CAMPUS_SETUP', 'Campus setup'), keywords: ['campus', 'setup', 'availability'] },
     { id: 'departments', label: 'Departments', icon: School, desc: 'Academic', keywords: ['department', 'faculty', 'academic', 'level'] },
@@ -76,6 +98,17 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
 
 // Flat list for search and other lookups.
 export const ADMIN_SECTIONS = ADMIN_GROUPS.flatMap((g) => g.items);
+
+// The sections a role may open. A section without explicit roles keeps the
+// historic admin/super-admin default, so community_manager only ever sees the
+// three ambassador sections. The backend independently rejects every other
+// endpoint for that role — this is navigation, not the security boundary.
+export const sectionsForRole = (role?: string | null) => {
+  const allowed = role && FINANCIAL_ADMIN_ROLES.includes(role)
+    ? ADMIN_SECTIONS
+    : ADMIN_SECTIONS.filter((s) => (s.roles || FINANCIAL_ADMIN_ROLES).includes(role || ''));
+  return allowed;
+};
 
 // Fuzzy section match — returns sections whose label, desc, or keywords
 // include every word in the query (case-insensitive). "create menu" matches

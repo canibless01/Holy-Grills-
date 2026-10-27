@@ -7,7 +7,7 @@ import StorefrontSlider from '@/components/storefront/StorefrontSlider';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame } from 'lucide-react';
+import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame, Gift } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCampus } from '@/lib/campusContext';
@@ -195,6 +195,18 @@ export default function Checkout() {
   const [promoResult, setPromoResult] = useState(null);
   const [promoError, setPromoError] = useState(null);
   const [validatingPromo, setValidatingPromo] = useState(false);
+  // Ambassador meal discounts (separate from wallet credit — a food-only,
+  // expiring, single/multi-use reward; delivery stays payable in full).
+  const [mealDiscounts, setMealDiscounts] = useState<any[]>([]);
+  const [selectedMealDiscountId, setSelectedMealDiscountId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isAuthenticated) { setMealDiscounts([]); setSelectedMealDiscountId(null); return; }
+    let live = true;
+    mockApi.ambassadors.myMealDiscounts()
+      .then((rows) => { if (live) setMealDiscounts((rows || []).filter((d: any) => d.status === 'active')); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -251,7 +263,7 @@ export default function Checkout() {
 
   const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
   const [quoteRetry, setQuoteRetry] = useState(0);
-  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady });
+  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady, mealDiscount: selectedMealDiscountId });
   const quote = quoteState?.key === quoteKey ? quoteState.data : null;
   useEffect(() => {
     if (quote) setRewardOptions({ hp: quote.available_hp_rewards || [], delivery: quote.available_delivery_rewards || [] });
@@ -444,6 +456,7 @@ export default function Checkout() {
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
         promo_code: promoResult?.code,
+        ...(selectedMealDiscountId ? { meal_discount_id: selectedMealDiscountId } : {}),
         ...(!rewardOnly && squadSelection?.squad_id ? {
           squad_id: squadSelection.squad_id,
           ...(squadSelection.excluded_member_ids?.length ? { excluded_member_ids: squadSelection.excluded_member_ids } : {}),
@@ -1083,6 +1096,32 @@ export default function Checkout() {
         {promoError && <div className="mt-2 flex items-center gap-2 text-xs text-destructive font-semibold"><AlertTriangle className="w-3.5 h-3.5" /> {promoError}</div>}
       </div>
 
+      {/* Ambassador meal discount — food only, delivery stays payable */}
+      {mealDiscounts.length > 0 && (
+        <div className="hg-card">
+          <h3 className="hg-section-title mb-2 flex items-center gap-2"><Gift className="w-4 h-4 text-primary" /> {msg('FE_CHECKOUT_MEAL_DISCOUNT', 'Ambassador meal discount')}</h3>
+          <div className="space-y-2">
+            <label className={`flex items-center gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${!selectedMealDiscountId ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <input type="radio" name="meal-discount" checked={!selectedMealDiscountId} onChange={() => setSelectedMealDiscountId(null)} />
+              <span className="text-muted-foreground">{msg('FE_CHECKOUT_MEAL_DISCOUNT_NONE', 'No meal discount')}</span>
+            </label>
+            {mealDiscounts.map((d) => (
+              <label key={d.id}
+                className={`flex items-center gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${selectedMealDiscountId === d.id ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" name="meal-discount" checked={selectedMealDiscountId === d.id} onChange={() => setSelectedMealDiscountId(d.id)} />
+                <span className="flex-1">
+                  <span className="font-bold block">{d.code} · {formatNaira(d.max_meal_value)} off one meal</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {d.uses_remaining}/{d.uses_total} {msg('FE_ADMIN_AMBASSADOR_GRANT_USES', 'Number of uses').toLowerCase()} ·{' '}
+                    {msg('FE_AMBASSADOR_DISCOUNT_EXPIRES', 'Expires')} {String(d.expires_at).slice(0, 10)} · delivery not covered
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {rewardOnly && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_REWARD_ONLY', 'Your redeemed reward is free. Review the delivery fee below. Items already in your cart will stay saved.')}</p>}
 
       {/* Order summary */}
@@ -1095,6 +1134,12 @@ export default function Checkout() {
         {quote?.order_lock_discount > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_LOCK_DISCOUNT', 'Order lock discount')}</span><span>-{formatNaira(quote.order_lock_discount)}</span></div>}
         {(quote?.reward_items || []).map(item => <div key={item.redemption_id} className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_REDEEMED_ITEM', 'Redeemed reward: {name}', { name: item.name })}</span><span>₦0</span></div>)}
         {(quote?.free_sides || []).map(side => <div key={side.selection_id} className="flex justify-between text-success"><span>{msg('FE_FREE_SIDE_SUMMARY', 'Free side: {name}', { name: side.name })}</span><span>₦0</span></div>)}
+        {quote?.meal_discount?.amount > 0 && (
+          <div className="flex justify-between text-success">
+            <span>{msg('FE_CHECKOUT_MEAL_DISCOUNT', 'Ambassador meal discount')} ({quote.meal_discount.code})</span>
+            <span>-{formatNaira(quote.meal_discount.amount)}</span>
+          </div>
+        )}
         <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span className="font-semibold">{(quote?.delivery_fee_original ?? deliveryFee) > 0 ? formatNaira(quote?.delivery_fee_original ?? deliveryFee) : <span className="text-success">FREE</span>}</span></div>
         {quote?.delivery_benefit?.discount > 0 && <div className="flex justify-between text-success"><span>{quote.delivery_benefit.source === 'monthly' ? msg('FE_CHECKOUT_MONTHLY_DELIVERY', 'Monthly free-delivery perk') : msg('FE_CHECKOUT_SPIN_DELIVERY', 'Spin delivery credit')}</span><span>-{formatNaira(quote.delivery_benefit.discount)}</span></div>}
         {(quote?.squad_delivery_discount_amount ?? (squadDeliveryPct > 0 ? deliveryFee - effectiveDeliveryFee : 0)) > 0 && <div className="flex justify-between text-success"><span>{msg('FE_CHECKOUT_SQUAD_DELIVERY_DISCOUNT', 'Squad delivery discount')}</span><span>-{formatNaira(quote?.squad_delivery_discount_amount ?? (deliveryFee - effectiveDeliveryFee))}</span></div>}

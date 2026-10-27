@@ -37,8 +37,12 @@ import AdminStore from '@/components/admin/AdminStore';
 import AdminWalletTransactions from '@/components/admin/AdminWalletTransactions';
 import AdminAcademicCalendar from '@/components/admin/AdminAcademicCalendar';
 import AdminWebhooks from '@/components/admin/AdminWebhooks';
+import AdminAmbassadors from '@/components/admin/AdminAmbassadors';
+import AdminAmbassadorPromo from '@/components/admin/AdminAmbassadorPromo';
+import AdminAmbassadorReviews from '@/components/admin/AdminAmbassadorReviews';
 import { isAuthenticated, clearTokens } from '@/lib/apiClient';
 import { useCampus } from '@/lib/campusContext';
+import { sectionsForRole } from '@/lib/adminSections';
 
 const TITLES = {
   dashboard: 'Dashboard Overview',
@@ -74,16 +78,25 @@ const TITLES = {
   campuses: msg('FE_CAMPUSES', 'Campuses'),
   webhooks: 'Webhook Events',
   system: 'System — Cron & Audit',
+  ambassadors: msg('FE_ADMIN_AMBASSADORS_TITLE', 'Campus Ambassadors'),
+  ambassadorpromo: msg('FE_ADMIN_AMBASSADOR_PROMO_TITLE', 'Promo Distribution'),
+  ambassadorreviews: msg('FE_ADMIN_AMBASSADOR_REVIEWS_TITLE', 'Monthly Reviews'),
 };
 
 export default function Admin() {
   const { user, isLoading } = useHolyGrill();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSection = searchParams.get('section') || 'dashboard';
-  const active = Object.prototype.hasOwnProperty.call(TITLES, requestedSection) ? requestedSection : 'dashboard';
+  // A community_manager only carries the three ambassador sections. Their
+  // default landing page is the ambassador roster; any other section id in
+  // the URL is rewritten before a request can be made.
+  const allowedSections = sectionsForRole(user?.role);
+  const allowedIds = new Set(allowedSections.map((s) => s.id));
+  const defaultSection = user?.role === 'community_manager' ? 'ambassadors' : 'dashboard';
+  const requestedSection = searchParams.get('section') || defaultSection;
+  const active = allowedIds.has(requestedSection) ? requestedSection : defaultSection;
   const setActive = (section: string) => {
-    if (Object.prototype.hasOwnProperty.call(TITLES, section)) setSearchParams({ section });
+    if (allowedIds.has(section)) setSearchParams({ section });
   };
   // Campus scope. The header selector writes hg_admin_campus_id, which
   // apiClient sends as X-Campus-ID on the *next* request — but every admin
@@ -107,10 +120,11 @@ export default function Admin() {
     );
   }
 
-  // Role gate — admin and super_admin only. Everything else a backend accepts
-  // from a regular campus admin stays open to both roles here (the backend
-  // scope-checks per campus anyway).
-  if (!['admin', 'super_admin'].includes(user.role)) {
+  // Role gate — admin/super_admin plus the restricted community_manager, who
+  // only ever reaches the three ambassador sections (filtered above). Every
+  // backend route independently re-checks the role, so hiding sections is not
+  // the security boundary.
+  if (!['admin', 'super_admin', 'community_manager'].includes(user.role)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="text-center max-w-sm">
@@ -165,6 +179,9 @@ export default function Admin() {
       case 'campuses': return <AdminCampuses />;
       case 'webhooks': return <AdminWebhooks />;
       case 'system': return <AdminSystem />;
+      case 'ambassadors': return <AdminAmbassadors />;
+      case 'ambassadorpromo': return <AdminAmbassadorPromo />;
+      case 'ambassadorreviews': return <AdminAmbassadorReviews />;
       default: return <AdminDashboard />;
     }
   };
@@ -176,6 +193,7 @@ export default function Admin() {
       onNavigate={setActive}
       title={TITLES[active] || 'Admin'}
       subtitle="Holy Grills · Admin Panel"
+      allowedIds={allowedIds}
       onSignOut={() => {
         clearTokens();
         localStorage.removeItem('hg_admin_campus_id');

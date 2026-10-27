@@ -11,7 +11,7 @@ import { haptic } from '@/lib/haptic';
 
 // Role-based login — after POST /api/auth/login the user's role routes them:
 // admin/super_admin → /admin, kitchen → /kitchen, rider → /rider, student → /.
-const ROLE_HOME = { admin: '/admin', super_admin: '/admin', kitchen: '/kitchen', rider: '/rider', student: '/' };
+const ROLE_HOME = { admin: '/admin', super_admin: '/admin', community_manager: '/admin', kitchen: '/kitchen', rider: '/rider', student: '/' };
 
 const loginDestination = (role, from) => {
   const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);

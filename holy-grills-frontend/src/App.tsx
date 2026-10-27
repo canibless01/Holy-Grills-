@@ -10,6 +10,7 @@ import { HolyGrillProvider } from '@/lib/HolyGrillContext';
 import { CampusProvider } from '@/lib/campusContext';
 import Layout from '@/components/Layout';
 import CampusScope from '@/components/CampusScope';
+import AmbassadorClickTracker from '@/components/AmbassadorClickTracker';
 import Contact from '@/pages/Contact';
 import InstallPrompt from '@/components/InstallPrompt';
 import CookieConsent from '@/components/CookieConsent';
@@ -160,6 +161,7 @@ export function AppShell() {
       <HolyGrillProvider>
         <CampusProvider>
           <ScrollToTop />
+          <AmbassadorClickTracker />
           <AppRoutes />
         </CampusProvider>
         <ClientOnly>
