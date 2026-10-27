@@ -1,6 +1,6 @@
 import copy
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from flask import Flask, g
 from app.services.reward_checkout import reward_checkout_plan
 
@@ -49,6 +49,31 @@ class DB:
 class RewardCheckoutTests(unittest.TestCase):
     def setUp(self): self.db = DB()
     def plan(self, **kw): return reward_checkout_plan(self.db, 'owner', 'campus', **kw)
+    def test_catalog_edits_do_not_replace_an_earned_reward(self):
+        original = copy.deepcopy(self.db.rows['rewards'][0])
+        self.db.rows['reward_redemptions'][0]['reward_snapshot'] = {**original, 'version': 1}
+        self.db.rows['rewards'][0].update(name='Replacement dish', metadata={})
+        plan = self.plan(redemption_id=RID, include_next_order=False)
+        self.assertEqual(plan['items'][0]['name_snapshot'], 'Free lunch')
+        self.assertEqual(plan['items'][0]['menu_item_id'], original['metadata']['menu_item_id'])
+        self.assertEqual(plan['items'][0]['price_snapshot'], 0)
+
+    def test_earned_snapshot_does_not_need_a_visible_catalog_row(self):
+        original = copy.deepcopy(self.db.rows['rewards'][0])
+        self.db.rows['reward_redemptions'][0]['reward_snapshot'] = {**original, 'version': 1}
+        self.db.rows['rewards'] = []
+        self.assertEqual(self.plan(redemption_id=RID)['claims'], [RID])
+
+    def test_original_dish_unavailability_does_not_substitute_new_catalog_dish(self):
+        original = copy.deepcopy(self.db.rows['rewards'][0])
+        self.db.rows['reward_redemptions'][0]['reward_snapshot'] = {**original, 'version': 1}
+        self.db.rows['menu_items'][0]['is_available'] = False
+        self.db.rows['rewards'][0]['metadata'] = {}
+        with self.assertRaises(ValueError): self.plan(redemption_id=RID)
+
+    def test_bad_snapshot_cannot_silently_fall_back_to_new_catalog(self):
+        self.db.rows['reward_redemptions'][0]['reward_snapshot'] = {'version': 1, 'id': 'other', 'name': 'Wrong'}
+        with self.assertRaises(ValueError): self.plan(redemption_id=RID)
     def test_explicit_reward_is_server_priced_without_food_hp(self):
         plan = self.plan(redemption_id=RID, include_next_order=False)
         self.assertEqual(plan['claims'], [RID])
@@ -110,6 +135,42 @@ class DeliveryChoiceTests(unittest.TestCase):
 
 
 class RedemptionHistoryTests(unittest.TestCase):
+    def test_success_reports_actual_spent_hp_and_saved_name(self):
+        from app.routes import rewards
+        user_db=DB(); user_db.rows['rewards'][0]['hp_cost']=100
+        service=DB(); service.rpc=MagicMock(return_value={'id':RID,'hp_cost_snapshot':25,'status':'fulfilled'})
+        service.rows['reward_redemptions'][0]['reward_snapshot']={'version':1,'id':'reward','name':'Earned meal'}
+        with Flask(__name__).test_request_context(method='POST'), \
+             patch.object(rewards,'get_user_client',return_value=user_db), \
+             patch.object(rewards,'get_db',return_value=service),patch.object(rewards,'send_notification') as notify:
+            g.user_id='owner'
+            response,status=rewards.redeem_reward.__wrapped__('reward')
+        self.assertEqual(status,201)
+        self.assertEqual(response.json['hp_spent'],25)
+        self.assertEqual(notify.call_args.kwargs['template_data'],{'name':'Earned meal','hp':25})
+
+    def test_post_commit_display_outage_does_not_instruct_redemption_retry(self):
+        from app.routes import rewards
+        user_db=DB(); user_db.rows['rewards'][0]['hp_cost']=100
+        service=MagicMock(); service.rpc.return_value={'id':RID,'hp_cost_snapshot':25,'status':'fulfilled'}
+        service.table.side_effect=RuntimeError('temporary lookup failure')
+        with Flask(__name__).test_request_context(method='POST'), \
+             patch.object(rewards,'get_user_client',return_value=user_db), \
+             patch.object(rewards,'get_db',return_value=service),patch.object(rewards,'send_notification'):
+            g.user_id='owner'
+            response,status=rewards.redeem_reward.__wrapped__('reward')
+        self.assertEqual(status,201)
+        self.assertEqual(response.json['hp_spent'],25)
+
+    def test_history_uses_earned_name_image_and_hp_cost(self):
+        from app.services.reward_promises import display_earned_reward
+        row={'reward_id':'reward','hp_cost_snapshot':25,'rewards':{'name':'New name','hp_cost':100},
+             'reward_snapshot':{'version':1,'id':'reward','name':'Earned meal','image_url':'saved-image','reward_type':'food'}}
+        display=display_earned_reward(row)['rewards']
+        self.assertEqual(display['name'],'Earned meal')
+        self.assertEqual(display['image_url'],'saved-image')
+        self.assertEqual(display['hp_cost'],25)
+
     def test_hidden_catalog_name_is_loaded_only_for_owned_history(self):
         from app.routes.rewards import my_redemptions
         db = DB()

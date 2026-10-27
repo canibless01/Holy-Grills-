@@ -1,6 +1,7 @@
 """Build server-owned reward lines; the order RPC claims them atomically."""
 from app.messages import MSG
 from app.utils.validators import validate_uuid
+from app.services.reward_promises import earned_reward
 
 
 def reward_checkout_plan(db, user_id, campus_id, redemption_id=None, include_next_order=True):
@@ -26,8 +27,10 @@ def reward_checkout_plan(db, user_id, campus_id, redemption_id=None, include_nex
         valid = (row.get('user_id') == user_id and row.get('status') == 'fulfilled'
                  and not row.get('attached_order_id') and not row.get('used_at')
                  and row.get('campus_id') in (None, campus_id))
-        reward = (db.table('rewards').select('id,name,reward_type,fulfillment_type,metadata,campus_id')
-                  .eq('id', row['reward_id']).single().execute()) if valid else None
+        reward = earned_reward(row) if valid else None
+        if valid and reward is None:
+            reward = (db.table('rewards').select('id,name,reward_type,fulfillment_type,metadata,campus_id')
+                      .eq('id', row['reward_id']).single().execute())
         valid = valid and bool(reward) and reward.get('campus_id') in (None, campus_id)
         metadata = (reward.get('metadata') or {}) if reward else {}
         menu_id = metadata.get('menu_item_id') if isinstance(metadata, dict) else None

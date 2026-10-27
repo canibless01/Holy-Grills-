@@ -301,12 +301,24 @@ def redeem_reward(reward_id):
 
     redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "fulfilled"}
     redemption_id = redemption_row.get("id") or redemption_row.get("redemption_id") or str(rpc_res)
+    hp_cost = redemption_row.get("hp_cost_snapshot", hp_cost)
+    earned_name = reward["name"]
+    try:
+        from app.services.reward_promises import earned_reward
+        saved = get_db().table("reward_redemptions").select("reward_id,reward_snapshot").eq("id", redemption_id).eq("user_id", g.user_id).single().execute()
+        if saved and (promise := earned_reward(saved)):
+            earned_name = promise["name"]
+            redemption_row = {**redemption_row, "reward_snapshot": promise}
+    except Exception as exc:
+        # The debit is already committed. A display lookup outage must not turn
+        # the completed redemption into a failure/retry instruction.
+        logger.warning("Earned reward display lookup unavailable: %s", type(exc).__name__)
 
     try:
         send_notification(
             user_id=g.user_id,
             notif_type="reward_redeemed",
-            template_data={"name": reward["name"], "hp": hp_cost},
+            template_data={"name": earned_name, "hp": hp_cost},
             reference_id=redemption_id,
             reference_type="reward_redemption",
         )
@@ -368,6 +380,8 @@ def admin_list_redemptions():
     if reward_id:
         q = q.eq("reward_id", reward_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    from app.services.reward_promises import display_earned_reward
+    rows = [display_earned_reward(row) for row in rows]
     return jsonify({"redemptions": rows, "count": len(rows)}), 200
 
 
@@ -887,7 +901,9 @@ def my_redemptions():
     # Catalog RLS can hide an inactive reward, but an earned entitlement must
     # retain its name in the owner's history and delivery chooser. Only hydrate
     # public display fields for reward IDs obtained from the authorized rows.
-    hidden_ids = sorted({row['reward_id'] for row in (redemptions or [])
+    from app.services.reward_promises import display_earned_reward
+    redemptions = [display_earned_reward(row) for row in (redemptions or [])]
+    hidden_ids = sorted({row['reward_id'] for row in redemptions
                          if row.get('reward_id') and not row.get('rewards')})
     if hidden_ids:
         display_rows = (get_db().table('rewards').select('id,name,reward_type,hp_cost,image_url')
