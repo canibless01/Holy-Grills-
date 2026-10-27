@@ -154,7 +154,7 @@ export default function AdminDelivery() {
           ) : batches.map((b) => (
             <div key={b.id} className="rounded-2xl bg-card border border-border shadow-card p-4">
               <div className="flex items-center justify-between mb-2">
-                <div><div className="font-bold text-sm text-foreground">{b.zone || msg('FE_BATCH_LABEL', 'Delivery batch')}</div><div className="text-xs text-muted-foreground font-mono">#{b.id.toUpperCase()}</div></div>
+                <div><div className="font-bold text-sm text-foreground">{b.zone || msg('FE_BATCH_LABEL', 'Delivery batch')}</div>{b.delivery_date && <time dateTime={b.delivery_date} className="block text-xs font-semibold text-foreground">{new Date(`${b.delivery_date}T12:00:00+01:00`).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', year: 'numeric' })}</time>}<div className="text-xs text-muted-foreground font-mono">#{b.id.toUpperCase()}</div></div>
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${b.status === 'in_progress' ? 'tone-info' : b.status === 'assigned' ? 'tone-warn' : b.status === 'completed' ? 'tone-success' : 'bg-secondary text-muted-foreground'}`}>{b.status.replace(/_/g, ' ')}</span>
               </div>
               <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">Rider: {b.profiles?.full_name || b.rider_name || <span className="text-destructive">Unassigned</span>}</span><span className="font-bold text-foreground">{b.order_count ?? 0} orders</span></div>
