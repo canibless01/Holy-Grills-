@@ -969,7 +969,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
             return
 
         chosen = get_email_provider(scope="transactional", override=provider)
-        app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
+        app_tagline = os.environ.get("APP_TAGLINE", "The Holy Grills Team")
         
         # Use rich HTML builder if rich content is provided
         if rich_content and (rich_content.get("body_html") or rich_content.get("images") or rich_content.get("cta_blocks")):
