@@ -1,0 +1,31 @@
+{
+  "origin": "https://www.holygrills.online",
+  "mode": "post-push deployed page/CMS/Cloudinary; no response fixtures",
+  "profiles": [
+    {
+      "viewport_width": 1365,
+      "slide1": {
+        "decoded": true,
+        "natural": [
+          192,
+          192
+        ]
+      },
+      "slide2": {
+        "decoded": true,
+        "natural": [
+          1200,
+          630
+        ]
+      },
+      "copy_and_cta_switched": true,
+      "document_count": 1
+    },
+    {
+      "viewport_width": 393,
+      "error_type": "TimeoutError",
+      "headings": [],
+      "document_count": 1
+    }
+  ]
+}

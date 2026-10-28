@@ -96,7 +96,7 @@ export default function Dashboard() {
   const quickActions = [
     { label: 'Events', subtitle: 'Earn HP', icon: Calendar, to: '/events', bg: 'bg-brand-brown' },
     { label: 'Marketplace', subtitle: 'Browse deals', icon: ShoppingBag, to: '/marketplace', bg: 'bg-accent' },
-    { label: 'Leaderboard', subtitle: `Rank #${myRank}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary', span: 'col-span-2 sm:col-span-1' },
+    { label: 'Leaderboard', subtitle: rank?.unranked ? 'Not ranked yet' : `${rank?.period_type === 'all_time' ? 'Overall' : 'Monthly'} rank ${rank?.rank ? '#' + myRank : '—'}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary', span: 'col-span-2 sm:col-span-1' },
   ];
 
   if (loading) return <DashboardSkeleton />;

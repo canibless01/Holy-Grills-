@@ -53,7 +53,9 @@ def get_leaderboard():
       200:
         description: Leaderboard rankings
     """
-    db = get_user_client()
+    # A student's own-row RLS cannot produce a campus leaderboard. Read through
+    # the trusted client, then publish only the scoped student/name/score fields.
+    db = get_db()
     period_type = request.args.get("period_type", "monthly")
     if period_type not in ("monthly", "weekly", "all_time"):
         period_type = "monthly"

@@ -7,10 +7,10 @@ import { Flame, Lock, Gift, Target, X, Check, History, Sparkles, Crown, Zap, Clo
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { getTierProgress, getTierProgressGradient, getTierOverallProgress } from '@/lib/hgUtils';
+import { getTierProgress, getTierProgressGradient, getTierOverallProgress, setTiers } from '@/lib/hgUtils';
 import TierIcon from '@/components/TierIcon';
 import { getStreakRewardHp, isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
-import { lowCodeInventoryThreshold, freeSideCreditsValidityDays } from '@/lib/appConfig';
+import { freeSideCreditsValidityDays } from '@/lib/appConfig';
 import { expiryLabel } from '@/lib/rewardUtils';
 import { toast } from '@/components/ui/use-toast';
 import RewardsSkeleton from '@/components/skeletons/RewardsSkeleton';
@@ -25,6 +25,8 @@ import { triggerMascotCelebration } from '@/lib/mascots';
 import type { MyChallengesEnvelope } from '@/types/challenges';
 import { msg, useMessages } from '@/lib/messages';
 import { localStore } from '@/lib/storage';
+import { useCampus } from '@/lib/campusContext';
+import { useResumeEffect } from '@/hooks/useResumeEffect';
 
 const CATEGORY_LABELS = { food: 'Food', discount: 'Wallet', experience: 'Experience' };
 
@@ -66,6 +68,7 @@ export default function Rewards() {
   const hallReleased = isFeatureEnabled('hall_of_fame');
   const flashReleased = isFeatureEnabled('flash_redemptions');
   const { hpBalance, refreshHp, streak, user } = useHolyGrill();
+  const { campusId } = useCampus();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(() => searchParams.get('tab') === 'challenges' ? 'challenges' : 'redeem');
@@ -88,27 +91,36 @@ export default function Rewards() {
   const [hasSpun, setHasSpun] = useState(false);
   const [deliveryRedemption, setDeliveryRedemption] = useState(null);
   const [hpTiers, setHpTiers] = useState([]);
+  const [loadError, setLoadError] = useState(false);
+  const [reload, setReload] = useState(0);
 
-  useEffect(() => {
-    liveApi.hp.getTiers().then((t) => setHpTiers(Array.isArray(t) ? t : []))
-      .catch(() => { /* empty tiers — backend unavailable */ });
+  useResumeEffect((background) => {
+    let active = true;
+    if (!user?.id || !campusId) return;
+    if (!background) setLoading(true);
+    setLoadError(false);
+    liveApi.hp.getTiers().then(t => {
+      if (active && Array.isArray(t)) { setTiers(t); setHpTiers(t); }
+    }).catch(() => { if (active) setLoadError(true); });
     const load = async () => {
       try {
-        const [r, myChallenges, fsc, exStatus] = await Promise.all([
-          liveApi.rewards.list(),
-          liveApi.challenges.my().catch(() => ({ badges: [], challenges_available: [], challenges_completed: [] })),
-          liveApi.rewards.getFreeSideCredits().catch(() => ({ count: 0, expires_at: null })),
-          liveApi.hp.getExclusiveSpinStatus().catch(() => null),
-        ]);
-        setRewards(r);
-        setChallenges(myChallenges);
-        setFreeSideCredits(fsc);
-        setExclusiveStatus(exStatus);
-      } catch (e) { console.error(e); }
-      setLoading(false);
+        const r = await liveApi.rewards.list();
+        if (!active) return;
+        setRewards(Array.isArray(r) ? r : (r?.rewards || []));
+      } catch { if (active) setLoadError(true); }
+      if (active) setLoading(false);
     };
+    Promise.all([
+      liveApi.challenges.my().catch(() => ({ badges: [], challenges_available: [], challenges_completed: [] })),
+      liveApi.rewards.getFreeSideCredits().catch(() => ({ count: 0, expires_at: null })),
+      liveApi.hp.getExclusiveSpinStatus().catch(() => null),
+    ]).then(([myChallenges, fsc, exStatus]) => {
+      if (!active) return;
+      setChallenges(myChallenges); setFreeSideCredits(fsc); setExclusiveStatus(exStatus);
+    });
     load();
-  }, []);
+    return () => { active = false; };
+  }, [user?.id, campusId, reload]);
 
   const loadRedemptions = async () => {
     try {
@@ -208,6 +220,7 @@ export default function Rewards() {
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {loadError && <div role="alert" className="rounded-2xl border border-destructive/30 p-4 text-sm flex items-center justify-between gap-3"><span>Rewards or tier details could not be loaded.</span><button className="font-bold text-primary" onClick={() => setReload(value => value + 1)}>Retry</button></div>}
       {/* Page header */}
       <div>
         <span className="hg-eyebrow">Holy Points</span>
@@ -386,7 +399,7 @@ export default function Rewards() {
         <div className="space-y-3">
           <GiftCampaignCard onClaimed={async () => { await refreshHp(); setFreeSideCredits(await liveApi.rewards.getFreeSideCredits()); }} />
           <h3 className="font-heading font-bold text-sm text-foreground">It counts everywhere.</h3>
-          {rewards.length === 0 && (
+          {rewards.length === 0 && !loadError && (
             <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border">
               <MascotStandee mascot="worried" className="w-28 h-28 mx-auto mb-2" alt="No rewards available" />
               <p className="text-sm text-muted-foreground">Nothing here yet.</p>
@@ -397,9 +410,9 @@ export default function Rewards() {
             const tierList = hpTiers;
             const tierIndex = tierList.findIndex((t) => t.id === reward.min_tier_id);
             const currentTierIndex = tierInfo ? tierList.findIndex((t) => t.id === tierInfo.current.id || t.slug === tierInfo.current.slug) : 0;
-            const tierLocked = currentTierIndex < tierIndex;
-            const lowStock = reward.stock_quantity <= lowCodeInventoryThreshold();
-            const locked = !flash && (tierLocked || lowStock);
+            const tierLocked = Boolean(reward.min_tier_id) && (tierIndex < 0 || currentTierIndex < tierIndex);
+            const outOfStock = reward.stock_quantity != null && Number(reward.stock_quantity) <= 0;
+            const locked = !flash && (tierLocked || outOfStock);
             const effectiveHpCost = flash?.hpCost ?? reward.hp_cost;
             const canAfford = hpActive >= effectiveHpCost;
             const category = CATEGORY_LABELS[reward.reward_type] || reward.reward_type;
@@ -453,7 +466,7 @@ export default function Rewards() {
                     {locked ? (
                       <div className="flex items-center gap-1 text-xs font-bold text-muted-foreground">
                         <Lock className="w-3.5 h-3.5" />
-                        {tierLocked ? `${tierList[tierIndex]?.name || 'Higher'} tier` : 'Low stock'}
+                        {tierLocked ? `${tierList[tierIndex]?.name || reward.hp_tiers?.name || 'Higher'} tier` : 'Out of stock'}
                       </div>
                     ) : flash ? (
                       <button

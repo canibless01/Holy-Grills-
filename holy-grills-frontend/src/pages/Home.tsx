@@ -149,7 +149,7 @@ export default function Home() {
         <Link to="/leaderboard" className="flex flex-col items-start gap-1 rounded-xl bg-card border border-border px-2.5 py-2.5 hover:border-primary/40 active:scale-95 transition">
           <TrendingUp className="w-3.5 h-3.5 text-accent" />
           <div className="font-heading font-extrabold text-base text-foreground leading-none tabular-nums">{myRankValue != null ? <>#{<CountUp value={myRankValue} />}</> : '—'}</div>
-          <div className="text-[10px] text-muted-foreground font-medium leading-tight truncate w-full">Your Rank</div>
+          <div className="text-[10px] text-muted-foreground font-medium leading-tight truncate w-full">{myRank?.period_type === 'all_time' ? 'Overall Rank' : 'Monthly Rank'}</div>
         </Link>
         <ActiveOrderCard />
       </div>

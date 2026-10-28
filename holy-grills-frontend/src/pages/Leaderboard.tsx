@@ -16,6 +16,8 @@ import { triggerMascotCelebration } from '@/lib/mascots';
 import { playSound } from '@/lib/soundManager';
 import { msg, useMessages } from '@/lib/messages';
 import { localStore } from '@/lib/storage';
+import { useCampus } from '@/lib/campusContext';
+import { useResumeEffect } from '@/hooks/useResumeEffect';
 
 const VIEWS = [{ id: 'user', label: 'Solo' }, { id: 'squad', label: 'Squad' }];
 const PERIODS = [
@@ -51,6 +53,7 @@ export default function Leaderboard() {
   useFeatureFlags();
   useMessages();
   const { hpBalance, user } = useHolyGrill();
+  const { campusId } = useCampus();
   const [view, setView] = useState('user');
   const [period, setPeriod] = useState('monthly');
   const [rankings, setRankings] = useState([]);
@@ -70,34 +73,44 @@ export default function Leaderboard() {
   const [hpTiers, setHpTiers] = useState([]);
 
   useEffect(() => {
-    liveApi.hp.getTiers().then((t) => setHpTiers(Array.isArray(t) ? t : []))
+    let active = true;
+    if (campusId) liveApi.hp.getTiers().then((t) => { if (active) setHpTiers(Array.isArray(t) ? t : []); })
       .catch(() => { /* keep empty — icon falls back to 🔥 */ });
     const t = setInterval(() => setCountdown(getWeeklyCountdown()), 60000);
-    return () => clearInterval(t);
-  }, []);
+    return () => { active = false; clearInterval(t); };
+  }, [campusId]);
 
-  useEffect(() => {
+  useResumeEffect((background) => {
+    let active = true;
+    if (!campusId) return;
     const load = async () => {
-      setLoading(true);
+      if (!background) { setLoading(true); setMyRank(null); }
       setError(null);
-      const [lb, my, squad, hof] = await Promise.allSettled([
-        liveApi.leaderboard.get({ period_type: period }),
-        liveApi.leaderboard.getMyRank({ period_type: period }),
-        liveApi.leaderboard.getSquad({ period_type: period }),
-        liveApi.leaderboard.getHallOfFame(),
+      const [board, my] = await Promise.allSettled([
+        view === 'squad' ? liveApi.leaderboard.getSquad({ period_type: period }) : liveApi.leaderboard.get({ period_type: period }),
+        user?.id && view === 'user' ? liveApi.leaderboard.getMyRank({ period_type: period }) : Promise.resolve(null),
       ]);
-      const lbRes = lb.status === 'fulfilled' ? lb.value : null;
-      setRankings(lbRes?.rankings || (Array.isArray(lbRes) ? lbRes : []));
-      setMyRank(my.status === 'fulfilled' ? (my.value?.rank_entry || my.value) : null);
-      const sqRes = squad.status === 'fulfilled' ? squad.value : null;
-      setSquadRankings(sqRes?.rankings || (Array.isArray(sqRes) ? sqRes : []));
-      const hofRes = hof.status === 'fulfilled' ? hof.value : null;
-      setHallOfFame(hofRes?.inductees || hofRes?.monthly_winners || (Array.isArray(hofRes) ? hofRes : []));
-      if (lb.status === 'rejected' && my.status === 'rejected') setError(msg('FE_LEADERBOARD_SOMETHING_SLIPPED_TRY_AGAIN', 'Something slipped. Try again.'));
+      if (!active) return;
+      if (board.status === 'fulfilled') {
+        const rows = board.value?.rankings || (Array.isArray(board.value) ? board.value : []);
+        if (view === 'squad') setSquadRankings(rows); else setRankings(rows);
+      }
+      if (my.status === 'fulfilled') setMyRank(my.value?.rank_entry || (my.value?.rank ? my.value : null));
+      if (board.status === 'rejected' || my.status === 'rejected') setError(msg('FE_LEADERBOARD_SOMETHING_SLIPPED_TRY_AGAIN', 'Something slipped. Try again.'));
       setLoading(false);
     };
     load();
-  }, [period, reload]);
+    return () => { active = false; };
+  }, [period, view, reload, user?.id, campusId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!hallReleased) { setHallOfFame([]); return; }
+    liveApi.leaderboard.getHallOfFame().then(result => {
+      if (active) setHallOfFame(result?.inductees || result?.monthly_winners || (Array.isArray(result) ? result : []));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [hallReleased, campusId]);
 
   useEffect(() => {
     let active = true;
@@ -157,6 +170,7 @@ export default function Leaderboard() {
       )}
 
       {/* Pinned user rank */}
+      {!myRank && !error && user?.role === 'student' && view === 'user' && <p role="status" className="text-sm text-muted-foreground">Not ranked for this period yet. Earn HP to join this leaderboard.</p>}
       {myRank && (
         <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-card">
           <div className="flex items-center justify-between">

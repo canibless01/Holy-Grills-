@@ -7,6 +7,11 @@
 // (slug 'ember', min_points 0) so the UI renders sensibly without crashing.
 
 let tierCache = [];
+const tierListeners = new Set<() => void>();
+export function subscribeTiers(listener: () => void) {
+  tierListeners.add(listener);
+  return () => { tierListeners.delete(listener); };
+}
 
 // Load tiers from the backend into the module cache. Called once on app
 // init by HolyGrillContext. Safe to call again to refresh.
@@ -14,13 +19,16 @@ export async function loadTiers() {
   try {
     const { liveApi } = await import('./liveApi');
     const tiers = await liveApi.hp.getTiers();
-    tierCache = Array.isArray(tiers) ? tiers : [];
-  } catch { tierCache = []; }
+    if (Array.isArray(tiers)) setTiers(tiers);
+  } catch { /* Keep already loaded tier definitions on transient failure. */ }
 }
 
 // Imperatively set the tier cache (e.g. from a component that already
 // fetched tiers for its own use).
-export function setTiers(tiers) { tierCache = Array.isArray(tiers) ? tiers : []; }
+export function setTiers(tiers) {
+  tierCache = Array.isArray(tiers) ? tiers : [];
+  tierListeners.forEach(listener => listener());
+}
 export function getTiers() { return tierCache; }
 
 // Minimal placeholder returned while the backend tiers haven't loaded yet.

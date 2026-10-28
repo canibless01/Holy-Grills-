@@ -7,6 +7,7 @@ class Query:
  def __init__(self,db,table):self.db=db;self.table=table;self.filters=[];self.skip=0;self.count=1000;self.one=False
  def select(self,*_):return self
  def eq(self,k,v):self.filters.append(lambda r:r.get(k)==v);return self
+ def in_(self,k,values):self.filters.append(lambda r:r.get(k) in values);return self
  def neq(self,k,v):self.filters.append(lambda r:r.get(k)!=v);return self
  def gte(self,k,v):self.filters.append(lambda r:r.get(k,'')>=v);return self
  def order(self,*_,**__):return self
@@ -36,3 +37,15 @@ class LivePersonalRank(unittest.TestCase):
   db=self.fixture();base=db.rows['hp_transactions'][0];db.rows['hp_transactions']=[dict(base,id=str(i),amount=1) for i in range(1002)];r=self.result(db);self.assertEqual(r['rank_entry']['hp_total'],1002)
  def test_no_current_earnings_has_no_fabricated_rank(self):
   db=self.fixture();db.rows['hp_transactions']=[];self.assertIsNone(self.result(db)['rank'])
+
+ def test_public_board_reads_other_students_with_scoped_trusted_client(self):
+  db=self.fixture()
+  for row in db.rows['profiles']:row['is_active']='true'
+  db.rows['profiles'].append({'id':'foreign','role':'student','campus_id':'foreign','is_active':'true','hp_balance':9999})
+  db.rows['hp_transactions'].append(dict(db.rows['hp_transactions'][0],id='foreign',user_id='foreign',campus_id='foreign',amount=9999))
+  with self.app.test_request_context('/?period_type=monthly'),patch.object(leaderboard,'get_db',return_value=db),patch.object(leaderboard,'get_user_client',side_effect=AssertionError('student RLS hides peers')),patch('app.routes.events._require_campus_selection',return_value=('campus',None)),patch.object(leaderboard,'_period_start_utc_iso',return_value='2026-10-01'),patch('app.services.squad_service.resolve_leaderboard_names_batch',return_value={'me':'Private alias','other':'Other alias'}):
+   response,status=leaderboard.get_leaderboard.__wrapped__()
+   self.assertEqual(status,200)
+   self.assertEqual([r['user_id'] for r in response.json['rankings']],['other','me'])
+   self.assertEqual([r['rank'] for r in response.json['rankings']],[1,2])
+   self.assertNotIn('email',response.get_data(as_text=True))

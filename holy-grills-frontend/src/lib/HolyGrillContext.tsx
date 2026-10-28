@@ -5,7 +5,7 @@ import { apiClient } from './apiClient';
 import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
 import { loadSystemSettings, loadFeatureFlags, useFeatureFlags, getSetting, getStringSetting, getBoolSetting } from './featureConfig';
-import { loadTiers } from './hgUtils';
+import { loadTiers, subscribeTiers } from './hgUtils';
 import { msg, useMessages } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
 import { initOneSignal, logoutOneSignal } from './onesignal';
@@ -164,6 +164,8 @@ export const HolyGrillProvider = ({ children }) => {
   // real token immediately after mount.
   const [authed, setAuthed] = useState(() => !isHydratingPrerender() && isAuthenticated());
   const [savedItems, setSavedItems] = useState([]);
+  const [tiersVersion, setTiersVersion] = useState(0);
+  useEffect(() => subscribeTiers(() => setTiersVersion(version => version + 1)), []);
 
   const loadGuestCart = useCallback(() => {
     cartRequestVersion.current += 1;
@@ -347,6 +349,7 @@ export const HolyGrillProvider = ({ children }) => {
       if (!isAuthenticated()) loadGuestCart();
       loadSystemSettings().then(setSystemSettings).catch(() => {});
       loadFeatureFlags().catch(() => {});
+      loadTiers().catch(() => {});
     };
     window.addEventListener('hg:scope-changed', reloadScope);
     return () => window.removeEventListener('hg:scope-changed', reloadScope);
@@ -487,7 +490,7 @@ export const HolyGrillProvider = ({ children }) => {
 
   return (
     <HolyGrillContext.Provider value={{
-      featureVersion, user, isLoading, cart, cartCount, hpBalance, wallet, notifications, unreadCount, streak, systemSettings, getSetting, getStringSetting, getBoolSetting,
+      featureVersion, tiersVersion, user, isLoading, cart, cartCount, hpBalance, wallet, notifications, unreadCount, streak, systemSettings, getSetting, getStringSetting, getBoolSetting,
       savedItems, isAuthenticated: authed,
       login, register, logout, refreshUser, refreshStreak, refreshCart, refreshHp, refreshWallet, refreshNotifications, refreshSavedItems,
       addToCart, updateCartItem, removeFromCart, clearCart,
