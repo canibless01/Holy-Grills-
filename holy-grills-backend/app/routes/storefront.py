@@ -21,6 +21,8 @@ from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.routes.events import _get_campus_id
 from app.services import newsletter_service
+
+
 from app.utils.logger import get_logger
 from app.utils.tz import today_wat
 from app.utils.schedule import override_window, resolve_date_override
@@ -30,6 +32,28 @@ from app.utils.upload_urls import is_cms_image_url
 logger = get_logger(__name__)                                                    # D17-B09: module had no logging at all
 
 storefront_bp = Blueprint("storefront", __name__)
+
+
+def _active_gift_campaign(campus_id):
+    if not campus_id or (getattr(g, 'user_id', None) and getattr(g, 'user_role', None) != 'student'):
+        return None
+    from app.services.gift_campaigns import read_config, features_ready
+    config, _, _ = read_config(get_db(), campus_id)
+    if not config.get('enabled') or not features_ready(get_db(), config): return None
+    now = datetime.now(timezone.utc)
+    if not datetime.fromisoformat(config['starts_at']) <= now < datetime.fromisoformat(config['ends_at']): return None
+    # First-order/signup eligibility is confirmed privately when claiming. The
+    # guest teaser advertises that audience; existing signed-in customers use
+    # their earned Rewards receipts instead of an unconditional welcome banner.
+    if getattr(g, 'user_id', None) and config['eligibility'] != 'everyone': return None
+    return config
+
+
+@storefront_bp.route('/gift-campaign', methods=['GET'])
+@optional_auth
+def public_gift_campaign():
+    try: return jsonify({'campaign': _active_gift_campaign(_get_campus_id())}), 200
+    except Exception: return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
 
 try:
     from zoneinfo import ZoneInfo

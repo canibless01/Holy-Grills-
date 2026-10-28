@@ -24,6 +24,7 @@ export default function Register() {
     phone: '', date_of_birth: '', campus_id: getStoredCampusId() || '', department_id: '', academic_level_id: '', referred_by: searchParams.get('ref') || searchParams.get('referral') || '',
   });
   const [terms, setTerms] = useState(false);
+  const [promotionalEmails, setPromotionalEmails] = useState(false);
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -42,17 +43,26 @@ export default function Register() {
     setReferencesError(false);
     setDepartments([]);
     setAcademicLevels([]);
-    Promise.all([
-      liveApi.campuses.list(),
-      liveApi.departments.list(form.campus_id ? { campus_id: form.campus_id } : {}),
-      liveApi.academicLevels.list(form.campus_id ? { campus_id: form.campus_id } : {}),
-    ]).then(([campusRows, departmentRows, levelRows]) => {
-      if (!active) return;
-      setCampuses(campusRows);
-      setDepartments(departmentRows);
-      setAcademicLevels(levelRows);
-    }).catch(() => { if (active) setReferencesError(true); })
-      .finally(() => { if (active) setReferencesLoading(false); });
+    const load = async () => {
+      try {
+        const campusRows = await liveApi.campuses.list();
+        if (!active) return;
+        setCampuses(campusRows);
+        if (!form.campus_id && campusRows.length === 1) {
+          setForm(old => ({ ...old, campus_id: campusRows[0].id }));
+          return;
+        }
+        const [departmentRows, levelRows] = await Promise.all([
+          liveApi.departments.list(form.campus_id ? { campus_id: form.campus_id } : {}),
+          liveApi.academicLevels.list(form.campus_id ? { campus_id: form.campus_id } : {}),
+        ]);
+        if (!active) return;
+        setDepartments(departmentRows);
+        setAcademicLevels(levelRows);
+      } catch { if (active) setReferencesError(true); }
+      finally { if (active) setReferencesLoading(false); }
+    };
+    load();
     return () => { active = false; };
   }, [form.campus_id, referenceRetry]);
 
@@ -74,11 +84,16 @@ export default function Register() {
   // Age, password policy, phone format and every other rule belong to the
   // backend: it decides what is valid and its message is what the user sees.
   const validate = () => {
-    if (!form.full_name.trim()) return 'Please enter your full name';
-    if (!form.email.trim()) return 'Please enter your email';
-    if (!form.password) return 'Please enter a password';
-    if (form.password !== form.confirm) return 'Passwords do not match';
-    if (!terms) return 'Please accept the Terms & Conditions';
+    if (!form.full_name.trim()) return msg('FE_REGISTER_NAME_REQUIRED', 'Please enter your full name.');
+    if (!form.email.trim()) return msg('FE_REGISTER_EMAIL_REQUIRED', 'Please enter your email.');
+    if (!form.phone.trim()) return msg('FE_REGISTER_PHONE_REQUIRED', 'Please enter your phone number.');
+    if (!form.campus_id && campuses.length > 1) return msg('FE_REGISTER_CAMPUS_REQUIRED', 'Please select your campus.');
+    if (!form.date_of_birth) return msg('FE_REGISTER_DOB_REQUIRED', 'Please enter your date of birth.');
+    if (!form.department_id) return msg('FE_REGISTER_DEPARTMENT_REQUIRED', 'Please select your department.');
+    if (!form.academic_level_id) return msg('FE_REGISTER_LEVEL_REQUIRED', 'Please select your academic level.');
+    if (!form.password) return msg('FE_REGISTER_PASSWORD_REQUIRED', 'Please enter a password.');
+    if (form.password !== form.confirm) return msg('FE_REGISTER_PASSWORD_MISMATCH', 'Passwords do not match.');
+    if (!terms) return msg('FE_REGISTER_TERMS_REQUIRED', 'Please accept the Terms & Conditions.');
     return null;
   };
 
@@ -94,6 +109,7 @@ export default function Register() {
       const phone = form.phone.startsWith('0') ? '+234' + form.phone.slice(1) : form.phone;
       const data = await register({
         full_name: form.full_name,
+        promotional_emails: promotionalEmails,
         nickname: form.nickname.trim() || undefined,
         email: form.email.toLowerCase(),
         password: form.password,
@@ -209,8 +225,13 @@ export default function Register() {
         <label className="flex items-start gap-2.5 p-3 rounded-xl bg-beige-soft/60 border border-border cursor-pointer">
           <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} className="mt-0.5 w-4 h-4 accent-primary shrink-0" />
           <span className="text-[11px] text-foreground leading-relaxed">
-            I agree to the <Link to="/terms" className="text-primary font-bold">Terms & Conditions</Link> and confirm I'm at least 16 years old. I consent to receive order notifications and marketing offers.
+            {msg('FE_REGISTER_TERMS', 'I agree to the Terms & Conditions and confirm I am at least 16 years old. Order notifications are sent separately.')} <Link to="/terms" className="text-primary font-bold">Terms & Conditions</Link>
           </span>
+        </label>
+
+        <label className="flex items-start gap-2.5 p-3 rounded-xl bg-beige-soft/60 border border-border cursor-pointer">
+          <input type="checkbox" checked={promotionalEmails} onChange={(e) => setPromotionalEmails(e.target.checked)} className="mt-0.5 w-4 h-4 accent-primary shrink-0" />
+          <span className="text-[11px] text-foreground leading-relaxed">{msg('FE_REGISTER_PROMOTIONAL_EMAILS', 'Email me promotions, offers and product news (optional). You can unsubscribe at any time.')}</span>
         </label>
 
         {error && (

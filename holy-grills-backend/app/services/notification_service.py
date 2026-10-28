@@ -39,7 +39,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "order_placed", "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
     "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
-    "order_refunded", "order_unclaimed", "order_moved_up", "order_scheduled_deferred",
+    "order_refunded", "order_unclaimed", "order_moved_up", "order_scheduled_deferred", "gift_campaign_granted",
     "order_thank_you", "satisfaction_check", "reengagement_nudge",
     # HP
     "hp_earned", "hp_unlocked", "hp_decay_applied", "hp_transfer_recipient", "hp_admin_grant",

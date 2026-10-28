@@ -22,7 +22,7 @@ RETURNS TABLE (user_id uuid, role text, campus_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
   SELECT p.id, p.role::text, p.campus_id
   FROM public.profiles p
-  WHERE p.id = auth.uid();
+  WHERE p.id = auth.uid() AND p.is_active IS TRUE;
 $$;
 REVOKE ALL ON FUNCTION public.hg_ambassador_actor() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.hg_ambassador_actor() TO authenticated, service_role;

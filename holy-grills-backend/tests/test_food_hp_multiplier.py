@@ -17,6 +17,9 @@ class Db:
  def __init__(self):self.fail=set();self.rows={'profiles':[{'next_order_hp_multiplier':1}],'exclusive_spin_fulfillments':[{'id':'first','result_snapshot':{'reward_config':{'multiplier':2}}},{'id':'second','result_snapshot':{'reward_config':{'multiplier':3}}}]}
  def table(self,t):return Query(self,t)
 class FoodMultiplierTests(unittest.TestCase):
+ def test_expired_first_receipt_does_not_hide_next_available_bonus(self):
+  self.db.rows['exclusive_spin_fulfillments'][0]['result_snapshot']['expires_at']='2000-01-01T00:00:00Z'
+  self.assertEqual(next_food_hp_multiplier(self.db,'user','campus')['receipt_id'],'second')
  def setUp(self):self.db=Db()
  def test_guest_has_no_award_reads(self):self.assertEqual(next_food_hp_multiplier(None,None,'campus')['multiplier'],1)
  def test_legacy_award_precedes_the_new_queue(self):

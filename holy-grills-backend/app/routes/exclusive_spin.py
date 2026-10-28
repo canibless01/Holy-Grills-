@@ -46,6 +46,7 @@ def my_spins():
         spins = _available_spins(db, g.user_id)
         prizes = _spin_prizes()
         history = (db.table('exclusive_spin_fulfillments').select('*')
+                   .or_('result_snapshot->>source.is.null,result_snapshot->>source.neq.gift_campaign')
                    .eq('user_id', g.user_id).order('created_at', ascending=False).limit(100).execute()) or []
         return jsonify({'total_spins': sum(s.get('spin_count', 0) for s in spins),
                         'spins': spins, 'prizes': prizes, 'history': history}), 200

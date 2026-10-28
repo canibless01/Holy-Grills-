@@ -18,6 +18,33 @@ logger = get_logger(__name__)
 
 rewards_bp = Blueprint("rewards", __name__)
 
+
+@rewards_bp.route('/gift-campaign', methods=['GET', 'POST'])
+@require_auth
+def customer_gift_campaign():
+    from app.services.gift_campaigns import read_config, claim, eligible_preview, features_ready
+    if request.method == 'POST':
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data.get('campaign_id'):
+            return jsonify({'error': MSG.GIFT_CAMPAIGN_INVALID}), 400
+        try: return jsonify(claim(g.user_id, data['campaign_id'])), 200
+        except ValueError as exc: return jsonify({'error': str(exc)}), 400
+        except Exception: return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
+    try:
+        config, _, _ = read_config(get_db(), getattr(g, 'campus_id', None))
+        history = (get_user_client().table('exclusive_spin_fulfillments')
+                   .select('id,prize_name,created_at,result_snapshot').eq('user_id', g.user_id)
+                   .eq('result_snapshot->>source', 'gift_campaign')
+                   .eq('result_snapshot->>prize_type', 'campaign_bundle')
+                   .order('created_at', ascending=False).limit(20).execute()) or []
+        now = datetime.now(timezone.utc)
+        active = config.get('enabled') and datetime.fromisoformat(config['starts_at']) <= now < datetime.fromisoformat(config['ends_at']) and features_ready(get_db(), config)
+        owned = any(row.get('result_snapshot', {}).get('campaign_id') == config.get('id') for row in history)
+        visible = active and getattr(g, 'user_role', None) == 'student' and (owned or eligible_preview(get_db(), g.user_id, config, getattr(g, 'jwt_payload', None)))
+        campaign = config if visible else None
+        return jsonify({'campaign': campaign, 'history': history}), 200
+    except Exception: return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
+
 # Mirrors the DB CHECK rewards_fulfillment_type_check. Keep in sync.
 _FULFILLMENT_TYPES = ("simple", "menu_item")
 # hp_transactions.reference_type written by hg_redeem_flash_reward_atomic for every flash redemption.

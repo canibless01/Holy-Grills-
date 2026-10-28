@@ -8,6 +8,7 @@ import { Field, TextInput, Card, Toggle, Pill } from './AdminShared';
 import { useIsSuperAdmin } from './SuperAdminGate';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import AdminGiftCampaign from './AdminGiftCampaign';
 
 export default function AdminOnboarding() {
   const isSuperAdmin = useIsSuperAdmin();
@@ -82,6 +83,7 @@ export default function AdminOnboarding() {
         <button onClick={save} disabled={saving || !valid} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" />{saving ? msg('FE_ONBOARDING_SAVING', 'Saving…') : msg('FE_ONBOARDING_WELCOME_SAVE', 'Save welcome credits')}</button>
       </div>
     </Card>
+    <AdminGiftCampaign key={scopeKey} scope={scope} />
     <div>
       <h3 className="font-bold text-sm mb-2 flex items-center gap-2"><Gift className="w-4 h-4 text-primary" />{msg('FE_ONBOARDING_LEGACY_TITLE', 'Earlier first-order gifts')}</h3>
       <p className="text-[11px] text-muted-foreground mb-2">{msg('FE_ONBOARDING_LEGACY_HELP', 'Previously granted physical gifts remain available for fulfillment. New welcome rewards use free-side credits.')}</p>

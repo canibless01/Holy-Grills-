@@ -27,7 +27,7 @@ BEGIN
       WHERE key = r.key AND campus_id IS NULL
     ) THEN
       INSERT INTO public.system_settings (key, value, campus_id, is_public, updated_at)
-      VALUES (r.key, r.value, NULL, false, now());
+      VALUES (r.key, r.value::jsonb, NULL, false, now());
     END IF;
   END LOOP;
 END $$;

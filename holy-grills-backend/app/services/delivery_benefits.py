@@ -4,6 +4,7 @@ from app.db import get_db
 from app.messages import MSG
 from app.services.tier_service import resolve_perk
 from app.utils.tz import today_wat
+from app.services.benefit_validity import available
 
 
 def _money(value):
@@ -42,11 +43,16 @@ def quote_delivery_benefit(user_id, campus_id, delivery_fee, is_squad_order, *, 
             .eq('result_snapshot->>prize_type', 'free_delivery').is_('applied_order_id', 'null')
             .order('created_at').order('id').execute()) or []
     for receipt in rows:
-        cap = _money((receipt.get('result_snapshot') or {}).get('reward_config', {}).get('cap'))
+        if not available(receipt): continue
+        config = (receipt.get('result_snapshot') or {}).get('reward_config', {})
+        cap = _money(config.get('cap'))
+        ratio = Decimal(str(config.get('discount_pct', 1)))
+        if not ratio.is_finite() or not Decimal('.01') <= ratio <= 1:
+            raise ValueError(MSG.ORDER_PRICE_UNVERIFIED)
         if cap <= 0:
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED)
         choices.append({'id':receipt['id'],'name':receipt.get('prize_name') or MSG.CHECKOUT_DELIVERY_REWARD_NAME,
-                        'source':'spin','receipt_id':receipt['id'],'cap':float(cap),'discount':float(min(fee,cap))})
+                        'source':'spin','receipt_id':receipt['id'],'cap':float(cap),'discount':float(min(_money(fee * ratio),cap))})
     selected=choices[0] if choice=='auto' and choices else next((r for r in choices if r['id']==choice),None)
     if choice not in ('none','auto') and not selected:
         raise ValueError(MSG.CHECKOUT_REWARD_UNAVAILABLE)

@@ -24,7 +24,7 @@ def _redirect_url(path_key: str, default_path: str):
     return base + current_app.config.get(path_key, default_path)
 
 
-def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None, nickname: str = None) -> dict:
+def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None, nickname: str = None, promotional_emails: bool = False) -> dict:
     """
     Create a Supabase Auth user and profile.
     Returns Supabase auth session (access_token, refresh_token, user).
@@ -198,6 +198,19 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     except SupabaseError as exc:
         logger.error("register: required profile persistence failed for %s: %s", user_id, exc)
         raise ValueError(MSG.REGISTER_FAILED_RETRY) from exc
+
+    # Marketing consent is separate from transactional email delivery. Save it
+    # on the existing preferences row, and reuse the newsletter audience.
+    db.table("notification_preferences").upsert(
+        {"user_id": user_id, "promotions": promotional_emails}, on_conflict="user_id")
+    if promotional_emails:
+        try:
+            db.table("newsletter_subscriptions").upsert({
+                "email": email, "full_name": full_name, "campus_id": campus_id,
+                "source": "signup", "is_confirmed": True, "unsubscribed_at": None,
+            }, on_conflict="email")
+        except Exception:
+            logger.exception("register: newsletter subscription unavailable for %s", user_id)
 
     if referred_by_user_id:
         try:

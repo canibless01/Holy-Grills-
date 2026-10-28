@@ -1,5 +1,6 @@
 import { nextChallengeSteps } from '@/lib/challengeProgression';
 import GraduationClaimButton from '@/components/GraduationClaimButton';
+import GiftCampaignCard from '@/components/GiftCampaignCard';
 import { formatNaira } from '@/lib/hgUtils';
 import { useState, useEffect } from 'react';
 import { Flame, Lock, Gift, Target, X, Check, History, Sparkles, Crown, Zap, Clock, ChevronRight, Award, Download } from 'lucide-react';
@@ -383,6 +384,7 @@ export default function Rewards() {
       {/* Redeem tab */}
       {tab === 'redeem' && (
         <div className="space-y-3">
+          <GiftCampaignCard onClaimed={async () => { await refreshHp(); setFreeSideCredits(await liveApi.rewards.getFreeSideCredits()); }} />
           <h3 className="font-heading font-bold text-sm text-foreground">It counts everywhere.</h3>
           {rewards.length === 0 && (
             <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border">

@@ -18,6 +18,52 @@ from datetime import datetime, timezone
 admin_gifts_bp = Blueprint("admin_gifts", __name__)
 
 
+@admin_gifts_bp.route('/gift-campaign', methods=['GET', 'PATCH'])
+@require_role('admin')
+def gift_campaign_settings():
+    from app.services.gift_campaigns import read_config, validate_config, CONFIG_KEY
+    from app.utils.validators import validate_uuid
+    data = request.get_json(silent=True) if request.method == 'PATCH' else {}
+    if not isinstance(data, dict): return jsonify({'error': MSG.INVALID_INPUT}), 400
+    global_scope = data.get('scope') == 'global' or request.args.get('scope') == 'global'
+    if global_scope and g.user_role != 'super_admin':
+        return jsonify({'error': MSG.SETTINGS_WRITE_FORBIDDEN}), 403
+    campus = None if global_scope else resolve_scoped_campus_id(data.get('campus_id') or request.args.get('campus_id'))
+    if campus and not validate_uuid(campus): return jsonify({'error': MSG.INVALID_CAMPUS_ID}), 400
+    if not campus and g.user_role != 'super_admin': return jsonify({'error': MSG.ACCOUNT_NO_CAMPUS}), 400
+    if request.method == 'GET':
+        try: config, stamp, inherited = read_config(get_db(), campus)
+        except Exception: return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
+        return jsonify({'config': config, 'updated_at': stamp, 'inherited': inherited}), 200
+    try: config = validate_config(data.get('config'))
+    except ValueError as exc: return jsonify({'error': str(exc)}), 400
+    db = get_user_client()
+    try:
+        query = db.table('system_settings').eq('key', CONFIG_KEY)
+        query = query.eq('campus_id', campus) if campus else query.is_('campus_id', 'null')
+        existing = query.select('key,updated_at').single().execute()
+        expected = data.get('expected_updated_at')
+        if existing and existing.get('updated_at') != expected:
+            return jsonify({'error': MSG.GIFT_CAMPAIGN_CHANGED}), 409
+        payload = {'value': config, 'is_public': True, 'updated_by': g.user_id,
+                   'updated_at': datetime.now(timezone.utc).isoformat()}
+        if existing:
+            query = query.eq('updated_at', expected) if expected else query.is_('updated_at', 'null')
+            written = query.update(payload)
+        elif expected is not None:
+            return jsonify({'error': MSG.GIFT_CAMPAIGN_CHANGED}), 409
+        else:
+            written = db.table('system_settings').insert({'key': CONFIG_KEY, 'campus_id': campus,
+                        'description': MSG.GIFT_CAMPAIGN_DESCRIPTION, **payload})
+        row = written[0] if isinstance(written, list) and written else written
+        if not row: return jsonify({'error': MSG.GIFT_CAMPAIGN_CHANGED}), 409
+        return jsonify({'config': config, 'updated_at': row.get('updated_at'), 'inherited': False}), 200
+    except SupabaseError as exc:
+        if str((getattr(exc, 'details', None) or {}).get('code')) == '23505':
+            return jsonify({'error': MSG.GIFT_CAMPAIGN_CHANGED}), 409
+        return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
+
+
 @admin_gifts_bp.route("/first-order-gifts", methods=["GET"])
 @require_role("admin")
 def list_first_order_gifts():
@@ -208,6 +254,13 @@ def update_setting(key):
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 400
 
+    if key == 'order_gift_campaign':
+        from app.services.gift_campaigns import validate_config as validate_campaign
+        try:
+            value = validate_campaign(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
     if key == 'signup_free_side_config':
         from app.services.welcome_credit_service import validate_config
         try:
@@ -314,6 +367,13 @@ def create_setting():
             return jsonify({'error': MSG.SOCIAL_LINKS_GLOBAL_ONLY}), 400
         try:
             value = validate_social_links(value)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    if key == 'order_gift_campaign':
+        from app.services.gift_campaigns import validate_config as validate_campaign
+        try:
+            value = validate_campaign(value)
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 400
 

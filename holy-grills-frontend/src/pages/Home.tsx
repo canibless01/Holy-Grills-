@@ -17,6 +17,7 @@ import OrderSuggestionCard from '@/components/OrderSuggestionCard';
 import ActiveOrderCard from '@/components/ActiveOrderCard';
 import SquadOrderEducation from '@/components/SquadOrderEducation';
 import StorefrontSlider from '@/components/storefront/StorefrontSlider';
+import GiftCampaignTeaser from '@/components/GiftCampaignTeaser';
 import EarlySupportersSlider from '@/components/storefront/EarlySupportersSlider';
 import CateringCard from '@/components/CateringCard';
 import SEO from '@/components/SEO';
@@ -178,6 +179,7 @@ export default function Home() {
       )}
 
       <HeroCarousel placement="home" />
+      <GiftCampaignTeaser campusId={campusId} authenticated={isAuthenticated} />
       <StorefrontSlider sectionType="promo" variant="poster" headline={msg('FE_STOREFRONT_PROMOTIONS', 'From the grill')} />
 
 

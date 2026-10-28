@@ -40,6 +40,20 @@ class Db:
     def rpc(self,*a):raise AssertionError('Quote called a mutating RPC')
 
 class CheckoutQuoteTests(unittest.TestCase):
+    def test_campaign_percentage_delivery_is_quoted_read_only(self):
+        self.db.rows['exclusive_spin_fulfillments']=[{'id':'campaign-delivery','user_id':'student','campus_id':CAMPUS,
+            'status':'pending','prize_name':'Launch delivery','result_snapshot':{'source':'gift_campaign',
+            'prize_type':'free_delivery','expires_at':'2099-01-01T00:00:00Z','reward_config':{'cap':200,'discount_pct':0.5}}}]
+        q=self.calculate(payload={**self.payload,'delivery_reward_id':'campaign-delivery'})
+        self.assertEqual(q['delivery_fee'],125)
+        self.assertEqual(q['delivery_benefit']['discount'],125)
+        self.assertEqual(q['available_delivery_rewards'][0]['name'],'Launch delivery')
+
+    def test_expired_campaign_delivery_is_not_quoted_or_silently_selected(self):
+        self.db.rows['exclusive_spin_fulfillments']=[{'id':'expired','user_id':'student','campus_id':CAMPUS,
+            'status':'pending','result_snapshot':{'prize_type':'free_delivery','expires_at':'2000-01-01T00:00:00Z','reward_config':{'cap':200}}}]
+        self.assertEqual(self.calculate()['delivery_fee'],250)
+        with self.assertRaises(ValueError): self.calculate(payload={**self.payload,'delivery_reward_id':'expired'})
     def setUp(self):
         self.app=Flask(__name__);self.app.config.update(HP_PER_NAIRA_FOOD=0.1,SQUAD_ORDER_ENABLED=False)
         self.db=Db();self.payload={'items':[{'menu_item_id':MEAL,'quantity':1}],'payment_method':'card','delivery_type':'on_campus','delivery_location_id':HOSTEL}

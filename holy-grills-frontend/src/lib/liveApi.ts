@@ -304,6 +304,8 @@ const hp = {
 
 // ========== REWARDS ==========
 const rewards = {
+  async getGiftCampaign() { return apiClient.get('/rewards/gift-campaign'); },
+  async claimGiftCampaign(body) { return apiClient.post('/rewards/gift-campaign', body); },
   async list(params = {}) { return apiClient.get('/rewards', params); },
   async redeem(rewardId) { return apiClient.post(`/rewards/${rewardId}/redeem`); },
   async getRedemptions() { return apiClient.get('/rewards/redemptions'); },
@@ -837,6 +839,8 @@ const admin = {
   async getGiftSettings() { const res = await apiClient.get('/admin/settings'); return res && res.settings ? res.settings : (res || {}); },
   async updateGiftSetting(key, body) { return apiClient.patch(`/admin/settings/${key}`, body); },
   async getWelcomeCreditSettings(params = {}) { return apiClient.get('/admin/welcome-credit', params); },
+  async getGiftCampaign(params = {}) { return apiClient.get('/admin/gift-campaign', params); },
+  async updateGiftCampaign(body) { return apiClient.patch('/admin/gift-campaign', body); },
   async updateWelcomeCreditSettings(body) { return apiClient.patch('/admin/welcome-credit', body); },
 
   // --- Menu Categories (POST/PATCH/DELETE /menu/categories) ---

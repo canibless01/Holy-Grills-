@@ -175,26 +175,38 @@ def register():
         if data.get(field) is not None and not isinstance(data[field], str):
             return jsonify({"error": MSG.AUTH_FIELD_INVALID.format(field=field)}), 400
 
+    required = {"phone": MSG.REGISTER_PHONE_REQUIRED, "date_of_birth": MSG.REGISTER_DOB_REQUIRED,
+                "department": MSG.REGISTER_DEPARTMENT_REQUIRED, "academic_level": MSG.REGISTER_LEVEL_REQUIRED}
+    for field, message in required.items():
+        if not (data.get(field) or "").strip():
+            return jsonify({"error": message, "field": field}), 400
+    if not isinstance(data.get("promotional_emails", False), bool):
+        return jsonify({"error": MSG.AUTH_FIELD_INVALID.format(field="promotional_emails")}), 400
+
     if len(data["password"]) < 8:
         return jsonify({"error": MSG.AUTH_PASSWORD_TOO_SHORT}), 400
 
-    db = get_db()
-    campus_id = (data.get("campus_id") or "").strip() or None
-    if campus_id:
-        if not validate_uuid(campus_id):
-            return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
-        campus_id = campus_id.lower()
-        chosen = db.table("campuses").select("id").eq("id", campus_id).eq("is_active", True).single().execute()
-        if not chosen:
-            return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
-    else:
-        # exactly one active campus: default to it; more than one: the student must choose
-        active = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(2).execute() or []
-        if len(active) > 1:
-            return jsonify({"error": MSG.CAMPUS_REQUIRED}), 400
-        if not active:
-            return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
-        campus_id = active[0]["id"]
+    try:
+        db = get_db()
+        campus_id = (data.get("campus_id") or "").strip() or None
+        if campus_id:
+            if not validate_uuid(campus_id):
+                return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+            campus_id = campus_id.lower()
+            chosen = db.table("campuses").select("id").eq("id", campus_id).eq("is_active", True).single().execute()
+            if not chosen:
+                return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
+        else:
+            # exactly one active campus: default to it; more than one: the student must choose
+            active = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(2).execute() or []
+            if len(active) > 1:
+                return jsonify({"error": MSG.CAMPUS_REQUIRED}), 400
+            if not active:
+                return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
+            campus_id = active[0]["id"]
+    except SupabaseError:
+        logger.exception("register: campus lookup unavailable")
+        return jsonify({"error": MSG.REFERENCE_DATA_UNAVAILABLE}), 503
 
     try:
         result = auth_service.register(
@@ -202,6 +214,7 @@ def register():
             phone=data.get("phone"), date_of_birth=data.get("date_of_birth"),
             referred_by_code=data.get("referred_by_code"), department=data.get("department"),
             academic_level=data.get("academic_level"), campus_id=campus_id, nickname=data.get("nickname"),
+            promotional_emails=data.get("promotional_emails", False),
         )
     except ValueError as e:
         err_msg = str(e)
@@ -216,7 +229,6 @@ def register():
     user_id = ((result.get("user") or {}).get("id")) or result.get("id")
     if user_id:
         # Fetch welcome bonuses for the notification
-        from app.db import get_db
         db = get_db()
         welcome_hp = "50"
         free_side_credits = "1"
@@ -451,7 +463,13 @@ def recover_welcome_credit():
     """Retry the idempotent signup grant after session hydration, never during it."""
     from app.services.welcome_credit_service import grant_signup_credit
     try:
-        return jsonify(grant_signup_credit(g.user_id)), 200
+        result = grant_signup_credit(g.user_id)
+        try:
+            from app.services.gift_campaigns import claim
+            result = {**result, 'campaign': claim(g.user_id)}
+        except Exception:
+            logger.warning('Gift campaign recovery remains pending for %s', g.user_id)
+        return jsonify(result), 200
     except Exception:
         logger.warning("welcome credit recovery unavailable for %s", g.user_id)
         return jsonify({"error": MSG.WELCOME_CREDIT_UNAVAILABLE}), 503

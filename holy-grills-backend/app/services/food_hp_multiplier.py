@@ -1,6 +1,7 @@
 """Select one unspent food-HP entitlement; consumption belongs to delivery SQL."""
 import math
 from app.messages import MSG
+from app.services.benefit_validity import available
 
 
 def next_food_hp_multiplier(db,user_id,campus_id,*,order_id=None):
@@ -29,7 +30,8 @@ def next_food_hp_multiplier(db,user_id,campus_id,*,order_id=None):
     rows=(db.table('exclusive_spin_fulfillments').select('id,result_snapshot')
           .eq('user_id',user_id).or_(f'campus_id.eq.{campus_id},campus_id.is.null')
           .eq('status','pending').is_('applied_order_id','null')
-          .eq('result_snapshot->>prize_type','hp_multiplier').order('created_at').order('id').limit(1).execute()) or []
+          .eq('result_snapshot->>prize_type','hp_multiplier').order('created_at').order('id').execute()) or []
+    rows = [row for row in rows if available(row)]
     if not rows:
         return {'multiplier':1.0,'source':None,'receipt_id':None}
     value=(rows[0].get('result_snapshot') or {}).get('reward_config',{}).get('multiplier')
@@ -60,6 +62,7 @@ def choose_food_hp_reward(db,user_id,campus_id,choice):
           .eq('user_id',user_id).or_(f'campus_id.eq.{campus_id},campus_id.is.null').eq('status','pending')
           .is_('applied_order_id','null').eq('result_snapshot->>prize_type','hp_multiplier').order('created_at').order('id').execute()) or []
     for row in rows:
+        if not available(row): continue
         value=float((row.get('result_snapshot') or {}).get('reward_config',{}).get('multiplier'))
         if not math.isfinite(value) or not 1.01<=value<=10:
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED)
