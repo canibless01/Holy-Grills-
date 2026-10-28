@@ -1,0 +1,7 @@
+{
+  "mode": "actual homepage with controlled menu GET; no stock mutations or orders",
+  "unlimited_has_no_empty_scarcity_tag": true,
+  "limited_three_servings_shows_real_count": true,
+  "zero_and_normal_stock_do_not_show_scarcity_tag": true,
+  "duplicated_carousel_cards_checked": true
+}

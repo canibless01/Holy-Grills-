@@ -21,7 +21,7 @@ export default function MenuGridCard({ item, onAdd }) {
   const [hpPulse, setHpPulse] = useState(false);
   const saved = isSavedItem(item.id);
 
-  const lowStock = item.daily_remaining != null && item.daily_remaining <= 10 && !item.is_sold_out;
+  const lowStock = item.daily_remaining != null && item.daily_remaining > 0 && item.daily_remaining <= 10 && !item.is_sold_out;
 
   const handleAdd = (e) => {
     if (item.is_sold_out) return;

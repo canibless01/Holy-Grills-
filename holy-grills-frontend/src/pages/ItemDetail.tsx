@@ -198,7 +198,7 @@ export default function ItemDetail() {
 
   const errors = validateSelections();
   const totalPrice = calculatePrice();
-  const lowStock = item.daily_remaining != null && item.daily_remaining <= 10 && !item.is_sold_out;
+  const lowStock = item.daily_remaining != null && item.daily_remaining > 0 && item.daily_remaining <= 10 && !item.is_sold_out;
   const stockLevel = item.daily_remaining == null ? 'mid' : item.daily_remaining <= 2 ? 'critical' : item.daily_remaining <= 5 ? 'low' : 'mid';
   const stockBadgeBg = stockLevel === 'critical' ? 'bg-destructive' : stockLevel === 'low' ? 'bg-warn' : 'bg-warn';
 

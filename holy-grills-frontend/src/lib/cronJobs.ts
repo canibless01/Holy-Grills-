@@ -17,7 +17,7 @@ export const KNOWN_CRON_JOBS = [
   { job: 'check-order-locks', cadence: 'Daily · 09:00 WAT', desc: 'Send lock reminders (10/7/3/1 days) + expire stale locks' },
   { job: 'win-back-notifications', cadence: 'Daily · 10:00 WAT', desc: 'Dormancy win-back at day 70/95/118' },
   { job: 'reset-monthly-hp-tracker', cadence: '1st of month · 00:05 WAT', desc: 'Clear monthly_hp_tracker for the new month' },
-  { job: 'grant-monthly-tier-perks', cadence: '1st of month · 00:05 WAT', desc: 'Grant monthly tier free-side credits + exclusive spins' },
+  { job: 'grant-monthly-tier-perks', cadence: '1st of month · 00:05 WAT', desc: 'Grant monthly tier free-side credits + bonus HP' },
   { job: 'monthly-birthday-report', cadence: '1st of month · 07:00 WAT', desc: 'Send admins the month\'s birthday list (in-app + email)' },
   { job: 'process-scheduled-orders', cadence: 'Every 5 min', desc: 'Notify kitchen when scheduled order delivery window arrives' },
   { job: 'send-scheduled-notifications', cadence: 'Every 15 min', desc: 'Deliver due scheduled notification campaigns' },

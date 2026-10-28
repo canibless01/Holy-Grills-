@@ -2086,7 +2086,7 @@ def grant_monthly_tier_perks(self):
                         db.table("free_side_credits").insert({
                             "user_id": uid, "credits_remaining": int(side_credits), "source": "tier_grant",
                             "month": curr_month, "expires_at": expires_at, "campus_id": campus_id,
-                        })
+                        }).execute()
                     except Exception as e:
                         logger.warning("grant_monthly_tier_perks side credits failed for user %s: %s", uid, e)
 

@@ -21,7 +21,7 @@ import RatingStars from '@/components/RatingStars';
 export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
   const { play } = useSound();
   const [hpPulse, setHpPulse] = useState(false);
-  const lowStock = item.daily_remaining <= 10 && !item.is_sold_out;
+  const lowStock = item.daily_remaining != null && item.daily_remaining > 0 && item.daily_remaining <= 10 && !item.is_sold_out;
   const stockLevel = item.daily_remaining <= 2 ? 'critical' : item.daily_remaining <= 5 ? 'low' : 'mid';
   const stockText = stockLevel === 'critical' ? 'text-destructive' : stockLevel === 'low' ? 'text-warn' : 'text-warn';
   const stockBadge = stockLevel === 'critical' ? 'bg-destructive' : stockLevel === 'low' ? 'bg-warn' : 'bg-warn';
