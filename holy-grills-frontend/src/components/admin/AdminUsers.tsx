@@ -33,6 +33,7 @@ const ROLES = [
   { value: 'kitchen', label: 'Kitchen' },
   { value: 'rider', label: 'Rider' },
   { value: 'admin', label: 'Admin' },
+  { value: 'community_manager', label: msg('FE_ROLE_COMMUNITY_MANAGER', 'Community Manager') },
   { value: 'super_admin', label: 'Super Admin' },
 ];
 const PAGE_SIZE = 24;
@@ -284,11 +285,11 @@ export default function AdminUsers() {
                       <select
                         value={u.role || 'student'}
                         onChange={(e) => handleRole(u, e.target.value)}
-                        disabled={updating === u.id || isSelf || (me?.role !== 'super_admin' && ['admin', 'super_admin'].includes(u.role))}
+                        disabled={updating === u.id || isSelf || (me?.role !== 'super_admin' && ['admin', 'super_admin', 'community_manager'].includes(u.role))}
                         title={isSelf ? 'You cannot change your own role' : 'Change role'}
                         className="flex-1 min-w-0 text-xs px-2.5 py-2 rounded-xl border border-border bg-card text-foreground font-bold focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
                       >
-                        {ROLES.filter((r) => r.value === u.role || me?.role === 'super_admin' || !['admin', 'super_admin'].includes(r.value)).map((r) => (
+                        {ROLES.filter((r) => r.value === u.role || me?.role === 'super_admin' || !['admin', 'super_admin', 'community_manager'].includes(r.value)).map((r) => (
                           <option key={r.value} value={r.value}>{r.label}</option>
                         ))}
                       </select>

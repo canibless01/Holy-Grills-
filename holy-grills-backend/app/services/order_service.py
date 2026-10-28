@@ -845,8 +845,10 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     promo_discount = 0.0
     promo_code_id = None
+    if payload.get("promo_code") and not user_id:
+        raise ValueError(MSG.ORDER_PROMO_SIGN_IN)
     if payload.get("promo_code") and user_id:
-        promo = _apply_promo(user_id, payload["promo_code"], subtotal)
+        promo = _apply_promo(user_id, payload["promo_code"], subtotal, campus_id=campus_id, priced_items=order_items)
         promo_discount = promo["discount"]
         promo_code_id = promo["promo_code_id"]
 
@@ -1045,7 +1047,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     claim_token = str(uuid.uuid4()) if is_guest else None
 
     # Calculate variables for RPC payload
-    total_discount = round(promo_discount + squad_discount + order_lock_discount, 2)
+    total_discount = float(total_discount_dec)
     address_input = ({'line1': saved_delivery_address.get('line1') or '',
                       'landmark': saved_delivery_address.get('landmark') or ''}
                      if saved_delivery_address else payload.get('delivery_address') or {})
@@ -1225,6 +1227,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         order_items[0]['_reward_claims'] = reward_plan['claims']
         order_items[0]['_delivery_benefit'] = delivery_benefit
         order_items[0]['_free_sides'] = free_side_quote['items']
+        order_items[0]['_promo_discount_amount'] = promo_discount
         if meal_discount and meal_discount_dec > 0:
             order_items[0]['_ambassador_meal_discount'] = {
                 'discount_id': meal_discount['id'], 'amount': float(meal_discount_dec),
@@ -1284,7 +1287,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         result = {}
 
     if result.get("error"):
-        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed', 'hp_bonus_changed', 'meal_discount_', 'ambassador_meal_discount_changed')):
+        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed', 'hp_bonus_changed', 'meal_discount_', 'ambassador_meal_discount_changed', 'promo_unavailable')):
             # The lock changed after pricing but before its transaction claim.
             # Return a fresh, read-only quote rather than repeating stale totals.
             refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
@@ -2114,8 +2117,9 @@ def _handle_delivery_rewards(order: dict):
         logger.warning("_handle_delivery_rewards: last_activity_at update failed for %s: %s", user_id, e)
 
 
-def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
-    db = get_user_client()
+def _apply_promo(user_id: str, code: str, order_subtotal: float, campus_id=None, priced_items=None) -> dict:
+    # Global quotas must see all uses; only the resulting discount is exposed.
+    db = get_db()
     promo = (
         db.table("promo_codes")
         .select("*")
@@ -2129,7 +2133,7 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
 
     from flask import has_request_context, g
     if has_request_context():
-        campus_id = getattr(g, 'campus_id', None)
+        campus_id = campus_id or getattr(g, 'campus_id', None)
         if campus_id and promo.get("campus_id") and promo["campus_id"] != campus_id:
             raise ValueError(MSG.ORDER_PROMO_INVALID.format(code=code))
 
@@ -2143,7 +2147,7 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
             db.table("orders")
             .select("id")
             .eq("promo_code_id", promo["id"])
-            .neq("status", "cancelled")
+            .neq("status", "cancelled").neq("status", "refunded")
             .execute()
         ) or []
         if len(total_uses) >= promo["max_uses"]:
@@ -2157,18 +2161,32 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float) -> dict:
             .select("id")
             .eq("user_id", user_id)
             .eq("promo_code_id", promo["id"])
-            .neq("status", "cancelled")
+            .neq("status", "cancelled").neq("status", "refunded")
             .execute()
         )
         if len(user_uses or []) >= int(promo["max_uses_per_user"]):
             raise ValueError(MSG.PROMO_CODE_MAX_USES)
 
-    if promo["discount_type"] == "percentage":
-        discount = order_subtotal * float(promo["discount_value"]) / 100
-    else:
-        discount = float(promo["discount_value"])
-
-    return {"discount": round(discount, 2), "promo_code_id": promo["id"]}
+    eligible = Decimal(str(order_subtotal))
+    scope = promo.get('scope') or 'cart'
+    if scope in ('item','items','category','categories'):
+        if priced_items is None:
+            return {'discount': None, 'promo_code_id': promo['id'], 'requires_quote': True}
+        allowed = set(promo.get('applicable_item_ids') or [])
+        if scope in ('category','categories'):
+            ids = {row.get('menu_item_id') for row in priced_items if row.get('menu_item_id')}
+            menu_rows = db.table('menu_items').select('id,category_id').in_('id',list(ids)).execute() if ids else []
+            categories = set(promo.get('applicable_category_ids') or [])
+            allowed = {row['id'] for row in menu_rows if row.get('category_id') in categories}
+        eligible = sum((Decimal(str(row.get('line_total') or 0)) for row in priced_items
+                        if row.get('menu_item_id') in allowed and not row.get('is_addon')), Decimal('0'))
+        if eligible <= 0: raise ValueError(MSG.ORDER_PROMO_NOT_APPLICABLE)
+    elif scope != 'cart':
+        raise ValueError(MSG.ORDER_PROMO_NOT_APPLICABLE)
+    value = Decimal(str(promo['discount_value']))
+    discount = eligible * value / 100 if promo['discount_type']=='percentage' else value
+    discount = min(eligible,max(Decimal('0'),discount)).quantize(Decimal('0.01'),rounding='ROUND_HALF_UP')
+    return {'discount': float(discount), 'promo_code_id': promo['id']}
 
 
 def _log_status_change(order_id: str, from_status: str, to_status: str, changed_by: str = None, notes: str = "", campus_id: str = None):

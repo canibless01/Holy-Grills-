@@ -34,6 +34,7 @@ export default function AdminOperatingHours() {
   const [schedule, setSchedule] = useState(null); // array indexed by weekday
   const [override, setOverride] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [effectiveSource, setEffectiveSource] = useState(null);
   const [busy, setBusy] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -54,6 +55,7 @@ export default function AdminOperatingHours() {
       setSchedule(byIdx);
       setOverride(res?.today_override || null);
       setIsOpen(!!res?.is_open);
+      setEffectiveSource(res?.effective_source || null);
       if (res?.today_override) {
         setOvDate(res.today_override.date || '');
         setOvClosed(res.today_override.is_closed !== false);
@@ -80,8 +82,8 @@ export default function AdminOperatingHours() {
     try {
       await liveApi.admin.updateOperatingHours({
         day: dayKey,
-        open_time: row?.is_closed ? null : (row?.open_time || '08:00'),
-        close_time: row?.is_closed ? null : (row?.close_time || '21:00'),
+        open_time: row?.is_closed ? null : (row?.open_time || row?.opens_at || '08:00'),
+        close_time: row?.is_closed ? null : (row?.close_time || row?.closes_at || '21:00'),
         is_closed: !!row?.is_closed,
       });
       toast({ title: msg('FE_ADMIN_OPERATING_HOURS_DAY_KEY_HOURS_SAVED', '✅ {day_key} hours saved', { day_key: dayKey }) });
@@ -163,10 +165,11 @@ export default function AdminOperatingHours() {
       <Card>
         <div className="flex items-center gap-2 mb-3">
           <CalendarOff className="w-4 h-4 text-primary" />
-          <h3 className="font-heading font-bold text-sm text-foreground">Date override</h3>
+          <h3 className="font-heading font-bold text-sm text-foreground">{msg('FE_HOURS_DATE_EXCEPTION', 'Hours for one date')}</h3>
           {override && <Pill tone="flame">Today: {override.is_closed ? 'Closed' : 'Modified'}</Pill>}
         </div>
-        <p className="text-[11px] text-muted-foreground mb-3">Close the kitchen or set special hours for a specific date (e.g. public holiday). Overrides the weekly schedule for that day only.</p>
+        <p className="text-[11px] text-muted-foreground mb-3">{msg('FE_HOURS_OVERRIDE_HELP', 'Use this for a holiday, closure or special opening. It changes the storefront kitchen status and ordering/scheduling hours for that Lagos date, then the weekly schedule returns automatically. A date-specific Ordering Window takes precedence; edit it under Delivery → Ordering & slots if one exists. This does not change capacity or existing orders.')}</p>
+        {effectiveSource === 'date' && <p className="mb-3 text-xs font-semibold text-primary">{msg('FE_HOURS_DATED_WINDOW_ACTIVE', 'Today has a date-specific ordering window. Its hours take priority over this override.')}</p>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Date"><TextInput type="date" value={ovDate} onChange={(e) => setOvDate(e.target.value)} /></Field>
           <div className="flex items-end gap-2">

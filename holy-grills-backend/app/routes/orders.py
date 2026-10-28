@@ -738,6 +738,8 @@ def _atomic_refund_response(order_id, customer_cancel=False, scheduled_only=Fals
     if not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 200:
         return jsonify({'error': MSG.ORDER_INTENT_INVALID}), 400
     amount = None
+    if not customer_cancel and data.get('refund_amount') is None:
+        return jsonify({'error': MSG.ORDER_REFUND_AMOUNT_REQUIRED}), 400
     if not customer_cancel and data.get('refund_amount') is not None:
         try:
             value = Decimal(str(data['refund_amount']))
@@ -749,6 +751,8 @@ def _atomic_refund_response(order_id, customer_cancel=False, scheduled_only=Fals
     before = get_user_client().table('orders').select('id,user_id,is_scheduled,status').eq('id', order_id).single().execute()
     if not before:
         return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+    if not customer_cancel and before.get('status') == 'delivered' and data.get('acknowledge_delivered') is not True:
+        return jsonify({'error': MSG.ORDER_REFUND_DELIVERED_ACK_REQUIRED}), 400
     if customer_cancel and before.get('user_id') != g.user_id:
         return jsonify({'error': MSG.ORDER_CANCEL_NOT_OWNER}), 403
     if scheduled_only and not before.get('is_scheduled'):
@@ -1067,6 +1071,8 @@ def validate_promo():
       400:
         description: Invalid, expired, or inapplicable code
     """
+    if not getattr(g, 'user_id', None):
+        return jsonify({'error': MSG.ORDER_PROMO_SIGN_IN}), 401
     data = request.get_json(force=True) or {}
     code = (data.get("code") or "").strip()
     try:
@@ -1090,7 +1096,7 @@ def validate_promo():
             return jsonify({"error": MSG.ORDER_PROMO_INVALID.format(code=code)}), 400
 
     try:
-        result = order_service._apply_promo(getattr(g, "user_id", None), code, subtotal)
+        result = order_service._apply_promo(getattr(g, "user_id", None), code, subtotal, campus_id=campus_id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -1099,6 +1105,7 @@ def validate_promo():
         "code": code.upper(),
         "calculated_discount": result["discount"],
         "promo_code_id": result["promo_code_id"],
+        "requires_quote": result.get("requires_quote", False),
         "message": MSG.PROMO_CODE_VALID,
     }), 200
 

@@ -1,3 +1,4 @@
+import CapacityGuide from './CapacityGuide';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, Clock, Bike } from 'lucide-react';
@@ -89,8 +90,8 @@ export default function AdminDelivery() {
   if (loading) return <StaffPanelSkeleton />;
 
   const tabs = [
-    { id: 'windows', label: 'Windows', icon: Calendar },
-    { id: 'ordering', label: 'Ordering', icon: Clock },
+    { id: 'windows', label: msg('FE_CAPACITY_DELIVERY_TIMES', 'Delivery times'), icon: Calendar },
+    { id: 'ordering', label: msg('FE_CAPACITY_ORDERING_TIMES', 'Ordering & slots'), icon: Clock },
     { id: 'batches', label: 'Batches', icon: Truck },
     { id: 'zones', label: 'Zones & Fees', icon: MapPin },
     { id: 'area', label: 'Delivery area', icon: MapPin },
@@ -101,6 +102,7 @@ export default function AdminDelivery() {
   return (
     <div className="space-y-4">
       {loadError && <div role="alert" className="rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{loadError} <button onClick={load} className="underline">{msg('FE_BATCH_RETRY', 'Retry')}</button></div>}
+      {(tab === 'windows' || tab === 'ordering') && <CapacityGuide />}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -123,7 +125,7 @@ export default function AdminDelivery() {
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${w.status === 'open' ? 'tone-success' : 'tone-info'}`}>{w.status.toUpperCase()}</span>
                 </div>
                 <div className="text-xs text-muted-foreground mb-2">{formatDateTime(w.starts_at)}</div>
-                <div className="flex items-center gap-2 text-xs mb-2"><span className="text-muted-foreground">Cap {w.capacity}</span><span className="font-bold text-foreground">{w.order_count ?? w.orders_count ?? 0} orders</span></div>
+                <div className="flex items-center gap-2 text-xs mb-2"><span className="text-muted-foreground">{msg('FE_CAPACITY_PLANNING_VALUE', 'Planning target: {count}', { count: w.capacity ?? '—' })}</span><span className="font-bold text-foreground">{w.order_count ?? w.orders_count ?? 0} orders</span></div>
                 <div className="w-full h-1.5 rounded-full bg-secondary mb-3"><div className="h-full rounded-full bg-gradient-cta" style={{ width: `${Math.min(100, ((w.order_count ?? w.orders_count ?? 0) / Math.max(1, w.capacity || 1)) * 100)}%` }} /></div>
                 <div className="flex gap-2">
                   <button onClick={() => setEditWindow(w)} className="flex-1 py-2 rounded-full bg-secondary text-secondary-foreground text-xs font-bold hover:bg-primary/10 hover:text-primary transition">
@@ -292,7 +294,7 @@ function CreateWindowModal({
           <Field label="Starts at"><input type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" /></Field>
           <Field label="Ends at"><input type="datetime-local" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" /></Field>
         </div>
-        <Field label="Capacity"><TextInput type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
+        <Field label={msg('FE_CAPACITY_DELIVERY', 'Delivery planning target')}><TextInput type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
         <button onClick={submit} disabled={submitting || !form.label || !form.starts_at || !form.ends_at} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? (editing ? 'Saving...' : 'Creating...') : (editing ? 'Save Changes' : 'Create Window')}</button>
       </div>
     </Modal>

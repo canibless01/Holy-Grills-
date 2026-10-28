@@ -77,7 +77,7 @@ export default function AdminOrders() {
   const doRefund = async () => {
     if (!refundOrder || refundBusy.current) return;
     const amount = Number(refundOrder.refund_amount);
-    if (!Number.isFinite(amount) || amount <= 0 || !refundOrder.reason.trim()) {
+    if (!refundOrder.mode || !Number.isFinite(amount) || amount <= 0 || amount > refundOrder.remaining || !refundOrder.reason.trim() || (refundOrder.status === 'delivered' && !refundOrder.acknowledge_delivered)) {
       toast({ title: msg('FE_REFUND_FIELDS_REQUIRED', 'Enter a positive refund amount and a reason.'), variant: 'destructive' });
       return;
     }
@@ -86,6 +86,7 @@ export default function AdminOrders() {
     try {
       await mockApi.orders.refund(refundOrder.id, {
         reason: refundOrder.reason, refund_amount: amount,
+        acknowledge_delivered: refundOrder.acknowledge_delivered,
         idempotency_key: refundOrder.idempotency_key,
       });
       const rid = refundOrder.id;
@@ -263,7 +264,7 @@ export default function AdminOrders() {
                         <AlertTriangle className="w-3.5 h-3.5" /> Override Status
                       </button>
                       {o.user_id && !['cancelled', 'refunded'].includes(o.status) && (
-                        <button onClick={() => setRefundOrder({ id: o.id, total_amount: o.total_amount, reason: '', refund_amount: Math.max(0, Number(o.wallet_amount_used || 0) + (['paid', 'partially_refunded', 'refunded'].includes(o.payment_status) ? Number(o.card_amount_used || 0) : 0) - Number(o.wallet_refund_total || 0) - Number(o.card_refund_total || 0)), idempotency_key: crypto.randomUUID() })}
+                        <button onClick={() => setRefundOrder({ id: o.id, total_amount: o.total_amount, status: o.status, mode: '', acknowledge_delivered: false, refund_amount: '', reason: '', remaining: Math.max(0, Number(o.wallet_amount_used || 0) + (['paid', 'partially_refunded', 'refunded'].includes(o.payment_status) ? Number(o.card_amount_used || 0) : 0) - Number(o.wallet_refund_total || 0) - Number(o.card_refund_total || 0)), idempotency_key: crypto.randomUUID() })}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold">
                           <RotateCcw className="w-3.5 h-3.5" /> Refund
                         </button>
@@ -290,9 +291,18 @@ export default function AdminOrders() {
         <Modal open onClose={() => { if (!refundBusy.current) setRefundOrder(null); }} title={msg('FE_REFUND_ORDER_TITLE', 'Refund #{id}', { id: refundOrder.id.toUpperCase() })}>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">{msg('FE_REFUND_WALLET_EXPLANATION', 'Collected payments are returned to the customer wallet. A partial refund keeps the current order status; a full refund closes the order.')}</p>
-            <Field label={msg('FE_REFUND_AMOUNT_LABEL', 'Refund amount (₦)')}><TextInput type="number" min="0.01" step="0.01" disabled={busy === refundOrder.id} value={refundOrder.refund_amount} onChange={(e) => setRefundOrder({ ...refundOrder, refund_amount: e.target.value })} /></Field>
-            <Field label={msg('FE_REFUND_REASON_LABEL', 'Reason')}><TextInput disabled={busy === refundOrder.id} value={refundOrder.reason} onChange={(e) => setRefundOrder({ ...refundOrder, reason: e.target.value })} /></Field>
-            <button onClick={doRefund} disabled={busy === refundOrder.id} className="w-full py-3 rounded-full bg-destructive text-white font-bold disabled:opacity-50">
+            <p className="text-sm font-semibold">{msg('FE_REFUND_REMAINING', 'Remaining refundable: {amount}', { amount: formatNaira(refundOrder.remaining) })}</p>
+            {refundOrder.status === 'delivered' && <div className="rounded-xl border border-amber-400/40 bg-amber-50/50 p-3 space-y-2 text-sm">
+              <p>{msg('FE_REFUND_DELIVERED_WARNING', 'This order has already been delivered. Review the complaint before returning money. A refund does not undo delivery or restore consumed rewards.')}</p>
+              <label className="flex items-start gap-2"><input type="checkbox" checked={refundOrder.acknowledge_delivered} onChange={event => setRefundOrder({ ...refundOrder, acknowledge_delivered: event.target.checked })} />{msg('FE_REFUND_DELIVERED_ACK', 'I have reviewed the delivered order and authorise this refund.')}</label>
+            </div>}
+            <Field label={msg('FE_REFUND_TYPE', 'Refund type')}><select aria-label={msg('FE_REFUND_TYPE', 'Refund type')} value={refundOrder.mode} onChange={event => setRefundOrder({ ...refundOrder, mode: event.target.value, refund_amount: event.target.value === 'full' ? refundOrder.remaining : '' })} className="w-full rounded-xl border border-border bg-card p-3 text-sm">
+              <option value="">{msg('FE_REFUND_CHOOSE_TYPE', 'Choose full or partial refund')}</option>
+              <option value="partial">{msg('FE_REFUND_PARTIAL', 'Partial refund')}</option><option value="full">{msg('FE_REFUND_FULL', 'Full remaining refund')}</option>
+            </select></Field>
+            <Field label={msg('FE_REFUND_AMOUNT_LABEL', 'Refund amount (₦)')}><TextInput aria-label={msg('FE_REFUND_AMOUNT_LABEL', 'Refund amount (₦)')} type="number" min="0.01" max={refundOrder.remaining} step="0.01" disabled={busy === refundOrder.id || refundOrder.mode !== 'partial'} value={refundOrder.refund_amount} onChange={(e) => setRefundOrder({ ...refundOrder, refund_amount: e.target.value })} /></Field>
+            <Field label={msg('FE_REFUND_REASON_LABEL', 'Reason')}><TextInput aria-label={msg('FE_REFUND_REASON_LABEL', 'Reason')} disabled={busy === refundOrder.id} value={refundOrder.reason} onChange={(e) => setRefundOrder({ ...refundOrder, reason: e.target.value })} /></Field>
+            <button onClick={doRefund} disabled={busy === refundOrder.id || !refundOrder.mode || !refundOrder.reason.trim() || Number(refundOrder.refund_amount) <= 0 || Number(refundOrder.refund_amount) > refundOrder.remaining || (refundOrder.status === 'delivered' && !refundOrder.acknowledge_delivered)} className="w-full py-3 rounded-full bg-destructive text-white font-bold disabled:opacity-50">
               {busy === refundOrder.id ? msg('FE_REFUND_PROCESSING', 'Processing…') : msg('FE_REFUND_CONFIRM', 'Confirm Refund')}
             </button>
           </div>

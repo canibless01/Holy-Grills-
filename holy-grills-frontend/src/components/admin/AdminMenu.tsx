@@ -1,3 +1,4 @@
+import CapacityGuide from './CapacityGuide';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Star, CheckSquare, Square, Zap, Gauge, Layers } from 'lucide-react';
@@ -257,8 +258,8 @@ export default function AdminMenu() {
       <Modal open={capacityModal} onClose={() => setCapacityModal(false)} title="Capacity Settings">
         {capacity && (
           <div className="space-y-4">
-            <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">{msg('FE_ADMIN_MENU_THREE_DISTINCT_CAPACITY_CONTROLS_CHANGES_APPLY_T', "Three distinct capacity controls. Changes apply to this campus immediately.")}</div>
-            <Field label="Kitchen / Daily Capacity (total orders/day)" hint="Max orders the kitchen accepts per day. Leave blank to remove the daily cap."><TextInput type="number" value={capacity.daily_order_capacity ?? ''} onChange={(e) => setCapacity({ ...capacity, daily_order_capacity: e.target.value === '' ? null : Number(e.target.value) })} /></Field>
+            <CapacityGuide />
+            <Field label={msg('FE_CAPACITY_DAILY', 'Daily kitchen slots')} hint={msg('FE_CAPACITY_DAILY_INPUT_HELP', 'Total slots for one delivery date. Blank removes this ceiling. Increasing it can bring paid capacity-deferred orders forward.')}><TextInput type="number" value={capacity.daily_order_capacity ?? ''} onChange={(e) => setCapacity({ ...capacity, daily_order_capacity: e.target.value === '' ? null : Number(e.target.value) })} /></Field>
             <button onClick={saveCapacity} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">Save Capacity Settings</button>
           </div>
         )}

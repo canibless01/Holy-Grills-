@@ -59,6 +59,38 @@ BEGIN
  OR (SELECT capacity_deferred FROM public.orders WHERE id=deferred)
  OR (SELECT balance FROM public.wallets WHERE user_id=u)<>4700 THEN RAISE EXCEPTION 'capacity increase did not move paid overflow and delivery metadata together: %',receipts; END IF;
  IF jsonb_array_length(public.hg_move_deferred_orders_atomic(actor,w1,today))<>0 THEN RAISE EXCEPTION 'move-up replay changed another order'; END IF;
+ -- Weekly closed rows can be reopened by a one-date override. A later close
+ -- blocks admission; an explicit dated ordering window still takes priority.
+ UPDATE public.kitchen_settings SET value='10' WHERE campus_id=c AND key='daily_order_capacity';
+ UPDATE public.ordering_windows SET date=null,weekday=extract(isodow FROM today)::int-1,is_closed=true,capacity=10 WHERE id=w1;
+ INSERT INTO public.operating_hour_overrides(date,campus_id,is_closed,opens_at,closes_at)
+ VALUES(today,c,false,'00:00','23:59');
+ target_window:=w1;target_delivery:=d1;scheduled:=false;target_time:=null;original_target:=null;
+   result:=public.hg_create_order_atomic(p_user_id=>u,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
+     p_subtotal=>100,p_delivery_fee=>0,p_discount_amount=>0,p_total_amount=>100,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+     p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>target_delivery,
+     p_squad_name=>null,p_notes=>'[AUDIT rollback] Capacity admission',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>null,
+     p_items=>jsonb_build_array(line),p_wallet_amount_used=>100,p_campus_id=>c,p_ordering_window_id=>target_window,
+     p_is_scheduled=>scheduled,p_scheduled_for=>target_time,p_capacity_deferred=>scheduled,p_originally_requested_date=>original_target);
+ IF NOT coalesce((result->>'success')::boolean,false) THEN RAISE EXCEPTION 'open date override could not admit closed weekly window: %',result; END IF;
+ UPDATE public.operating_hour_overrides SET is_closed=true WHERE campus_id=c AND date=today;
+   result:=public.hg_create_order_atomic(p_user_id=>u,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
+     p_subtotal=>100,p_delivery_fee=>0,p_discount_amount=>0,p_total_amount=>100,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+     p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>target_delivery,
+     p_squad_name=>null,p_notes=>'[AUDIT rollback] Capacity admission',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>null,
+     p_items=>jsonb_build_array(line),p_wallet_amount_used=>100,p_campus_id=>c,p_ordering_window_id=>target_window,
+     p_is_scheduled=>scheduled,p_scheduled_for=>target_time,p_capacity_deferred=>scheduled,p_originally_requested_date=>original_target);
+ IF result->>'error' IS DISTINCT FROM 'ORDERING_WINDOW_CLOSED' THEN RAISE EXCEPTION 'closed override admitted weekly order: %',result; END IF;
+ target_window:=gen_random_uuid();
+ INSERT INTO public.ordering_windows(id,campus_id,date,opens_at,closes_at,capacity,linked_delivery_window_id)
+ VALUES(target_window,c,today,'00:00','23:59',10,d1);
+   result:=public.hg_create_order_atomic(p_user_id=>u,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
+     p_subtotal=>100,p_delivery_fee=>0,p_discount_amount=>0,p_total_amount=>100,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+     p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>target_delivery,
+     p_squad_name=>null,p_notes=>'[AUDIT rollback] Capacity admission',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>null,
+     p_items=>jsonb_build_array(line),p_wallet_amount_used=>100,p_campus_id=>c,p_ordering_window_id=>target_window,
+     p_is_scheduled=>scheduled,p_scheduled_for=>target_time,p_capacity_deferred=>scheduled,p_originally_requested_date=>original_target);
+ IF NOT coalesce((result->>'success')::boolean,false) THEN RAISE EXCEPTION 'dated window did not take priority: %',result; END IF;
 END $audit$;
 ROLLBACK;
 SELECT 'two actual admissions; third same-day refusal; overflow tomorrow; increased capacity moves it back with no second charge; rollback complete' AS evidence;

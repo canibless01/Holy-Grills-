@@ -51,12 +51,28 @@ class AtomicRefundRouteTests(unittest.TestCase):
 
     def test_atomic_failure_cannot_be_reported_as_success(self):
         self.db.rpc.return_value = {'success': False, 'error': 'refund_failed'}
-        response, status = self.invoke({'reason': 'Return payment', 'idempotency_key': 'intent'})
+        response, status = self.invoke({'reason': 'Return payment', 'idempotency_key': 'intent', 'refund_amount': 100})
         self.assertEqual(status, 503)
         self.assertNotIn('success', response.get_json())
 
     def test_replay_does_not_repeat_notification(self):
         with patch('app.services.notification_service.send_notification') as notify:
-            _, status = self.invoke({'reason': 'Return payment', 'idempotency_key': 'intent'})
+            _, status = self.invoke({'reason': 'Return payment', 'idempotency_key': 'intent', 'refund_amount': 100})
         self.assertEqual(status, 200)
         notify.assert_not_called()
+
+    def test_admin_cannot_omit_amount_and_silently_refund_everything(self):
+        _, status = self.invoke({'reason':'Reviewed complaint','idempotency_key':'intent'})
+        self.assertEqual(status,400)
+        self.db.rpc.assert_not_called()
+
+    def test_delivered_refund_requires_explicit_acknowledgement(self):
+        self.order['status']='delivered'
+        body={'reason':'Reviewed complaint','refund_amount':25,'idempotency_key':'intent'}
+        for value in (None,False,'true'):
+            _,status=self.invoke({**body,'acknowledge_delivered':value})
+            self.assertEqual(status,400)
+        self.db.rpc.assert_not_called()
+        _,status=self.invoke({**body,'acknowledge_delivered':True})
+        self.assertEqual(status,200)
+        self.assertEqual(self.db.rpc.call_args.args[1]['p_requested_amount'],25)

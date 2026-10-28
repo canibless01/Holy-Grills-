@@ -181,3 +181,51 @@ class CheckoutQuoteTests(unittest.TestCase):
         self.assertEqual(self.db.rows['profiles'][0]['next_order_hp_multiplier'],2)
 
 if __name__=='__main__':unittest.main()
+
+class CombinedMealDiscountTests(unittest.TestCase):
+    setUp = CheckoutQuoteTests.setUp
+    calculate = CheckoutQuoteTests.calculate
+    def test_promo_lock_meal_and_delivery_credit_keep_payment_conservation(self):
+        from app.services import ambassador_service
+        discount='55555555-5555-4555-8555-555555555555'
+        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1}]
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        with patch.object(service,'_apply_promo',return_value={'discount':300,'promo_code_id':'promo'}),patch.object(ambassador_service,'sweep_expired_discounts',return_value=0):
+            quote=self.calculate(payload={**self.payload,'promo_code':'PROMO','meal_discount_id':discount})
+        self.assertEqual(quote['discount_amount'],1505)
+        self.assertEqual(quote['delivery_fee'],150)
+        self.assertEqual(quote['total_amount'],695)
+        self.assertEqual(quote['subtotal']-quote['discount_amount']+quote['delivery_fee'],quote['total_amount'])
+        self.assertEqual(quote['meal_discount']['amount'],1000)
+        self.assertEqual(self.db.rows['ambassador_meal_discounts'][0]['uses_remaining'],1)
+
+    def test_fully_discounted_food_does_not_spend_meal_benefit_or_discount_delivery(self):
+        from app.services import ambassador_service
+        discount='55555555-5555-4555-8555-555555555555'
+        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1}]
+        with patch.object(service,'_apply_promo',return_value={'discount':3000,'promo_code_id':'promo'}),patch.object(ambassador_service,'sweep_expired_discounts',return_value=0):
+            quote=self.calculate(payload={**self.payload,'promo_code':'PROMO','meal_discount_id':discount})
+        self.assertEqual((quote['discount_amount'],quote['total_amount']),(2050,250))
+        self.assertEqual(quote['meal_discount']['amount'],0)
+        self.assertEqual(self.db.rows['ambassador_meal_discounts'][0]['uses_remaining'],1)
+
+class ScopedPromoTests(unittest.TestCase):
+    def apply(self,promo,lines):
+        from unittest.mock import MagicMock
+        db=MagicMock();db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value=promo
+        with Flask(__name__).test_request_context(),patch.object(service,'get_db',return_value=db):
+            g.campus_id=CAMPUS
+            return service._apply_promo('student','PROMO',1000,campus_id=CAMPUS,priced_items=lines)
+
+    def test_item_scoped_percentage_cannot_discount_unrelated_food_or_global_addons(self):
+        promo={'id':'promo','scope':'item','campus_id':CAMPUS,'discount_type':'percentage','discount_value':50,'applicable_item_ids':[MEAL]}
+        lines=[{'menu_item_id':MEAL,'line_total':200},{'menu_item_id':'other','line_total':700},{'menu_item_id':None,'is_addon':True,'line_total':100}]
+        self.assertEqual(self.apply(promo,lines)['discount'],100)
+        promo.update(discount_type='flat',discount_value=500)
+        self.assertEqual(self.apply(promo,lines)['discount'],200)
+
+    def test_scoped_code_without_eligible_items_is_refused_and_preview_promises_no_amount(self):
+        promo={'id':'promo','scope':'item','campus_id':CAMPUS,'discount_type':'percentage','discount_value':50,'applicable_item_ids':[MEAL]}
+        self.assertTrue(self.apply(promo,None)['requires_quote'])
+        with self.assertRaisesRegex(ValueError,'does not apply'):
+            self.apply(promo,[{'menu_item_id':'other','line_total':1000}])

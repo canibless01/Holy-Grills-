@@ -5,7 +5,7 @@ DO $audit$
 DECLARE ids uuid[]; ambassador uuid; actor uuid; customer uuid; other uuid;
  campus uuid:=gen_random_uuid(); category uuid:=gen_random_uuid(); meal uuid:=gen_random_uuid();
  grant_result jsonb; result jsonb; line jsonb; discount uuid; oid uuid; second_order uuid;
- intent text:=gen_random_uuid()::text; hp_before integer; hits integer; code text;
+ promo uuid:=gen_random_uuid(); intent text:=gen_random_uuid()::text; hp_before integer; hits integer; code text;
 BEGIN
  SELECT array_agg(id) INTO ids FROM (SELECT p.id FROM public.profiles p JOIN public.wallets w ON w.user_id=p.id
    WHERE p.full_name ILIKE '%audit%' AND p.is_active ORDER BY p.id LIMIT 4) selected;
@@ -40,42 +40,57 @@ BEGIN
    IF SQLERRM='invalid claim accepted' THEN RAISE; END IF;
  END;
  IF (SELECT hp_balance FROM public.profiles WHERE id=ambassador)<>hp_before+50 THEN RAISE EXCEPTION 'partial HP grant leaked'; END IF;
+ INSERT INTO public.promo_codes(id,code,discount_type,discount_value,campus_id,max_uses,max_uses_per_user) VALUES(promo,'AUDIT-'||promo,'flat',10,campus,1,1);
  INSERT INTO public.menu_categories(id,name,slug,campus_id) VALUES(category,'[AUDIT rollback] Ambassador','audit-amb-'||category,campus);
  INSERT INTO public.menu_items(id,category_id,name,slug,price,hp_earn_value,campus_id) VALUES(meal,category,'[AUDIT rollback] Meal','audit-amb-'||meal,100,10,campus);
  line:=jsonb_build_object('menu_item_id',meal,'name_snapshot','[AUDIT rollback] Meal','quantity',1,'price_snapshot',100,'line_total',100,
    'hp_earn_snapshot',10,'hp_multiplier_snapshot',1,'is_addon',false,'options_snapshot','{}'::jsonb,'selected_variations','[]'::jsonb,
-   '_ambassador_meal_discount',jsonb_build_object('discount_id',discount,'amount',75,'meal_item_id',meal));
+   '_promo_discount_amount',10,'_ambassador_meal_discount',jsonb_build_object('discount_id',discount,'amount',75,'meal_item_id',meal));
  intent:=gen_random_uuid()::text;
  result:=public.hg_create_order_atomic(p_user_id=>ambassador,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
-   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>75,p_total_amount=>45,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>85,p_total_amount=>35,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
    p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>null,p_squad_name=>null,
-   p_notes=>'[AUDIT rollback]',p_idempotency_key=>intent,p_promo_code_id=>null,p_items=>jsonb_build_array(line),p_wallet_amount_used=>45,p_campus_id=>campus);
+   p_notes=>'[AUDIT rollback]',p_idempotency_key=>intent,p_promo_code_id=>promo,p_items=>jsonb_build_array(line),p_wallet_amount_used=>35,p_campus_id=>campus);
  IF NOT coalesce((result->>'success')::boolean,false) THEN RAISE EXCEPTION 'meal checkout failed: %',result; END IF;
  oid:=(result->>'order_id')::uuid;
- IF (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>4955 OR (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>0
+ IF (SELECT discount_amount FROM public.promo_code_uses WHERE order_id=oid) IS DISTINCT FROM 10::numeric THEN RAISE EXCEPTION 'promo usage counted another benefit as promo discount'; END IF;
+ IF (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>4965 OR (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>0
  OR (SELECT ambassador_discount_id FROM public.orders WHERE id=oid) IS DISTINCT FROM discount THEN RAISE EXCEPTION 'discount/charge did not commit together'; END IF;
  -- Last use already consumed: a second admission must roll back the whole new order.
  result:=public.hg_create_order_atomic(p_user_id=>ambassador,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
-   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>75,p_total_amount=>45,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>85,p_total_amount=>35,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
    p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>null,p_squad_name=>null,
-   p_notes=>'[AUDIT rollback]',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>null,p_items=>jsonb_build_array(line),p_wallet_amount_used=>45,p_campus_id=>campus);
- IF result->>'error' IS NULL OR (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>4955
+   p_notes=>'[AUDIT rollback]',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>promo,p_items=>jsonb_build_array(line),p_wallet_amount_used=>35,p_campus_id=>campus);
+ IF result->>'error' IS NULL OR (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>4965
  OR (SELECT count(*) FROM public.orders WHERE campus_id=campus)<>1 THEN RAISE EXCEPTION 'duplicate discounted checkout leaked order or debit'; END IF;
+ IF result->>'error' IS DISTINCT FROM 'promo_unavailable' THEN RAISE EXCEPTION 'global promo limit not enforced'; END IF;
+ UPDATE public.promo_codes SET max_uses=null WHERE id=promo;
+ result:=public.hg_create_order_atomic(p_user_id=>ambassador,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
+   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>85,p_total_amount=>35,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+   p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>null,p_squad_name=>null,
+   p_notes=>'[AUDIT rollback]',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>promo,p_items=>jsonb_build_array(line),p_wallet_amount_used=>35,p_campus_id=>campus);
+ IF result->>'error' IS DISTINCT FROM 'promo_unavailable' THEN RAISE EXCEPTION 'per-user promo limit not enforced'; END IF;
+ UPDATE public.promo_codes SET max_uses=1 WHERE id=promo;
  result:=public.hg_refund_order_atomic(oid,ambassador,'audit-cancel',null,'[AUDIT rollback]',true);
  IF NOT coalesce((result->>'success')::boolean,false) THEN RAISE EXCEPTION 'meal cancellation failed: %',result; END IF;
+ IF (SELECT used_count FROM public.promo_codes WHERE id=promo)<>0 THEN RAISE EXCEPTION 'cancel did not release promo use'; END IF;
  IF (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>5000 OR (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>1 THEN RAISE EXCEPTION 'cancel did not restore wallet and meal use'; END IF;
  result:=public.hg_refund_order_atomic(oid,ambassador,'audit-cancel',null,'[AUDIT rollback]',true);
  IF (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>1 THEN RAISE EXCEPTION 'cancel replay refilled twice'; END IF;
+ UPDATE public.promo_codes SET used_count=1 WHERE id=promo; -- historical cancelled-use counter
  result:=public.hg_create_order_atomic(p_user_id=>ambassador,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
-   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>75,p_total_amount=>45,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>85,p_total_amount=>35,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
    p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>null,p_squad_name=>null,
-   p_notes=>'[AUDIT rollback]',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>null,p_items=>jsonb_build_array(line),p_wallet_amount_used=>45,p_campus_id=>campus);
+   p_notes=>'[AUDIT rollback]',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>promo,p_items=>jsonb_build_array(line),p_wallet_amount_used=>35,p_campus_id=>campus);
  IF NOT coalesce((result->>'success')::boolean,false) THEN RAISE EXCEPTION 'restored discount could not be reused: %',result; END IF;
  second_order:=(result->>'order_id')::uuid;
  UPDATE public.orders SET status='preparing' WHERE id=second_order;
- result:=public.hg_refund_order_atomic(second_order,actor,'audit-post-prep-refund',null,'[AUDIT rollback]',false);
+ result:=public.hg_refund_order_atomic(second_order,actor,'audit-partial-post-prep',10,'[AUDIT rollback]',false);
+ IF NOT coalesce((result->>'success')::boolean,false) OR (SELECT used_count FROM public.promo_codes WHERE id=promo)<>1 THEN RAISE EXCEPTION 'partial refund released promo'; END IF;
+ result:=public.hg_refund_order_atomic(second_order,actor,'audit-post-prep-refund',25,'[AUDIT rollback]',false);
  IF NOT coalesce((result->>'success')::boolean,false) OR (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>5000
  OR (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>0 THEN RAISE EXCEPTION 'post-prep refund restored a spent meal benefit or lost money: %',result; END IF;
+ IF (SELECT used_count FROM public.promo_codes WHERE id=promo)<>0 THEN RAISE EXCEPTION 'full refund did not release promo use or replay double released'; END IF;
  -- Tracking: anonymous adoption is idempotent, and future clicks cannot steal an earlier order.
  result:=public.hg_ambassador_record_click(code,null,'audit-'||intent,campus);
  result:=public.hg_ambassador_merge_visitor('audit-'||intent,customer);

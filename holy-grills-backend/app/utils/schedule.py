@@ -143,7 +143,7 @@ def config_default_window() -> tuple:
     )
 
 
-def effective_windows_with_config(db, campus_id, date_iso, weekday):
+def effective_windows_with_config(db, campus_id, date_iso, weekday, operating_hours=None):
     """`effective_ordering_windows`, with the config fallback materialised.
 
     Identical precedence, except that step 4 — "no rows at all" — now returns
@@ -156,6 +156,18 @@ def effective_windows_with_config(db, campus_id, date_iso, weekday):
     rows, source = effective_ordering_windows(db, campus_id, date_iso, weekday)
     if rows or source != "config":
         return rows, source
+    # Admin weekly hours are the campus fallback when no ordering window was
+    # configured. They must govern checkout as well as the storefront badge.
+    hours = operating_hours
+    if hours is None:
+        hours = db.table('operating_hours').select('*').eq('weekday',weekday).execute() or []
+    candidates = [row for row in hours if row.get('weekday') == weekday and row.get('campus_id') in (None,campus_id)]
+    candidates.sort(key=lambda row: row.get('campus_id') is not None, reverse=True)
+    if candidates:
+        row = candidates[0]
+        return [{"id":None,"opens_at":row.get('open_time') or row.get('opens_at') or FULL_DAY_OPEN,
+                 "closes_at":row.get('close_time') or row.get('closes_at') or FULL_DAY_CLOSE,
+                 "is_closed":bool(row.get('is_closed')), "capacity":None,"linked_delivery_window_id":None}], 'operating_hours'
     opens, closes = config_default_window()
     return [{
         "id": None,

@@ -3136,6 +3136,44 @@ class MSG:
 
     FE_ITEM_SELECT_SIDE = "Select a side"
 
+    ORDER_REFUND_AMOUNT_REQUIRED = "Choose a full or partial refund and provide the refund amount."
+    ORDER_REFUND_DELIVERED_ACK_REQUIRED = "This order is delivered. Confirm that you have reviewed and authorised the refund."
+    FE_REFUND_REMAINING = "Remaining refundable: {amount}"
+    FE_REFUND_DELIVERED_WARNING = "This order has already been delivered. Review the complaint before returning money. A refund does not undo delivery or restore consumed rewards."
+    FE_REFUND_DELIVERED_ACK = "I have reviewed the delivered order and authorise this refund."
+    FE_REFUND_TYPE = "Refund type"
+    FE_REFUND_CHOOSE_TYPE = "Choose full or partial refund"
+    FE_REFUND_PARTIAL = "Partial refund"
+    FE_REFUND_FULL = "Full remaining refund"
+
+    FE_CAPACITY_DAILY = "Daily kitchen slots"
+    FE_CAPACITY_DAILY_HELP = "The campus-wide limit for one delivery date, across all ordering windows."
+    FE_CAPACITY_ORDERING = "Ordering-window slots"
+    FE_CAPACITY_ORDERING_HELP = "The limit for one ordering window on that date. Checkout must have room under both limits."
+    FE_CAPACITY_DELIVERY = "Delivery planning target"
+    FE_CAPACITY_DELIVERY_HELP = "The delivery window groups rider runs and delivery times. Its planning value does not enforce checkout capacity."
+    FE_CAPACITY_UNITS = "A standard order uses one kitchen slot; a squad order uses its meal count. Menu-item daily limits separately cap units of that item."
+    FE_CAPACITY_DAILY_INPUT_HELP = "Total slots for one delivery date. Blank removes this ceiling. Increasing it can bring paid capacity-deferred orders forward."
+    FE_CAPACITY_DELIVERY_TIMES = "Delivery times"
+    FE_CAPACITY_ORDERING_TIMES = "Ordering & slots"
+    FE_CAPACITY_PLANNING_VALUE = "Planning target: {count}"
+    FE_CAPACITY_ORDERING_SCREEN_HELP = "Set when customers may order and how many slots each window accepts. Link a delivery window to tell customers when food arrives."
+    FE_CAPACITY_WINDOW_INPUT = "Window slots (blank = unlimited)"
+    FE_HOURS_DATE_EXCEPTION = "Hours for one date"
+    FE_HOURS_OVERRIDE_HELP = "Use this for a holiday, closure or special opening. It changes the storefront kitchen status and ordering/scheduling hours for that Lagos date, then the weekly schedule returns automatically. A date-specific Ordering Window takes precedence; edit it under Delivery → Ordering & slots if one exists. This does not change capacity or existing orders."
+
+    FE_ROLE_COMMUNITY_MANAGER = "Community Manager"
+
+    FE_HOURS_DATED_WINDOW_ACTIVE = "Today has a date-specific ordering window. Its hours take priority over this override."
+
+    ORDER_PROMO_NOT_APPLICABLE = "This promo does not apply to the menu items in your cart."
+    FE_PROMO_AWAIT_QUOTE = "Code verified. Eligible-item savings appear after your checkout details are complete."
+    FE_PROMO_APPLIED_SAVING = "{code} applied. You save {amount}"
+    FE_PROMO_REMOVE = "Remove code"
+
+    ORDER_PROMO_SIGN_IN = "Sign in to use promo codes. Your guest cart will be kept."
+    FE_PROMO_SIGN_IN = "Sign in to use promo codes"
+
 M = MSG
 
 

@@ -890,11 +890,16 @@ def get_hours():
     # returns the global row, exactly as the scoped read above does.
     override = resolve_date_override(db, campus_id, today_iso)
 
+    from app.utils.schedule import effective_windows_with_config
+    effective, source = effective_windows_with_config(db, campus_id, today_iso, today_wat().weekday(), operating_hours=hours) if campus_id else ([], None)
+    current = datetime.now(_WAT).time()
+    is_open = any(not row.get('is_closed') and _parse_time(row.get('opens_at')) <= current <= _parse_time(row.get('closes_at')) for row in effective)
     return jsonify({
         "schedule": hours,
         "today_override": override,
+        "effective_source": source,
         # D17-B08: without a campus the rows of several campuses are mixed, so "open?" has no single answer
-        "is_open": _is_currently_open(hours, override) if campus_id else None,
+        "is_open": is_open if campus_id else None,
     }), 200
 
 

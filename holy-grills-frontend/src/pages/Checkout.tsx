@@ -1094,11 +1094,12 @@ export default function Checkout() {
       {/* Promo code — moved from the cart page so all order adjustments live here */}
       <div className="hg-card">
         <h3 className="hg-section-title mb-2 flex items-center gap-2"><Tag className="w-4 h-4 text-primary" /> Promo Code</h3>
+        {!isAuthenticated && <p className="mb-2 text-xs text-muted-foreground"><Link to="/login" state={{ from: '/checkout' }} className="font-semibold text-primary underline">{msg('FE_PROMO_SIGN_IN', 'Sign in to use promo codes')}</Link></p>}
         <div className="flex gap-2">
-          <input type="text" value={promoCode} onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); setPromoError(null); }} placeholder="Try SAVE10 or WELCOME50" className="flex-1 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
-          <button onClick={handleValidatePromo} disabled={!promoCode || validatingPromo} className="px-4 rounded-xl bg-brand-brown text-white text-xs font-bold disabled:opacity-40 hover:opacity-90 transition-opacity">{validatingPromo ? '...' : 'Apply'}</button>
+          <input type="text" disabled={!isAuthenticated} value={promoCode} onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); setPromoError(null); }} placeholder="Try SAVE10 or WELCOME50" className="flex-1 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+          <button onClick={handleValidatePromo} disabled={!isAuthenticated || !promoCode || validatingPromo} className="px-4 rounded-xl bg-brand-brown text-white text-xs font-bold disabled:opacity-40 hover:opacity-90 transition-opacity">{validatingPromo ? '...' : 'Apply'}</button>
         </div>
-        {promoResult && <div className="mt-2 flex items-center gap-2 text-xs text-success font-semibold"><Check className="w-3.5 h-3.5" /> {promoResult.code} applied. You save {formatNaira(promoResult.calculated_discount)}</div>}
+        {promoResult && <div className="mt-2 flex items-center gap-2 text-xs text-success font-semibold"><Check className="w-3.5 h-3.5" /> {promoResult.requires_quote && !quote ? msg('FE_PROMO_AWAIT_QUOTE', 'Code verified. Eligible-item savings appear after your checkout details are complete.') : msg('FE_PROMO_APPLIED_SAVING', '{code} applied. You save {amount}', { code: promoResult.code, amount: formatNaira(quote?.promo_discount ?? promoResult.calculated_discount) })}<button type="button" onClick={() => { setPromoCode(''); setPromoResult(null); setPromoError(null); }} className="ml-auto underline">{msg('FE_PROMO_REMOVE', 'Remove code')}</button></div>}
         {promoError && <div className="mt-2 flex items-center gap-2 text-xs text-destructive font-semibold"><AlertTriangle className="w-3.5 h-3.5" /> {promoError}</div>}
       </div>
 

@@ -61,7 +61,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Clock className="w-4 h-4" /> When ordering is open, per weekday/date, with slot capacity.</div>
+        <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Clock className="w-4 h-4" /> {msg('FE_CAPACITY_ORDERING_SCREEN_HELP', 'Set when customers may order and how many slots each window accepts. Link a delivery window to tell customers when food arrives.')}</div>
         <div className="flex gap-2">
           <button onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
           <button onClick={() => setModal({ item: { weekday: 0, opens_at: '08:00', closes_at: '16:00', capacity: 100, is_closed: false } })} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold"><Plus className="w-3.5 h-3.5" /> New Window</button>
@@ -81,7 +81,7 @@ export default function OrderingWindowsTab({ deliveryWindows = [] }) {
                   {closed ? <Pill tone="red">CLOSED</Pill> : <Pill tone="green">OPEN</Pill>}
                 </div>
                 <div className="text-xs text-muted-foreground mb-2">{w.opens_at && w.closes_at ? `${w.opens_at}–${w.closes_at}` : 'No hours set'}{w.date ? ` · ${w.date}` : ''}</div>
-                <div className="flex items-center gap-2 text-xs mb-2"><span className="text-muted-foreground">Capacity</span><span className="font-bold text-foreground">{w.capacity ?? '∞'}</span></div>
+                <div className="flex items-center gap-2 text-xs mb-2"><span className="text-muted-foreground">{msg('FE_CAPACITY_ORDERING', 'Ordering-window slots')}</span><span className="font-bold text-foreground">{w.capacity ?? '∞'}</span></div>
                 {w.linked_delivery_window_id && <div className="text-[11px] text-muted-foreground mb-2">Linked delivery: {deliveryWindows.find((d) => d.id === w.linked_delivery_window_id)?.label || w.linked_delivery_window_id.slice(0, 8)}</div>}
                 <button onClick={() => setModal({ item: { ...w } })} className="w-full py-2 rounded-full bg-secondary text-secondary-foreground text-xs font-bold hover:bg-primary/10 hover:text-primary flex items-center justify-center gap-1"><Pencil className="w-3 h-3" /> Edit</button>
               </div>
@@ -125,7 +125,7 @@ function OrderingWindowModal({ item, deliveryWindows, onClose, onSave, busy }) {
           <Field label="Closes at"><TextInput type="time" value={form.closes_at} onChange={(e) => setForm({ ...form, closes_at: e.target.value })} /></Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Capacity (blank = ∞)"><TextInput type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
+          <Field label={msg('FE_CAPACITY_WINDOW_INPUT', 'Window slots (blank = unlimited)')}><TextInput type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
           <Field label="Linked delivery window">
             <select value={form.linked_delivery_window_id} onChange={(e) => setForm({ ...form, linked_delivery_window_id: e.target.value })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card">
               <option value="">— None —</option>

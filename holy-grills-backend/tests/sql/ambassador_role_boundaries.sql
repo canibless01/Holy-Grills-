@@ -28,6 +28,14 @@ BEGIN
  PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',u)::text,true);
  PERFORM set_config('role','authenticated',true);
  IF NOT EXISTS(SELECT 1 FROM public.ambassadors WHERE profile_id=other) THEN RAISE EXCEPTION 'super admin global read failed'; END IF;
+ -- Actual authenticated super-admin can assign the newly supported enum role.
+ UPDATE public.profiles SET role='community_manager' WHERE id=other;
+ IF NOT EXISTS(SELECT 1 FROM public.profiles WHERE id=other AND role::text='community_manager') THEN RAISE EXCEPTION 'community manager assignment failed'; END IF;
+ PERFORM set_config('role','none',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',other)::text,true);
+ PERFORM set_config('role','authenticated',true);
+ IF NOT public.hg_is_ambassador_staff(c2) OR public.hg_is_ambassador_staff(c1) OR public.hg_is_financial_admin() THEN RAISE EXCEPTION 'community manager campus/financial boundaries failed'; END IF;
+
  PERFORM set_config('role','none',true);
  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
  UPDATE public.profiles SET is_active=false WHERE id=u;
