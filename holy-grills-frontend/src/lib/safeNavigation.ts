@@ -86,3 +86,21 @@ export function openCmsDestination(dest: unknown, navigate: (to: string) => void
   }
   navigate(trimmed);
 }
+
+/** Notification actions may be app routes or explicit HTTPS campaign links. */
+export function openNotificationDestination(raw: unknown, navigate: (to: string) => void): boolean {
+  if (typeof raw !== 'string') return false;
+  const target = raw.trim();
+  if (!target || /[\u0000-\u001f\\]/.test(target) || target.startsWith('//')) return false;
+  const url = parse(target);
+  if (!url || url.username || url.password) return false;
+  if (url.origin === window.location.origin && (target.startsWith('/') || /^https:\/\//i.test(target))) {
+    navigate(url.pathname + url.search + url.hash);
+    return true;
+  }
+  if (/^https:\/\//i.test(target) && url.protocol === 'https:') {
+    window.open(url.href, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+  return false;
+}

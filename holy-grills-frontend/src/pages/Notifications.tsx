@@ -1,3 +1,4 @@
+import { openNotificationDestination } from '@/lib/safeNavigation';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -16,11 +17,11 @@ export default function Notifications() {
     refreshNotifications().then(() => setLoading(false));
   }, [refreshNotifications]);
 
-  const handleClick = async (notif) => {
+  const handleClick = (notif) => {
     const isRead = !!(notif.read_at || notif.is_read);
-    if (!isRead) await markNotificationRead(notif.id);
-    const target = notif.action_url || (notif.metadata && notif.metadata.action_url);
-    if (target && target.startsWith('/')) navigate(target);
+    if (!isRead) void markNotificationRead(notif.id).catch(() => undefined);
+    const target = notif.action_url || notif.metadata?.action_url || notif.data?.action_url;
+    openNotificationDestination(target, navigate);
   };
 
   return (

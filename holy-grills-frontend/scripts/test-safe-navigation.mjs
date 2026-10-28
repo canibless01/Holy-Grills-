@@ -30,7 +30,7 @@ globalThis.window = {
   open: (url, target, features) => { opened = { url, target, features }; return null; },
 };
 
-const { isAllowedPaymentUrl, safeCallHref, openCmsDestination } = await import(out);
+const { isAllowedPaymentUrl, safeCallHref, openCmsDestination, openNotificationDestination } = await import(out);
 
 let failures = 0;
 const eq = (label, got, want) => {
@@ -38,6 +38,20 @@ const eq = (label, got, want) => {
   if (!ok) failures += 1;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${ok ? '' : ` — got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`);
 };
+
+console.log('notification destinations');
+let visited = null;
+const visit = (to) => { visited = to; };
+eq('local notification', openNotificationDestination('/cart?reminder=1', visit), true);
+eq('cart destination preserved', visited, '/cart?reminder=1');
+eq('same-origin absolute', openNotificationDestination('https://holygrill.app/rewards#claims', visit), true);
+eq('absolute becomes app route', visited, '/rewards#claims');
+eq('HTTPS campaign', openNotificationDestination('https://example.com/promo', visit), true);
+eq('external has noopener', opened.features, 'noopener,noreferrer');
+for (const value of ['//evil.invalid', '/\\evil.invalid', 'javascript:alert(1)', 'data:text/html,x', 'http://evil.invalid', 'https://user:pass@example.com', 42, null]) {
+  eq('unsafe notification refused ' + String(value), openNotificationDestination(value, visit), false);
+}
+opened = null;
 
 console.log('isAllowedPaymentUrl');
 eq('paystack checkout', isAllowedPaymentUrl('https://checkout.paystack.com/abc123'), true);

@@ -43,6 +43,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.scheduled.grant_monthly_tier_perks",
         "schedule": crontab(hour=0, minute=5, day_of_month=1),
     },
+    "sweep-pending-squad-hp": {
+        "task": "app.tasks.scheduled.sweep_pending_squad_hp",
+        "schedule": crontab(hour=5, minute=30),
+    },
     "send-newsletter-campaigns": {
         "task": "app.tasks.scheduled.send_newsletter_campaigns",
         "schedule": crontab(minute="*/5"),
@@ -98,7 +102,8 @@ celery_app.conf.beat_schedule = {
 # All times in West Africa Time (UTC+1)
 celery_app.conf.timezone = "Africa/Lagos"
 
-# Prevent tasks from running simultaneously if the previous run is still active
+# Reserve one task per worker process and acknowledge after execution.
+# These settings do not serialize runs; individual job locks provide that guard.
 celery_app.conf.task_acks_late = True
 celery_app.conf.worker_prefetch_multiplier = 1
 

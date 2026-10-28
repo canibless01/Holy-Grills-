@@ -1585,12 +1585,12 @@ _CRON_INTERVAL_MINUTES = {
     "check-order-locks":             (1440, "daily @ 09:00 WAT"),
     "reset-monthly-hp-tracker":      (44640, "1st of month @ 00:05 WAT"),
     "membership-anniversary-awards": (1440, "daily @ 06:00 WAT"),
-    "send-scheduled-notifications":  (15, "every 15 minutes"),
     "send-scheduled-blasts":         (15, "every 15 minutes"),
     "process-scheduled-orders":      (5, "every 5 minutes"),
     "check-post-delivery-nudges":    (30, "every 30 minutes"),
     "grant-monthly-tier-perks":      (44640, "1st of month @ 00:05 WAT"),
     "send-newsletter-campaigns":     (5, "every 5 minutes"),
+    "sweep-pending-squad-hp":        (1440, "daily @ 05:30 WAT"),
 }
 
 

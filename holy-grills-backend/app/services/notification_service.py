@@ -8,6 +8,7 @@ Email and push dispatch via OneSignal (fire-and-forget, never raises).
 import os
 import uuid
 import threading
+from urllib.parse import urljoin, urlsplit
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
 from app.constants import APP_TAGLINE_DEFAULT
@@ -239,6 +240,24 @@ def _fetch_user_name(user_id: str) -> str:
 # (an order) is listed before `squad_` (the squad page), and `order_streak` /
 # `order_lock*` before `order_`.
 _ACTION_URL_PREFIXES = (
+    ("admin_hof_induction", "/admin?section=leaderboard"),
+    ("low_inventory", "/admin?section=store"),
+    ("low_stock_ingredient", "/admin?section=store"),
+    ("menu_item_sold_out", "/admin?section=menu"),
+    ("webhook_failure", "/admin?section=webhooks"),
+    ("system_alert", "/admin?section=webhooks"),
+    ("gift_granted", "/kitchen"),
+    ("gift_rider_assigned", "/orders/{order_id}"),
+    ("gift_returned", "/rewards"),
+    ("gift_campaign", "/rewards"),
+    ("first_order_gift", "/rewards"),
+    ("ambassador_grant", "/rewards"),
+    ("graduation_hp", "/rewards"),
+    ("membership_anniversary", "/rewards"),
+    ("milestone_", "/rewards"),
+    ("multiplier_", "/rewards"),
+    ("new_reward", "/rewards"),
+    ("streak_cycle", "/streak"),
     ("catering_request", "/admin?section=catering"),
     ("admin_catering_request", "/admin?section=catering"),
     ("marketplace_request", "/admin?section=marketplace"),
@@ -375,7 +394,10 @@ def send_notification(
 
     # Where a tap should land: callers may state it, the type otherwise decides.
     if not action_url:
-        action_url = default_action_url(notif_type, template_data or {})
+        link_data = dict(template_data or {})
+        if reference_type == "order" and reference_id:
+            link_data.setdefault("order_id", reference_id)
+        action_url = default_action_url(notif_type, link_data)
 
     # Guard: if neither mode supplied title/body, skip to avoid blank notifications
     if not title or not body:
@@ -1005,6 +1027,29 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 
 
+def _push_action_url(raw):
+    """OS-level browser navigation needs an absolute, safe web destination."""
+    if not isinstance(raw, str):
+        return None
+    target = raw.strip()
+    if not target or target.startswith("//") or "\\" in target or any(ord(c) < 32 for c in target):
+        return None
+    try:
+        base = os.environ.get("FRONTEND_URL", "").strip().rstrip("/")
+        if target.startswith("/") and urlsplit(base).scheme in ("https", "http"):
+            target = urljoin(base + "/", target)
+        parsed = urlsplit(target)
+        if parsed.username or parsed.password:
+            return None
+        if parsed.scheme == "https" and parsed.hostname:
+            return target
+        if parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"):
+            return target
+    except ValueError:
+        pass
+    return None
+
+
 def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None, push_image: str = None):
     """
     Send a push notification via OneSignal using user_id as external_id.
@@ -1026,8 +1071,11 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
             "headings": {"en": title},
             "contents": {"en": body},
         }
-        if action_url:
-            payload["url"] = action_url
+        # Reuse this UUID throughout the existing transport retry loop.
+        payload["idempotency_key"] = str(uuid.uuid4())
+        destination = _push_action_url(action_url)
+        if destination:
+            payload["url"] = destination
         if push_image:
             from app.utils.upload_urls import is_cms_image_url
             if is_cms_image_url(push_image):

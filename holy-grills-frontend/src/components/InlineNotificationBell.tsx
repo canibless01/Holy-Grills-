@@ -1,3 +1,4 @@
+import { openNotificationDestination } from '@/lib/safeNavigation';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -118,10 +119,7 @@ export default function InlineNotificationBell() {
     const isRead = !!(n.read_at || n.is_read);
     if (!isRead) markRead(n.id);
     const target = n.action_url || n.metadata?.action_url || n.data?.action_url;
-    if (typeof target === 'string' && target.startsWith('/')) {
-      setOpen(false);
-      navigate(target);
-    }
+    if (openNotificationDestination(target, navigate)) setOpen(false);
   };
 
   const panel = open && typeof document !== 'undefined' ? createPortal(
