@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Bike, Phone, MapPin, Wallet, ChevronDown, ChevronRight, Check, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import { formatNaira, formatDateTime, timeAgo } from '@/lib/hgUtils';
+import { formatDateTime, timeAgo } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+
+const formatRiderPay = (value) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value || 0));
 
 // Riders tab for AdminDelivery — backed by riders.py /api/riders/admin/*.
 // Roster (who is online), payments summary, per-rider batches with set-pay +
@@ -15,6 +17,7 @@ export default function AdminRiders() {
   const [roster, setRoster] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [expanded, setExpanded] = useState(null); // rider_id whose batches are open
   const [riderBatches, setRiderBatches] = useState({}); // rider_id -> { batches, loading }
   const [payModal, setPayModal] = useState(null); // { batch }
@@ -23,13 +26,17 @@ export default function AdminRiders() {
 
   const load = async () => {
     setLoading(true);
-    const [r, p] = await Promise.all([
-      mockApi.admin.getRiderRoster(),
-      mockApi.admin.getRiderPayments({ period: 'all' }),
-    ]);
-    setRoster(r || []);
-    setPayments(p || []);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [r, p] = await Promise.all([
+        mockApi.admin.getRiderRoster(),
+        mockApi.admin.getRiderPayments({ period: 'all' }),
+      ]);
+      setRoster(r || []);
+      setPayments(p || []);
+    } catch (e) {
+      setLoadError(e.message || msg('FE_ADMIN_RIDERS_FAILED', "Failed"));
+    } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -71,8 +78,9 @@ export default function AdminRiders() {
   const markUnpaid = async (batchId, riderId) => {
     setBusy(batchId);
     try {
-      await mockApi.admin.markBatchesUnpaid([batchId]);
-      toast({ title: msg('FE_ADMIN_RIDERS_MARKED_UNPAID', 'Marked unpaid') });
+      const res = await mockApi.admin.markBatchesUnpaid([batchId]);
+      const changed = (res?.updated || []).includes(batchId);
+      toast({ title: changed ? msg('FE_ADMIN_RIDERS_MARKED_UNPAID', "Marked unpaid") : msg('FE_ADMIN_RIDERS_RECORD_CHANGED', "The payment record changed. Review its current state before trying again."), variant: changed ? 'default' : 'destructive' });
       await reloadRider(riderId);
     } catch (e) { toast({ title: msg('FE_ADMIN_RIDERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
@@ -82,6 +90,8 @@ export default function AdminRiders() {
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">{msg('FE_ADMIN_RIDERS_EXTERNAL_PAY', "Pay riders outside the site, then record the payment here. Recording payment does not send money. Only completed batches count towards earnings.")}</p>
+      {loadError && <div role="alert" className="rounded-xl border border-destructive p-3 text-sm">{loadError}<button onClick={load} className="ml-3 font-bold text-primary">{msg('FE_ADMIN_RIDERS_RETRY', "Retry")}</button></div>}
       <div className="flex gap-1 p-1 rounded-full bg-secondary">
         {[{ id: 'roster', label: 'Roster' }, { id: 'payments', label: 'Payments' }].map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>{t.label}</button>
@@ -126,7 +136,7 @@ export default function AdminRiders() {
                   <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-primary/10"><Bike className="w-4 h-4 text-primary" /></div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-sm text-foreground">{r.full_name || 'Rider'}</div>
-                    <div className="text-xs text-muted-foreground">Earned {formatNaira(r.total_earnings ?? r.earnings ?? 0)} · Paid {formatNaira(r.total_paid ?? r.paid ?? 0)} · Outstanding {formatNaira(r.outstanding ?? 0)}{r.batch_count != null ? ` · ${r.batch_count} batches` : ''}</div>
+                    <div className="text-xs text-muted-foreground">Earned {formatRiderPay(r.total_earned ?? r.total_earnings ?? r.earnings ?? 0)} · Paid {formatRiderPay(r.total_paid ?? r.paid ?? 0)} · Outstanding {formatRiderPay(r.outstanding ?? 0)}{(r.completed_batches ?? r.batch_count) != null ? ` · ${r.completed_batches ?? r.batch_count} batches` : ''}</div>
                   </div>
                   {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                 </button>
@@ -143,15 +153,15 @@ export default function AdminRiders() {
                         <div key={batchId} className="rounded-xl bg-card border border-border p-2.5 flex items-center gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-bold text-foreground">{b.zone || 'Batch'} · {b.order_count ?? 0} orders</div>
-                            <div className="text-[11px] text-muted-foreground">{b.completed_at ? formatDateTime(b.completed_at) : ''}</div>
+                            <div className="text-[11px] text-muted-foreground">{b.status} · {b.completed_at ? formatDateTime(b.completed_at) : ''}</div>
                           </div>
-                          {amount != null ? <span className="text-xs font-bold text-foreground">{formatNaira(amount)}</span> : <Pill tone="amber">Unpriced</Pill>}
+                          {amount != null ? <span className="text-xs font-bold text-foreground">{formatRiderPay(amount)}</span> : <Pill tone="amber">Unpriced</Pill>}
                           {paid ? <Pill tone="green">Paid</Pill> : amount != null ? <Pill tone="amber">Unpaid</Pill> : null}
-                          <button onClick={() => setPayModal({ ...b, rider_id: rid })} title="Set pay" className="p-1.5 rounded-lg hover:bg-muted"><Wallet className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                          <button onClick={() => setPayModal({ ...b, rider_id: rid })} title="Set pay" disabled={paid} className="p-1.5 rounded-lg hover:bg-muted"><Wallet className="w-3.5 h-3.5 text-muted-foreground" /></button>
                           <button onClick={() => setBreakdownModal(batchId)} title="Pay breakdown" className="p-1.5 rounded-lg hover:bg-muted"><Eye className="w-3.5 h-3.5 text-muted-foreground" /></button>
                           {paid
-                            ? <button onClick={() => markUnpaid(batchId, rid)} disabled={busy === batchId} className="px-2 py-1 rounded-full bg-secondary text-[11px] font-bold disabled:opacity-50">{busy === batchId ? '…' : 'Unpay'}</button>
-                            : amount != null && <button onClick={() => markPaid(batchId, rid)} disabled={busy === batchId} className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-success text-white text-[11px] font-bold disabled:opacity-50"><Check className="w-3 h-3" />{busy === batchId ? '…' : 'Pay'}</button>}
+                            ? <button onClick={() => markUnpaid(batchId, rid)} disabled={busy === batchId} className="px-2 py-1 rounded-full bg-secondary text-[11px] font-bold disabled:opacity-50">{busy === batchId ? '…' : msg('FE_ADMIN_RIDERS_UNDO_PAID', "Undo paid record")}</button>
+                            : amount != null && b.status === 'completed' && <button onClick={() => markPaid(batchId, rid)} disabled={busy === batchId} className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-success text-white text-[11px] font-bold disabled:opacity-50"><Check className="w-3 h-3" />{busy === batchId ? '…' : msg('FE_ADMIN_RIDERS_RECORD_PAID', "Record paid")}</button>}
                         </div>
                       );
                     })}
@@ -178,11 +188,11 @@ function SetPayModal({ batch, onClose, onSaved }) {
   const submit = async () => {
     setError(null);
     const value = Number(amount);
-    if (!Number.isFinite(value) || value < 0) { setError(msg('FE_ADMIN_RIDERS_ENTER_A_VALID_AMOUNT', 'Enter a valid amount.')); return; }
+    if (String(amount).trim() === '' || !Number.isFinite(value) || value < 0) { setError(msg('FE_ADMIN_RIDERS_ENTER_A_VALID_AMOUNT', 'Enter a valid amount.')); return; }
     setSubmitting(true);
     try {
       await mockApi.admin.setBatchPay(batch.batch_id || batch.id, { rider_pay_total: value });
-      toast({ title: msg('FE_ADMIN_RIDERS_PAY_SAVED', '✅ Pay saved'), description: formatNaira(value) });
+      toast({ title: msg('FE_ADMIN_RIDERS_PAY_SAVED', '✅ Pay saved'), description: formatRiderPay(value) });
       onSaved(); onClose();
     } catch (e) { setError(e.message); }
     setSubmitting(false);
@@ -192,7 +202,7 @@ function SetPayModal({ batch, onClose, onSaved }) {
     <Modal open onClose={onClose} title="Set Rider Pay">
       <div className="space-y-3">
         <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">{batch.zone || 'Batch'} · {batch.order_count ?? 0} orders</div>
-        <Field label="Rider pay total (₦)"><TextInput type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="Rider pay total (₦)"><TextInput aria-label={msg('FE_ADMIN_RIDERS_AMOUNT', "Rider pay total (\u20a6)")} type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         {error && <p className="text-[11px] font-bold text-destructive text-center">⚠ {error}</p>}
         <button onClick={submit} disabled={submitting} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? 'Saving...' : 'Save Pay'}</button>
       </div>
@@ -226,7 +236,7 @@ function BreakdownModal({ batchId, onClose }) {
             {(data?.orders || []).map((o, i) => (
               <div key={o.order_id || i} className="rounded-xl bg-muted border border-border p-2.5 flex items-center justify-between">
                 <div className="text-xs text-foreground font-mono">#{(o.order_id || '').slice(0, 8).toUpperCase()}</div>
-                <div className="text-xs font-bold text-foreground">{formatNaira(o.pay_component ?? o.amount ?? 0)}</div>
+                <div className="text-xs font-bold text-foreground">{formatRiderPay(o.pay_component ?? o.amount ?? 0)}</div>
               </div>
             ))}
             {data?.orders?.length > 0 && <div className="text-[11px] text-muted-foreground text-center pt-1">For records only — never shown to riders.</div>}

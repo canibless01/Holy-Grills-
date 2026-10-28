@@ -23,10 +23,10 @@ Signup's local-import crash, missing-field messages, academic-list retry and opt
 | Payments | Real Paystack test card/bank/split/funding returns; wider interruption/reconciliation cases; guest provider-refund operations |
 | Promos/refunds | Wider combinations of HP, squad, locks, campaign and earned rewards. Promo/meal quota, scope, partial/full refund and reuse corrections now pass |
 | Physical rewards | Menu-linked/special reward variants and legacy missing-snapshot handling. Generic reward checkout → kitchen → rider → delivered/unclaimed → partial/full refund is now verified |
-| Delivery | Wider exception combinations and rider payout settlement; real map/device behavior. Generic attempted/unclaimed and early/post-handover refund cases now pass |
+| Delivery | Wider exception combinations and real map/device behavior. Rider settlement records, totals, retry/concurrency and campus boundaries now pass. Generic attempted/unclaimed and early/post-handover refund cases now pass |
 | Messaging | Durable quota counters/dispatch/retries; actual OneSignal delivery; full notification-link matrix; deployed worker schedules/recovery |
 | Storefront/sessions | Final content/device presentation matrix and deployed returning-user performance. Resume recovery and menu campus dependency are now fixed and browser-tested |
 | Admin/roles | Remaining per-action campus/global/role and error/concurrency matrix beyond the targeted verified paths; real ambassador share handoff; fresh live signup/email confirmation |
 | Chrome installation | Missing native Chrome install-menu entry on the reported Android and desktop devices |
 
-Current physical-reward handover, refund review, promo conservation and capacity-hours evidence: [28 October follow-up](PHYSICAL_REWARDS_REFUNDS_CAPACITY_EVIDENCE_2026_10_28.md). Next related cases: payout settlement and remaining reward/stacking variants. Provider/device checks remain explicitly distinguished from controlled transport tests. Database cleanup remains paused.
+Current physical-reward handover, refund review, promo conservation and capacity-hours evidence: [28 October follow-up](PHYSICAL_REWARDS_REFUNDS_CAPACITY_EVIDENCE_2026_10_28.md). Rider settlement recording is also verified in [settlement evidence](RIDER_SETTLEMENT_EVIDENCE_2026_10_28.md). Next related cases: remaining reward/stacking variants and messaging/payment checks. Provider/device checks remain explicitly distinguished from controlled transport tests. Database cleanup remains paused.

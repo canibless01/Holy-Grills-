@@ -799,7 +799,7 @@ def admin_set_batch_pay(batch_id):
         return jsonify({"error": MSG.RIDER_PAY_BATCH_CANCELLED}), 400
     amount = round(float(data["rider_pay_total"]), 2)
     # only while it is still unpaid: an admin marking it paid at the same moment must win
-    updated = db.table("delivery_batches").eq("id", batch_id).eq("rider_paid_at", None).update({"rider_pay_total": amount})
+    updated = db.table("delivery_batches").eq("id", batch_id).eq("rider_paid_at", None).neq("status", "cancelled").update({"rider_pay_total": amount})
     if not updated:
         return jsonify({"error": MSG.RIDER_PAY_ALREADY_PAID}), 409
     _log_rider_admin_action(
@@ -909,12 +909,12 @@ def _set_batches_paid_state(paid):
             # only a completed batch with a total that is not already paid; the write repeats those conditions
             if row["status"] != "completed" or row.get("rider_pay_total") is None or row.get("rider_paid_at"):
                 continue
-            done = (db.table("delivery_batches").eq("id", batch_id).eq("status", "completed").eq("rider_paid_at", None)
+            done = (db.table("delivery_batches").eq("id", batch_id).eq("status", "completed").eq("rider_paid_at", None).eq("rider_pay_total", row["rider_pay_total"])
                     .update({"rider_paid_at": now_iso, "rider_paid_by": g.user_id}))
         else:
             if not row.get("rider_paid_at"):
                 continue
-            done = db.table("delivery_batches").eq("id", batch_id).update({"rider_paid_at": None, "rider_paid_by": None})
+            done = db.table("delivery_batches").eq("id", batch_id).eq("rider_paid_at", row["rider_paid_at"]).update({"rider_paid_at": None, "rider_paid_by": None})
         if not done:
             continue
         updated.append(batch_id)
