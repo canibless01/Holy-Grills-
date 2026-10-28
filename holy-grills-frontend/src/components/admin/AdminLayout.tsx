@@ -9,7 +9,7 @@ import SectionErrorBoundary from './SectionErrorBoundary';
  * error-bounded, animated content region. Manages the sidebar collapse and
  * mobile-drawer state locally so the page can focus on which section to show.
  */
-export default function AdminLayout({ active, onSelect, onNavigate, title, subtitle, onSignOut, children }) {
+export default function AdminLayout({ active, onSelect, onNavigate, title, subtitle, onSignOut, children, allowedIds = null }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('hg_admin_collapsed') === 'true');
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -45,6 +45,7 @@ export default function AdminLayout({ active, onSelect, onNavigate, title, subti
         onToggleCollapse={() => setCollapsed((c) => !c)}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
+        allowedIds={allowedIds}
       />
 
       <div className={`transition-all duration-300 ${collapsed ? 'lg:ml-[76px]' : 'lg:ml-64'}`}>

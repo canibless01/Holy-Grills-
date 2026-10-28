@@ -93,7 +93,8 @@ Copy `.env.example` to `.env` and fill in every **REQUIRED** value before starti
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP_NAME` | `Holy Grills` | App name shown in emails and responses |
-| `APP_TAGLINE` | `Holy Grills FUTA` | Tagline used in email footers |
+| `APP_TAGLINE` | `Made with more than flame ❤️‍🔥` | Fallback tagline for email template data and notification payloads; the fixed email sign-off renders two lines: "Made with more than flame ❤️‍🔥," then "Holy Grills Team." |
+| `AMBASSADOR_SYSTEM_ACTOR_ID` | *(unset)* | Admin profile id authorizing ambassador milestone auto-issue grants |
 | `FLASK_ENV` | `development` | `development` or `production` |
 | `FLASK_DEBUG` | `false` | Enable Flask debug mode |
 | `FRONTEND_URL` | `http://localhost:3000` | Frontend URL: password-reset links, and added to `Config.CORS_ORIGINS` |

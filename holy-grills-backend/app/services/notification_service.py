@@ -10,6 +10,7 @@ import uuid
 import threading
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
+from app.constants import APP_TAGLINE_DEFAULT
 from app.db import get_db, get_user_client, SupabaseError
 from app.services.notification_preferences import effective_preferences, permitted_channels, REQUEST_TYPES
 from flask import current_app
@@ -969,7 +970,7 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
             return
 
         chosen = get_email_provider(scope="transactional", override=provider)
-        app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
+        app_tagline = os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT)
         
         # Use rich HTML builder if rich content is provided
         if rich_content and (rich_content.get("body_html") or rich_content.get("images") or rich_content.get("cta_blocks")):

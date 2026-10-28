@@ -786,6 +786,16 @@ def _atomic_refund_response(order_id, customer_cancel=False, scheduled_only=Fals
                 reference_id=order_id, reference_type='order', channels=['push','in_app','email'])
         except Exception:
             logger.exception('Refund notification unavailable for order %s', order_id)
+        # A full refund closes the order ('refunded'); partial refunds leave it
+        # 'delivered' and stay eligible. Remove fully-refunded orders from
+        # ambassador performance. The reversal is idempotent, so retries converge.
+        try:
+            after = get_user_client().table('orders').select('status').eq('id', order_id).single().execute()
+            if after and after.get('status') == 'refunded':
+                from app.services import ambassador_service
+                ambassador_service.reverse_attributed_order(order_id, reason[:300])
+        except Exception:
+            logger.exception('Ambassador attribution reversal failed for refunded order %s', order_id)
     return jsonify(result), 200
 
 

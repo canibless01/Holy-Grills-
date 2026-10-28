@@ -72,7 +72,8 @@ def build_newsletter_html(body_text: str, unsubscribe_url: str, app_name: str, t
     """Build a branded newsletter HTML using the shared email layout."""
     from app.utils.email import _build_html
     # Newsletters are marketing emails, so we keep the "Thank you" message
-    # but skip the "With love" sign-off since newsletters have their own tone
+    # but skip the shared brand sign-off since newsletters have their own tone
+    # inside the campaign body
     return _build_html(
         "there",  # Newsletter doesn't have personal name
         body_text,

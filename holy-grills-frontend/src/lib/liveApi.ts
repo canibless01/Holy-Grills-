@@ -1475,6 +1475,100 @@ const storefront = {
 // free-side options, etc.). Students cannot read /admin/settings, so this is
 // the student-facing source of configurable values. Falls back gracefully.
 //
+// ========== CAMPUS AMBASSADOR PROGRAMME ==========
+// Tracking works for guests (anonymous_id persisted locally) and signed-in
+// users; staff endpoints are role-gated server-side.
+const AMB_ANON_KEY = 'hg_amb_anonymous_id';
+const ambassadors = {
+  anonId(): string {
+    let id = localStorage.getItem(AMB_ANON_KEY);
+    if (!id) {
+      id = (crypto as any).randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      localStorage.setItem(AMB_ANON_KEY, id);
+    }
+    return id;
+  },
+  // Public link tracking — never throws into the page render path.
+  async trackClick(refCode: string) {
+    return apiClient.post('/ambassadors/track-click', {
+      ref_code: refCode,
+      anonymous_id: this.anonId(),
+    });
+  },
+  async mergeVisitor(anonymousId: string) {
+    return apiClient.post('/ambassadors/merge-visitor', { anonymous_id: anonymousId });
+  },
+  // Ambassador self-service (their own programme data only).
+  async myProgramme() { return apiClient.get('/ambassadors/me'); },
+  async myMealDiscounts() {
+    const r = await apiClient.get('/ambassadors/meal-discounts');
+    return (r && r.discounts) || [];
+  },
+  // Staff roster + tagging
+  async listStaff(month?: string) {
+    const r = await apiClient.get('/ambassadors/staff/ambassadors', month ? { month } : {});
+    return (r && r.ambassadors) || [];
+  },
+  async tag(userId: string) { return apiClient.post('/ambassadors/staff/ambassadors', { user_id: userId }); },
+  async untag(ambassadorId: string) {
+    return apiClient.delete(`/ambassadors/staff/ambassadors/${ambassadorId}`);
+  },
+  async detail(ambassadorId: string, month?: string) {
+    return apiClient.get(`/ambassadors/staff/ambassadors/${ambassadorId}`, month ? { month } : {});
+  },
+  // Promo distribution + activity tracking
+  async listPromos(month?: string) {
+    const r = await apiClient.get('/ambassadors/staff/promo-messages', month ? { month } : {});
+    return (r && r.messages) || [];
+  },
+  async createPromo(body) { return apiClient.post('/ambassadors/staff/promo-messages', body); },
+  async promoAssignments(messageId: string) {
+    const r = await apiClient.get(`/ambassadors/staff/promo-messages/${messageId}/assignments`);
+    return (r && r.assignments) || [];
+  },
+  async setAssignmentStatus(assignmentId: string, status: string, evidenceNote?: string) {
+    const r = await apiClient.patch(`/ambassadors/staff/assignments/${assignmentId}`, {
+      status, ...(evidenceNote !== undefined ? { evidence_note: evidenceNote } : {}),
+    });
+    return r && r.assignment;
+  },
+  // Monthly reviews
+  async listReviews(month?: string) {
+    const r = await apiClient.get('/ambassadors/staff/reviews', month ? { month } : {});
+    return (r && r.reviews) || [];
+  },
+  async recommend(ambassadorId: string, body) {
+    const r = await apiClient.post(`/ambassadors/staff/reviews/${ambassadorId}/recommendation`, body);
+    return r && r.review;
+  },
+  async decide(ambassadorId: string, body) {
+    const r = await apiClient.post(`/ambassadors/staff/reviews/${ambassadorId}/decision`, body);
+    return r && r.review;
+  },
+  // Milestones (writes are admin/super-admin only)
+  async listMilestones() {
+    const r = await apiClient.get('/ambassadors/staff/milestones');
+    return (r && r.milestones) || [];
+  },
+  async createMilestone(body) {
+    const r = await apiClient.post('/ambassadors/staff/milestones', body);
+    return r && r.milestone;
+  },
+  async updateMilestone(id: string, body) {
+    const r = await apiClient.patch(`/ambassadors/staff/milestones/${id}`, body);
+    return r && r.milestone;
+  },
+  // Grants (admin/super-admin only)
+  async listGrants(ambassadorId?: string) {
+    const r = await apiClient.get('/ambassadors/staff/grants', ambassadorId ? { ambassador_id: ambassadorId } : {});
+    return (r && r.grants) || [];
+  },
+  async createGrant(body) {
+    const r = await apiClient.post('/ambassadors/staff/grants', body);
+    return r && r.grant;
+  },
+};
+
 // ========== HEALTH (public, Domain 17 — GET /health) ==========
 // Unauthenticated API health check: API status + Supabase and Redis connectivity.
 const health = {
@@ -1486,6 +1580,7 @@ export const liveApi = {
   auth, addresses, menu, cart, orders, events, hp, rewards, marketplace,
   wallet, notifications, push, referrals, leaderboard, kitchen, riders, analytics, admin, delivery, orderLocks, squads,
   saved, challenges, graduation, departments, academicLevels, campuses, storefront, health, users,
+  ambassadors,
   demoLogin() {
     // No-op for live API — use login() instead
     console.warn('demoLogin is not available with the live API. Use login() instead.');

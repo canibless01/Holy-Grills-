@@ -11,6 +11,7 @@ import { orderLockMaxReschedules, referralHp } from '@/lib/appConfig';
 import DashboardSkeleton from '@/components/skeletons/DashboardSkeleton';
 import CountUp from '@/components/CountUp';
 import MascotStandee from '@/components/mascot/MascotStandee';
+import AmbassadorProgrammeCard from '@/components/AmbassadorProgrammeCard';
 import FlameMark from '@/components/FlameMark';
 import TierIcon from '@/components/TierIcon';
 
@@ -325,6 +326,9 @@ export default function Dashboard() {
           <ChevronRight className="w-5 h-5 text-foreground/30" />
         </div>
       </Link>
+
+      {/* Campus Ambassador programme — renders only for tagged accounts */}
+      <AmbassadorProgrammeCard />
     </div>
   );
 }

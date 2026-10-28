@@ -47,6 +47,7 @@ from app.routes.admin_feature_flags import admin_flags_bp
 from app.routes.uploads import uploads_bp
 from app.routes.squads import squads_bp
 from app.routes.admin_economics import admin_economics_bp
+from app.routes.ambassadors import ambassadors_bp
 
 # SQLSTATE codes raised by Postgres/PostgREST that mean "the caller sent something wrong", not "the server is broken":
 # 22P02 bad text representation (e.g. malformed UUID), 22007/22008 bad date/time, 22003 number out of range,
@@ -194,6 +195,7 @@ def create_app(config_class=Config):
     app.register_blueprint(uploads_bp, url_prefix="/api/upload")
     app.register_blueprint(squads_bp, url_prefix="/api/squads")
     app.register_blueprint(admin_economics_bp, url_prefix="/api/admin/economics")
+    app.register_blueprint(ambassadors_bp, url_prefix="/api/ambassadors")
     app.register_blueprint(health_bp, url_prefix="/api")
     app.register_blueprint(messages_bp, url_prefix="/api/messages")
 

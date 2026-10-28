@@ -3,8 +3,13 @@ import { X, ChevronRight, Sparkles } from 'lucide-react';
 import { ADMIN_GROUPS as GROUPS } from '@/lib/adminSections';
 import BrandLogo from '@/components/BrandLogo';
 
-export default function AdminSidebar({ active, onSelect, collapsed, onToggleCollapse, mobileOpen, onCloseMobile }) {
+export default function AdminSidebar({ active, onSelect, collapsed, onToggleCollapse, mobileOpen, onCloseMobile, allowedIds = null }) {
   const [expandedGroup, setExpandedGroup] = useState(null);
+  // Community managers only carry the three ambassador sections; when no
+  // allow-list is supplied (admins/super admins) every group renders as before.
+  const groups = allowedIds
+    ? GROUPS.map((g) => ({ ...g, items: g.items.filter((s) => allowedIds.has(s.id)) })).filter((g) => g.items.length)
+    : GROUPS;
 
   return (
     <>
@@ -43,7 +48,7 @@ export default function AdminSidebar({ active, onSelect, collapsed, onToggleColl
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 scrollbar-hide">
-          {GROUPS.map((g, gi) => {
+          {groups.map((g, gi) => {
             const hasLabel = !!g.label;
             const isExpanded = expandedGroup === g.label || !hasLabel;
             const activeInGroup = g.items.some((s) => s.id === active);

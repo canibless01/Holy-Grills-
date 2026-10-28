@@ -21,7 +21,8 @@ Every environment variable the app reads, what it controls, its default, and
 |----------|-------------|----------------------|
 | `SECRET_KEY` | Flask session secret (random string) | *(required)* |
 | `APP_NAME` | Platform name used in emails and push notifications | `Holy Grills` |
-| `APP_TAGLINE` | Sign-off line on all emails | `Holy Grills FUTA` |
+| `APP_TAGLINE` | Fallback tagline available to email templates and notification payloads (`APP_TAGLINE_DEFAULT`); the fixed email sign-off renders two lines: "Made with more than flame ❤️‍🔥," then "Holy Grills Team." | `Made with more than flame ❤️‍🔥` |
+| `AMBASSADOR_SYSTEM_ACTOR_ID` | Admin/super-admin profile id that authorizes Campus Ambassador milestone **auto-issue** grants; blank keeps every milestone reward manual | *(unset)* |
 | `FLASK_DEBUG` | Enable debug mode (`true`/`false`) | `false` |
 | `FRONTEND_URL` | Frontend URL — password-reset links, and **added to** `Config.CORS_ORIGINS` | `http://localhost:3000` |
 | `CORS_ORIGINS` / `ALLOWED_ORIGINS` | Comma-separated origins to **add** to the allowed list (`*` is ignored — the list is never a wildcard) | *(unset)* |
