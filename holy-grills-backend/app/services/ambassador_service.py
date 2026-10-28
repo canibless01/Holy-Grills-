@@ -15,12 +15,14 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
-from flask import g
+from flask import current_app, g
 
+from app.constants import ADMIN_ROLES
 from app.db import get_db
 from app.messages import MSG
 from app.utils.logger import get_logger
 from app.utils.settings import setting_or_config
+from app.utils.validators import validate_uuid
 
 logger = get_logger(__name__)
 
@@ -307,9 +309,93 @@ def list_milestones(db, campus_id: str | None, include_inactive: bool = False) -
     return rows
 
 
+def _system_actor(db) -> dict | None:
+    """The admin profile that authorizes milestone AUTO-issue grants.
+
+    Returns None when the setting is missing/invalid rather than inventing an
+    issuer: ambassador_grants.issued_by is a NOT NULL foreign key to profiles,
+    and a reward must never appear without a real authorizing admin. Callers
+    then fall back to the normal pending-approval/manual-grant flow.
+    """
+    actor_id = str(current_app.config.get("AMBASSADOR_SYSTEM_ACTOR_ID") or "").strip()
+    if not actor_id or not validate_uuid(actor_id):
+        return None
+    profile = (
+        db.table("profiles")
+        .select("id,role,campus_id")
+        .eq("id", actor_id)
+        .single()
+        .execute()
+    )
+    if not profile or profile.get("role") not in ADMIN_ROLES:
+        logger.warning(
+            "AMBASSADOR_SYSTEM_ACTOR_ID %s is not an admin profile; "
+            "milestone auto-issue stays in manual approval", actor_id)
+        return None
+    return {"id": profile["id"], "role": profile["role"],
+            "campus_id": profile.get("campus_id")}
+
+
+def _auto_issue_milestone_grant(ambassador: dict, milestone: dict,
+                                claim: dict, month: str) -> dict:
+    """Issue the configured reward for an ``auto_issue`` milestone as soon as
+    its claim is created, and mark the claim ``issued`` with the grant linked.
+
+    This is a system action and deliberately runs on the service-role client
+    (``get_db``), not the caller's user-scoped client: the ambassador tables
+    are SELECT-only for authenticated users, and this path can be reached from
+    a student's own dashboard read. The configured system actor profile is the
+    authorization. Best effort: every failure leaves the claim in
+    ``pending_approval`` for a manual decision instead of breaking the page. A
+    same-month/category grant already existing (the duplicate guard) is the
+    common case — an admin can still grant with the explicit override.
+    """
+    db = get_db()
+    actor = _system_actor(db)
+    if not actor:
+        logger.info(
+            "auto-issue milestone %s reached but no system actor is configured; "
+            "claim %s stays pending_approval", milestone.get("id"), claim.get("id"))
+        return claim
+    try:
+        grant = issue_grant(
+            db, actor,
+            ambassador_id=ambassador["profile_id"],
+            category=milestone["reward_type"],
+            amount=float(milestone["reward_amount"]),
+            reason=f"Auto milestone {milestone['metric']} >= "
+                   f"{milestone['threshold']} ({month})",
+            month=month,
+            validity_days=milestone.get("validity_days"),
+            uses_count=milestone.get("reward_uses") or 1,
+            source="milestone",
+            milestone_claim_id=claim["id"],
+        )
+    except DuplicateGrant:
+        logger.info(
+            "auto-issue skipped for claim %s: a %s grant for %s already exists "
+            "this month; manual override remains available",
+            claim.get("id"), milestone.get("reward_type"), month)
+        return claim
+    except AmbassadorError:
+        logger.exception("auto-issue failed for claim %s", claim.get("id"))
+        return claim
+    updated = db.table("ambassador_milestone_claims").update({
+        "status": "issued",
+        "grant_id": grant["id"],
+        "decided_by": actor["id"],
+        "decided_at": _iso(datetime.now(timezone.utc)),
+        "decision_note": "Auto-issued by configured milestone rule",
+    }).eq("id", claim["id"]).execute()
+    rows = updated if isinstance(updated, list) else [updated]
+    return rows[0] if rows else claim
+
+
 def evaluate_milestones(db, ambassador_id: str, month: str | None = None) -> list[dict]:
     """Return each applicable milestone with live progress; create pending
-    claims when a threshold is first reached in the programme month."""
+    claims when a threshold is first reached in the programme month. A claim
+    for an ``auto_issue`` milestone is immediately granted via the configured
+    system actor; everything else waits for an admin decision."""
     month = parse_month(month)
     ambassador = _active_ambassador(db, ambassador_id)
     metrics = milestone_metrics(db, ambassador_id, month)
@@ -332,6 +418,16 @@ def evaluate_milestones(db, ambassador_id: str, month: str | None = None) -> lis
                 "status": "pending_approval",
             }).execute()
             claim = claim[0] if isinstance(claim, list) else claim
+            if ms.get("auto_issue"):
+                # Best effort; any failure leaves the pending claim untouched.
+                # The helper elevates to the service-role client itself.
+                try:
+                    claim = _auto_issue_milestone_grant(
+                        ambassador, ms, claim, month)
+                except Exception:
+                    logger.exception(
+                        "milestone auto-issue evaluation failed for claim %s",
+                        claim.get("id"))
         out.append({
             "milestone": ms,
             "metric_value": value,

@@ -194,7 +194,6 @@ class AmbassadorTestBase(unittest.TestCase):
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(svc, 'get_db', return_value=self.db))
         self.stack.enter_context(patch.object(routes, 'get_db', return_value=self.db))
-        self.stack.enter_context(patch.object(routes, 'get_user_client', return_value=self.db))
         self.stack.enter_context(
             patch('app.middleware.auth.get_db', return_value=self.db))
         self.stack.__enter__()
@@ -686,6 +685,103 @@ class MilestoneTests(AmbassadorTestBase):
             svc.evaluate_milestones(self.db, AMB, 'not-a-month')
 
 
+class AutoIssueMilestoneTests(AmbassadorTestBase):
+    """auto_issue milestones grant their reward without an admin clicking
+    anything — but only via a real configured admin profile, and never at the
+    expense of the duplicate guard or dashboard stability."""
+
+    def _auto_milestone(self, **over):
+        row = {'id': 'ms-auto', 'campus_id': None, 'metric': 'orders',
+               'threshold': 1, 'reward_type': 'meal_discount',
+               'reward_amount': 3000, 'reward_uses': 2, 'validity_days': 14,
+               'auto_issue': True, 'is_active': True}
+        row.update(over)
+        return row
+
+    def _seed_reached(self, milestone):
+        self.seed_ambassador()
+        self.db.seed('ambassador_milestones', [milestone])
+        self.db.seed('ambassador_order_attributions', [{
+            'order_id': 'ord-1', 'ambassador_id': AMB, 'eligibility': 'eligible',
+            'order_total': 4000,
+            'attributed_at': '2026-10-01T10:00:00+00:00'}])
+
+    def test_auto_milestone_grants_immediately_and_links_claim_to_grant(self):
+        self.ctx()
+        self.app.config['AMBASSADOR_SYSTEM_ACTOR_ID'] = ADMIN_ID
+        self.db.seed('profiles', [profile(ADMIN_ID, role='admin')])
+        self._seed_reached(self._auto_milestone())
+        self.db.rpcs['hg_grant_ambassador_meal_discount'] = (
+            lambda p: {'id': 'disc-auto', **p})
+        with patch('app.utils.settings.setting_or_config', return_value=14):
+            out = svc.evaluate_milestones(self.db, AMB, MONTH)
+
+        claim = out[0]['claim']
+        self.assertEqual(claim['status'], 'issued')
+        grant = self.db.rows('ambassador_grants')[0]
+        self.assertEqual(claim['grant_id'], grant['id'])
+        self.assertEqual(grant['source'], 'milestone')
+        self.assertEqual(grant['milestone_claim_id'], claim['id'])
+        self.assertEqual(grant['issued_by'], ADMIN_ID)
+        self.assertEqual(grant['uses_count'], 2)
+        # Re-evaluation must not double-issue: the claim already exists.
+        with patch('app.utils.settings.setting_or_config', return_value=14):
+            svc.evaluate_milestones(self.db, AMB, MONTH)
+        self.assertEqual(len(self.db.rows('ambassador_grants')), 1)
+        self.assertEqual(len(self.db.rows('ambassador_milestone_claims')), 1)
+
+    def test_auto_milestone_without_system_actor_stays_manual_pending(self):
+        self.ctx()  # AMBASSADOR_SYSTEM_ACTOR_ID unset
+        self._seed_reached(self._auto_milestone())
+        out = svc.evaluate_milestones(self.db, AMB, MONTH)
+        self.assertEqual(out[0]['claim']['status'], 'pending_approval')
+        self.assertEqual(self.db.rows('ambassador_grants'), [])
+        self.assertNotIn('hg_grant_ambassador_meal_discount',
+                         self.db.rpc_names())
+
+    def test_unknown_or_non_admin_system_actor_disables_auto_issue(self):
+        self.ctx()
+        self.app.config['AMBASSADOR_SYSTEM_ACTOR_ID'] = STUDENT_ID
+        self.db.seed('profiles', [profile(STUDENT_ID, role='student')])
+        self._seed_reached(self._auto_milestone())
+        out = svc.evaluate_milestones(self.db, AMB, MONTH)
+        self.assertEqual(out[0]['claim']['status'], 'pending_approval')
+        self.assertEqual(self.db.rows('ambassador_grants'), [])
+
+    def test_existing_monthly_grant_makes_auto_issue_degrade_to_pending(self):
+        self.ctx()
+        self.app.config['AMBASSADOR_SYSTEM_ACTOR_ID'] = ADMIN_ID
+        self.db.seed('profiles', [profile(ADMIN_ID, role='admin')])
+        self._seed_reached(self._auto_milestone())
+        # A manual meal_discount grant already exists for this month/category.
+        self.db.seed('ambassador_grants', [{
+            'id': 'grant-existing', 'ambassador_id': AMB, 'month': MONTH,
+            'reward_category': 'meal_discount', 'amount': 3000,
+            'duplicate_override': False, 'reason': 'manual review reward'}])
+        out = svc.evaluate_milestones(self.db, AMB, MONTH)
+        self.assertEqual(out[0]['claim']['status'], 'pending_approval')
+        # No second grant row and no reward RPC attempted.
+        self.assertEqual(len(self.db.rows('ambassador_grants')), 1)
+        self.assertNotIn('hg_grant_ambassador_meal_discount',
+                         self.db.rpc_names())
+
+    def test_hp_auto_milestone_uses_existing_award_service(self):
+        self.ctx()
+        self.app.config['AMBASSADOR_SYSTEM_ACTOR_ID'] = ADMIN_ID
+        self.db.seed('profiles', [profile(ADMIN_ID, role='super_admin')])
+        self._seed_reached(self._auto_milestone(
+            reward_type='hp', reward_amount=25, reward_uses=1))
+        awards = []
+        with patch('app.services.hp_service.award_active_hp',
+                   side_effect=lambda **kw: awards.append(kw) or {
+                       'id': 'txn-auto'}):
+            out = svc.evaluate_milestones(self.db, AMB, MONTH)
+        self.assertEqual(out[0]['claim']['status'], 'issued')
+        self.assertEqual(awards[0]['amount'], 25)
+        self.assertEqual(awards[0]['reference_type'], 'ambassador_grant')
+        self.assertFalse(awards[0]['apply_multiplier'])
+
+
 # ---------------------------------------------------------------------------
 # 11/13. Grants: HP, free sides, meal discounts, dedupe, recurring grants
 # ---------------------------------------------------------------------------
@@ -1036,6 +1132,33 @@ class DashboardAndReviewTests(AmbassadorTestBase):
             svc.record_decision(self.db, ADMIN_ID, AMB, MONTH, 'unsure', None)
         # One review row, upserted — not one per action.
         self.assertEqual(len(self.db.rows('ambassador_monthly_reviews')), 1)
+
+    def test_me_route_uses_the_service_client_scoped_to_the_jwt_user(self):
+        # RLS gives authenticated users SELECT only; the dashboard also reads
+        # staff-only tables and may write claims/grants, so the route must use
+        # the service client while hard-scoping every row to g.user_id.
+        captured = {}
+
+        def fake_dashboard(db, user_id, frontend_url):
+            captured.update(db=db, user_id=user_id)
+            return {'is_ambassador': True}
+
+        with self.app.test_request_context('/'):
+            g.user_id = STUDENT_ID
+            g.user_role = 'student'
+            with patch.object(svc, 'ambassador_dashboard', side_effect=fake_dashboard):
+                body, code = inspect.unwrap(routes.my_ambassador_programme)()
+        self.assertEqual(code, 200, body)
+        self.assertEqual(captured['user_id'], STUDENT_ID)
+        self.assertIs(captured['db'], self.db)
+
+    def test_meal_discounts_route_uses_service_client_and_jwt_scope(self):
+        with self.app.test_request_context('/'):
+            g.user_id = STUDENT_ID
+            with patch.object(svc, 'list_my_discounts', return_value=[]) as mocked:
+                body, code = inspect.unwrap(routes.my_meal_discounts)()
+        self.assertEqual(code, 200, body)
+        self.assertEqual(mocked.call_args.args, (self.db, STUDENT_ID))
 
     def test_activity_alone_never_issues_a_grant(self):
         self.ctx()

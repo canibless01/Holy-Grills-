@@ -15,7 +15,7 @@ import uuid
 from flask import Blueprint, request, jsonify, g, current_app
 
 from app.constants import ADMIN_ROLES, COMMUNITY_MANAGER_ROLE
-from app.db import get_db, get_user_client
+from app.db import get_db
 from app.messages import MSG
 from app.middleware.auth import require_auth, require_role, optional_auth
 from app.services import ambassador_service as svc
@@ -94,8 +94,14 @@ def merge_visitor():
 @ambassadors_bp.route("/me", methods=["GET"])
 @require_auth
 def my_ambassador_programme():
+    # Service client, not the RLS user client: the payload joins staff-read
+    # tables (milestones, promo assignments) and may create milestone claims /
+    # auto-issue grants, none of which authenticated users have policies for.
+    # Every query is hard-scoped to g.user_id from the verified JWT, so this
+    # cannot read another student's programme; the self-read RLS policies stay
+    # as defense in depth for any direct table access.
     data = svc.ambassador_dashboard(
-        get_user_client(), g.user_id, current_app.config.get("FRONTEND_URL", ""))
+        get_db(), g.user_id, current_app.config.get("FRONTEND_URL", ""))
     if data is None:
         # Not an ambassador — a normal 200 flag, not an error, so the student
         # dashboard can hide the card without a failed request.
@@ -106,8 +112,10 @@ def my_ambassador_programme():
 @ambassadors_bp.route("/meal-discounts", methods=["GET"])
 @require_auth
 def my_meal_discounts():
+    # Service client: list_my_discounts also runs the service-only expiry sweep
+    # RPC, and rows are filtered to the JWT user inside the service.
     return jsonify({
-        "discounts": svc.list_my_discounts(get_user_client(), g.user_id),
+        "discounts": svc.list_my_discounts(get_db(), g.user_id),
     }), 200
 
 

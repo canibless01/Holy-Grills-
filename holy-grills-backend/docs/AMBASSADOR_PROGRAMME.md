@@ -1,6 +1,6 @@
 # Campus Ambassador Programme — Implementation & Deployment Guide
 
-Status: code-complete, gated by 645 backend tests (54 ambassador-specific) and the
+Status: code-complete, gated by 657 backend tests (61 ambassador-specific plus 5 email sign-off) and the
 full frontend build. **The four SQL migrations have not been executed** — they are
 shipped as reviewable files and must be applied manually by a platform operator in
 the order given below.
@@ -19,7 +19,7 @@ no separate accounts, wallets, referral engine or dashboards were introduced.
 | Separate ambassador attribution (visits, signups, existing-customer clicks, delivered orders, milestones) with a **7-day rolling last-click window** | `ambassador_link_clicks`, `ambassador_attributions`, `ambassador_order_attributions` + tracking RPCs |
 | Promo distribution: one graphic, one `{{link}}` caption, per-ambassador personalized links and Share | Admin → Ambassador Promos (`AdminAmbassadorPromo.tsx`) |
 | Manual Pending / Seen / Shared activity, completion rate vs 4 shares/week | `ambassador_promo_assignments`, monthly review metrics |
-| Configurable milestones with reached → approved → issued → redeemed → expired lifecycle and dedupe | `ambassador_milestones`, `ambassador_milestone_claims` |
+| Configurable milestones with reached → approved → issued → redeemed → expired lifecycle and dedupe; **auto-issue** milestones grant immediately via `AMBASSADOR_SYSTEM_ACTOR_ID`, manual ones wait for an admin decision | `ambassador_milestones`, `ambassador_milestone_claims` |
 | Rewards: existing HP and free-side grants **plus new meal-discount rewards** (100% off one eligible meal up to a cap, N uses, expiry, single-use checkout redemption) | `ambassador_grants`, `ambassador_meal_discounts` + reward RPCs, checkout integration |
 | Monthly reviews with manager recommendation and admin-only decision | `ambassador_monthly_reviews`, Admin → Ambassador Reviews |
 | Student dashboard widget (own data only) | `AmbassadorProgrammeCard.tsx` on the student dashboard |
@@ -125,10 +125,14 @@ drop the four migration's objects in reverse order and be reviewed separately.
 
 ### Environment variables
 
-No new environment variables are required. The tracking link builder reuses the
-existing mandatory `FRONTEND_URL` (production deploys already fail fast without
-it). Supabase service-role credentials continue to supply the single database
-connection used by the SECURITY DEFINER calls.
+The tracking link builder reuses the existing mandatory `FRONTEND_URL`
+(production deploys already fail fast without it). Supabase service-role
+credentials continue to supply the single database connection used by the
+SECURITY DEFINER calls. One optional variable supports auto-issuing milestones:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `AMBASSADOR_SYSTEM_ACTOR_ID` | optional | Profile id of an `admin`/`super_admin` that authorizes grants created by milestones with **auto-issue** enabled. When blank or invalid, an auto milestone still creates a `pending_approval` claim for a manual admin decision — a reward is never written without a real authorizing profile (the `ambassador_grants.issued_by` foreign key requires one). |
 
 ### `system_settings` seeds (migration 4, global rows)
 
@@ -190,6 +194,27 @@ The existing referral tables are not involved at any point.
   blocks the same ambassador × month × reward category unless
   `override_duplicate: true` is sent; each grant gets its own
   `idempotency_key`, its own discount row, expiry and redemption counter.
+
+### Milestone auto-issue vs manual approval
+
+- A milestone with `auto_issue = false` (the default) creates a
+  `pending_approval` claim when its threshold is first reached; the reward is
+  only issued when an admin records an approved decision/grant.
+- A milestone with `auto_issue = true` issues its configured reward the moment
+  the claim is created, inside the same `evaluate_milestones` call that powers
+  the review pages and the student dashboard — no separate cron job is needed.
+  The claim is marked `issued` and linked to the grant (`grant_id`,
+  `decided_by = AMBASSADOR_SYSTEM_ACTOR_ID`). The write always runs on the
+  service-role client (the ambassador tables are SELECT-only under RLS for
+  authenticated users), including when it is triggered from a student's own
+  `GET /me`; rows remain hard-scoped to that JWT user.
+- Guard rails: claim creation is deduped per milestone/ambassador/month, so a
+  reward can auto-issue at most once; if a same-month/category grant already
+  exists the duplicate guard wins and the claim simply stays
+  `pending_approval` (an admin can still grant with the explicit override); any
+  failure leaves the pending claim intact and never breaks the dashboard.
+- Activity on its own never issues a reward — only a configured auto rule, or
+  an admin, can do so.
 
 ### Grants reuse the existing financial services
 
@@ -266,7 +291,7 @@ the build if these guarantees are removed.
 
 ## 8. Test coverage & verification
 
-### Backend — `tests/test_ambassador_programme.py` (54 tests)
+### Backend — `tests/test_ambassador_programme.py` (61 tests) plus `tests/test_email_signoff.py` (5 tests)
 
 | Mandated scenario | Test(s) |
 |---|---|
@@ -280,10 +305,12 @@ the build if these guarantees are removed.
 | Delivered once / cancelled-refunded excluded | `test_delivery_and_refund_eligibility_rules_are_in_sql`, wrapper/lifecycle tests |
 | Completion rate 7/10 = 70% | `test_completion_rate_seven_of_ten_is_seventy_percent` |
 | Milestone dedupe | `MilestoneTests` |
+| Auto-issue grant, missing/invalid actor fallback, duplicate degradation, HP auto grant, service-client `/me` scoping | `AutoIssueMilestoneTests`, `DashboardAndReviewTests` |
+| Email sign-off replaced on every branded mail (`test_email_signoff.py`) | fixed "Made with more than flame ❤️‍🔥, Holy Grills Team." line, no "With love"/"Holy Grills FUTA" |
 | Single/multiple meal grants + duplicate override | `GrantTests` |
 | Checkout discount + delivery payable | `MealDiscountCheckoutTests` |
 | Independent biweekly grants | `test_recurring_biweekly_grants_keep_independent_keys_and_discounts` |
-| Regression of referral/free-side/HP/wallet/orders | full 645-test suite, HP/free-side grant tests, lifecycle hook source tests, RPC `REVOKE` contract tests |
+| Regression of referral/free-side/HP/wallet/orders | full 657-test suite, HP/free-side grant tests, lifecycle hook source tests, RPC `REVOKE` contract tests |
 
 ### Gate commands
 
@@ -291,7 +318,7 @@ the build if these guarantees are removed.
 # backend (from holy-grills-backend)
 .venv/bin/python -m pyflakes app/services/ambassador_service.py \
   app/routes/ambassadors.py tests/test_ambassador_programme.py
-.venv/bin/python -m pytest -q          # 645 passed
+.venv/bin/python -m pytest -q          # 657 passed
 
 # frontend (from holy-grills-frontend)
 npm run typecheck                     # tsc --noEmit
