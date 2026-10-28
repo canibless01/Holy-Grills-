@@ -225,7 +225,6 @@ function GrantModal({ review, month, onClose, onSaved }: { review: any; month: s
     } catch (e) {
       if (e.status === 409) {
         toast({ title: e.message, variant: 'destructive' });
-        set('override_duplicate', true); // surface the override for an explicit re-submit
       } else {
         toast({ title: e.message, variant: 'destructive' });
       }

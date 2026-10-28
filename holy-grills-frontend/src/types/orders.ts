@@ -130,6 +130,8 @@ export interface CreateOrderItem {
  * `items` and `payment_method` are always present.
  */
 export interface CreateOrderPayload {
+  ordering_window_id?: Uuid;
+  scheduled_date?: string;
   delivery_reward_id?: string;
   hp_reward_id?: string;
   redemption_id?: Uuid;

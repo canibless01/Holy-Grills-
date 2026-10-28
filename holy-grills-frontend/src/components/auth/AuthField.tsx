@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 // Domain 1 — shared labeled input with optional leading icon + trailing slot.
@@ -35,10 +35,11 @@ export default function AuthField({
   min,
   max,
 }: AuthFieldProps) {
+  const inputId = useId();
   return (
     <div>
       {label && (
-        <label className="block text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
+        <label htmlFor={inputId} className="block text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
           {label}
         </label>
       )}
@@ -47,6 +48,7 @@ export default function AuthField({
           <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         )}
         <input
+          id={inputId}
           ref={inputRef}
           name={name}
           type={type}

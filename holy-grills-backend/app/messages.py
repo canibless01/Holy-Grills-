@@ -3121,6 +3121,17 @@ class MSG:
     FE_REGISTER_PROMOTIONAL_EMAILS = "Email me promotions, offers and product news (optional). You can unsubscribe at any time."
 
 
+    FE_SCHEDULE_TITLE = "Choose your delivery date"
+    FE_SCHEDULE_DESCRIPTION = "Choose an available date and window. Capacity is checked again when you place your order."
+    FE_SCHEDULE_LOADING = "Checking availability…"
+    FE_SCHEDULE_ERROR = "Availability could not be loaded."
+    FE_SCHEDULE_FULL = "Fully booked"
+    FE_SCHEDULE_UNAVAILABLE = "Unavailable"
+    FE_SCHEDULE_REMAINING = "{count} slots remaining"
+    FE_SCHEDULE_NONE = "No bookable dates in the next 14 days. Please check again later."
+    FE_SCHEDULE_BACK = "Back"
+    FE_SCHEDULE_CONFIRM = "Use this date"
+
 M = MSG
 
 

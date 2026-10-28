@@ -309,7 +309,7 @@ def list_milestones(db, campus_id: str | None, include_inactive: bool = False) -
     return rows
 
 
-def _system_actor(db) -> dict | None:
+def _system_actor(db, creator_id=None) -> dict | None:
     """The admin profile that authorizes milestone AUTO-issue grants.
 
     Returns None when the setting is missing/invalid rather than inventing an
@@ -317,17 +317,17 @@ def _system_actor(db) -> dict | None:
     and a reward must never appear without a real authorizing admin. Callers
     then fall back to the normal pending-approval/manual-grant flow.
     """
-    actor_id = str(current_app.config.get("AMBASSADOR_SYSTEM_ACTOR_ID") or "").strip()
+    actor_id = str(current_app.config.get("AMBASSADOR_SYSTEM_ACTOR_ID") or creator_id or "").strip()
     if not actor_id or not validate_uuid(actor_id):
         return None
     profile = (
         db.table("profiles")
-        .select("id,role,campus_id")
+        .select("id,role,campus_id,is_active")
         .eq("id", actor_id)
         .single()
         .execute()
     )
-    if not profile or profile.get("role") not in ADMIN_ROLES:
+    if not profile or profile.get("is_active") is False or profile.get("role") not in ADMIN_ROLES:
         logger.warning(
             "AMBASSADOR_SYSTEM_ACTOR_ID %s is not an admin profile; "
             "milestone auto-issue stays in manual approval", actor_id)
@@ -351,7 +351,7 @@ def _auto_issue_milestone_grant(ambassador: dict, milestone: dict,
     common case — an admin can still grant with the explicit override.
     """
     db = get_db()
-    actor = _system_actor(db)
+    actor = _system_actor(db, milestone.get("created_by"))
     if not actor:
         logger.info(
             "auto-issue milestone %s reached but no system actor is configured; "
@@ -418,16 +418,16 @@ def evaluate_milestones(db, ambassador_id: str, month: str | None = None) -> lis
                 "status": "pending_approval",
             }).execute()
             claim = claim[0] if isinstance(claim, list) else claim
-            if ms.get("auto_issue"):
-                # Best effort; any failure leaves the pending claim untouched.
-                # The helper elevates to the service-role client itself.
-                try:
-                    claim = _auto_issue_milestone_grant(
-                        ambassador, ms, claim, month)
-                except Exception:
-                    logger.exception(
-                        "milestone auto-issue evaluation failed for claim %s",
-                        claim.get("id"))
+        if reached and claim and claim.get("status") == "pending_approval" and ms.get("auto_issue"):
+            # Best effort; any failure leaves the pending claim untouched.
+            # The helper elevates to the service-role client itself.
+            try:
+                claim = _auto_issue_milestone_grant(
+                    ambassador, ms, claim, month)
+            except Exception:
+                logger.exception(
+                    "milestone auto-issue evaluation failed for claim %s",
+                    claim.get("id"))
         out.append({
             "milestone": ms,
             "metric_value": value,
@@ -677,7 +677,7 @@ def compute_discount_amount(discount: dict, order_items: list[dict],
                             existing_food_discount_dec: Decimal) -> Decimal:
     """The discount covers ONE meal up to max_meal_value, never touches delivery,
     and can never push the food total below zero."""
-    unit_prices = [Decimal(str(i.get("price_snapshot") or 0)) for i in order_items]
+    unit_prices = [Decimal(str(i.get("price_snapshot") or 0)) for i in order_items if not i.get("is_addon") and i.get("menu_item_id")]
     priciest = max(unit_prices, default=Decimal("0"))
     cap = Decimal(str(discount["max_meal_value"]))
     headroom = max(Decimal("0"), subtotal_dec - existing_food_discount_dec)
@@ -729,7 +729,7 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
     if not reason:
         raise AmbassadorError(MSG.AMBASSADOR_GRANT_REASON_REQUIRED)
     amount = float(amount)
-    if amount <= 0:
+    if not Decimal(str(amount)).is_finite() or amount <= 0:
         raise AmbassadorError(MSG.AMBASSADOR_GRANT_AMOUNT_INVALID)
     ambassador = _active_ambassador(db, ambassador_id)
     uses_count = max(1, int(uses_count or 1))
@@ -737,11 +737,6 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
     # Accidental-duplicate guard. The partial unique index
     # uq_amb_grant_month_category is the hard backstop; this pre-check gives a
     # clean 409. An intentional extra grant sets override=true.
-    existing = db.table("ambassador_grants").select("id").eq(
-        "ambassador_id", ambassador_id).eq("month", month).eq(
-        "reward_category", category).eq("duplicate_override", False).execute() or []
-    if existing and not override:
-        raise DuplicateGrant(MSG.AMBASSADOR_GRANT_DUPLICATE)
 
     idem = _grant_idempotency_key(
         actor["id"], ambassador_id, month, category, amount, override)
@@ -759,68 +754,27 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
         "issued_by": actor["id"],
     }
 
-    if category == "hp":
-        grant = db.table("ambassador_grants").insert(grant_row).execute()
-        grant = grant[0] if isinstance(grant, list) else grant
-        from app.services.hp_service import award_active_hp
-        award_active_hp(
-            user_id=ambassador_id, amount=int(amount),
-            txn_type="earn", reference_id=grant["id"],
-            reference_type="ambassador_grant",
-            notes=f"Ambassador programme grant ({month}): {reason}",
-            issued_by_admin_id=actor["id"], apply_multiplier=False,
-            campus_id=ambassador.get("campus_id"),
-        )
-        txn = db.table("hp_transactions").select("id").eq(
-            "user_id", ambassador_id).eq("reference_id", grant["id"]).single().execute()
-        if txn:
-            db.table("ambassador_grants").update(
-                {"hp_transaction_id": txn["id"]}).eq("id", grant["id"]).execute()
-            grant["hp_transaction_id"] = txn["id"]
-
-    elif category == "free_side":
-        validity_days = int(validity_days or setting_or_config(
-            db, "free_side_credits_validity_days", 60, minimum=1, maximum=365))
-        grant_row["validity_days"] = validity_days
-        grant = db.table("ambassador_grants").insert(grant_row).execute()
-        grant = grant[0] if isinstance(grant, list) else grant
-        intent = str(uuid.uuid4())
-        result = db.rpc("hg_grant_free_sides_atomic", {
-            "p_actor_id": actor["id"], "p_user_id": ambassador_id,
-            "p_intent_key": intent, "p_credits": int(amount),
-            "p_days": validity_days,
-            "p_reason": f"Ambassador programme ({month}): {reason}"[:200],
-        })
-        if isinstance(result, dict) and result.get("error"):
-            db.table("ambassador_grants").update(
-                {"status": "voided"}).eq("id", grant["id"]).execute()
-            raise AmbassadorError(str(result["error"]))
-        if isinstance(result, dict) and result.get("credit_id"):
-            db.table("ambassador_grants").update(
-                {"free_side_grant_id": result["credit_id"]}).eq("id", grant["id"]).execute()
-            grant["free_side_grant_id"] = result["credit_id"]
-
-    else:  # meal_discount
-        validity_days = int(validity_days or setting_or_config(
-            db, "ambassador_meal_discount_default_validity", 14, minimum=1, maximum=365))
-        grant_row["validity_days"] = validity_days
-        grant = db.table("ambassador_grants").insert(grant_row).execute()
-        grant = grant[0] if isinstance(grant, list) else grant
-        discount = db.rpc("hg_grant_ambassador_meal_discount", {
-            "p_actor_id": actor["id"],
-            "p_ambassador_id": ambassador_id,
-            "p_max_meal_value": amount,
-            "p_uses": uses_count,
-            "p_validity_days": validity_days,
-            "p_grant_id": grant["id"],
-            "p_source_note": f"{source} ({month}): {reason}"[:500],
-        })
-        if isinstance(discount, dict) and discount.get("error"):
-            db.table("ambassador_grants").update(
-                {"status": "voided"}).eq("id", grant["id"]).execute()
-            raise AmbassadorError(str(discount["error"]))
-        if isinstance(discount, dict) and discount.get("id"):
-            grant["meal_discount_id"] = discount["id"]
+    if not Decimal(str(amount)).is_finite() or amount > 1000000 or (category in ('hp','free_side') and amount != int(amount)) or (category == 'free_side' and amount > 20):
+        raise AmbassadorError(MSG.AMBASSADOR_GRANT_AMOUNT_INVALID)
+    validity_days = int(validity_days or setting_or_config(
+        db, 'free_side_credits_validity_days' if category == 'free_side' else 'ambassador_meal_discount_default_validity',
+        60 if category == 'free_side' else 14, minimum=1, maximum=365))
+    # Include all terms, so an intentional later override is distinct while a
+    # retry of the same operation resolves the committed receipt.
+    idem = str(uuid.uuid5(_GRANT_NS, '|'.join(map(str, (idem, reason, validity_days, uses_count, source, milestone_claim_id)))))
+    grant = db.rpc('hg_issue_ambassador_grant_atomic', {
+        'p_actor_id': actor['id'], 'p_ambassador_id': ambassador_id,
+        'p_category': category, 'p_amount': amount, 'p_month': month,
+        'p_reason': reason[:500], 'p_validity_days': validity_days, 'p_uses': uses_count,
+        'p_source': grant_row['source'], 'p_claim_id': milestone_claim_id,
+        'p_override': bool(override), 'p_intent': idem,
+    })
+    if isinstance(grant, dict) and grant.get('error') == 'duplicate_monthly_grant':
+        raise DuplicateGrant(MSG.AMBASSADOR_GRANT_DUPLICATE)
+    if not isinstance(grant, dict) or not grant.get('id'):
+        raise AmbassadorError(MSG.SERVICE_UNAVAILABLE, status=503)
+    if grant.get('idempotent'):
+        return grant
 
     audit(actor["id"], f"ambassador_grant_{category}", ambassador_id,
           after={"grant_id": grant["id"], "amount": amount, "month": month},

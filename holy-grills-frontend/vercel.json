@@ -317,6 +317,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/signup",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/signup/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/squads",
       "dest": "/app-shell.html"
     },

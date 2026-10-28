@@ -201,16 +201,11 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
 
     # Marketing consent is separate from transactional email delivery. Save it
     # on the existing preferences row, and reuse the newsletter audience.
-    db.table("notification_preferences").upsert(
-        {"user_id": user_id, "promotions": promotional_emails}, on_conflict="user_id")
-    if promotional_emails:
-        try:
-            db.table("newsletter_subscriptions").upsert({
-                "email": email, "full_name": full_name, "campus_id": campus_id,
-                "source": "signup", "is_confirmed": True, "unsubscribed_at": None,
-            }, on_conflict="email")
-        except Exception:
-            logger.exception("register: newsletter subscription unavailable for %s", user_id)
+    preferences = db.rpc('hg_update_notification_preferences_atomic', {
+        'p_user_id': user_id, 'p_preferences': {'promotions': promotional_emails},
+    })
+    if isinstance(preferences, dict) and preferences.get('error'):
+        raise ValueError(MSG.REGISTER_FAILED_RETRY)
 
     if referred_by_user_id:
         try:

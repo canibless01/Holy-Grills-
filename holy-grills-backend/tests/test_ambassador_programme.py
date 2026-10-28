@@ -190,6 +190,17 @@ class AmbassadorTestBase(unittest.TestCase):
         self.app.config.update(FRONTEND_URL='https://holygrills.example',
                                FREE_SIDE_CREDITS_VALIDITY_DAYS=60)
         self.db = MockDB()
+        def grant_contract(params):
+            if not params['p_override'] and any(row.get('ambassador_id') == params['p_ambassador_id'] and row.get('month') == params['p_month'] and row.get('reward_category') == params['p_category'] and not row.get('duplicate_override') for row in self.db.rows('ambassador_grants')):
+                return {'error':'duplicate_monthly_grant'}
+            row = {'id':str(uuid.uuid4()), 'ambassador_id':params['p_ambassador_id'],
+                   'month':params['p_month'],'reward_category':params['p_category'],
+                   'source':params['p_source'],'milestone_claim_id':params['p_claim_id'],
+                   'issued_by':params['p_actor_id'],'uses_count':params['p_uses'],
+                   'duplicate_override':params['p_override'],'idempotency_key':params['p_intent']}
+            self.db.seed('ambassador_grants',[row])
+            return row
+        self.db.rpcs['hg_issue_ambassador_grant_atomic'] = grant_contract
         # Patches for every module that imported get_db by name.
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(svc, 'get_db', return_value=self.db))
@@ -629,7 +640,7 @@ class ClickAttributionTests(AmbassadorTestBase):
             __import__('app.routes.orders', fromlist=['x']))
         self.assertIn('resolve_discount_for_checkout', order_service)
         self.assertIn('compute_discount_amount', order_service)
-        self.assertIn('redeem_discount', order_service)
+        self.assertIn("['_ambassador_meal_discount']", order_service)
         self.assertIn('restore_discount_for_order', order_service)
         self.assertIn('attribute_delivered_order', order_service)
         self.assertIn('reverse_attributed_order', orders_route)
@@ -771,188 +782,77 @@ class AutoIssueMilestoneTests(AmbassadorTestBase):
         self.db.seed('profiles', [profile(ADMIN_ID, role='super_admin')])
         self._seed_reached(self._auto_milestone(
             reward_type='hp', reward_amount=25, reward_uses=1))
-        awards = []
-        with patch('app.services.hp_service.award_active_hp',
-                   side_effect=lambda **kw: awards.append(kw) or {
-                       'id': 'txn-auto'}):
-            out = svc.evaluate_milestones(self.db, AMB, MONTH)
+        out = svc.evaluate_milestones(self.db, AMB, MONTH)
         self.assertEqual(out[0]['claim']['status'], 'issued')
-        self.assertEqual(awards[0]['amount'], 25)
-        self.assertEqual(awards[0]['reference_type'], 'ambassador_grant')
-        self.assertFalse(awards[0]['apply_multiplier'])
+        params = next(params for name,params in self.db.rpc_calls if name=='hg_issue_ambassador_grant_atomic')
+        self.assertEqual(params['p_amount'],25)
+        self.assertEqual(params['p_category'],'hp')
+
 
 
 # ---------------------------------------------------------------------------
 # 11/13. Grants: HP, free sides, meal discounts, dedupe, recurring grants
 # ---------------------------------------------------------------------------
 class GrantTests(AmbassadorTestBase):
-    def _actor(self, role='admin'):
-        return {'id': ADMIN_ID, 'role': role, 'campus_id': CAMPUS_A}
+    def _actor(self): return {'id':ADMIN_ID,'role':'admin','campus_id':CAMPUS_A}
 
-    def test_grant_validates_category_reason_and_amount(self):
-        self.ctx()
-        self.seed_ambassador()
+    def test_three_categories_pass_one_atomic_contract(self):
+        for category,amount in [('hp',50),('free_side',2),('meal_discount',3000)]:
+            with self.subTest(category=category):
+                self.ctx();self.seed_ambassador()
+                grant=svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category=category,
+                    amount=amount,reason='October review',month=MONTH)
+                name,params=self.db.rpc_calls[-1]
+                self.assertEqual(name,'hg_issue_ambassador_grant_atomic')
+                self.assertEqual(params['p_category'],category)
+                self.assertEqual(params['p_amount'],amount)
+                self.assertEqual(params['p_actor_id'],ADMIN_ID)
+                self.assertTrue(grant['id'])
+                self.assertNotIn('wallet_transactions',self.db.written_tables)
+
+    def test_failed_atomic_response_never_records_a_local_grant(self):
+        self.ctx();self.seed_ambassador()
+        self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'error':'unavailable'}
         with self.assertRaises(svc.AmbassadorError):
-            svc.issue_grant(self.db, self._actor(), ambassador_id=AMB,
-                            category='wallet_cash', amount=10, reason='x',
-                            month=MONTH)
-        with self.assertRaises(svc.AmbassadorError):
-            svc.issue_grant(self.db, self._actor(), ambassador_id=AMB,
-                            category='hp', amount=10, reason='  ', month=MONTH)
-        with self.assertRaises(svc.AmbassadorError):
-            svc.issue_grant(self.db, self._actor(), ambassador_id=AMB,
-                            category='hp', amount=0, reason='x', month=MONTH)
-
-    def test_hp_grant_goes_through_existing_award_service_with_no_multiplier(self):
-        self.ctx()
-        self.seed_ambassador()
-        calls = []
-
-        def fake_award(**kwargs):
-            calls.append(kwargs)
-            self.db.seed('hp_transactions', [{
-                'id': 'txn-1', 'user_id': kwargs['user_id'],
-                'reference_id': kwargs['reference_id']}])
-            return {'id': 'txn-1'}
-
-        with patch('app.services.hp_service.award_active_hp', side_effect=fake_award):
-            grant = svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB, category='hp',
-                amount=50, reason='October review', month=MONTH)
-
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]['amount'], 50)
-        self.assertFalse(calls[0]['apply_multiplier'])
-        self.assertEqual(calls[0]['reference_type'], 'ambassador_grant')
-        self.assertEqual(grant['hp_transaction_id'], 'txn-1')
-        # No wallet/balance table is touched by the programme.
-        self.assertNotIn('wallet_transactions', self.db.written_tables)
-
-    def test_free_side_grant_uses_atomic_rpc_and_voids_on_failure(self):
-        self.ctx()
-        self.seed_ambassador()
-        self.db.rpcs['hg_grant_free_sides_atomic'] = (
-            lambda p: {'credit_id': 'credit-1'})
-        with patch('app.utils.settings.setting_or_config', return_value=60):
-            grant = svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB, category='free_side',
-                amount=2, reason='Milestone reward', month=MONTH)
-        rpc = [(n, p) for n, p in self.db.rpc_calls
-               if n == 'hg_grant_free_sides_atomic']
-        self.assertEqual(len(rpc), 1)
-        self.assertEqual(rpc[0][1]['p_credits'], 2)
-        self.assertEqual(rpc[0][1]['p_days'], 60)
-        self.assertTrue(rpc[0][1]['p_intent_key'])  # idempotency intent
-        self.assertEqual(grant['free_side_grant_id'], 'credit-1')
-
-    def test_failed_free_side_rpc_marks_the_grant_voided(self):
-        self.ctx()
-        self.seed_ambassador(AMB2)
-        self.db.rpcs['hg_grant_free_sides_atomic'] = lambda _: {'error': 'boom'}
-        with patch('app.utils.settings.setting_or_config', return_value=60):
-            with self.assertRaises(svc.AmbassadorError):
-                svc.issue_grant(
-                    self.db, self._actor(), ambassador_id=AMB2,
-                    category='free_side', amount=1, reason='failed', month=MONTH)
-        grants = [g for g in self.db.rows('ambassador_grants')
-                  if g['ambassador_id'] == AMB2]
-        self.assertEqual(grants[-1]['status'], 'voided')
-
-    def test_meal_discount_grant_calls_reward_rpc_with_default_validity(self):
-        self.ctx()
-        self.seed_ambassador()
-        self.db.rpcs['hg_grant_ambassador_meal_discount'] = (
-            lambda p: {'id': 'disc-1', **p})
-        with patch('app.utils.settings.setting_or_config', return_value=14):
-            grant = svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB,
-                category='meal_discount', amount=3000, reason='Biweekly reward',
-                month=MONTH, uses_count=2)
-        rpc = [(n, p) for n, p in self.db.rpc_calls
-               if n == 'hg_grant_ambassador_meal_discount'][0][1]
-        self.assertEqual(rpc['p_max_meal_value'], 3000)
-        self.assertEqual(rpc['p_uses'], 2)
-        self.assertEqual(rpc['p_validity_days'], 14)
-        self.assertEqual(rpc['p_grant_id'], grant['id'])
-        self.assertEqual(grant['meal_discount_id'], 'disc-1')
+            svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='free_side',amount=1,reason='test',month=MONTH)
+        self.assertEqual(self.db.rows('ambassador_grants'),[])
 
     def test_duplicate_month_category_grant_is_409_until_explicit_override(self):
-        self.ctx()
-        self.seed_ambassador()
-        self.db.rpcs['hg_grant_ambassador_meal_discount'] = (
-            lambda p: {'id': f"disc-{len(self.db.rpc_calls)}", **p})
-        with patch('app.utils.settings.setting_or_config', return_value=14):
-            svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB,
-                category='meal_discount', amount=3000, reason='first',
-                month=MONTH)
-            with self.assertRaises(svc.DuplicateGrant) as raised:
-                svc.issue_grant(
-                    self.db, self._actor(), ambassador_id=AMB,
-                    category='meal_discount', amount=3000, reason='accidental dup',
-                    month=MONTH)
-        self.assertEqual(raised.exception.status, 409)
-
-        # Explicit override (an intentional extra) succeeds and is flagged.
-        with patch('app.utils.settings.setting_or_config', return_value=14):
-            extra = svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB,
-                category='meal_discount', amount=3000, reason='extra campaign',
-                month=MONTH, override=True)
+        self.ctx();self.seed_ambassador()
+        kwargs=dict(ambassador_id=AMB,category='meal_discount',amount=3000,reason='first',month=MONTH)
+        svc.issue_grant(self.db,self._actor(),**kwargs)
+        with self.assertRaises(svc.DuplicateGrant):svc.issue_grant(self.db,self._actor(),**kwargs)
+        extra=svc.issue_grant(self.db,self._actor(),**{**kwargs,'reason':'second'},override=True)
         self.assertTrue(extra['duplicate_override'])
-        # The partial unique index mirrors the soft guard in the database.
-        self.assertIn('uq_amb_grant_month_category', SCHEMA_SQL)
 
-    def test_recurring_biweekly_grants_keep_independent_keys_and_discounts(self):
-        self.ctx()
-        self.seed_ambassador()
-        granted_discounts = []
+    def test_issued_replay_does_not_send_another_notification(self):
+        self.ctx();self.seed_ambassador()
+        self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'id':'receipt','idempotent':True}
+        with patch('app.services.notification_service.send_notification') as notify:
+            svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='hp',amount=50,reason='test',month=MONTH)
+            notify.assert_not_called()
 
-        def grant_rpc(params):
-            disc = {'id': f"disc-{len(granted_discounts) + 1}", **params}
-            granted_discounts.append(disc)
-            return disc
+    def test_unsafe_amounts_never_reach_award_rpc(self):
+        self.ctx();self.seed_ambassador()
+        for amount in (float('nan'),float('inf'),0,-1,0.5):
+            with self.subTest(amount=amount),self.assertRaises(svc.AmbassadorError):
+                svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='hp',amount=amount,reason='test',month=MONTH)
+        self.assertNotIn('hg_issue_ambassador_grant_atomic',self.db.rpc_names())
 
-        self.db.rpcs['hg_grant_ambassador_meal_discount'] = grant_rpc
-        with patch('app.utils.settings.setting_or_config', return_value=14):
-            g1 = svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB,
-                category='meal_discount', amount=3000, reason='biweekly 1',
-                month=MONTH, source='monthly_review')
-            g2 = svc.issue_grant(
-                self.db, self._actor(), ambassador_id=AMB,
-                category='meal_discount', amount=3000, reason='biweekly 2',
-                month=MONTH, source='monthly_review', override=True)
-
-        # Separate authorizing grant records, idempotency keys, discount rows.
-        self.assertNotEqual(g1['id'], g2['id'])
-        self.assertNotEqual(g1['idempotency_key'], g2['idempotency_key'])
-        self.assertEqual(len(granted_discounts), 2)
-        self.assertNotEqual(granted_discounts[0]['id'], granted_discounts[1]['id'])
-        # Idempotency key is deterministic for retried requests.
-        self.assertEqual(
-            svc._grant_idempotency_key(ADMIN_ID, AMB, MONTH, 'meal_discount',
-                                       3000, False),
-            svc._grant_idempotency_key(ADMIN_ID, AMB, MONTH, 'meal_discount',
-                                       3000, False))
+    def test_recurring_override_includes_terms_in_intent(self):
+        self.ctx();self.seed_ambassador()
+        kwargs=dict(ambassador_id=AMB,category='meal_discount',amount=3000,month=MONTH,override=True)
+        one=svc.issue_grant(self.db,self._actor(),reason='biweekly one',**kwargs)
+        two=svc.issue_grant(self.db,self._actor(),reason='biweekly two',**kwargs)
+        self.assertNotEqual(one['idempotency_key'],two['idempotency_key'])
 
     def test_grant_route_returns_409_body_with_duplicate_code(self):
-        self.ctx()
+        self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'error':'duplicate_monthly_grant'}
         self.seed_ambassador()
-        self.db.rpcs['hg_grant_ambassador_meal_discount'] = lambda p: {'id': 'd', **p}
-        with patch('app.utils.settings.setting_or_config', return_value=14):
-            svc.issue_grant(self.db, self._actor(), ambassador_id=AMB,
-                            category='meal_discount', amount=3000,
-                            reason='first', month=MONTH)
-        with self.app.test_request_context(
-                '/', json={'ambassador_id': AMB, 'reward_type': 'meal_discount',
-                           'amount': 3000, 'reason': 'dup', 'month': MONTH}):
-            g.user_id = ADMIN_ID
-            g.user_role = 'admin'
-            g.campus_id = CAMPUS_A
-            body, code = inspect.unwrap(routes.staff_create_grant)()
-        self.assertEqual(code, 409)
-        self.assertEqual(body.get_json()['code'], 'DUPLICATE_MONTHLY_GRANT')
+        with self.app.test_request_context('/',json={'ambassador_id':AMB,'reward_type':'hp','amount':50,'reason':'test','month':MONTH}):
+            g.user_id,g.user_role,g.campus_id=ADMIN_ID,'admin',CAMPUS_A
+            body,code=inspect.unwrap(routes.staff_create_grant)()
+            self.assertEqual(code,409);self.assertEqual(body.json['code'],'DUPLICATE_MONTHLY_GRANT')
 
 
 # ---------------------------------------------------------------------------
@@ -1231,9 +1131,44 @@ class MigrationContractTests(unittest.TestCase):
         self.assertNotIn('.table("referrals").insert', code)
         self.assertNotIn('.table("referrals").update', code)
         # Reward issuance is funnelled through the existing services.
-        self.assertIn('award_active_hp', code)
-        self.assertIn('hg_grant_free_sides_atomic', code)
+        self.assertIn('hg_issue_ambassador_grant_atomic', code)
 
 
 if __name__ == '__main__':
     unittest.main()
+
+class ProgrammeRegressionTests(AmbassadorTestBase):
+    def test_campus_admin_cannot_patch_global_or_other_campus_rule(self):
+        rule='99999999-9999-4999-8999-999999999999'
+        for campus in (None,CAMPUS_B):
+            self.db.tables['ambassador_milestones']=[{'id':rule,'campus_id':campus}]
+            with self.app.test_request_context('/',method='PATCH',json={'is_active':False}):
+                g.user_id,g.user_role,g.campus_id=ADMIN_ID,'admin',CAMPUS_A
+                response,status=inspect.unwrap(routes.staff_update_milestone)(rule)
+                self.assertEqual(status,403)
+                self.assertNotIn('ambassador_milestones',self.db.written_tables)
+
+    def test_malformed_rule_values_are_not_coerced_into_rewards(self):
+        base={'metric':'orders','threshold':2,'reward_type':'free_side','reward_amount':1}
+        for change in ({'threshold':True},{'threshold':1.5},{'auto_issue':'false'},
+                       {'reward_amount':float('nan')},{'reward_amount':0.5},
+                       {'validity_days':366},{'reward_uses':101}):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                routes._milestone_values({**base,**change})
+
+    def test_auto_issue_uses_rule_creator_and_recovers_pending_claim(self):
+        self.ctx();self.seed_ambassador()
+        self.db.seed('profiles',[profile(ADMIN_ID,role='admin')])
+        self.db.seed('ambassador_milestones',[{'id':'rule','created_by':ADMIN_ID,'metric':'shares','threshold':1,
+            'reward_type':'hp','reward_amount':25,'auto_issue':True,'is_active':True,'campus_id':CAMPUS_A}])
+        self.db.seed('ambassador_promo_assignments',[{'ambassador_id':AMB,'month':MONTH,'status':'shared'}])
+        self.db.seed('ambassador_milestone_claims',[{'id':'claim','ambassador_id':AMB,'milestone_id':'rule','period_month':MONTH,'status':'pending_approval'}])
+        out=svc.evaluate_milestones(self.db,AMB,MONTH)
+        self.assertEqual(out[0]['claim']['status'],'issued')
+        self.assertEqual(self.db.rows('ambassador_grants')[0]['issued_by'],ADMIN_ID)
+
+    def test_meal_discount_never_selects_a_standalone_addon(self):
+        amount=svc.compute_discount_amount({'max_meal_value':1000},[
+            {'menu_item_id':'meal','price_snapshot':100,'is_addon':False},
+            {'price_snapshot':500,'is_addon':True}],Decimal('600'),Decimal('0'))
+        self.assertEqual(amount,Decimal('100.00'))

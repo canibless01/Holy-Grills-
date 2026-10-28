@@ -142,6 +142,7 @@ const orders = {
   async initializePayment(id, body = {}) { return apiClient.post(`/orders/${id}/payment`, body); },
   async verifyPayment(id, body = {}) { return apiClient.post(`/orders/${id}/payment/verify`, body); },
   async validatePromo(body) { return apiClient.post('/orders/validate-promo', body); },
+  async getScheduleCalendar(campusId?: string) { return apiClient.get('/orders/delivery-windows/status?calendar=true', undefined, campusId ? { 'X-Campus-ID': campusId } : undefined); },
   async getDeliveryWindows() { return apiClient.get('/orders/delivery-windows'); },
   async getDeliveryWindowStatus(campusId?: string) {
     // The campus id is sent as an explicit header when the caller has one, so

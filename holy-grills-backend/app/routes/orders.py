@@ -991,13 +991,23 @@ def delivery_windows_status():
         calendar = []
         from datetime import datetime, timezone, timedelta as _td
         _now_wat_date = (datetime.now(timezone.utc) + _td(hours=1)).date()
-        for i in range(7):
+        for i in range(14):
             d = _now_wat_date + _td(days=i)
             st = get_ordering_window_status(get_db(), campus_id, for_date=d)
+            # Today's elapsed windows cannot be selected; future openings do
+            # not compare their clock against the current time.
+            from app.services.order_service import _parse_hm_local
+            now_wat = datetime.now(timezone.utc) + _td(hours=1)
+            rows = [{**w, "date": st["date"], "is_closed": bool(w.get("is_closed")) or
+                     (i == 0 and _parse_hm_local(w.get("closes_at"), 23, 59) < now_wat.time())}
+                    for w in st.get("windows", [])]
+            bookable = [w for w in rows if not w["is_closed"] and not w["is_full"]]
+            remaining = [w["remaining"] for w in bookable if w.get("remaining") is not None]
             calendar.append({
-                "date": st["date"],
-                "is_open": st["is_open"],
-                "any_capacity_remaining": st["any_capacity_remaining"],
+                "date": st["date"], "is_open": bool(bookable),
+                "any_capacity_remaining": bool(bookable), "windows": rows,
+                "remaining": min(remaining) if remaining else None,
+                "reason": "open" if bookable else st.get("reason"),
             })
 
     return jsonify({

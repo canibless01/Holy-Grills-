@@ -18,6 +18,7 @@ from app.constants import ADMIN_ROLES, COMMUNITY_MANAGER_ROLE
 from app.db import get_db
 from app.messages import MSG
 from app.middleware.auth import require_auth, require_role, optional_auth
+from app.middleware.rate_limit import rate_limit
 from app.services import ambassador_service as svc
 from app.utils.logger import get_logger
 from app.utils.validators import validate_uuid
@@ -56,11 +57,42 @@ def _guard_ambassador(ambassador_id: str):
     return svc._active_ambassador(get_db(), ambassador_id)
 
 
+def _milestone_values(data, partial=False):
+    fields = {"metric", "threshold", "reward_type", "reward_amount", "reward_uses", "validity_days", "auto_issue", "is_active"}
+    values = {key: value for key, value in data.items() if key in fields}
+    if not partial:
+        values = {"reward_uses": 1, "validity_days": 14, "auto_issue": False, "is_active": True, **values}
+        if not {"metric", "threshold", "reward_type", "reward_amount"} <= values.keys():
+            raise ValueError()
+    if not values: raise ValueError()
+    for key, value in values.items():
+        if key in ("auto_issue", "is_active"):
+            if not isinstance(value, bool): raise ValueError()
+        elif key == "metric":
+            if value not in svc.MILESTONE_METRICS: raise ValueError()
+        elif key == "reward_type":
+            if value not in svc.GRANT_CATEGORIES: raise ValueError()
+        else:
+            from decimal import Decimal, InvalidOperation
+            try: number = Decimal(str(value))
+            except InvalidOperation: raise ValueError()
+            if isinstance(value,bool) or not number.is_finite() or number <= 0: raise ValueError()
+            if key != "reward_amount" and number != int(number): raise ValueError()
+            if key == "validity_days" and number > 365: raise ValueError()
+            if key == "reward_uses" and number > 100: raise ValueError()
+            values[key] = float(number) if key == "reward_amount" else int(number)
+    if values.get('reward_type') in ('hp','free_side') and 'reward_amount' in values:
+        amount = values['reward_amount']
+        if amount != int(amount) or (values['reward_type'] == 'free_side' and amount > 20): raise ValueError()
+    return values
+
+
 # ---------------------------------------------------------------------------
 # Public tracking (the ?ref= link) — works for guests and logged-in users
 # ---------------------------------------------------------------------------
 @ambassadors_bp.route("/track-click", methods=["POST"])
 @optional_auth
+@rate_limit(60, 60)
 def track_click():
     data = _body() or {}
     ref_code = str(data.get("ref_code") or "").strip()
@@ -299,24 +331,9 @@ def staff_create_milestone():
     data = _body() or {}
     db = get_db()
     try:
-        metric = str(data.get("metric") or "").strip()
-        if metric not in svc.MILESTONE_METRICS:
-            raise svc.AmbassadorError(MSG.AMBASSADOR_INVALID_METRIC)
-        reward_type = str(data.get("reward_type") or "").strip()
-        if reward_type not in svc.GRANT_CATEGORIES:
-            raise svc.AmbassadorError(MSG.AMBASSADOR_INVALID_GRANT_CATEGORY)
+        values = _milestone_values(data)
         row = db.table("ambassador_milestones").insert({
-            # Super admin creates global milestones; campus admins' rows are
-            # pinned to their campus.
-            "campus_id": None if _is_super() and data.get("global") else getattr(g, "campus_id", None),
-            "metric": metric,
-            "threshold": int(data.get("threshold")),
-            "reward_type": reward_type,
-            "reward_amount": float(data.get("reward_amount")),
-            "reward_uses": max(1, int(data.get("reward_uses") or 1)),
-            "validity_days": max(1, int(data.get("validity_days") or 14)),
-            "auto_issue": bool(data.get("auto_issue")),
-            "is_active": bool(data.get("is_active", True)),
+            **values, "campus_id": None if _is_super() and data.get("global") is True else getattr(g,"campus_id",None),
             "created_by": g.user_id,
         }).execute()
     except (TypeError, ValueError):
@@ -335,13 +352,17 @@ def staff_update_milestone(milestone_id):
     if not validate_uuid(milestone_id):
         return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
     data = _body() or {}
-    allowed = {"metric", "threshold", "reward_type", "reward_amount", "reward_uses",
-               "validity_days", "auto_issue", "is_active"}
-    patch = {k: v for k, v in data.items() if k in allowed and v is not None}
-    if not patch:
-        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     db = get_db()
-    row = db.table("ambassador_milestones").update(patch).eq("id", milestone_id).execute()
+    existing = db.table("ambassador_milestones").select("*").eq("id",milestone_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    if not _is_super() and (not getattr(g,"campus_id",None) or existing.get("campus_id") != g.campus_id):
+        return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
+    try:
+        patch = _milestone_values(data, partial=True)
+        _milestone_values({**existing, **patch})
+    except (TypeError, ValueError): return jsonify({"error": MSG.AMBASSADOR_MILESTONE_INVALID}), 400
+    row = db.table("ambassador_milestones").eq("id",milestone_id).update(patch)
     row = row[0] if isinstance(row, list) and row else row
     if not row:
         return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
@@ -403,3 +424,7 @@ def staff_create_grant():
     except (TypeError, ValueError):
         return jsonify({"error": MSG.AMBASSADOR_GRANT_AMOUNT_INVALID}), 400
     return jsonify({"grant": grant}), 201
+
+@ambassadors_bp.errorhandler(svc.AmbassadorError)
+def programme_error(error):
+    return jsonify({"error": str(error)}), error.status

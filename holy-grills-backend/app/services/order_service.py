@@ -551,6 +551,18 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=start_date)
             if not slot or (requested_date and slot.get("date") != requested_date and not payload.get("accept_next_available_date")):
                 raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
+            requested_window = payload.get("ordering_window_id")
+            if requested_window:
+                state = get_ordering_window_status(get_db(), campus_id, for_date=start_date)
+                from app.services.delivery_window_schedule import bind_ordering_delivery
+                selected = next((w for w in state.get("windows", [])
+                                 if w.get("id") == requested_window and not w.get("is_closed") and not w.get("is_full")
+                                 and (start_date != today_wat() or _parse_hm_local(w.get("closes_at"),23,59) >= (datetime.now(timezone.utc)+timedelta(hours=1)).time())), None)
+                if not selected:
+                    raise ValueError(MSG.ORDER_NO_BOOKABLE_WINDOW)
+                selected = bind_ordering_delivery(get_db(), selected, campus_id, start_date.isoformat())
+                slot = {**slot, "date": start_date.isoformat(), "window_id": selected["id"],
+                        "opens_at": selected.get("opens_at"), "delivery_window_id": selected.get("linked_delivery_window_id")}
             ordering_window_id = slot.get("window_id")
             if slot.get("date") != start_date.isoformat():
                 requested_state = get_ordering_window_status(get_db(), campus_id, for_date=start_date)
@@ -993,7 +1005,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         if meal_discount_dec > 0:
             priced = [
                 (Decimal(str(i.get('price_snapshot') or 0)), i.get('menu_item_id'))
-                for i in order_items
+                for i in order_items if not i.get("is_addon") and i.get("menu_item_id")
             ]
             meal_discount_item_id = max(priced, key=lambda pair: pair[0])[1] if priced else None
             total_discount_dec = (total_discount_dec + meal_discount_dec).quantize(Decimal('0.01'))
@@ -1213,6 +1225,11 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         order_items[0]['_reward_claims'] = reward_plan['claims']
         order_items[0]['_delivery_benefit'] = delivery_benefit
         order_items[0]['_free_sides'] = free_side_quote['items']
+        if meal_discount and meal_discount_dec > 0:
+            order_items[0]['_ambassador_meal_discount'] = {
+                'discount_id': meal_discount['id'], 'amount': float(meal_discount_dec),
+                'meal_item_id': meal_discount_item_id,
+            }
         if hp_bonus_plan is not None:
             order_items[0]['_hp_bonus_plan'] = hp_bonus_plan
 
@@ -1267,7 +1284,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         result = {}
 
     if result.get("error"):
-        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed', 'hp_bonus_changed')):
+        if any(marker in str(result['error']).lower() for marker in ('order_lock_unavailable', 'order_lock_pricing_mismatch', 'delivery_benefit_changed', 'free_side_selection_changed', 'hp_bonus_changed', 'meal_discount_', 'ambassador_meal_discount_changed')):
             # The lock changed after pricing but before its transaction claim.
             # Return a fresh, read-only quote rather than repeating stale totals.
             refreshed = create_order(user_id, {**payload, 'payment_method': 'card'}, quote_only=True)
@@ -1307,19 +1324,6 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         except Exception as exc:                                    # noqa: BLE001
             logger.error("create_order: reward claim call failed for redemption %s / order %s: %s",
                          redemption_id, order_id, exc)
-
-    # ── Ambassador meal discount: consume the bucket exactly once ──────────
-    # The order was priced with this discount above; the SECURITY DEFINER RPC
-    # re-validates owner/expiry/uses under a row lock and records a redemption
-    # unique per order. A replay (same idempotency key) must not consume twice.
-    if order_id and meal_discount and meal_discount_dec > 0 and not result.get("idempotent"):
-        from app.services import ambassador_service
-        ambassador_service.redeem_discount(
-            get_db(), meal_discount["id"], str(order_id), user_id,
-            meal_discount_dec, meal_discount_item_id,
-        )
-        get_db().table("orders").eq("id", order_id).update(
-            {"ambassador_discount_id": meal_discount["id"]}).execute()
 
     if squad_id and order_id and not result.get("idempotent"):
         excluded_ids = set(payload.get("excluded_member_ids") or [])

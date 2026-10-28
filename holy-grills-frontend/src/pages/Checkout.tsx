@@ -1,3 +1,4 @@
+import ScheduleOrderPanel from '@/components/ScheduleOrderPanel';
 import { guestOrders as readGuestOrders, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { localStore } from '@/lib/storage';
@@ -185,6 +186,7 @@ export default function Checkout() {
   const [globalAddons, setGlobalAddons] = useState([]);
   const [selectedGlobalAddonIds, setSelectedGlobalAddonIds] = useState([]);
   const [scheduledWindow, setScheduledWindow] = useState(null);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   // E3: this used to be seeded from location.state.squadId, which the cart could
   // never set (its squad switch was unreachable). Squad selection is made here.
   const [squadSelection, setSquadSelection] = useState(null);
@@ -233,7 +235,7 @@ export default function Checkout() {
       if (active) setLoading(false);
     };
     load();
-    try { setScheduledWindow(JSON.parse(sessionStorage.getItem('hg_scheduled_window') || 'null')); } catch { /* ignore */ }
+    try { const saved = JSON.parse(sessionStorage.getItem('hg_scheduled_window') || 'null'); setScheduledWindow(saved?.campus_id === campus?.id && saved?.date ? saved : null); } catch { /* ignore */ }
     return () => { active = false; };
   }, [campus?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -436,7 +438,7 @@ export default function Checkout() {
     // The kitchen is closed and a window was picked earlier in the session
     // (home page / menu radar): attach it so the order is booked into that
     // window. Otherwise the backend picks the next available one.
-    const scheduled = !windowStatus?.is_open ? scheduledWindow : null;
+    const scheduled = scheduledWindow;
     return {
         items: (rewardOnly ? [] : (cart?.items || [])).map((ci) => ({
           menu_item_id: ci.menu_item_id,
@@ -478,7 +480,7 @@ export default function Checkout() {
             delivery_address: { line1: deliveryAddress, landmark },
           }),
         ...(!rewardOnly && selectedGlobalAddonIds.length ? { addons: selectedGlobalAddonIds.map((id) => ({ addon_id: id, quantity: 1 })) } : {}),
-        ...((scheduled || scheduleRequested) ? { accept_next_available_date: true } : {}),
+        ...(scheduled ? { is_scheduled: true, scheduled_date: scheduled.date, ordering_window_id: scheduled.id } : scheduleRequested ? { accept_next_available_date: true } : {}),
     };
   };
 
@@ -683,7 +685,7 @@ export default function Checkout() {
     
     if (!isAuthenticated) saveGuestOrder(order, order.claim_token, cart?.items || []);
 
-    if (payload.delivery_window_id) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
+    if (payload.is_scheduled || payload.accept_next_available_date) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
     const cardPending = order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0;
     if (cardPending) {
       try {
@@ -825,11 +827,15 @@ export default function Checkout() {
         </>
       )}
 
-      {scheduledWindow && !windowStatus?.is_open && (
+      {isFeatureEnabled('scheduled_orders') && !pendingCheckout && <div className="rounded-xl border border-border p-4">
+        <button type="button" onClick={() => setShowSchedulePicker(v => !v)} className="text-sm font-bold text-primary">{msg('FE_SCHEDULE_TITLE', 'Choose your delivery date')}</button>
+        {showSchedulePicker && <div className="mt-4"><ScheduleOrderPanel showBack={false} onConfirm={window => { setScheduledWindow(window); setScheduleRequested(false); setShowClosedPopup(false); setShowSchedulePicker(false); }} /></div>}
+      </div>}
+      {scheduledWindow && (
         <div className="flex items-center gap-2 p-3 rounded-xl bg-accent/20 border border-accent/40">
           <Clock className="w-4 h-4 text-accent-foreground shrink-0" />
           <div className="text-xs text-foreground flex-1">
-            Scheduled for <span className="font-bold">{scheduledWindow.label || 'next window'}</span>
+            Scheduled for <span className="font-bold">{scheduledWindow.date}</span>
             {scheduledWindow.starts_at ? ` · ${new Date(scheduledWindow.starts_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
           </div>
           <button onClick={() => { setScheduledWindow(null); try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }} className="text-xs font-bold text-muted-foreground underline">Clear</button>

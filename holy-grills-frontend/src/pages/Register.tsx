@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -273,12 +273,13 @@ export default function Register() {
 }
 
 function SelectField({ icon: Icon, label, value, onChange, placeholder, children, disabled = false }) {
+  const inputId = useId();
   return (
     <div>
-      <label className="block text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">{label}</label>
+      <label htmlFor={inputId} className="block text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">{label}</label>
       <div className="relative">
         <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-        <select
+        <select id={inputId}
           disabled={disabled}
           value={value}
           onChange={onChange}
