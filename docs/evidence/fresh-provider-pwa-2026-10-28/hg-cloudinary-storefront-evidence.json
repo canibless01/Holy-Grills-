@@ -1,0 +1,31 @@
+{
+  "origin": "https://holy-grills-backend.onrender.com/api",
+  "mode": "real deployed admin signing/CMS APIs and real Cloudinary; isolated audit campus",
+  "banner_id": "c6d9cde8-eaee-4b69-8dae-1be06a4ef593",
+  "campus_id": "47f42df1-5327-4f31-83fa-93172755f11b",
+  "signed_upload_count": 2,
+  "anonymous_reload_http_status": 200,
+  "saved_slides_match": true,
+  "slides": [
+    {
+      "image_url": "https://res.cloudinary.com/risvlfhx/image/upload/v1793203230/holy_grills_audit/provider_20261028/qznqlmobehgcctuvuqlh.png",
+      "mobile_image_url": "https://res.cloudinary.com/risvlfhx/image/upload/v1793203230/holy_grills_audit/provider_20261028/qznqlmobehgcctuvuqlh.png",
+      "eyebrow": "AUDIT 1",
+      "title": "Provider audit slide 1",
+      "subtitle": "Isolated audit content 1",
+      "cta_text": "Audit menu",
+      "cta_url": "/menu",
+      "display_mode": "image"
+    },
+    {
+      "image_url": "https://res.cloudinary.com/risvlfhx/image/upload/v1793203232/holy_grills_audit/provider_20261028/qkcf97nuu7c926wsbiuz.jpg",
+      "mobile_image_url": "https://res.cloudinary.com/risvlfhx/image/upload/v1793203232/holy_grills_audit/provider_20261028/qkcf97nuu7c926wsbiuz.jpg",
+      "eyebrow": "AUDIT 2",
+      "title": "Provider audit slide 2",
+      "subtitle": "Isolated audit content 2",
+      "cta_text": "Audit rewards",
+      "cta_url": "/rewards",
+      "display_mode": "image"
+    }
+  ]
+}

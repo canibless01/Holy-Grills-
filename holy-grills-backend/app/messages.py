@@ -1294,6 +1294,10 @@ class MSG:
     PROMO_CODE_VALID               = "Promo code applied"
     UPLOAD_SIGNATURE_ISSUED        = "Ready to upload"
     WALLET_CARD_FUNDING_INITIATED  = "Redirecting you to complete payment"
+    WALLET_PAYMENT_INVALID = "This wallet payment could not be verified for your account."
+    WALLET_PAYMENT_REVIEW = "This payment needs support review. Do not start another payment."
+    FE_WALLET_PAYMENT_REVIEW = "This payment needs support review. Do not start another payment."
+    FE_WALLET_PAYMENT_CHECK_FAILED = "Payment verification is unavailable. Check again before starting another payment."
     WALLET_BANK_TRANSFER_INITIATED = "Transfer details ready"
 
     # ── Phase 1b Centralized Error Messages ───────────────────────────────────

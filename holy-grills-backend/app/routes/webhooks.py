@@ -466,23 +466,12 @@ def _handle_charge_success(data: dict):
         return None
 
     elif payment_type == "wallet_topup" and user_id:
-        if amount_naira <= 0:
-            raise ValueError(f"Invalid top-up amount: {amount_naira}")
-
-        profile = db.table("profiles").select("id,campus_id").eq("id", user_id).single().execute()
-        if not profile:
-            raise ValueError(f"User {user_id} not found for wallet top-up")
-
-        campus_id = profile.get("campus_id")
-        credit_wallet(
-            user_id=user_id,
-            amount=amount_naira,
-            payment_reference=reference,
-            reference_type="topup",
-            notes=f"Card top-up via Paystack ({reference})",
-            provider_response=data,
-            campus_id=campus_id,
-        )
+        from app.services.wallet_payments import confirm_paystack_wallet_funding
+        funded = confirm_paystack_wallet_funding(data, reference)
+        if funded['payment_status'] != 'paid':
+            raise ValueError('Wallet payment is not successful')
+        amount_naira = funded['amount']
+        campus_id = funded['campus_id']
         _fmt_amt = f"{amount_naira:,.0f}"
         try:
             send_notification(

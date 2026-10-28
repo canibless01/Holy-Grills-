@@ -361,12 +361,11 @@ const marketplace = {
 // ========== WALLET ==========
 // Backend wallet routes (wallet.py): GET /wallet, POST /wallet/fund/card,
 // POST /wallet/fund/bank, GET /wallet/transactions, GET /wallet/admin/transactions.
-// There is NO /wallet/withdraw or /wallet/verify/<ref> route on the backend —
-// card funding returns a Paystack authorization_url and the Wallet page simply
-// refreshes the balance on return, so those former methods were removed.
+// Card returns verify the provider reference before reporting wallet funding.
 const wallet = {
   async get() { return apiClient.get('/wallet'); },
   async fundCard(body) { return apiClient.post('/wallet/fund/card', body); },
+  async verifyCardFunding(body) { return apiClient.post('/wallet/fund/card/verify', body); },
   async fundBank(body) { return apiClient.post('/wallet/fund/bank', body); },
   async getTransactions(params = {}) { return apiClient.get('/wallet/transactions', params); },
 };

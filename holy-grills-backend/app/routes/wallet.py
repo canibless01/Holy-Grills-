@@ -112,7 +112,7 @@ def fund_via_card():
             email=email,
             amount_naira=amount,
             reference=reference,
-            metadata={"user_id": g.user_id, "type": "wallet_topup"},
+            metadata={"user_id": g.user_id, "type": "wallet_topup", "expected_amount_kobo": round(amount * 100)},
             callback_url=data.get("callback_url"),
         )
         return jsonify({
@@ -129,6 +129,27 @@ def fund_via_card():
     except Exception as e:
         _cur_app.logger.error("wallet fund/card error: %s", e)
         return jsonify({"error": MSG.PAYMENT_GATEWAY_UNAVAILABLE}), 502
+
+
+@wallet_bp.route("/fund/card/verify", methods=["POST"])
+@require_auth
+def verify_card_funding():
+    from app.services.payment_service import verify_payment
+    from app.services.wallet_payments import confirm_paystack_wallet_funding, WalletFundingConflict
+    data = request.get_json(silent=True)
+    reference = data.get('reference') if isinstance(data, dict) else None
+    if not isinstance(reference, str) or not reference.strip() or len(reference) > 200:
+        return jsonify({'error': MSG.WALLET_PAYMENT_INVALID}), 400
+    try:
+        verified = verify_payment(reference)
+        return jsonify(confirm_paystack_wallet_funding(verified, reference, g.user_id)), 200
+    except WalletFundingConflict:
+        return jsonify({'error': MSG.WALLET_PAYMENT_REVIEW}), 409
+    except ValueError:
+        return jsonify({'error': MSG.WALLET_PAYMENT_INVALID}), 400
+    except Exception:
+        current_app.logger.warning('Wallet payment verification unavailable')
+        return jsonify({'error': MSG.PAYMENT_GATEWAY_UNAVAILABLE}), 503
 
 
 @wallet_bp.route("/fund/bank", methods=["POST"])

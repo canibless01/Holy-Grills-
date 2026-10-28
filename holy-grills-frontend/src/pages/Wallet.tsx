@@ -23,6 +23,7 @@ export default function Wallet() {
   const [hpTxns, setHpTxns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
+  const [fundingStatus, setFundingStatus] = useState<'pending' | 'error' | 'review' | null>(null);
   const [showFund, setShowFund] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
@@ -37,21 +38,35 @@ export default function Wallet() {
   const transferMinimum = hpTransferMinOrders();
   const hpTransferEnabled = transferReleased && deliveredCount != null && deliveredCount >= transferMinimum;
 
+  const checkFunding = async (reference: string) => {
+    setVerifying(true);
+    try {
+      const result = await liveApi.wallet.verifyCardFunding({ reference });
+      if (result.payment_status !== 'paid') {
+        setFundingStatus('pending');
+        return;
+      }
+      await refreshWallet();
+      await refreshHp();
+      const transactions = await liveApi.wallet.getTransactions({ limit: 30 });
+      setWalletTxns(Array.isArray(transactions) ? transactions : (transactions?.transactions || transactions?.items || []));
+      setFundingStatus(null);
+      toast({ title: msg('FE_WALLET_WALLET_FUNDED', 'Wallet funded ❤️‍🔥'), description: msg('FE_WALLET_YOUR_BALANCE_IS_UPDATED', 'Your balance is updated.') });
+      const params = new URLSearchParams(searchParams);
+      for (const key of ['reference', 'trxref', 'status']) params.delete(key);
+      setSearchParams(params, { replace: true });
+    } catch (error) {
+      setFundingStatus(error?.status === 409 ? 'review' : 'error');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   useEffect(() => {
     const load = async () => {
       const reference = searchParams.get('reference');
       if (reference) {
-        setVerifying(true);
-        try {
-          await refreshWallet();
-          await refreshHp();
-          toast({ title: msg('FE_WALLET_WALLET_FUNDED', 'Wallet funded ❤️‍🔥'), description: msg('FE_WALLET_YOUR_BALANCE_IS_UPDATED', 'Your balance is updated.') });
-        } catch { /* ignore */ }
-        setVerifying(false);
-        searchParams.delete('reference');
-        searchParams.delete('trxref');
-        searchParams.delete('status');
-        setSearchParams(searchParams, { replace: true });
+        await checkFunding(reference);
       }
       try {
         const [wt, ht] = await Promise.allSettled([
@@ -90,6 +105,19 @@ export default function Wallet() {
         <h1 className="font-heading font-extrabold text-2xl text-foreground">Wallet</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Fund once. Pay faster.</p>
       </div>
+
+      {fundingStatus && (
+        <div role="status" className="rounded-2xl border border-border bg-card p-4 space-y-2">
+          <p className="text-sm">{fundingStatus === 'pending'
+            ? msg('FE_ORDER_PAYMENT_PENDING', 'Payment has not been confirmed. You can continue payment or check again.')
+            : fundingStatus === 'review'
+              ? msg('FE_WALLET_PAYMENT_REVIEW', 'This payment needs support review. Do not start another payment.')
+              : msg('FE_WALLET_PAYMENT_CHECK_FAILED', 'Payment verification is unavailable. Check again before starting another payment.')}</p>
+          {fundingStatus !== 'review' && <button className="text-sm font-bold text-primary" onClick={() => checkFunding(searchParams.get('reference') || '')}>
+            {msg('FE_ORDER_PAYMENT_CHECK', 'I have paid — check payment')}
+          </button>}
+        </div>
+      )}
 
       {balance === 0 && (
         <div className="flex justify-center">

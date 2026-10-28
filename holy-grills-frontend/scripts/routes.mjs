@@ -137,6 +137,8 @@ export function securityHeaders() {
   const connect = [
     "'self'",
     'https://api.cloudinary.com',
+    // Off-campus address search fetches JSON directly from Nominatim.
+    'https://nominatim.openstreetmap.org',
     'https://cdn.onesignal.com',
     'https://*.onesignal.com',
     // The SDK's own API host is api.onesignal.com; the bare domain is listed
