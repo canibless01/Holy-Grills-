@@ -1,0 +1,95 @@
+[
+  {
+    "host": "holygrills.online",
+    "status": 200
+  },
+  {
+    "host": "www.holygrills.online",
+    "status": 200
+  },
+  {
+    "host": "holy-grills-backend.onrender.com",
+    "error_type": "TimeoutError",
+    "reason": "TimeoutError"
+  },
+  {
+    "host": "zaxdkrmzyibkvlsrgmvq.supabase.co",
+    "status": 404
+  },
+  {
+    "host": "api.cloudinary.com",
+    "status": 403
+  },
+  {
+    "host": "res.cloudinary.com",
+    "status": 200
+  },
+  {
+    "host": "api.paystack.co",
+    "status": 200
+  },
+  {
+    "host": "checkout.paystack.com",
+    "status": 200
+  },
+  {
+    "host": "paystack.com",
+    "status": 200
+  },
+  {
+    "host": "js.paystack.co",
+    "status": 200
+  },
+  {
+    "host": "api.resend.com",
+    "status": 200
+  },
+  {
+    "host": "api.onesignal.com",
+    "status": 403
+  },
+  {
+    "host": "onesignal.com",
+    "status": 200
+  },
+  {
+    "host": "cdn.onesignal.com",
+    "status": 200
+  },
+  {
+    "host": "nominatim.openstreetmap.org",
+    "status": 200
+  },
+  {
+    "host": "a.tile.openstreetmap.org",
+    "status": 200
+  },
+  {
+    "host": "b.tile.openstreetmap.org",
+    "status": 200
+  },
+  {
+    "host": "c.tile.openstreetmap.org",
+    "status": 200
+  },
+  {
+    "host": "www.google.com",
+    "status": 200
+  },
+  {
+    "host": "maps.google.com",
+    "status": 200
+  },
+  {
+    "host": "wa.me",
+    "status": 200
+  },
+  {
+    "host": "api.whatsapp.com",
+    "status": 200
+  },
+  {
+    "host": "web.whatsapp.com",
+    "status": 200
+  }
+]

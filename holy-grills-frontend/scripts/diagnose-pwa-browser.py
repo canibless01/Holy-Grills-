@@ -10,14 +10,16 @@ parser=argparse.ArgumentParser();parser.add_argument('--origin',default='http://
 repo=Path(__file__).resolve().parents[1];origin=args.origin.rstrip('/');proc=None
 if origin=='http://127.0.0.1:5240':
  proc=subprocess.Popen(['node','scripts/serve-static.mjs','5240'],cwd=repo,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT);time.sleep(1)
-results={'origin':origin,'mode':'real CDP; headless browser; clean persistent profiles; controlled application API; not visible Chrome omnibox or physical Android','profiles':[]}
+local=origin=='http://127.0.0.1:5240'
+proxy=os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY')
+results={'origin':origin,'mode':'real CDP; headless browser; clean persistent profiles; '+('controlled application API' if local else 'live application API')+'; not visible Chrome omnibox or physical Android','profiles':[]}
 try:
  with sync_playwright() as pw:
   contexts=[]
   for mobile in (False,True):
-   context=pw.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='hg-pwa-clean-'),executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'],viewport={'width':393 if mobile else 1365,'height':873 if mobile else 900},is_mobile=mobile,has_touch=mobile,service_workers='allow')
+   context=pw.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='hg-pwa-clean-'),executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'],viewport={'width':393 if mobile else 1365,'height':873 if mobile else 900},is_mobile=mobile,has_touch=mobile,service_workers='allow',**({'proxy':{'server':proxy}} if proxy and not local else {}))
    context.add_init_script("window.__pwaEvents=[];addEventListener('beforeinstallprompt',e=>window.__pwaEvents.push({type:e.type,trusted:e.isTrusted}));addEventListener('securitypolicyviolation',e=>window.__pwaEvents.push({type:'csp',directive:e.effectiveDirective,blocked:e.blockedURI}))")
-   context.route('**/api/**',lambda route:route.fulfill(status=200,json={} if any(x in route.request.url for x in ('messages','config','feature-flags')) else []))
+   if local:context.route('**/api/**',lambda route:route.fulfill(status=200,json={} if any(x in route.request.url for x in ('messages','config','feature-flags')) else []))
    page=context.new_page();cdp=context.new_cdp_session(page);cdp.send('Page.enable');page.goto(origin,wait_until='domcontentloaded',timeout=30000)
    try:page.get_by_role('button',name='Essential only',exact=True).click(timeout=8000)
    except Exception:page.mouse.click(20,20)
@@ -33,7 +35,7 @@ try:
     assets.append(entry)
    sw=page.evaluate("async()=>({secureContext:isSecureContext,controller:navigator.serviceWorker.controller?.scriptURL||null,registrations:(await navigator.serviceWorker.getRegistrations()).map(r=>({scope:r.scope,script:r.active?.scriptURL,state:r.active?.state}))})")
    response=context.request.get(urljoin(manifest_url,manifest.get('start_url','/')))
-   result={'profile':'mobile emulation' if mobile else 'desktop','browser':context.browser.version,'engagement_seconds':round(time.monotonic()-started),'manifest_url':manifest_url,'manifest_errors':data.get('errors',[]),'installability':cdp.send('Page.getInstallabilityErrors'),'manifest':manifest,'icons':assets,'start_url_status':response.status,'service_worker':sw,'events':page.evaluate('window.__pwaEvents'),'manifest_links':page.locator('link[rel="manifest"]').count()}
+   result={'profile':'mobile emulation' if mobile else 'desktop','final_url':page.url,'browser':context.browser.version,'engagement_seconds':round(time.monotonic()-started),'manifest_url':manifest_url,'manifest_errors':data.get('errors',[]),'installability':cdp.send('Page.getInstallabilityErrors'),'manifest':manifest,'icons':assets,'start_url_status':response.status,'service_worker':sw,'events':page.evaluate('window.__pwaEvents'),'manifest_links':page.locator('link[rel="manifest"]').count()}
    result['asset_headers'] = {}
    for path in ('/manifest.json','/service-worker.js'):
     res=context.request.get(origin+path)
@@ -46,11 +48,12 @@ try:
    assert manifest.get('name') or manifest.get('short_name')
    assert manifest.get('display') in ('standalone','fullscreen','minimal-ui','window-controls-overlay')
    assert manifest.get('prefer_related_applications') is not True
-   assert urlparse(urljoin(manifest_url,manifest['start_url'])).netloc==urlparse(origin).netloc
+   assert urlparse(urljoin(manifest_url,manifest['start_url'])).netloc==urlparse(result['final_url']).netloc
    for size in (192,512):
     assert any(icon['status']==200 and icon.get('pixels')==[size,size] and icon['content_type'].startswith('image/png') for icon in assets)
  Path(args.output).write_text(json.dumps(results,indent=2))
  for result in results['profiles']:
   print(json.dumps({'profile':result['profile'],'chrome_errors':result['installability'],'manifest_errors':result['manifest_errors'],'secure_context':result['service_worker']['secureContext'],'worker':result['service_worker']['controller'],'start_status':result['start_url_status'],'native_event':any(e['type']=='beforeinstallprompt' for e in result['events']),'icons':result['icons']}))
 finally:
+ Path(args.output).write_text(json.dumps(results,indent=2))
  if proc:os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=10)
