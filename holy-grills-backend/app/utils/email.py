@@ -8,6 +8,7 @@ Auth: Authorization: Bearer <RESEND_API_KEY>
 
 import os
 import requests
+from app.constants import APP_TAGLINE_DEFAULT
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -15,10 +16,11 @@ logger = get_logger(__name__)
 
 RESEND_BASE = "https://api.resend.com"
 
-# Fixed brand sign-off used by every transactional/rich/ticket email. Kept as
-# a constant (rather than the configurable APP_TAGLINE) so every mail ends on
-# the same line regardless of environment overrides.
-EMAIL_SIGNOFF = "Made with more than flame ❤️‍🔥, Holy Grills Team."
+# Fixed two-line brand sign-off used by every transactional/rich/ticket email.
+# Kept as constants (rather than the configurable APP_TAGLINE) so every mail
+# ends on the same two brand lines regardless of environment overrides.
+EMAIL_SIGNOFF_LINE_1 = "Made with more than flame ❤️‍🔥,"
+EMAIL_SIGNOFF_LINE_2 = "Holy Grills Team."
 
 TEMPLATES = {
     "order_confirmed": {
@@ -200,8 +202,9 @@ def _build_html(name: str, body_text: str, app_tagline: str = "", **kwargs) -> s
     use; the sign-off itself is the fixed EMAIL_SIGNOFF brand line.
     """
     safe_name = _html.escape(str(name or "there"))
-    safe_signoff = _html.escape(EMAIL_SIGNOFF)
-    
+    safe_signoff_1 = _html.escape(EMAIL_SIGNOFF_LINE_1)
+    safe_signoff_2 = _html.escape(EMAIL_SIGNOFF_LINE_2)
+
     # Extract optional components
     hero_image = kwargs.get("hero_image")
     headline = kwargs.get("headline")
@@ -405,7 +408,8 @@ def _build_html(name: str, body_text: str, app_tagline: str = "", **kwargs) -> s
     # Sign-off (optional — skip for emails that have their own sign-off in body)
     if not skip_signoff:
         html += f"""
-                                        <p style="margin: 32px 0 0 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_signoff}</p>"""
+                                        <p style="margin: 32px 0 14px 0; font-size: 15px; color: {muted_color};" class="email-muted">{safe_signoff_1}</p>
+                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_signoff_2}</p>"""
     else:
         # Still need to close the content table cell
         html += ""
@@ -504,13 +508,14 @@ def _build_rich_html(name: str, body_html: str, images: list, cta_blocks: list, 
         images: List of image blocks {url, alt, link?}
         cta_blocks: List of CTA blocks {label, url, style}
         app_tagline: accepted for call-site compatibility; the sign-off is
-                     the fixed EMAIL_SIGNOFF brand line
+                     the fixed two-line EMAIL_SIGNOFF brand lines
 
     Returns:
         Complete HTML email string
     """
     safe_name = _html.escape(str(name or "there"))
-    safe_signoff = _html.escape(EMAIL_SIGNOFF)
+    safe_signoff_1 = _html.escape(EMAIL_SIGNOFF_LINE_1)
+    safe_signoff_2 = _html.escape(EMAIL_SIGNOFF_LINE_2)
     
     # Brand colors
     brand_red = "#E01616"
@@ -668,8 +673,11 @@ def _build_rich_html(name: str, body_html: str, images: list, cta_blocks: list, 
                             {cta_html}
                             
                             <!-- Sign-off -->
-                            <p style="margin: 32px 0 0 0; font-size: 16px; font-weight: 600; color: #1A1A1A;">
-                                {safe_signoff}
+                            <p style="margin: 32px 0 14px 0; font-size: 15px; color: #666666;">
+                                {safe_signoff_1}
+                            </p>
+                            <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1A1A1A;">
+                                {safe_signoff_2}
                             </p>
                         </td>
                     </tr>
@@ -711,7 +719,7 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
     """
     data = data or {}
     data.setdefault("name", to_name)
-    data.setdefault("app_tagline", os.environ.get("APP_TAGLINE", "The Holy Grills Team"))
+    data.setdefault("app_tagline", os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT))
     data.setdefault("app_name", os.environ.get("APP_NAME", "Holy Grills"))
     data.setdefault("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
 
@@ -967,7 +975,8 @@ Create an account to earn HP for this event!"""
     muted_color = "#666666"
     wordmark_url = "https://holygrills.online/brand/wordmark.png"
     safe_name = _html.escape(str(name or "there"))
-    safe_signoff = _html.escape(EMAIL_SIGNOFF)
+    safe_signoff_1 = _html.escape(EMAIL_SIGNOFF_LINE_1)
+    safe_signoff_2 = _html.escape(EMAIL_SIGNOFF_LINE_2)
 
     html_body = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1038,7 +1047,8 @@ Create an account to earn HP for this event!"""
                                         <div style="margin: 24px 0; padding: 20px; background-color: #FFF5F0; border-radius: 12px; border-left: 4px solid {brand_red};">
                                             <p style="margin: 0; font-size: 15px; color: {text_color};" class="email-text"><strong>Earn Rewards!</strong> Create an account with this email to earn HP for this event and unlock exclusive perks!</p>
                                         </div>
-                                        <p style="margin: 32px 0 0 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_signoff}</p>
+                                        <p style="margin: 32px 0 14px 0; font-size: 15px; color: {muted_color};" class="email-muted">{safe_signoff_1}</p>
+                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_signoff_2}</p>
                                     </td>
                                 </tr>
                             </table>

@@ -3,6 +3,8 @@ import re
 
 from dotenv import load_dotenv
 
+from app.constants import APP_TAGLINE_DEFAULT
+
 load_dotenv()
 
 
@@ -58,7 +60,7 @@ class Config:
     AUTH_RESET_REDIRECT_PATH = os.environ.get("AUTH_RESET_REDIRECT_PATH", "/reset-password")
     AUTH_VERIFY_REDIRECT_PATH = os.environ.get("AUTH_VERIFY_REDIRECT_PATH", "/login")
     APP_NAME = os.environ.get("APP_NAME", "Holy Grills")
-    APP_TAGLINE = os.environ.get("APP_TAGLINE", "The Holy Grills Team")
+    APP_TAGLINE = os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT)
     # Profile id of the admin that authorizes milestone AUTO-issue grants.
     # Optional: when unset/invalid, auto milestones still create pending claims
     # for a manual admin decision instead of writing an unauthorised grant.

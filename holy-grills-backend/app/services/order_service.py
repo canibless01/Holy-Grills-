@@ -2,6 +2,7 @@
 Order service — order creation, status transitions, delivery rewards, payment confirmation.
 """
 
+import os
 import uuid
 import hashlib
 import math
@@ -62,6 +63,7 @@ class OrderingWindowUnavailable(ValueError):
         self._resolve()
         return self._next_opens_at
 from decimal import Decimal
+from app.constants import APP_TAGLINE_DEFAULT
 from app.utils.tz import today_wat
 from app.utils.schedule import effective_windows_with_config
 from app.utils.settings import setting_or_config, setting_bool
@@ -2216,7 +2218,7 @@ def _send_guest_status_email(order: dict, new_status: str):
         html_body = _build_html(
             order.get("guest_name") or "there",
             body_text,
-            os.environ.get("APP_TAGLINE", "The Holy Grills Team"),
+            os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT),
             cta_buttons=cta_buttons,
             skip_thank_you=True,  # Transactional email
         )

@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, g, Response, redirect
+from app.constants import APP_TAGLINE_DEFAULT
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.services.notification_service import send_blast, resolve_segment_user_ids
 from app.db import get_user_client, SupabaseError
@@ -8,6 +9,7 @@ from app.db import get_db
 from app.messages import MSG
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
+import os
 from app.utils.campus_scope import resolve_write_campus
 from app.utils.admin_helpers import as_instant
 import base64
@@ -875,7 +877,7 @@ def test_email_deliverability():
         html_body = _build_html(
             "Test User",
             body,
-            os.environ.get("APP_TAGLINE", "The Holy Grills Team"),
+            os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT),
         )
         
         # Send the test email

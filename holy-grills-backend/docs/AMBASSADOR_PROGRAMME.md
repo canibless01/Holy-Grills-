@@ -1,6 +1,6 @@
 # Campus Ambassador Programme — Implementation & Deployment Guide
 
-Status: code-complete, gated by 657 backend tests (61 ambassador-specific plus 5 email sign-off) and the
+Status: code-complete, gated by 658 backend tests (61 ambassador-specific plus 6 email sign-off) and the
 full frontend build. **The four SQL migrations have not been executed** — they are
 shipped as reviewable files and must be applied manually by a platform operator in
 the order given below.
@@ -291,7 +291,7 @@ the build if these guarantees are removed.
 
 ## 8. Test coverage & verification
 
-### Backend — `tests/test_ambassador_programme.py` (61 tests) plus `tests/test_email_signoff.py` (5 tests)
+### Backend — `tests/test_ambassador_programme.py` (61 tests) plus `tests/test_email_signoff.py` (6 tests)
 
 | Mandated scenario | Test(s) |
 |---|---|
@@ -306,11 +306,11 @@ the build if these guarantees are removed.
 | Completion rate 7/10 = 70% | `test_completion_rate_seven_of_ten_is_seventy_percent` |
 | Milestone dedupe | `MilestoneTests` |
 | Auto-issue grant, missing/invalid actor fallback, duplicate degradation, HP auto grant, service-client `/me` scoping | `AutoIssueMilestoneTests`, `DashboardAndReviewTests` |
-| Email sign-off replaced on every branded mail (`test_email_signoff.py`) | fixed "Made with more than flame ❤️‍🔥, Holy Grills Team." line, no "With love"/"Holy Grills FUTA" |
+| Email sign-off replaced on every branded mail (`test_email_signoff.py`) | fixed two-line sign-off ("Made with more than flame ❤️‍🔥," / "Holy Grills Team." in separate paragraphs), no "With love"/"Holy Grills FUTA" |
 | Single/multiple meal grants + duplicate override | `GrantTests` |
 | Checkout discount + delivery payable | `MealDiscountCheckoutTests` |
 | Independent biweekly grants | `test_recurring_biweekly_grants_keep_independent_keys_and_discounts` |
-| Regression of referral/free-side/HP/wallet/orders | full 657-test suite, HP/free-side grant tests, lifecycle hook source tests, RPC `REVOKE` contract tests |
+| Regression of referral/free-side/HP/wallet/orders | full 658-test suite, HP/free-side grant tests, lifecycle hook source tests, RPC `REVOKE` contract tests |
 
 ### Gate commands
 
@@ -318,7 +318,7 @@ the build if these guarantees are removed.
 # backend (from holy-grills-backend)
 .venv/bin/python -m pyflakes app/services/ambassador_service.py \
   app/routes/ambassadors.py tests/test_ambassador_programme.py
-.venv/bin/python -m pytest -q          # 657 passed
+.venv/bin/python -m pytest -q          # 658 passed
 
 # frontend (from holy-grills-frontend)
 npm run typecheck                     # tsc --noEmit

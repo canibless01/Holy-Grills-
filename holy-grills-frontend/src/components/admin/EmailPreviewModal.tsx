@@ -180,14 +180,21 @@ export default function EmailPreviewModal({ open, onClose, title, bodyHtml, imag
                 </table>
               )}
 
-              {/* Sign-off — fixed brand line shared with the backend email builders */}
+              {/* Sign-off — fixed two brand lines shared with the backend email builders */}
               <p style={{
-                margin: '32px 0 0 0',
+                margin: '32px 0 14px 0',
+                fontSize: '15px',
+                color: '#666666',
+              }}>
+                Made with more than flame ❤️‍🔥,
+              </p>
+              <p style={{
+                margin: 0,
                 fontSize: '16px',
                 fontWeight: 600,
                 color: '#1A1A1A',
               }}>
-                Made with more than flame ❤️‍🔥, Holy Grills Team.
+                Holy Grills Team.
               </p>
             </div>
 
