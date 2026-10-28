@@ -1,3 +1,4 @@
+import { useResumeEffect } from '@/hooks/useResumeEffect';
 import CompactBannerCarousel from '@/components/storefront/CompactBannerCarousel';
 import { bannerSlides } from '@/lib/bannerSlides';
 import { msg } from '@/lib/messages';
@@ -69,10 +70,9 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   const scrollRef = useRef(null);
   const autoTimer = useRef(null);
 
-  useEffect(() => {
+  useResumeEffect((background) => {
     let cancelled = false;
-    setSlides([]);
-    setI(0);
+    if (!background) { setSlides([]); setI(0); }
     const loadHero = async () => {
       try {
         const banners = await liveApi.storefront.getBanners({ placement });
@@ -86,7 +86,7 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
           const fromSections = buildSlidesFromSections(sections);
           setSlides(fromSections || []);
         }
-      } catch { if (!cancelled) setSlides([]); }
+      } catch { if (!cancelled && !background) setSlides([]); }
     };
     loadHero();
     return () => { cancelled = true; };

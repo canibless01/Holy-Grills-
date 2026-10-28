@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useResumeEffect } from '@/hooks/useResumeEffect';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronRight, TrendingUp, Gift, Mail, Check, Trophy, Zap, Loader2, Flame } from 'lucide-react';
@@ -59,10 +60,9 @@ export default function Home() {
   const rankNo = rankRaw && typeof rankRaw === 'object' ? (rankRaw.rank ?? rankRaw.position ?? null) : rankRaw;
   const myRankValue = typeof rankNo === 'number' && rankNo > 0 ? rankNo : null;
 
-  useEffect(() => {
+  useResumeEffect((background) => {
     let live = true;
-    setFeaturedItems([]);
-    setLoading(true);
+    if (!background) { setFeaturedItems([]); setLoading(true); }
     const load = async () => {
       try {
         const items = await liveApi.menu.getItems({});
@@ -84,9 +84,9 @@ export default function Home() {
     return () => { live = false; clearTimeout(deadline); };
   }, [campusId, isAuthenticated]);
 
-  useEffect(() => {
+  useResumeEffect((background) => {
     let live = true;
-    setTestimonials([]);
+    if (!background) setTestimonials([]);
     getStorefrontSections('testimonial').then((sections) => {
       if (live) setTestimonials(sections.map((s) => ({
         text: s.content?.review || s.subtitle || s.title || '',

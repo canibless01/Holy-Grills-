@@ -37,6 +37,7 @@ let initialized = false;
 let sdkInstance: any = null;
 let registeredUserId: string | null = null;
 let identifiedUserId: string | null = null;
+let storedDevice: { userId: string; subscriptionId: string } | null = null;
 let initialization: Promise<void> | null = null;
 let identityGeneration = 0;
 let identityTask: { userId: string; promise: Promise<void> } | null = null;
@@ -53,7 +54,8 @@ const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
 
 const storeDeviceToken = async (userId: string, subscriptionId: string) => {
   if (!userId || !subscriptionId || registeredUserId !== userId || identifiedUserId !== userId) return;
-  await liveApi.auth.deviceToken({ player_id: subscriptionId, platform: 'web', device_info: navigator.userAgent || '' });
+  await liveApi.auth.deviceToken({ token: subscriptionId, platform: 'web', device_model: (navigator.userAgent || '').slice(0, 100) });
+  if (registeredUserId === userId && identifiedUserId === userId) storedDevice = { userId, subscriptionId };
 };
 
 const initialize = async (appId: string) => {
@@ -92,7 +94,7 @@ const initialize = async (appId: string) => {
 export const initOneSignal = async (userId: string | null) => {
   const appId = APP_CONFIG.onesignal.appId;
   if (userId) registeredUserId = userId;
-  if (!appId) return;
+  if (!appId || !registeredUserId) return;
   try {
     if (!initialized) {
       if (!initialization) initialization = initialize(appId).finally(() => { initialization = null; });
@@ -130,7 +132,7 @@ export const optOutOneSignal = async () => {
  * v16: OneSignal.logout() removes the external_id and resets to anonymous.
  */
 export const logoutOneSignal = async () => {
-  registeredUserId = null; identifiedUserId = null; identityGeneration += 1;
+  registeredUserId = null; identifiedUserId = null; storedDevice = null; identityGeneration += 1;
   if (sdkInstance) {
     await identityTask?.promise.catch(() => {});
     try { await sdkInstance.logout(); } catch (e) { /* ignore */ }
@@ -172,6 +174,9 @@ export const requestPushPermission = async () => {
       const subId = sdk.User?.PushSubscription?.id;
       if (optedIn && subId && userId && registeredUserId === userId && identifiedUserId === userId) {
         await storeDeviceToken(userId, subId);
+        if (registeredUserId !== userId || identifiedUserId !== userId) return false;
+        await liveApi.notifications.updatePreferences({ push_enabled: true });
+        if (registeredUserId !== userId || identifiedUserId !== userId) return false;
         return true;
       }
       return false;
@@ -207,7 +212,8 @@ export const requestPushPermission = async () => {
         await verify();
         if (settled) return;
         // v16: native browser prompt via the Notifications namespace.
-        await sdk.Notifications?.requestPermission();
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted') await sdk.Notifications?.requestPermission();
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') await sdk.User?.PushSubscription?.optIn();
         await verify();
       } catch (failure) { finish(false, failure); }
     })();
@@ -217,3 +223,7 @@ export const requestPushPermission = async () => {
 export const isPushSupported = () => {
   return typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator;
 };
+
+export const isPushRegistered = () => Boolean(storedDevice && registeredUserId &&
+  storedDevice.userId === registeredUserId && identifiedUserId === registeredUserId &&
+  sdkInstance?.User?.PushSubscription?.optedIn && sdkInstance?.User?.PushSubscription?.id === storedDevice.subscriptionId);

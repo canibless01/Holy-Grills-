@@ -10,7 +10,7 @@ These categories contain completed implementation and tested cases as well as op
 | Address/batches/delivery exceptions | Saved address/gate/radius checks; standard kitchen to two riders/delivery/HP loop; automatic staging; manual assignment/reassign/split/cancel; actual delivery-date isolation; capacity rollover/move-up | Kitchen Handoff, preparation-day/date-preview and saved-pin navigation repairs are now verified in [handoff evidence](KITCHEN_HANDOFF_MAP_EVIDENCE_2026_10_27.md). Remaining: real map/device behavior, attempted/unclaimed/cancellation combinations and payout settlement |
 | Email/push/links/workers | Explicit-quota email fallback; provider outcome checks; push registration wiring; corrected delivery-time and capacity-change notices | Durable quota counters/dispatcher/retries; actual push delivery; full deep-link matrix; running Celery/Redis schedules/recovery |
 | Storefront/returning sessions | User confirms actual uploads; section-specific controls, multiple slides/copy/actions and prior session recovery fixes | Final presentation matrix and deployed returning-user loading/performance |
-| Admin/role boundaries | Specific repaired paths tested; latest user campus/global changes preserved; service-only financial helpers and migration/grant checks | Remaining per-action role/campus/global, error/retry/concurrency and consumer-reflection matrix |
+| Admin/role boundaries | Specific repaired paths tested; latest user campus/global changes preserved; service-only financial helpers and migration/grant checks | Ambassador programme financial and RLS cases are verified in the 28 October evidence. Remaining: wider per-action role/campus/global, error/retry/concurrency and consumer-reflection matrix |
 | Chrome native installation | Local normal-profile installability, manifest/icons/service worker checks | Reported missing native Chrome menu entry on Android and desktop remains unresolved |
 
 ## This continuation: late payment and refund reconciliation
@@ -32,3 +32,5 @@ Backend suite: **587 passed**; new focused tests cover provider-proof refusal, c
 Cleanup remains paused. The earlier checkpoint and dated evidence files contain details; this table supersedes stale descriptions of already completed cases.
 
 28 October continuation: ambassador programme migrations, financial/role repairs, signup consent and capacity-aware date selection are documented in [current evidence](AMBASSADOR_SIGNUP_SCHEDULING_EVIDENCE_2026_10_28.md). Returning-browser content recovery and push subscription/timing are active next checks.
+
+Returning-browser read recovery and the push device-token contract are implemented and browser-tested in [follow-up evidence](RETURNING_BROWSER_PUSH_EVIDENCE_2026_10_28.md). Real OneSignal delivery remains separate from these registration checks.

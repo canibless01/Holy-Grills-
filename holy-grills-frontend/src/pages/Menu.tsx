@@ -1,3 +1,5 @@
+import { useResumeEffect } from '@/hooks/useResumeEffect';
+import { useCampus } from '@/lib/campusContext';
 import HeroCarousel from '@/components/HeroCarousel';
 import StorefrontSlider from '@/components/storefront/StorefrontSlider';
 import { useState, useEffect } from 'react';
@@ -35,6 +37,7 @@ function MenuSkeleton() {
 
 export default function Menu() {
   const navigate = useNavigate();
+  const { campusId } = useCampus();
   const { addToCart, isAuthenticated: isAuthed } = useHolyGrill();
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
@@ -54,7 +57,8 @@ export default function Menu() {
   }, [searchInput]);
 
   // Load static metadata on mount
-  useEffect(() => {
+  useResumeEffect(() => {
+    if (!campusId) return;
     mockApi.menu.getCategories().then(setCategories).catch(() => {});
     if (isAuthed) {
       mockApi.rewards.getFreeSideCredits().then((res) => {
@@ -62,13 +66,15 @@ export default function Menu() {
         setFreeSideCredits(Number(count) || 0);
       }).catch(() => {});
     }
-  }, [isAuthed]);
+  }, [isAuthed, campusId]);
 
   // Load items on filter/search change
-  useEffect(() => {
+  useResumeEffect((background) => {
+    if (!campusId) return;
+    let alive = true;
     const load = async () => {
-      setLoading(true);
-      setError(null);
+      if (!background) setLoading(true);
+      if (!background) setError(null);
       try {
         const params: Record<string, string> = {};
         if (activeCategory) params.category = activeCategory;
@@ -80,14 +86,15 @@ export default function Menu() {
           if (priceDiff !== 0) return priceDiff;
           return (a.name || '').localeCompare(b.name || '');
         });
-        setItems(sortedItems);
+        if (alive) { setItems(sortedItems); setError(null); }
       } catch (e) {
-        setError(msg('FE_MENU_FAILED_TO_FETCH_MENU_ITEMS', 'Failed to fetch menu items.'));
+        if (alive && !background) setError(msg('FE_MENU_FAILED_TO_FETCH_MENU_ITEMS', 'Failed to fetch menu items.'));
       }
-      setLoading(false);
+      if (alive) setLoading(false);
     };
     load();
-  }, [activeCategory, search, retryNonce]);
+    return () => { alive = false; };
+  }, [activeCategory, search, retryNonce, campusId]);
 
   // Quick add — if the item needs required modifiers, send to detail page
   const handleAdd = async (item) => {

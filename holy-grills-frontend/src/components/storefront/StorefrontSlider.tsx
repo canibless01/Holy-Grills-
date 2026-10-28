@@ -1,3 +1,4 @@
+import { useResumeEffect } from '@/hooks/useResumeEffect';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { Pause, Play } from 'lucide-react';
@@ -38,10 +39,9 @@ export default function StorefrontSlider({ sectionType, variant = 'poster', eyeb
   const v = VARIANTS[variant] || VARIANTS.poster;
   const spec = bannerSpec(storefrontSpecId(variant));
 
-  useEffect(() => {
+  useResumeEffect((background) => {
     let live = true;
-    setSlides(null);
-    setActive(0);
+    if (!background) { setSlides(null); setActive(0); }
     getStorefrontSections(sectionType)
       .then((list) => {
         if (!live) return;
@@ -50,7 +50,7 @@ export default function StorefrontSlider({ sectionType, variant = 'poster', eyeb
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
         setSlides(arr);
       })
-      .catch(() => { if (live) setSlides([]); });
+      .catch(() => { if (live && !background) setSlides([]); });
     return () => { live = false; };
   }, [sectionType, campusId, placement]);
 

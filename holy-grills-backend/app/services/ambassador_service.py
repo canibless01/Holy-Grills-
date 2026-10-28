@@ -12,13 +12,13 @@ Design principles (see docs/AMBASSADOR_PROGRAMME.md):
 """
 import calendar
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from flask import current_app, g
 
 from app.constants import ADMIN_ROLES
-from app.db import get_db
+from app.db import get_db, SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
 from app.utils.settings import setting_or_config
@@ -221,24 +221,36 @@ def _profile_basics(db, user_ids: list[str]) -> dict[str, dict]:
 
 
 def attributed_signups(db, ambassador_id: str, month: str | None = None) -> list[dict]:
-    """Distinct customers whose FIRST recorded ambassador click is this ambassador's
-    and whose account was created in the period (new-customer signups)."""
-    q = db.table("ambassador_link_clicks").select(
-        "visitor_user_id,created_at"
-    ).eq("ambassador_id", ambassador_id)
-    clicks = q.execute() or []
-    visitor_ids = {c["visitor_user_id"] for c in clicks if c.get("visitor_user_id")}
-    if not visitor_ids:
-        return []
-    profiles = db.table("profiles").select("id,created_at").in_(
-        "id", list(visitor_ids)).execute() or []
-    if month:
-        start, end = month_bounds(month)
-        profiles = [
-            p for p in profiles
-            if p.get("created_at") and start.isoformat() <= p["created_at"] <= end.isoformat()
-        ]
-    return profiles
+    """New accounts whose first qualifying pre-signup click belongs here.
+
+    Existing users clicking an ambassador link are attributed customers/orders,
+    never new signups. Count once across ambassadors, within the click window.
+    """
+    clicks = db.table("ambassador_link_clicks").select(
+        "visitor_user_id,created_at").eq("ambassador_id", ambassador_id).execute() or []
+    visitor_ids = {row['visitor_user_id'] for row in clicks if row.get('visitor_user_id')}
+    if not visitor_ids: return []
+    profiles = db.table("profiles").select("id,created_at").in_("id",list(visitor_ids)).execute() or []
+    trail = db.table("ambassador_link_clicks").select(
+        "id,ambassador_id,visitor_user_id,created_at").in_("visitor_user_id",list(visitor_ids)).execute() or []
+    days = int(setting_or_config(db,'ambassador_attribution_window_days',7,minimum=1,maximum=365))
+    def instant(value):
+        try:
+            parsed = datetime.fromisoformat(str(value).replace('Z','+00:00'))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except (TypeError,ValueError): return None
+    result=[]
+    for profile in profiles:
+        created=instant(profile.get('created_at'))
+        if created is None or (month and created.strftime('%Y-%m') != month): continue
+        qualifying=[]
+        for click in trail:
+            clicked=instant(click.get('created_at'))
+            if click.get('visitor_user_id')==profile['id'] and click.get('ambassador_id') != profile['id'] and clicked and created-timedelta(days=days) <= clicked <= created:
+                qualifying.append((clicked,str(click.get('id') or ''),click))
+        first=min(qualifying,key=lambda entry:(entry[0],entry[1]))[2] if qualifying else None
+        if first and first.get('ambassador_id')==ambassador_id: result.append(profile)
+    return result
 
 
 def attributed_orders(db, ambassador_id: str, month: str | None = None,
@@ -410,14 +422,19 @@ def evaluate_milestones(db, ambassador_id: str, month: str | None = None) -> lis
         reached = value >= int(ms["threshold"])
         claim = claim_by_milestone.get(ms["id"])
         if reached and not claim:
-            claim = db.table("ambassador_milestone_claims").insert({
-                "milestone_id": ms["id"],
-                "ambassador_id": ambassador_id,
-                "period_month": month,
-                "metric_value_at_claim": value,
-                "status": "pending_approval",
-            }).execute()
-            claim = claim[0] if isinstance(claim, list) else claim
+            try:
+                claim = db.table("ambassador_milestone_claims").insert({
+                    "milestone_id": ms["id"],
+                    "ambassador_id": ambassador_id,
+                    "period_month": month,
+                    "metric_value_at_claim": value,
+                    "status": "pending_approval",
+                }).execute()
+                claim = claim[0] if isinstance(claim, list) else claim
+            except SupabaseError as error:
+                if str((error.details or {}).get('code')) != '23505': raise
+                claim = db.table('ambassador_milestone_claims').select('*').eq(
+                    'ambassador_id',ambassador_id).eq('milestone_id',ms['id']).eq('period_month',month).single().execute()
         if reached and claim and claim.get("status") == "pending_approval" and ms.get("auto_issue"):
             # Best effort; any failure leaves the pending claim untouched.
             # The helper elevates to the service-role client itself.

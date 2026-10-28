@@ -3132,6 +3132,8 @@ class MSG:
     FE_SCHEDULE_BACK = "Back"
     FE_SCHEDULE_CONFIRM = "Use this date"
 
+    FE_PUSH_NOT_REGISTERED = "Notifications are not enabled yet. Please retry."
+
 M = MSG
 
 

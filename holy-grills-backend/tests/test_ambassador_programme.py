@@ -1172,3 +1172,19 @@ class ProgrammeRegressionTests(AmbassadorTestBase):
             {'menu_item_id':'meal','price_snapshot':100,'is_addon':False},
             {'price_snapshot':500,'is_addon':True}],Decimal('600'),Decimal('0'))
         self.assertEqual(amount,Decimal('100.00'))
+
+class SignupAttributionRegressionTests(AmbassadorTestBase):
+    def test_existing_customer_click_is_not_a_new_signup(self):
+        self.ctx();self.seed_ambassador()
+        self.db.seed('profiles',[profile(STUDENT_ID)])
+        self.db.seed('ambassador_link_clicks',[{'id':'click','ambassador_id':AMB,'visitor_user_id':STUDENT_ID,'created_at':'2026-10-03T10:00:00Z'}])
+        self.assertEqual(svc.attributed_signups(self.db,AMB,MONTH),[])
+
+    def test_first_pre_signup_click_counts_once_across_ambassadors(self):
+        self.ctx();self.seed_ambassador()
+        self.db.seed('profiles',[profile(STUDENT_ID)])
+        self.db.seed('ambassador_link_clicks',[
+            {'id':'one','ambassador_id':AMB,'visitor_user_id':STUDENT_ID,'created_at':'2026-10-01T10:00:00Z'},
+            {'id':'two','ambassador_id':AMB2,'visitor_user_id':STUDENT_ID,'created_at':'2026-10-01T11:00:00Z'}])
+        self.assertEqual(len(svc.attributed_signups(self.db,AMB,MONTH)),1)
+        self.assertEqual(svc.attributed_signups(self.db,AMB2,MONTH),[])

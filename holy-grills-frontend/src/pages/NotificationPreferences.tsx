@@ -86,7 +86,7 @@ export default function NotificationPreferences() {
         <h1 className="font-heading font-extrabold text-2xl text-foreground">{msg('FE_PREF_TITLE', 'Preferences')}</h1>
       </div>
 
-      <PushPermissionBanner />
+      <PushPermissionBanner enabled={prefs.push_enabled} onEnabled={() => setPrefs(previous => ({ ...previous, push_enabled: true }))} />
 
       <section className="space-y-2.5">
         <h2 className="font-heading font-extrabold text-base text-foreground px-1">{msg('FE_PREF_RECEIVE', 'What you receive')}</h2>

@@ -1,3 +1,4 @@
+import { useResumeEffect } from '@/hooks/useResumeEffect';
 import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
@@ -14,13 +15,12 @@ export default function EarlySupportersSlider({ eyebrow = 'Since day one', headl
   const [paused, setPaused] = useState(false);
   const scrollRef = useRef(null);
 
-  useEffect(() => {
+  useResumeEffect((background) => {
     let live = true;
-    setSupporters(null);
-    setActive(0);
+    if (!background) { setSupporters(null); setActive(0); }
     getEarlySupporters()
       .then((list) => { if (live) setSupporters(Array.isArray(list) ? list : []); })
-      .catch(() => { if (live) setSupporters([]); });
+      .catch(() => { if (live && !background) setSupporters([]); });
     return () => { live = false; };
   }, [campusId]);
 

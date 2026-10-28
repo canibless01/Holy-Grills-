@@ -66,6 +66,16 @@ BEGIN
  IF (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>5000 OR (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>1 THEN RAISE EXCEPTION 'cancel did not restore wallet and meal use'; END IF;
  result:=public.hg_refund_order_atomic(oid,ambassador,'audit-cancel',null,'[AUDIT rollback]',true);
  IF (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>1 THEN RAISE EXCEPTION 'cancel replay refilled twice'; END IF;
+ result:=public.hg_create_order_atomic(p_user_id=>ambassador,p_guest_name=>null,p_guest_email=>null,p_guest_phone=>null,p_claim_token=>null,
+   p_subtotal=>100,p_delivery_fee=>20,p_discount_amount=>75,p_total_amount=>45,p_delivery_type=>'off_campus',p_delivery_location_id=>null,
+   p_delivery_location_lat=>null,p_delivery_location_lon=>null,p_delivery_address_snapshot=>'{}',p_delivery_window_id=>null,p_squad_name=>null,
+   p_notes=>'[AUDIT rollback]',p_idempotency_key=>gen_random_uuid()::text,p_promo_code_id=>null,p_items=>jsonb_build_array(line),p_wallet_amount_used=>45,p_campus_id=>campus);
+ IF NOT coalesce((result->>'success')::boolean,false) THEN RAISE EXCEPTION 'restored discount could not be reused: %',result; END IF;
+ second_order:=(result->>'order_id')::uuid;
+ UPDATE public.orders SET status='preparing' WHERE id=second_order;
+ result:=public.hg_refund_order_atomic(second_order,actor,'audit-post-prep-refund',null,'[AUDIT rollback]',false);
+ IF NOT coalesce((result->>'success')::boolean,false) OR (SELECT balance FROM public.wallets WHERE user_id=ambassador)<>5000
+ OR (SELECT uses_remaining FROM public.ambassador_meal_discounts WHERE id=discount)<>0 THEN RAISE EXCEPTION 'post-prep refund restored a spent meal benefit or lost money: %',result; END IF;
  -- Tracking: anonymous adoption is idempotent, and future clicks cannot steal an earlier order.
  result:=public.hg_ambassador_record_click(code,null,'audit-'||intent,campus);
  result:=public.hg_ambassador_merge_visitor('audit-'||intent,customer);

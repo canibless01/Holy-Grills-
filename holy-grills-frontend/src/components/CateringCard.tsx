@@ -1,7 +1,8 @@
+import { useResumeEffect } from '@/hooks/useResumeEffect';
 import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
 import { useCampus } from '@/lib/campusContext';
-import { useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import BannerCard from '@/components/storefront/BannerCard';
 import { bannerSpec } from '@/lib/bannerSpec';
 import CateringRequestModal from '@/components/events/CateringRequestModal';
@@ -25,11 +26,12 @@ export default function CateringCard() {
   const [section, setSection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const formOpen = useRef(showForm); formOpen.current = showForm;
 
-  useEffect(() => {
+  useResumeEffect((background) => {
+    if (background && formOpen.current) return;
     let cancelled = false;
-    setSection(null);
-    setLoading(true);
+    if (!background) { setSection(null); setLoading(true); }
     (async () => {
       try {
         const sections = await getStorefrontSections('catering');

@@ -1,3 +1,6 @@
+import { localStore } from '@/lib/storage';
+import { useCampus } from '@/lib/campusContext';
+import { isPushRegistered } from '@/lib/onesignal';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -15,22 +18,24 @@ import { toast } from '@/components/ui/use-toast';
 export default function PushSoftPrompt() {
   const { pathname } = useLocation();
   const { user } = useHolyGrill();
+  const { campusId, gateOpen } = useCampus();
   const previousPath = useRef(pathname);
   const seenKey = user?.id ? `hg_push_soft_prompt_seen:${user.id}` : null;
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  useEffect(() => { setShow(false); setDismissed(false); }, [seenKey, campusId]);
 
   useEffect(() => {
     const arrivedAfterCheckout = previousPath.current !== pathname && pathname.startsWith('/order-confirmation/');
     previousPath.current = pathname;
     // Browsing or reloading a page never triggers a permission/soft prompt.
     // The optional suggestion follows an in-app checkout transition only.
-    if (!arrivedAfterCheckout || !seenKey || typeof Notification === 'undefined' || Notification.permission !== 'default') return;
-    if (localStorage.getItem(seenKey)) return;
+    if (!arrivedAfterCheckout || !seenKey || !campusId || gateOpen || typeof Notification === 'undefined' || Notification.permission === 'denied' || isPushRegistered()) return;
+    if (localStore.getItem(seenKey)) return;
     const timer = setTimeout(() => setShow(true), 3000);
     return () => clearTimeout(timer);
-  }, [pathname, seenKey]);
+  }, [pathname, seenKey, campusId, gateOpen]);
 
   const handleEnable = async () => {
     setBusy(true);
@@ -42,28 +47,31 @@ export default function PushSoftPrompt() {
           description: msg('FE_INSTALL_PUSH_BONUSES_YOU_LL_RECEIVE_ALERTS_ON_THIS_DEVICE', "You'll receive alerts on this device."),
         });
 
+        if (seenKey) localStore.setItem(seenKey, 'true');
+        setShow(false);
+      } else {
+        toast({ title: msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.'), variant: 'destructive' });
       }
     } catch (error) {
       toast({
         title: msg('FE_INSTALL_PUSH_BONUSES_COULD_NOT_ENABLE_PUSH', 'Could not enable push'),
-        description: msg('FE_PUSH_SOFT_RETRY_SETTINGS', 'You can enable it later in notification settings.'),
+        description: error.message || msg('FE_PUSH_SOFT_RETRY_SETTINGS', 'You can enable it later in notification settings.'),
         variant: 'destructive',
       });
 
     }
     finally {
-      if (seenKey) localStorage.setItem(seenKey, 'true');
-      setShow(false); setBusy(false);
+      setBusy(false);
     }
   };
 
   const handleDismiss = () => {
-    if (seenKey) localStorage.setItem(seenKey, 'true');
+    if (seenKey) localStore.setItem(seenKey, 'true');
     setDismissed(true);
     setTimeout(() => setShow(false), 300);
   };
 
-  if (typeof Notification === 'undefined' || Notification.permission === 'granted') {
+  if (!user?.id || !campusId || gateOpen || typeof Notification === 'undefined') {
     return null;
   }
 

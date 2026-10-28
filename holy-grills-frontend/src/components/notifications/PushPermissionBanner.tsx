@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { initOneSignal, isPushRegistered } from '@/lib/onesignal';
+import { msg } from '@/lib/messages';
 import { motion } from 'framer-motion';
 import { Bell, BellRing, BellOff, Loader2 } from 'lucide-react';
 import { subscribeToWebPush } from '@/lib/webPush';
@@ -8,24 +10,29 @@ import { subscribeToWebPush } from '@/lib/webPush';
 // browser's Notification permission only. Push subscription is handled by the
 // native Web Push API — on grant it POSTs /push/subscribe (see webPush.js),
 // which stores the browser PushSubscription for server-side delivery.
-export default function PushPermissionBanner() {
+export default function PushPermissionBanner({ enabled = true, onEnabled = undefined }: { enabled?: boolean; onEnabled?: () => void }) {
+  const [subscribed, setSubscribed] = useState(isPushRegistered);
+  const [error, setError] = useState('');
+  useEffect(() => { let alive = true; initOneSignal(null).then(() => { if (alive) setSubscribed(isPushRegistered()); }); return () => { alive = false; }; }, []);
   const [permission, setPermission] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
   const [busy, setBusy] = useState(false);
 
   const enable = async () => {
-    setBusy(true);
+    setBusy(true); setError('');
     try {
       // Native Web Push — requests Notification permission, subscribes via
       // PushManager, and POSTs the subscription to /push/subscribe.
       const ok = await subscribeToWebPush();
-      setPermission(ok ? 'granted' : (typeof Notification !== 'undefined' ? Notification.permission : 'default'));
-    } catch { /* permission denied or browser unsupported — banner reflects status */ }
+      setPermission(typeof Notification !== 'undefined' ? Notification.permission : 'default');
+      setSubscribed(ok);
+      if (ok) onEnabled?.(); else setError(msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.'));
+    } catch (failure) { setSubscribed(false); setError(failure.message || msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.')); }
     setBusy(false);
   };
 
-  if (permission === 'granted') {
+  if (permission === 'granted' && subscribed && enabled) {
     return (
       <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-success/10 border border-success/25">
         <div className="w-10 h-10 rounded-xl bg-success/15 flex items-center justify-center flex-shrink-0">
@@ -64,6 +71,7 @@ export default function PushPermissionBanner() {
             : 'Get instant alerts for orders, HP and delivery.'}
         </div>
       </div>
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       {!denied && (
         <button
           onClick={enable}
