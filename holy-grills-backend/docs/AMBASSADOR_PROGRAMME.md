@@ -72,10 +72,10 @@ caller.
 
 | Order | File | Contents |
 |---|---|---|
-| 1 | `migrations/20261027120000_ambassador_programme_schema.sql` | 12 tables, indexes, unique constraints (one attribution per order, one claim per milestone/ambassador/month, one non-overridden grant per ambassador/month/category), RLS enablement + policies, helper functions `hg_ambassador_actor`, `hg_is_ambassador_staff`, `hg_is_financial_admin` |
-| 2 | `migrations/20261027120100_ambassador_tracking_rpcs.sql` | `hg_ambassador_record_click`, `hg_ambassador_merge_visitor`, `hg_ambassador_attribute_order`, `hg_ambassador_reverse_order` plus the window/for-code resolvers |
-| 3 | `migrations/20261027120200_ambassador_reward_rpcs.sql` | `hg_expire_ambassador_discounts`, `hg_grant_ambassador_meal_discount`, `hg_redeem_ambassador_meal_discount`, `hg_restore_ambassador_meal_discount` |
-| 4 | `migrations/20261027120300_ambassador_programme_settings.sql` | Four global `system_settings` seeds (existing values are never overwritten) |
+| 1 | `migrations/20261028084136_ambassador_programme_schema.sql` | 12 tables, indexes, unique constraints (one attribution per order, one claim per milestone/ambassador/month, one non-overridden grant per ambassador/month/category), RLS enablement + policies, helper functions `hg_ambassador_actor`, `hg_is_ambassador_staff`, `hg_is_financial_admin` |
+| 2 | `migrations/20261028084144_ambassador_tracking_rpcs.sql` | `hg_ambassador_record_click`, `hg_ambassador_merge_visitor`, `hg_ambassador_attribute_order`, `hg_ambassador_reverse_order` plus the window/for-code resolvers |
+| 3 | `migrations/20261028084202_ambassador_reward_rpcs.sql` | `hg_expire_ambassador_discounts`, `hg_grant_ambassador_meal_discount`, `hg_redeem_ambassador_meal_discount`, `hg_restore_ambassador_meal_discount` |
+| 4 | `migrations/20261028084221_ambassador_programme_settings.sql` | Four global `system_settings` seeds (existing values are never overwritten) |
 
 ### Tables created (migration 1)
 

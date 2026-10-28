@@ -294,7 +294,8 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
 
     if isinstance(res, dict) and res.get("error"):
         logger.warning("unlock_pending_hp failed: %s", res["error"])
-        return {"unlocked": 0}
+        from app.messages import MSG
+        raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
     unlocked_amount = res.get("unlocked_amount", 0) if isinstance(res, dict) else 0
 

@@ -20,17 +20,19 @@ Signup's local-import crash, missing-field messages, academic-list retry and opt
 
 | Area | Remaining executed evidence/work |
 | --- | --- |
-| Payments | Real Paystack test card/bank/split/funding returns; wider interruption/reconciliation cases; guest provider-refund operations |
+| Payments | Provider chat now verifies PAY-01–07 (card/split/guest/funding/returns/webhooks and controlled interruption with real recovery). Remaining: wider ambiguous timeout/late-payment/refund variants and guest provider-refund operations; see fresh-provider results |
 | Promos/refunds | Wider combinations of HP, squad, locks, campaign and earned rewards. Promo/meal quota, scope, partial/full refund and reuse corrections now pass |
 | Physical rewards | Menu-linked/special reward variants and legacy missing-snapshot handling. Generic reward checkout → kitchen → rider → delivered/unclaimed → partial/full refund is now verified |
-| Delivery | Wider exception combinations and real map/device behavior. Rider settlement records, totals, retry/concurrency and campus boundaries now pass. Generic attempted/unclaimed and early/post-handover refund cases now pass |
+| Delivery | Wider delivery exceptions and nonfinancial reward-hook outages; ambiguous legacy financial recovery requires review. Financial HP/unlock/welcome/squad recovery and admin re-drive now pass. Rider settlement and generic attempted/unclaimed/refund cases pass; provider chat verifies map/search/save, with native rider-map opening still a device check |
 | Messaging | Durable quota counters/dispatch/retries; actual OneSignal device delivery/click; deployed worker execution/recovery. Literal notification destinations, safe browser navigation, push retry deduplication and Beat registration now pass |
-| Storefront/sessions | Final content/device presentation matrix and deployed returning-user performance. Resume recovery and menu campus dependency are now fixed and browser-tested |
+| Storefront/sessions | Final content/device presentation matrix and deployed returning-user performance. Provider chat now verifies real Cloudinary persistence/replacement, tier containment and share-card composition; resume recovery is fixed |
 | Admin/roles | Remaining per-action campus/global/role and error/concurrency matrix beyond the targeted verified paths; real ambassador share handoff; fresh live signup/email confirmation |
-| Chrome installation | Live-domain/actual-device native Chrome entry remains unresolved. Local production manifest/icons/worker/CDP criteria pass; returning-user manifest caching repaired. See [PWA evidence](PWA_CRITERIA_EVIDENCE_2026_10_28.md) |
+| Chrome installation | Actual-device native Chrome entry remains unresolved. Provider chat verifies deployed technical prerequisites and returning metadata; first-install reload/header fixes are preserved. See fresh-provider results and [PWA evidence](PWA_CRITERIA_EVIDENCE_2026_10_28.md) |
 
 Current physical-reward handover, refund review, promo conservation and capacity-hours evidence: [28 October follow-up](PHYSICAL_REWARDS_REFUNDS_CAPACITY_EVIDENCE_2026_10_28.md). Rider settlement recording is also verified in [settlement evidence](RIDER_SETTLEMENT_EVIDENCE_2026_10_28.md). Next related cases: remaining reward/stacking variants and messaging/payment checks. Provider/device checks remain explicitly distinguished from controlled transport tests. Database cleanup remains paused.
 
 Notification destinations, OS push URL/idempotency, worker registration and the deployment evidence gap: [messaging follow-up](NOTIFICATION_LINK_WORKER_EVIDENCE_2026_10_28.md). Current backend suite: 707 passed.
 
 Community-manager workspace/navigation, explicit admin batch entry, rider batch collection and earnings reflection, global hero, helper privilege hardening and the precise Auth/application-email split: [latest checkpoint](COMMUNITY_WORKSPACE_BATCH_LAUNCH_CHECKPOINT_2026_10_28.md). Backend suite now 708 passed. Delivery auxiliary-reward hook outage recovery remains open; do not infer it from normal delivery evidence.
+
+Current primary-chat checkpoint: [financial delivery reward recovery](DELIVERY_REWARD_FINANCIAL_RECOVERY_2026_10_28.md), backend suite 725 passed. This supersedes the earlier financial-auxiliary recovery gap; tier/streak/milestone/gift hook outage recovery remains open. Provider/device status is maintained in [the other chat’s results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md).

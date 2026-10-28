@@ -3,7 +3,7 @@ import re,json,os,signal,subprocess,tempfile,time
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright,expect
-repo=Path(__file__).resolve().parents[1];out=Path(tempfile.mkdtemp(prefix='hg-refund-review-'));c='11111111-1111-4111-8111-111111111111';oid='22222222-2222-4222-8222-222222222222';uid='33333333-3333-4333-8333-333333333333';refunds=[];role_changes=[];hours_saves=[]
+repo=Path(__file__).resolve().parents[1];out=Path(tempfile.mkdtemp(prefix='hg-refund-review-'));c='11111111-1111-4111-8111-111111111111';oid='22222222-2222-4222-8222-222222222222';uid='33333333-3333-4333-8333-333333333333';refunds=[];role_changes=[];hours_saves=[];recoveries=[]
 order={'id':oid,'user_id':uid,'status':'delivered','payment_status':'paid','subtotal':100,'total_amount':100,'wallet_amount_used':100,'card_amount_used':0,'wallet_refund_total':0,'card_refund_total':0,'order_items':[]}
 user={'id':uid,'full_name':'Controlled customer','role':'student','campus_id':c,'is_active':True}
 def fixture(route):
@@ -12,6 +12,8 @@ def fixture(route):
  elif path.endswith('/campuses'):data=[{'id':c,'name':'Controlled campus','is_active':True}]
  elif path.endswith('/admin/orders'):data={'orders':[order]}
  elif path.endswith('/orders/'+oid+'/history'):data=[]
+ elif path.endswith('/orders/'+oid+'/status'):
+  recoveries.append(req.post_data_json);data={'id':oid,'status':'delivered','rewards_pending':len(recoveries)==1}
  elif path.endswith('/orders/'+oid+'/refund'):
   refunds.append(req.post_data_json);amount=req.post_data_json['refund_amount'];order['wallet_refund_total']+=amount;order['payment_status']='partially_refunded' if order['wallet_refund_total']<100 else 'refunded';order['status']='delivered' if order['wallet_refund_total']<100 else 'refunded';data={'success':True,'refund_amount':amount}
  elif path.endswith('/admin/users'):data={'users':[user],'total':1}
@@ -30,7 +32,7 @@ try:
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']);ctx=browser.new_context(viewport={'width':1280,'height':1000});ctx.route('**/api/**',fixture)
   ctx.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_campus_id','"+c+"');localStorage.setItem('hg_admin_campus_id','"+c+"')")
-  page=ctx.new_page();page.set_default_timeout(8000);page.goto('http://127.0.0.1:5230/admin?section=orders');page.get_by_role('button',name='Essential only',exact=True).click();page.get_by_text('#'+oid.upper(),exact=True).click();page.get_by_role('button',name='Refund',exact=True).click()
+  page=ctx.new_page();page.set_default_timeout(8000);page.goto('http://127.0.0.1:5230/admin?section=orders');page.get_by_role('button',name='Essential only',exact=True).click();page.get_by_text('#'+oid.upper(),exact=True).click();page.get_by_role('button',name='Recover delivery rewards',exact=True).click();expect(page.get_by_text('Delivery is saved. Customer rewards still need to be processed.',exact=True)).to_be_visible();page.get_by_role('button',name='Recover delivery rewards',exact=True).click();expect(page.get_by_text('Delivery rewards checked',exact=True)).to_be_visible();assert len(recoveries)==2 and all(row['status']=='delivered' for row in recoveries);page.get_by_role('button',name='Refund',exact=True).click()
   expect(page.get_by_role('button',name='Confirm Refund',exact=True)).to_be_disabled();expect(page.get_by_label('Refund amount (₦)',exact=True)).to_have_value('')
   page.get_by_label('Refund type',exact=True).select_option('partial');page.get_by_label('Refund amount (₦)',exact=True).fill('25');page.get_by_label('Reason',exact=True).fill('Reviewed delivered complaint')
   expect(page.get_by_role('button',name='Confirm Refund',exact=True)).to_be_disabled();page.get_by_label('I have reviewed the delivered order and authorise this refund.',exact=True).check();page.get_by_role('button',name='Confirm Refund',exact=True).click();page.wait_for_timeout(150)
@@ -41,5 +43,5 @@ try:
   page.goto('http://127.0.0.1:5230/admin?section=users');role=page.locator('select[title="Change role"]').first;expect(role.locator('option[value="community_manager"]')).to_have_count(1);role.select_option('community_manager');page.wait_for_timeout(150);assert role_changes[-1]['role']=='community_manager'
   page.goto('http://127.0.0.1:5230/admin?section=storefront');page.get_by_role('button',name=re.compile(r'^Hours')).click();expect(page.get_by_text('Today has a date-specific ordering window. Its hours take priority over this override.',exact=True)).to_be_visible();monday=page.get_by_text('Monday',exact=True).locator('..').locator('..');monday.get_by_role('button',name='Save',exact=True).click();page.wait_for_timeout(150);assert hours_saves[-1]['open_time']=='10:15' and hours_saves[-1]['close_time']=='22:30'
   browser.close()
- print(json.dumps({'explicit_partial_full_review':True,'delivered_ack_required':True,'remaining_balance_used':True,'distinct_refund_intents':True,'capacity_terms_distinguished':True,'super_admin_can_select_community_manager':True,'hours_save_preserves_stored_times':True}))
+ print(json.dumps({'delivered_reward_recovery_pending_then_success':True,'explicit_partial_full_review':True,'delivered_ack_required':True,'remaining_balance_used':True,'distinct_refund_intents':True,'capacity_terms_distinguished':True,'super_admin_can_select_community_manager':True,'hours_save_preserves_stored_times':True}))
 finally:os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=10)

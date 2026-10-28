@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from flask import Flask
 from app.services import order_service as service
+from app.services import delivery_reward_recovery as recovery
 
 
 class AfterPrimaryAward(Exception):
@@ -11,6 +12,7 @@ class AfterPrimaryAward(Exception):
 
 class DeliveryMultiplierRecoveryTests(unittest.TestCase):
     def setUp(self):
+        self.aux = MagicMock(side_effect=AfterPrimaryAward)
         self.app = Flask(__name__); self.db = MagicMock(); self.profiles = MagicMock(); self.squads = MagicMock()
         self.receipts = MagicMock()
         for method in ('select','eq','or_','is_','order','limit'):
@@ -27,7 +29,7 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
              patch.object(service.hp_service, 'get_user_tier', return_value={'tier': {'slug': 'ember'}}), \
              patch.object(service.hp_service, 'calculate_delivery_hp', return_value=102), \
              patch.object(service.hp_service, 'unlock_pending_hp'), \
-             patch.object(service.hp_service, 'award_welcome_bonus', side_effect=AfterPrimaryAward):
+             patch.object(recovery, 'complete_delivery_financial_rewards', self.aux):
             service._handle_delivery_rewards(self.order)
 
     def test_payout_failure_never_resets_the_profile_before_transaction(self):
@@ -55,7 +57,9 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
 
     def test_committed_replay_does_not_consume_a_newly_granted_bonus(self):
         self.db.rpc.return_value = {'already_credited': True}
+        self.aux.side_effect = None; self.aux.return_value = {'success': True, 'replayed': True}
         self.invoke()
+        self.aux.assert_called_once()
         self.profiles.update.assert_not_called()
 
     def test_repeated_multiplier_changes_leave_award_pending(self):
@@ -80,7 +84,7 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
             stack.enter_context(patch.object(service,'get_user_client',return_value=self.db))
             stack.enter_context(patch.object(service.hp_service,'get_user_tier',return_value={'tier':{'slug':'ember'}}))
             stack.enter_context(patch.object(service.hp_service,'calculate_delivery_hp',return_value=102))
-            stack.enter_context(patch.object(service.hp_service,'unlock_pending_hp',return_value={'unlocked':30}))
+            stack.enter_context(patch.object(recovery,'complete_delivery_financial_rewards',return_value={'success':True,'unlocked_hp':30,'welcome_hp':0}))
             stack.enter_context(patch.object(service.hp_service,'award_welcome_bonus',return_value={'awarded':0}))
             stack.enter_context(patch.object(service.hp_service,'recalculate_tier',return_value={'changed':False}))
             for target in ('app.services.streak_service.try_reclaim_checkin','app.services.streak_service.process_order_streak','app.services.milestone_service.check_milestone_trigger','app.services.gift_service.maybe_grant_first_order_gift'):

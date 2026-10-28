@@ -52,10 +52,10 @@ STUDENT_ID = '55555555-5555-4555-8555-555555555555'
 MONTH = '2026-10'
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / 'migrations'
-SCHEMA_SQL = (MIGRATIONS / '20261027120000_ambassador_programme_schema.sql').read_text()
-TRACKING_SQL = (MIGRATIONS / '20261027120100_ambassador_tracking_rpcs.sql').read_text()
-REWARD_SQL = (MIGRATIONS / '20261027120200_ambassador_reward_rpcs.sql').read_text()
-SETTINGS_SQL = (MIGRATIONS / '20261027120300_ambassador_programme_settings.sql').read_text()
+SCHEMA_SQL = (MIGRATIONS / '20261028084136_ambassador_programme_schema.sql').read_text()
+TRACKING_SQL = (MIGRATIONS / '20261028084144_ambassador_tracking_rpcs.sql').read_text()
+REWARD_SQL = (MIGRATIONS / '20261028084202_ambassador_reward_rpcs.sql').read_text()
+SETTINGS_SQL = (MIGRATIONS / '20261028084221_ambassador_programme_settings.sql').read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -1079,12 +1079,12 @@ class DashboardAndReviewTests(AmbassadorTestBase):
 # ---------------------------------------------------------------------------
 class MigrationContractTests(unittest.TestCase):
     def test_all_four_migrations_are_versioned_and_ordered(self):
-        names = sorted(p.name for p in MIGRATIONS.glob('2026102712*_ambassador_*.sql'))
+        names = sorted(p.name for p in MIGRATIONS.glob('20261028084*_ambassador_*.sql'))
         self.assertEqual(names, [
-            '20261027120000_ambassador_programme_schema.sql',
-            '20261027120100_ambassador_tracking_rpcs.sql',
-            '20261027120200_ambassador_reward_rpcs.sql',
-            '20261027120300_ambassador_programme_settings.sql',
+            '20261028084136_ambassador_programme_schema.sql',
+            '20261028084144_ambassador_tracking_rpcs.sql',
+            '20261028084202_ambassador_reward_rpcs.sql',
+            '20261028084221_ambassador_programme_settings.sql',
         ])
 
     def test_rls_is_enabled_and_ambassador_tables_exist(self):

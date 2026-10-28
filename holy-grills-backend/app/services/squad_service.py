@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timezone
 from app.db import get_db
-from app.utils.settings import get_validated_setting
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +146,8 @@ def squad_share_plan(order_id: str, hp_amount: int, owner_id: str, campus_id: st
             .execute()
         ) or []
     except Exception as e:
-        logger.warning("squad_share_plan: failed to read squad_members for order %s: %s", order_id, e)
-        members = []
+        logger.warning('squad_share_plan: member read failed for %s', order_id, exc_info=True)
+        raise RuntimeError('squad_member_plan_unavailable') from e
 
     if not members:
         return {
@@ -196,6 +195,7 @@ def squad_share_plan(order_id: str, hp_amount: int, owner_id: str, campus_id: st
 
     # Deduplicate by email lowercased, keep first, but ensure owner not double counted
     seen_emails = set()
+    seen_users = set()
     distinct_members = []
     for m in members:
         email_key = (m.get("email") or "").strip().lower()
@@ -206,7 +206,11 @@ def squad_share_plan(order_id: str, hp_amount: int, owner_id: str, campus_id: st
         # If member is the owner (same user_id as owner_id), don't count as separate share
         if m.get("user_id") and owner_id and str(m["user_id"]) == str(owner_id):
             continue
+        if m.get('user_id') and str(m['user_id']) in seen_users:
+            continue
         seen_emails.add(email_key)
+        if m.get('user_id'):
+            seen_users.add(str(m['user_id']))
         distinct_members.append(m)
 
     total_shares = 1 + len(distinct_members)  # owner + distinct others
@@ -231,161 +235,12 @@ def squad_share_plan(order_id: str, hp_amount: int, owner_id: str, campus_id: st
 
 
 def distribute_squad_hp(order_id: str, total_hp: int, organizer_id: str, campus_id: str = None):
-    """
-    True split + owner bonus implementation (B-8).
-
-    - total_hp is the full order HP (100%)
-    - Split equally between owner and members on that order (registered + unregistered)
-    - Owner takes rounding remainder
-    - Registered members: active HP at once, tagged squad_split, no multiplier
-    - Unregistered: pending_squad_hp row for share, skip if (order,email) already has a row
-    - Owner bonus: squad_hp_bonus_pct% of order HP, tagged squad_bonus, only when at least one other
-      registered member exists. pct from settings, default 30, 0 = split only.
-    - No multiplier: every squad payment uses award_active_hp(..., apply_multiplier=False)
-    - Re-entry protection: rely on orders.squad_hp_distributed, unique reference index, and pending-row check
-    """
-    if total_hp <= 0:
-        return
-    db = get_db()
-
-    try:
-        # Use shared helper for consistent share calculation
-        plan = squad_share_plan(order_id, total_hp, organizer_id, campus_id=campus_id)
-        share = plan["share"]
-        registered = plan["registered"]
-        unregistered = plan["unregistered"]
-
-        # Idempotency: check if squad HP already distributed for this order via hp_transactions
-        # We check for any squad_split for this order to avoid replay; bonus is checked separately
-        try:
-            existing_split = (
-                db.table("hp_transactions")
-                .select("id")
-                .eq("reference_type", "squad_split")
-                .eq("reference_id", order_id)
-                .limit(1)
-                .execute()
-            )
-            has_existing_splits = bool(existing_split)
-        except Exception as e:
-            logger.warning("distribute_squad_hp: idempotency check failed for order %s: %s", order_id, e)
-            has_existing_splits = False
-
-        from app.services.hp_service import award_active_hp
-
-        # Determine bonus pct
-        try:
-            pct = get_validated_setting(db, "squad_hp_bonus_pct", default=30, minimum=0, maximum=100, campus_id=campus_id)
-            pct = int(pct)
-        except Exception as e:
-            logger.warning("distribute_squad_hp: failed to read squad_hp_bonus_pct for order %s, using 30: %s", order_id, e)
-            pct = 30
-
-        # Registered members (not owner): squad_split
-        if not has_existing_splits:
-            for m in registered:
-                uid = m.get("user_id")
-                if not uid or str(uid) == str(organizer_id):
-                    continue
-                try:
-                    award_active_hp(
-                        user_id=uid,
-                        amount=share,
-                        source_type="squad_split",
-                        reference_type="squad_split",
-                        reference_id=order_id,
-                        notes=f"Squad split — {share} HP from order {order_id[:8]}",
-                        apply_multiplier=False,
-                        campus_id=campus_id,
-                    )
-                except Exception as e:
-                    logger.warning("distribute_squad_hp: squad_split award failed for user %s order %s: %s", uid, order_id, e)
-
-            # Unregistered: pending_squad_hp
-            for m in unregistered:
-                email = (m.get("email") or "").strip().lower()
-                if not email:
-                    continue
-                try:
-                    # Skip if (order,email) already has a pending row
-                    existing_pending = (
-                        db.table("pending_squad_hp")
-                        .select("id")
-                        .eq("order_id", order_id)
-                        .eq("email", email)
-                        .limit(1)
-                        .execute()
-                    )
-                    if existing_pending:
-                        continue
-                    db.table("pending_squad_hp").insert({
-                        "email": email,
-                        "order_id": order_id,
-                        "hp_amount": share,
-                        "campus_id": campus_id,
-                        "status": "pending",
-                    }).execute()
-                except Exception as e:
-                    logger.warning("distribute_squad_hp: pending_squad_hp insert failed for %s order %s: %s", m.get("email"), order_id, e)
-
-        # Owner bonus: only if at least one other registered member exists
-        has_other_registered = len(registered) > 0
-        if has_other_registered and pct > 0:
-            # Check if bonus already paid
-            try:
-                bonus_exists = (
-                    db.table("hp_transactions")
-                    .select("id")
-                    .eq("user_id", organizer_id)
-                    .eq("reference_type", "squad_bonus")
-                    .eq("reference_id", order_id)
-                    .limit(1)
-                    .execute()
-                )
-                if bonus_exists:
-                    bonus_exists = True
-                else:
-                    bonus_exists = False
-            except Exception:
-                bonus_exists = False
-
-            if not bonus_exists:
-                bonus_amount = (total_hp * pct) // 100
-                if bonus_amount > 0:
-                    try:
-                        award_active_hp(
-                            user_id=organizer_id,
-                            amount=bonus_amount,
-                            source_type="squad_bonus",
-                            reference_type="squad_bonus",
-                            reference_id=order_id,
-                            notes=f"Squad bonus {pct}% — {bonus_amount} HP from order {order_id[:8]}",
-                            apply_multiplier=False,
-                            campus_id=campus_id,
-                        )
-                    except Exception as e:
-                        logger.warning("distribute_squad_hp: squad_bonus award failed for owner %s order %s: %s", organizer_id, order_id, e)
-
-        # Update each member's hp_share with their share
-        try:
-            all_members = plan.get("all_raw_members") or []
-            for m in all_members:
-                # Only update distinct members that are part of the share plan
-                email_key = (m.get("email") or "").strip().lower()
-                if not email_key:
-                    continue
-                # Check if this email is in distinct list
-                if email_key not in { (x.get("email") or "").strip().lower() for x in plan.get("all_members", []) }:
-                    continue
-                try:
-                    db.table("squad_members").eq("id", m["id"]).update({"hp_share": share}).execute()
-                except Exception as exc:
-                    logger.warning("distribute_squad_hp: could not record hp_share for member %s: %s", m.get("id"), exc)
-        except Exception as e:
-            logger.warning("distribute_squad_hp: hp_share update failed for order %s: %s", order_id, e)
-
-    except Exception as e:
-        logger.error("distribute_squad_hp failed for order %s: %s", order_id, e)
+    """Compatibility entry: all financial delivery steps share one durable receipt."""
+    from app.services.delivery_reward_recovery import complete_delivery_financial_rewards
+    order = get_db().table('orders').select('*').eq('id', order_id).single().execute()
+    if not order or order.get('user_id') != organizer_id or int(order.get('hp_earned') or 0) != int(total_hp):
+        raise ValueError('delivery_reward_order_mismatch')
+    return complete_delivery_financial_rewards(order)
 
 
 def get_pending_squad_hp_report(campus_id: str = None, p_stale_days: int = 14):

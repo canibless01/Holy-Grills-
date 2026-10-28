@@ -75,6 +75,18 @@ export default function AdminOrders() {
     }
   };
 
+  const recoverDeliveryRewards = async (order) => {
+    if (busy) return;
+    setBusy(order.id);
+    try {
+      const result = await mockApi.orders.updateStatus(order.id, { status: 'delivered' });
+      toast({ title: result?.rewards_pending ? msg('FE_RIDER_REWARDS_PENDING', 'Delivery is saved. Customer rewards still need to be processed.') : msg('FE_DELIVERY_REWARDS_RECOVERED', 'Delivery rewards checked'), variant: result?.rewards_pending ? 'destructive' : 'default' });
+      await load();
+    } catch (error) {
+      toast({ title: msg('FE_DELIVERY_REWARDS_RETRY_FAILED', 'Could not recover rewards'), description: error.message, variant: 'destructive' });
+    } finally { setBusy(null); }
+  };
+
   const doRefund = async () => {
     if (!refundOrder || refundBusy.current) return;
     const amount = Number(refundOrder.refund_amount);
@@ -249,6 +261,8 @@ export default function AdminOrders() {
                       ))}
                     </div>
                     <div className="flex gap-2 flex-wrap">
+                      {o.status === 'delivered' && o.user_id && <button onClick={() => recoverDeliveryRewards(o)} disabled={busy === o.id} className="rounded-full bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary disabled:opacity-50">{msg('FE_DELIVERY_RETRY_REWARDS', 'Recover delivery rewards')}</button>}
+
                       {!isTerminal && (
                         <button onClick={() => setWalkOrder({ id: o.id, current_status: o.status, target_status: WALK_TARGETS[WALK_TARGETS.indexOf(o.status) + 1] || 'delivered', reason: '' })}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold">

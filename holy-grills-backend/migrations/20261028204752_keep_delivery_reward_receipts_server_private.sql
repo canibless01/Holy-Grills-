@@ -1,0 +1,1 @@
+CREATE POLICY hg_internal_delivery_reward_receipts ON public.order_status_logs AS RESTRICTIVE FOR ALL TO anon, authenticated USING (NOT (metadata ?| ARRAY['delivery_reward_recovery','pending_hp_unlock'])) WITH CHECK (NOT (metadata ?| ARRAY['delivery_reward_recovery','pending_hp_unlock']));

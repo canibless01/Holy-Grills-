@@ -1820,7 +1820,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") not in ("paid", "partially_refunded"):
         raise OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if new_status == current_status:
-        if new_status == "delivered" and order.get("user_id") and not order.get("hp_credited_at"):
+        if new_status == "delivered" and order.get("user_id"):
             try:
                 _handle_delivery_rewards(order)
             except Exception:
@@ -1829,7 +1829,11 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
         if new_status == "delivered" and order.get("user_id"):
             # Idempotent: the RPC upserts on order_id, so a re-drive is safe.
             from app.services import ambassador_service
-            ambassador_service.attribute_delivered_order(order_id)
+            try:
+                ambassador_service.attribute_delivered_order(order_id)
+            except Exception:
+                logger.exception("Delivery attribution recovery remains pending for %s", order_id)
+                return {**order, "unchanged": True, "rewards_pending": True}
         return {**order, "unchanged": True}
     allowed = VALID_TRANSITIONS.get(current_status, [])
     if new_status not in allowed:
@@ -1895,6 +1899,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
             from app.services import ambassador_service
             ambassador_service.attribute_delivered_order(order_id)
         except Exception:
+            rewards_pending = True
             logger.exception("update_order_status: ambassador attribution failed for order %s", order_id)
 
     # Status notifications are fire-and-forget; run in a thread so the
@@ -1929,6 +1934,19 @@ def _notify_rider_order_ready(order: dict):
         logger.warning("_notify_rider_order_ready failed for order %s", order.get("id"), exc_info=True)
 
 
+def _notify_recovered_delivery_rewards(order, result):
+    if result.get('replayed'):
+        return
+    for kind, amount, key in (('hp_unlocked', result.get('unlocked_hp', 0), 'unlocked_hp'),
+                               ('hp_earned', result.get('welcome_hp', 0), 'hp')):
+        if amount:
+            try:
+                send_notification(user_id=order['user_id'], notif_type=kind,
+                                  template_data={key: amount}, reference_id=order['id'], reference_type='order')
+            except Exception:
+                logger.warning('Recovered delivery reward notification pending for %s', order['id'], exc_info=True)
+
+
 def _handle_delivery_rewards(order: dict):
     """
     Full HP award sequence on order delivery:
@@ -1940,6 +1958,12 @@ def _handle_delivery_rewards(order: dict):
     user_id = order["user_id"]
     order_id = order["id"]
     subtotal = float(order.get("subtotal", 0))
+
+    from app.services.delivery_reward_recovery import complete_delivery_financial_rewards
+    if order.get('hp_credited_at'):
+        recovered = complete_delivery_financial_rewards(order)
+        _notify_recovered_delivery_rewards(order, recovered)
+        return
 
     tier_info = hp_service.get_user_tier(user_id)
     tier = tier_info.get("tier") or {}
@@ -2010,18 +2034,16 @@ def _handle_delivery_rewards(order: dict):
             continue
         break
     if isinstance(result, dict) and result.get('already_credited'):
+        recovered = complete_delivery_financial_rewards({**order, 'hp_earned': result.get('hp_earned', order.get('hp_earned', 0))})
+        _notify_recovered_delivery_rewards(order, recovered)
         return
     if not isinstance(result, dict) or not result.get('success'):
         logger.error('Failed to credit HP for order %s', order_id)
         raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
-    unlock_result = {}
-    try:
-        unlock_result = hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=stored_plan['food_spend'] if stored_plan else subtotal)
-    except Exception as e:
-        logger.warning("_handle_delivery_rewards: unlock_pending_hp failed for order %s: %s", order_id, e)
-
-    welcome_result = hp_service.award_welcome_bonus(user_id, order_id)
+    financial = complete_delivery_financial_rewards(order, food_spend=stored_plan['food_spend'] if stored_plan else subtotal)
+    unlock_result = {'unlocked': 0 if financial.get('replayed') else financial.get('unlocked_hp', 0)}
+    welcome_result = {'awarded': 0 if financial.get('replayed') else financial.get('welcome_hp', 0)}
 
     tier_change = hp_service.recalculate_tier(user_id)
 
@@ -2064,18 +2086,6 @@ def _handle_delivery_rewards(order: dict):
             )
 
     _t.Thread(target=_send_delivery_notifications, daemon=True).start()
-
-    # has_squad_members already computed above
-    if has_squad_members and not order.get("squad_hp_distributed"):
-        try:
-            from app.services.squad_service import distribute_squad_hp
-            distribute_squad_hp(order_id, hp_amount, user_id, campus_id=order.get("campus_id"))
-            db.table("orders").eq("id", order_id).update({
-                "squad_hp_distributed": True,
-                "squad_hp_distributed_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-        except Exception as e:
-            logger.warning("_handle_delivery_rewards: squad HP distribution failed for order %s: %s", order_id, e)
 
     # Try to reclaim a missed login-streak day via this order
     try:
@@ -2199,6 +2209,7 @@ def _log_status_change(order_id: str, from_status: str, to_status: str, changed_
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
         rows = (db.table("order_status_logs").eq("order_id", order_id).eq("status", to_status).gte("created_at", cutoff)
+                .eq("metadata->delivery_reward_recovery", None).eq("metadata->pending_hp_unlock", None).eq("metadata->hp_bonus_plan", None)
                 .update({"changed_by": changed_by, "note": note, "metadata": meta, "campus_id": campus_id}))
         if not rows:
             db.table("order_status_logs").insert({"order_id": order_id, "status": to_status, "changed_by": changed_by,
