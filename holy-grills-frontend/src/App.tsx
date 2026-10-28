@@ -123,6 +123,7 @@ const AppRoutes = () => {
         </Route>
       </Route>
       <Route path="/admin" element={<Admin />} />
+      <Route path="/community-manager" element={<Admin communityWorkspace />} />
       <Route path="/kitchen" element={<Kitchen />} />
       <Route path="/rider" element={<Rider />} />
       <Route path="*" element={<PageNotFound />} />

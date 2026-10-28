@@ -1,3 +1,4 @@
+import { msg } from '@/lib/messages';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeftRight } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -7,12 +8,14 @@ const HOME_PANEL: Record<string, string> = {
   super_admin: '/admin',
   kitchen: '/kitchen',
   rider: '/rider',
+  community_manager: '/community-manager',
 };
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Admin',
   super_admin: 'Admin',
   kitchen: 'Kitchen',
   rider: 'Rider',
+  community_manager: 'Community Manager',
 };
 
 /**
@@ -31,10 +34,10 @@ export default function PanelSwitcher({ className = '', labelClassName = undefin
   const home = user ? HOME_PANEL[user.role] : undefined;
   if (!home) return null;
 
-  const onHomePanel = pathname === home;
+  const onHomePanel = pathname === home || (user.role === 'community_manager' && pathname === '/admin');
   const target = onHomePanel ? '/' : home;
   const roleLabel = ROLE_LABEL[user.role] ?? 'Panel';
-  const title = onHomePanel ? 'View student page' : `Open ${roleLabel} panel`;
+  const title = onHomePanel ? msg('FE_PANEL_STUDENT', 'View student page') : msg('FE_PANEL_OPEN', 'Open {role} panel', { role: roleLabel });
 
   return (
     <Link to={target} className={className} aria-label={title} title={title}>

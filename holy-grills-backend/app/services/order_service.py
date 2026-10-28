@@ -2015,8 +2015,9 @@ def _handle_delivery_rewards(order: dict):
         logger.error('Failed to credit HP for order %s', order_id)
         raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
+    unlock_result = {}
     try:
-        hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=stored_plan['food_spend'] if stored_plan else subtotal)
+        unlock_result = hp_service.unlock_pending_hp(user_id=user_id, order_id=order_id, food_spend=stored_plan['food_spend'] if stored_plan else subtotal)
     except Exception as e:
         logger.warning("_handle_delivery_rewards: unlock_pending_hp failed for order %s: %s", order_id, e)
 
@@ -2045,7 +2046,7 @@ def _handle_delivery_rewards(order: dict):
                 reference_id=order_id,
                 reference_type="order",
             )
-        unlocked = int(result.get("unlocked_hp") or 0)
+        unlocked = int((unlock_result or {}).get("unlocked") or 0)
         if unlocked > 0:
             send_notification(
                 user_id=user_id,

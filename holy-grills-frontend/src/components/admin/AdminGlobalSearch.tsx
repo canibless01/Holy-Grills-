@@ -27,7 +27,7 @@ export default function AdminGlobalSearch({ onNavigate }) {
   return (
     <div className="relative" ref={wrapRef}>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}

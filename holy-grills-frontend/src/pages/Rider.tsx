@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Bike, Check, Clock, Package } from 'lucide-react';
 import { useRiderData } from '@/hooks/useRiderData';
-import { formatNaira, formatDateTime, timeAgo, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
+import { formatRiderPay, formatDateTime, timeAgo, ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import RiderHeader from '@/components/rider/RiderHeader';
 import RiderOrderCard from '@/components/rider/RiderOrderCard';
@@ -27,7 +27,7 @@ export default function Rider() {
   const [tab, setTab] = useState('batch');
   const {
     authed, loading, error, batch, earnings, stats, history, online, period,
-    actionLoading, calling, toggling, changePeriod, handleAction, handleCall, navigateTo, toggleOnline, handleSignOut,
+    actionLoading, batchPickupBusy, handleBatchPickup, calling, toggling, changePeriod, handleAction, handleCall, navigateTo, toggleOnline, handleSignOut,
   } = useRiderData();
 
   if (!authed) return <Navigate to="/login" state={{ from: '/rider' }} replace />;
@@ -69,8 +69,8 @@ export default function Rider() {
               <div className="text-[10px] text-white/80 uppercase font-bold tracking-wider">
                 {periodLabel} Earnings
               </div>
-              <div className="font-heading font-extrabold text-3xl mt-1 tabular-nums">{formatNaira(earnings?.total_earnings ?? 0)}</div>
-              <div className="text-xs text-white/80 mt-1">{earnings?.completed_batches ?? 0} batches completed{earnings?.outstanding ? ` · ${formatNaira(earnings.outstanding)} unpaid` : ''}</div>
+              <div className="font-heading font-extrabold text-3xl mt-1 tabular-nums">{formatRiderPay(earnings?.total_earnings ?? 0)}</div>
+              <div className="text-xs text-white/80 mt-1">{earnings?.completed_batches ?? 0} batches completed{earnings?.outstanding ? ` · ${formatRiderPay(earnings.outstanding)} unpaid` : ''}</div>
             </div>
           </motion.div>
         )}
@@ -116,6 +116,9 @@ export default function Rider() {
               )}
             </div>
 
+            {(batch?.orders || []).some(order => ['ready', 'assigned'].includes(order.status)) && <button onClick={handleBatchPickup} disabled={batchPickupBusy || !!actionLoading} className="w-full rounded-full bg-gradient-cta py-3 text-sm font-bold text-white disabled:opacity-50">
+              {batchPickupBusy ? msg('FE_RIDER_BATCH_COLLECTING', 'Collecting batch…') : msg('FE_RIDER_BATCH_COLLECT', 'Collect batch · start deliveries')}
+            </button>}
             <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">Delivery Route (sorted by distance)</div>
             {(batch?.orders || []).map((order) => (
               <RiderOrderCard
@@ -124,7 +127,7 @@ export default function Rider() {
                 onAction={handleAction}
                 onCall={handleCall}
                 onNavigate={navigateTo}
-                actionLoading={actionLoading}
+                actionLoading={batchPickupBusy ? order.id : actionLoading}
                 calling={calling}
               />
             ))}
@@ -167,19 +170,20 @@ export default function Rider() {
             )}
             <div className="space-y-2">
               {(earnings?.batches || []).map((b) => {
-                const paid = !!b.rider_paid_at;
+                const paid = !!(b.paid_at || b.rider_paid_at);
+                const amount = b.amount ?? b.rider_pay_total ?? b.batch_pay;
                 return (
-                  <div key={b.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border shadow-card">
+                  <div key={b.batch_id || b.id} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border shadow-card">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${paid ? 'tone-success' : 'bg-accent/20'}`}>
                       <Check className={`w-5 h-5 ${paid ? 'text-success' : 'text-accent-foreground'}`} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-foreground truncate">{b.zone || `Batch #${(b.id || '').slice(0, 8)}`}</div>
-                      <div className="text-xs text-muted-foreground">{b.order_count ?? 0} order(s) · {timeAgo(b.delivered_at)}</div>
+                      <div className="font-semibold text-sm text-foreground truncate">{b.zone || `Batch #${(b.batch_id || b.id || '').slice(0, 8)}`}</div>
+                      <div className="text-xs text-muted-foreground">{b.order_count ?? 0} order(s) · {timeAgo(b.completed_at || b.delivered_at)}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="font-heading font-bold text-sm text-foreground tabular-nums">{formatNaira(b.rider_pay_total ?? b.batch_pay ?? 0)}</div>
-                      <div className={`text-[9px] font-bold uppercase ${paid ? 'text-success' : 'text-warn'}`}>{paid ? 'Paid' : 'Unpaid'}</div>
+                      <div className="font-heading font-bold text-sm text-foreground tabular-nums">{amount == null ? msg('FE_RIDER_UNPRICED', 'Unpriced') : formatRiderPay(amount)}</div>
+                      <div className={`text-[9px] font-bold uppercase ${paid ? 'text-success' : 'text-warn'}`}>{amount == null ? '—' : paid ? 'Paid' : 'Unpaid'}</div>
                     </div>
                   </div>
                 );

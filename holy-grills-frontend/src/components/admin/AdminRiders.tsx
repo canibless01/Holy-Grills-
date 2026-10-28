@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Bike, Phone, MapPin, Wallet, ChevronDown, ChevronRight, Check, Eye } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
-import { formatDateTime, timeAgo } from '@/lib/hgUtils';
+import { formatRiderPay, formatDateTime, timeAgo } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Modal, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
-
-const formatRiderPay = (value) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value || 0));
 
 // Riders tab for AdminDelivery — backed by riders.py /api/riders/admin/*.
 // Roster (who is online), payments summary, per-rider batches with set-pay +

@@ -15,7 +15,7 @@ import AdminDeliveryArea from './AdminDeliveryArea';
 import { msg } from '@/lib/messages';
 
 export default function AdminDelivery() {
-  const [tab, setTab] = useState('windows');
+  const [tab, setTab] = useState('batches');
   const [windows, setWindows] = useState([]);
   const [batches, setBatches] = useState([]);
   const [carts, setCarts] = useState([]);
@@ -163,7 +163,7 @@ export default function AdminDelivery() {
               {b.status === 'open' && !b.rider_id && <p className="mt-2 text-xs text-muted-foreground">{msg('FE_BATCH_STAGED_SUMMARY', 'Ready orders grouped by gate and delivery window. Assign a rider to send this batch.')}</p>}
               {b.status !== 'completed' && b.status !== 'cancelled' && (
                 <div className="flex gap-2 mt-2">
-                  <button onClick={() => setManageBatch(b)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-secondary text-xs font-bold disabled:opacity-50">{msg('FE_BATCH_MANAGE_ACTION', 'Manage / split')}</button>
+                  <button onClick={() => setManageBatch(b)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-secondary text-xs font-bold disabled:opacity-50">{!b.rider_id ? msg('FE_BATCH_ASSIGN_RIDER', 'Assign rider') : msg('FE_BATCH_MANAGE_ACTION', 'Manage / split')}</button>
                   {b.status !== 'open' && <button onClick={() => completeBatch(b.id)} disabled={batchBusy === b.id} className="flex-1 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">{batchBusy === b.id ? '...' : 'Mark Completed'}</button>}
                   <button onClick={() => cancelBatch(b.id)} disabled={batchBusy === b.id} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Cancel</button>
                 </div>

@@ -1,6 +1,8 @@
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { msg } from '@/lib/messages';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, ExternalLink, LogOut, UtensilsCrossed, Bike, Search, X } from 'lucide-react';
+import { Menu, ExternalLink, LogOut, UtensilsCrossed, Bike, Search, X, Users } from 'lucide-react';
 import AdminGlobalSearch from '@/components/admin/AdminGlobalSearch';
 import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
@@ -19,6 +21,8 @@ import BrandLogo from '@/components/BrandLogo';
  * Title/subtitle come from the TITLES map in Admin.tsx.
  */
 export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, onNavigate }) {
+  const { user } = useHolyGrill();
+  const financialStaff = ['admin', 'super_admin'].includes(user?.role);
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
@@ -46,7 +50,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
         </div>
 
         {/* Center — global search (desktop) */}
-        <div className="hidden lg:block flex-1 max-w-sm">
+        <div className="hidden 2xl:block min-w-0 flex-1 max-w-sm">
           <AdminGlobalSearch onNavigate={onNavigate} />
         </div>
 
@@ -59,7 +63,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
           {/* Mobile search toggle */}
           <button
             onClick={() => setSearchOpen((v) => !v)}
-            className={`lg:hidden w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+            className={`2xl:hidden w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
               searchOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
             }`}
             aria-label="Search admin panel"
@@ -67,13 +71,17 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             {searchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
           </button>
           <InlineNotificationBell />
+          {financialStaff && <>
+          <Link to="/community-manager" aria-label={msg('FE_CM_WORKSPACE', 'Community manager workspace')} title={msg('FE_CM_WORKSPACE', 'Community manager workspace')} className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10">
+            <Users className="w-4 h-4" /><span className="hidden xl:inline">{msg('FE_CM_SHORT', 'Community')}</span>
+          </Link>
           <Link
             to="/kitchen"
             aria-label="Kitchen panel"
             title="Kitchen panel"
             className="hidden sm:flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
           >
-            <UtensilsCrossed className="w-4 h-4" /> <span className="hidden lg:inline">Kitchen</span>
+            <UtensilsCrossed className="w-4 h-4" /> <span className="hidden xl:inline">Kitchen</span>
           </Link>
           <Link
             to="/rider"
@@ -81,8 +89,9 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             title="Rider panel"
             className="hidden sm:flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
           >
-            <Bike className="w-4 h-4" /> <span className="hidden lg:inline">Rider</span>
+            <Bike className="w-4 h-4" /> <span className="hidden xl:inline">Rider</span>
           </Link>
+          </>}
           <Link
             to="/"
             className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
@@ -96,14 +105,14 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             title="Sign out"
           >
             <LogOut className="w-4 h-4" />
-            <span className="hidden lg:inline">Sign out</span>
+            <span className="hidden xl:inline">Sign out</span>
           </button>
         </div>
       </div>
 
       {/* Mobile search row — same engine as desktop, full width */}
       {searchOpen && (
-        <div className="lg:hidden px-4 pb-3 border-t border-border/60">
+        <div className="2xl:hidden px-4 pb-3 border-t border-border/60">
           <AdminGlobalSearch onNavigate={onNavigate} />
         </div>
       )}

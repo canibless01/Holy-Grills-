@@ -332,3 +332,5 @@ export const getTierProgressGradient = (hpEarned120Day) => {
   const to = hexLerp(cur.to, nxt.to, t);
   return `linear-gradient(135deg, ${from}, ${to})`;
 };
+/** Preserve fractional naira in staff settlement records. */
+export const formatRiderPay = (value) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value || 0));

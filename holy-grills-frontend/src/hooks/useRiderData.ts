@@ -22,6 +22,8 @@ export function useRiderData() {
   const [period, setPeriod] = useState('week');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
+  const [batchPickupBusy, setBatchPickupBusy] = useState(false);
+  const pickupGuard = useRef(false);
   const [calling, setCalling] = useState(null);
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState(null);
@@ -118,6 +120,7 @@ export function useRiderData() {
   };
 
   const handleAction = async (orderId, action) => {
+    if (pickupGuard.current) return;
     setActionLoading(orderId);
     try {
       let result;
@@ -133,6 +136,28 @@ export function useRiderData() {
       toast({ title: msg('FE_USE_RIDER_DATA_ACTION_FAILED', 'Action failed'), description: e.message, variant: 'destructive' });
     }
     setActionLoading(null);
+  };
+
+  const handleBatchPickup = async () => {
+    if (pickupGuard.current || actionLoading) return;
+    const pending = (batch?.orders || []).filter(order => ['ready', 'assigned'].includes(order.status));
+    if (!pending.length) return;
+    pickupGuard.current = true;
+    setBatchPickupBusy(true);
+    let succeeded = 0;
+    try {
+      // Reuse per-order ownership/status checks. Partial failure remains visible;
+      // the refresh leaves only uncollected orders eligible for the next attempt.
+      for (const order of pending) {
+        try { await liveApi.riders.pickup(order.id); succeeded += 1; }
+        catch { /* count refusal and continue with the remaining assigned work */ }
+      }
+      toast({ title: msg('FE_RIDER_BATCH_PICKUP_RESULT', '{done} collected · {failed} not collected', { done: succeeded, failed: pending.length - succeeded }), variant: succeeded === pending.length ? 'default' : 'destructive' });
+      await loadBatch();
+    } finally {
+      pickupGuard.current = false;
+      setBatchPickupBusy(false);
+    }
   };
 
   const handleCall = async (orderId) => {
@@ -219,6 +244,6 @@ export function useRiderData() {
 
   return {
     authed, loading, error, batch, earnings, stats, history, online, period,
-    actionLoading, calling, toggling, changePeriod, handleAction, handleCall, navigateTo, toggleOnline, handleSignOut,
+    actionLoading, batchPickupBusy, handleBatchPickup, calling, toggling, changePeriod, handleAction, handleCall, navigateTo, toggleOnline, handleSignOut,
   };
 }

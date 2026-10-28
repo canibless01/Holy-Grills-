@@ -83,16 +83,16 @@ const TITLES = {
   ambassadorreviews: msg('FE_ADMIN_AMBASSADOR_REVIEWS_TITLE', 'Monthly Reviews'),
 };
 
-export default function Admin() {
+export default function Admin({ communityWorkspace = false }: { communityWorkspace?: boolean }) {
   const { user, isLoading } = useHolyGrill();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // A community_manager only carries the three ambassador sections. Their
   // default landing page is the ambassador roster; any other section id in
   // the URL is rewritten before a request can be made.
-  const allowedSections = sectionsForRole(user?.role);
+  const allowedSections = sectionsForRole(user?.role).filter(section => !communityWorkspace || ['ambassadors', 'ambassadorpromo', 'ambassadorreviews'].includes(section.id));
   const allowedIds = new Set(allowedSections.map((s) => s.id));
-  const defaultSection = user?.role === 'community_manager' ? 'ambassadors' : 'dashboard';
+  const defaultSection = (communityWorkspace || user?.role === 'community_manager') ? 'ambassadors' : 'dashboard';
   const requestedSection = searchParams.get('section') || defaultSection;
   const active = allowedIds.has(requestedSection) ? requestedSection : defaultSection;
   const setActive = (section: string) => {
@@ -107,7 +107,7 @@ export default function Admin() {
 
   // Check the live token (not a local snapshot) so that a session cleared by
   // HolyGrillContext on profile-fetch failure also redirects to login.
-  if (!isAuthenticated()) return <Navigate to="/login" state={{ from: '/admin' }} replace />;
+  if (!isAuthenticated()) return <Navigate to="/login" state={{ from: communityWorkspace ? '/community-manager' : '/admin' }} replace />;
 
   // Wait for the user profile before checking role — the JWT alone proves
   // authentication, but the role comes from /auth/me.
@@ -192,7 +192,7 @@ export default function Admin() {
       onSelect={setActive}
       onNavigate={setActive}
       title={TITLES[active] || 'Admin'}
-      subtitle="Holy Grills · Admin Panel"
+      subtitle={communityWorkspace || user?.role === 'community_manager' ? msg('FE_CM_WORKSPACE_SUBTITLE', 'Holy Grills · Community Manager') : 'Holy Grills · Admin Panel'}
       allowedIds={allowedIds}
       onSignOut={() => {
         clearTokens();

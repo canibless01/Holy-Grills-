@@ -70,3 +70,25 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
         with self.assertRaises(AfterPrimaryAward):
             self.invoke()
         self.assertEqual(self.db.rpc.call_args.args[1]['p_hp_amount'], 300)
+
+    def test_unlock_notice_uses_the_actual_unlock_result(self):
+        from contextlib import ExitStack
+        self.db.rpc.return_value={'success':True}
+        with ExitStack() as stack:
+            stack.enter_context(self.app.test_request_context())
+            stack.enter_context(patch.object(service,'get_db',return_value=self.db))
+            stack.enter_context(patch.object(service,'get_user_client',return_value=self.db))
+            stack.enter_context(patch.object(service.hp_service,'get_user_tier',return_value={'tier':{'slug':'ember'}}))
+            stack.enter_context(patch.object(service.hp_service,'calculate_delivery_hp',return_value=102))
+            stack.enter_context(patch.object(service.hp_service,'unlock_pending_hp',return_value={'unlocked':30}))
+            stack.enter_context(patch.object(service.hp_service,'award_welcome_bonus',return_value={'awarded':0}))
+            stack.enter_context(patch.object(service.hp_service,'recalculate_tier',return_value={'changed':False}))
+            for target in ('app.services.streak_service.try_reclaim_checkin','app.services.streak_service.process_order_streak','app.services.milestone_service.check_milestone_trigger','app.services.gift_service.maybe_grant_first_order_gift'):
+                stack.enter_context(patch(target))
+            thread=stack.enter_context(patch('threading.Thread'))
+            send=stack.enter_context(patch.object(service,'send_notification'))
+            service._handle_delivery_rewards(self.order)
+            thread.call_args.kwargs['target']()
+            notices={call.kwargs['notif_type']:call.kwargs['template_data'] for call in send.call_args_list}
+            self.assertEqual(notices['hp_unlocked']['unlocked_hp'],30)
+            self.assertEqual(notices['hp_earned']['hp'],204)

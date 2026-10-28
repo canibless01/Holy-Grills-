@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState, useEffect, useRef } from 'react';
 import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2, Bike } from 'lucide-react';
@@ -136,6 +137,7 @@ export default function AdminOrders() {
 
   return (
     <div className="space-y-4">
+      <Link to="/admin?section=delivery" className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-xs font-bold text-primary"><Bike className="h-4 w-4" />{msg('FE_ORDER_DELIVERY_BATCHES', 'View delivery batches · assign riders')}</Link>
       {/* Tab switcher */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         <button onClick={() => setTab('orders')} className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === 'orders' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}>
