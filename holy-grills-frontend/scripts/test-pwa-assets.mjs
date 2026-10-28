@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import sharp from 'sharp';
 const manifest=JSON.parse(await readFile('public/manifest.json','utf8'));
-assert.equal(manifest.display,'standalone');assert.equal(manifest.start_url,'/');
+assert.ok((manifest.name || manifest.short_name || '').trim(), 'installable app name required');
+assert.ok(['fullscreen','standalone','minimal-ui','window-controls-overlay'].includes(manifest.display));
+assert.notEqual(manifest.prefer_related_applications, true);
+assert.equal(manifest.start_url,'/');assert.equal(manifest.scope,'/');assert.equal(manifest.id,'/');
+for (const size of ['192x192','512x512']) assert.ok(manifest.icons.some(icon => icon.sizes === size && icon.purpose === 'any'), `missing general-purpose ${size} icon`);
+const html=await readFile('index.html','utf8');
+assert.equal((html.match(/rel="manifest"/g) || []).length,1,'exactly one manifest link');
+assert.match(html, /rel="manifest" href="\/manifest.json"/);
+// No installed share entry is advertised until an actual share receiver exists.
+assert.equal(manifest.share_target,undefined);
 for(const icon of manifest.icons.filter(icon=>icon.type==='image/png')) {
  const image=sharp('public'+icon.src);const metadata=await image.metadata();
  assert.equal(`${metadata.width}x${metadata.height}`,icon.sizes);

@@ -27,7 +27,7 @@ Signup's local-import crash, missing-field messages, academic-list retry and opt
 | Messaging | Durable quota counters/dispatch/retries; actual OneSignal device delivery/click; deployed worker execution/recovery. Literal notification destinations, safe browser navigation, push retry deduplication and Beat registration now pass |
 | Storefront/sessions | Final content/device presentation matrix and deployed returning-user performance. Resume recovery and menu campus dependency are now fixed and browser-tested |
 | Admin/roles | Remaining per-action campus/global/role and error/concurrency matrix beyond the targeted verified paths; real ambassador share handoff; fresh live signup/email confirmation |
-| Chrome installation | Missing native Chrome install-menu entry on the reported Android and desktop devices |
+| Chrome installation | Live-domain/actual-device native Chrome entry remains unresolved. Local production manifest/icons/worker/CDP criteria pass; returning-user manifest caching repaired. See [PWA evidence](PWA_CRITERIA_EVIDENCE_2026_10_28.md) |
 
 Current physical-reward handover, refund review, promo conservation and capacity-hours evidence: [28 October follow-up](PHYSICAL_REWARDS_REFUNDS_CAPACITY_EVIDENCE_2026_10_28.md). Rider settlement recording is also verified in [settlement evidence](RIDER_SETTLEMENT_EVIDENCE_2026_10_28.md). Next related cases: remaining reward/stacking variants and messaging/payment checks. Provider/device checks remain explicitly distinguished from controlled transport tests. Database cleanup remains paused.
 
