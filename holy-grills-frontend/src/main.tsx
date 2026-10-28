@@ -63,9 +63,12 @@ if ('serviceWorker' in navigator) {
       });
     });
 
-    // Reload when the new service worker takes over.
+    // First installation should claim the open page without interrupting its
+    // forms/guest lookup. Reload only when an already controlled page updates.
     let refreshing = false;
+    let wasControlled = Boolean(navigator.serviceWorker.controller);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!wasControlled) { wasControlled = true; return; }
       if (refreshing) return;
       refreshing = true;
       window.location.reload();

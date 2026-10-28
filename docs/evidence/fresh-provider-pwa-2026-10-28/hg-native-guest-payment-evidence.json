@@ -1,0 +1,10 @@
+{
+  "mode": "actual native item/cart/checkout; real audit backend/Supabase and Paystack TEST",
+  "phase": "confirmed",
+  "cart_rows_before": 1,
+  "order_id": "0795cf9f-902e-4bee-871d-a23288aa0488",
+  "cart_rows_after": 0,
+  "cart_settled": true,
+  "tab_proof_saved": true,
+  "reload_confirmed": true
+}

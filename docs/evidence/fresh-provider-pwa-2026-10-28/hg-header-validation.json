@@ -1,0 +1,4 @@
+{
+  "production_host_smoke_exit": 0,
+  "header_routes_precede_filesystem": true
+}

@@ -1,0 +1,31 @@
+{
+  "origin": "http://127.0.0.1:4174",
+  "mode": "production build; actual deployed CMS/API and real Cloudinary; no response fixtures",
+  "profiles": [
+    {
+      "viewport_width": 1365,
+      "error_type": "TimeoutError"
+    },
+    {
+      "viewport_width": 393,
+      "slide1": {
+        "decoded": true,
+        "natural": [
+          192,
+          192
+        ],
+        "url": "https://res.cloudinary.com/risvlfhx/image/upload/v1793219684/holy_grills_audit/provider_20261028/gkiliemxxrcry4tsexxf.png"
+      },
+      "slide2": {
+        "decoded": true,
+        "natural": [
+          1200,
+          630
+        ],
+        "url": "https://res.cloudinary.com/risvlfhx/image/upload/v1793203232/holy_grills_audit/provider_20261028/qkcf97nuu7c926wsbiuz.jpg"
+      },
+      "distinct_images": true,
+      "copy_and_cta_switched": true
+    }
+  ]
+}

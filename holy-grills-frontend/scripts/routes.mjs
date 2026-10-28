@@ -185,7 +185,22 @@ export function securityHeaders() {
 /** The full vercel.json for the frontend. */
 export function buildConfig() {
   const families = routeFamilies();
-  const routes = [{ handle: 'filesystem' }];
+  // Legacy route handling can terminate at filesystem/rewrite rules before
+  // separately transformed top-level headers are reached. Apply headers first
+  // in the same routing dialect so files and SPA fallbacks receive them.
+  const headerRules = [...securityHeaders(),
+    { source: '/manifest.json', headers: [{ key: 'Content-Type', value: 'application/manifest+json' }, { key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/service-worker.js', headers: [{ key: 'Content-Type', value: 'application/javascript' }, { key: 'Cache-Control', value: 'no-cache' }, { key: 'Service-Worker-Allowed', value: '/' }] },
+    { source: '/icons/(.*)', headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }] },
+  ];
+  const routes = [
+    ...headerRules.map(({ source, headers }) => ({
+      src: source.replace(/\.(json|js)$/, '\\.$1'),
+      headers: Object.fromEntries(headers.map(({ key, value }) => [key, value])),
+      continue: true,
+    })),
+    { handle: 'filesystem' },
+  ];
 
   for (const family of families) {
     if (family === '/') continue; // the "/" route is emitted explicitly as "/" below
@@ -208,11 +223,6 @@ export function buildConfig() {
     installCommand: 'npm ci',
     buildCommand: 'npm run build',
     outputDirectory: 'dist',
-    headers: [...securityHeaders(),
-      { source: '/manifest.json', headers: [{ key: 'Content-Type', value: 'application/manifest+json' }, { key: 'Cache-Control', value: 'no-cache' }] },
-      { source: '/service-worker.js', headers: [{ key: 'Content-Type', value: 'application/javascript' }, { key: 'Cache-Control', value: 'no-cache' }, { key: 'Service-Worker-Allowed', value: '/' }] },
-      { source: '/icons/(.*)', headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }] },
-    ],
     routes,
   };
 }
@@ -248,7 +258,7 @@ export function patternToRegExp(src) {
 export function resolvePath(pathname, config = buildConfig()) {
   for (const route of config.routes) {
     if (route.handle === 'filesystem') continue;
-    if (!route.src) continue;
+    if (!route.src || route.continue || !route.dest) continue;
     if (patternToRegExp(route.src).test(pathname)) {
       return route.status
         ? { type: 'notfound', dest: route.dest, status: route.status }

@@ -1,0 +1,248 @@
+{
+  "mode": "real Paystack TEST transactions and Supabase ledgers; actual provider receipts checked before locally signed replay of verified provider payloads",
+  "before_replays": {
+    "wallet": 161.53,
+    "transactions": [
+      {
+        "id": "dd92b358-5a4a-471d-9e20-0f6993166ef1",
+        "type": "credit",
+        "amount": 101.53,
+        "balance_after": 101.53,
+        "provider_reference": "HG-WALLET-491f30d146f7426880302b01d1569310",
+        "reference_type": "topup",
+        "reference_id": null
+      },
+      {
+        "id": "7fa7fc7c-9acb-4aaf-8726-037e48aff48b",
+        "type": "credit",
+        "amount": 100.0,
+        "balance_after": 161.53,
+        "provider_reference": "HG-WALLET-25e4e59db88b447e846f3294235477c0",
+        "reference_type": "topup",
+        "reference_id": null
+      },
+      {
+        "id": "f8772a00-d7c6-4389-839a-a5454027a065",
+        "type": "debit",
+        "amount": 40.0,
+        "balance_after": 61.53,
+        "provider_reference": null,
+        "reference_type": "order",
+        "reference_id": "3b993492-c9c9-4ebb-845a-f632aae73964"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case": "card",
+      "reference": "HG-ORDER-d337ba53459244bc86596eac3be1684c",
+      "provider": {
+        "status": "success",
+        "domain": "test",
+        "amount": 10153,
+        "fees": 153,
+        "requested_amount": 10000,
+        "currency": "NGN"
+      },
+      "provider_receipts_before_manual_replay": [
+        {
+          "id": "d75c0af5-8683-4a9f-94fa-50a1f9f1e41b",
+          "status": "processed",
+          "event_type": "charge.success",
+          "created_at": "2026-10-28T16:01:44.65283+00:00",
+          "processed_at": "2026-10-28T16:01:48.426282+00:00"
+        }
+      ],
+      "invalid_signature_http": 401,
+      "signed_replay_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "order": {
+        "id": "d337ba53-4592-44bc-8659-6eac3be1684c",
+        "status": "received",
+        "payment_status": "paid",
+        "total_amount": 100.0,
+        "wallet_amount_used": 0.0,
+        "card_amount_used": 100.0
+      },
+      "payments": [
+        {
+          "id": "10293a4a-953f-495e-aaac-1c25c1f858cf",
+          "reference": "HG-ORDER-d337ba53459244bc86596eac3be1684c",
+          "amount": 100.0,
+          "status": "paid",
+          "order_id": "d337ba53-4592-44bc-8659-6eac3be1684c"
+        }
+      ]
+    },
+    {
+      "case": "split",
+      "reference": "HG-ORDER-3b993492c9c94ebb845af632aae73964",
+      "provider": {
+        "status": "success",
+        "domain": "test",
+        "amount": 6092,
+        "fees": 92,
+        "requested_amount": 6000,
+        "currency": "NGN"
+      },
+      "provider_receipts_before_manual_replay": [
+        {
+          "id": "a12b2281-ed87-4288-805f-9474a534a1fb",
+          "status": "processed",
+          "event_type": "charge.success",
+          "created_at": "2026-10-28T16:11:48.88131+00:00",
+          "processed_at": "2026-10-28T16:11:51.592008+00:00"
+        }
+      ],
+      "signed_replay_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "order": {
+        "id": "3b993492-c9c9-4ebb-845a-f632aae73964",
+        "status": "received",
+        "payment_status": "paid",
+        "total_amount": 100.0,
+        "wallet_amount_used": 40.0,
+        "card_amount_used": 60.0
+      },
+      "payments": [
+        {
+          "id": "71325bca-ef2a-4b3c-89b0-d6e7e4a35ad4",
+          "reference": "HG-ORDER-3b993492c9c94ebb845af632aae73964",
+          "amount": 60.0,
+          "status": "paid",
+          "order_id": "3b993492-c9c9-4ebb-845a-f632aae73964"
+        }
+      ]
+    },
+    {
+      "case": "guest",
+      "reference": "HG-ORDER-8bce80957adc46069035c85b64503045",
+      "provider": {
+        "status": "success",
+        "domain": "test",
+        "amount": 10153,
+        "fees": 153,
+        "requested_amount": 10000,
+        "currency": "NGN"
+      },
+      "provider_receipts_before_manual_replay": [
+        {
+          "id": "577449b7-b1b2-44bd-9a2d-a78bc6d8d25c",
+          "status": "processed",
+          "event_type": "charge.success",
+          "created_at": "2026-10-28T16:12:00.350216+00:00",
+          "processed_at": "2026-10-28T16:12:00.858014+00:00"
+        }
+      ],
+      "signed_replay_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "order": {
+        "id": "8bce8095-7adc-4606-9035-c85b64503045",
+        "status": "received",
+        "payment_status": "paid",
+        "total_amount": 100.0,
+        "wallet_amount_used": 0.0,
+        "card_amount_used": 100.0
+      },
+      "payments": [
+        {
+          "id": "5efc84d2-a371-4d24-a24c-d23765ef1b5b",
+          "reference": "HG-ORDER-8bce80957adc46069035c85b64503045",
+          "amount": 100.0,
+          "status": "paid",
+          "order_id": "8bce8095-7adc-4606-9035-c85b64503045"
+        }
+      ]
+    },
+    {
+      "case": "wallet-fixed",
+      "reference": "HG-WALLET-25e4e59db88b447e846f3294235477c0",
+      "provider": {
+        "status": "success",
+        "domain": "test",
+        "amount": 10153,
+        "fees": 153,
+        "requested_amount": 10000,
+        "currency": "NGN"
+      },
+      "provider_receipts_before_manual_replay": [
+        {
+          "id": "46460f18-9f58-4c7f-b363-29647c3622a3",
+          "status": "processed",
+          "event_type": "charge.success",
+          "created_at": "2026-10-28T16:17:13.852749+00:00",
+          "processed_at": "2026-10-28T16:17:16.228498+00:00"
+        }
+      ],
+      "signed_replay_http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "credits": [
+        {
+          "id": "7fa7fc7c-9acb-4aaf-8726-037e48aff48b",
+          "type": "credit",
+          "amount": 100.0,
+          "provider_reference": "HG-WALLET-25e4e59db88b447e846f3294235477c0"
+        }
+      ]
+    }
+  ],
+  "after_replays": {
+    "wallet": 161.53,
+    "transactions": [
+      {
+        "id": "dd92b358-5a4a-471d-9e20-0f6993166ef1",
+        "type": "credit",
+        "amount": 101.53,
+        "balance_after": 101.53,
+        "provider_reference": "HG-WALLET-491f30d146f7426880302b01d1569310",
+        "reference_type": "topup",
+        "reference_id": null
+      },
+      {
+        "id": "7fa7fc7c-9acb-4aaf-8726-037e48aff48b",
+        "type": "credit",
+        "amount": 100.0,
+        "balance_after": 161.53,
+        "provider_reference": "HG-WALLET-25e4e59db88b447e846f3294235477c0",
+        "reference_type": "topup",
+        "reference_id": null
+      },
+      {
+        "id": "f8772a00-d7c6-4389-839a-a5454027a065",
+        "type": "debit",
+        "amount": 40.0,
+        "balance_after": 61.53,
+        "provider_reference": null,
+        "reference_type": "order",
+        "reference_id": "3b993492-c9c9-4ebb-845a-f632aae73964"
+      }
+    ]
+  },
+  "wallet_corrected_topup_delta": 100.0,
+  "old_overcredit_preserved": true,
+  "old_overcredit_verify_http": 409
+}

@@ -19,7 +19,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { patternToRegExp, resolvePath } from './routes.mjs';
+import { resolvePath } from './routes.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = join(root, 'dist');
@@ -63,9 +63,9 @@ const isFile = async (p) => {
  * The header rules from vercel.json, applied exactly as the host applies them —
  * so the CSP/security headers are verified locally, not just declared.
  */
-const headerRules = (config.headers || []).map((rule) => ({
-  test: patternToRegExp(rule.source),
-  headers: rule.headers,
+const headerRules = config.routes.filter((rule) => rule.headers && rule.continue).map((rule) => ({
+  test: new RegExp(`^(?:${rule.src})$`),
+  headers: Object.entries(rule.headers).map(([key, value]) => ({ key, value })),
 }));
 
 const securityHeadersFor = (pathname) => {

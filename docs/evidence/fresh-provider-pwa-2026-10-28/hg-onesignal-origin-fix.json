@@ -1,0 +1,25 @@
+{
+  "before": {
+    "chrome_web_origin": "https://holygrills.online",
+    "safari_site_origin": "https://holygrills.online",
+    "players": 341,
+    "messageable_players": 340
+  },
+  "requested_change": {
+    "chrome_web_origin": "https://www.holygrills.online",
+    "safari_site_origin": "https://www.holygrills.online"
+  },
+  "app_id_unchanged": true,
+  "subscriptions_deleted": false,
+  "update_http_status": 401,
+  "provider_errors": [
+    "Access denied.  Please include an 'Authorization: ...' header with a valid API key (https://documentation.onesignal.com/docs/en/keys-and-ids#api-keys)."
+  ],
+  "after": {
+    "chrome_web_origin": "https://holygrills.online",
+    "safari_site_origin": "https://holygrills.online",
+    "players": 341,
+    "messageable_players": 340
+  },
+  "origins_aligned": false
+}
