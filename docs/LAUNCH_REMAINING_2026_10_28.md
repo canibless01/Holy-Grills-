@@ -1,0 +1,32 @@
+# Launch checkpoint — 28 October 2026
+
+The eight rows below are remaining cases within implemented features, not eight unbuilt features. No entire A–Z category is yet signed off. Passing the listed automated/database cases does not guarantee there are no undiscovered defects.
+
+## Completed in this checkpoint
+
+Side groups on menu-item details now use native compact dropdowns. Each required side slot remains independent; optional clearing, unavailable-option refusal, price adjustments and the existing cart payload are retained. Current Supabase catalogue confirms 13 groups named “Choose your side”, all single-choice, which match the changed renderer. Other modifier layouts retain their existing behavior.
+
+Controlled mobile browser: four side dropdowns, required-selection blocking, unavailable options disabled, all four IDs present in the cart, and correct 1030 total for 1000 food + 30 selected-option charges. TypeScript, changed-page lint and production build pass.
+
+Real Supabase admission scenario (tests/sql/capacity_two_order_admission.sql): kitchen/window capacity two; two orders created through the actual atomic checkout function and wallet debits; third same-day admission refused with no debit/order; overflow admitted for tomorrow; increasing window capacity alone respects the independent daily ceiling; increasing daily capacity moves the overflow to today, changes its linked delivery window and emits complete notification time metadata; wallet remains charged once; move-up replay is a no-op. All fixtures roll back. Service tests separately verify the automatic next-slot search chooses tomorrow when two orders fill today and that admin capacity updates invoke the move-up/notification path. This is real database financial/admission evidence plus application integration tests, not a completed live gateway/browser ordering exercise.
+
+Multi-gift campaigns are implemented and tested: scoped editor, four gift types, eligibility/timing, immutable once-per-user terms, checkout choice/reservation, cancellation/restoration and expiry refusal. They are no longer an unfinished feature on the launch list.
+
+Ambassador coverage includes tagging/untagging, student/community-manager/admin boundaries, promo targeting/personalization, rules/progress, grants, attribution, discount checkout and early/post-preparation refunds. Actual authenticated RLS and real rolled-back financial cases pass. WhatsApp sharing uses the native share sheet where supported, with explicit copy/download fallback. Seen/shared measurements are manually recorded by staff; they are not WhatsApp delivery/read telemetry. Actual device sharing remains an acceptance check.
+
+Signup's local-import crash, missing-field messages, academic-list retry and optional marketing-consent persistence are repaired and covered by route/browser/database tests. A fresh live signup through delivered verification email has not been executed in this checkpoint.
+
+## Remaining launch work
+
+| Area | Remaining executed evidence/work |
+| --- | --- |
+| Payments | Real Paystack test card/bank/split/funding returns; wider interruption/reconciliation cases; guest provider-refund operations |
+| Promos/refunds | Wider combinations of promo, HP, squad, locks, campaign and earned rewards; delivery-stage cancellation/refund/restoration variants |
+| Physical rewards | Complete physical reward through kitchen/rider/delivery, failed/unclaimed delivery and refund variants; legacy missing-snapshot handling |
+| Delivery | Broader attempted/unclaimed/cancellation combinations and rider payout settlement; real map/device behavior |
+| Messaging | Durable quota counters/dispatch/retries; actual OneSignal delivery; full notification-link matrix; deployed worker schedules/recovery |
+| Storefront/sessions | Final content/device presentation matrix and deployed returning-user performance. Resume recovery and menu campus dependency are now fixed and browser-tested |
+| Admin/roles | Remaining per-action campus/global/role and error/concurrency matrix beyond the targeted verified paths; real ambassador share handoff; fresh live signup/email confirmation |
+| Chrome installation | Missing native Chrome install-menu entry on the reported Android and desktop devices |
+
+Next related implementation/audit batch: physical-reward handover and delivery exceptions, followed by remaining promo/reward stacking/restoration combinations. Provider/device checks remain explicitly distinguished from controlled transport tests. Database cleanup remains paused.

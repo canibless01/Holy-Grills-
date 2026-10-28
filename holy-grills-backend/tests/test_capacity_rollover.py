@@ -69,3 +69,20 @@ class CapacityRolloverTests(unittest.TestCase):
             self.assertEqual(service.rpc.call_args_list[1].args[1]['p_target_date'],'2026-11-03')
             notify.assert_called_once(); email.assert_called_once()
             user_db.table.assert_not_called()
+
+class TwoOrderCapacityTests(unittest.TestCase):
+    def test_two_orders_fill_today_and_next_slot_is_tomorrow(self):
+        class TwoCapDb(FakeDb):
+            def rows_for(self, table, filters):
+                if table=='kitchen_settings': return [{'value':'2'}]
+                return super().rows_for(table,filters)
+        db=TwoCapDb(ordering_windows=[_window('today','00:00','23:59',weekday=1,capacity=2),
+            _window('tomorrow','00:00','23:59',weekday=2,capacity=2)],orders=[
+            {'id':'first','created_at':'2026-10-06T10:00:00+01:00'},
+            {'id':'second','created_at':'2026-10-06T11:00:00+01:00'}])
+        _FrozenClock.fixed=_at(12)
+        with patch.object(order_service,'datetime',_FrozenClock):
+            self.assertEqual(order_service.get_ordering_window_status(db,CAMPUS)['reason'],'full')
+            slot=order_service.find_next_available_ordering_slot(db,CAMPUS,date(2026,10,6))
+            self.assertEqual(slot['date'],'2026-10-07')
+            self.assertEqual(slot['window_id'],'tomorrow')

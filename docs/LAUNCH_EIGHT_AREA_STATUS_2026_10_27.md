@@ -34,3 +34,5 @@ Cleanup remains paused. The earlier checkpoint and dated evidence files contain 
 28 October continuation: ambassador programme migrations, financial/role repairs, signup consent and capacity-aware date selection are documented in [current evidence](AMBASSADOR_SIGNUP_SCHEDULING_EVIDENCE_2026_10_28.md). Returning-browser content recovery and push subscription/timing are active next checks.
 
 Returning-browser read recovery and the push device-token contract are implemented and browser-tested in [follow-up evidence](RETURNING_BROWSER_PUSH_EVIDENCE_2026_10_28.md). Real OneSignal delivery remains separate from these registration checks.
+
+Current remaining-case inventory, compact side selectors and the exact two-order capacity admission/move-up evidence: [28 October checkpoint](LAUNCH_REMAINING_2026_10_28.md). Multi-gift campaigns and returning-browser read recovery are completed implementation/test cases, not unfinished features.

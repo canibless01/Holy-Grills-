@@ -3134,6 +3134,8 @@ class MSG:
 
     FE_PUSH_NOT_REGISTERED = "Notifications are not enabled yet. Please retry."
 
+    FE_ITEM_SELECT_SIDE = "Select a side"
+
 M = MSG
 
 

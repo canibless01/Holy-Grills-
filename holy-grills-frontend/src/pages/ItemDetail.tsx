@@ -311,6 +311,20 @@ export default function ItemDetail() {
           <p className="hg-caption">
             {vg.min_selections === vg.max_selections ? `Choose exactly ${vg.min_selections}` : `Choose ${vg.min_selections}–${vg.max_selections}`}
           </p>
+          {/\bsides?\b/i.test(vg.name || '') && Number(vg.max_selections) === 1 ? (
+            <select
+              aria-label={vg.name}
+              value={(selections[vg.id] || [])[0] || ''}
+              disabled={item.is_sold_out}
+              onChange={(event) => setSelections(previous => ({ ...previous, [vg.id]: event.target.value ? [event.target.value] : [] }))}
+              className="w-full rounded-xl border border-border bg-card px-3 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
+            >
+              <option value="" disabled={vg.is_required}>{msg('FE_ITEM_SELECT_SIDE', 'Select a side')}</option>
+              {(vg.options || []).map(option => <option key={option.id} value={option.id} disabled={option.is_available === false || option.is_archived}>
+                {option.name}{option.price_delta > 0 ? ` +${formatNaira(option.price_delta)}` : ''}
+              </option>)}
+            </select>
+          ) : (
           <div className="space-y-2">
             {(vg.options || []).map((opt) => {
               const selected = (selections[vg.id] || []).includes(opt.id);
@@ -333,6 +347,7 @@ export default function ItemDetail() {
               );
             })}
           </div>
+          )}
         </motion.div>
       ))}
 
