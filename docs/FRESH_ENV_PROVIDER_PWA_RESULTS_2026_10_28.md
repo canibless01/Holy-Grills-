@@ -177,4 +177,13 @@ Changes:
 
 Validation before integrating the latest independent main changes: **732 backend tests passed**; frontend TypeScript, full production build/message checks, production-host smoke and changed-file ESLint pass (two existing Home warnings). The existing resume/push browser regression also passes. No cron, hosting migration, provider-origin edit, database cleanup, real content replacement or deferred uploaded-skills access occurred.
 
-Integrated validation after preserving academic/signup commit `006b08d`: **742 backend tests passed**; TypeScript and the complete production build pass. Storefront recovery implementation: `f88234b`. Source push is followed by a separate served-build check; local production/provider evidence is not labeled deployed until that check succeeds.
+Integrated validation after preserving academic/signup commit `006b08d`: **742 backend tests passed**; TypeScript and the complete production build pass. Storefront recovery implementation: `05f580c` (final rebased source commit). Source push is followed by a separate served-build check; local production/provider evidence is not labeled deployed until that check succeeds.
+
+Final validation after also preserving calendar commit `c982d79`: **750 backend tests passed**, frontend TypeScript and complete production build passed. Fix and validation were pushed through `bfe184e`. GitHub reports Vercel deployment pending at the first rollout check; this is host build progress, not a failed application test.
+
+
+### Prerender completion correction
+
+The first rollout exposed a build-lifecycle defect in the new cache: an explicit 30-minute garbage-collection timer also applied during server rendering. Pages were written, but Node stayed alive, so the earlier page-generation logs were **not** proof that the build had exited. Those earlier build-pass statements are superseded by the completed exit checks below. This was identified while watching the pending Vercel deployment, before claiming live success.
+
+The cache now uses `Infinity` for server-rendered garbage collection (no cleanup timer), while retaining 30-minute browser cache retention. The full corrected build **exited with status 0**. Added `test:storefront-ssr` to the production build: render actual Home in a child process and require natural exit within 15 seconds. A controlled compiled copy with the finite server timer completes HTML rendering but times out; the corrected copy exits 0. Evidence: `docs/evidence/storefront-return-2026-10-29/ssr-build-exit-regression.json`. No forced process exit or hosting-setting change is used as a workaround. Browser recovery logic and the previously passing 750 backend tests are unchanged.

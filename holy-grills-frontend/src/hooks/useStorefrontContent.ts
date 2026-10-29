@@ -26,7 +26,8 @@ export function useStorefrontContent(resource: Resource) {
       return rows;
     },
     staleTime: 30000,
-    gcTime: 30 * 60 * 1000,
+    // SSR must not schedule a cleanup timer that keeps prerender alive.
+    gcTime: typeof window === 'undefined' ? Infinity : 30 * 60 * 1000,
     retry: (failures, error: { status?: number }) => failures < 2 &&
       (error.status === 0 || error.status === 408 || error.status === 429 || (error.status ?? 0) >= 500),
     retryDelay: attempt => Math.min(750 * 2 ** attempt, 3000),

@@ -1,0 +1,6 @@
+{
+  "mode": "controlled compiled-copy regression; actual Home SSR; no source or provider mutation",
+  "finite_cache_process_timed_out": true,
+  "finite_cache_render_completed": true,
+  "fixed_cache_process_exit_code": 0
+}
