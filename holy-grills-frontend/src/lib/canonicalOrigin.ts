@@ -62,6 +62,9 @@ export const BOUNCE_VALUE = 'bounced';
 export const BOUNCE_WINDOW_MS = 60_000;
 
 const ATTEMPT_STORAGE_KEY = 'hg_canonical_origin_attempt_at';
+// URL cleanup must not erase the only bounce evidence when storage is blocked.
+// This lasts for the document, including later SDK init and Enable calls.
+let bouncedDocument = false;
 
 type LocationLike = {
   protocol?: string;
@@ -101,6 +104,7 @@ export const isOriginBounce = (
   now: number = Date.now(),
 ): boolean => {
   if (!location) return false;
+  if (isWwwAliasHost(location.hostname) && bouncedDocument) return true;
   if (hasBounceMarker(location.search)) return true;
   const attemptedAt = readAttemptAt();
   return attemptedAt > 0 && now - attemptedAt < BOUNCE_WINDOW_MS;
@@ -142,7 +146,9 @@ let redirectStarted = false;
 export const enforceCanonicalOrigin = (): boolean => {
   if (redirectStarted) return true; // a navigation is already in flight
   if (typeof window === 'undefined' || !window.location) return false;
-  const target = canonicalRedirectTarget(window.location, { bounced: isOriginBounce(window.location) });
+  const bounced = isOriginBounce(window.location);
+  if (isWwwAliasHost(window.location.hostname) && bounced) bouncedDocument = true;
+  const target = canonicalRedirectTarget(window.location, { bounced });
   if (!target) return false;
   redirectStarted = true;
   try {
@@ -167,6 +173,7 @@ export const clearOriginMarker = (): void => {
   if (typeof window === 'undefined' || !window.location) return;
   const { search } = window.location;
   if (!hasBounceMarker(search)) return;
+  if (isWwwAliasHost(window.location.hostname)) bouncedDocument = true;
   try {
     const params = new URLSearchParams(search);
     params.delete(BOUNCE_PARAM);

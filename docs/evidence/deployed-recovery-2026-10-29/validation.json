@@ -1,0 +1,31 @@
+{
+  "base_commit": "7c91bbeae48545056a37c427c001cf9d43446af3",
+  "deployment_id": "dpl_7ZYcTWqmewexSzGC2zdQ1Auupfbw",
+  "deployment_state": "READY",
+  "deployment_target": "production",
+  "newer_main_review": [
+    "cedf12c",
+    "fae8aa2"
+  ],
+  "regression": {
+    "scenario": "bounced www document, sessionStorage unavailable or throws, boot removes marker, later SDK init/Enable calls guard",
+    "before_fix_failed_assertions": 8,
+    "after_fix_assertions_passed": 53,
+    "fix": "retain bounce state for document lifetime"
+  },
+  "checks": {
+    "build": 0,
+    "typecheck": 0,
+    "smoke": 0
+  },
+  "controlled_browser_result": "all assertions completed and evidence written",
+  "lint": "ESLint has no matching TS config for canonicalOrigin.ts; skipped, not a lint pass",
+  "not_executed": [
+    "new payment/order",
+    "signed-in live return",
+    "physical PWA installation",
+    "real device subscription/external ID/backend persistence",
+    "notification send/receipt/click",
+    "Supabase Auth management redirect configuration"
+  ]
+}

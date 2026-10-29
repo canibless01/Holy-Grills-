@@ -180,6 +180,28 @@ const installWindow = (mod, location) => {
   eq('after the window expires the alias may redirect again', later.enforceCanonicalOrigin(), true);
 }
 
+// Real boot clears the URL before account restoration calls the guard again.
+// Remember the bounce for this document even when sessionStorage is blocked.
+for (const storage of [undefined, {
+  getItem() { throw new Error('storage blocked'); },
+  setItem() { throw new Error('storage blocked'); },
+}]) {
+  const mod = await freshModule();
+  globalThis.sessionStorage = storage;
+  const calls = installWindow(mod, at('www.holygrills.online', '/menu', '?campus=futa&hg_origin=bounced'));
+  window.history = { state: null, replaceState: (_s, _t, url) => {
+    const next = new URL(url, 'https://www.holygrills.online');
+    Object.assign(window.location, { pathname: next.pathname, search: next.search, hash: next.hash });
+  } };
+  eq('boot permits a bounced alias to render', mod.enforceCanonicalOrigin(), false);
+  mod.clearOriginMarker();
+  eq('boot actually clears the bounce marker', window.location.search, '?campus=futa');
+  eq('bounce diagnosis survives URL cleanup', mod.isBeingOriginBounced(), true);
+  eq('later push init does not restart navigation after cleanup', mod.enforceCanonicalOrigin(), false);
+  eq('repeated Enable attempts do not restart navigation', mod.enforceCanonicalOrigin(), false);
+  eq('no navigation after the bounce marker is removed', calls.length, 0);
+}
+
 // ── 4. Marker cleanup never navigates and keeps real params ─────────────────
 {
   const mod = await freshModule();
