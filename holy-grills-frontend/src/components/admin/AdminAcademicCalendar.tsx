@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Pencil, CalendarDays, Globe } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
 
 const PERIOD_TYPES = [
   { value: 'semester', label: 'Semester' },
@@ -21,6 +22,9 @@ const fmt = (d) => (d ? formatDate(d) : '—');
 const sortEntry = (e) => (e.start_date || e.end_date || e.created_date || '');
 
 export default function AdminAcademicCalendar() {
+  const { user } = useHolyGrill();
+  const { campuses: availableCampuses } = useCampus();
+  const ownCampus = user?.campus_id || user?.profile?.campus_id;
   const [periods, setPeriods] = useState(null);
   const [campuses, setCampuses] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -41,7 +45,7 @@ export default function AdminAcademicCalendar() {
 
   useEffect(() => {
     load();
-    liveApi.admin.getCampuses().then(setCampuses).catch(() => setCampuses([]));
+    liveApi.admin.getCampuses().then(setCampuses).catch(() => setCampuses(availableCampuses));
   }, []);
 
   return (
@@ -101,12 +105,13 @@ export default function AdminAcademicCalendar() {
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
                     <span>{fmt(p.start_date)} → {fmt(p.end_date)}</span>
-                    <button
+                    {(user?.role === 'super_admin' || (p.campus_id && p.campus_id === ownCampus)) && <button
+                      aria-label={`${msg('FE_CALENDAR_EDIT', 'Edit period')} ${p.name}`}
                       onClick={() => setEditing(p)}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-secondary text-secondary-foreground text-xs font-bold hover:bg-primary/10 hover:text-primary active:scale-95 transition"
                     >
                       <Pencil className="w-3 h-3" /> Edit
-                    </button>
+                    </button>}
                   </div>
                   {p.description && <p className="text-[11px] text-muted-foreground leading-relaxed">{p.description}</p>}
                 </Card>
@@ -141,6 +146,10 @@ function CalendarModal({
   onSaved?: () => void | Promise<void>;
 }) {
   const { user } = useHolyGrill();
+  const { adminCampusId } = useCampus();
+  const superAdmin = user?.role === 'super_admin';
+  const ownCampus = user?.campus_id || user?.profile?.campus_id;
+  const writing = useRef(false);
   const [form, setForm] = useState(period ? {
     period_type: period.period_type || 'semester',
     name: period.name || '',
@@ -150,14 +159,16 @@ function CalendarModal({
     campus_id: period.campus_id || '',
     description: period.description || '',
     is_active: period.is_active !== false,
-  } : { ...BLANK });
+  } : { ...BLANK, campus_id: superAdmin ? (adminCampusId || '') : (ownCampus || '') });
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
+    if (writing.current) return;
     if (!form.name.trim()) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_NAME_REQUIRED', 'Name required'), variant: 'destructive' }); return; }
-    if (!period && !form.academic_year.trim()) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_ACADEMIC_YEAR_REQUIRED', 'Academic year required'), variant: 'destructive' }); return; }
+    if (!form.academic_year.trim()) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_ACADEMIC_YEAR_REQUIRED', 'Academic year required'), variant: 'destructive' }); return; }
     if (!form.start_date || !form.end_date) { toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_START_AND_END_DATES_REQUIRED', 'Start and end dates required'), variant: 'destructive' }); return; }
-    setSubmitting(true);
+    if (form.end_date < form.start_date) { toast({ title: msg('FE_CALENDAR_DATE_ORDER', 'End date must be on or after start date.'), variant: 'destructive' }); return; }
+    writing.current = true; setSubmitting(true);
     try {
       const payload = {
         period_type: form.period_type,
@@ -166,7 +177,7 @@ function CalendarModal({
         end_date: form.end_date,
         academic_year: form.academic_year.trim() || null,
         description: form.description.trim() || null,
-        campus_id: form.campus_id || null,
+        campus_id: superAdmin ? (form.campus_id || null) : ownCampus,
       };
       if (period) {
         await liveApi.admin.updateAcademicCalendar(period.id, { ...payload, is_active: form.is_active });
@@ -179,12 +190,12 @@ function CalendarModal({
     } catch (e) {
       toast({ title: msg('FE_ADMIN_ACADEMIC_CALENDAR_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
-    setSubmitting(false);
+    writing.current = false; setSubmitting(false);
   };
 
   return (
-    <Modal open onClose={onClose} title={period ? `Edit — ${period.name}` : 'Add Academic Period'}>
-      <div className="space-y-3">
+    <Modal open onClose={() => { if (!writing.current) onClose(); }} title={period ? `Edit — ${period.name}` : 'Add Academic Period'}>
+      <fieldset disabled={submitting} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Period type">
             <select value={form.period_type} onChange={(e) => setForm({ ...form, period_type: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40">
@@ -192,9 +203,10 @@ function CalendarModal({
             </select>
           </Field>
           <Field label="Campus">
-            <select value={form.campus_id} onChange={(e) => setForm({ ...form, campus_id: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40">
+            <select disabled={!superAdmin} value={superAdmin ? form.campus_id : (ownCampus || '')} onChange={(e) => setForm({ ...form, campus_id: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40">
               <option value="">{user?.role === 'super_admin' ? 'All Campuses' : msg('FE_CALENDAR_OWN_CAMPUS', 'Your campus')}</option>
-              {campuses.filter(c => user?.role === 'super_admin' || c.id === user?.campus_id).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {form.campus_id && !campuses.some(c => c.id === form.campus_id) && <option value={form.campus_id}>{msg('FE_CALENDAR_CURRENT_CAMPUS', 'Current campus')}</option>}
+              {campuses.filter(c => superAdmin || c.id === ownCampus).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
         </div>
@@ -214,7 +226,7 @@ function CalendarModal({
         <button onClick={submit} disabled={submitting} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold active:scale-95 transition disabled:opacity-50">
           {submitting ? 'Saving…' : (period ? 'Save Changes' : 'Create Period')}
         </button>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

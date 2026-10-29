@@ -28,3 +28,5 @@ Coverage is completed as each domain is audited: admin input/action → API → 
 | Settings; System; Webhook Events | B for remaining controls/diagnostics; A for payment/reward behavior | Each setting must be traced to an actual consumer. New payment replay rules are A's shared contract; historical security/dead settings remain under B |
 
 See the complete [two-workstream assignment](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md), [tested/fixed progress](ECOSYSTEM_AUDIT_PROGRESS.md), [database access verification](MIGRATION_ACCESS_VERIFICATION.md), and [external-provider checklist](PROVIDER_VERIFICATION_BLOCKERS.md). The historical Playwright coverage map is a test plan, not a completed test run. No whole-page or whole-ecosystem approval is implied by inventory status.
+
+29 October next completed page batch: [Academic Calendar](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) now has native field/type/edit/retire/restore/error/scope checks and real RLS/date/duplicate/graduation-consumer proof. Gates/Hostels and Delivery area are next. This does not close the entire Campus configuration domain.

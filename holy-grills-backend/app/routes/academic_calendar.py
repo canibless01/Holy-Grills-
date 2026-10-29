@@ -106,7 +106,9 @@ def get_current_academic_period():
             .lte("start_date", today_str).gte("end_date", today_str)
         )
         q = campus_or_global(q, campus_id)
-        rows = q.order("start_date", ascending=False).limit(1).execute() or []
+        rows = q.order("start_date", ascending=False).execute() or []
+        # A matching campus period takes precedence over a newer global entry.
+        rows.sort(key=lambda row: (bool(campus_id and row.get("campus_id") == campus_id), row.get("start_date") or ""), reverse=True)
     except (SupabaseError, requests.RequestException) as e:
         logger.error("get_current_academic_period failed: %s", e)
         return jsonify({"error": MSG.ACADEMIC_CALENDAR_UNAVAILABLE}), 503
@@ -126,10 +128,11 @@ def list_academic_calendar_entries():
     List academic calendar entries (admin only).
     """
     db = get_user_client()
-    requested, error = _requested_campus()
-    if error:
-        return error
-    campus_id = resolve_scoped_campus_id(requested)  # admin: own campus (param ignored); super_admin: param or all
+    try:
+        requested = as_campus_id(request.args.get("campus_id"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+    campus_id = resolve_scoped_campus_id(requested)
     try:
         # none_means_all=True: an admin always has a campus_id by this point (B-27), so this only changes
         # behavior for super_admin with no ?campus_id= — they see every campus's entries, not just globals.

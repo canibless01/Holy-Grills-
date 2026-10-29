@@ -37,3 +37,5 @@ The full original A/B domain scope is [here](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md)
 Latest provider handoff `c829332` is integrated: settled real mobile/desktop carousel samples, browser Google Maps and WhatsApp redirects pass. Native handoff/device push/installation remain separate. The initial-load timing gap remains open; no provider settings or additional accounts were changed in that handoff.
 
 Academic setup continuation: [Departments & Academic Levels page evidence](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) closes that page's listed native actions and targeted actual database/role cases. PG and searchable signup options are added; backend suite **742 passed**. Academic Calendar and delivery-location page actions remain next in this group. Whole-admin sign-off is still open.
+
+Academic Calendar page continuation: [calendar evidence](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) records all six types, all modal fields, scoped creation/edit/retirement, real permissions and graduation date consumer checks. Backend **750 passed**. Gate/hostel and delivery-area controls remain next; no worker or cleanup was activated.
