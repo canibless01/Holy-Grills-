@@ -1,9 +1,8 @@
-import { useResumeEffect } from '@/hooks/useResumeEffect';
+import { useStorefrontContent } from '@/hooks/useStorefrontContent';
+import StorefrontReadState from './StorefrontReadState';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { Pause, Play } from 'lucide-react';
-import { getStorefrontSections } from '@/lib/storefrontMockData';
-import { useCampus } from '@/lib/campusContext';
 import { msg } from '@/lib/messages';
 import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
@@ -27,8 +26,10 @@ const VARIANTS = {
 
 export default function StorefrontSlider({ sectionType, variant = 'poster', eyebrow = '', headline = '', subline = '', placement = 'home' }) {
   const navigate = useNavigate();
-  const { campusId } = useCampus();
-  const [slides, setSlides] = useState(null);
+  const content = useStorefrontContent('sections');
+  const slides = content.data?.filter(s => s.section_type === sectionType && s.is_active !== false &&
+    (!s.content?.placement || s.content.placement === placement))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const [userPaused, setUserPaused] = useState(false);
@@ -39,20 +40,7 @@ export default function StorefrontSlider({ sectionType, variant = 'poster', eyeb
   const v = VARIANTS[variant] || VARIANTS.poster;
   const spec = bannerSpec(storefrontSpecId(variant));
 
-  useResumeEffect((background) => {
-    let live = true;
-    if (!background) { setSlides(null); setActive(0); }
-    getStorefrontSections(sectionType)
-      .then((list) => {
-        if (!live) return;
-        const arr = (Array.isArray(list) ? list : [])
-          .filter((s) => s.is_active !== false && (!s.content?.placement || s.content.placement === placement))
-          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-        setSlides(arr);
-      })
-      .catch(() => { if (live && !background) setSlides([]); });
-    return () => { live = false; };
-  }, [sectionType, campusId, placement]);
+  useEffect(() => { setActive(0); }, [content.data, sectionType, placement]);
 
   const scrollTo = useCallback((idx) => {
     const el = scrollRef.current;
@@ -104,6 +92,7 @@ export default function StorefrontSlider({ sectionType, variant = 'poster', eyeb
     openCmsDestination(dest, navigate);
   };
 
+  if (content.isError && !slides) return <StorefrontReadState label={headline || sectionType} retry={() => void content.refetch({ cancelRefetch: false })} />;
   if (!slides) {
     return (
       <section className="space-y-3">

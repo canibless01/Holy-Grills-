@@ -1,12 +1,11 @@
-import { useResumeEffect } from '@/hooks/useResumeEffect';
+import { useStorefrontContent } from '@/hooks/useStorefrontContent';
+import StorefrontReadState from '@/components/storefront/StorefrontReadState';
 import CompactBannerCarousel from '@/components/storefront/CompactBannerCarousel';
 import { bannerSlides } from '@/lib/bannerSlides';
 import { msg } from '@/lib/messages';
-import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { liveApi } from '@/lib/liveApi';
 import { openCmsDestination } from '@/lib/safeNavigation';
 import { heroTitleParts } from '@/lib/heroTitle';
 
@@ -63,34 +62,16 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
   const navigate = useNavigate();
   const SlideHeading = 'h1';
   const isHero = placement === 'hero';
-  const { campusId } = useCampus();
-  const [slides, setSlides] = useState<HeroSlide[]>([]);
+  const banners = useStorefrontContent('banners');
+  const sections = useStorefrontContent('sections');
+  const slides = buildSlidesFromBanners(banners.data, placement) ||
+    (placement === 'hero' ? buildSlidesFromSections(sections.data) : null) || [];
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
   const scrollRef = useRef(null);
   const autoTimer = useRef(null);
 
-  useResumeEffect((background) => {
-    let cancelled = false;
-    if (!background) { setSlides([]); setI(0); }
-    const loadHero = async () => {
-      try {
-        const banners = await liveApi.storefront.getBanners({ placement });
-        if (!cancelled) {
-          const fromBanners = buildSlidesFromBanners(banners, placement);
-          if (fromBanners) { setSlides(fromBanners); return; }
-        }
-        if (placement !== 'hero') { if (!cancelled) setSlides([]); return; }
-        const sections = await liveApi.storefront.getSections({ section_type: 'hero' });
-        if (!cancelled) {
-          const fromSections = buildSlidesFromSections(sections);
-          setSlides(fromSections || []);
-        }
-      } catch { if (!cancelled && !background) setSlides([]); }
-    };
-    loadHero();
-    return () => { cancelled = true; };
-  }, [campusId, placement]);
+  useEffect(() => { setI(0); setPaused(false); }, [banners.data, sections.data, placement]);
 
   const scrollToSlide = useCallback((idx) => {
     const el = scrollRef.current;
@@ -121,7 +102,13 @@ export default function HeroCarousel({ onCta = undefined, placement = 'hero' }) 
     if (idx !== i) setI(idx);
   }, [slides.length, i]);
 
-  if (!slides.length) return null;
+  if (!slides.length) {
+    const loading = banners.isPending || (isHero && sections.isPending);
+    const failed = banners.isError || (isHero && sections.isError);
+    if (loading || failed) return <StorefrontReadState label={isHero ? 'Home highlights' : 'Home banners'} loading={loading}
+      retry={() => { void banners.refetch({ cancelRefetch: false }); if (isHero) void sections.refetch({ cancelRefetch: false }); }} />;
+    return null;
+  }
   // Every banner placement except the immersive homepage hero renders through
   // the same card shell as the CMS sections: a rounded frame that holds either
   // inset picture + copy + CTA, or a complete design filling the whole frame.

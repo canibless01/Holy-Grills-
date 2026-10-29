@@ -1,12 +1,11 @@
-import { useResumeEffect } from '@/hooks/useResumeEffect';
+import { useStorefrontContent } from '@/hooks/useStorefrontContent';
+import StorefrontReadState from '@/components/storefront/StorefrontReadState';
 import { useNavigate } from 'react-router-dom';
 import { openCmsDestination } from '@/lib/safeNavigation';
-import { useCampus } from '@/lib/campusContext';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import BannerCard from '@/components/storefront/BannerCard';
 import { bannerSpec } from '@/lib/bannerSpec';
 import CateringRequestModal from '@/components/events/CateringRequestModal';
-import { getStorefrontSections } from '@/lib/storefrontMockData';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { msg } from '@/lib/messages';
 
@@ -21,30 +20,14 @@ import { msg } from '@/lib/messages';
  */
 export default function CateringCard() {
   const { isAuthenticated } = useHolyGrill();
-  const { campusId } = useCampus();
+  const contentRead = useStorefrontContent('sections');
   const navigate = useNavigate();
-  const [section, setSection] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const currentSection = contentRead.data?.find(row => row.section_type === 'catering' && row.is_active !== false);
   const [showForm, setShowForm] = useState(false);
-  const formOpen = useRef(showForm); formOpen.current = showForm;
-
-  useResumeEffect((background) => {
-    if (background && formOpen.current) return;
-    let cancelled = false;
-    if (!background) { setSection(null); setLoading(true); }
-    (async () => {
-      try {
-        const sections = await getStorefrontSections('catering');
-        if (cancelled) return;
-        const s = Array.isArray(sections) ? sections[0] : null;
-        setSection(s || null);
-      } catch { /* ignore */ }
-      if (!cancelled) setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [campusId]);
-
-  if (loading || !section) return null;
+  const [formSection, setFormSection] = useState(null);
+  const section = showForm ? formSection : currentSection;
+  if (contentRead.isError && !contentRead.data) return <StorefrontReadState label="Catering" retry={() => void contentRead.refetch({ cancelRefetch: false })} />;
+  if (!section) return null;
 
   const content = section?.content || section?.data || {};
   const image = content.image_url || content.image || section?.image_url;
@@ -69,7 +52,7 @@ export default function CateringCard() {
           onAction={() => {
             const destination = content.cta_url || content.cta_link || section?.cta_url;
             if (destination) openCmsDestination(destination, navigate);
-            else setShowForm(true);
+            else { setFormSection(section); setShowForm(true); }
           }}
           footer={!isAuthenticated ? msg('FE_CATERING_NO_ACCOUNT_NEEDED', 'No account needed.') : null}
         />

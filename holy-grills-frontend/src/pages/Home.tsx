@@ -26,7 +26,7 @@ import CountUp from '@/components/CountUp';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import FlameMark from '@/components/FlameMark';
 import ModalPortal from '@/components/ModalPortal';
-import { getStorefrontSections } from '@/lib/storefrontMockData';
+import { useStorefrontContent } from '@/hooks/useStorefrontContent';
 import { msg } from '@/lib/messages';
 import { useCurrentRank } from '@/hooks/useCurrentRank';
 
@@ -49,7 +49,10 @@ export default function Home() {
   const [subscribing, setSubscribing] = useState(false);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const myRank = useCurrentRank();
-  const [testimonials, setTestimonials] = useState([]);
+  const storefront = useStorefrontContent('sections');
+  const testimonials = (storefront.data || []).filter(s => s.section_type === 'testimonial' && s.is_active !== false).map(s => ({
+    text: s.content?.review || s.subtitle || s.title || '', name: s.content?.name || s.title || '', rating: s.content?.rating,
+  }));
 
   // The backend may return the rank under different keys — normalise it so the
   // tile shows the real number whenever the user has one.
@@ -83,19 +86,6 @@ export default function Home() {
     const deadline = setTimeout(() => setLoading(false), 6000);
     return () => { live = false; clearTimeout(deadline); };
   }, [campusId, isAuthenticated]);
-
-  useResumeEffect((background) => {
-    let live = true;
-    if (!background) setTestimonials([]);
-    getStorefrontSections('testimonial').then((sections) => {
-      if (live) setTestimonials(sections.map((s) => ({
-        text: s.content?.review || s.subtitle || s.title || '',
-        name: s.content?.name || s.title || '',
-        rating: s.content?.rating,
-      })));
-    }).catch(() => { /* An unavailable CMS does not supply testimonials. */ });
-    return () => { live = false; };
-  }, [campusId]);
 
   const handleQuickAdd = async (item) => {
     const detail = await liveApi.menu.getItem(item.id);

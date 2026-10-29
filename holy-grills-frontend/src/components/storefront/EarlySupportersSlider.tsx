@@ -1,28 +1,20 @@
-import { useResumeEffect } from '@/hooks/useResumeEffect';
-import { useCampus } from '@/lib/campusContext';
+import { useStorefrontContent } from '@/hooks/useStorefrontContent';
+import StorefrontReadState from './StorefrontReadState';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
-import { getEarlySupporters } from '@/lib/storefrontMockData';
 import { msg } from '@/lib/messages';
 
 // Compact supporter cards — small square photo on top, name + note + social
 // link below in a clean bordered card. No gradient overlays; cards are small
 // enough that multiple fit on screen without dominating the page.
 export default function EarlySupportersSlider({ eyebrow = 'Since day one', headline = 'The First Believers 💛', subline = 'They ordered before anyone else did.' }) {
-  const { campusId } = useCampus();
-  const [supporters, setSupporters] = useState(null);
+  const content = useStorefrontContent('early-supporters');
+  const supporters = content.data;
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const scrollRef = useRef(null);
 
-  useResumeEffect((background) => {
-    let live = true;
-    if (!background) { setSupporters(null); setActive(0); }
-    getEarlySupporters()
-      .then((list) => { if (live) setSupporters(Array.isArray(list) ? list : []); })
-      .catch(() => { if (live && !background) setSupporters([]); });
-    return () => { live = false; };
-  }, [campusId]);
+  useEffect(() => { setActive(0); }, [content.data]);
 
   const reducedMotion = typeof window !== 'undefined' && window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -56,6 +48,7 @@ export default function EarlySupportersSlider({ eyebrow = 'Since day one', headl
     if (idx !== active && idx >= 0 && idx < supporters.length) setActive(idx);
   }, [supporters, active]);
 
+  if (content.isError && !supporters) return <StorefrontReadState label={headline} retry={() => void content.refetch({ cancelRefetch: false })} />;
   if (!supporters) {
     return (
       <section className="space-y-3">

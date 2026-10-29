@@ -1,5 +1,6 @@
 // HolyGrill Live API Client — calls the real backend at holy-grills-backend.onrender.com
 import { localStore, sessionStore } from '@/lib/storage';
+import { queryClientInstance } from '@/lib/query-client';
 
 // Configurable so a staging backend, a local Flask run or the dev proxy can be
 // pointed at without a code change. The fallback is the production API.
@@ -118,7 +119,7 @@ async function refreshToken(rejectedToken: string) {
 }
 
 /** fetch options plus the internal single-retry flag. */
-type RequestOptions = RequestInit & { _retried?: boolean };
+type RequestOptions = RequestInit & { _retried?: boolean; timeoutMs?: number };
 
 const PUBLIC_STOREFRONT_READS = new Set([
   '/storefront/sections', '/storefront/banners', '/storefront/early-supporters',
@@ -166,7 +167,12 @@ function campusScopeHeaders(
   return headers;
 }
 
+export function getPublicCampusScope() {
+  return campusScopeHeaders(getToken(), 'GET', { publicRead: true })['X-Campus-ID'] || null;
+}
+
 async function request(path: string, options: RequestOptions = {}) {
+  const { timeoutMs = 12000, ...fetchOptions } = options;
   const storedToken = getToken();
   const parsedPath = new URL(path, 'https://app.invalid');
   const publicRead = (!options.method || options.method === 'GET') && PUBLIC_STOREFRONT_READS.has(parsedPath.pathname)
@@ -195,14 +201,14 @@ async function request(path: string, options: RequestOptions = {}) {
     ...options.headers,
   };
 
-  // 12s timeout — fails fast on a cold-starting backend instead of hanging
-  // indefinitely and freezing the UI behind a loading state.
+  // Bounded deadline. Public storefront reads can allow a slower cold start;
+  // authenticated and financial requests keep the existing 12-second default.
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
+    res = await fetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeoutId);
     if (e.name === 'AbortError') throw new ApiError(0, 'Request timed out — the server may be starting up. Try again in a moment.');
@@ -233,6 +239,15 @@ async function request(path: string, options: RequestOptions = {}) {
     throw new ApiError(res.status, data?.error || data?.message || `Request failed (${res.status})`, data);
   }
 
+  // Admin publication must appear immediately even when Home has a fresh
+  // cached snapshot. Private/financial requests never invalidate this cache.
+  const publishedResource = parsedPath.pathname.match(/^\/storefront\/(sections|banners|early-supporters)(?:\/|$)/)?.[1];
+  if (publishedResource && options.method && !['GET', 'HEAD'].includes(options.method)) {
+    void queryClientInstance.invalidateQueries({
+      queryKey: ['published-storefront'],
+      predicate: query => query.queryKey[2] === publishedResource,
+    });
+  }
   return data;
 }
 
@@ -297,11 +312,11 @@ export const apiClient = {
    * kitchen-status read, which must be scoped to the campus the guest is
    * actually ordering from even if the persisted header has not landed yet.
    */
-  get(path: string, params?: Record<string, unknown>, headers?: Record<string, string>) {
+  get(path: string, params?: Record<string, unknown>, headers?: Record<string, string>, options?: { timeoutMs?: number }) {
     const qs = params ? '?' + new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]
     ).toString() : '';
-    return request(path + qs, headers ? { headers } : undefined);
+    return request(path + qs, { ...options, ...(headers ? { headers } : {}) });
   },
   post(path: string, body?: unknown) {
     return request(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
