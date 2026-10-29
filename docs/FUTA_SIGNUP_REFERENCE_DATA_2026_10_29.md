@@ -13,3 +13,5 @@ Validation:
 - Full backend: **732 passed**. Frontend typecheck, changed-page lint and full production build pass.
 
 No account was created or deleted for this batch. The separate [reset preparation](PRE_LAUNCH_CLEANUP_PLAN_2026_10_29.md) records current Auth/profile counts and reference-data questions. Website deployment completion is not inferred from a successful Git push; the department data is already verified through the live backend.
+
+Latest owner follow-up: [Postgraduate, searchable school/department selectors and academic admin page evidence](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) supersedes the earlier 51-only totals: FUTA now has 52 departments/11 school labels and a PG level, with no 600 level.

@@ -1,6 +1,6 @@
 import { useState, useEffect, useId } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
-import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin } from 'lucide-react';
+import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin, Search } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { liveApi } from '@/lib/liveApi';
 import { msg } from '@/lib/messages';
@@ -32,6 +32,8 @@ export default function Register() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [departments, setDepartments] = useState([]);
   const [faculty, setFaculty] = useState('');
+  const [schoolSearch, setSchoolSearch] = useState('');
+  const [departmentSearch, setDepartmentSearch] = useState('');
   const [academicLevels, setAcademicLevels] = useState([]);
   const [campuses, setCampuses] = useState([]);
 
@@ -68,7 +70,7 @@ export default function Register() {
   }, [form.campus_id, referenceRetry]);
 
   const set = (k, v) => {
-    if (k === 'campus_id') setFaculty('');
+    if (k === 'campus_id') { setFaculty(''); setSchoolSearch(''); setDepartmentSearch(''); }
     setForm((old) => ({ ...old, [k]: v,
       ...(k === 'campus_id' ? { department_id: '', academic_level_id: '' } : {}),
     }));
@@ -76,7 +78,13 @@ export default function Register() {
   const schoolFor = (department) => department.faculty?.trim() || msg('FE_REGISTER_OTHER_SCHOOL', 'Other');
   const hasSchools = departments.some((department) => department.faculty?.trim());
   const schools = hasSchools ? [...new Set(departments.map(schoolFor))].sort((a, b) => a.localeCompare(b)) : [];
-  const visibleDepartments = departments.filter((department) => !hasSchools || schoolFor(department) === faculty)
+  const matchingSchools = schools.filter((school) => school.toLocaleLowerCase().includes(schoolSearch.trim().toLocaleLowerCase()));
+  // Keep the chosen option mounted while searching, so native selects never
+  // display a different value from the saved form selection.
+  const visibleSchools = schools.filter((school) => school === faculty || matchingSchools.includes(school));
+  const schoolDepartments = departments.filter((department) => !hasSchools || schoolFor(department) === faculty);
+  const matchingDepartments = schoolDepartments.filter((department) => department.name.toLocaleLowerCase().includes(departmentSearch.trim().toLocaleLowerCase()));
+  const visibleDepartments = schoolDepartments.filter((department) => department.id === form.department_id || matchingDepartments.includes(department))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const strength = (() => {
@@ -186,13 +194,16 @@ export default function Register() {
           icon={GraduationCap}
           label={msg('FE_REGISTER_SCHOOL_LABEL', 'School / faculty')}
           value={faculty}
-          onChange={(event) => { setFaculty(event.target.value); set('department_id', ''); }}
+          onChange={(event) => { setFaculty(event.target.value); setSchoolSearch(''); setDepartmentSearch(''); set('department_id', ''); }}
+          searchValue={schoolSearch} onSearchChange={setSchoolSearch}
+          searchLabel={msg('FE_REGISTER_SEARCH_SCHOOLS', 'Search schools or faculties')}
+          noMatches={matchingSchools.length === 0}
           placeholder={msg('FE_REGISTER_SCHOOL_PLACEHOLDER', 'Pick your school or faculty')}
         >
-          {schools.map((school) => <option key={school} value={school}>{school}</option>)}
+          {visibleSchools.map((school) => <option key={school} value={school}>{school}</option>)}
         </SelectField>}
 
-        <SelectField disabled={referencesLoading || referencesError || (hasSchools && !faculty)} icon={BookOpen} label="What are you studying?" value={form.department_id || ''} onChange={(e) => set('department_id', e.target.value)} placeholder={hasSchools && !faculty ? msg('FE_REGISTER_SCHOOL_FIRST', 'Choose your school or faculty first') : msg('FE_REGISTER_DEPARTMENT_PLACEHOLDER', 'Pick your department')}>
+        <SelectField disabled={referencesLoading || referencesError || (hasSchools && !faculty)} icon={BookOpen} searchValue={departmentSearch} onSearchChange={setDepartmentSearch} searchLabel={msg('FE_REGISTER_SEARCH_DEPARTMENTS', 'Search departments')} noMatches={matchingDepartments.length === 0} label="What are you studying?" value={form.department_id || ''} onChange={(e) => set('department_id', e.target.value)} placeholder={hasSchools && !faculty ? msg('FE_REGISTER_SCHOOL_FIRST', 'Choose your school or faculty first') : msg('FE_REGISTER_DEPARTMENT_PLACEHOLDER', 'Pick your department')}>
           {visibleDepartments.map((d) => (
             <option key={d.id} value={d.id}>{d.name}</option>
           ))}
@@ -293,11 +304,18 @@ export default function Register() {
   );
 }
 
-function SelectField({ icon: Icon, label, value, onChange, placeholder, children, disabled = false }) {
+function SelectField({ icon: Icon, label, value, onChange, placeholder, children, disabled = false, searchValue = undefined, onSearchChange = undefined, searchLabel = undefined, noMatches = false }) {
   const inputId = useId();
   return (
     <div>
       <label htmlFor={inputId} className="block text-[11px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">{label}</label>
+      {onSearchChange && <div className="relative mb-1.5">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <input type="search" aria-label={searchLabel} placeholder={searchLabel} value={searchValue} disabled={disabled}
+          onChange={(event) => onSearchChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
+          className="w-full pl-10 pr-3 py-2 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50" />
+      </div>}
+      {onSearchChange && searchValue?.trim() && noMatches && <p role="status" className="text-xs text-muted-foreground mb-1.5">{msg('FE_REGISTER_SEARCH_EMPTY', 'No matches. Clear your search to browse all options.')}</p>}
       <div className="relative">
         <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <select id={inputId}

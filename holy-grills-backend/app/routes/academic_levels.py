@@ -18,7 +18,7 @@ admin controls the canonical list (e.g. "100 Level", "200 Level", "Postgraduate"
 
 import requests
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_role, optional_auth
+from app.middleware.auth import require_role, optional_auth, resolve_scoped_campus_id
 from app.db import get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.admin_helpers import get_json_object, as_bool, as_int, as_text, db_error_response
@@ -143,9 +143,18 @@ def admin_list_academic_levels():
     # (unchanged — ADM-08)
     db = get_user_client()
     q = db.table("academic_levels").select("*")
+    try:
+        campus_id = resolve_scoped_campus_id(as_campus_id(request.args.get("campus_id")))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+    q = campus_or_global(q, campus_id, none_means_all=True)
     if request.args.get("is_active") is not None:
         q = q.eq("is_active", request.args.get("is_active").lower() == "true")
-    rows = q.order("sort_order", ascending=True).execute() or []
+    try:
+        rows = q.order("sort_order", ascending=True).execute() or []
+    except (SupabaseError, requests.RequestException) as exc:
+        logger.warning("Academic admin list unavailable: %s", type(exc).__name__)
+        return jsonify({"error": MSG.REFERENCE_DATA_UNAVAILABLE}), 503
     return jsonify({"levels": rows, "count": len(rows)}), 200
 
 

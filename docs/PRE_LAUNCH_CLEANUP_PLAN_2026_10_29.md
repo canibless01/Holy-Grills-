@@ -29,10 +29,10 @@ A profile-only reset does not free every email. The corresponding `auth.users` i
 
 ## Information needed for production reference configuration
 
-- Confirm whether 600-level and/or postgraduate options are needed; only global 100–500 are active for FUTA today.
-- Confirm actual gate names and coordinates/fees. Current FUTA names are West Gate, South Gate and North Gate; names alone do not validate routing.
+- Owner confirmed no 600 level. Postgraduate school/department and PG level are now added for FUTA alongside 100–500.
+- Owner confirmed West Gate, South Gate and North Gate. All have stored coordinates; North was aligned to a published study/map reference. West/South still need reliable entrance-pin verification; confirm fees as well.
 - Confirm the 13 hostel names and coverage/fees. Current names include both `FUTACOOPS` and `FUTASCOOPS Hostel`; keep both until the owner confirms whether they are distinct.
-- Confirm the calendar: `First Semester 2026/2027`, 19 October–31 December 2026. Dates are configuration, not independently verified university dates.
+- Owner confirmed session began Monday, 26 October 2026; the existing semester start is corrected. Its stored 31 December end date still needs confirmation; no new end date was invented.
 - Confirm whether Lagos Campus is intended for launch or retained configuration. Audit-labelled campuses are separately identifiable.
 
 This is an execution plan and inventory, not a completed cleanup or a new automatic deletion job. The user asked to prepare the reset alongside finishing launch fixes; none of the destructive steps has run at this checkpoint.

@@ -1,3 +1,5 @@
+> **Latest completed page batch:** [Departments & Academic Levels](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) now has native create/edit/hide/restore/search/error evidence, real profile propagation and role/duplicate checks. Academic Calendar and delivery-location pages are next; the overall admin audit is still open.
+
 > **29 October update:** this is a historical coverage map, not completed page approval. Current [launch priorities](LAUNCH_PRIORITY_STATUS_2026_10_29.md), [provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md), [delivery financial recovery](DELIVERY_REWARD_FINANCIAL_RECOVERY_2026_10_28.md), [ordering-streak recovery](ORDER_STREAK_RECOVERY_2026_10_29.md) and [FUTA signup](FUTA_SIGNUP_REFERENCE_DATA_2026_10_29.md) supersede older provider/upload/funding gaps below. **The complete admin action matrix remains open.**
 
 # Admin audit coverage and ownership
