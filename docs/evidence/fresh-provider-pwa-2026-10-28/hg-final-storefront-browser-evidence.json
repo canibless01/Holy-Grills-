@@ -1,0 +1,46 @@
+{
+  "origin": "https://www.holygrills.online",
+  "mode": "actual deployed CMS and Cloudinary, fresh browser profiles; no response fixtures",
+  "profiles": [
+    {
+      "width": 393,
+      "errors": [],
+      "initial_settle_seconds": 15,
+      "slide1": {
+        "width": 192,
+        "height": 192,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "slide2": {
+        "width": 1200,
+        "height": 630,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "pass": true
+    },
+    {
+      "width": 1365,
+      "errors": [],
+      "initial_settle_seconds": 15,
+      "slide1": {
+        "width": 192,
+        "height": 192,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "slide2": {
+        "width": 1200,
+        "height": 630,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "pass": true
+    }
+  ]
+}
