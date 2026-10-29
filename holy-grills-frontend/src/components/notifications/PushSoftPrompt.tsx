@@ -40,7 +40,9 @@ export default function PushSoftPrompt() {
   const handleEnable = async () => {
     setBusy(true);
     try {
-      const ok = await subscribeToWebPush();
+      // Pass the signed-in id so the tap can start SDK init itself and then wait
+      // for it, instead of racing a slow load.
+      const ok = await subscribeToWebPush(user?.id ?? null);
       if (ok) {
         toast({
           title: msg('FE_INSTALL_PUSH_BONUSES_PUSH_ENABLED', '🔔 Push enabled!'),

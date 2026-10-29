@@ -16,8 +16,7 @@
  * VAPID key exists in this product, and every surface that used to surface
  * the "set the VAPID public key" message was a dead end.
  */
-import APP_CONFIG from '@/config/app.config';
-import { initOneSignal, requestPushPermission, isPushSupported, optOutOneSignal } from './onesignal';
+import { ensurePushReady, initOneSignal, requestPushPermission, isPushSupported, optOutOneSignal } from './onesignal';
 
 export const isWebPushSupported = isPushSupported;
 
@@ -27,15 +26,18 @@ export const isWebPushSupported = isPushSupported;
  * Throws with a user-readable message when OneSignal isn't configured or the
  * browser blocks notifications.
  */
-export const subscribeToWebPush = async () => {
-  if (!APP_CONFIG.onesignal?.appId) {
-    // onesignal.ts's requestPushPermission throws the same message; the guard
-    // here keeps the banner from flashing a promptless state first.
-    await initOneSignal(null);
-  }
-  // OneSignal identifies the signed-in user on its own once initOneSignal ran
-  // at login (HolyGrillContext). Pass through to the slidedown prompt.
-  await initOneSignal(null);
+export const subscribeToWebPush = async (userId: string | null = null) => {
+  // Wait for the SDK to finish initializing (and for the signed-in user to be
+  // identified) BEFORE asking for permission. This is the whole point of the
+  // ready gate: on a slow connection the tap used to land while the SDK was
+  // still loading and the user got "OneSignal is still loading — try again",
+  // even though nothing was wrong. `ensurePushReady` waits (bounded) and, when
+  // something really is wrong, says what it is.
+  //
+  // `userId` is optional: HolyGrillContext identifies the user on login, so the
+  // user id is usually already registered here. Passing it lets a page that has
+  // the id on hand start initialization itself.
+  await ensurePushReady(userId);
   try {
     return await requestPushPermission();
   } catch (e) {

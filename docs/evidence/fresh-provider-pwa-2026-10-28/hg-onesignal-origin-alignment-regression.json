@@ -1,0 +1,76 @@
+{
+  "case": "PUSH-ORIGIN (web push origin alignment)",
+  "executed_at": "2026-10-29",
+  "environment": {
+    "host": "local production build (vite client + SSR + prerender) via scripts/serve-static.mjs",
+    "browser_provider": "not executed in this batch — no live host change and no remote setting written",
+    "provider_settings_changed": false,
+    "subscriptions_deleted": false,
+    "notifications_sent": 0
+  },
+  "root_cause": {
+    "configured_origin": "https://holygrills.online",
+    "served_origin": "https://www.holygrills.online",
+    "apex_redirect_today": "308 -> https://www.holygrills.online/",
+    "sdk_error_on_served_origin": "Can only be used on: https://holygrills.online",
+    "dashboard_update_attempt": {
+      "http_status": 401,
+      "changed_anything": false,
+      "evidence": "hg-onesignal-origin-fix.json"
+    }
+  },
+  "decision": {
+    "option": "redirect to a single origin (preserves the existing 341 players)",
+    "canonical_origin": "https://holygrills.online",
+    "onesignal_site_url_change": "rejected — would orphan existing subscriptions and require resubscribe",
+    "subscriptions_to_delete": 0,
+    "host_step_remaining": "Vercel Domains: make holygrills.online primary and redirect www.holygrills.online -> holygrills.online (path/query preserved)"
+  },
+  "code_changes": [
+    "holy-grills-frontend/src/lib/canonicalOrigin.ts (new): single served-origin source of truth + pure redirect target",
+    "holy-grills-frontend/src/main.tsx: boot() skipped on the www alias — nothing mounts, no worker registered there",
+    "holy-grills-frontend/src/lib/onesignal.ts: init refused on the alias; new ensurePushReady() waits for SDK init AND OneSignal.login identity before any permission request",
+    "holy-grills-frontend/src/lib/webPush.ts: subscribeToWebPush awaits ensurePushReady before requestPushPermission",
+    "holy-grills-frontend/src/components/notifications/PushSoftPrompt.tsx, holy-grills-frontend/src/components/challenges/InstallPushBonuses.tsx: pass the signed-in id",
+    "holy-grills-backend/app/messages.py: 3 FE_ONESIGNAL_* keys for the new outcomes",
+    "holy-grills-frontend/scripts/test-canonical-origin.mjs (new), scripts/test-push-registration.mjs (rewritten and repaired), package.json build chain"
+  ],
+  "local_regression": {
+    "tsc_no_emit": { "exit": 0 },
+    "test:canonical-origin": {
+      "exit": 0,
+      "checks_ok": 18,
+      "asserts": [
+        "www alias -> https://holygrills.online with path, query string and hash preserved",
+        "http on the alias still lands on https",
+        "lookalike domain (www.holygrills.online.evil.test) is not redirected",
+        "localhost and vercel preview hosts are not redirected",
+        "apex is already canonical (no redirect loop)"
+      ]
+    },
+    "test:push-registration": {
+      "exit": 0,
+      "result": "PASS",
+      "asserts": [
+        "single-flight SDK init and one login for repeated init calls",
+        "no permission prompt during setup",
+        "permission alone is not registration",
+        "backend registration failure surfaces its real error",
+        "slow SDK load: the Enable tap waits, then resolves (init 1, login 1, permission 0 while waiting)",
+        "stalled SDK: retryable 'push couldn't load' message, requestPushPermission stays 'still loading'",
+        "not signed in: sign-in message",
+        "www alias: 0 SDK init calls, 0 login calls, redirect to https://holygrills.online/notification-preferences?tab=push"
+      ],
+      "pre_existing_state": "this suite was not part of the build and already failed at HEAD (fixture missing liveApi.notifications.updatePreferences; asserted a player_id contract the endpoint replaced with token) — repaired here"
+    },
+    "messages:check": { "exit": 0, "new_keys_resolve": true },
+    "npm_run_build": { "exit": 0, "includes_prerender": true },
+    "npm_run_smoke": { "exit": 0, "result": "[smoke] PASS" }
+  },
+  "status": "FIX SHIPPED — LIVE HOST VERIFICATION PENDING",
+  "not_executed": [
+    "live re-probe of https://www.holygrills.online against the OneSignal SDK after the domain redirect flip",
+    "real recipient subscription, device receipt and click (PUSH-DEVICE unchanged)",
+    "any dashboard or provider setting write"
+  ]
+}
