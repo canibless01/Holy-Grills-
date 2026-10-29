@@ -3,6 +3,7 @@ import App from '@/App'
 import { isHydratingPrerender } from '@/lib/hydrationMode'
 import { loadMessages } from '@/lib/messages'
 import { clearOriginMarker, enforceCanonicalOrigin, isBeingOriginBounced } from '@/lib/canonicalOrigin'
+import { registerAppServiceWorker, watchServiceWorkerController } from '@/lib/serviceWorkerLifecycle'
 import '@fontsource-variable/nunito'
 import '@/index.css'
 
@@ -62,7 +63,7 @@ function boot() {
         .catch(() => { /* nothing cached — nothing to clean up */ });
     } else {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').then((reg) => {
+        registerAppServiceWorker().then((reg) => {
           reg.addEventListener('updatefound', () => {
             const newWorker = reg.installing;
             if (!newWorker) return;
@@ -79,16 +80,7 @@ function boot() {
         });
       });
 
-      // First installation should claim the open page without interrupting its
-      // forms/guest lookup. Reload only when an already controlled page updates.
-      let refreshing = false;
-      let wasControlled = Boolean(navigator.serviceWorker.controller);
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!wasControlled) { wasControlled = true; return; }
-        if (refreshing) return;
-        refreshing = true;
-        window.location.reload();
-      });
+      watchServiceWorkerController();
     }
   }
 }

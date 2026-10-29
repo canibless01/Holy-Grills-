@@ -27,5 +27,20 @@
     "real device subscription/external ID/backend persistence",
     "notification send/receipt/click",
     "Supabase Auth management redirect configuration"
-  ]
+  ],
+  "final_rollout": {
+    "commit": "e939f618b2f0837079aa627d40825e1fec6427cc",
+    "state": "READY",
+    "target": "production",
+    "deployment_id": "dpl_EmVwZ7fyUY5RSvPQ6WDR9AEmxYF6",
+    "csp_fix_commit": "be160cc",
+    "preserved_concurrent_main": "78c04d3",
+    "integrated_checks": {
+      "build": 0,
+      "typecheck": 0,
+      "smoke": 0
+    },
+    "sdk_initialized_with_actual_deployed_policy": true,
+    "no_header_override": true
+  }
 }

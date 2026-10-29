@@ -234,3 +234,26 @@ The standalone v16 SDK probe on the actual deployed apex did **not** initialize 
 Fixed the policy generator `scripts/routes.mjs` and regenerated `vercel.json`, adding exactly `https://api.onesignal.com` to `script-src`. A fresh real browser on the deployed page with **only that response header corrected under controlled interception** now initializes the actual SDK successfully, with zero CSP/console/page/request errors. Headless permission is denied and no subscription exists; no permission request, user login, notification send or provider mutation was performed by the probe. This confirms SDK initialization with the correction, not subscription/identity/device delivery. The configured `/service-worker.js` is 200 JavaScript, no redirect, root scope allowed, and imports the OneSignal worker. The unused default `/OneSignalSDKWorker.js` is 404; the application explicitly uses the shared worker instead. Apex CORS preflight is 204 with the exact allowed origin and campus header. Supabase Auth management redirect settings were not accessible through the supplied bindings and were not changed.
 
 Evidence: `origin-sdk-before-csp-fix.json` (actual deployed failure) and `origin-sdk-controlled-csp-fix.json` (actual SDK/provider with controlled header). The full build exits 0 and a newly started production simulator using the regenerated policy passes smoke. Deployment/provider checks after push are recorded separately below; do not treat the header override as a deployed pass.
+
+### Corrected policy verified on production
+
+The host is now serving `e939f618b2f0837079aa627d40825e1fec6427cc`, Vercel deployment `dpl_EmVwZ7fyUY5RSvPQ6WDR9AEmxYF6`, **READY / production**. This integrates CSP fix `be160cc` with concurrent delivery-area work `78c04d3` without overwriting it. The combined frontend build, TypeScript and production-host smoke each exited 0.
+
+The actual live CSP now allows the configuration script. A fresh real SDK probe, with **no response interception/header override**, initializes successfully on the apex. `sdk-live-final.json` records the served policy and result. No subscription or permission was created (headless permission denied); this remains an initialization pass only. The same unselected guest profile also logged a separate campus-required 400 from application content; those console events are retained and are not OneSignal CSP errors. No provider configuration changed and no push was sent.
+
+### Signed-in continuation: shared PWA/OneSignal worker reload defect
+
+Reused the existing provider-audit student (`49e8d44e-1c18-4e4e-a03a-0c72bfc806a1`) in its original isolated campus through admin-generated/verified Auth links; no email/password change, signup, order or payment was performed. The account has three existing audit orders. OneSignal's connected identity read also confirms this existing `external_id`; there is still no new browser push subscription, so this is not subscription association or device-delivery proof.
+
+Initial probes included a mistaken guest-only heading assertion; those are not treated as product failures. A settled desktop account eventually returned in 101ms with its populated cache and document intact. A subsequent settled mobile run **did** reproduce real content loss: the page reloaded twice and all successful published-storefront cache entries became cold/pending again. The saved worker event trace establishes the cause, independently of domain redirects and concurrent deployments:
+
+1. The PWA registers `/service-worker.js` and receives its first claim.
+2. The real OneSignal SDK registers that same root worker with `?appId=…&sdkVersion=160610`.
+3. The app's controller-change listener reloads the document.
+4. The new app boot registers the plain URL again, replacing the SDK registration and causing another controller change/reload.
+
+Evidence: `signed-worker-reload-before.json` (actual signed-in deployed browser, account UI restored, same-campus successful cache before reload, worker events and lost document marker) and `controlled-shared-worker-before.json` (production boot, real browser worker activation, controlled APIs and SDK-style worker URL). The latter also loses its document marker on the old build, so the cause is reproducible without account/network/deployment timing.
+
+The application now reuses the active shared worker URL on boot. Query-only changes to the same worker script do not reload the page; a genuine update at the unchanged script URL still reloads at most once, and the first claim still preserves the page. `test:worker-lifecycle` is part of the build; `scripts/test-shared-worker-browser.py` exercises actual worker activation and a returning boot. Results after the corrected build/rollout are recorded below rather than inferring success from the source change.
+
+Corrected local production verification: full build, TypeScript, production-host smoke and the actual shared-worker browser regression each exit 0. The same browser test that lost its document before the fix now preserves it through SDK-style registration and a returning boot, retaining the active app-ID/version URL. Evidence: `controlled-shared-worker-after.json`. This is controlled transport/worker-registration evidence; real signed-in provider rollout is checked separately.

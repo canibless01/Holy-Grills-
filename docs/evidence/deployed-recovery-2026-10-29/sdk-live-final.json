@@ -1,0 +1,15 @@
+{
+  "mode": "actual deployed policy and SDK; no header overrides, login, permission request or notification send",
+  "origin": "https://holygrills.online",
+  "csp": "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://cdn.onesignal.com https://api.onesignal.com 'sha256-mxK/8VZ+kDICNz+7/rtUULv0pCwJoIyxBpSXBbb0PvI='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; connect-src 'self' https://api.cloudinary.com https://nominatim.openstreetmap.org https://cdn.onesignal.com https://*.onesignal.com https://onesignal.com https://images.unsplash.com https://holy-grills-backend.onrender.com; frame-src 'self' https://*.onesignal.com; worker-src 'self' blob:; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'",
+  "sdk": {
+    "initialized": true,
+    "permission": "denied",
+    "subscription_present": false,
+    "opted_in": false
+  },
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 400 ()",
+    "rt: Please choose your campus\n    at Ya (https://holygrills.online/assets/index-BdLwX5MC.js:418:42679)\n    at async https://holygrills.online/assets/index-BdLwX5MC.js:426:290748"
+  ]
+}
