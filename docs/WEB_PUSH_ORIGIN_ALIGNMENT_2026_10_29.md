@@ -1,5 +1,7 @@
 # Web push origin alignment — 29 October 2026
 
+**Latest verification:** the live host now serves the apex directly and redirects `www` → apex (308), matching OneSignal's existing Chrome/Safari origins. The historical host-flip action below is complete. A separate real SDK probe exposed a CSP blocker: v16 loads `https://api.onesignal.com/sync/{appId}/web` as a script, but only the CDN was allowed in `script-src`. Adding the exact API host lets the real SDK initialize with no CSP errors in a controlled header test. Source/generated Vercel policy are corrected; live rollout verification is recorded in the [latest provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md#fresh-takeover-deployed-recovery-and-current-domain-verification-29-october-2026). No origin migration or subscription deletion is needed. Device receipt remains unverified.
+
 **Scope:** the `PUSH-ORIGIN FAIL` case in
 [provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md), the
 `OneSignal registration and actual device delivery/click` row in

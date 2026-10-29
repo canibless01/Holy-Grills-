@@ -77,7 +77,8 @@ export function routeFamilies(paths = readRoutePaths()) {
  * Vercel only, never by the vite dev server.
  *
  * The allow-list below is derived from the origins the source actually uses:
- *   scripts   OneSignal SDK (cdn.onesignal.com)
+ *   scripts   OneSignal SDK (cdn.onesignal.com) and its JSONP web configuration
+ *             (api.onesignal.com/sync/{appId}/web)
  *   styles    Tailwind + React style attributes ('unsafe-inline'); fonts are
  *             self-hosted now (S9), so no remote stylesheet origin is allowed
  *   fonts     none — @fontsource-variable/nunito ships in the bundle ('self')
@@ -153,7 +154,9 @@ export function securityHeaders() {
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
-    ["script-src 'self' https://cdn.onesignal.com", ...inlineScriptHashes()].join(' '),
+    // v16 loads /sync/{appId}/web as JSONP. connect-src alone does not allow
+    // that script; without this exact host the deferred SDK queue never runs.
+    ["script-src 'self' https://cdn.onesignal.com https://api.onesignal.com", ...inlineScriptHashes()].join(' '),
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     // https: (not an allow-list) — see the `images` note above; admins may
