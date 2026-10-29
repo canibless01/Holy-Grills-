@@ -39,6 +39,7 @@ with sync_playwright() as pw:
         assert result['controller_on_return']==result['controller_after_sdk'] and result['return_document_preserved'],result
         result['pass']=True
     finally:
+        Path(args.output).parent.mkdir(parents=True,exist_ok=True)
         Path(args.output).write_text(json.dumps(result,indent=2)+'\n')
         print(json.dumps(result,indent=2))
         browser.close()
