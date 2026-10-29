@@ -155,14 +155,32 @@ try {
     await aliasModule.initOneSignal('alias-user');
     assert.equal(alias.counts.init, 0, 'no SDK init on the alias origin');
     assert.equal(alias.counts.login, 0, 'no identity call on the alias origin');
-    assert.equal(globalThis.__redirectedTo, 'https://holygrills.online/notification-preferences?tab=push',
+    assert.equal(globalThis.__redirectedTo, 'https://holygrills.online/notification-preferences?tab=push&hg_origin=bounced',
       'the visitor is moved to the configured origin with the URL intact');
     await assert.rejects(aliasModule.ensurePushReady('alias-user', 30), /only available on https:\/\/holygrills\.online/);
+
+    // ── 6. Bounced back by the host: never init, never promise a redirect ──
+    // This is the 29 Oct infinite-reload shape: the host keeps returning the
+    // document to www. The guard stands down, the app renders, and push says
+    // where it actually works instead of redirecting again.
+    globalThis.__redirectedTo = null;
+    const bounced = makeSdk();
+    globalThis.window.OneSignalDeferred = { push: (fn) => queueMicrotask(() => fn(bounced.sdk)) };
+    globalThis.window.location = {
+      protocol: 'https:', hostname: 'www.holygrills.online', pathname: '/notification-preferences',
+      search: '?tab=push&hg_origin=bounced', hash: '', replace: (url) => { globalThis.__redirectedTo = url; },
+    };
+    const bouncedModule = await import(`${pathToFileURL(output).href}?bounced`);
+    await bouncedModule.initOneSignal('bounced-user');
+    assert.equal(bounced.counts.init, 0, 'still no SDK init on a bounced alias document');
+    assert.equal(globalThis.__redirectedTo, null, 'a bounced document is never redirected again');
+    await assert.rejects(bouncedModule.ensurePushReady('bounced-user', 30),
+      /Push only works on https:\/\/holygrills\.online/);
   } finally { globalThis.setTimeout = realSetTimeout; }
 
   console.log('PASS v16 single-flight, verified identity, no automatic permission, permission-only refusal, '
     + 'backend registration failure, denied permission, cleanup, v16 opt-out, logout, bounded stalled SDK, '
-    + 'ready gate before the prompt, guest message, and no SDK init on the www alias');
+    + 'ready gate before the prompt, guest message, no SDK init on the www alias, and no redirect loop when the host bounces back');
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

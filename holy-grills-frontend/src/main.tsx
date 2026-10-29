@@ -2,7 +2,7 @@ import ReactDOM from 'react-dom/client'
 import App from '@/App'
 import { isHydratingPrerender } from '@/lib/hydrationMode'
 import { loadMessages } from '@/lib/messages'
-import { enforceCanonicalOrigin } from '@/lib/canonicalOrigin'
+import { clearOriginMarker, enforceCanonicalOrigin, isBeingOriginBounced } from '@/lib/canonicalOrigin'
 import '@fontsource-variable/nunito'
 import '@/index.css'
 
@@ -93,4 +93,20 @@ function boot() {
   }
 }
 
-if (!enforceCanonicalOrigin()) boot();
+if (!enforceCanonicalOrigin()) {
+  // A redirect would have returned true. Reaching here means either the page is
+  // already on the canonical origin, or we have just been bounced back by the
+  // host — in which case the guard stands down permanently instead of
+  // reloading forever, and the app must render (push reports the real reason).
+  clearOriginMarker();
+  if (isBeingOriginBounced()) {
+    console.warn(
+      '[origin] The site is being served from www.holygrills.online and the redirect '
+      + 'back to https://holygrills.online is looping, so the app was rendered here '
+      + 'instead of reloading. Fix the host: make holygrills.online primary and point '
+      + 'www.holygrills.online at it (one direction only). Push stays unavailable on '
+      + 'this origin until then.',
+    );
+  }
+  boot();
+}

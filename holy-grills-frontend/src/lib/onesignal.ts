@@ -22,7 +22,7 @@
 import APP_CONFIG from '@/config/app.config';
 import { liveApi } from '@/lib/liveApi';
 import { msg } from '@/lib/messages';
-import { enforceCanonicalOrigin, isOnAliasedOrigin } from '@/lib/canonicalOrigin';
+import { enforceCanonicalOrigin, isBeingOriginBounced, isOnAliasedOrigin } from '@/lib/canonicalOrigin';
 
 // v16 SDK type — the page SDK exposes OneSignalDeferred as a global queue.
 declare global {
@@ -130,10 +130,11 @@ export const initOneSignal = async (userId: string | null) => {
   if (userId) registeredUserId = userId;
   if (!appId || !registeredUserId) return;
   // Never start the SDK on the www alias: the browser treats it as a different
-  // origin from the one the OneSignal app is configured for, so init can only
-  // fail (loudly, in the console). Move the visitor to the canonical origin
-  // instead — the page they land on initialises normally.
-  if (enforceCanonicalOrigin()) return;
+  // origin from the one the OneSignal app is configured for, so init can only fail
+  // (loudly, in the console). Move the visitor to the canonical origin instead —
+  // the page they land on initialises normally. If the host bounces us back,
+  // the origin guard has already stood down; stay idle rather than error.
+  if (enforceCanonicalOrigin() || isOnAliasedOrigin()) return;
   try {
     await ensureSdk(appId);
     const target = registeredUserId;
@@ -160,10 +161,17 @@ export const ensurePushReady = async (userId: string | null = null, timeoutMs = 
   if (!appId) {
     throw new Error(msg('FE_ONESIGNAL_PUSH_NOTIFICATIONS_AREN_T_CONFIGURED', 'Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them.'));
   }
-  // Wrong origin: send the visitor to the configured one rather than letting the
-  // SDK fail with an origin mismatch.
-  if (enforceCanonicalOrigin() || isOnAliasedOrigin()) {
+  // Wrong origin. Normally we send the visitor to the configured origin rather
+  // than letting the SDK fail with an origin mismatch. If the host is bouncing
+  // between the two (see canonicalOrigin.ts) we must not promise a redirect that
+  // will not settle — say plainly where push works.
+  if (enforceCanonicalOrigin()) {
     throw new Error(msg('FE_ONESIGNAL_PUSH_IS_ONLY_AVAILABLE_ON_THE_CANONICAL_SITE', 'Push notifications are only available on https://holygrills.online — taking you there now.'));
+  }
+  if (isOnAliasedOrigin()) {
+    throw new Error(isBeingOriginBounced()
+      ? msg('FE_ONESIGNAL_PUSH_NEEDS_THE_CANONICAL_SITE_OPEN_IT_DIRECTLY', 'Push only works on https://holygrills.online. Open that address directly to enable it.')
+      : msg('FE_ONESIGNAL_PUSH_IS_ONLY_AVAILABLE_ON_THE_CANONICAL_SITE', 'Push notifications are only available on https://holygrills.online — taking you there now.'));
   }
   if (userId) registeredUserId = userId;
   const target = registeredUserId;
