@@ -2162,6 +2162,7 @@ class MSG:
     FE_ONESIGNAL_ONE_SIGNAL_IS_STILL_LOADING_TRY_AGAIN                  = "OneSignal is still loading — try again in a moment."
     FE_ONESIGNAL_PUSH_COULDN_T_LOAD_CHECK_YOUR_CONNECTION_AND           = "Push couldn’t load on this connection. Check your network and tap Enable again."
     FE_ONESIGNAL_PUSH_IS_ONLY_AVAILABLE_ON_THE_CANONICAL_SITE           = "Push notifications are only available on https://holygrills.online — taking you there now."
+    FE_ONESIGNAL_PUSH_NEEDS_THE_CANONICAL_SITE_OPEN_IT_DIRECTLY         = "Push only works on https://holygrills.online. Open that address directly to enable it."
     FE_ONESIGNAL_PUSH_NOTIFICATIONS_AREN_T_CONFIGURED                   = "Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them."
     FE_ONESIGNAL_SIGN_IN_TO_ENABLE_PUSH_ON_THIS_DEVICE                  = "Sign in to enable push notifications on this device."
     FE_ORDERING_WINDOWS_TAB_COULDN_T_LOAD_ORDERING_WINDOWS              = "Couldn't load ordering windows"

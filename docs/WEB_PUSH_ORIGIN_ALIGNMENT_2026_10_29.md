@@ -124,7 +124,8 @@ Machine-readable copy: `docs/evidence/fresh-provider-pwa-2026-10-28/hg-onesignal
 
 ### 6.2 Live checks after deploying this batch + flipping the domain
 
-1. `https://www.holygrills.online/menu?x=1` → `308` → `https://holygrills.online/menu?x=1`.
+1. `https://www.holygrills.online/menu?x=1` → `308` → `https://holygrills.online/menu?x=1`
+   (exactly one hop — if the address bar keeps flip-flopping, see §7).
 2. On `https://holygrills.online`: DevTools console shows **no**
    `Can only be used on: …` error, and
    `window.OneSignalDeferred` resolves with the v16 SDK.
@@ -139,7 +140,76 @@ Machine-readable copy: `docs/evidence/fresh-provider-pwa-2026-10-28/hg-onesignal
 Steps 1–4 are the `PUSH-ORIGIN` case. Step 5 remains
 `PUSH-DEVICE NOT EXECUTED` until it is run against a real device.
 
-## 7. Not claimed
+## 7. Incident: endless reload after the Vercel domain edit (same day)
+
+**Symptom (reported):** after changing the domain settings, the site "loads a page
+continually" and never renders.
+
+**Cause.** Two redirect rules pointing at each other. The host was serving
+`https://holygrills.online` with a 308 to `https://www.holygrills.online/`
+(recorded in `hg-live-host-map.json`), and PR #80 added a **client-side** rule
+that sends `www` back to the apex. If the host edit left the apex → www redirect
+in place while `www` → apex was added, each hop is a fresh document load:
+
+```
+apex  --308-->  www  --(JS guard)-->  apex  --308-->  www  --…  (never renders)
+```
+
+That is a different failure from the build hang the auditor traced earlier
+(`199c1f1`, storefront cache timers keeping the SSR process alive *after* the
+pages were written). That one was a **build** problem and is closed: `npm run
+build` exits 0 here and `test:storefront-ssr` — which renders Home in a child
+process and requires a natural exit within 15 s — runs inside it. An endless
+reload in the browser is a **redirect** problem, not a build one.
+
+**Fix shipped in this batch — the guard can no longer contribute to a loop.**
+
+| Rule | Implementation |
+| --- | --- |
+| At most **one** redirect per document | `redirectStarted` latch in `enforceCanonicalOrigin()` |
+| Never redirect while a bounce is in progress | the redirect target carries `hg_origin=bounced`; seeing that marker on the alias, or having recorded an attempt on that origin in the last 60 s (`sessionStorage`), means "the host sent us back" → stand down |
+| The marker never lingers | `clearOriginMarker()` strips it with `history.replaceState` on every boot — no navigation, real params and hash preserved |
+| No SDK on the alias, ever | `initOneSignal()` returns before touching the SDK when `isOnAliasedOrigin()`, not only when a redirect was started |
+| Honest copy when stranded | paused traffic gets `Push only works on https://holygrills.online. Open that address directly to enable it.` — it no longer claims "taking you there now" |
+| Operator signal | one `console.warn('[origin] …')` naming the exact host misconfiguration, and the app still renders |
+
+Net effect: a mis-set host can no longer produce a blank, endlessly reloading
+site. It degrades to "site works on `www`, push unavailable, console says why".
+
+### The host setting still has to be right (one direction only)
+
+Vercel → Project → Settings → Domains:
+
+| Domain | Must be |
+| --- | --- |
+| `holygrills.online` | **Primary / connected** — serves the app, *no redirect* |
+| `www.holygrills.online` | **Redirect to `holygrills.online`** (308) |
+
+If *both* entries redirect, browsers get `ERR_TOO_MANY_REDIRECTS`; if the apex
+still redirects to `www`, the app guard now stands down instead of looping but
+push stays off. Check from a terminal:
+
+```bash
+curl -sSI https://holygrills.online/ | head -3      # expect: HTTP/2 200   (no location:)
+curl -sSI https://www.holygrills.online/ | head -3  # expect: 308 + location: https://holygrills.online/
+```
+
+One 308 on the `www` side and none on the apex side is the passing shape.
+
+### Regression added for this incident
+
+`npm run test:canonical-origin` now also proves: a URL already carrying the
+marker is never redirected again; a bounced document starts **no** navigation;
+a quick return to the alias with the marker stripped by the host is still
+treated as a bounce (`sessionStorage`); after the 60 s window the alias may
+redirect again; the marker strip keeps real params, the hash and `history.state`.
+`test:push-registration` adds the bounce case: **zero** SDK init/login and **no**
+second redirect, with the "open the canonical site" message.
+
+Local result: **41/41 origin assertions**, push suite PASS, `tsc` clean,
+`npm run build` exit 0, `npm run smoke` PASS.
+
+## 8. Not claimed
 
 - No live re-probe of OneSignal/Vercel happens in this batch: the host redirect
   is still `apex → www` in `hg-live-host-map.json` until the setting in §5 is

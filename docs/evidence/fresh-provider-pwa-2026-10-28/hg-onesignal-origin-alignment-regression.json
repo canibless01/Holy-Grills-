@@ -3,7 +3,7 @@
   "executed_at": "2026-10-29",
   "environment": {
     "host": "local production build (vite client + SSR + prerender) via scripts/serve-static.mjs",
-    "browser_provider": "not executed in this batch — no live host change and no remote setting written",
+    "browser_provider": "not executed in this batch \u2014 no live host change and no remote setting written",
     "provider_settings_changed": false,
     "subscriptions_deleted": false,
     "notifications_sent": 0
@@ -22,13 +22,13 @@
   "decision": {
     "option": "redirect to a single origin (preserves the existing 341 players)",
     "canonical_origin": "https://holygrills.online",
-    "onesignal_site_url_change": "rejected — would orphan existing subscriptions and require resubscribe",
+    "onesignal_site_url_change": "rejected \u2014 would orphan existing subscriptions and require resubscribe",
     "subscriptions_to_delete": 0,
     "host_step_remaining": "Vercel Domains: make holygrills.online primary and redirect www.holygrills.online -> holygrills.online (path/query preserved)"
   },
   "code_changes": [
     "holy-grills-frontend/src/lib/canonicalOrigin.ts (new): single served-origin source of truth + pure redirect target",
-    "holy-grills-frontend/src/main.tsx: boot() skipped on the www alias — nothing mounts, no worker registered there",
+    "holy-grills-frontend/src/main.tsx: boot() skipped on the www alias \u2014 nothing mounts, no worker registered there",
     "holy-grills-frontend/src/lib/onesignal.ts: init refused on the alias; new ensurePushReady() waits for SDK init AND OneSignal.login identity before any permission request",
     "holy-grills-frontend/src/lib/webPush.ts: subscribeToWebPush awaits ensurePushReady before requestPushPermission",
     "holy-grills-frontend/src/components/notifications/PushSoftPrompt.tsx, holy-grills-frontend/src/components/challenges/InstallPushBonuses.tsx: pass the signed-in id",
@@ -36,7 +36,9 @@
     "holy-grills-frontend/scripts/test-canonical-origin.mjs (new), scripts/test-push-registration.mjs (rewritten and repaired), package.json build chain"
   ],
   "local_regression": {
-    "tsc_no_emit": { "exit": 0 },
+    "tsc_no_emit": {
+      "exit": 0
+    },
     "test:canonical-origin": {
       "exit": 0,
       "checks_ok": 18,
@@ -61,16 +63,71 @@
         "not signed in: sign-in message",
         "www alias: 0 SDK init calls, 0 login calls, redirect to https://holygrills.online/notification-preferences?tab=push"
       ],
-      "pre_existing_state": "this suite was not part of the build and already failed at HEAD (fixture missing liveApi.notifications.updatePreferences; asserted a player_id contract the endpoint replaced with token) — repaired here"
+      "pre_existing_state": "this suite was not part of the build and already failed at HEAD (fixture missing liveApi.notifications.updatePreferences; asserted a player_id contract the endpoint replaced with token) \u2014 repaired here"
     },
-    "messages:check": { "exit": 0, "new_keys_resolve": true },
-    "npm_run_build": { "exit": 0, "includes_prerender": true },
-    "npm_run_smoke": { "exit": 0, "result": "[smoke] PASS" }
+    "messages:check": {
+      "exit": 0,
+      "new_keys_resolve": true
+    },
+    "npm_run_build": {
+      "exit": 0,
+      "includes_prerender": true
+    },
+    "npm_run_smoke": {
+      "exit": 0,
+      "result": "[smoke] PASS"
+    }
   },
-  "status": "FIX SHIPPED — LIVE HOST VERIFICATION PENDING",
+  "status": "FIX SHIPPED \u2014 LIVE HOST VERIFICATION PENDING",
   "not_executed": [
     "live re-probe of https://www.holygrills.online against the OneSignal SDK after the domain redirect flip",
     "real recipient subscription, device receipt and click (PUSH-DEVICE unchanged)",
     "any dashboard or provider setting write"
-  ]
+  ],
+  "incident_2026_10_29_endless_reload": {
+    "reported": "after the Vercel domain edit the site reloads continually and never renders",
+    "cause": "redirect rules pointing at each other: the host served the apex with a 308 to www while the app guard sent www back to the apex, so every hop was a fresh document load",
+    "distinct_from": "the earlier build hang (199c1f1, storefront cache timers) \u2014 that was an SSR/build lifecycle defect, already closed; this build exits 0 and test:storefront-ssr passes inside it",
+    "guard_changes": [
+      "one redirect per document (redirectStarted latch)",
+      "redirect target carries hg_origin=bounced; marker on the alias => stand down",
+      "sessionStorage attempt record (60s window) also detects a bounce when the host drops the query",
+      "marker stripped with history.replaceState \u2014 no navigation, params/hash/state preserved",
+      "initOneSignal returns on the alias even without a started redirect (no SDK init, no console mismatch error)",
+      "copy changed to \"Push only works on https://holygrills.online. Open that address directly to enable it.\" when stranded",
+      "one console.warn naming the host misconfiguration; the app still renders"
+    ],
+    "local_regression": {
+      "test:canonical-origin": {
+        "exit": 0,
+        "checks_ok": 41,
+        "loop_cases": [
+          "URL already carrying the marker is never redirected again",
+          "bounced document starts no navigation",
+          "quick return to the alias counts as a bounce even without the query marker",
+          "after the 60s window the alias may redirect again",
+          "marker strip keeps real params, hash and history.state"
+        ]
+      },
+      "test:push-registration": {
+        "exit": 0,
+        "loop_cases": [
+          "bounced alias document: 0 SDK init, 0 login, 0 redirects, \"open the canonical site\" message"
+        ]
+      },
+      "tsc_no_emit": {
+        "exit": 0
+      },
+      "npm_run_build": {
+        "exit": 0,
+        "note": "exits normally; test:storefront-ssr enforces a natural exit"
+      },
+      "npm_run_smoke": {
+        "exit": 0,
+        "result": "[smoke] PASS"
+      }
+    },
+    "host_setting_required": "holygrills.online primary (no redirect) + www.holygrills.online redirect 308 to it \u2014 exactly one direction",
+    "status": "LOOP FIXED IN SOURCE \u2014 HOST CONFIG MUST BE ONE-DIRECTIONAL"
+  }
 }

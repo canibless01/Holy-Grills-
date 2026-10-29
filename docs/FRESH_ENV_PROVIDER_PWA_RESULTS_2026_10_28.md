@@ -200,3 +200,13 @@ The single-origin direction chosen is the non-destructive one: standardise on th
 Local regression (production build): `test:canonical-origin` 18/18, `test:push-registration` PASS (both are now part of `npm run build` — the push suite was previously unwired and failing at HEAD, and is repaired here), TypeScript clean, full build exit 0, `npm run smoke` PASS. Evidence `hg-onesignal-origin-alignment-regression.json`, report [WEB_PUSH_ORIGIN_ALIGNMENT_2026_10_29.md](WEB_PUSH_ORIGIN_ALIGNMENT_2026_10_29.md).
 
 **Not claimed:** the live host still redirects apex → `www` until the Vercel domain setting is flipped, so this is `FIX SHIPPED — LIVE VERIFICATION PENDING`, not PASS. No subscription was created, deleted or migrated; no provider setting was written; no notification was sent; device receipt/click remains `PUSH-DEVICE NOT EXECUTED`.
+
+### Follow-up: endless reload after the domain edit (29 October 2026)
+
+The first domain edit produced a page that reloaded continuously without rendering. Cause: the host still served the apex with a `308` to `www` while the app guard sent `www` back to the apex, so every hop was a fresh document load. This is **not** the build hang previously traced to server rendering (`199c1f1`, storefront cache timers): that was a build-lifecycle defect, is closed, and `npm run build` here exits normally with `test:storefront-ssr` enforcing a natural child-process exit.
+
+The guard can no longer contribute to a loop: one redirect per document, a `hg_origin=bounced` marker (plus a 60-second `sessionStorage` record) makes a bounce back stand the guard down permanently, the marker is stripped without navigating, the SDK is never initialised on the alias, and the copy says "open the canonical site" instead of promising a redirect that will not settle. A mis-set host now degrades to "site works on `www`, push unavailable, console names the misconfiguration" rather than a blank reloading page.
+
+Regression: `test:canonical-origin` now runs **41** assertions including the loop cases, and `test:push-registration` covers the bounced document (0 SDK init, 0 redirects). `tsc`, full build and `npm run smoke` pass. Evidence `hg-onesignal-origin-alignment-regression.json` (field `incident_2026_10_29_endless_reload`); report §7 of [WEB_PUSH_ORIGIN_ALIGNMENT_2026_10_29.md](WEB_PUSH_ORIGIN_ALIGNMENT_2026_10_29.md).
+
+Required host shape: `holygrills.online` primary with **no** redirect, `www.holygrills.online` → `308` to it. Both-sides-redirecting yields `ERR_TOO_MANY_REDIRECTS`; apex-→-www leaves push off. Push on `www` remains unavailable until the host is one-directional.
