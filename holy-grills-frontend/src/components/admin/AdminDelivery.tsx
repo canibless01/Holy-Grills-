@@ -1,7 +1,7 @@
 import CapacityGuide from './CapacityGuide';
 import { confirmAction } from '@/lib/confirmAction';
-import { useState, useEffect } from 'react';
-import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Trash2, Pencil, Clock, Bike } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Calendar, Truck, ShoppingCart, Send, Plus, MapPin, Home, Pencil, Clock, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime, formatNaira, timeAgo } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -13,8 +13,15 @@ import AdminManageBatchModal from './AdminManageBatchModal';
 import AdminRiders from './AdminRiders';
 import AdminDeliveryArea from './AdminDeliveryArea';
 import { msg } from '@/lib/messages';
+import DeliveryLocationModal from './DeliveryLocationModal';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 export default function AdminDelivery() {
+  const { user } = useHolyGrill();
+  const ownCampus = user?.campus_id || user?.profile?.campus_id;
+  const canEditZone = (row) => user?.role === 'super_admin' || (row.campus_id && row.campus_id === ownCampus);
+  const zoneWriting = useRef(false);
+  const [zoneBusy, setZoneBusy] = useState(null);
   const [tab, setTab] = useState('batches');
   const [windows, setWindows] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -74,7 +81,7 @@ export default function AdminDelivery() {
     try {
       if (type === 'hostel') await mockApi.admin.deleteDeliveryHostel(id);
       else await mockApi.admin.deleteDeliveryGate(id); // soft-deactivates (is_active=false)
-      toast({ title: type === 'hostel' ? '✅ Hostel deleted' : '⏸ Gate deactivated', description: type === 'hostel' ? 'Hostel removed.' : 'Gate is hidden from students and existing orders keep their reference. Restore it any time.' });
+      toast({ title: msg('FE_LOCATION_HIDDEN', 'Delivery location hidden.'), description: msg('FE_LOCATION_HIDE_HELP', 'It is hidden from checkout. Existing orders retain their reference; you can restore it later.') });
       setZoneModal(null);
       await load();
     } catch (e) {
@@ -82,9 +89,15 @@ export default function AdminDelivery() {
     }
   };
 
-  const restoreGate = async (id) => {
-    try { await mockApi.admin.restoreDeliveryGate(id); toast({ title: msg('FE_ADMIN_DELIVERY_GATE_RESTORED', '✅ Gate restored'), description: msg('FE_ADMIN_DELIVERY_GATE_IS_ACTIVE_AND_VISIBLE_TO_STUDENTS', 'Gate is active and visible to students again.') }); await load(); }
-    catch (e) { toast({ title: msg('FE_ADMIN_DELIVERY_RESTORE_FAILED', 'Restore failed'), description: e.message, variant: 'destructive' }); }
+  const restoreZone = async (type, id) => {
+    if (zoneWriting.current) return;
+    zoneWriting.current = true; setZoneBusy(id);
+    try {
+      if (type === 'hostel') await mockApi.admin.updateDeliveryHostel(id, { is_active: true });
+      else await mockApi.admin.restoreDeliveryGate(id);
+      toast({ title: msg('FE_LOCATION_RESTORED', 'Delivery location restored.') }); await load();
+    } catch (error) { toast({ title: msg('FE_LOCATION_SAVE_FAILED', 'Delivery location could not be saved.'), description: error.message, variant: 'destructive' }); }
+    finally { zoneWriting.current = false; setZoneBusy(null); }
   };
 
   if (loading) return <StaffPanelSkeleton />;
@@ -178,14 +191,16 @@ export default function AdminDelivery() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5"><Home className="w-4 h-4 text-primary" /> On-Campus Hostels</h3>
-              <button onClick={() => setZoneModal({ type: 'hostel' })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-3 h-3" /> Add</button>
+              <button aria-label={msg('FE_LOCATION_ADD_HOSTEL', 'Add hostel')} onClick={() => setZoneModal({ type: 'hostel' })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-3 h-3" /> Add</button>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {hostels.map((h) => (
                 <div key={h.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-2 shadow-card">
                   <MapPin className="w-4 h-4 text-primary shrink-0" />
                   <div className="flex-1 min-w-0"><div className="font-bold text-xs text-foreground truncate">{h.name}</div><div className="text-[11px] text-muted-foreground">Fee {formatNaira(h.delivery_fee)}</div></div>
-                  <button onClick={() => setZoneModal({ type: 'hostel', item: h })} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                  <Pill tone={h.is_active === false ? 'red' : 'green'}>{h.is_active === false ? msg('FE_LOCATION_HIDDEN_SHORT', 'Hidden') : msg('FE_LOCATION_ACTIVE', 'Active')}</Pill>
+                  {canEditZone(h) && <div className="flex flex-col gap-1"><button aria-label={`${msg('FE_LOCATION_EDIT_HOSTEL', 'Edit hostel')} ${h.name}`} onClick={() => setZoneModal({ type: 'hostel', item: h })} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                    {h.is_active === false && <button disabled={!!zoneBusy} onClick={() => restoreZone('hostel',h.id)} className="text-xs text-primary font-bold">{msg('FE_LOCATION_RESTORE', 'Restore')}</button>}</div>}
                 </div>
               ))}
             </div>
@@ -193,7 +208,7 @@ export default function AdminDelivery() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5"><MapPin className="w-4 h-4 text-info" /> Off-Campus Gates</h3>
-              <button onClick={() => setZoneModal({ type: 'gate' })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-3 h-3" /> Add</button>
+              <button aria-label={msg('FE_LOCATION_ADD_GATE', 'Add gate')} onClick={() => setZoneModal({ type: 'gate' })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-3 h-3" /> Add</button>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {gates.map((g) => {
@@ -204,10 +219,10 @@ export default function AdminDelivery() {
                     <MapPin className={`w-4 h-4 shrink-0 ${isActive ? 'text-info' : 'text-muted-foreground'}`} />
                     <div className="flex-1 min-w-0"><div className="font-bold text-xs text-foreground truncate">{g.name}</div><div className="text-[11px] text-muted-foreground">Base fee {formatNaira(g.base_fee)}</div></div>
                     {isActive ? <Pill tone="green">Active</Pill> : <Pill tone="red">Deactivated</Pill>}
-                    <button onClick={() => setZoneModal({ type: 'gate', item: g })} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                    {canEditZone(g) && <button aria-label={`${msg('FE_LOCATION_EDIT_GATE', 'Edit gate')} ${g.name}`} onClick={() => setZoneModal({ type: 'gate', item: g })} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>}
                   </div>
-                  {!isActive && (
-                    <button onClick={() => restoreGate(g.id)} className="mt-2 w-full px-3 py-1.5 rounded-full tone-success border border-success/30 text-[11px] font-bold">Restore gate</button>
+                  {!isActive && canEditZone(g) && (
+                    <button disabled={!!zoneBusy} onClick={() => restoreZone('gate',g.id)} className="mt-2 w-full px-3 py-1.5 rounded-full tone-success border border-success/30 text-[11px] font-bold">Restore gate</button>
                   )}
                 </div>
                 );
@@ -238,7 +253,7 @@ export default function AdminDelivery() {
       {editWindow && <CreateWindowModal window={editWindow} onClose={() => setEditWindow(null)} onSaved={load} />}
       {manageBatch && <AdminManageBatchModal batch={manageBatch} onClose={() => setManageBatch(null)} onSaved={load} />}
       {batchModal && <CreateBatchModal windows={windows} onClose={() => setBatchModal(false)} onSaved={load} />}
-      {zoneModal && <ZoneModal type={zoneModal.type} item={zoneModal.item} onClose={() => setZoneModal(null)} onSave={saveZone} onDelete={deleteZone} />}
+      {zoneModal && <DeliveryLocationModal gates={gates} type={zoneModal.type} item={zoneModal.item} onClose={() => setZoneModal(null)} onSave={saveZone} onDelete={deleteZone} />}
     </div>
   );
 }
@@ -296,32 +311,6 @@ function CreateWindowModal({
         </div>
         <Field label={msg('FE_CAPACITY_DELIVERY', 'Delivery planning target')}><TextInput type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
         <button onClick={submit} disabled={submitting || !form.label || !form.starts_at || !form.ends_at} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? (editing ? 'Saving...' : 'Creating...') : (editing ? 'Save Changes' : 'Create Window')}</button>
-      </div>
-    </Modal>
-  );
-}
-
-function ZoneModal({ type, item, onClose, onSave, onDelete }) {
-  const [form, setForm] = useState(item ? { ...item } : { name: '', ...(type === 'hostel' ? { delivery_fee: 300 } : { base_fee: 400, lat: 7.30, lon: 5.13 }) });
-  const feeKey = type === 'hostel' ? 'delivery_fee' : 'base_fee';
-  return (
-    <Modal open onClose={onClose} title={`${item ? 'Edit' : 'Add'} ${type === 'hostel' ? 'Hostel' : 'Gate'}`}>
-      <div className="space-y-3">
-        <Field label="Name"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label={type === 'hostel' ? 'Delivery fee (₦)' : 'Base fee (₦)'}><TextInput type="number" value={form[feeKey]} onChange={(e) => setForm({ ...form, [feeKey]: Number(e.target.value) })} /></Field>
-        {type === 'hostel' && (
-          <Field label="Gate ID (optional)"><TextInput value={form.gate_id || ''} onChange={(e) => setForm({ ...form, gate_id: e.target.value })} /></Field>
-        )}
-        {type === 'gate' && (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Latitude"><TextInput type="number" value={form.lat} onChange={(e) => setForm({ ...form, lat: Number(e.target.value) })} /></Field>
-            <Field label="Longitude"><TextInput type="number" value={form.lon} onChange={(e) => setForm({ ...form, lon: Number(e.target.value) })} /></Field>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button onClick={() => onSave(type, form)} disabled={!form.name} className="flex-1 py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">Save</button>
-          {item && <button onClick={() => onDelete(type, item.id)} className="px-4 py-3 rounded-full tone-error border border-destructive/30 font-bold"><Trash2 className="w-4 h-4" /></button>}
-        </div>
       </div>
     </Modal>
   );
