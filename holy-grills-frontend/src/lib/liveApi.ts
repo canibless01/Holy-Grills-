@@ -491,12 +491,15 @@ const kitchen = {
   // The backend stores settings as arbitrary key/value strings. Return the
   // settings map as a flat object — values are strings (the backend does
   // str(value) on upsert). Consumers parse booleans/numbers as needed.
-  async getSettings() {
-    const res = await apiClient.get('/kitchen/settings');
+  async getSettings(campusId?: string) {
+    const res = await apiClient.get('/kitchen/settings', campusId ? { campus_id: campusId } : undefined);
     return (res && res.settings) ? res.settings : {};
   },
   // PATCH /kitchen/settings expects { settings: {key: value, ...} }.
-  async updateSettings(settingsMap) { return apiClient.patch('/kitchen/settings', { settings: settingsMap }); },
+  async updateSettings(settingsMap, campusId?: string) {
+    const scope = campusId ? '?' + new URLSearchParams({ campus_id: campusId }).toString() : '';
+    return apiClient.patch('/kitchen/settings' + scope, { settings: settingsMap });
+  },
   async batchAdvanceStatus(windowId, body) { return apiClient.post(`/kitchen/batch/${windowId}/advance`, body); },
   async markItemUnavailable(itemId) { return apiClient.patch(`/menu/items/${itemId}`, { is_available: false, is_sold_out: true }); },
   async markItemAvailable(itemId) { return apiClient.patch(`/menu/items/${itemId}`, { is_available: true, is_sold_out: false }); },

@@ -1,8 +1,17 @@
-> **Latest completed page batch:** [Departments & Academic Levels](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) now has native create/edit/hide/restore/search/error evidence, real profile propagation and role/duplicate checks. Academic Calendar and delivery-location pages are next; the overall admin audit is still open.
-
-> **29 October update:** this is a historical coverage map, not completed page approval. Current [launch priorities](LAUNCH_PRIORITY_STATUS_2026_10_29.md), [provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md), [delivery financial recovery](DELIVERY_REWARD_FINANCIAL_RECOVERY_2026_10_28.md), [ordering-streak recovery](ORDER_STREAK_RECOVERY_2026_10_29.md) and [FUTA signup](FUTA_SIGNUP_REFERENCE_DATA_2026_10_29.md) supersede older provider/upload/funding gaps below. **The complete admin action matrix remains open.**
-
 # Admin audit coverage and ownership
+
+**Current executed page batches — 29 October 2026.** Each pass covers the actions/cases in its evidence; the whole admin A–Z audit is still open.
+
+| Page | Current result |
+| --- | --- |
+| Departments & Academic Levels | [Native fields/edit/hide/restore/search, role/scope/duplicate and linked-profile checks](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) pass |
+| Academic Calendar | [All six types, modal fields, scope/edit/retire/restore and graduation consumer](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) pass |
+| Delivery → Zones & Fees | [Gate/hostel fields, pricing, lifecycle, actual scope/link/duplicate integrity](ADMIN_DELIVERY_LOCATIONS_EVIDENCE_2026_10_29.md) pass |
+| Delivery → Delivery area | [Centre/radius target, failed/stale reads, save/clear/force, permissions and checkout distance](ADMIN_DELIVERY_AREA_EVIDENCE_2026_10_29.md) pass |
+| Remaining admin pages / actions | Still open; targeted earlier successes below do not establish whole-page approval |
+
+The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite: **769 passed**.
+
 
 **Inventoried means mapped, not approved safe.** Opening a sidebar page, listing fields or finding an existing test does not establish that every button, role and customer outcome works. A passed loop applies only to its recorded assertions. This chat cannot certify work performed in another chat without its evidence/PR.
 

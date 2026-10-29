@@ -2400,7 +2400,7 @@ class MSG:
     FE_ADMIN_DELIVERY_AREA_SAVING                     = "Saving…"
     FE_ADMIN_DELIVERY_AREA_SAVE_RADIUS                = "Save radius"
     FE_ADMIN_DELIVERY_AREA_SAVE_ANYWAY                = "These coordinates are outside Nigeria — save anyway"
-    FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING          = "Without a centre point every address is measured against nothing, so students get the 15 km default instead of your campus."
+    FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING          = "Without a campus centre, the distance limit cannot be enforced. Set a centre before accepting off-campus orders."
 
     # Ecosystem audit: validated menu choices, admission and retries.
     MENU_ITEM_NAME_REQUIRED = "A menu item name is required"
@@ -3190,6 +3190,7 @@ class MSG:
     DELIVERY_LOCATION_EXISTS = "A delivery location with this name already exists in this campus. Edit or restore the existing entry."
     DELIVERY_HOSTEL_HIDDEN = "Hostel hidden"
     DELIVERY_GATE_HIDDEN = "Gate hidden"
+    DELIVERY_RADIUS_INVALID = "Delivery radius must be a finite number greater than zero."
     FE_CALENDAR_EDIT = "Edit period"
     FE_CALENDAR_DATE_ORDER = "End date must be on or after start date."
     FE_CALENDAR_CURRENT_CAMPUS = "Current campus"

@@ -36,3 +36,5 @@ A profile-only reset does not free every email. The corresponding `auth.users` i
 - Confirm whether Lagos Campus is intended for launch or retained configuration. Audit-labelled campuses are separately identifiable.
 
 This is an execution plan and inventory, not a completed cleanup or a new automatic deletion job. The user asked to prepare the reset alongside finishing launch fixes; none of the destructive steps has run at this checkpoint.
+
+Delivery-location integrity follow-up: audit-only hostel/gate/campus cleanup must respect the new cross-campus-link guard. Unlink/remove exactly owned audit hostel children before moving/deleting their gate/campus; do not disable the guard or alter protected FUTA relationships. These rules do not authorize broad content deletion.

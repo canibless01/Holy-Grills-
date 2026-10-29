@@ -41,3 +41,5 @@ Academic setup continuation: [Departments & Academic Levels page evidence](ADMIN
 Academic Calendar page continuation: [calendar evidence](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) records all six types, all modal fields, scoped creation/edit/retirement, real permissions and graduation date consumer checks. Backend **750 passed**. Gate/hostel and delivery-area controls remain next; no worker or cleanup was activated.
 
 Delivery locations continuation: [Gates/Hostels evidence](ADMIN_DELIVERY_LOCATIONS_EVIDENCE_2026_10_29.md) records the completed listed controls, rate/minimum fields, restore, real scope/duplicate/link constraints and a corrected no-pin base-fee bypass. Backend **760 passed**. Delivery area radius/centre is next. No cleanup or worker activation occurred.
+
+Delivery area continuation: [centre/radius page evidence](ADMIN_DELIVERY_AREA_EVIDENCE_2026_10_29.md) closes its listed controls and actual settings permission/backing-row checks, including the wrong-campus radius request, stale/failed-read handling and strict radius inputs. Backend **769 passed**. Other admin matrices remain open; no cleanup or scheduler was activated.
