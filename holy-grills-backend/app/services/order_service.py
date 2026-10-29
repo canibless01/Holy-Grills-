@@ -1947,6 +1947,12 @@ def _notify_recovered_delivery_rewards(order, result):
                 logger.warning('Recovered delivery reward notification pending for %s', order['id'], exc_info=True)
 
 
+def _recover_delivery_order_streak(order):
+    if float(order.get("subtotal") or 0) > 0:
+        from app.services.streak_service import process_order_streak
+        process_order_streak(order["user_id"], order["id"], campus_id=order.get("campus_id"))
+
+
 def _handle_delivery_rewards(order: dict):
     """
     Full HP award sequence on order delivery:
@@ -1963,6 +1969,7 @@ def _handle_delivery_rewards(order: dict):
     if order.get('hp_credited_at'):
         recovered = complete_delivery_financial_rewards(order)
         _notify_recovered_delivery_rewards(order, recovered)
+        _recover_delivery_order_streak(order)
         return
 
     tier_info = hp_service.get_user_tier(user_id)
@@ -2036,6 +2043,7 @@ def _handle_delivery_rewards(order: dict):
     if isinstance(result, dict) and result.get('already_credited'):
         recovered = complete_delivery_financial_rewards({**order, 'hp_earned': result.get('hp_earned', order.get('hp_earned', 0))})
         _notify_recovered_delivery_rewards(order, recovered)
+        _recover_delivery_order_streak(order)
         return
     if not isinstance(result, dict) or not result.get('success'):
         logger.error('Failed to credit HP for order %s', order_id)
@@ -2089,12 +2097,12 @@ def _handle_delivery_rewards(order: dict):
 
     # Try to reclaim a missed login-streak day via this order
     try:
-        from app.services.streak_service import try_reclaim_checkin, process_order_streak
+        from app.services.streak_service import try_reclaim_checkin
         try_reclaim_checkin(user_id)
-        if subtotal > 0:
-            process_order_streak(user_id, order_id, campus_id=order.get("campus_id"))
     except Exception as _se:
         logger.warning("_handle_delivery_rewards: streak hooks failed for %s: %s", user_id, _se)
+
+    _recover_delivery_order_streak(order)
 
     # Fire first_order badge trigger
     try:
@@ -2209,7 +2217,7 @@ def _log_status_change(order_id: str, from_status: str, to_status: str, changed_
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
         rows = (db.table("order_status_logs").eq("order_id", order_id).eq("status", to_status).gte("created_at", cutoff)
-                .eq("metadata->delivery_reward_recovery", None).eq("metadata->pending_hp_unlock", None).eq("metadata->hp_bonus_plan", None)
+                .eq("metadata->delivery_reward_recovery", None).eq("metadata->pending_hp_unlock", None).eq("metadata->hp_bonus_plan", None).eq("metadata->order_streak_recovery", None)
                 .update({"changed_by": changed_by, "note": note, "metadata": meta, "campus_id": campus_id}))
         if not rows:
             db.table("order_status_logs").insert({"order_id": order_id, "status": to_status, "changed_by": changed_by,

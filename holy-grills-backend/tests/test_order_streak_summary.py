@@ -45,13 +45,29 @@ class OrderStreakSummaryTests(unittest.TestCase):
         with patch.object(service,'today_wat',return_value=date(2025,12,29)):
             self.assertEqual(service.get_order_streak('me',db=self.db)['streak_weeks'],3)
     def test_reads_never_award_hp(self):
-        with patch.object(service,'_award_order_streak_hp',side_effect=AssertionError('GET must not award')):
+        with patch.object(service,'process_order_streak',side_effect=AssertionError('GET must not award')):
             self.read()
-    def test_award_uses_effective_campus_and_actual_multiplier_amount(self):
-        with patch('app.services.hp_service.award_active_hp',return_value={'awarded':200,'replayed':False}) as award,patch('app.services.notification_service.send_notification') as notify:
-            result=service._award_order_streak_hp(self.db,'me',3,'2026-44','campus')
-        self.assertEqual(result,200);self.assertEqual(award.call_args.kwargs['campus_id'],'campus');self.assertEqual(notify.call_args.kwargs['template_data']['hp'],200)
-    def test_replayed_award_does_not_send_another_reward_notification(self):
-        with patch('app.services.hp_service.award_active_hp',return_value={'awarded':0,'replayed':True}),patch('app.services.notification_service.send_notification') as notify:
-            self.assertEqual(service._award_order_streak_hp(self.db,'me',3,'2026-44','campus'),0)
+    def process(self):
+        with patch.object(service,'get_db',return_value=self.db),patch('app.services.hp_service._get_hp_multiplier',return_value=2):
+            return service.process_order_streak('me','order','campus')
+    def test_atomic_award_notifies_actual_amount(self):
+        self.db.rpc.return_value={'success':True,'streak_weeks':3,'hp_awarded':200,'reference_id':'weekly-ref'}
+        with patch('app.services.notification_service.send_notification') as notify:
+            result=self.process()
+        self.assertEqual(result['hp_awarded'],200)
+        self.assertEqual(notify.call_args.kwargs['template_data']['hp'],200)
+        self.assertEqual(self.db.rpc.call_args.args[0],'hg_process_order_streak_atomic')
+    def test_replay_never_sends_reward_again(self):
+        self.db.rpc.return_value={'success':True,'streak_weeks':3,'hp_awarded':0,'replayed':True}
+        with patch('app.services.notification_service.send_notification') as notify:self.process()
         notify.assert_not_called()
+    def test_failed_atomic_award_remains_pending(self):
+        self.db.rpc.return_value={'error':'order_streak_pending'}
+        with self.assertRaisesRegex(RuntimeError,'ordering-streak reward'):self.process()
+    def test_network_failure_is_not_success(self):
+        self.db.rpc.side_effect=RuntimeError('connection lost')
+        with self.assertRaisesRegex(RuntimeError,'connection lost'):self.process()
+    def test_notification_failure_does_not_undo_committed_award(self):
+        self.db.rpc.return_value={'success':True,'streak_weeks':3,'hp_awarded':200,'reference_id':'weekly-ref'}
+        with patch('app.services.notification_service.send_notification',side_effect=RuntimeError('provider unavailable')):
+            self.assertEqual(self.process()['hp_awarded'],200)

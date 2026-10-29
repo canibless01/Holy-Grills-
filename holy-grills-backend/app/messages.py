@@ -1052,6 +1052,8 @@ class MSG:
     LOGIN_STREAK_RECLAIM_BODY_ORDER  = "Your order recovered your missed check-in today. Streak saved!"
 
     # ── Order streak ──────────────────────────────────────────────────────────
+    ORDER_STREAK_LEDGER_NOTE = "Weekly ordering streak reward"
+    ORDER_STREAK_RECOVERY_PENDING = "Your order is delivered, but its ordering-streak reward still needs recovery. Please retry recovery."
     ORDER_STREAK_TITLE               = "Order Streak: {weeks} Week{plural}! 🔥"
     ORDER_STREAK_BODY                = "You earned {hp} {currency} for ordering every week for {weeks} week{plural}!"
     MULTIPLIER_LIVE_TITLE            = "🔥 {currency} Multiplier Is LIVE!"

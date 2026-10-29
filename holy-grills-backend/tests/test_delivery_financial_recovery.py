@@ -45,9 +45,9 @@ class DeliveryFinancialRecoveryTests(unittest.TestCase):
             self.run_recovery()
         self.db.rpc.assert_not_called()
     def test_already_credited_order_goes_straight_to_financial_recovery(self):
-        with self.app.test_request_context(),patch.object(recovery,'complete_delivery_financial_rewards',return_value={'success':True,'replayed':True}) as complete,patch.object(order_service.hp_service,'get_user_tier') as tier,patch.object(order_service,'get_db') as db:
+        with self.app.test_request_context(),patch.object(recovery,'complete_delivery_financial_rewards',return_value={'success':True,'replayed':True}) as complete,patch.object(order_service.hp_service,'get_user_tier') as tier,patch.object(order_service,'get_db') as db,patch.object(order_service,'_recover_delivery_order_streak') as streak:
             order_service._handle_delivery_rewards({**self.order,'hp_credited_at':'saved','hp_earned':100})
-        complete.assert_called_once();tier.assert_not_called();db.assert_not_called()
+        complete.assert_called_once();tier.assert_not_called();db.assert_not_called();streak.assert_called_once()
     def test_squad_member_read_failure_does_not_give_full_award_to_owner(self):
         self.query.execute.side_effect=RuntimeError('unavailable')
         with patch.object(squad_service,'get_db',return_value=self.db),self.assertRaises(RuntimeError):squad_service.squad_share_plan('order',100,'owner')
@@ -64,5 +64,5 @@ class DeliveryFinancialRecoveryTests(unittest.TestCase):
         with patch.object(order_service,'get_db',return_value=db):
             order_service._log_status_change('order','out_for_delivery','delivered','admin','Reason','campus')
         conditions=[call.args for call in query.eq.call_args_list]
-        for key in ('delivery_reward_recovery','pending_hp_unlock','hp_bonus_plan'):
+        for key in ('delivery_reward_recovery','pending_hp_unlock','hp_bonus_plan','order_streak_recovery'):
             self.assertIn(('metadata->'+key,None),conditions)

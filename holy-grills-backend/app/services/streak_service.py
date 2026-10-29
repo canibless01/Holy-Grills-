@@ -597,142 +597,32 @@ def _touch_last_activity(db, user_id: str, now: datetime) -> None:
 def process_order_streak(user_id: str, order_id: str, campus_id: str = None) -> dict:
     """
     Called when a food order is delivered.
-    If this is the first qualifying order for the current ISO week, increments
+    If this is the first qualifying order for its delivered ISO week, increments
     the order streak. Awards HP from order_streak_rewards table.
 
     Returns {"streak_weeks": int, "hp_awarded": int, "new_week": bool}
     """
-    db = get_db()
-    today = today_wat()
-    current_week = _week_key(today)
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Load or create order_streaks record
-    try:
-        streak = (
-            db.table("order_streaks")
-            .select("*")
-            .eq("user_id", user_id)
-            .single()
-            .execute()
-        )
-    except Exception:
-        streak = None
-
-    if not streak:
-        # First ever order streak entry
-        if campus_id is None:
-            from flask import has_app_context, g
-            if has_app_context():
-                campus_id = getattr(g, 'campus_id', None)
-        try:
-            db.table("order_streaks").insert({
-                "user_id": user_id,
-                "streak_weeks": 1,
-                "longest_streak": 1,
-                "last_order_week": current_week,
-                "last_updated": now,
-                "campus_id": campus_id,
-            })
-        except Exception as e:
-            err_str = str(e)
-            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                # Lost the race to a concurrent order for this same user -- re-read the row the winner
-                # created and report its real state instead of claiming a fresh streak that didn't happen.
-                try:
-                    existing = db.table("order_streaks").select("*").eq("user_id", user_id).single().execute()
-                except Exception:
-                    existing = None
-                if existing:
-                    return {"streak_weeks": int(existing.get("streak_weeks") or 1), "hp_awarded": 0, "new_week": False}
-            logger.warning("process_order_streak: insert failed for %s: %s", user_id, e)
-            return {"streak_weeks": 1, "hp_awarded": 0, "new_week": True}
-        hp = _award_order_streak_hp(db, user_id, 1, current_week, campus_id)
-        return {"streak_weeks": 1, "hp_awarded": hp, "new_week": True}
-
-    last_week = streak.get("last_order_week")
-
-    # Same week — already counted
-    if last_week == current_week:
-        return {"streak_weeks": int(streak.get("streak_weeks") or 0), "hp_awarded": 0, "new_week": False}
-
-    # Previous week check — was last week the previous ISO week?
-    try:
-        prev_week_date = today - timedelta(weeks=1)
-        prev_week_key = _week_key(prev_week_date)
-        is_consecutive = (last_week == prev_week_key)
-    except Exception:
-        is_consecutive = False
-
-    if is_consecutive:
-        new_streak = int(streak.get("streak_weeks") or 0) + 1
-    else:
-        # Missed at least one week — reset
-        new_streak = 1
-
-    longest = max(new_streak, int(streak.get("longest_streak") or 0))
-
-    try:
-        db.table("order_streaks").eq("user_id", user_id).update({
-            "streak_weeks": new_streak,
-            "longest_streak": longest,
-            "last_order_week": current_week,
-            "last_updated": now,
-        })
-    except Exception as e:
-        logger.warning("process_order_streak: update failed for %s: %s", user_id, e)
-
-    hp = _award_order_streak_hp(db, user_id, new_streak, current_week, campus_id)
-
-    return {"streak_weeks": new_streak, "hp_awarded": hp, "new_week": True}
-
-
-def _award_order_streak_hp(db, user_id: str, streak_weeks: int, current_week: str, campus_id: str = None) -> int:
-    """
-    Award HP for hitting an order streak milestone.
-    Reads from order_streak_rewards (capped at week 12 so week 13+ plateaus at 350 HP).
-    HP destination: Active.
-    current_week: this order's ISO week key ("YYYY-WW"). Used (not streak_weeks) for the
-    idempotency reference -- streak_weeks resets on any missed week, so a user who breaks their
-    streak and later rebuilds to the same length (e.g. 5 weeks, twice) would otherwise replay the
-    first payout and silently receive nothing the second time. The ISO week is unique per delivery
-    regardless of how the streak count moves.
-    """
-    try:
-        milestones = order_streak_rewards(db, campus_id)
-        lookup_weeks = min(streak_weeks, milestones[-1]["weeks"]) if milestones else streak_weeks
-        hp = next((row["hp_awarded"] for row in milestones if row["weeks"] == lookup_weeks), 0)
-    except Exception:
-        hp = 0
-
-    if hp <= 0:
-        return 0
-
-    from app.services.hp_service import award_active_hp
-    try:
-        award = award_active_hp(
-            user_id=user_id,
-            amount=hp,
-            campus_id=campus_id,
-            source_type="streak",
-            reference_type="streak",
-            reference_id=_streak_reference_id(user_id, "order_streak", current_week),
-            notes=f"Order streak milestone — {streak_weeks} consecutive week(s) → {hp} HP active",
-        )
-        if award.get("replayed"):
-            return 0
-        awarded_hp = int(award.get("awarded") or 0)
+    # The database owns qualification, delivery week, configured reward snapshot,
+    # balance, streak state and replay protection in one transaction.
+    from app.messages import MSG
+    from app.services.hp_service import _get_hp_multiplier
+    result = get_db().rpc("hg_process_order_streak_atomic", {
+        "p_order_id": order_id,
+        "p_multiplier": _get_hp_multiplier(campus_id),
+        "p_notes": MSG.ORDER_STREAK_LEDGER_NOTE,
+    })
+    if not isinstance(result, dict) or not result.get("success"):
+        raise RuntimeError(MSG.ORDER_STREAK_RECOVERY_PENDING)
+    awarded_hp = int(result.get("hp_awarded") or 0)
+    if awarded_hp > 0:
         from app.services.notification_service import send_notification
-        _plural = "s" if streak_weeks != 1 else ""
-        send_notification(
-            user_id=user_id,
-            notif_type="order_streak",
-            template_data={"weeks": streak_weeks, "plural": _plural, "hp": awarded_hp},
-            reference_id=_streak_reference_id(user_id, "order_streak", current_week),
-            reference_type="streak",
-        )
-    except Exception as e:
-        logger.warning("_award_order_streak_hp: failed for %s: %s", user_id, e)
-        return 0
-
-    return awarded_hp
+        try:
+            weeks = int(result["streak_weeks"])
+            send_notification(
+                user_id=user_id, notif_type="order_streak",
+                template_data={"weeks": weeks, "plural": "s" if weeks != 1 else "", "hp": awarded_hp},
+                reference_id=result["reference_id"], reference_type="streak",
+            )
+        except Exception:
+            logger.warning("Order streak credited; notification pending for %s", order_id, exc_info=True)
+    return result

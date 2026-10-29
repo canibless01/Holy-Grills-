@@ -30,7 +30,8 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
              patch.object(service.hp_service, 'calculate_delivery_hp', return_value=102), \
              patch.object(service.hp_service, 'unlock_pending_hp'), \
              patch.object(recovery, 'complete_delivery_financial_rewards', self.aux):
-            service._handle_delivery_rewards(self.order)
+            with patch.object(service, '_recover_delivery_order_streak'):
+                service._handle_delivery_rewards(self.order)
 
     def test_payout_failure_never_resets_the_profile_before_transaction(self):
         self.db.rpc.side_effect = RuntimeError('award unavailable')
