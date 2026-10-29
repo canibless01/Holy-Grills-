@@ -8,9 +8,11 @@
 | Academic Calendar | [All six types, modal fields, scope/edit/retire/restore and graduation consumer](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) pass |
 | Delivery → Zones & Fees | [Gate/hostel fields, pricing, lifecycle, actual scope/link/duplicate integrity](ADMIN_DELIVERY_LOCATIONS_EVIDENCE_2026_10_29.md) pass |
 | Delivery → Delivery area | [Centre/radius target, failed/stale reads, save/clear/force, permissions and checkout distance](ADMIN_DELIVERY_AREA_EVIDENCE_2026_10_29.md) pass |
+| Kitchen workspace / read-only settings | [Explicit super-admin campus, handoff scope, authoritative availability, failed-read recovery](KITCHEN_WORKSPACE_SCOPE_EVIDENCE_2026_10_29.md) pass; ineffective legacy switch removed in favor of existing ordering-window controls |
+| Feature Flags — global controls | [Native toggle/create/retry, override visibility, actual global-row/RLS checks](ADMIN_FEATURE_FLAGS_SCOPE_EVIDENCE_2026_10_29.md) pass; complete consumer/worker matrix remains open |
 | Remaining admin pages / actions | Still open; targeted earlier successes below do not establish whole-page approval |
 
-The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite: **769 passed**.
+The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite: **771 passed**.
 
 
 **Inventoried means mapped, not approved safe.** Opening a sidebar page, listing fields or finding an existing test does not establish that every button, role and customer outcome works. A passed loop applies only to its recorded assertions. This chat cannot certify work performed in another chat without its evidence/PR.

@@ -93,7 +93,7 @@ const menu = {
   async getAddons(id) { return apiClient.get(`/menu/items/${id}/addons`); },
   async getCategories(params = {}) { return apiClient.get('/menu/categories', params); },
   async getGlobalAddons() { return apiClient.get('/menu/addons'); },
-  async getKitchenCapacity() { return apiClient.get('/menu/kitchen-capacity'); },
+  async getKitchenCapacity(campusId?: string) { return apiClient.get('/menu/kitchen-capacity', undefined, campusId ? { 'X-Campus-ID': campusId } : undefined); },
 };
 
 // ========== CART ==========
@@ -446,8 +446,8 @@ const normKitchenOrder = (o) => {
 
 // ========== KITCHEN ==========
 const kitchen = {
-  async getHandoff() { return apiClient.get('/kitchen/handoff'); },
-  async assignHandoffRider(id, body) { return apiClient.post(`/kitchen/handoff/${id}/assign`, body); },
+  async getHandoff(campusId?: string) { return apiClient.get('/kitchen/handoff', campusId ? { campus_id: campusId } : undefined); },
+  async assignHandoffRider(id, body, campusId?: string) { return apiClient.post(`/kitchen/handoff/${id}/assign${campusId ? `?campus_id=${encodeURIComponent(campusId)}` : ''}`, body); },
   // The campus-scoped queue is authoritative. An outage must remain visible
   // instead of looking like an empty kitchen or falling back to customer orders.
   async getQueue(params = {}) {
@@ -479,14 +479,14 @@ const kitchen = {
     if (res && Array.isArray(res.orders)) return { count: res.count ?? res.orders.length, scheduled_orders: res.orders.map(normKitchenOrder) };
     return { count: 0, scheduled_orders: [] };
   },
-  async getBatchSummary(windowId) {
-    const res = await apiClient.get(`/kitchen/batch-summary/${windowId}`);
+  async getBatchSummary(windowId, campusId?: string) {
+    const res = await apiClient.get(`/kitchen/batch-summary/${windowId}`, campusId ? { campus_id: campusId } : undefined);
     if (res && Array.isArray(res.summary)) return res;
     if (res && Array.isArray(res.items)) return { total_orders: res.total_orders ?? res.items.length, summary: res.items.map((i) => ({ item_name: i.item_name || i.name, total_quantity: i.total_quantity || i.quantity || 0 })) };
     return { total_orders: (res && res.total_orders) || 0, summary: (res && res.summary) || [] };
   },
-  async getMetrics() { return apiClient.get('/kitchen/metrics'); },
-  async getWindows() { return unwrap(await apiClient.get('/kitchen/windows'), 'windows'); },
+  async getMetrics(campusId?: string) { return apiClient.get('/kitchen/metrics', campusId ? { campus_id: campusId } : undefined); },
+  async getWindows(campusId?: string) { return unwrap(await apiClient.get('/kitchen/windows', campusId ? { campus_id: campusId } : undefined), 'windows'); },
   // GET /kitchen/settings → { settings: {key: value}, updated_at: {key: ts} }
   // The backend stores settings as arbitrary key/value strings. Return the
   // settings map as a flat object — values are strings (the backend does
@@ -500,7 +500,7 @@ const kitchen = {
     const scope = campusId ? '?' + new URLSearchParams({ campus_id: campusId }).toString() : '';
     return apiClient.patch('/kitchen/settings' + scope, { settings: settingsMap });
   },
-  async batchAdvanceStatus(windowId, body) { return apiClient.post(`/kitchen/batch/${windowId}/advance`, body); },
+  async batchAdvanceStatus(windowId, body, campusId?: string) { return apiClient.post(`/kitchen/batch/${windowId}/advance${campusId ? `?campus_id=${encodeURIComponent(campusId)}` : ''}`, body); },
   async markItemUnavailable(itemId) { return apiClient.patch(`/menu/items/${itemId}`, { is_available: false, is_sold_out: true }); },
   async markItemAvailable(itemId) { return apiClient.patch(`/menu/items/${itemId}`, { is_available: true, is_sold_out: false }); },
 };

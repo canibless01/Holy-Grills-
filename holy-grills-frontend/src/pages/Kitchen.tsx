@@ -11,6 +11,9 @@ import KitchenSettings from '@/components/kitchen/KitchenSettings';
 import KitchenCatering from '@/components/kitchen/KitchenCatering';
 import KitchenHandoff from '@/components/kitchen/KitchenHandoff';
 import { msg } from '@/lib/messages';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
+import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 
 const TABS = [
   { id: 'queue', label: 'Live Queue' },
@@ -28,13 +31,27 @@ const COLUMN_ACCENTS = {
 };
 
 export default function Kitchen() {
+  const { user, isLoading } = useHolyGrill();
+  const { adminCampusId } = useCampus();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const campusId = isSuperAdmin ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  if (isLoading) return <StaffPanelSkeleton variant="kitchen" />;
+  return <>
+    {isSuperAdmin && <div className="flex items-center justify-end gap-3 border-b border-border bg-card px-4 py-2"><AdminCampusSelector /></div>}
+    {isSuperAdmin && !campusId
+      ? <p className="p-6 text-sm text-muted-foreground">{msg('FE_KITCHEN_SELECT_CAMPUS', 'Select a campus to open its kitchen workspace.')}</p>
+      : <KitchenWorkspace key={campusId || 'own-campus'} campusId={campusId} canManageSettings={user?.role === 'admin' || isSuperAdmin} />}
+  </>;
+}
+
+function KitchenWorkspace({ campusId, canManageSettings }) {
   const [tab, setTab] = useState('queue');
   const {
     authed, loading, error, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary,
-    settings, capacity, metrics, accepting, open, prepTarget, flashingIds, actionLoading,
-    batchBusy, batchResult, selectWindow, handleStatusUpdate, handleToggleAccepting,
+    settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
+    batchBusy, batchResult, selectWindow, handleStatusUpdate,
     handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
-  } = useKitchenData();
+  } = useKitchenData(campusId);
 
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
   if (loading) return <StaffPanelSkeleton variant="kitchen" />;
@@ -45,7 +62,7 @@ export default function Kitchen() {
 
   return (
     <div className="min-h-screen bg-background">
-      <KitchenHeader accepting={accepting} open={open} onToggleAccepting={handleToggleAccepting} deliveryWindow={windows.find(window => window.id === selectedWindow) || windows[0] || null} />
+      <KitchenHeader canManageSettings={canManageSettings && !error} open={open} deliveryWindow={windows.find(window => window.id === selectedWindow) || windows[0] || null} />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 space-y-4 animate-fade-in">
         {/* Error state */}
@@ -61,6 +78,7 @@ export default function Kitchen() {
           </div>
         )}
 
+        {!error && <>
         {/* Capacity bar */}
         {capacity && (
           <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card flex items-center justify-between gap-3 flex-wrap">
@@ -71,9 +89,9 @@ export default function Kitchen() {
             <div className="text-xs text-muted-foreground flex items-center gap-2">
               <span className="font-bold text-foreground tabular-nums">{capacity.orders_today ?? 0}</span>
               <span>/</span>
-              <span className="tabular-nums">{capacity.daily_order_capacity ?? 0}</span>
+              <span className="tabular-nums">{capacity.daily_order_capacity ?? msg('FE_KITCHEN_NO_DAILY_LIMIT', 'No daily limit')}</span>
               <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'tone-error' : 'tone-success'}`}>
-                {(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'AT CAPACITY' : `${Math.max(0, (capacity.daily_order_capacity ?? 0) - (capacity.orders_today ?? 0))} LEFT`}
+                {(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'AT CAPACITY' : capacity.daily_order_capacity == null ? msg('FE_KITCHEN_NO_DAILY_LIMIT', 'No daily limit') : `${Math.max(0, capacity.daily_order_capacity - (capacity.orders_today ?? 0))} LEFT`}
               </span>
             </div>
           </div>
@@ -104,7 +122,7 @@ export default function Kitchen() {
 
         {/* Live Queue — 3-column KDS board */}
         {tab === 'catering' && <KitchenCatering />}
-        {tab === 'handoff' && <KitchenHandoff />}
+        {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
         {tab === 'queue' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
             {['received', 'preparing', 'ready'].map((status) => {
@@ -269,8 +287,9 @@ export default function Kitchen() {
 
         {/* Settings */}
         {tab === 'settings' && settings && (
-          <KitchenSettings settings={settings} capacity={capacity} />
+          <KitchenSettings settings={settings} capacity={capacity} windowStatus={windowStatus} canManageSettings={canManageSettings} />
         )}
+        </>}
       </div>
     </div>
   );
