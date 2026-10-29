@@ -2840,7 +2840,7 @@ def set_campus_location(campus_id):
             return jsonify({"error": MSG.CAMPUS_LOCATION_INVALID}), 400
         outside = not (_NIGERIA_LAT[0] <= lat <= _NIGERIA_LAT[1] and _NIGERIA_LON[0] <= lon <= _NIGERIA_LON[1])
         if outside and data.get("force") is not True:
-            return jsonify({"error": MSG.CAMPUS_LOCATION_OUTSIDE_NIGERIA}), 400
+            return jsonify({"error": MSG.CAMPUS_LOCATION_OUTSIDE_NIGERIA, "code": "CAMPUS_LOCATION_OUTSIDE_NIGERIA"}), 400
 
     updated = get_db().table("campuses").eq("id", campus_id).update(
         {"lat": lat, "lon": lon, "updated_at": datetime.now(timezone.utc).isoformat()})

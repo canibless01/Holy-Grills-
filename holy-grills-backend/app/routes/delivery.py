@@ -97,7 +97,7 @@ def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[
     """
     Calculate off-campus delivery fee for a given gate.
     Returns (fee_in_naira, distance_km_or_None).
-    If user coordinates are absent, falls back to gate.min_fee.
+    If user coordinates are absent, charges the greater of the base and minimum fee.
     """
     base_fee = float(gate.get("base_fee") or 0)
     rate_per_km = float(gate.get("rate_per_km") or 0)

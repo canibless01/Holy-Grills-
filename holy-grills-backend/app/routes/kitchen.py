@@ -403,8 +403,10 @@ def _resolve_kitchen_campus_id():
     if getattr(g, "user_role", None) == "super_admin":
         campus_id = request.args.get("campus_id")
         if not campus_id:
-            return None, (jsonify({"error": "campus_id is required for super_admin"}), 400)
-        return campus_id, None
+            return None, (jsonify({"error": MSG.CAMPUS_ID_REQUIRED}), 400)
+        if not validate_uuid(campus_id):
+            return None, (jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400)
+        return campus_id.lower(), None
     return getattr(g, "campus_id", None), None
 
 
@@ -490,7 +492,9 @@ def update_kitchen_settings():
       400:
         description: "settings object missing or empty"
     """
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     settings = data.get("settings")
     if not settings or not isinstance(settings, dict):
         return jsonify({"error": MSG.KITCHEN_SETTINGS_REQUIRED}), 400
@@ -502,6 +506,17 @@ def update_kitchen_settings():
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
+    if "max_delivery_radius_km" in settings:
+        raw_radius = settings["max_delivery_radius_km"]
+        try:
+            if isinstance(raw_radius, bool):
+                raise ValueError
+            radius = float(raw_radius)
+            if not math.isfinite(radius) or radius <= 0:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({"error": MSG.DELIVERY_RADIUS_INVALID}), 400
+        settings = {**settings, "max_delivery_radius_km": radius}
     previous_capacity = None
     if "daily_order_capacity" in settings:
         value = settings["daily_order_capacity"]

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, Save, Loader2, AlertTriangle, Ruler, ExternalLink } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';
@@ -6,6 +6,7 @@ import { useIsSuperAdmin } from './SuperAdminGate';
 import { Card, Field, TextInput, Pill } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 /**
  * Delivery area — the campus centre point + the delivery radius.
@@ -29,8 +30,6 @@ import { msg } from '@/lib/messages';
  * max_delivery_radius_km) which is what the checkout distance check uses.
  */
 
-const DEFAULT_RADIUS_KM = 15;
-
 // Accept either a pasted "7.3021, 5.1391" pair or two separate numbers.
 const parseCoords = (raw) => {
   const parts = String(raw || '').replace(/,/g, ' ').split(/\s+/).filter(Boolean);
@@ -45,47 +44,55 @@ const parseCoords = (raw) => {
 export default function AdminDeliveryArea() {
   const { campuses, adminCampusId } = useCampus();
   const isSuperAdmin = useIsSuperAdmin();
+  const { user } = useHolyGrill();
+  const ownCampusId = user?.campus_id || user?.profile?.campus_id;
+  const generation = useRef(0);
+  const writing = useRef(false);
+  const [loadError, setLoadError] = useState(false);
   const [campusId, setCampusId] = useState(adminCampusId || '');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null); // 'location' | 'radius'
   const [coords, setCoords] = useState('');   // "lat, lon"
-  const [radius, setRadius] = useState(String(DEFAULT_RADIUS_KM));
+  const [radius, setRadius] = useState('');
   const [saved, setSaved] = useState(null);   // last-known centre point
   const [error, setError] = useState(null);   // { text, canForce }
 
-  const targetId = isSuperAdmin ? campusId : adminCampusId;
+  const targetId = isSuperAdmin ? campusId : ownCampusId;
   const campusName = campuses.find((c) => c.id === targetId)?.name || 'this campus';
 
   const load = useCallback(async () => {
-    if (!targetId) { setLoading(false); return; }
-    setLoading(true);
+    const request = ++generation.current;
+    if (!targetId) { setLoading(false); setLoadError(false); setSaved(null); setCoords(''); setRadius(''); return; }
+    setLoading(true); setLoadError(false);
     try {
       const [loc, ks] = await Promise.all([
-        liveApi.admin.getCampusLocation(targetId).catch(() => null),
-        liveApi.kitchen.getSettings().catch(() => ({})),
+        liveApi.admin.getCampusLocation(targetId),
+        liveApi.kitchen.getSettings(targetId),
       ]);
+      if (request !== generation.current) return;
       setSaved(loc && loc.lat != null && loc.lon != null ? { lat: loc.lat, lon: loc.lon } : null);
       setCoords(loc && loc.lat != null && loc.lon != null ? `${loc.lat}, ${loc.lon}` : '');
-      const r = ks && ks.max_delivery_radius_km;
-      setRadius(r != null && r !== '' ? String(r) : String(DEFAULT_RADIUS_KM));
+      const r = ks?.max_delivery_radius_km ?? loc?.max_delivery_radius_km;
+      setRadius(r != null ? String(r) : '');
       setError(null);
     } catch (e) {
+      if (request !== generation.current) return;
+      setLoadError(true);
       toast({ title: msg('FE_ADMIN_DELIVERY_AREA_COULDN_T_LOAD', "Couldn't load the delivery area"), description: e.message, variant: 'destructive' });
     }
-    setLoading(false);
+    if (request === generation.current) setLoading(false);
   }, [targetId]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (!campusId && adminCampusId) setCampusId(adminCampusId); }, [adminCampusId, campusId]);
+  useEffect(() => { load(); return () => { generation.current++; }; }, [load]);
 
   const saveLocation = async (force = false) => {
-    if (!targetId) return;
+    if (!targetId || writing.current || loading || loadError) return;
     const parsed = parseCoords(coords);
     if (coords.trim() && !parsed) {
       setError({ text: msg('FE_ADMIN_DELIVERY_AREA_COORDS_INVALID', 'Enter coordinates as "latitude, longitude" — for example 7.3021, 5.1391'), canForce: false });
       return;
     }
-    setSaving('location');
+    writing.current = true; setSaving('location');
     setError(null);
     try {
       if (!parsed) {
@@ -102,28 +109,29 @@ export default function AdminDeliveryArea() {
     } catch (e) {
       // The backend refuses points outside Nigeria unless force is set; offer
       // the override rather than dead-ending on a legitimate border campus.
-      setError({ text: e?.message || msg('FE_ADMIN_DELIVERY_AREA_SAVE_FAILED', 'Could not save the campus centre'), canForce: !force });
+      setError({ text: e?.message || msg('FE_ADMIN_DELIVERY_AREA_SAVE_FAILED', 'Could not save the campus centre'), canForce: !force && e?.status === 400 && e?.detail?.code === 'CAMPUS_LOCATION_OUTSIDE_NIGERIA' });
       if (force) toast({ title: msg('FE_ADMIN_DELIVERY_AREA_FAILED', 'Failed'), description: e.message, variant: 'destructive' });
     }
-    setSaving(null);
+    writing.current = false; setSaving(null);
   };
 
   const saveRadius = async () => {
+    if (!targetId || writing.current || loading || loadError) return;
     const km = Number(radius);
     if (!isFinite(km) || km <= 0) {
       setError({ text: msg('FE_ADMIN_DELIVERY_AREA_RADIUS_INVALID', 'Radius must be a number greater than 0'), canForce: false });
       return;
     }
-    setSaving('radius');
+    writing.current = true; setSaving('radius');
     setError(null);
     try {
-      await liveApi.kitchen.updateSettings({ max_delivery_radius_km: String(km) });
+      await liveApi.kitchen.updateSettings({ max_delivery_radius_km: String(km) }, targetId);
       toast({ title: msg('FE_ADMIN_DELIVERY_AREA_RADIUS_SAVED', 'Delivery radius saved'), description: msg('FE_ADMIN_DELIVERY_AREA_RADIUS_SAVED_DESC', 'Orders beyond {km} km from the campus centre will be refused.', { km: km }) });
       await load();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_DELIVERY_AREA_FAILED', 'Failed'), description: e.message, variant: 'destructive' });
     }
-    setSaving(null);
+    writing.current = false; setSaving(null);
   };
 
   const mapUrl = saved?.map_url || (saved ? `https://www.google.com/maps/search/?api=1&query=${saved.lat},${saved.lon}` : null);
@@ -144,7 +152,7 @@ export default function AdminDeliveryArea() {
         {isSuperAdmin && (
           <div className="mb-3">
             <Field label={msg('FE_ADMIN_DELIVERY_AREA_CAMPUS', 'Campus')}>
-              <select value={campusId} onChange={(e) => setCampusId(e.target.value)}
+              <select disabled={!!saving} value={campusId} onChange={(e) => setCampusId(e.target.value)}
                 className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card">
                 <option value="">{msg('FE_ADMIN_DELIVERY_AREA_SELECT_CAMPUS', 'Select a campus…')}</option>
                 {campuses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -159,8 +167,10 @@ export default function AdminDeliveryArea() {
           <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> {msg('FE_ADMIN_DELIVERY_AREA_LOADING', 'Loading…')}
           </div>
+        ) : loadError ? (
+          <div role="alert" className="space-y-2"><p className="text-sm text-destructive">{msg('FE_ADMIN_DELIVERY_AREA_COULDN_T_LOAD', "Couldn't load the delivery area")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>
         ) : (
-          <div className="space-y-3">
+          <fieldset disabled={!!saving} className="space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-muted-foreground">{msg('FE_ADMIN_DELIVERY_AREA_EDITING', 'Editing')}</span>
               <Pill tone="blue">{campusName}</Pill>
@@ -173,7 +183,7 @@ export default function AdminDeliveryArea() {
             </Field>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => saveLocation(false)} disabled={saving === 'location'}
+              <button onClick={() => saveLocation(false)} disabled={!!saving}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50 active:scale-95 transition">
                 <Save className="w-3.5 h-3.5" /> {saving === 'location' ? msg('FE_ADMIN_DELIVERY_AREA_SAVING', 'Saving…') : msg('FE_ADMIN_DELIVERY_AREA_SAVE_CENTRE', 'Save centre point')}
               </button>
@@ -190,7 +200,7 @@ export default function AdminDeliveryArea() {
                 hint={msg('FE_ADMIN_DELIVERY_AREA_RADIUS_HINT', 'Measured from the centre point above. This is per campus — saved to kitchen_settings.max_delivery_radius_km.')}>
                 <TextInput value={radius} onChange={(e) => setRadius(e.target.value)} inputMode="decimal" placeholder="15" />
               </Field>
-              <button onClick={saveRadius} disabled={saving === 'radius'}
+              <button onClick={saveRadius} disabled={!!saving}
                 className="mt-2 flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50 active:scale-95 transition">
                 <Ruler className="w-3.5 h-3.5" /> {saving === 'radius' ? msg('FE_ADMIN_DELIVERY_AREA_SAVING', 'Saving…') : msg('FE_ADMIN_DELIVERY_AREA_SAVE_RADIUS', 'Save radius')}
               </button>
@@ -203,7 +213,7 @@ export default function AdminDeliveryArea() {
               </div>
             )}
             {error?.canForce && (
-              <button onClick={() => saveLocation(true)} disabled={saving === 'location'}
+              <button onClick={() => saveLocation(true)} disabled={!!saving}
                 className="text-xs font-bold text-primary hover:underline">
                 {msg('FE_ADMIN_DELIVERY_AREA_SAVE_ANYWAY', 'These coordinates are outside Nigeria — save anyway')}
               </button>
@@ -211,10 +221,10 @@ export default function AdminDeliveryArea() {
 
             {!saved && !error && (
               <p className="text-[11px] text-warn font-semibold break-words">
-                {msg('FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING', 'Without a centre point every address is measured against nothing, so students get the 15 km default instead of your campus.')}
+                {msg('FE_ADMIN_DELIVERY_AREA_NO_CENTRE_WARNING', 'Without a campus centre, the distance limit cannot be enforced. Set a centre before accepting off-campus orders.')}
               </p>
             )}
-          </div>
+          </fieldset>
         )}
       </Card>
     </div>
