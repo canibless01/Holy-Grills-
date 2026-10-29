@@ -31,6 +31,7 @@ export default function Register() {
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [departments, setDepartments] = useState([]);
+  const [faculty, setFaculty] = useState('');
   const [academicLevels, setAcademicLevels] = useState([]);
   const [campuses, setCampuses] = useState([]);
 
@@ -66,9 +67,17 @@ export default function Register() {
     return () => { active = false; };
   }, [form.campus_id, referenceRetry]);
 
-  const set = (k, v) => setForm((old) => ({ ...old, [k]: v,
-    ...(k === 'campus_id' ? { department_id: '', academic_level_id: '' } : {}),
-  }));
+  const set = (k, v) => {
+    if (k === 'campus_id') setFaculty('');
+    setForm((old) => ({ ...old, [k]: v,
+      ...(k === 'campus_id' ? { department_id: '', academic_level_id: '' } : {}),
+    }));
+  };
+  const schoolFor = (department) => department.faculty?.trim() || msg('FE_REGISTER_OTHER_SCHOOL', 'Other');
+  const hasSchools = departments.some((department) => department.faculty?.trim());
+  const schools = hasSchools ? [...new Set(departments.map(schoolFor))].sort((a, b) => a.localeCompare(b)) : [];
+  const visibleDepartments = departments.filter((department) => !hasSchools || schoolFor(department) === faculty)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const strength = (() => {
     let s = 0;
@@ -89,6 +98,7 @@ export default function Register() {
     if (!form.phone.trim()) return msg('FE_REGISTER_PHONE_REQUIRED', 'Please enter your phone number.');
     if (!form.campus_id && campuses.length > 1) return msg('FE_REGISTER_CAMPUS_REQUIRED', 'Please select your campus.');
     if (!form.date_of_birth) return msg('FE_REGISTER_DOB_REQUIRED', 'Please enter your date of birth.');
+    if (hasSchools && !faculty) return msg('FE_REGISTER_SCHOOL_REQUIRED', 'Please select your school or faculty.');
     if (!form.department_id) return msg('FE_REGISTER_DEPARTMENT_REQUIRED', 'Please select your department.');
     if (!form.academic_level_id) return msg('FE_REGISTER_LEVEL_REQUIRED', 'Please select your academic level.');
     if (!form.password) return msg('FE_REGISTER_PASSWORD_REQUIRED', 'Please enter a password.');
@@ -171,8 +181,19 @@ export default function Register() {
 
         <AuthField icon={Calendar} label="When's your birthday?" type="date" value={form.date_of_birth} onChange={(e) => set('date_of_birth', e.target.value)} />
 
-        <SelectField disabled={referencesLoading || referencesError} icon={BookOpen} label="What are you studying?" value={form.department_id || ''} onChange={(e) => set('department_id', e.target.value)} placeholder="Pick your department">
-          {departments.map((d) => (
+        {hasSchools && <SelectField
+          disabled={referencesLoading || referencesError || !form.campus_id}
+          icon={GraduationCap}
+          label={msg('FE_REGISTER_SCHOOL_LABEL', 'School / faculty')}
+          value={faculty}
+          onChange={(event) => { setFaculty(event.target.value); set('department_id', ''); }}
+          placeholder={msg('FE_REGISTER_SCHOOL_PLACEHOLDER', 'Pick your school or faculty')}
+        >
+          {schools.map((school) => <option key={school} value={school}>{school}</option>)}
+        </SelectField>}
+
+        <SelectField disabled={referencesLoading || referencesError || (hasSchools && !faculty)} icon={BookOpen} label="What are you studying?" value={form.department_id || ''} onChange={(e) => set('department_id', e.target.value)} placeholder={hasSchools && !faculty ? msg('FE_REGISTER_SCHOOL_FIRST', 'Choose your school or faculty first') : msg('FE_REGISTER_DEPARTMENT_PLACEHOLDER', 'Pick your department')}>
+          {visibleDepartments.map((d) => (
             <option key={d.id} value={d.id}>{d.name}</option>
           ))}
         </SelectField>

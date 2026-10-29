@@ -1,3 +1,5 @@
+> **29 October update:** this is a historical coverage map, not completed page approval. Current [launch priorities](LAUNCH_PRIORITY_STATUS_2026_10_29.md), [provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md), [delivery financial recovery](DELIVERY_REWARD_FINANCIAL_RECOVERY_2026_10_28.md), [ordering-streak recovery](ORDER_STREAK_RECOVERY_2026_10_29.md) and [FUTA signup](FUTA_SIGNUP_REFERENCE_DATA_2026_10_29.md) supersede older provider/upload/funding gaps below. **The complete admin action matrix remains open.**
+
 # Admin audit coverage and ownership
 
 **Inventoried means mapped, not approved safe.** Opening a sidebar page, listing fields or finding an existing test does not establish that every button, role and customer outcome works. A passed loop applies only to its recorded assertions. This chat cannot certify work performed in another chat without its evidence/PR.

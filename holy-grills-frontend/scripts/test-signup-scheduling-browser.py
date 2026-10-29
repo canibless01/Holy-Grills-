@@ -51,7 +51,7 @@ try:
         saved=json.loads(page.evaluate("sessionStorage.getItem('hg_scheduled_window')"));assert saved==selected
         page.evaluate("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_campus_id','"+c+"')")
         page.goto('http://127.0.0.1:5227/admin?section=ambassadors');expect(page.get_by_role('button',name='Add Ambassador tag',exact=True)).to_be_visible();page.get_by_role('button',name='Performance milestones',exact=True).click();expect(page.get_by_role('button',name='New milestone',exact=True)).to_be_visible();page.get_by_role('button',name='New milestone',exact=True).click();page.get_by_role('button',name='Save milestone',exact=True).click();expect(page.get_by_text('1 configured milestone',exact=True)).to_be_visible();assert milestones[0]['threshold']==3 and milestones[0]['reward_type']=='meal_discount'
-        page.goto('http://127.0.0.1:5227/admin?section=ambassadorpromo');expect(page.get_by_role('heading',name='Promo Distribution',exact=True)).to_be_visible()
+        page.goto('http://127.0.0.1:5227/admin?section=ambassadorpromo');expect(page.get_by_role('button',name='New promotional message',exact=True)).to_be_visible()
         page.goto('http://127.0.0.1:5227/admin?section=ambassadorreviews');expect(page.get_by_text('No active ambassadors for this campus yet.',exact=True)).to_be_visible()
         browser.close()
     print(json.dumps({'missing_birthday_blocks_network':True,'separate_optional_consent_false_and_true':True,'academic_reference_retry_keeps_campus':True,'full_closed_and_remaining_slots':True,'selected_date_and_campus_saved':True,'ambassador_admin_screens_render':True}))

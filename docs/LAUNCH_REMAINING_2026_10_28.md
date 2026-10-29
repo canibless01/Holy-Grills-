@@ -38,3 +38,5 @@ Community-manager workspace/navigation, explicit admin batch entry, rider batch 
 Current primary-chat checkpoint: [financial delivery reward recovery](DELIVERY_REWARD_FINANCIAL_RECOVERY_2026_10_28.md), backend suite 725 passed. This supersedes the earlier financial-auxiliary recovery gap; tier/streak/milestone/gift hook outage recovery remains open. Provider/device status is maintained in [the other chat’s results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md).
 
 29 October continuation: [ordering-streak recovery](ORDER_STREAK_RECOVERY_2026_10_29.md) is now atomic and re-driven for already-credited deliveries. Backend **728 passed** and real database failure/retry/year-boundary cases passed. Remaining auxiliary hooks are tier/milestone/login-reclamation/legacy gift recovery; do not infer their completion from the streak fix.
+
+Current 29 October [launch-blocking versus later-work classification](LAUNCH_PRIORITY_STATUS_2026_10_29.md), [FUTA catalogue/signup evidence](FUTA_SIGNUP_REFERENCE_DATA_2026_10_29.md) and [cleanup preparation](PRE_LAUNCH_CLEANUP_PLAN_2026_10_29.md) are now available. The broader admin audit remains incomplete. No cleanup was executed.
