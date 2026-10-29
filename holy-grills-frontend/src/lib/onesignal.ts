@@ -22,6 +22,7 @@
 import APP_CONFIG from '@/config/app.config';
 import { liveApi } from '@/lib/liveApi';
 import { msg } from '@/lib/messages';
+import { enforceCanonicalOrigin, isOnAliasedOrigin } from '@/lib/canonicalOrigin';
 
 // v16 SDK type — the page SDK exposes OneSignalDeferred as a global queue.
 declare global {
@@ -42,6 +43,9 @@ let initialization: Promise<void> | null = null;
 let identityGeneration = 0;
 let identityTask: { userId: string; promise: Promise<void> } | null = null;
 const SDK_TIMEOUT_MS = 15000;
+// How long an explicit "Enable push" tap waits for the SDK + identity before it
+// reports a real failure instead of the old "still loading" dead end.
+const READY_TIMEOUT_MS = 20000;
 
 const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
   if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -91,35 +95,108 @@ const initialize = async (appId: string) => {
   } finally { clearTimeout(timer!); }
 };
 
+/** Start (or join) the single in-flight SDK initialization. */
+const ensureSdk = async (appId: string) => {
+  if (initialized && sdkInstance) return;
+  if (!initialization) initialization = initialize(appId).finally(() => { initialization = null; });
+  await initialization;
+};
+
+/**
+ * Attach the signed-in account to the device's push subscription.
+ * Serialised: a login that supersedes an in-flight one wins, and the older
+ * promise resolves without touching the newer identity.
+ */
+const identify = async (target: string) => {
+  if (identifiedUserId === target) return;
+  if (identityTask?.userId === target) { await identityTask.promise; return; }
+  const previous = identityTask?.promise;
+  const version = ++identityGeneration;
+  const promise = (async () => {
+    await previous?.catch(() => {});
+    if (version !== identityGeneration || registeredUserId !== target) return;
+    await sdkInstance.login(target);
+    if (version !== identityGeneration || registeredUserId !== target) return;
+    identifiedUserId = target;
+    const id = sdkInstance.User?.PushSubscription?.id;
+    if (id) await storeDeviceToken(target, id);
+  })();
+  identityTask = { userId: target, promise };
+  try { await promise; } finally { if (identityTask?.promise === promise) identityTask = null; }
+};
+
 export const initOneSignal = async (userId: string | null) => {
   const appId = APP_CONFIG.onesignal.appId;
   if (userId) registeredUserId = userId;
   if (!appId || !registeredUserId) return;
+  // Never start the SDK on the www alias: the browser treats it as a different
+  // origin from the one the OneSignal app is configured for, so init can only
+  // fail (loudly, in the console). Move the visitor to the canonical origin
+  // instead — the page they land on initialises normally.
+  if (enforceCanonicalOrigin()) return;
   try {
-    if (!initialized) {
-      if (!initialization) initialization = initialize(appId).finally(() => { initialization = null; });
-      await initialization;
-    }
+    await ensureSdk(appId);
     const target = registeredUserId;
-    if (target && identifiedUserId !== target) {
-      if (identityTask?.userId === target) { await identityTask.promise; return; }
-      const previous = identityTask?.promise;
-      const version = ++identityGeneration;
-      const promise = (async () => {
-        await previous?.catch(() => {});
-        if (version !== identityGeneration || registeredUserId !== target) return;
-        await sdkInstance.login(target);
-        if (version !== identityGeneration || registeredUserId !== target) return;
-        identifiedUserId = target;
-        const id = sdkInstance.User?.PushSubscription?.id;
-        if (id) await storeDeviceToken(target, id);
-      })();
-      identityTask = { userId: target, promise };
-      try { await promise; } finally { if (identityTask?.promise === promise) identityTask = null; }
-    }
+    if (target && identifiedUserId !== target) await identify(target);
   } catch {
     // Optional push initialization never blocks account restoration. The
     // explicit enable action reports missing readiness and can be retried.
+  }
+};
+
+/**
+ * Wait until the SDK is initialized AND the signed-in user is identified.
+ *
+ * This is what the "Enable push notifications" button awaits. Previously the
+ * button called `requestPushPermission()` straight after firing init, so a slow
+ * SDK load surfaced as "OneSignal is still loading — try again in a moment."
+ * even though the user had done everything right. Now the tap waits (bounded),
+ * and a genuine failure reports the genuine reason.
+ *
+ * Rejects with a user-readable message; never hangs.
+ */
+export const ensurePushReady = async (userId: string | null = null, timeoutMs = READY_TIMEOUT_MS): Promise<void> => {
+  const appId = APP_CONFIG.onesignal.appId;
+  if (!appId) {
+    throw new Error(msg('FE_ONESIGNAL_PUSH_NOTIFICATIONS_AREN_T_CONFIGURED', 'Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them.'));
+  }
+  // Wrong origin: send the visitor to the configured one rather than letting the
+  // SDK fail with an origin mismatch.
+  if (enforceCanonicalOrigin() || isOnAliasedOrigin()) {
+    throw new Error(msg('FE_ONESIGNAL_PUSH_IS_ONLY_AVAILABLE_ON_THE_CANONICAL_SITE', 'Push notifications are only available on https://holygrills.online — taking you there now.'));
+  }
+  if (userId) registeredUserId = userId;
+  const target = registeredUserId;
+  if (!target) {
+    throw new Error(msg('FE_ONESIGNAL_SIGN_IN_TO_ENABLE_PUSH_ON_THIS_DEVICE', 'Sign in to enable push notifications on this device.'));
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ready = (async () => {
+    await ensureSdk(appId);
+    if (!initialized || !sdkInstance) throw new Error('push_sdk_not_initialized');
+    if (registeredUserId !== target) return; // a newer login took over
+    await identify(target);
+  })();
+
+  try {
+    await Promise.race([
+      ready,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('push_ready_timeout')), timeoutMs);
+      }),
+    ]);
+  } catch {
+    // One message for "the SDK never became usable": missing network, blocked
+    // CDN, unsupported browser. Retryable, unlike the old generic loading text.
+    throw new Error(msg('FE_ONESIGNAL_PUSH_COULDN_T_LOAD_CHECK_YOUR_CONNECTION_AND', 'Push couldn’t load on this connection. Check your network and tap Enable again.'));
+  } finally {
+    clearTimeout(timer!);
+  }
+
+  if (registeredUserId !== target) return;
+  if (identifiedUserId !== target) {
+    throw new Error(msg('FE_ONESIGNAL_PUSH_COULDN_T_LOAD_CHECK_YOUR_CONNECTION_AND', 'Push couldn’t load on this connection. Check your network and tap Enable again.'));
   }
 };
 

@@ -21,5 +21,18 @@
     "players": 341,
     "messageable_players": 340
   },
-  "origins_aligned": false
+  "origins_aligned": false,
+  "resolution": {
+    "date": "2026-10-29",
+    "option_taken": "redirect to a single origin (apex https://holygrills.online); dashboard origin stays correct",
+    "dashboard_change_required": false,
+    "subscriptions_deleted": false,
+    "existing_players_at_decision_time": 341,
+    "why_not_www": "changing the Site URL to www would orphan the existing 341 players, require deleting their web push subscriptions and a resubscribe; the 401 above also means it cannot be done safely from this checkout",
+    "app_side_fix": "src/lib/canonicalOrigin.ts + src/main.tsx redirect the www alias to the apex origin (path/query/hash preserved) and src/lib/onesignal.ts refuses to initialize the SDK there; the Enable button now waits for SDK init + identity (ensurePushReady) before requesting permission",
+    "host_side_step_remaining": "Vercel Domains: make holygrills.online primary and redirect www.holygrills.online -> holygrills.online",
+    "regression_evidence": "hg-onesignal-origin-alignment-regression.json",
+    "report": "docs/WEB_PUSH_ORIGIN_ALIGNMENT_2026_10_29.md",
+    "status": "FIX SHIPPED \u2014 LIVE HOST VERIFICATION PENDING"
+  }
 }

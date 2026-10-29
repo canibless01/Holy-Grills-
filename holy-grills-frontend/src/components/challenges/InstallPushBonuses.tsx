@@ -7,7 +7,7 @@ import StreakPwaBonus from '@/components/streak/StreakPwaBonus';
 
 /** Each step records a real browser action; the server owns eligibility/HP. */
 export default function InstallPushBonuses() {
-  const { refreshHp } = useHolyGrill();
+  const { refreshHp, user } = useHolyGrill();
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -51,7 +51,7 @@ export default function InstallPushBonuses() {
         await apiClient.post('/challenges/pwa-installed');
       } else if (!status.push_subscribe) {
         if (!isWebPushSupported()) throw new Error('Push alerts are unavailable in this browser. Open the installed app in a supported browser.');
-        if (!await subscribeToWebPush()) throw new Error('Push permission was not granted. You can retry or update site permissions.');
+        if (!await subscribeToWebPush(user?.id ?? null)) throw new Error('Push permission was not granted. You can retry or update site permissions.');
         await apiClient.post('/challenges/push-registered');
       } else if (!status.bonus_completed) {
         await apiClient.post('/challenges/pwa-push-bonus');
