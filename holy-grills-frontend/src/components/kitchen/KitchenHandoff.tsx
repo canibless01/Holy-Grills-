@@ -4,29 +4,29 @@ import { msg } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 
-export default function KitchenHandoff() {
+export default function KitchenHandoff({ campusId = undefined }: { campusId?: string } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const [selected, setSelected] = useState({});
   const [busy, setBusy] = useState(null);
   const load = async () => {
-    try { setData(await liveApi.kitchen.getHandoff()); setError(false); }
+    try { setData(await liveApi.kitchen.getHandoff(campusId)); setError(false); }
     catch { setError(true); }
   };
   useEffect(() => {
     let active = true;
     const refresh = async () => {
-      try { const value = await liveApi.kitchen.getHandoff(); if (active) { setData(value); setError(false); } }
+      try { const value = await liveApi.kitchen.getHandoff(campusId); if (active) { setData(value); setError(false); } }
       catch { if (active) setError(true); }
     };
     refresh(); const timer = setInterval(refresh, 10000);
     return () => { active = false; clearInterval(timer); };
-  }, []);
+  }, [campusId]);
   const assign = async (batch) => {
     if (busy) return;
     setBusy(batch.id);
     try {
-      await liveApi.kitchen.assignHandoffRider(batch.id, { rider_id: selected[batch.id] || batch.rider_id });
+      await liveApi.kitchen.assignHandoffRider(batch.id, { rider_id: selected[batch.id] || batch.rider_id }, campusId);
       await load();
       toast({ title: msg('FE_KITCHEN_RIDER_SAVED', 'Rider assignment saved') });
     } catch (exception) {

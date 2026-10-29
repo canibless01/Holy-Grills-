@@ -19,7 +19,7 @@ import { msg } from '@/lib/messages';
  * Polls the live order queue, detects newly-arrived orders (sound + flash),
  * and exposes the handlers the KDS board needs.
  */
-export function useKitchenData() {
+export function useKitchenData(campusId?: string) {
   const [queue, setQueue] = useState([]);
   const [scheduled, setScheduled] = useState(null);
   const [scheduledDate, setScheduledDate] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 10));
@@ -71,11 +71,18 @@ export function useKitchenData() {
   const refreshQueue = async () => {
     const generation = scheduleGeneration.current;
     try {
-      const [q, m, s] = await Promise.all([liveApi.kitchen.getQueue(), liveApi.kitchen.getMetrics(), liveApi.kitchen.getScheduled({ date: scheduledDate })]);
+      const [q, m, s, w, cap, stg, status] = await Promise.all([
+        liveApi.kitchen.getQueue(campusId ? { campus_id: campusId } : {}),
+        liveApi.kitchen.getMetrics(campusId),
+        liveApi.kitchen.getScheduled({ date: scheduledDate, ...(campusId ? { campus_id: campusId } : {}) }),
+        liveApi.kitchen.getWindows(campusId), liveApi.menu.getKitchenCapacity(campusId),
+        liveApi.kitchen.getSettings(campusId), liveApi.orders.getDeliveryWindowStatus(campusId),
+      ]);
       applyQueue(q);
-      setMetrics(m);
+      setMetrics(m); setWindows(w); setCapacity(cap); setSettings(stg); setWindowStatus(status);
       if (generation === scheduleGeneration.current) setScheduled(s);
-    } catch (e) { /* ignore poll errors */ }
+      setError(null);
+    } catch { setError(msg('FE_KITCHEN_QUEUE_STALE', 'Kitchen updates are unavailable. The displayed orders may be out of date. Retry before preparing or handing over orders.')); }
   };
 
   useEffect(() => {
@@ -84,13 +91,13 @@ export function useKitchenData() {
     const init = async () => {
       try {
         const [q, s, w, m, cap, stg, status] = await Promise.all([
-          liveApi.kitchen.getQueue(),
-          liveApi.kitchen.getScheduled(),
-          liveApi.kitchen.getWindows(),
-          liveApi.kitchen.getMetrics(),
-          liveApi.menu.getKitchenCapacity(),
-          liveApi.kitchen.getSettings(),
-          liveApi.orders.getDeliveryWindowStatus(),
+          liveApi.kitchen.getQueue(campusId ? { campus_id: campusId } : {}),
+          liveApi.kitchen.getScheduled({ date: scheduledDate, ...(campusId ? { campus_id: campusId } : {}) }),
+          liveApi.kitchen.getWindows(campusId),
+          liveApi.kitchen.getMetrics(campusId),
+          liveApi.menu.getKitchenCapacity(campusId),
+          liveApi.kitchen.getSettings(campusId),
+          liveApi.orders.getDeliveryWindowStatus(campusId),
         ]);
         if (!alive) return;
         applyQueue(q);
@@ -98,7 +105,7 @@ export function useKitchenData() {
         const firstWin = w.find((x) => x.status === 'open')?.id || w[0]?.id;
         setSelectedWindow(firstWin);
         if (firstWin) {
-          const bs = await liveApi.kitchen.getBatchSummary(firstWin);
+          const bs = await liveApi.kitchen.getBatchSummary(firstWin, campusId);
           if (alive) setBatchSummary(bs);
         }
       } catch (e) {
@@ -109,20 +116,20 @@ export function useKitchenData() {
     };
     init();
     return () => { alive = false; };
-  }, [authed]);
+  }, [authed, campusId]);
 
   useEffect(() => {
     if (!authed) return;
     const interval = setInterval(refreshQueue, 10000);
     return () => clearInterval(interval);
-  }, [authed, scheduledDate]);
+  }, [authed, scheduledDate, campusId]);
 
   const selectScheduledDate = async (date) => {
     if (!date) return;
     const generation = ++scheduleGeneration.current;
     setScheduledDate(date); setScheduledLoading(true); setScheduled(null);
     try {
-      const value = await liveApi.kitchen.getScheduled({ date });
+      const value = await liveApi.kitchen.getScheduled({ date, ...(campusId ? { campus_id: campusId } : {}) });
       if (generation === scheduleGeneration.current) setScheduled(value);
     } catch (exception) {
       if (generation === scheduleGeneration.current) setScheduled({ date, scheduled_orders: [], count: 0, error: true });
@@ -132,7 +139,7 @@ export function useKitchenData() {
   const selectWindow = async (winId) => {
     setSelectedWindow(winId);
     try {
-      const bs = await liveApi.kitchen.getBatchSummary(winId);
+      const bs = await liveApi.kitchen.getBatchSummary(winId, campusId);
       setBatchSummary(bs);
     } catch (e) { console.error(e); }
   };
@@ -147,17 +154,6 @@ export function useKitchenData() {
       toast({ title: msg('FE_USE_KITCHEN_DATA_FAILED_TO_UPDATE_ORDER_STATUS', 'Failed to update order status'), description: e.message, variant: 'destructive' });
     }
     setActionLoading(null);
-  };
-
-  const handleToggleAccepting = async (newValue) => {
-    try {
-      // Settings are stored as strings on the backend (str(value) on upsert).
-      await liveApi.kitchen.updateSettings({ is_accepting_orders: String(newValue) });
-      setSettings((prev) => ({ ...prev, is_accepting_orders: String(newValue) }));
-      toast({ title: newValue ? 'Kitchen open — accepting orders' : 'Kitchen paused — orders closed' });
-    } catch (e) {
-      toast({ title: msg('FE_USE_KITCHEN_DATA_COULD_NOT_UPDATE_KITCHEN_STATE', 'Could not update kitchen state'), description: e.message, variant: 'destructive' });
-    }
   };
 
   const handleMarkUnavailable = async (itemId) => {
@@ -181,7 +177,7 @@ export function useKitchenData() {
   const handleBatchAdvance = async (winId, body, label) => {
     setBatchBusy(true);
     try {
-      const res = await liveApi.kitchen.batchAdvanceStatus(winId, body);
+      const res = await liveApi.kitchen.batchAdvanceStatus(winId, body, campusId);
       const advanced = res?.advanced_count ?? res?.advanced?.length ?? 0;
       const skipped = res?.skipped_count ?? 0;
       const skippedReasons: Record<string, number> = {};
@@ -206,19 +202,16 @@ export function useKitchenData() {
 
   const clearBatchResult = () => setBatchResult(null);
 
-  // Settings arrive as a key/value map of strings from the backend. Booleans are
-  // "true"/"false" strings (or absent). Parse defensively — no hardcoded
-  // defaults for business rules (the backend is the source of truth).
-  const boolVal = (v) => v === true || v === 'true';
-  const accepting = !boolVal(settings?.is_closed_for_day) && settings?.is_accepting_orders !== 'false' && settings?.is_accepting_orders !== false;
-  const open = !!windowStatus?.is_open;
-  const prepTarget = settings?.avg_prep_target_minutes ?? settings?.prep_time_minutes ?? null;
+  // Ordering-window status is authoritative. Legacy kitchen settings such as
+  // is_accepting_orders are not consumed by order admission.
+  const open = windowStatus?.is_open === true;
+  const prepTarget = null;
 
   return {
     authed, loading, error,
     queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, metrics, settings, capacity, windowStatus,
-    accepting, open, prepTarget, flashingIds, actionLoading, batchBusy, batchResult,
-    selectWindow, handleStatusUpdate, handleToggleAccepting, handleMarkUnavailable,
+    open, prepTarget, flashingIds, actionLoading, batchBusy, batchResult,
+    selectWindow, handleStatusUpdate, handleMarkUnavailable,
     handleMarkAvailable, handleBatchAdvance, clearBatchResult,
   };
 }

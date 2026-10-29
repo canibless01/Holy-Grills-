@@ -1,44 +1,21 @@
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ExternalLink, LogOut, Volume2, VolumeX } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
 import BrandLogo from '@/components/BrandLogo';
 import { clearTokens } from '@/lib/apiClient';
 import { useSound } from '@/lib/SoundProvider';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
 import PanelSwitcher from '@/components/PanelSwitcher';
 import { msg } from '@/lib/messages';
 
-// Sticky kitchen header with open/closed toggle (PATCH /kitchen/settings),
-// sound toggle, and navigation. The toggle maps to is_accepting_orders —
-// closing requires a confirmation dialog per the kitchen spec.
-export default function KitchenHeader({ accepting, open, onToggleAccepting, deliveryWindow = null }) {
+// Opening and capacity come from ordering windows, not legacy display settings.
+export default function KitchenHeader({ open, deliveryWindow = null, canManageSettings = false }) {
   const navigate = useNavigate();
   const { soundOn, toggleSound } = useSound();
-  const [showConfirm, setShowConfirm] = useState(false);
-
-  const handleSwitch = (checked) => {
-    if (!checked) {
-      setShowConfirm(true);
-    } else {
-      onToggleAccepting(true);
-    }
-  };
-
-  const confirmClose = () => {
-    setShowConfirm(false);
-    onToggleAccepting(false);
-  };
-
-  const dotColor = open && accepting ? 'bg-success' : accepting ? 'bg-warn' : 'bg-destructive';
+  const dotColor = open ? 'bg-success' : 'bg-destructive';
   const deliveryStart = deliveryWindow?.delivery_starts_at;
   const deliveryEnd = deliveryWindow?.delivery_ends_at;
   const deliveryLabel = deliveryStart && deliveryEnd ? msg('FE_KITCHEN_DELIVERY_HOURS', 'Delivery {start}–{end}', { start: deliveryStart, end: deliveryEnd }) : msg('FE_KITCHEN_DELIVERY_UNCONFIGURED', 'Delivery time not configured');
-  const statusLabel = open && accepting ? 'Open' : accepting ? 'Paused — no window' : 'Closed';
+  const statusLabel = open ? 'Open' : 'Closed';
 
   return (
     <>
@@ -50,7 +27,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting, deli
               <h1 className="font-heading font-extrabold text-base sm:text-lg text-foreground leading-none truncate">Kitchen</h1>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className={`w-2 h-2 rounded-full ${dotColor} relative flex`}>
-                  {open && accepting && (
+                  {open && (
                     <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${dotColor} opacity-60`} />
                   )}
                 </span>
@@ -62,14 +39,7 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting, deli
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <InlineNotificationBell />
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-secondary">
-              <Switch
-                checked={open && accepting}
-                onCheckedChange={handleSwitch}
-                className="data-[state=checked]:bg-success data-[state=unchecked]:bg-destructive/40"
-              />
-              <span className="hidden sm:inline text-[11px] font-bold text-foreground">{open && accepting ? 'Open' : 'Closed'}</span>
-            </div>
+            {canManageSettings && <Link to="/admin?section=delivery" className="hidden sm:flex rounded-full bg-secondary px-3 py-2 text-xs font-bold">{msg('FE_KITCHEN_MANAGE_SCHEDULE', 'Manage ordering windows')}</Link>}
             <button
               onClick={toggleSound}
               className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
@@ -97,25 +67,6 @@ export default function KitchenHeader({ accepting, open, onToggleAccepting, deli
         </div>
       </header>
 
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Close the kitchen?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Users won't be able to checkout while the kitchen is closed. You can reopen at any time.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmClose}
-              className="bg-destructive text-white hover:bg-destructive"
-            >
-              Yes, close kitchen
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
