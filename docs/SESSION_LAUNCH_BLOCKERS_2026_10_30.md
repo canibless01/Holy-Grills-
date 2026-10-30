@@ -57,6 +57,18 @@ Frontend source through `7db065d` deployed READY as `dpl_RqRWUhGPeqf5T7n1Nri7GN7
 
 The Render rollout was initially pending, then **live backend verification passed**: the Hall endpoint no longer returns the test fixture, and the uncached public message catalog serves “Ordering is closed” plus the explanation that the kitchen may still be preparing earlier orders. The backend does not expose a deployed Git SHA, so these are live behaviour markers rather than an exact backend revision attestation. No manual Render deployment or hosting migration was performed.
 
-The 100 active HP recovery and missing student-tier repairs are already applied in the database. A future qualifying top-up/device notification remains useful operational confirmation of the tested backend paths. The single guest tracking email was accepted by Resend, and the production guest tracking route was verified; recipient inbox/click confirmation remains pending.
+The 100 active HP recovery and missing student-tier repairs are already applied in the database. A future qualifying top-up/device notification remains useful operational confirmation of the tested backend paths. The single guest tracking email was accepted by Resend, and the production guest tracking route was verified; recipient inbox/click confirmation is now USER CONFIRMED.
 
-Outstanding launch setup: real Google Maps provider/key verification; owned Google Business Profile Place ID; OneSignal email approval re-evaluation on/after 1 November; recipient/device confirmation of email link and new notification appearance. Google search recrawl and AI Overview wording remain controlled by Google.
+Outstanding launch setup: real Google Maps provider/key verification; owned Google Business Profile Place ID; OneSignal email approval re-evaluation on/after 1 November; device confirmation of new notification appearance. Google search recrawl and AI Overview wording remain controlled by Google.
+
+## Follow-up: local map and saved addresses
+
+User confirmed the guest tracking email arrived and its link opened successfully.
+
+Both `/addresses` and checkout use the shared Google map. The map now limits panning/zooming and Places search to the campus’s surrounding area (FUTA/Akure for the current campus). Google loads visible tiles, not an entire world map; these bounds guide location selection rather than guaranteeing a different billing tier. Server delivery radius/fee validation remains authoritative.
+
+A shared saved-pin wrapper skips mounting Google Maps when a saved off-campus pin is selected. “Change delivery pin” explicitly opens the map; saving/editing addresses uses the same wrapper and selected-campus centre. Controlled browser checks prove zero map loads before edit, local bounds, GPS, pin tap/drag, Places selection and gate selection. Frontend typecheck/full build pass.
+
+Live global email settings inspected: `email_provider_transactional_default` = Resend and `email_provider_blast_default` = Resend. No settings were changed. OneSignal email remains optional until approval; an explicitly chosen OneSignal provider on an individual campaign would still depend on that approval. OneSignal push continues independently for automated app events and admin sends. In-app notification records remain in the application database.
+
+Setup requires no additional integration code once the Google configuration is valid: set `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_BUSINESS_PLACE_ID` in Vercel Production and redeploy (Vite embeds them at build time). Enable Maps JavaScript API + Places API (New), billing and appropriate API/website key restrictions. Verify a real map/search and the review destination after deployment.

@@ -3,13 +3,15 @@ import { useState, useEffect } from 'react';
 import { Plus, MapPin, X, Trash2, Edit2, Check } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { findNearestGate } from '@/lib/deliveryUtils';
-import OffCampusMap from '@/components/OffCampusMap';
+import DeliveryLocationMap from '@/components/DeliveryLocationMap';
+import { useCampus } from '@/lib/campusContext';
 import AddressesSkeleton from '@/components/skeletons/AddressesSkeleton';
 import MascotStandee from '@/components/mascot/MascotStandee';
 
 const EMPTY_FORM = { label: '', type: 'on_campus', line1: '', hostel: '', city: 'Akure', state: 'Ondo', is_default: false, gate_id: '', location_id: '', lat: null, lng: null };
 
 export default function Addresses() {
+  const { campus } = useCampus();
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -204,7 +206,9 @@ export default function Addresses() {
                   <div>
                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Drop your delivery pin</label>
                     <div className="mt-1.5">
-                      <OffCampusMap
+                      <DeliveryLocationMap
+                        savedAddressId={editing}
+                        center={campus?.lat != null && campus?.lon != null ? [Number(campus.lat), Number(campus.lon)] : null}
                         gates={gates}
                         pin={pin}
                         onPinChange={(ll) => {

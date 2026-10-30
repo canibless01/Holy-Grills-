@@ -29,6 +29,9 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   const [searching, setSearching] = useState(false), [searchError, setSearchError] = useState('');
   const [locating, setLocating] = useState(false), [geoError, setGeoError] = useState('');
   const initial = center ? { lat: center[0], lng: center[1] } : gates.map(gatePin).find(Boolean) || { lat: 7.295, lng: 5.14 };
+  // Keep the viewport in the campus's surrounding city. This is a navigation
+  // aid; the backend still decides delivery eligibility and fees.
+  const localBounds = { north: initial.lat + 0.25, south: initial.lat - 0.25, east: initial.lng + 0.25, west: initial.lng - 0.25 };
 
   useEffect(() => {
     let alive = true;
@@ -37,7 +40,8 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
       const { Map } = await api.importLibrary('maps');
       if (!alive || !element.current) return;
       map.current = new Map(element.current, { center: pin || initial, zoom: pin ? 16 : 14, mapTypeId: 'roadmap',
-        streetViewControl: false, mapTypeControl: false, fullscreenControl: false, clickableIcons: false, gestureHandling: 'cooperative' });
+        streetViewControl: false, mapTypeControl: false, fullscreenControl: false, clickableIcons: false, gestureHandling: 'cooperative',
+        minZoom: 11, restriction: { latLngBounds: localBounds, strictBounds: true } });
       map.current.addListener('click', (event: any) => {
         if (event.latLng) callbacks.current.onPinChange?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
       });
@@ -90,7 +94,7 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
         const places = await maps.importLibrary('places');
         session.current ||= new places.AutocompleteSessionToken();
         const response = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query.trim(),
-          sessionToken: session.current, includedRegionCodes: ['ng'], locationBias: { center: initial, radius: 50000 } });
+          sessionToken: session.current, includedRegionCodes: ['ng'], locationRestriction: localBounds });
         if (generation.current === version) setSuggestions(response.suggestions || []);
       } catch { if (generation.current === version) setSearchError('Search is unavailable. Tap the map or use GPS instead.'); }
       finally { if (generation.current === version) setSearching(false); }

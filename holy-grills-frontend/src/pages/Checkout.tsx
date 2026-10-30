@@ -18,7 +18,7 @@ import { toast } from '@/components/ui/use-toast';
 import { msg, useMessages } from '@/lib/messages';
 import FreeSideCreditModal from '@/components/FreeSideCreditModal';
 import SquadOrderButton from '@/components/checkout/SquadOrderButton';
-import OffCampusMap from '@/components/OffCampusMap';
+import DeliveryLocationMap from '@/components/DeliveryLocationMap';
 import CheckoutKitchenClosedPopup from '@/components/CheckoutKitchenClosedPopup';
 import DeliveryZonesInfo from '@/components/DeliveryZonesInfo';
 import { useSound } from '@/lib/SoundProvider';
@@ -979,8 +979,9 @@ export default function Checkout() {
 
         {deliveryType === 'off_campus' && (
           <div className="mt-3 animate-fade-in space-y-3">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Drop your delivery pin</label>
-            <OffCampusMap
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery pin</label>
+            <DeliveryLocationMap
+              savedAddressId={selectedAddressId}
               gates={gates}
               center={campus?.lat != null && campus?.lon != null ? [Number(campus.lat), Number(campus.lon)] : null}
               pin={deliveryPin}
