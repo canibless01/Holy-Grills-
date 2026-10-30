@@ -6,6 +6,7 @@ Email and push dispatch via OneSignal (fire-and-forget, never raises).
 """
 
 import os
+import time
 import uuid
 import threading
 from urllib.parse import urljoin, urlsplit
@@ -932,7 +933,52 @@ def send_blast(blast_id: str) -> dict:
     records = db.table("notifications").select("id").eq("type", f"blast_{blast_id}").execute() or []
     metadata["notification_records"] = len(records)
     db.table("notification_blasts").eq("id", blast_id).eq("status", "sending").eq("metadata->>worker_token", token).update({"status": "sent", "metadata": metadata})
+    # Delivery truth (provider accepted / rejected / delivered to nobody) is written
+    # by the channel threads into notification_deliveries; fold it back onto the blast.
+    _record_blast_delivery_summary(blast_id, token)
     return {"sent_to": count}
+
+
+def summarize_blast_deliveries(blast_id: str) -> dict:
+    """Count what actually left the building for one blast, per channel."""
+    db = get_db()
+    rows = db.table("notification_deliveries").select("channel,status").eq("blast_id", blast_id).execute() or []
+    summary = {}
+    for row in rows:
+        channel = row.get("channel") or "unknown"
+        bucket = summary.setdefault(channel, {"sent": 0, "failed": 0, "skipped": 0, "other": 0})
+        status = str(row.get("status") or "other")
+        bucket[status if status in bucket else "other"] += 1
+    return summary
+
+
+def _record_blast_delivery_summary(blast_id: str, token: str, delay: float = 20.0):
+    """After dispatch, record the real per-channel outcome on the blast.
+
+    Emails go out on their own threads, so the counts are only meaningful once they
+    have had time to finish. `status` stays "sent" (the blast *was* dispatched — push
+    and in-app may well have worked); `metadata.dispatch` carries the truth about
+    each channel so the panel can show "12 emails failed" instead of a green tick.
+    """
+    def run():
+        try:
+            time.sleep(delay)
+            summary = summarize_blast_deliveries(blast_id)
+            db = get_db()
+            row = db.table("notification_blasts").select("metadata").eq("id", blast_id).single().execute() or {}
+            metadata = dict(row.get("metadata") or {})
+            metadata["dispatch"] = {**summary, "recorded_at": datetime.now(timezone.utc).isoformat()}
+            email_stats = summary.get("email") or {}
+            if email_stats.get("sent", 0) == 0 and email_stats.get("failed", 0) > 0:
+                metadata["email_delivery_failed"] = True
+                logger.error("blast %s: %s email(s) failed and none were delivered — "
+                             "check the email provider configuration and today's send counters",
+                             blast_id, email_stats.get("failed"))
+            (db.table("notification_blasts").eq("id", blast_id)
+             .update({"metadata": metadata}).execute())
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("blast %s: delivery summary unavailable: %s", blast_id, exc)
+    threading.Thread(target=run, daemon=True).start()
 
 
 def mark_read(notification_id: str, user_id: str) -> dict | None:
@@ -998,6 +1044,47 @@ def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, htm
     return send_email_routed(to_email, to_name, subject, html_body, provider="onesignal")
 
 
+def _record_delivery(notification_id, channel, receipt, *, blast_id=None, user_id=None):
+    """Persist one channel's real delivery outcome in notification_deliveries.
+
+    The blast used to be marked "sent" as soon as the notification *rows* existed,
+    so a campaign whose emails the provider never delivered looked identical to a
+    successful one. This is the record the admin panel reads to tell them apart.
+    """
+    if not notification_id:
+        return
+    state = (receipt or {}).get("state") or "unknown"
+    status = {"accepted": "sent", "accepted_fallback": "sent", "not_configured": "skipped",
+              "skipped": "skipped"}.get(state, "failed")
+    provider = (receipt or {}).get("delivered_by") or (receipt or {}).get("provider")
+    row = {
+        "notification_id": notification_id,
+        "channel": channel,
+        "status": status,
+        "provider_message_id": (receipt or {}).get("provider_message_id"),
+        "error_message": (receipt or {}).get("error"),
+    }
+    if blast_id:
+        row["blast_id"] = blast_id
+    if user_id:
+        row["user_id"] = user_id
+    if status == "sent":
+        row["delivered_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        db = get_db()
+        existing = (db.table("notification_deliveries")
+                    .select("id").eq("notification_id", notification_id).eq("channel", channel)
+                    .limit(1).execute() or [])
+        if existing:
+            db.table("notification_deliveries").eq("id", existing[0]["id"]).update(row).execute()
+        else:
+            db.table("notification_deliveries").insert(row).execute()
+    except Exception as exc:                                      # noqa: BLE001
+        # A missing table/column must not fail the send that already happened.
+        logger.warning("delivery record could not be saved for %s (%s): %s", notification_id, channel, exc)
+    return {"provider": provider, "receipt": receipt}
+
+
 def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None, rich_content: dict = None, blast_id: str = None):
     """
     Send a transactional email to the user's registered email address, via
@@ -1043,7 +1130,17 @@ def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id
                 track_links=track_links,
             )
 
-        send_email_routed(email, name or "there", subject, html_body, provider=chosen)
+        receipt = {}
+        # A campaign email is marketing (respect unsubscribes); everything else is
+        # transactional (must reach the customer even if they opted out of promos).
+        accepted = send_email_routed(
+            email, name or "there", subject, html_body, provider=chosen,
+            receipt=receipt, transactional=not blast_id,
+        )
+        if not accepted:
+            logger.warning("Email to %s was not delivered by %s (subject %r, blast %s)",
+                           email, chosen, subject, blast_id or "-")
+        _record_delivery(notification_id, "email", receipt, blast_id=blast_id, user_id=user_id)
     except Exception as e:
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 
@@ -1115,7 +1212,15 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
             headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
             payload=payload,
         )
-        if resp.status_code not in (200, 202):
+        ok = resp.status_code in (200, 202)
+        if not ok:
             logger.warning("OneSignal push error %s for user %s: %s", resp.status_code, user_id, resp.text[:200])
+        _record_delivery(notification_id, "push", {
+            "provider": "onesignal",
+            "state": "accepted" if ok else "rejected",
+            "http_status": resp.status_code,
+            "provider_message_id": (resp.json() or {}).get("id") if ok else None,
+            "error": None if ok else resp.text[:300],
+        }, user_id=user_id)
     except Exception as e:
         logger.error("Push dispatch error for user %s: %s", user_id, e)

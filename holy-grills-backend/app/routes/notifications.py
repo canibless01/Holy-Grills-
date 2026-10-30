@@ -285,6 +285,17 @@ def update_preferences():
 
     try:
         result = get_db().rpc('hg_update_notification_preferences_atomic',{'p_user_id':g.user_id,'p_preferences':update})
+        # Mirror the master email switch into OneSignal. "No promotions" is handled
+        # server-side before dispatch, so that choice must not unregister the address —
+        # otherwise declining a newsletter would also stop order/QR emails.
+        if "email_enabled" in update:
+            try:
+                from app.services.onesignal_email import sync_email_subscription_async
+                profile = get_db().table("profiles").select("email").eq("id", g.user_id).single().execute() or {}
+                if profile.get("email"):
+                    sync_email_subscription_async(g.user_id, profile["email"], enabled=update["email_enabled"])
+            except Exception as exc:                              # noqa: BLE001
+                logger.warning("OneSignal email subscription sync failed for %s: %s", g.user_id, exc)
         if isinstance(result, dict):
             result["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
         return jsonify(result), 200
@@ -547,6 +558,40 @@ def preview_blast():
     return jsonify({"recipient_count": len(ids)}), 200
 
 
+def _await_email_delivery(blast_id, timeout=6.0, interval=0.4):
+    """The recorded email outcome for a just-dispatched blast, or None.
+
+    Reads `notification_deliveries`, which the dispatch thread writes once the
+    provider answers, so the admin sees the provider's own verdict instead of a
+    generic "sent".
+    """
+    import time as _time
+    if not blast_id:
+        return None
+    deadline = _time.monotonic() + timeout
+    while True:
+        try:
+            rows = (get_db().table("notification_deliveries")
+                    .select("status,provider_message_id,error_message,delivered_at")
+                    .eq("blast_id", blast_id).eq("channel", "email")
+                    .limit(1).execute() or [])
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("test blast %s: delivery record unreadable: %s", blast_id, exc)
+            return None
+        if rows:
+            row = rows[0] if isinstance(rows, list) else rows
+            return {
+                "status": row.get("status"),
+                "message_id": row.get("provider_message_id"),
+                "delivered_at": row.get("delivered_at"),
+                "error": row.get("error_message"),
+            }
+        if _time.monotonic() >= deadline:
+            return {"status": "pending",
+                    "error": "no delivery record yet — the provider has not answered"}
+        _time.sleep(interval)
+
+
 @notifications_bp.route("/blasts/test", methods=["POST"])
 @require_role("admin")
 def send_test_blast():
@@ -621,7 +666,12 @@ def send_test_blast():
             if not blast or any(blast.get(k)!=v for k,v in payload.items() if k!='status'):
                 return jsonify({'error':MSG.INVALID_INPUT}),409
         result=send_blast(blast['id'])
-        return jsonify({'blast_id':blast['id'],'sent_to':result['sent_to'],'channels':channels,'test_user_id':g.user_id}),200
+        # Email leaves on its own thread, so wait briefly for the delivery record and
+        # report what the provider actually said. "Sent" without this is how a test
+        # could look successful while nothing was ever delivered.
+        email_receipt = _await_email_delivery(blast['id'])
+        return jsonify({'blast_id':blast['id'],'sent_to':result['sent_to'],'channels':channels,
+                        'test_user_id':g.user_id,'email':email_receipt}),200
     except Exception:
         logger.exception('Self-only notification preview failed')
         return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503

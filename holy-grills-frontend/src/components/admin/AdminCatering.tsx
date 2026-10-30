@@ -267,7 +267,10 @@ function EventCateringTab({ events }) {
     if (!eventId) { setLoadingRegs(false); return; }
     setLoadingRegs(true);
     try {
-      const regs = await liveApi.admin.getEventRegistrantList(eventId);
+      // include_unpaid: a ticket whose card payment has not been confirmed yet is still a
+      // real reservation (it holds a seat). Hiding it is how an admin ends up seeing "1
+      // registered" next to an empty list — show it, badged, instead.
+      const regs = await liveApi.admin.getEventRegistrantList(eventId, { include_unpaid: true });
       if (attempt === registrantLoad.current) setRegistrants(regs);
     } catch {
       if (attempt === registrantLoad.current) setRegistrantsError(true);
@@ -357,6 +360,11 @@ function EventCateringTab({ events }) {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-foreground">{r.full_name || r.user?.name || r.name || 'Attendee'}</span>
                         {tierText(r) && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/30 text-accent-foreground/80">{tierText(r)}</span>}
+                        {r.payment_status && !['paid', 'not_required'].includes(r.payment_status) && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800" title="Card payment not confirmed yet">
+                            Awaiting payment
+                          </span>
+                        )}
                         {r.checked_in && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tone-success">Checked in</span>}
                       </div>
                       <div className="text-xs text-muted-foreground">{r.email || r.user?.email || '—'}</div>

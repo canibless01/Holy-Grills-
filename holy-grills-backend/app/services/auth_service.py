@@ -235,6 +235,21 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         except Exception as e:
             logger.error("register: referral signup notification failed for referrer %s: %s", referred_by_user_id, e)
 
+    # Register the new account's email address as an OneSignal Email Subscription.
+    # Push is subscribed by the web SDK only after the visitor allows notifications;
+    # email had no equivalent, so campaigns sent "to everyone" reached almost nobody.
+    # Best-effort and off the request path: registration must not depend on it.
+    try:
+        from app.services.onesignal_email import sync_email_subscription_async
+        # Every account is subscribed, regardless of the promotions tick box: OneSignal
+        # cannot deliver to an address it does not know, and that address is how the
+        # order confirmation, QR code and password reset reach them. Promotions are
+        # filtered by our own `promotions` preference before dispatch, so declining
+        # the box still means no marketing mail.
+        sync_email_subscription_async(user_id, email, enabled=True)
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("register: OneSignal email subscription sync unavailable for %s: %s", user_id, exc)
+
     try:
         from app.services.welcome_credit_service import grant_signup_credit
         grant_signup_credit(user_id)

@@ -391,6 +391,11 @@ def purchase(listing_id):
                 "quantity": 1,
                 "wallet_amount": wallet_amount,
                 "pay_with_hp": use_hp,
+                # Server-side record of what we asked for. The webhook reconciles the
+                # provider charge against this (a customer-borne gateway fee means the
+                # settled amount is larger than the price), and the purchase RPC is
+                # completed for this amount rather than the gross charge.
+                "expected_amount_kobo": round(card_amount * 100),
             },
         )
         return jsonify({
@@ -1494,13 +1499,20 @@ def _alert_admin_low_inventory(listing_id: str, title: str, remaining: int):
         )
 
 
-def complete_marketplace_card_purchase(user_id, listing_id, quantity, wallet_amount, pay_with_hp, payment_reference, amount_paid):
+def complete_marketplace_card_purchase(user_id, listing_id, quantity, wallet_amount, pay_with_hp,
+                                       payment_reference, amount_paid, refund_amount=None):
     """
     Card-payment entry point for the Paystack and Flutterwave webhooks.
     If the purchase cannot be completed after the card was charged (sold out, HP or wallet ran
     short, price changed), the amount paid goes back to the buyer's wallet and the buyer is told.
     The error is re-raised so the webhook is marked failed and the admins are alerted.
+
+    `amount_paid` is the card amount the purchase is being completed for — the price the
+    customer owed, not the gross provider charge (which can include the gateway fee). The
+    wallet refund uses `refund_amount` (defaults to `amount_paid`) so a fee cannot be
+    refunded as spendable balance.
     """
+    refund_amount = float(amount_paid if refund_amount is None else refund_amount)
     try:
         return _complete_marketplace_purchase(
             user_id=user_id,
@@ -1519,7 +1531,7 @@ def complete_marketplace_card_purchase(user_id, listing_id, quantity, wallet_amo
         from app.services.notification_service import send_notification
         credit_wallet(
             user_id=user_id,
-            amount=float(amount_paid),
+            amount=refund_amount,
             payment_reference=f"MKTFAIL-{payment_reference}",
             reference_type="marketplace_refund",
             notes=f"Refund: marketplace purchase could not be completed ({payment_reference})",

@@ -341,6 +341,8 @@ def initialize_hp_bundle():
         "user_id": g.user_id,
         "hp_amount": hp_amount,
         "type": "hp_bundle",  # for webhook routing isolation
+        # Server-recorded amount for fee-aware reconciliation in the webhook/verify path.
+        "expected_amount_kobo": round(naira * 100),
     }
 
     try:
@@ -443,11 +445,14 @@ def purchase_hp_bundle():
             except (TypeError, ValueError):
                 return jsonify({"error": "Invalid hp_amount in payment metadata"}), 400
 
-        paid_kobo = int(txn_data.get("amount", 0))
-        expected_kobo = int(naira_paid * 100)
-        # Exact match required, not >=
-        if paid_kobo != expected_kobo:
-            return jsonify({"error": MSG.HP_PAYMENT_MISMATCH.format(expected=naira_paid, received=paid_kobo / 100)}), 402
+        # Fee-aware amount check (same rule as orders/wallet): the customer may have
+        # been charged Paystack's gateway fee on top of the bundle price, so a strict
+        # equality test rejected charges that had already gone through.
+        from app.services.payment_amounts import validate_charge_amount
+        try:
+            validate_charge_amount(txn_data, naira_paid, "paystack", label="HP bundle")
+        except ValueError:
+            return jsonify({"error": MSG.HP_PAYMENT_MISMATCH.format(expected=naira_paid, received=int(txn_data.get("amount", 0)) / 100)}), 402
 
     except Exception as e:
         # Preserve our own 400 errors, only wrap verification failures

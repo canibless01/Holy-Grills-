@@ -1,5 +1,6 @@
-import { Plus, X, Image as ImageIcon, Link2 } from 'lucide-react';
+import { Plus, X, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ImageUploader from './ImageUploader';
 
 interface ImageBlock {
   id: string;
@@ -67,16 +68,19 @@ export default function ImageStackEditor({ value, onChange, className, maxImages
         {value.map((image, index) => (
           <div key={image.id} className="flex items-start gap-2 p-3 rounded-xl border border-border bg-secondary/30">
             <div className="flex-1 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-muted-foreground">#{index + 1}</span>
-                <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                <input
-                  type="url"
-                  value={image.url}
-                  onChange={(e) => updateImage(image.id, { url: e.target.value })}
-                  placeholder="https://example.com/image.jpg"
-                  className="flex-1 px-2 py-1.5 rounded-lg border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
-                />
+              <div className="flex items-start gap-2">
+                <span className="text-xs font-bold text-muted-foreground mt-2">#{index + 1}</span>
+                <div className="flex-1 min-w-0">
+                  {/* Same Cloudinary uploader every other admin image field uses —
+                      a bare URL box meant "upload an image" required a link, which is
+                      exactly what the campaign page used to demand. */}
+                  <ImageUploader
+                    value={image.url}
+                    onChange={(url: string) => updateImage(image.id, { url })}
+                    folder="campaigns"
+                    label="Image"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => removeImage(image.id)}
@@ -105,18 +109,6 @@ export default function ImageStackEditor({ value, onChange, className, maxImages
                   className="flex-1 px-2 py-1.5 rounded-lg border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
               </div>
-              {image.url && (
-                <div className="mt-2 rounded-lg overflow-hidden border border-border">
-                  <img
-                    src={image.url}
-                    alt={image.alt || 'Preview'}
-                    className="w-full h-auto max-h-32 object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                </div>
-              )}
             </div>
           </div>
         ))}

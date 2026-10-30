@@ -322,6 +322,17 @@ def login():
         if prof.get("is_active") is False:
             get_db().auth_sign_out(result.get("access_token"), scope="local")   # drop the session just issued
             return jsonify({"error": MSG.ACCOUNT_DEACTIVATED}), 403
+        # Backfill the OneSignal Email Subscription for accounts created before we
+        # registered them: without one, a campaign addressed to the account is
+        # accepted by OneSignal and delivered to nobody. Fire-and-forget so login
+        # latency never depends on OneSignal.
+        try:
+            from app.services.onesignal_email import sync_email_subscription_async
+            email = (result.get("user") or {}).get("email")
+            if email:
+                sync_email_subscription_async(user_id, email, enabled=True)
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning("login: OneSignal email subscription sync unavailable for %s: %s", user_id, e)
         # Loyalty work runs after authenticated profile hydration. Never delay
         # delivery of newly issued credentials behind optional streak queries.
 
