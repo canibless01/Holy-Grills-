@@ -1,0 +1,12 @@
+{
+  "frontend_commit": "14be33bf4fd5fbf84d2d254c6248ea60a3150532",
+  "vercel_deployment": "dpl_7xSs7n8yn4nnFj4fHcnEscCSx3TZ",
+  "deployment_state": "READY",
+  "home_status": 200,
+  "community_brand_copy": true,
+  "csp_allows_google_maps_script": true,
+  "csp_preserves_onesignal_config_script": true,
+  "backend_tests": 788,
+  "frontend_typecheck_build": "passed",
+  "google_real_provider": "awaiting restricted browser key; controlled SDK test passed"
+}

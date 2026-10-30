@@ -6,6 +6,7 @@ import HallOfFameSkeleton from '@/components/skeletons/HallOfFameSkeleton';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import ShareSheet from '@/components/ShareSheet';
 import { msg } from '@/lib/messages';
+import { publicHallEntries } from '@/lib/publicHallEntries';
 
 export default function HallOfFame() {
   useFeatureFlags();
@@ -22,7 +23,7 @@ export default function HallOfFame() {
       try {
         const res = await liveApi.leaderboard.getInductees();
         // unwrap() already handles the inductees/winners/hall_of_fame keys.
-        setInductees(res);
+        setInductees(publicHallEntries(Array.isArray(res) ? res : []));
       } catch (e) {
         setError(msg('FE_HALL_OF_FAME_SOMETHING_SLIPPED_TRY_AGAIN', 'Something slipped. Try again.'));
       }
