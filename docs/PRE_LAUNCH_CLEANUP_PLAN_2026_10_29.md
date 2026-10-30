@@ -1,3 +1,5 @@
+**Reset update — 30 October:** the authorized database cleanup is now completed and independently verified. See [completed reset and preserved configuration](PRE_LAUNCH_RESET_COMPLETED_2026_10_30.md). Earlier “not executed” notes below are historical. Real owner/admin setup and final release smoke remain.
+
 # Pre-launch reset preparation — 29 October 2026
 
 The user has identified the current accounts and transactions as test data and requested a clean production start, while preserving deliberately entered FUTA menu/storefront/reviews/rewards and other real configuration. This checkpoint prepares the reset; **no account, order, payment, content or Cloudinary asset has been deleted**.
