@@ -144,6 +144,7 @@ def _kitchen_stats(db, campus_id=None):
     orders_q = (
         db.table("orders").select("id,is_squad_order,squad_item_count")
         .or_(_today_fulfilment_filter())
+        .in_('payment_status', ['paid', 'partially_refunded'])
         .not_.in_("status", ["cancelled", "refunded"])
     )
     if campus_id:
@@ -165,6 +166,7 @@ def _daily_item_counts(db):
     orders_q = (
         db.table("orders").select("id")
         .or_(_today_fulfilment_filter())
+        .in_('payment_status', ['paid', 'partially_refunded'])
         .not_.in_("status", ["cancelled", "refunded"])
     )
     if campus_id:

@@ -44,3 +44,23 @@ def test_consent_requires_boolean():
     with Flask(__name__).test_request_context(method='POST',json={**VALID,'promotional_emails':'false'}),patch.object(auth.auth_service,'register') as create:
         _,status=auth.register.__wrapped__()
         assert status==400;create.assert_not_called()
+
+
+def test_autoconfirm_signup_returns_only_real_issued_session():
+    db=MagicMock()
+    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value={'id':CAMPUS}
+    result={'user':{'id':'new-owner'},'access_token':'issued-access','refresh_token':'issued-refresh'}
+    with Flask(__name__).test_request_context(method='POST',json=VALID), patch.object(auth,'get_db',return_value=db), patch.object(auth.auth_service,'register',return_value=result), patch.object(auth,'_notify_security') as notify:
+        response,status=auth.register.__wrapped__()
+    assert status==201 and response.json['access_token']=='issued-access'
+    assert response.json['refresh_token']=='issued-refresh'
+    assert notify.call_args.kwargs['template_data']['welcome_hp']=='0'
+
+
+def test_duplicate_stays_ambiguous_and_never_gets_a_session():
+    db=MagicMock()
+    db.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value={'id':CAMPUS}
+    with Flask(__name__).test_request_context(method='POST',json=VALID), patch.object(auth,'get_db',return_value=db), patch.object(auth.auth_service,'register',side_effect=ValueError(MSG.REGISTER_EMAIL_AMBIGUOUS)):
+        response,status=auth.register.__wrapped__()
+    assert status==200 and response.json['status']=='check_email'
+    assert 'access_token' not in response.json

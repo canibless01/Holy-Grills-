@@ -28,6 +28,10 @@ try:
   page.evaluate('window.testMap.listeners.click({latLng:{lat:()=>7.32,lng:()=>5.22}})');expect(page.get_by_label('pin',exact=True)).to_contain_text('7.32')
   page.evaluate("window.markers.find(m=>m.o.draggable).listeners.dragend({latLng:{lat:()=>7.33,lng:()=>5.23}})");expect(page.get_by_label('pin',exact=True)).to_contain_text('7.33')
   page.get_by_role('button',name='Use my location').click();expect(page.get_by_label('pin',exact=True)).to_contain_text('7.31')
+  page.evaluate("() => { navigator.geolocation.getCurrentPosition=(ok,fail,options)=>options.enableHighAccuracy?fail({code:3}):ok({coords:{latitude:7.34,longitude:5.24}}); }")
+  page.get_by_role('button',name='Use my location').click();expect(page.get_by_label('pin',exact=True)).to_contain_text('7.34')
+  page.evaluate("() => { navigator.geolocation.getCurrentPosition=(ok,fail)=>fail({code:1}); }")
+  page.get_by_role('button',name='Use my location').click();expect(page.get_by_text('Location permission is blocked.',exact=False)).to_be_visible()
   page.get_by_label('Search delivery location').fill('FUTA address');page.get_by_role('button',name='Selected Nigerian address').click();expect(page.get_by_label('pin',exact=True)).to_contain_text('7.3')
   page.evaluate("window.markers.find(m=>m.o.title==='West Gate').listeners.click()");expect(page.get_by_label('gate',exact=True)).to_have_text('west')
   stats=page.evaluate('window.stats');assert stats['maps']==1 and stats['searches']==1 and stats['fields']==['location','formattedAddress'],stats

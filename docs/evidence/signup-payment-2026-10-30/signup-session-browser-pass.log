@@ -1,0 +1,1 @@
+PASS autoconfirm signup persists issued tokens, restores identity and navigates Home without inbox prompt; production untouched

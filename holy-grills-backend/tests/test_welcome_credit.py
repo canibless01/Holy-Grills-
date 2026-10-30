@@ -186,11 +186,12 @@ class SessionHydrationBoundaryTests(unittest.TestCase):
         from flask import g
         from app.routes import auth
         app = Flask(__name__)
-        with app.test_request_context('/api/auth/welcome-credit',method='POST',json={'user_id':'someone-else'}), patch.object(service,'grant_signup_credit',return_value={'granted':False,'idempotent':True}) as grant:
+        with app.test_request_context('/api/auth/welcome-credit',method='POST',json={'user_id':'someone-else'}), patch.object(service,'grant_signup_credit',return_value={'granted':False,'idempotent':True}) as grant, patch('app.services.auth_service.hp_service.award_signup_bonus',return_value={'awarded':0}) as hp:
             g.user_id='saved-user'
             response,status=auth.recover_welcome_credit.__wrapped__()
             self.assertEqual(status,200)
             grant.assert_called_once_with('saved-user')
+            hp.assert_called_once_with('saved-user')
         with app.test_request_context('/api/auth/welcome-credit',method='POST'), patch.object(service,'grant_signup_credit',side_effect=RuntimeError('outage')):
             g.user_id='saved-user'
             response,status=auth.recover_welcome_credit.__wrapped__()

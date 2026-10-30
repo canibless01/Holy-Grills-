@@ -530,6 +530,7 @@ def award_signup_bonus(user_id: str) -> dict:
     )
     if already:
         return {"awarded": 0, "reason": "Already received"}
+    profile = db.table('profiles').select('campus_id').eq('id', user_id).single().execute() or {}
     return award_active_hp(
         user_id=user_id,
         amount=amount,
@@ -537,6 +538,8 @@ def award_signup_bonus(user_id: str) -> dict:
         reference_id=user_id,
         reference_type="signup_bonus",
         source_type="signup",
+        apply_multiplier=False,
+        campus_id=profile.get('campus_id'),
         notes=f"Welcome to {current_app.config.get('APP_NAME', 'Holy Grills')} — {amount} HP signup gift",
     )
 

@@ -55,7 +55,7 @@ export const APP_CONFIG = {
   seo: {
     defaultTitle: "Holy Grills — Grilled Food & Connection in FUTA, Akure",
     defaultDescription:
-      "Grilled chicken, wings, kebabs and sides at FUTA, Akure. Holy Grills brings people together through shared plates, friendship and campus experiences.",
+      "Student-built flame grill at FUTA, Akure. Fresh open-flame wings, skewers, plates and buns, shared meals, Squad Orders and evening delivery.",
     ogType: 'website',
     twitterCard: 'summary_large_image',
     // Default social share image. App-relative is fine: useSEO runs it through
@@ -69,7 +69,7 @@ export const APP_CONFIG = {
     business: {
       type: 'Restaurant',
       description:
-        "Born at FUTA in Akure, Holy Grills brings students together through real flame cooking, shared plates and campus experiences. Built on faith, love, energy and flavour, we strengthen connection and turn everyday gatherings into memories.",
+        "Holy Grills is a student built flame grill serving FUTA, Akure. Marinated deep, grilled on real open flame and basted again and again, every plate is made fresh. Order during the day and we deliver in the evening to school gates and on and off campus hostels. Wings, skewers, plates, buns and shareable feasts, with sides picked your way. We started with one grill outside a hostel, and food is still the heart of it. But Holy Grills is really about bringing students together. Start a Squad Order with your people, earn Holy Points every time you show up, and find what's happening on campus. Bring your people. We bring the fire. Faith. Love. Energy. Flavor.",
       logo: '/icons/icon.svg',
       image: '',
       servesCuisine: ['Grilled Chicken', 'Fast Food', 'Nigerian'],

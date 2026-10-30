@@ -23,6 +23,14 @@ class DB:
 
 
 class PaidOrderDeliveryNotificationTests(unittest.TestCase):
+    def test_guest_confirmation_requires_verified_paid_state(self):
+        guest={'id':'order','user_id':None,'guest_email':'owner@example.invalid','guest_name':'Owner','claim_token':'private'}
+        with patch('app.utils.email.send_email') as email:
+            order_service._on_order_paid({**guest,'payment_status':'pending'})
+            email.assert_not_called()
+            order_service._on_order_paid({**guest,'payment_status':'paid'})
+            email.assert_called_once_with('owner@example.invalid','Owner','guest_order_confirmed',{'order_id':'order','claim_token':'private'})
+
     def notify(self, db=None, **changes):
         order = {'id': '11111111-1111-4111-8111-111111111111', 'user_id': 'owner',
                  'delivery_window_id': 'window', 'created_at': '2026-10-27T23:30:00Z'}

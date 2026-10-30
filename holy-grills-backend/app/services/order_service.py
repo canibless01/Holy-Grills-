@@ -181,7 +181,7 @@ def _today_start_iso():
     return utc_midnight.replace(tzinfo=timezone.utc).isoformat()
 
 
-def _daily_capacity_remaining(db, campus_id, date_iso):
+def _daily_capacity_remaining(db, campus_id, date_iso, *, paid_only=False):
     """Use the delivery business date, including preorders booked earlier."""
     rows = db.table("kitchen_settings").select("value").eq("key", "daily_order_capacity").eq("campus_id", campus_id).execute() or []
     raw = rows[0].get("value") if rows else None
@@ -189,8 +189,10 @@ def _daily_capacity_remaining(db, campus_id, date_iso):
         return None
     day = datetime.fromisoformat(str(date_iso)).date()
     start, end = f"{day.isoformat()}T00:00:00+01:00", f"{(day + timedelta(days=1)).isoformat()}T00:00:00+01:00"
-    orders = (db.table("orders").select("id,is_squad_order,squad_item_count")
-              .eq("campus_id", campus_id).not_.in_("status", ["cancelled", "refunded"])
+    query = db.table("orders").select("id,is_squad_order,squad_item_count").eq("campus_id", campus_id)
+    if paid_only:
+        query = query.in_('payment_status', ['paid', 'partially_refunded'])
+    orders = (query.not_.in_("status", ["cancelled", "refunded"])
               .or_(f"and(is_scheduled.is.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),"
                    f"and(or(is_scheduled.is.false,is_scheduled.is.null),created_at.gte.{start},created_at.lt.{end})").execute()) or []
     return max(0, int(raw) - sum(_order_capacity_weight(row) for row in orders))
@@ -1401,7 +1403,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         order["delivery_window_start"] = delivery_start
         order["delivery_window_end"] = delivery_end
 
-        if capacity_deferred and user_id and delivery_start and delivery_end:
+        if capacity_deferred and user_id and delivery_start and delivery_end and order.get('payment_status') == 'paid':
             try:
                 scheduled_date_display = (scheduled_for or "")[:10]
                 send_notification(
@@ -1418,17 +1420,6 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             except Exception as _dn:
                 logger.warning("create_order: order_scheduled_deferred notify failed: %s", _dn)
 
-        if user_id is None and payload.get("guest_email"):
-            try:
-                from app.utils.email import send_email
-                send_email(
-                    to_email=payload["guest_email"],
-                    to_name=payload.get("guest_name", ""),
-                    template_key="guest_order_confirmed",
-                    data={"order_id": result["order_id"], "claim_token": claim_token},
-                )
-            except Exception as _ge:
-                logger.warning("create_order: guest email failed: %s", _ge)
 
     if not result.get("idempotent") and isinstance(order, dict):
         order["hp_preview"] = hp_preview
@@ -1569,6 +1560,10 @@ def _on_order_paid(order: dict):
     (confirm_order_payment) or instant wallet payment (create_order). Completes a pending referral and
     sends the order_confirmed notification. order_placed (immediate, at creation) is a separate message."""
     if not order.get("user_id"):
+        if order.get('guest_email') and order.get('payment_status') == 'paid':
+            from app.utils.email import send_email
+            send_email(order['guest_email'], order.get('guest_name') or '', 'guest_order_confirmed',
+                       {'order_id': order['id'], 'claim_token': order.get('claim_token') or ''})
         return
     db = get_db()
     try:
@@ -2307,14 +2302,16 @@ def _order_capacity_weight(order_row: dict) -> int:
     return 1
 
 
-def _window_capacity_orders(db, campus_id, window_id, date_iso):
+def _window_capacity_orders(db, campus_id, window_id, date_iso, *, paid_only=False):
     """Match admission's Lagos business date, including orders booked earlier."""
     from datetime import date
     day = date.fromisoformat(str(date_iso))
     start = f"{day.isoformat()}T00:00:00+01:00"
     end = f"{(day + timedelta(days=1)).isoformat()}T00:00:00+01:00"
-    return (db.table("orders").select("id,is_squad_order,squad_item_count")
-            .eq("campus_id", campus_id).eq("ordering_window_id", window_id)
+    query = db.table("orders").select("id,is_squad_order,squad_item_count").eq("campus_id", campus_id).eq("ordering_window_id", window_id)
+    if paid_only:
+        query = query.in_('payment_status', ['paid', 'partially_refunded'])
+    return (query
             .not_.in_("status", ["cancelled", "refunded"])
             .or_(f"and(is_scheduled.is.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),"
                  f"and(or(is_scheduled.is.false,is_scheduled.is.null),created_at.gte.{start},created_at.lt.{end})")
@@ -2447,7 +2444,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
 
     from app.services.delivery_window_schedule import delivery_clock, bind_ordering_delivery
     candidates = [bind_ordering_delivery(db, row, campus_id, _today_iso) for row in candidates]
-    daily_remaining = _daily_capacity_remaining(db, campus_id, _today_iso)
+    daily_remaining = _daily_capacity_remaining(db, campus_id, _today_iso, paid_only=True)
     windows_out = []
     any_capacity = False
     any_open_now = False
@@ -2462,7 +2459,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
         is_full = False
         remaining = None
         if row.get("capacity") is not None:
-            _rows = _window_capacity_orders(db, campus_id, row["id"], _today_iso)
+            _rows = _window_capacity_orders(db, campus_id, row["id"], _today_iso, paid_only=True)
             used = sum(_order_capacity_weight(o) for o in _rows)
             remaining = max(0, int(row["capacity"]) - used)
             is_full = used >= int(row["capacity"])

@@ -120,8 +120,17 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
     setLocating(true);
     navigator.geolocation.getCurrentPosition(position => {
       setLocating(false); callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
-    }, () => { setLocating(false); setGeoError('Location access failed. Search, tap the map, or choose a gate and enter your address.'); },
-    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+    }, failure => {
+      if (failure.code === 1) {
+        setLocating(false); setGeoError('Location permission is blocked. Allow location for holygrills.online in your browser and phone settings, then retry. You can also search or tap the map.');
+        return;
+      }
+      // A GPS fix can time out indoors. Try the device's coarser network fix.
+      navigator.geolocation.getCurrentPosition(position => {
+        setLocating(false); callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
+      }, () => { setLocating(false); setGeoError('Your device could not determine its location. Check that phone location is on, retry outdoors, or search for your address.'); },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   };
 
   return <div className="space-y-3">

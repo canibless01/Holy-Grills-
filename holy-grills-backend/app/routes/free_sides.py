@@ -34,6 +34,9 @@ def _active_credits(db, user_id: str) -> list:
     )
     campus_id = getattr(g, 'campus_id', None)
     if not campus_id:
+        profile = db.table('profiles').select('campus_id').eq('id', user_id).single().execute() or {}
+        campus_id = profile.get('campus_id')
+    if not campus_id:
         return []
     return q.or_(f"campus_id.eq.{campus_id},campus_id.is.null").order("expires_at").execute() or []
 

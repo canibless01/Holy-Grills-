@@ -147,7 +147,12 @@ export const HolyGrillProvider = ({ children }) => {
     welcomeRecoveryUser.current = profile.id;
     // Token delivery and verified identity must not wait for loyalty work.
     void apiClient.post('/auth/session-activity', {}).then(() => liveApi.auth.getStreak()).then(setStreak).catch(() => {});
-    if (profile.role === 'student') void apiClient.post('/auth/welcome-credit', {}).catch(() => {});
+    if (profile.role === 'student') {
+      const version = restoreVersion.current;
+      void apiClient.post('/auth/welcome-credit', {}).then(() => liveApi.hp.getBalance()).then(balance => {
+        if (version === restoreVersion.current) setHpBalance(balance);
+      }).catch(() => {});
+    }
   };
   const [cart, setCart] = useState(EMPTY_CART);
   const cartRequestVersion = useRef(0);

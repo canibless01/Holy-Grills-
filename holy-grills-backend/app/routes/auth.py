@@ -228,26 +228,17 @@ def register():
 
     user_id = ((result.get("user") or {}).get("id")) or result.get("id")
     if user_id:
-        # Fetch welcome bonuses for the notification
+        # Announce only ledger grants, never first-delivery or configured promises.
         db = get_db()
-        welcome_hp = "50"
-        free_side_credits = "1"
+        welcome_hp, free_side_credits = '0', '0'
         try:
-            row = db.table("system_settings").select("value").eq("key", "welcome_bonus_hp").is_("campus_id", "null").single().execute()
-            if row:
-                welcome_hp = str(row.get("value", "50"))
+            rows = db.table('hp_transactions').select('amount').eq('user_id', user_id).eq('reference_type', 'signup_bonus').eq('status', 'active').execute() or []
+            welcome_hp = str(sum(int(row.get('amount') or 0) for row in rows))
+            credits = db.table('free_side_credits').select('credits_remaining').eq('user_id', user_id).eq('source', 'signup').execute() or []
+            free_side_credits = str(sum(int(row.get('credits_remaining') or 0) for row in credits))
         except Exception:
-            pass
-        try:
-            from app.services.welcome_credit_service import read_config
-            config, _ = read_config(db)
-            if config.get("enabled"):
-                free_side_credits = str(config.get("credits", 1))
-            else:
-                free_side_credits = "0"
-        except Exception:
-            pass
-        
+            logger.warning('Welcome grant receipt unavailable for %s', user_id)
+
         # Select the right welcome message variant based on bonuses
         has_hp = int(welcome_hp) > 0
         has_sides = int(free_side_credits) > 0
@@ -265,7 +256,10 @@ def register():
             "free_side_credits": free_side_credits,
             "welcome_body": welcome_body
         })
-    # Always return the same ambiguous shape so the response does not reveal whether the email exists
+    session = result.get('session') or result
+    if session.get('access_token') and session.get('refresh_token'):
+        return jsonify({'access_token': session['access_token'], 'refresh_token': session['refresh_token'], 'user': result.get('user')}), 201
+    # No issued session: preserve the confirmation/duplicate-safe response.
     return jsonify({"status": "check_email", "message": MSG.REGISTER_EMAIL_AMBIGUOUS}), 200
 
 
@@ -464,6 +458,7 @@ def recover_welcome_credit():
     from app.services.welcome_credit_service import grant_signup_credit
     try:
         result = grant_signup_credit(g.user_id)
+        result = {**result, 'signup_hp': auth_service.hp_service.award_signup_bonus(g.user_id)}
         try:
             from app.services.gift_campaigns import claim
             result = {**result, 'campaign': claim(g.user_id)}
