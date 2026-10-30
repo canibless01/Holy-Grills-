@@ -2362,7 +2362,7 @@ def resolve_ordering_window(db, campus_id):
     open_rows.sort(key=lambda r: _parse_hm(r["opens_at"], 0, 0))
     earliest_open = _parse_hm(open_rows[0]["opens_at"], 0, 0)
     latest_close = max(_parse_hm(r["closes_at"], 23, 59) for r in open_rows)
-    if _now_wat < earliest_open or _now_wat > latest_close:
+    if _now_wat < earliest_open or _now_wat >= latest_close:
         raise OrderingWindowUnavailable(
             MSG.ORDER_OUTSIDE_ORDERING_HOURS, code=ORDERING_WINDOW_CLOSED,
             next_slot_resolver=lambda: _next_available_slot(db, campus_id, _now_wat_dt))
@@ -2370,7 +2370,7 @@ def resolve_ordering_window(db, campus_id):
     daily_remaining = _daily_capacity_remaining(db, campus_id, _today_iso)
     any_time_eligible = False
     for row in open_rows:
-        if _now_wat > _parse_hm(row["closes_at"], 23, 59):
+        if _now_wat >= _parse_hm(row["closes_at"], 23, 59):
             continue
         any_time_eligible = True
         if daily_remaining == 0:
@@ -2479,7 +2479,7 @@ def get_ordering_window_status(db, campus_id, for_date=None):
         # no "now" to compare against, so capacity alone decides them.
         _opens = _parse_hm_local(row.get("opens_at"), 0, 0)
         _closes = _parse_hm_local(row.get("closes_at"), 23, 59)
-        _within_time = (not is_today) or (_opens <= _now_wat <= _closes)
+        _within_time = (not is_today) or (_opens <= _now_wat < _closes)
         _row_open = (not row.get("is_closed")) and (not is_full) and _within_time
         if _row_open:
             any_open_now = True
@@ -2526,7 +2526,7 @@ def _closed_reason(candidates, is_today, now_wat, any_capacity):
     latest = max(_parse_hm_local(r["closes_at"], 23, 59) for r in open_rows)
     if now_wat < earliest:
         return "before_opening"
-    if now_wat > latest:
+    if now_wat >= latest:
         return "after_closing"
     return "open"
 
@@ -2550,7 +2550,7 @@ def find_next_available_ordering_slot(db, campus_id, start_date, max_days_ahead=
         bookable = [
             w for w in open_wins
             if status.get("date") != _today_iso
-            or _parse_hm_local(w.get("closes_at"), 23, 59) >= _now_wat
+            or _parse_hm_local(w.get("closes_at"), 23, 59) > _now_wat
         ]
         if bookable:
             first = min(bookable, key=lambda w: _parse_hm_local(w.get("opens_at"), 0, 0))

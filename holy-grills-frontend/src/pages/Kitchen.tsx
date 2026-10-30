@@ -46,7 +46,6 @@ export default function Kitchen() {
 
 function KitchenWorkspace({ campusId, canManageSettings }) {
   const [tab, setTab] = useState('queue');
-  const [queuePeriod, setQueuePeriod] = useState('today');
   const {
     authed, loading, error, dataWarning, refreshQueue, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, batchSummaryLoading, batchSummaryError,
     settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
@@ -62,8 +61,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
     const instant = new Date(order.is_scheduled ? order.scheduled_for : order.received_at || order.created_at).getTime();
     return Number.isFinite(instant) ? new Date(instant + 3600000).toISOString().slice(0, 10) : null;
   };
-  const older = queue.filter(order => preparationDay(order) !== today);
-  const visibleQueue = queuePeriod === 'today' ? queue.filter(order => preparationDay(order) === today) : older;
+  const visibleQueue = queue.filter(order => preparationDay(order) === today);
   const received = visibleQueue.filter((o) => o.status === 'received' || o.status === 'paid');
   const preparing = visibleQueue.filter((o) => o.status === 'preparing');
   const ready = visibleQueue.filter((o) => o.status === 'ready');
@@ -131,10 +129,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
 
         {tab === 'queue' && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_STOCK_HELP', 'Stock switches affect new orders in this campus. Existing paid orders still need to be prepared.')}</p>}
         {/* Live Queue — 3-column KDS board */}
-        {tab === 'queue' && <div className="space-y-2"><div className="flex flex-wrap gap-2">
-          <button onClick={() => setQueuePeriod('today')} className={`rounded-full border px-4 py-2 text-sm font-bold ${queuePeriod === 'today' ? 'bg-primary text-white' : ''}`}>Today's preparation · {queue.length - older.length}</button>
-          <button onClick={() => setQueuePeriod('backlog')} className={`rounded-full border px-4 py-2 text-sm font-bold ${queuePeriod === 'backlog' ? 'bg-primary text-white' : ''}`}>Older / undated · {older.length}</button>
-        </div><p className="text-xs text-muted-foreground">Newest orders appear first in each stage. Older unfinished orders stay in the backlog until resolved; they are not today's new work.</p></div>}
+        {tab === 'queue' && <p className="text-sm font-semibold">Today's preparation · {visibleQueue.length} orders. Grouped by today's delivery window; older orders remain in admin history.</p>}
         {tab === 'catering' && <KitchenCatering />}
         {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
         {tab === 'queue' && (

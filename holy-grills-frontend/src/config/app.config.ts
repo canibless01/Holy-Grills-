@@ -53,9 +53,9 @@ export const APP_CONFIG = {
   // routes every "enable push" action through OneSignal.
 
   seo: {
-    defaultTitle: "Holy Grills 🔥 — Made With More Than Flame",
+    defaultTitle: "Holy Grills — Grilled Food & Connection in FUTA, Akure",
     defaultDescription:
-      "Holy Grills brings students together through real flame cooking, shared plates and campus experiences. Faith, love, flavour and moments that become memories.",
+      "Grilled chicken, wings, kebabs and sides at FUTA, Akure. Holy Grills brings people together through shared plates, friendship and campus experiences.",
     ogType: 'website',
     twitterCard: 'summary_large_image',
     // Default social share image. App-relative is fine: useSEO runs it through
@@ -74,7 +74,7 @@ export const APP_CONFIG = {
       image: '',
       servesCuisine: ['Grilled Chicken', 'Fast Food', 'Nigerian'],
       priceRange: '₦₦',
-      areaServed: ['FUTA, Akure'],
+      areaServed: ['Federal University of Technology Akure (FUTA)', 'Akure, Ondo State, Nigeria'],
       telephone: '',
       address: {
         streetAddress: '',

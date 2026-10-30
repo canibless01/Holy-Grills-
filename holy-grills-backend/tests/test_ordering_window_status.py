@@ -203,6 +203,18 @@ class OrderingWindowStatusTest(unittest.TestCase):
         self.assertFalse(status["is_open"])
         self.assertEqual("after_closing", status["reason"])
 
+    def test_daily_cutoff_is_closed_at_exactly_four_pm(self):
+        self.db = FakeDb(ordering_windows=[_window('daily', '00:00', '16:00', weekday=1)])
+        self._patch_clock(_at(0, 0))
+        self.assertTrue(self._status()['is_open'])
+        self._patch_clock(_at(15, 59))
+        self.assertTrue(self._status()['is_open'])
+        self._patch_clock(_at(16, 0))
+        self.assertFalse(self._status()['is_open'])
+        self.assertEqual(self._status()['reason'], 'after_closing')
+        with self.assertRaises(OrderingWindowUnavailable):
+            order_service.resolve_ordering_window(self.db, CAMPUS)
+
     def test_closed_today(self):
         self.db = FakeDb(ordering_windows=[_window("w1", "08:00", "21:00", weekday=1, is_closed=True)])
         self._patch_clock(_at(12, 0))

@@ -198,6 +198,10 @@ check(!/data-prerendered-route/.test(shell), 'app-shell.html carries no pre-rend
 // ── 5. Static assets referenced by the build exist ───────────────────────────
 console.log('\nassets');
 const home = readFileSync(join(dist, 'index.html'), 'utf8');
+const robots = readFileSync(join(dist, 'robots.txt'), 'utf8');
+const sitemap = readFileSync(join(dist, 'sitemap.xml'), 'utf8');
+check(robots.includes('Sitemap: https://holygrills.online/sitemap.xml'), 'robots advertises canonical sitemap');
+check(!sitemap.includes('holygrill.app') && [...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].every(match => match[1].startsWith('https://holygrills.online/')), 'all sitemap URLs use canonical Holy Grills domain');
 for (const asset of [...home.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1])) {
   const { status } = await get(asset);
   check(status === 200, `asset ${asset}`, String(status));

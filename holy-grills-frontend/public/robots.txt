@@ -12,4 +12,4 @@ Disallow: /wallet
 Disallow: /profile
 Disallow: /dashboard
 
-Sitemap: https://holygrill.app/sitemap.xml
+Sitemap: https://holygrills.online/sitemap.xml

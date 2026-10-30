@@ -67,7 +67,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   },
   '/menu': {
     // verbatim from src/pages/Menu.tsx
-    title: "Today's Menu",
+    title: 'Grilled Chicken, Wings & Sides at FUTA, Akure',
     description:
       'Browse the full Holy Grills menu, flame grilled chicken, wings, kebabs and crispy sides, delivered hot across FUTA.',
     path: '/menu',

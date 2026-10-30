@@ -22,6 +22,16 @@ def _due_preparation(query):
             .or_(f"is_scheduled.eq.false,scheduled_for.lt.{tomorrow}T00:00:00+01:00"))
 
 
+def _today_preparation(query):
+    """A recurring window is a template; preparation belongs to one WAT date."""
+    start = today_wat().isoformat() + 'T00:00:00+01:00'
+    end = (today_wat() + timedelta(days=1)).isoformat() + 'T00:00:00+01:00'
+    return (query.in_('payment_status', ['paid', 'partially_refunded'])
+            .not_.is_('delivery_window_id', 'null')
+            .or_(f'and(is_scheduled.eq.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),'
+                 f'and(is_scheduled.eq.false,created_at.gte.{start},created_at.lt.{end})'))
+
+
 def _attach_campus_availability(db, orders, campus_id):
     """Expose only the campus stock switch, so kitchen controls survive reloads."""
     ids = {item.get("menu_item_id") for order in orders for item in order.get("order_items", []) if item.get("menu_item_id")}
@@ -592,7 +602,7 @@ def live_queue():
         .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
-    q = _due_preparation(q)
+    q = _today_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.order("received_at", ascending=False)
@@ -623,10 +633,14 @@ def delivery_windows():
     q = db.table("delivery_windows").select("*")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    from app.services.delivery_window_schedule import upcoming_delivery_windows
-    windows = upcoming_delivery_windows(q.execute() or [], open_only=False)
-
-    from app.services.delivery_window_schedule import WAT
+    from app.services.delivery_window_schedule import upcoming_delivery_windows, WAT
+    from datetime import time
+    day_start = datetime.combine(today_wat(), time.min, WAT)
+    windows = upcoming_delivery_windows(q.execute() or [], now=day_start, days=1, open_only=False)
+    windows = [window for window in windows if datetime.fromisoformat(
+        window['starts_at'].replace('Z', '+00:00')).astimezone(WAT).date() == today_wat()]
+    for window in windows:
+        window['label'] = f"{today_wat().isoformat()} · {window.get('label') or 'Daily preparation'}"
     window_ids = list({window["id"] for window in windows})
     counts = {}
     if window_ids:
@@ -810,7 +824,7 @@ def batch_summary(window_id):
         .eq("delivery_window_id", window_id)
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
-    q = _due_preparation(q)
+    q = _today_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -880,9 +894,8 @@ def batch_advance(batch_id):
         .select("id,status")
         .eq("delivery_window_id", batch_id)
         .in_("status", ["received", "paid", "preparing"])
-        .in_("payment_status", ["paid", "partially_refunded"])
-        .or_(f"is_scheduled.eq.false,scheduled_for.lt.{(today_wat() + timedelta(days=1)).isoformat()}T00:00:00+01:00")
     )
+    q = _today_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.not_.in_("status", ["delivered", "cancelled", "refunded", "delivery_attempted", "unclaimed"])

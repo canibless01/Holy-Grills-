@@ -16,6 +16,12 @@ logger = get_logger(__name__)
 
 RESEND_BASE = "https://api.resend.com"
 
+
+def public_api_base():
+    """Accept a backend origin or its /api URL consistently across email links."""
+    base = (os.environ.get('API_PUBLIC_URL') or 'https://holygrills.online/api').rstrip('/')
+    return base if base.endswith('/api') else base + '/api'
+
 # Fixed two-line brand sign-off used by every transactional/rich/ticket email.
 # Kept as constants (rather than the configurable APP_TAGLINE) so every mail
 # ends on the same two brand lines regardless of environment overrides.
@@ -181,9 +187,7 @@ def _wrap_url_with_tracking(url: str, blast_id: str, label: str = "") -> str:
         return url
     
     # Get API base URL
-    api_base = os.environ.get("API_PUBLIC_URL", "https://holygrills.online/api")
-    if api_base.endswith("/"):
-        api_base = api_base[:-1]
+    api_base = public_api_base()
     
     # Don't track mailto: or tel: links
     if url.startswith("mailto:") or url.startswith("tel:"):
@@ -476,9 +480,7 @@ def _build_html(name: str, body_text: str, app_tagline: str = "", **kwargs) -> s
     
     # Add tracking pixel if blast_id is provided
     if blast_id:
-        api_base = os.environ.get("API_PUBLIC_URL", "https://holygrills.online/api")
-        if api_base.endswith("/"):
-            api_base = api_base[:-1]
+        api_base = public_api_base()
         tracking_pixel_url = f"{api_base}/notifications/tracking/open/{blast_id}.png"
         html += f"""
                     <tr>

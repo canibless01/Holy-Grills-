@@ -63,7 +63,8 @@ def unsubscribe_links(token: str):
     frontend = (current_app.config.get("FRONTEND_URL") or "").rstrip("/")
     page = f"{frontend}/newsletter/unsubscribe?token={quote(token, safe='')}"
     api = (os.environ.get("API_PUBLIC_URL") or "").rstrip("/")
-    one_click = f"{api}/api/storefront/newsletter/unsubscribe?token={quote(token, safe='')}" if api else None
+    from app.utils.email import public_api_base
+    one_click = f"{public_api_base()}/storefront/newsletter/unsubscribe?token={quote(token, safe='')}" if api else None
     return page, one_click
 
 

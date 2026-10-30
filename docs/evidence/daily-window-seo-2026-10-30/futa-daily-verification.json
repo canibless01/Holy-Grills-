@@ -1,0 +1,56 @@
+{
+  "read_only_schedule_verification": [
+    {
+      "date": "2026-10-30",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "6d364b6a-c564-4b5e-a01b-03aea930ad36",
+      "delivery_window_id": "05e51846-63d6-4e77-bac1-74f88db02535",
+      "delivery": "19:30\u201320:30 WAT"
+    },
+    {
+      "date": "2026-10-31",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "2017f70a-24df-444f-b089-62b3a2d5b8f5",
+      "delivery_window_id": "730cdccd-5741-4367-b32f-52373a67687f",
+      "delivery": "19:30\u201320:30 WAT"
+    },
+    {
+      "date": "2026-11-01",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "50e42c2e-63fc-469c-b69e-354a035f234e",
+      "delivery_window_id": "2401768a-8448-456e-9cf4-fb5fe34fb197",
+      "delivery": "19:30\u201320:30 WAT"
+    },
+    {
+      "date": "2026-11-02",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "d870d561-47c5-4a00-b2f4-e1fd5834a0c1",
+      "delivery_window_id": "ae56d3b1-fb28-4516-a450-c608aeef9f1a",
+      "delivery": "19:30\u201320:30 WAT"
+    },
+    {
+      "date": "2026-11-03",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "27498186-a79b-4777-a454-c13c1818eb9b",
+      "delivery_window_id": "6ae91365-b2df-4745-a783-c6a08007cb18",
+      "delivery": "19:30\u201320:30 WAT"
+    },
+    {
+      "date": "2026-11-04",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "99237a42-86a5-49d2-a832-4ac3b9f91f26",
+      "delivery_window_id": "2942f3fa-94a9-4867-add3-e04dadd7e820",
+      "delivery": "19:30\u201320:30 WAT"
+    },
+    {
+      "date": "2026-11-05",
+      "intake": "00:00\u201316:00 WAT",
+      "ordering_window_id": "1c56dd16-72e6-423e-96bb-86dd9dbcada3",
+      "delivery_window_id": "bdde5557-001c-406f-b555-d61c9aa743ac",
+      "delivery": "19:30\u201320:30 WAT"
+    }
+  ],
+  "current_orders": 0,
+  "orders_missing_window": 0,
+  "test_accounts_orders_created": 0
+}
