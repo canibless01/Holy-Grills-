@@ -40,10 +40,25 @@ class EmailQuotaFallback(unittest.TestCase):
   with patch.object(email,'send_email_routed',return_value=True) as route:
    self.assertTrue(notifications._dispatch_email_via_onesignal('audit@example.invalid','Audit','Subject','Body'));self.assertEqual(route.call_args.kwargs['provider'],'onesignal')
 
- def test_zero_recipient_or_missing_message_id_is_not_success(self):
-  for payload in ({'id':'message','recipients':0},{'recipients':1},{'id':'message'},{}):
-   ok,first,second=self.run_send([],[self.reply(200,payload)],provider='onesignal')
-   self.assertFalse(ok);first.assert_not_called();self.assertEqual(second.call_count,1)
+ def test_zero_recipients_is_a_miss_and_uses_the_other_provider(self):
+  # Accepted by OneSignal but delivered to nobody (no email subscription): nothing
+  # was sent, so the alternate provider cannot duplicate — it delivers the mail the
+  # customer was otherwise never going to get.
+  ok,first,second=self.run_send([self.reply(200)],[self.reply(200,{'id':'message','recipients':0})],provider='onesignal')
+  self.assertTrue(ok);self.assertEqual((first.call_count,second.call_count),(1,1))
+ def test_error_body_on_a_2xx_is_a_miss(self):
+  ok,first,second=self.run_send([self.reply(200)],[self.reply(202,{'id':'message','errors':['All included players are not subscribed']})],provider='onesignal')
+  self.assertTrue(ok);self.assertEqual((first.call_count,second.call_count),(1,1))
+ def test_missing_message_id_stays_ambiguous_and_never_crosses_provider(self):
+  for payload in ({'recipients':1},{},{}):
+   with self.subTest(payload=payload):
+    ok,first,second=self.run_send([],[self.reply(200,payload)],provider='onesignal')
+    self.assertFalse(ok);first.assert_not_called();self.assertEqual(second.call_count,1)
+ def test_message_id_without_a_recipients_field_is_delivered(self):
+  # OneSignal does not always echo `recipients`; requiring it turned a successful
+  # send into a silent failure.
+  ok,first,second=self.run_send([],[self.reply(200,{'id':'message'})],provider='onesignal')
+  self.assertTrue(ok);first.assert_not_called();self.assertEqual(second.call_count,1)
  def test_resend_success_requires_message_id(self):
   ok,first,second=self.run_send([self.reply(200,{})],[])
   self.assertFalse(ok);second.assert_not_called()

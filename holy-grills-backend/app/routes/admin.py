@@ -9,6 +9,7 @@ _audit() helper used across the rest of the file.
 """
 
 import ipaddress
+import os
 import re
 import threading
 import uuid
@@ -2810,6 +2811,82 @@ def retry_webhook_event(event_id):
         "event_type": event_type,
         "reference": reference,
     }), 200
+
+# ---------------------------------------------------------------------------
+# Email provider health (send counters, configured providers, quota headroom)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/email-health", methods=["GET"])
+@require_role("admin")
+def email_health():
+    """Why email may not be arriving: which providers are configured, and how much
+    of today's allowance each has used.
+
+    The router counts its own accepted sends per provider per day
+    (`app/services/email_usage.py`) and pre-empts a known limit by switching to the
+    other provider, so this is also the counter that decides the fallback — a
+    provider reported as exhausted here is the one being bypassed.
+    ---
+    tags: [Admin]
+    responses:
+      200:
+        description: Email provider usage for today
+    """
+    from app.services import email_usage
+    from app.utils import email as email_utils
+    health = email_usage.health()
+    health["from_address"] = os.environ.get("EMAIL_FROM", "noreply@holygrills.online")
+    health["onesignal_email_from"] = (os.environ.get("ONESIGNAL_EMAIL_FROM")
+                                     or os.environ.get("EMAIL_FROM")
+                                     or "noreply@holygrills.online")
+    health["onesignal_sender_domain"] = os.environ.get("ONESIGNAL_EMAIL_SENDER_DOMAIN") or None
+    health["transactional_provider"] = email_utils_get_provider("transactional")
+    health["blast_provider"] = email_utils_get_provider("blast")
+    return jsonify(health), 200
+
+
+def email_utils_get_provider(scope):
+    from app.services.notification_service import get_email_provider
+    try:
+        return get_email_provider(scope=scope)
+    except Exception:                                             # noqa: BLE001
+        return None
+
+@admin_bp.route("/email-subscriptions/backfill", methods=["POST"])
+@require_role("admin")
+def backfill_email_subscriptions():
+    """Register OneSignal Email Subscriptions for accounts created before we did it.
+
+    Sign-up and login already register the address; this catches the accounts that do
+    neither, which is why OneSignal could show 0 email subscribers for a live app.
+    Runs in the background so a large table does not hold the request open.
+    ---
+    tags: [Admin]
+    parameters:
+      - in: body
+        name: body
+        schema:
+          properties:
+            limit: {type: integer, default: 500}
+            offset: {type: integer, default: 0}
+    responses:
+      202:
+        description: Backfill started
+      400:
+        description: Invalid range
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        limit = int(data.get("limit", 500))
+        offset = int(data.get("offset", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if not 1 <= limit <= 2000 or offset < 0:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    from app.services.onesignal_email import backfill_email_subscriptions as run_backfill
+    threading.Thread(target=lambda: run_backfill(limit=limit, offset=offset), daemon=True).start()
+    return jsonify({"started": True, "limit": limit, "offset": offset,
+                    "message": MSG.EMAIL_SUBSCRIPTION_BACKFILL_STARTED}), 202
 
 # --- END OF SECTION 7 (exclusive spin pool, webhook events) ---
 

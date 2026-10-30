@@ -7,6 +7,8 @@ Auth: Authorization: Bearer <RESEND_API_KEY>
 """
 
 import os
+import uuid
+
 import requests
 from app.constants import APP_TAGLINE_DEFAULT
 from app.messages import MSG
@@ -824,38 +826,132 @@ def _email_quota_rejection(response):
         for value in errors)
 
 
-def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None):
-    """Return (accepted, definitely_quota_rejected). Never retry ambiguity."""
+def _provider_errors(detail) -> str:
+    """Flatten a provider error envelope to one line for the delivery receipt."""
+    errors = detail.get("errors") if isinstance(detail, dict) else None
+    if isinstance(errors, str):
+        return errors
+    if isinstance(errors, list):
+        parts = []
+        for item in errors:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("title") or item.get("code") or item))
+        return "; ".join(parts)
+    if isinstance(detail, dict):
+        return str(detail.get("message") or detail.get("error") or "")
+    return ""
+
+
+def _email_undeliverable(response, detail) -> bool:
+    """True when the provider explicitly delivered to nobody.
+
+    This is the "campaign was sent but no inbox ever received it" case: OneSignal
+    accepts the request and answers with an error body (no email subscription, no
+    valid recipients) or with `recipients: 0`. Nothing was sent, so trying the other
+    provider cannot produce a duplicate — only an actual delivery.
+    """
+    if not isinstance(detail, dict):
+        return False
+    if detail.get("errors"):
+        return True
+    recipients = detail.get("recipients")
+    if isinstance(recipients, bool):
+        return True
+    if isinstance(recipients, (int, float)) and recipients <= 0:
+        return True
+    return False
+
+
+def _onesignal_email_payload(app_id, to_email, subject, html_body, transactional):
+    """Body for POST /notifications targeting one email address.
+
+    `email_from_address` is the part that was missing: without it OneSignal sends
+    from its own no-reply address on a domain the app has not verified, which is what
+    makes "sent" campaigns never turn up (and land in spam when they do). The
+    idempotency key stops a retried request from mailing the customer twice.
+    """
+    from_email = (os.environ.get("ONESIGNAL_EMAIL_FROM") or os.environ.get("EMAIL_FROM")
+                  or "noreply@holygrills.online")
+    payload = {
+        "app_id": app_id,
+        "target_channel": "email",
+        "include_email_tokens": [to_email],
+        "email_subject": subject,
+        "email_body": html_body,
+        "email_from_address": from_email,
+        "email_from_name": os.environ.get("EMAIL_FROM_NAME", "Holy Grills"),
+        "idempotency_key": str(uuid.uuid4()),
+    }
+    sender_domain = os.environ.get("ONESIGNAL_EMAIL_SENDER_DOMAIN")
+    if sender_domain:
+        payload["email_sender_domain"] = sender_domain
+    # Transactional mail (receipts, tickets, password resets) must reach the customer
+    # even if they unsubscribed from marketing; marketing blasts must respect it.
+    if transactional:
+        payload["include_unsubscribed"] = True
+    return payload
+
+
+def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None,
+                   receipt=None, transactional=True):
+    """One delivery attempt.
+
+    Returns (accepted, quota_rejected, undeliverable):
+      * accepted      — the provider took it (message id present, no errors)
+      * quota_rejected— an explicit out-of-quota refusal (safe to switch provider)
+      * undeliverable — the provider accepted but delivered to nobody (also safe)
+    Anything else (timeout, 5xx, an unrecognised 4xx) is ambiguous: no retry, no
+    second transport, because the message may already be in flight.
+    """
+    response = None
     try:
         if provider == "onesignal":
             from app.services.notification_service import _get_onesignal_creds, _onesignal_email_post, _ONESIGNAL_BASE
             app_id, api_key = _get_onesignal_creds()
             if not app_id or not api_key:
-                return False, False
+                if receipt is not None:
+                    receipt.update({"provider": provider, "state": "not_configured"})
+                return False, False, False
             # Custom RFC unsubscribe headers cannot safely be translated to an
             # undocumented provider field. Preserve the caller's Resend path.
             if headers:
-                return False, False
-            payload = {"app_id": app_id, "target_channel": "email", "include_email_tokens": [to_email],
-                       "email_subject": subject, "email_body": html_body}
+                if receipt is not None:
+                    receipt.update({"provider": provider, "state": "skipped"})
+                return False, False, False
+            payload = _onesignal_email_payload(app_id, to_email, subject, html_body, transactional)
             response = _onesignal_email_post(f"{_ONESIGNAL_BASE}/notifications",
                                       headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
                                       payload=payload)
-            accepted = response.status_code in (200, 202)
-            if accepted:
-                try:
-                    detail = response.json()
-                    accepted = (isinstance(detail, dict) and bool(detail.get("id"))
-                                and not detail.get("errors")
-                                and isinstance(detail.get("recipients"), (int, float))
-                                and not isinstance(detail.get("recipients"), bool)
-                                and detail["recipients"] > 0)
-                except (ValueError, TypeError):
-                    accepted = False
+            accepted = undeliverable = False
+            detail = {}
+            try:
+                detail = response.json()
+            except (ValueError, TypeError):
+                detail = {}
+            if not isinstance(detail, dict):
+                detail = {}
+            if response.status_code in (200, 202):
+                # A 2xx with an errors body, or recipients: 0, means nothing was sent:
+                # OneSignal accepted the request but had no email subscription to
+                # deliver to. That is a miss, not a success.
+                undeliverable = _email_undeliverable(response, detail)
+                accepted = bool(detail.get("id")) and not undeliverable
+            if receipt is not None:
+                receipt.update({
+                    "provider": provider,
+                    "http_status": response.status_code,
+                    "provider_message_id": detail.get("id"),
+                    "provider_recipients": detail.get("recipients"),
+                    "error": None if accepted else (_provider_errors(detail) or None),
+                })
         else:
             api_key = _resend_api_key()
             if not api_key:
-                return False, False
+                if receipt is not None:
+                    receipt.update({"provider": provider, "state": "not_configured"})
+                return False, False, False
             from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.online")
             from_name = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
             payload = {"from": f"{from_name} <{from_email}>", "to": [to_email], "subject": subject, "html": html_body}
@@ -865,40 +961,104 @@ def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None
                                      headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                                      json=payload, timeout=10)
             accepted = response.status_code in (200, 201)
+            detail = {}
             if accepted:
                 try:
                     detail = response.json()
-                    accepted = isinstance(detail, dict) and bool(detail.get("id")) and not detail.get("error")
                 except (ValueError, TypeError):
-                    accepted = False
+                    detail = {}
+                accepted = isinstance(detail, dict) and bool(detail.get("id")) and not detail.get("error")
+            if receipt is not None:
+                receipt.update({
+                    "provider": provider,
+                    "http_status": response.status_code,
+                    "provider_message_id": detail.get("id") if isinstance(detail, dict) else None,
+                    "error": None if accepted else (_provider_errors(detail) or None),
+                })
+            undeliverable = False
         if accepted:
-            return True, False
+            if receipt is not None:
+                receipt.update({"state": "accepted"})
+            return True, False, False
         quota = _email_quota_rejection(response)
-        logger.warning("Email provider %s rejected delivery with status %s (quota=%s)", provider, response.status_code, quota)
-        return False, quota
+        if not undeliverable:
+            # A 4xx that names "no valid recipients / not subscribed" also means
+            # nothing was delivered — safe to use the other transport.
+            undeliverable = (response.status_code in (400, 404)
+                             and any(marker in (_provider_errors(_safe_json(response)) or "").lower()
+                                     for marker in ("not subscribed", "no valid", "no recipients",
+                                                    "no email", "invalid email", "email not enabled")))
+        if receipt is not None and receipt.get("state") != "accepted":
+            receipt.setdefault("error", _provider_errors(_safe_json(response)) or None)
+            receipt["state"] = "undelivered" if undeliverable else ("rejected" if not quota else "quota")
+        logger.warning("Email provider %s rejected delivery with status %s (quota=%s, undelivered=%s)",
+                       provider, response.status_code, quota, undeliverable)
+        return False, quota, undeliverable
     except Exception as exc:
         # A timeout/connection reset may follow provider acceptance. A second
         # transport here could deliver the same message twice.
         logger.warning("Email provider %s outcome unavailable: %s", provider, type(exc).__name__)
-        return False, False
+        if receipt is not None:
+            receipt.update({"provider": provider, "state": "unknown", "error": type(exc).__name__})
+        return False, False, False
 
 
-def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None):
-    """One preferred attempt, then one alternate only after a quota refusal.
+def _safe_json(response):
+    try:
+        detail = response.json()
+        return detail if isinstance(detail, dict) else {}
+    except (ValueError, TypeError, AttributeError):
+        return {}
 
-    No counters, global configuration changes or speculative timeout retries.
-    This is application email routing; Supabase Auth SMTP is independent.
+
+def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None,
+                      receipt=None, transactional=True):
+    """Deliver one email, preferring `provider` and switching only when it is safe.
+
+    A switch happens in exactly three situations:
+      1. the preferred provider explicitly refused for quota;
+      2. it accepted the request but delivered to nobody (no email subscription,
+         zero recipients) — nothing was sent, so the alternate cannot duplicate;
+      3. our own daily counter shows the preferred provider is already at its
+         configured allowance (see app/services/email_usage.py) — pre-emptive, and
+         only when the counter could be read.
+
+    Ambiguous outcomes (timeout, 5xx, unrecognised 4xx) never switch: the first
+    attempt may already be in the customer's inbox.
     """
+    from app.services import email_usage
     chosen = "onesignal" if provider == "onesignal" else "resend"
     if headers:
         chosen = "resend"  # Retain explicit unsubscribe/custom headers.
-    accepted, quota = _email_attempt(chosen, to_email, to_name, subject, html_body, headers)
+    if receipt is not None:
+        receipt.clear()
+        receipt.update({"preempted": None})
+    if not headers:
+        target = email_usage.choose_provider(chosen)
+        if target != chosen:
+            if receipt is not None:
+                receipt["preempted"] = chosen
+            chosen = target
+
+    accepted, quota, undeliverable = _email_attempt(
+        chosen, to_email, to_name, subject, html_body, headers, receipt=receipt,
+        transactional=transactional)
     if accepted:
+        email_usage.record_send(chosen)
         return True
-    if not quota or headers:
+    if headers or not (quota or undeliverable):
         return False
     alternate = "resend" if chosen == "onesignal" else "onesignal"
-    accepted, _ = _email_attempt(alternate, to_email, to_name, subject, html_body)
+    alternate_receipt = {}
+    accepted, _, _ = _email_attempt(alternate, to_email, to_name, subject, html_body,
+                                    receipt=alternate_receipt, transactional=transactional)
+    if accepted:
+        email_usage.record_send(alternate)
+    if receipt is not None:
+        receipt.setdefault("fallback", alternate_receipt)
+        if accepted:
+            receipt["state"] = "accepted_fallback"
+            receipt["delivered_by"] = alternate
     return accepted
 
 

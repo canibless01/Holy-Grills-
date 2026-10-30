@@ -285,6 +285,16 @@ def update_preferences():
 
     try:
         result = get_db().rpc('hg_update_notification_preferences_atomic',{'p_user_id':g.user_id,'p_preferences':update})
+        # Mirror the email opt-in/opt-out into OneSignal so it cannot mail someone who
+        # turned email off in the app (and so an opt-in actually subscribes them).
+        if "email_enabled" in update:
+            try:
+                from app.services.onesignal_email import sync_email_subscription_async
+                profile = get_db().table("profiles").select("email").eq("id", g.user_id).single().execute() or {}
+                if profile.get("email"):
+                    sync_email_subscription_async(g.user_id, profile["email"], enabled=update["email_enabled"])
+            except Exception as exc:                              # noqa: BLE001
+                logger.warning("OneSignal email subscription sync failed for %s: %s", g.user_id, exc)
         if isinstance(result, dict):
             result["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
         return jsonify(result), 200

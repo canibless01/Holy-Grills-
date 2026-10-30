@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, Image as ImageIcon, TrendingUp } from 'lucide-react';
+import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, TrendingUp } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -11,6 +11,7 @@ import { msg } from '@/lib/messages';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { apiClient } from '@/lib/apiClient';
 import RichTextEditor from './RichTextEditor';
+import ImageUploader from './ImageUploader';
 import CTABlockEditor, { type CTABlock } from './CTABlockEditor';
 import ImageStackEditor, { type ImageBlock } from './ImageStackEditor';
 import EmailPreviewModal from './EmailPreviewModal';
@@ -89,6 +90,11 @@ export default function AdminNotifications() {
   const [selectedBlastAnalytics, setSelectedBlastAnalytics] = useState(null); // Analytics data for selected blast
   const [analyticsBlastId, setAnalyticsBlastId] = useState<string | null>(null); // Blast ID for analytics modal
   const [analyticsBlastTitle, setAnalyticsBlastTitle] = useState<string>(''); // Blast title for analytics modal
+  // Why mail might not land: which providers are configured and how much of
+  // today's allowance each has used (GET /admin/email-health). Read-only.
+  const [emailHealth, setEmailHealth] = useState<any>(null);
+  const [showTips, setShowTips] = useState(false);
+  const [syncingSubscribers, setSyncingSubscribers] = useState(false);
   const preview = async () => {
     try { const result = await apiClient.post('/notifications/blasts/preview', buildPayload()); setPreviewCount(result.recipient_count); }
     catch { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), variant: 'destructive' }); }
@@ -108,11 +114,22 @@ export default function AdminNotifications() {
     setLoadError(false);
     try { setBlasts(await mockApi.admin.getNotificationBlasts()); }
     catch { setLoadError(true); }
+    try { setEmailHealth(await apiClient.get('/admin/email-health')); }
+    catch { setEmailHealth(null); } // advisory only — never blocks the form
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
   const toggleChannel = (id, checked) => setChannels(checked ? [...channels, id] : channels.filter((x) => x !== id));
+  // The editor's image button appends an image block (max 6) and points the admin
+  // at it, rather than embedding an <img> the blast API would strip.
+  const addImageBlock = () => {
+    if (images.length >= 6) {
+      toast({ title: msg('FE_ADMIN_NOTIFICATIONS_IMAGE_LIMIT', 'Image limit reached'), description: msg('FE_ADMIN_NOTIFICATIONS_IMAGE_LIMIT_BODY', 'A campaign can carry up to 6 images.'), variant: 'destructive' });
+      return;
+    }
+    setImages([...images, { id: `img-${Date.now()}`, url: '', alt: '', link: '' }]);
+  };
   const valid = title.trim() && (body.trim() || bodyHtml.replace(/<[^>]*>/g, ' ').trim()) && channels.length > 0 && (!recipientQuery.trim() || selectedRecipients.length > 0);
   const isScheduled = !!sendAt;
 
@@ -194,6 +211,26 @@ export default function AdminNotifications() {
     setSendingTest(false);
   };
 
+  // Existing accounts were never registered as OneSignal email subscribers, which
+  // is why a campaign to "everyone" reached almost no inboxes. This backfills them.
+  const syncEmailSubscribers = async () => {
+    setSyncingSubscribers(true);
+    try {
+      await apiClient.post('/admin/email-subscriptions/backfill', { limit: 500 });
+      toast({
+        title: msg('FE_EMAIL_HEALTH_BACKFILL_STARTED', 'Email subscriber sync started'),
+        description: msg('FE_EMAIL_HEALTH_BACKFILL_HINT', 'Existing accounts are being linked in the background. Re-check OneSignal in a few minutes.'),
+      });
+    } catch (e) {
+      toast({
+        title: msg('FE_EMAIL_HEALTH_BACKFILL_FAILED', "Couldn't start the sync"),
+        description: e.message,
+        variant: 'destructive',
+      });
+    }
+    setSyncingSubscribers(false);
+  };
+
   const testDeliverability = async () => {
     // Prompt admin for email addresses to test with
     const testEmails = prompt(
@@ -252,23 +289,9 @@ export default function AdminNotifications() {
           description: `Sent to ${successful} address${successful > 1 ? 'es' : ''}. Check your inboxes to see where they land!${failed > 0 ? ` (${failed} failed)` : ''}`,
         });
         
-        // Show helpful tips
-        setTimeout(() => {
-          alert(
-            'Test emails sent! Now check the inboxes:\n\n' +
-            'What to look for:\n' +
-            '1. Primary vs Spam folder\n' +
-            '2. How quickly it arrived\n' +
-            '3. Does it render correctly?\n' +
-            '4. Are links working?\n\n' +
-            'Tips for better deliverability:\n' +
-            '• Use a clear, non-spammy subject line\n' +
-            '• Avoid excessive capitalization or exclamation marks\n' +
-            '• Include a clear unsubscribe link for marketing emails\n' +
-            '• Send from a consistent email address\n' +
-            '• Keep your sender reputation good'
-          );
-        }, 500);
+        // The checklist is shown on the page (not an alert) so the admin can keep
+        // it open while switching over to their inbox.
+        setShowTips(true);
       } else {
         toast({ 
           title: 'Failed to send tests', 
@@ -307,6 +330,10 @@ export default function AdminNotifications() {
               value={bodyHtml}
               onChange={setBodyHtml}
               placeholder="Write your notification message with rich formatting..."
+              // Campaign images live in the image stack below, not inside the HTML:
+              // the blast API sanitises body_html and drops <img>, so an inline image
+              // would silently vanish from the email.
+              onInsertImage={addImageBlock}
             />
             {/* Keep plain text body for backward compatibility */}
             <textarea
@@ -326,21 +353,7 @@ export default function AdminNotifications() {
 
           {/* Push/In-App Image */}
           <Field label="Push/In-App Image (optional)" hint="Image to show in push notifications and in-app notifications">
-            <div className="flex items-center gap-2 mt-1">
-              <ImageIcon className="w-4 h-4 text-muted-foreground" />
-              <input
-                type="url"
-                value={pushImage}
-                onChange={(e) => setPushImage(e.target.value)}
-                placeholder="https://example.com/push-image.jpg"
-                className="flex-1 p-2.5 rounded-xl border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
-              />
-            </div>
-            {pushImage && (
-              <div className="mt-2 rounded-lg overflow-hidden border border-border">
-                <img src={pushImage} alt="Push preview" className="w-full h-auto max-h-32 object-cover" />
-              </div>
-            )}
+            <ImageUploader value={pushImage} onChange={setPushImage} folder="campaigns" label="Push image" />
           </Field>
 
           {/* Email Tracking Toggle */}
@@ -431,6 +444,68 @@ export default function AdminNotifications() {
             </select>
           </Field>
 
+          {/* Email provider health — the same counters that decide the fallback
+              switch. Shown next to the provider picker so an admin can see why
+              mail is going out on the other provider, or not at all. */}
+          {emailHealth && (
+            <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-primary" />
+                  {msg('FE_EMAIL_HEALTH_TITLE', 'Email delivery today')}
+                </span>
+                {emailHealth.onesignal_email_from && (
+                  <span className="text-[10px] font-bold text-muted-foreground truncate" title={emailHealth.onesignal_email_from}>
+                    {msg('FE_EMAIL_HEALTH_FROM', 'From {address}', { address: emailHealth.onesignal_email_from })}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                {(emailHealth.providers || []).map((p) => {
+                  const used = p.sent_today ?? 0;
+                  const limit = p.daily_limit ?? 0;
+                  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                  const exhausted = limit > 0 && used >= limit;
+                  return (
+                    <div key={p.provider} className="flex items-center gap-2 text-[11px]">
+                      <span className="font-bold text-foreground capitalize w-20 shrink-0">{p.provider}</span>
+                      {p.configured === false ? (
+                        <Pill tone="cocoa">{msg('FE_EMAIL_HEALTH_NOT_CONFIGURED', 'Not configured')}</Pill>
+                      ) : (
+                        <span className={`font-bold ${exhausted ? 'text-destructive' : 'text-muted-foreground'}`}>
+                          {limit > 0
+                            ? msg('FE_EMAIL_HEALTH_USAGE', '{used} of {limit} today', { used, limit })
+                            : msg('FE_EMAIL_HEALTH_UNLIMITED', '{used} today', { used })}
+                        </span>
+                      )}
+                      {exhausted && <Pill tone="red">{msg('FE_EMAIL_HEALTH_EXHAUSTED', 'Switched away')}</Pill>}
+                      {limit > 0 && (
+                        <div className="flex-1 h-1 rounded-full bg-border overflow-hidden">
+                          <div className={`h-full ${exhausted ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  onClick={syncEmailSubscribers}
+                  disabled={syncingSubscribers}
+                  className="text-[10px] font-bold text-primary hover:underline disabled:opacity-50"
+                  title="Register existing accounts as OneSignal email subscribers"
+                >
+                  {syncingSubscribers
+                    ? msg('FE_EMAIL_HEALTH_BACKFILLING', 'Starting sync…')
+                    : msg('FE_EMAIL_HEALTH_BACKFILL', 'Sync existing email subscribers')}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {msg('FE_EMAIL_HEALTH_NOTE', 'When a provider reaches its daily limit we send on the other one, so the campaign still goes out.')}
+              </p>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
               onClick={() => setPreviewOpen(true)}
@@ -467,6 +542,22 @@ export default function AdminNotifications() {
             <Send className="w-4 h-4" />
             {sending ? 'Sending...' : isScheduled ? 'Schedule Campaign' : 'Send Blast Now'}
           </button>
+          {showTips && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-foreground">{msg('FE_EMAIL_TIPS_TITLE', 'Checking what landed')}</span>
+                <button onClick={() => setShowTips(false)} className="text-[10px] font-bold text-muted-foreground hover:underline">
+                  {msg('FE_EMAIL_TIPS_DISMISS', 'Dismiss')}
+                </button>
+              </div>
+              <ul className="text-[11px] text-muted-foreground space-y-0.5 list-disc pl-4">
+                <li>{msg('FE_EMAIL_TIPS_PRIMARY', 'Did it land in Primary or in Spam?')}</li>
+                <li>{msg('FE_EMAIL_TIPS_SPEED', 'How quickly did it arrive?')}</li>
+                <li>{msg('FE_EMAIL_TIPS_RENDER', 'Does it render correctly, and do the links work?')}</li>
+                <li>{msg('FE_EMAIL_TIPS_SENDER', 'A clear subject and one consistent sender address help most.')}</li>
+              </ul>
+            </div>
+          )}
           <button onClick={preview} className="text-primary font-bold text-sm">{msg('FE_BLAST_PREVIEW', 'Preview recipients')}</button>
           {previewCount !== null && <p className="text-sm">{msg('FE_BLAST_AUDIENCE_COUNT', '{count} recipients in this audience.', { count: previewCount })}</p>}
         </div>
@@ -510,6 +601,27 @@ export default function AdminNotifications() {
                   {['failed', 'sending'].includes(b.status) && <button onClick={() => retryCampaign(b.id)} className="text-primary font-bold text-xs">{msg('FE_BLAST_RETRY', 'Retry campaign')}</button>}
                   {b.metadata?.processed_count != null && <p className="text-xs">{msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: b.metadata.processed_count })}</p>}
                   {b.metadata?.notification_records != null && <p className="text-xs">{msg('FE_BLAST_STORED_RECORDS', '{count} notification records stored', { count: b.metadata.notification_records })}</p>}
+                  {/* Real delivery, not just "processed": counted from
+                      notification_deliveries after the send settles. */}
+                  {b.metadata?.dispatch?.email && (
+                    <p className={`text-xs font-bold ${b.metadata.email_delivery_failed ? 'text-destructive' : 'text-muted-foreground'}`}>
+                      {msg('FE_BLAST_EMAIL_DELIVERY', 'Email delivered to {sent}, failed for {failed}.', {
+                        sent: b.metadata.dispatch.email.sent ?? 0,
+                        failed: b.metadata.dispatch.email.failed ?? 0,
+                      })}
+                    </p>
+                  )}
+                  {b.metadata?.dispatch?.push && (
+                    <p className="text-xs text-muted-foreground">
+                      {msg('FE_BLAST_PUSH_DELIVERY', 'Push delivered to {sent}, failed for {failed}.', {
+                        sent: b.metadata.dispatch.push.sent ?? 0,
+                        failed: b.metadata.dispatch.push.failed ?? 0,
+                      })}
+                    </p>
+                  )}
+                  {b.metadata?.email_delivery_failed && (
+                    <Pill tone="red">{msg('FE_BLAST_EMAIL_FAILED', 'Email not delivered')}</Pill>
+                  )}
                   <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground font-bold flex-wrap">
                     {(b.scheduled_at || b.send_at) && <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {new Date(b.scheduled_at || b.send_at).toLocaleString()}</span>}
                     <span>{Array.isArray(b.channels) ? b.channels.join(', ') : '—'}</span>
