@@ -2842,6 +2842,19 @@ def email_health():
     health["onesignal_sender_domain"] = os.environ.get("ONESIGNAL_EMAIL_SENDER_DOMAIN") or None
     health["transactional_provider"] = email_utils_get_provider("transactional")
     health["blast_provider"] = email_utils_get_provider("blast")
+    # Identity of the OneSignal app we write subscriptions into. A wrong
+    # ONESIGNAL_APP_ID creates subscribers in another app and looks *exactly* like
+    # "nothing reaches OneSignal", so show which app is configured (ID is public).
+    from app.services.notification_service import _get_onesignal_creds
+    app_id, api_key = _get_onesignal_creds()
+    health["onesignal_app_id"] = app_id or None
+    health["onesignal_api_key_present"] = bool(api_key)
+    health["onesignal_api_key_type"] = ("server_rest" if str(api_key).startswith("os_v2_app_")
+                                        else ("present_unexpected_prefix" if api_key else None))
+    # OneSignal identifies the app by a uuid. Anything else is a typo (App ID vs Key
+    # swapped is the classic one).
+    health["onesignal_app_id_looks_valid"] = bool(
+        app_id and len(app_id) == 36 and app_id.count("-") == 4)
     return jsonify(health), 200
 
 

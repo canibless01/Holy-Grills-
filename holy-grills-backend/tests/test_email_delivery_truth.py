@@ -367,6 +367,113 @@ class SubscriptionDiagnosticsTests(unittest.TestCase):
         self.assertEqual(details["reason"], "onesignal_not_configured")
 
 
+class SelfHealTests(unittest.TestCase):
+    """A refused "not subscribed" send must be repaired, not just re-routed.
+
+    The production logs showed tests falling back to Resend on every send: OneSignal
+    answered 200 with "not subscribed", we treated it as a miss and mailed via Resend.
+    Users got their mail, OneSignal stayed at zero subscribers, and the fallback is
+    the provider that runs out at 100/day — so the failure was invisible until it
+    mattered.
+    """
+
+    def _route(self, replies, linked=True, transactional=True, provider="onesignal"):
+        db = MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = []
+        replies = list(replies)
+        with patch.object(notifications, "_get_onesignal_creds", return_value=("app", "key")), \
+             patch.object(notifications, "_onesignal_email_post", side_effect=replies) as post, \
+             patch.object(email_usage, "reserve", return_value=1), \
+             patch.object(email_usage, "release"), \
+             patch.object(onesignal_email, "ensure_email_subscription", return_value=linked) as ensure, \
+             patch("app.db.get_db", return_value=db):
+            receipt = {}
+            result = email.send_email_routed("guest@example.invalid", "Guest", "Your QR code",
+                                             "<p>qr</p>", provider=provider, receipt=receipt,
+                                             transactional=transactional)
+        return result, receipt, post, ensure
+
+    def test_a_missing_subscription_is_created_and_the_send_retried(self):
+        result, receipt, post, ensure = self._route([
+            _reply(200, {"id": "m0", "errors": ["All included players are not subscribed"]}),
+            _reply(200, {"id": "m1", "recipients": 1}),
+        ])
+        self.assertTrue(result)
+        ensure.assert_called_once()
+        self.assertEqual(post.call_count, 2)               # retried on OneSignal, not Resend
+        self.assertEqual(receipt["provider_message_id"], "m1")
+
+    def test_the_retry_is_not_used_when_registration_fails(self):
+        result, _, post, ensure = self._route([
+            _reply(200, {"id": "m0", "errors": ["All included players are not subscribed"]}),
+        ], linked=False)
+        self.assertFalse(result)
+        ensure.assert_called_once()
+        self.assertEqual(post.call_count, 1)               # no pointless second attempt
+
+    def test_an_unrelated_2xx_error_is_not_treated_as_a_subscription_problem(self):
+        result, _, post, ensure = self._route([_reply(200, {"errors": ["Sender domain not verified"]})])
+        self.assertFalse(result)
+        ensure.assert_not_called()
+        self.assertEqual(post.call_count, 1)
+
+    def test_a_guest_gets_a_stable_identity_and_an_account_uses_its_profile_id(self):
+        db = MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = [
+            {"id": "profile-uuid", "is_active": True}]
+        with patch("app.db.get_db", return_value=db):
+            self.assertEqual(email._subscription_identity("a@example.invalid"), "profile-uuid")
+        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = []
+        with patch("app.db.get_db", return_value=db):
+            first = email._subscription_identity("Guest@Example.invalid")
+            second = email._subscription_identity("guest@example.invalid")
+        self.assertTrue(first.startswith("guest-"))
+        self.assertEqual(first, second)                    # same guest, same alias, case-insensitive
+
+    def test_a_deactivated_account_is_not_registered(self):
+        db = MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = [
+            {"id": "profile-uuid", "is_active": False}]
+        with patch("app.db.get_db", return_value=db):
+            identity = email._subscription_identity("a@example.invalid")
+        self.assertTrue(identity.startswith("guest-"))
+
+    def test_email_addresses_are_masked_in_messages(self):
+        self.assertEqual(email._mask_email("someone@example.com"), "s***@example.com")
+        self.assertEqual(email._mask_email("nonsense"), "***")
+
+
+class EmailHealthDiagnosticsTests(unittest.TestCase):
+    """A wrong OneSignal app id looks exactly like "nothing reaches OneSignal"."""
+
+    def _health(self, app_id="471bd695-2342-4521-aa0f-8c93d7ce805f", api_key="os_v2_app_test"):
+        from app.routes import admin as admin_routes
+        with patch("app.services.email_usage.health",
+                   return_value={"date": "2026-10-30", "providers": [], "counters_available": True}), \
+             patch("app.services.notification_service._get_onesignal_creds",
+                   return_value=(app_id, api_key)), \
+             patch.object(admin_routes, "email_utils_get_provider", return_value="resend"), \
+             patch.object(admin_routes, "jsonify", side_effect=lambda payload: payload):
+            # __wrapped__ skips @require_role, which needs a live request.
+            return admin_routes.email_health.__wrapped__()[0]
+
+    def test_it_reports_the_app_id_and_the_key_kind(self):
+        health = self._health()
+        self.assertEqual(health["onesignal_app_id"], "471bd695-2342-4521-aa0f-8c93d7ce805f")
+        self.assertTrue(health["onesignal_app_id_looks_valid"])
+        self.assertTrue(health["onesignal_api_key_present"])
+        self.assertEqual(health["onesignal_api_key_type"], "server_rest")
+
+    def test_a_missing_key_or_odd_app_id_is_visible(self):
+        health = self._health(app_id="", api_key="")
+        self.assertIsNone(health["onesignal_app_id"])
+        self.assertFalse(health["onesignal_api_key_present"])
+        self.assertFalse(health["onesignal_app_id_looks_valid"])
+        # An App ID pasted into the key slot is the classic mix-up.
+        health = self._health(api_key="471bd695-2342-4521-aa0f-8c93d7ce805f")
+        self.assertEqual(health["onesignal_api_key_type"], "present_unexpected_prefix")
+
+
 class TestBlastReceiptTests(unittest.TestCase):
     def test_receipt_is_read_from_the_delivery_row(self):
         from app.routes import notifications as notification_routes
@@ -394,43 +501,74 @@ class TestBlastReceiptTests(unittest.TestCase):
 
 
 class SubscriptionBackfillTests(unittest.TestCase):
-    def _run(self, rows, linked=True):
+    """The sweep must use the query builder this repo actually has.
+
+    `TableQuery` (app/db.py) offers limit()/offset() and has no range(), and a nested
+    select is unsupported too. The first version used both, so every sweep died with
+    `'TableQuery' object has no attribute 'range'` before reading a single profile —
+    which is why OneSignal stayed at 0 email subscribers.
+    """
+
+    def _db(self, rows, preferences=None):
         db = MagicMock()
-        db.table.return_value.select.return_value.range.return_value.execute.return_value = rows
+        profiles = db.table.return_value.select.return_value.order.return_value.limit.return_value
+        profiles.offset.return_value.execute.return_value = rows
+        profiles.execute.return_value = rows
+        db.table.return_value.select.return_value.in_.return_value.limit.return_value.execute.return_value = (
+            preferences or [])
+        return db
+
+    def _run(self, rows, linked=True, preferences=None):
+        db = self._db(rows, preferences)
         with patch("app.db.get_db", return_value=db), \
              patch.object(onesignal_email, "ensure_email_subscription", return_value=linked) as ensure:
-            return onesignal_email.backfill_email_subscriptions(limit=10), ensure
+            return onesignal_email.backfill_email_subscriptions(limit=10), ensure, db
+
+    def test_the_query_uses_limit_offset_and_never_range(self):
+        _, _, db = self._run([{"id": "u1", "email": "a@example.invalid"}])
+        profiles = db.table.return_value.select.return_value.order.return_value.limit.return_value
+        profiles.offset.assert_called_once_with(0)
+        # A nested (embedded) select is what this client cannot build.
+        profile_select = db.table.return_value.select.call_args_list[0]
+        self.assertEqual(profile_select.args[0], "id,email,is_active,email_notifications")
+        self.assertNotIn("(", profile_select.args[0])
+
+    def test_preferences_are_read_separately_and_respected(self):
+        _, ensure, db = self._run(
+            [{"id": "u1", "email": "a@example.invalid"}, {"id": "u2", "email": "b@example.invalid"}],
+            preferences=[{"user_id": "u2", "email_enabled": False}])
+        self.assertEqual([call.kwargs["enabled"] for call in ensure.call_args_list], [True, False])
+        db.table.assert_any_call("notification_preferences")
 
     def test_active_accounts_are_linked(self):
-        summary, ensure = self._run([{"id": "u1", "email": "a@example.invalid", "is_active": True},
+        summary, ensure, _ = self._run([{"id": "u1", "email": "a@example.invalid", "is_active": True},
                                      {"id": "u2", "email": "b@example.invalid"}])
         self.assertEqual((summary["linked"], summary["failed"]), (2, 0))
         self.assertEqual(ensure.call_count, 2)
 
     def test_deactivated_and_addressless_profiles_are_skipped(self):
-        summary, ensure = self._run([{"id": "u1", "email": "a@example.invalid", "is_active": False},
+        summary, ensure, _ = self._run([{"id": "u1", "email": "a@example.invalid", "is_active": False},
                                      {"id": "u2", "email": None}])
         self.assertEqual((summary["skipped"], summary["linked"]), (2, 0))
         ensure.assert_not_called()
 
     def test_a_failed_link_is_counted_not_raised(self):
-        summary, _ = self._run([{"id": "u1", "email": "a@example.invalid"}], linked=False)
+        summary, _, _ = self._run([{"id": "u1", "email": "a@example.invalid"}], linked=False)
         self.assertEqual((summary["failed"], summary["linked"]), (1, 0))
 
     def test_a_promotions_opt_out_does_not_stop_the_address_being_registered(self):
         # OneSignal cannot deliver to an address it does not know, so declining
         # newsletters must not cost the account its order and QR emails.
-        summary, ensure = self._run([
-            {"id": "u1", "email": "a@example.invalid",
-             "notification_preferences": [{"promotions": False, "email_enabled": True}]},
-            {"id": "u2", "email": "b@example.invalid", "email_notifications": False},
-        ])
+        summary, ensure, _ = self._run(
+            [{"id": "u1", "email": "a@example.invalid"},
+             {"id": "u2", "email": "b@example.invalid", "email_notifications": False}],
+            # u1 opted out of newsletters only; the master email switch is still on.
+            preferences=[{"user_id": "u1", "email_enabled": True}])
         self.assertEqual(summary["linked"], 2)
         self.assertEqual([call.kwargs["enabled"] for call in ensure.call_args_list], [True, False])
 
     def test_unchanged_preferences_stay_subscribed(self):
-        _, ensure = self._run([{"id": "u1", "email": "a@example.invalid",
-                                "notification_preferences": {"promotions": True}}])
+        _, ensure, _ = self._run([{"id": "u1", "email": "a@example.invalid"}], preferences=[])
         self.assertTrue(ensure.call_args.kwargs["enabled"])
 
     def test_unreadable_profiles_returns_an_empty_summary(self):

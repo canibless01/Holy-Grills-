@@ -894,6 +894,21 @@ def _onesignal_email_payload(app_id, to_email, subject, html_body, transactional
     return payload
 
 
+# OneSignal's own words when the token it was given has no Email subscription. This is
+# not a transient failure — it means nothing was delivered and the address was never
+# registered, so it is safe (and useful) to fix the cause and retry.
+_UNSUBSCRIBED_MARKERS = ("not subscribed", "no email", "email not enabled", "no valid",
+                         "no recipients", "invalid email")
+
+
+def _onesignal_not_subscribed(receipt):
+    """Did OneSignal refuse because the address has no Email subscription?"""
+    if not receipt or receipt.get("provider") != "onesignal":
+        return False
+    text = str(receipt.get("error") or "").lower()
+    return any(marker in text for marker in _UNSUBSCRIBED_MARKERS)
+
+
 def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None,
                    receipt=None, transactional=True):
     """One delivery attempt.
@@ -938,6 +953,11 @@ def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None
                 # deliver to. That is a miss, not a success.
                 undeliverable = _email_undeliverable(response, detail)
                 accepted = bool(detail.get("id")) and not undeliverable
+            if undeliverable:
+                # Say *why* in the log, not just that it was a miss: "status 200" alone
+                # is what made this take a support round trip to diagnose.
+                logger.warning("onesignal: no email subscription for %s — provider said: %s",
+                               _mask_email(to_email), _provider_errors(detail) or "no recipients")
             if receipt is not None:
                 receipt.update({
                     "provider": provider,
@@ -1003,6 +1023,15 @@ def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None
         return False, False, False
 
 
+def _mask_email(address):
+    """a**@example.com — enough to debug, not enough to leak a customer list into logs."""
+    text = str(address or "")
+    if "@" not in text:
+        return "***"
+    local, _, domain = text.partition("@")
+    return f"{local[:1]}***@{domain}"
+
+
 def _safe_json(response):
     try:
         detail = response.json()
@@ -1041,6 +1070,53 @@ def _attempt_and_settle(provider, to_email, to_name, subject, html_body, headers
     if not accepted and (_slot_was_wasted(receipt) or quota or undeliverable):
         email_usage.release(provider)
     return accepted, quota, undeliverable
+
+
+def _subscription_identity(to_email):
+    """The external_id to register `to_email` under, or None.
+
+    A known account uses its profile id, which is what the web SDK's
+    `OneSignal.login(external_id)` uses — so the email lands on the same OneSignal
+    user as the push subscription. Guests (event registrations, guest orders, catering
+    enquiries) have no profile; they get a deterministic alias derived from the
+    address, so their QR code and confirmation can still be delivered and re-sending
+    to the same guest reuses one subscription instead of piling up users.
+    """
+    try:
+        from app.db import get_db
+        rows = (get_db().table("profiles").select("id,is_active")
+                .eq("email", to_email).limit(1).execute() or [])
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("email: could not look up a profile for %s: %s", _mask_email(to_email), exc)
+        return None
+    row = rows[0] if isinstance(rows, list) and rows else (rows if isinstance(rows, dict) else None)
+    if row and row.get("id") and row.get("is_active") is not False:
+        return str(row["id"])
+    # Guest: stable per address, never collides with a profile uuid.
+    return "guest-" + str(uuid.uuid5(uuid.NAMESPACE_URL, f"mailto:{str(to_email).lower().strip()}"))
+
+
+def _heal_missing_subscription(to_email):
+    """Register the address with OneSignal so this send can be delivered.
+
+    Called only after OneSignal has *refused* the send because the address had no
+    email subscription — nothing was delivered, so retrying cannot duplicate. This is
+    what makes existing accounts (and guests) work on the first attempt instead of
+    waiting for a login or a manual backfill.
+    """
+    identity = _subscription_identity(to_email)
+    if not identity:
+        return False
+    try:
+        from app.services.onesignal_email import ensure_email_subscription
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("email: subscription helper unavailable: %s", exc)
+        return False
+    details = {}
+    linked = ensure_email_subscription(identity, to_email, enabled=True, details=details)
+    logger.info("email: registration on demand for %s — linked=%s (%s)", _mask_email(to_email),
+                linked, details.get("http_status") or details.get("reason"))
+    return bool(linked)
 
 
 def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None,
@@ -1088,6 +1164,15 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend
     accepted, quota, undeliverable = _attempt_and_settle(
         chosen, to_email, to_name, subject, html_body, headers,
         receipt=receipt, transactional=transactional, slot_claimed=True)
+    if not accepted and chosen == "onesignal" and _onesignal_not_subscribed(receipt):
+        # Nothing was delivered and the cause is fixable: register the address with
+        # OneSignal, then retry the same message there. Falling straight back to
+        # Resend "works" but keeps leaving OneSignal with no subscribers and no
+        # history — and the fallback is the thing that runs out at 100/day.
+        if _heal_missing_subscription(to_email):
+            accepted, quota, undeliverable = _attempt_and_settle(
+                "onesignal", to_email, to_name, subject, html_body, headers,
+                receipt=receipt, transactional=transactional)
     if accepted:
         return True
     if not (quota or undeliverable):
