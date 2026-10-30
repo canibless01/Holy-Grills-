@@ -1,6 +1,6 @@
 {
-  "frontend_commit": "14be33bf4fd5fbf84d2d254c6248ea60a3150532",
-  "vercel_deployment": "dpl_7xSs7n8yn4nnFj4fHcnEscCSx3TZ",
+  "frontend_commit": "7db065d8cda4418c842d6f59ce502bf77c558f2f",
+  "vercel_deployment": "dpl_RqRWUhGPeqf5T7n1Nri7GN7r2Ccq",
   "deployment_state": "READY",
   "home_status": 200,
   "community_brand_copy": true,
@@ -8,5 +8,8 @@
   "csp_preserves_onesignal_config_script": true,
   "backend_tests": 788,
   "frontend_typecheck_build": "passed",
-  "google_real_provider": "awaiting restricted browser key; controlled SDK test passed"
+  "google_real_provider": "awaiting restricted browser key; controlled SDK test passed",
+  "backend_hall_fixture_excluded": true,
+  "backend_live_ordering_closed_copy": true,
+  "backend_exact_git_sha_exposed": false
 }
