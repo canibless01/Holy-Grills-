@@ -47,9 +47,9 @@ export default function Kitchen() {
 function KitchenWorkspace({ campusId, canManageSettings }) {
   const [tab, setTab] = useState('queue');
   const {
-    authed, loading, error, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary,
+    authed, loading, error, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, batchSummaryLoading, batchSummaryError,
     settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
-    batchBusy, batchResult, selectWindow, handleStatusUpdate,
+    batchBusy, batchResult, itemAvailability, availabilityBusy, selectWindow, handleStatusUpdate,
     handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
   } = useKitchenData(campusId);
 
@@ -120,6 +120,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
           ))}
         </div>
 
+        {tab === 'queue' && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_STOCK_HELP', 'Stock switches affect new orders in this campus. Existing paid orders still need to be prepared.')}</p>}
         {/* Live Queue — 3-column KDS board */}
         {tab === 'catering' && <KitchenCatering />}
         {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
@@ -142,6 +143,8 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
                       <KitchenOrderCard
                         key={order.id}
                         order={order}
+                        itemAvailability={itemAvailability}
+                        availabilityBusy={availabilityBusy}
                         onStatusUpdate={handleStatusUpdate}
                         onMarkUnavailable={handleMarkUnavailable}
                         onMarkAvailable={handleMarkAvailable}
@@ -209,6 +212,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
                 <button
                   key={w.id}
                   onClick={() => selectWindow(w.id)}
+                  disabled={batchBusy}
                   className={`shrink-0 px-3.5 py-2.5 rounded-2xl border text-left transition-all ${selectedWindow === w.id ? 'bg-primary border-primary text-white shadow-glow' : 'bg-card border-border text-foreground'}`}
                 >
                   <div className="text-xs font-bold">{w.label}</div>
@@ -219,6 +223,11 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
               ))}
             </div>
 
+            {batchSummaryLoading && <p role="status" className="text-sm text-muted-foreground">{msg('FE_KITCHEN_PREP_LOADING', 'Updating preparation list…')}</p>}
+            {batchSummaryError && <div role="alert" className="rounded-xl tone-error p-3 text-sm">
+              <p>{msg('FE_KITCHEN_PREP_FAILED', 'Preparation list could not be loaded. Retry before advancing this window.')}</p>
+              <button onClick={() => selectWindow(selectedWindow)} className="mt-2 font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+            </div>}
             {batchResult && (
               <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
                 <div className="flex items-center justify-between mb-2.5">
@@ -249,7 +258,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   onClick={() => handleBatchAdvance(selectedWindow, { from_status: 'received', notes: 'Started preparing batch' }, 'Received → Preparing')}
-                  disabled={batchBusy}
+                  disabled={batchBusy || batchSummaryLoading}
                   className="flex flex-col items-center gap-0.5 py-3 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
                 >
                   <Zap className="w-3.5 h-3.5" />
@@ -258,7 +267,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
                 </button>
                 <button
                   onClick={() => handleBatchAdvance(selectedWindow, { from_status: 'preparing', notes: 'Marked batch ready' }, 'Preparing → Ready')}
-                  disabled={batchBusy}
+                  disabled={batchBusy || batchSummaryLoading}
                   className="flex flex-col items-center gap-0.5 py-3 rounded-xl bg-success text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
                 >
                   <Check className="w-3.5 h-3.5" />

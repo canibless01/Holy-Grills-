@@ -25,9 +25,21 @@ export function useKitchenData(campusId?: string) {
   const [scheduledDate, setScheduledDate] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 10));
   const [scheduledLoading, setScheduledLoading] = useState(false);
   const scheduleGeneration = useRef(0);
+  const queueGeneration = useRef(0);
   const [windows, setWindows] = useState([]);
   const [selectedWindow, setSelectedWindow] = useState(null);
   const [batchSummary, setBatchSummary] = useState(null);
+  const [batchSummaryLoading, setBatchSummaryLoading] = useState(false);
+  const [batchSummaryError, setBatchSummaryError] = useState(false);
+  const summaryGeneration = useRef(0);
+  const selectedWindowRef = useRef(null);
+  const summaryWindowRef = useRef(null);
+  const summaryPending = useRef(false);
+  const batchWritePending = useRef(false);
+  const [itemAvailability, setItemAvailability] = useState({});
+  const [availabilityBusy, setAvailabilityBusy] = useState(new Set());
+  const availabilityPending = useRef(new Set());
+  const availabilityRevision = useRef(0);
   const [metrics, setMetrics] = useState(null);
   const [settings, setSettings] = useState(null);
   const [capacity, setCapacity] = useState(null);
@@ -46,8 +58,17 @@ export function useKitchenData(campusId?: string) {
 
   // Apply a freshly-fetched queue: store it, and on subsequent polls detect
   // brand-new order ids to fire the alert sound + a 6s flash highlight.
-  const applyQueue = (q) => {
+  const applyQueue = (q, stockRevision = availabilityRevision.current) => {
     setQueue(q);
+    setItemAvailability(previous => {
+      const next = { ...previous };
+      q.forEach(order => (order.order_items || []).forEach(item => {
+        if (stockRevision === availabilityRevision.current && item.menu_item_id && !availabilityPending.current.has(item.menu_item_id)) {
+          next[item.menu_item_id] = item.campus_is_available !== false;
+        }
+      }));
+      return next;
+    });
     const currentIds = new Set(q.map((o) => o.id));
     if (initialized.current) {
       const newIds = [...currentIds].filter((id) => !prevOrderIds.current.has(id));
@@ -68,7 +89,29 @@ export function useKitchenData(campusId?: string) {
     initialized.current = true;
   };
 
+  const loadBatchSummary = async (winId) => {
+    const generation = ++summaryGeneration.current;
+    summaryPending.current = true;
+    setBatchSummaryLoading(true); setBatchSummaryError(false);
+    try {
+      const value = await liveApi.kitchen.getBatchSummary(winId, campusId);
+      if (generation !== summaryGeneration.current || winId !== selectedWindowRef.current) return;
+      summaryWindowRef.current = winId;
+      setBatchSummary(value);
+    } catch {
+      if (generation !== summaryGeneration.current) return;
+      summaryWindowRef.current = null;
+      setBatchSummary(null); setBatchSummaryError(true);
+    } finally {
+      if (generation === summaryGeneration.current) {
+        summaryPending.current = false; setBatchSummaryLoading(false);
+      }
+    }
+  };
+
   const refreshQueue = async () => {
+    const queueRequest = ++queueGeneration.current;
+    const stockRevision = availabilityRevision.current;
     const generation = scheduleGeneration.current;
     try {
       const [q, m, s, w, cap, stg, status] = await Promise.all([
@@ -78,11 +121,25 @@ export function useKitchenData(campusId?: string) {
         liveApi.kitchen.getWindows(campusId), liveApi.menu.getKitchenCapacity(campusId),
         liveApi.kitchen.getSettings(campusId), liveApi.orders.getDeliveryWindowStatus(campusId),
       ]);
-      applyQueue(q);
+      if (queueRequest !== queueGeneration.current) return;
+      applyQueue(q, stockRevision);
       setMetrics(m); setWindows(w); setCapacity(cap); setSettings(stg); setWindowStatus(status);
       if (generation === scheduleGeneration.current) setScheduled(s);
       setError(null);
-    } catch { setError(msg('FE_KITCHEN_QUEUE_STALE', 'Kitchen updates are unavailable. The displayed orders may be out of date. Retry before preparing or handing over orders.')); }
+      const winId = w.some(window => window.id === selectedWindowRef.current)
+        ? selectedWindowRef.current : w.find(window => window.status === 'open')?.id || w[0]?.id;
+      if (winId) {
+        if (selectedWindowRef.current !== winId) {
+          selectedWindowRef.current = winId; setSelectedWindow(winId);
+          summaryWindowRef.current = null; setBatchSummary(null); setBatchResult(null);
+        }
+        await loadBatchSummary(winId);
+      } else {
+        ++summaryGeneration.current; selectedWindowRef.current = null; summaryWindowRef.current = null;
+        summaryPending.current = false; setSelectedWindow(null); setBatchSummary(null);
+        setBatchSummaryLoading(false); setBatchSummaryError(false);
+      }
+    } catch { if (queueRequest !== queueGeneration.current) return; setError(msg('FE_KITCHEN_QUEUE_STALE', 'Kitchen updates are unavailable. The displayed orders may be out of date. Retry before preparing or handing over orders.')); }
   };
 
   useEffect(() => {
@@ -103,11 +160,8 @@ export function useKitchenData(campusId?: string) {
         applyQueue(q);
         setScheduled(s); setWindows(w); setMetrics(m); setCapacity(cap); setSettings(stg); setWindowStatus(status);
         const firstWin = w.find((x) => x.status === 'open')?.id || w[0]?.id;
-        setSelectedWindow(firstWin);
-        if (firstWin) {
-          const bs = await liveApi.kitchen.getBatchSummary(firstWin, campusId);
-          if (alive) setBatchSummary(bs);
-        }
+        selectedWindowRef.current = firstWin; setSelectedWindow(firstWin);
+        if (firstWin) await loadBatchSummary(firstWin);
       } catch (e) {
         console.error(e);
         if (alive) setError(msg('FE_USE_KITCHEN_DATA_COULD_NOT_LOAD_KITCHEN_DATA_CHECK_YOUR', 'Could not load kitchen data. Check your connection and try again.'));
@@ -115,7 +169,7 @@ export function useKitchenData(campusId?: string) {
       if (alive) setLoading(false);
     };
     init();
-    return () => { alive = false; };
+    return () => { alive = false; ++summaryGeneration.current; };
   }, [authed, campusId]);
 
   useEffect(() => {
@@ -137,11 +191,10 @@ export function useKitchenData(campusId?: string) {
   };
 
   const selectWindow = async (winId) => {
-    setSelectedWindow(winId);
-    try {
-      const bs = await liveApi.kitchen.getBatchSummary(winId, campusId);
-      setBatchSummary(bs);
-    } catch (e) { console.error(e); }
+    if (!winId || batchWritePending.current) return;
+    selectedWindowRef.current = winId; summaryWindowRef.current = null;
+    setSelectedWindow(winId); setBatchSummary(null); setBatchResult(null);
+    await loadBatchSummary(winId);
   };
 
   const handleStatusUpdate = async (orderId, status) => {
@@ -156,26 +209,31 @@ export function useKitchenData(campusId?: string) {
     setActionLoading(null);
   };
 
-  const handleMarkUnavailable = async (itemId) => {
+  const setAvailability = async (itemId, available) => {
+    if (availabilityPending.current.has(itemId)) return false;
+    availabilityPending.current.add(itemId); setAvailabilityBusy(new Set(availabilityPending.current));
     try {
-      await liveApi.kitchen.markItemUnavailable(itemId);
-      toast({ title: msg('FE_USE_KITCHEN_DATA_ITEM_MARKED_AS_SOLD_OUT', 'Item marked as sold out') });
+      if (available) await liveApi.kitchen.markItemAvailable(itemId, campusId);
+      else await liveApi.kitchen.markItemUnavailable(itemId, campusId);
+      ++availabilityRevision.current;
+      setItemAvailability(previous => ({ ...previous, [itemId]: available }));
+      toast({ title: available ? msg('FE_USE_KITCHEN_DATA_ITEM_BACK_IN_STOCK', 'Item back in stock') : msg('FE_USE_KITCHEN_DATA_ITEM_MARKED_AS_SOLD_OUT', 'Item marked as sold out') });
+      return true;
     } catch (e) {
       toast({ title: msg('FE_USE_KITCHEN_DATA_COULD_NOT_UPDATE_ITEM', 'Could not update item'), description: e.message, variant: 'destructive' });
+      return false;
+    } finally {
+      availabilityPending.current.delete(itemId); setAvailabilityBusy(new Set(availabilityPending.current));
     }
   };
-
-  const handleMarkAvailable = async (itemId) => {
-    try {
-      await liveApi.kitchen.markItemAvailable(itemId);
-      toast({ title: msg('FE_USE_KITCHEN_DATA_ITEM_BACK_IN_STOCK', 'Item back in stock') });
-    } catch (e) {
-      toast({ title: msg('FE_USE_KITCHEN_DATA_COULD_NOT_UPDATE_ITEM', 'Could not update item'), description: e.message, variant: 'destructive' });
-    }
-  };
+  const handleMarkUnavailable = (itemId) => setAvailability(itemId, false);
+  const handleMarkAvailable = (itemId) => setAvailability(itemId, true);
 
   const handleBatchAdvance = async (winId, body, label) => {
-    setBatchBusy(true);
+    if (batchWritePending.current || summaryPending.current || !winId ||
+        winId !== selectedWindowRef.current || winId !== summaryWindowRef.current) return;
+    batchWritePending.current = true; setBatchBusy(true);
+    summaryWindowRef.current = null;
     try {
       const res = await liveApi.kitchen.batchAdvanceStatus(winId, body, campusId);
       const advanced = res?.advanced_count ?? res?.advanced?.length ?? 0;
@@ -196,8 +254,8 @@ export function useKitchenData(campusId?: string) {
       await refreshQueue();
     } catch (e) {
       toast({ title: msg('FE_USE_KITCHEN_DATA_BATCH_UPDATE_FAILED', 'Batch update failed'), description: e.message, variant: 'destructive' });
-    }
-    setBatchBusy(false);
+      await refreshQueue();
+    } finally { batchWritePending.current = false; setBatchBusy(false); }
   };
 
   const clearBatchResult = () => setBatchResult(null);
@@ -209,8 +267,8 @@ export function useKitchenData(campusId?: string) {
 
   return {
     authed, loading, error,
-    queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, metrics, settings, capacity, windowStatus,
-    open, prepTarget, flashingIds, actionLoading, batchBusy, batchResult,
+    queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, batchSummaryLoading, batchSummaryError, metrics, settings, capacity, windowStatus,
+    open, prepTarget, flashingIds, actionLoading, batchBusy, batchResult, itemAvailability, availabilityBusy,
     selectWindow, handleStatusUpdate, handleMarkUnavailable,
     handleMarkAvailable, handleBatchAdvance, clearBatchResult,
   };

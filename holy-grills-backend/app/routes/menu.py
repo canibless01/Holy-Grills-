@@ -14,6 +14,7 @@ from app.utils.upload_urls import is_cms_image_url
 from datetime import datetime, timezone, timedelta
 import math
 from app.messages import MSG
+from app.utils.validators import validate_uuid
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -1048,10 +1049,15 @@ def update_item_availability(item_id):
     price override, ordering window. Scoped to the caller's own campus.
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     campus_id = resolve_scoped_campus_id(data.get("campus_id"))
     if not campus_id:
-        return jsonify({"error": "campus_id is required"}), 400
+        return jsonify({"error": MSG.CAMPUS_ID_REQUIRED}), 400
+
+    if not validate_uuid(str(campus_id)):
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
 
     parent, err = fetch_or_403(db, 'menu_items', item_id, select='id,campus_id,deleted_at', not_found_msg=MSG.MENU_ITEM_NOT_FOUND)
     if err:
@@ -1076,7 +1082,7 @@ def update_item_availability(item_id):
     AVAILABILITY_FIELDS = {"is_available", "daily_limit", "price_override", "opens_at", "closes_at"}
     safe = {k: v for k, v in data.items() if k in AVAILABILITY_FIELDS}
     if not safe:
-        return jsonify({"error": "At least one availability field is required"}), 400
+        return jsonify({"error": MSG.MENU_AVAILABILITY_FIELDS_REQUIRED}), 400
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     result = db.table("menu_item_availability").upsert(

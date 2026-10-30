@@ -1,8 +1,8 @@
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
-import { useState } from 'react';
 import { Check, Users, Trophy, MapPin, Ban, RotateCcw } from 'lucide-react';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
 import KitchenTimer from '@/components/kitchen/KitchenTimer';
+import { msg } from '@/lib/messages';
 
 const STATUS_STYLES = {
   received: 'bg-warn text-white',
@@ -23,21 +23,16 @@ const STATUS_DOT = {
 // Each item line has a compact "86" toggle to mark the menu item sold out
 // (PATCH /menu/items/:id via kitchen.markItemUnavailable/Available).
 // isNew drives the flash ring for freshly arrived orders.
-export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavailable, onMarkAvailable, actionLoading, targetMinutes, isNew }) {
-  const [soldOut, setSoldOut] = useState(new Set());
+export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavailable, onMarkAvailable, actionLoading, targetMinutes, isNew, itemAvailability = {}, availabilityBusy = new Set() }) {
   const items = order.order_items || [];
   const isLoading = actionLoading === order.id;
 
   const toggleSoldOut = (e, item) => {
     e.stopPropagation();
-    if (!item.menu_item_id) return;
-    if (soldOut.has(item.menu_item_id)) {
-      onMarkAvailable?.(item.menu_item_id);
-      setSoldOut(prev => { const n = new Set(prev); n.delete(item.menu_item_id); return n; });
-    } else {
-      onMarkUnavailable?.(item.menu_item_id);
-      setSoldOut(prev => new Set(prev).add(item.menu_item_id));
-    }
+    const id = item.menu_item_id;
+    if (!id || availabilityBusy.has(id)) return;
+    const wasOut = (itemAvailability[id] ?? item.campus_is_available ?? true) === false;
+    if (wasOut) void onMarkAvailable?.(id); else void onMarkUnavailable?.(id);
   };
 
   return (
@@ -84,21 +79,22 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
       {/* Items with sold-out toggle */}
       <div className="space-y-1 mb-2">
         {items.map((item, i) => {
-          const isOut = soldOut.has(item.menu_item_id);
+          const isOut = (itemAvailability[item.menu_item_id] ?? item.campus_is_available ?? true) === false;
           return (
             <div key={i} className="flex items-center gap-1.5 text-sm text-foreground">
               <span className="font-bold shrink-0">{item.quantity}×</span>
-              <div className={`flex-1 min-w-0 ${isOut ? 'line-through text-muted-foreground' : ''}`}>{item.name_snapshot}<OrderItemCustomizations item={item} /></div>
+              <div className="flex-1 min-w-0">{item.name_snapshot}<OrderItemCustomizations item={item} /></div>
               {item.is_free_side && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md tone-warn shrink-0">🏆</span>
               )}
               {item.menu_item_id && (
                 <button
                   onClick={(e) => toggleSoldOut(e, item)}
+                  disabled={availabilityBusy.has(item.menu_item_id)}
                   className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors shrink-0 ${
                     isOut ? 'tone-success hover:bg-success/20' : 'tone-error hover:bg-destructive/15'
                   }`}
-                  title={isOut ? 'Restock item' : 'Mark sold out (86)'}
+                  title={isOut ? msg('FE_KITCHEN_RESTOCK_ITEM', 'Restock item') : msg('FE_KITCHEN_SELL_OUT_ITEM', 'Mark sold out (86)')}
                 >
                   {isOut ? <RotateCcw className="w-3 h-3" /> : <Ban className="w-3 h-3" />}
                 </button>
