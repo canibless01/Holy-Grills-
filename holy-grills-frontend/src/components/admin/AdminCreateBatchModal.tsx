@@ -6,6 +6,7 @@ import { Modal, Field, TextInput } from './AdminShared';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
 import { CheckSquare, Square, Truck } from 'lucide-react';
+import { useCampus } from '@/lib/campusContext';
 
 /**
  * CreateBatchModal — THE assignment flow: puts one or many orders on a rider
@@ -22,12 +23,13 @@ import { CheckSquare, Square, Truck } from 'lucide-react';
  * those same rules; scheduled orders become assignable after preparation.
  */
 export default function CreateBatchModal({ windows = [], presetOrderIds = [], onClose, onSaved }: {
-  windows?: Array<{ id?: string | number; label?: string; campus_id?: string }>;
+  windows?: Array<{ id?: string | number; label?: string; campus_id?: string; starts_at?: string; delivery_date?: string }>;
   presetOrderIds?: string[];
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;
 }) {
-  const [windowId, setWindowId] = useState(windows[0]?.id || '');
+  const [windowId, setWindowId] = useState('');
+  const { campuses, adminCampusId } = useCampus();
   const [riderId, setRiderId] = useState('');
   const [zone, setZone] = useState('');
   const [riders, setRiders] = useState([]);
@@ -37,6 +39,16 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
   const preset = presetOrderIds.length > 0;
   const intent = useRef<{ fingerprint: string; key: string } | null>(null);
   const selectedWindow = windows.find(window => String(window.id) === String(windowId));
+  const readyOrders = (orders || []).filter(order => order.status === 'ready' && !order.batch_id && ['paid', 'partially_refunded'].includes(order.payment_status)
+    && (!adminCampusId || order.campus_id === adminCampusId));
+  const availableWindows = windows.filter(window => (!adminCampusId || window.campus_id === adminCampusId)
+    && readyOrders.some(order => (!order.delivery_window_id || String(order.delivery_window_id) === String(window.id)) && (!window.campus_id || order.campus_id === window.campus_id)));
+  const windowLabel = window => {
+    const campusName = campuses.find(campus => campus.id === window.campus_id)?.name || 'Campus';
+    const stamp = window.delivery_date || window.starts_at;
+    const date = stamp && Number.isFinite(new Date(stamp).getTime()) ? new Date(stamp).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short' }) : '';
+    return [window.label || 'Delivery window', date, campusName, `#${String(window.id).slice(0, 6).toUpperCase()}`].filter(Boolean).join(' · ');
+  };
   const eligibleOrders = (orders || []).filter(order => order.status === 'ready' && !order.batch_id
     && ['paid', 'partially_refunded'].includes(order.payment_status)
     && (!selectedWindow?.campus_id || order.campus_id === selectedWindow.campus_id)
@@ -86,14 +98,14 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
         </div>
         {orders !== null && preset && !presetOrderIds.some(id => eligibleOrders.some(order => order.id === id)) && <p role="alert" className="text-xs text-warn">{msg('FE_BATCH_PRESET_CHANGED', 'This order is not currently ready for assignment in this window. Refresh its status or choose another eligible order.')}</p>}
         <Field label="Delivery Window">
-          {windows.length === 0 ? (
+          {orders === null ? <p className="text-sm text-muted-foreground">Loading ready orders and their delivery windows…</p> : availableWindows.length === 0 ? (
             <div className="rounded-xl tone-warn border border-warn/40 p-3 text-xs text-warn mt-1">
-              No delivery window exists yet. Create one first in <b>Delivery → Windows → New Window</b>, then assign the order — it only takes a few seconds.
+              No delivery window has paid, ready, unassigned orders in this campus. Prepare the orders in Kitchen first, then assign a rider. Configure missing delivery times in <b>Delivery → Delivery times</b>.
             </div>
           ) : (
             <select value={windowId} onChange={(e) => setWindowId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
               <option value="">Select window…</option>
-              {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+              {availableWindows.map((w) => <option key={w.id} value={w.id}>{windowLabel(w)}</option>)}
             </select>
           )}
         </Field>

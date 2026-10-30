@@ -145,6 +145,9 @@ export function securityHeaders() {
     // The SDK's own API host is api.onesignal.com; the bare domain is listed
     // because the v16 SDK also falls back to https://onesignal.com/api/*.
     'https://onesignal.com',
+    'https://maps.googleapis.com',
+    'https://places.googleapis.com',
+    'https://maps.gstatic.com',
     // Drives the <link rel=preconnect> in index.html (a connect, not an image).
     'https://images.unsplash.com',
     apiOrigin(),
@@ -156,9 +159,10 @@ export function securityHeaders() {
     "object-src 'none'",
     // v16 loads /sync/{appId}/web as JSONP. connect-src alone does not allow
     // that script; without this exact host the deferred SDK queue never runs.
-    ["script-src 'self' https://cdn.onesignal.com https://api.onesignal.com", ...inlineScriptHashes()].join(' '),
-    "style-src 'self' 'unsafe-inline'",
-    "font-src 'self'",
+    // Google Maps' documented allow-list policy requires eval for its SDK.
+    ["script-src 'self' 'unsafe-eval' https://cdn.onesignal.com https://api.onesignal.com https://maps.googleapis.com https://maps.gstatic.com", ...inlineScriptHashes()].join(' '),
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
     // https: (not an allow-list) — see the `images` note above; admins may
     // paste a picture URL from any host and that must keep working.
     "img-src 'self' data: blob: https:",

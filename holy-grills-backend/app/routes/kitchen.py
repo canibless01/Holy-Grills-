@@ -575,13 +575,13 @@ def live_queue():
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
     q = _due_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    q = q.order("received_at")
+    q = q.order("received_at", ascending=False)
     window_id = request.args.get("window_id")
     if window_id:
         q = q.eq("delivery_window_id", window_id)

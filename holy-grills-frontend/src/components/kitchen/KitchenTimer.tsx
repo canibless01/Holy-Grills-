@@ -11,7 +11,7 @@ export default function KitchenTimer({ receivedAt, targetMinutes }) {
     if (!receivedAt) return;
     const calc = () => {
       const start = new Date(receivedAt).getTime();
-      setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+      setElapsed(Number.isFinite(start) ? Math.max(0, Math.floor((Date.now() - start) / 1000)) : 0);
     };
     calc();
     const interval = setInterval(calc, 1000);
@@ -20,7 +20,8 @@ export default function KitchenTimer({ receivedAt, targetMinutes }) {
 
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
-  const display = `${mins}:${String(secs).padStart(2, '0')}`;
+  const display = mins >= 1440 ? `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`
+    : mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}:${String(secs).padStart(2, '0')}`;
   const overTarget = targetMinutes != null && mins >= targetMinutes;
 
   return (

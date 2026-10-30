@@ -59,12 +59,12 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
 
   const body =
     reason === 'closed_today'
-      ? msg('FE_CHECKOUT_KITCHEN_CLOSED_TODAY', 'The kitchen is closed for today. You can still order now and we will schedule it for the next opening.')
+      ? msg('FE_CHECKOUT_KITCHEN_CLOSED_TODAY', 'Ordering is closed for today. You can order now for the next opening; the kitchen may still be preparing earlier orders.')
       : reason === 'full'
         ? msg('FE_CHECKOUT_KITCHEN_CLOSED_FULL', "Today's slots are fully booked. You can still order now and we will schedule it for the next opening.")
         : nextTime && nextDate
-          ? msg('FE_CHECKOUT_KITCHEN_CLOSED_OPENS', 'The kitchen is closed. It opens at {time}. You can still order now and we will schedule it for {date}.', { time: to12h(nextTime), date: watDate(nextDate)?.toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'short' }) || nextDate })
-          : msg('FE_CHECKOUT_KITCHEN_CLOSED_NO_TIME', 'The kitchen is closed. You can still order now and we will schedule it for the next opening.');
+          ? msg('FE_CHECKOUT_KITCHEN_CLOSED_OPENS', 'Ordering is closed. It opens at {time}. You can order now for {date}.', { time: to12h(nextTime), date: watDate(nextDate)?.toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'short' }) || nextDate })
+          : msg('FE_CHECKOUT_KITCHEN_CLOSED_NO_TIME', 'Ordering is closed. You can order now for the next opening.');
 
   if (!open) return null;
 
@@ -139,7 +139,7 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
           <div className="px-6 pt-8 pb-6 text-center">
             <FlameMark className="w-16 h-16 mx-auto mb-4" />
             <h2 className="font-heading font-extrabold text-xl text-foreground">
-              {msg('FE_CHECKOUT_KITCHEN_CLOSED_TITLE', 'The kitchen is closed')}
+              {msg('FE_CHECKOUT_KITCHEN_CLOSED_TITLE', 'Ordering is closed')}
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{body}</p>
 

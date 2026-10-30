@@ -11,11 +11,11 @@ import { msg } from '@/lib/messages';
 export default function KitchenHeader({ open, deliveryWindow = null, canManageSettings = false }) {
   const navigate = useNavigate();
   const { soundOn, toggleSound } = useSound();
-  const dotColor = open ? 'bg-success' : 'bg-destructive';
+  const dotColor = open == null ? 'bg-muted-foreground' : open ? 'bg-success' : 'bg-destructive';
   const deliveryStart = deliveryWindow?.delivery_starts_at;
   const deliveryEnd = deliveryWindow?.delivery_ends_at;
   const deliveryLabel = deliveryStart && deliveryEnd ? msg('FE_KITCHEN_DELIVERY_HOURS', 'Delivery {start}–{end}', { start: deliveryStart, end: deliveryEnd }) : msg('FE_KITCHEN_DELIVERY_UNCONFIGURED', 'Delivery time not configured');
-  const statusLabel = open ? 'Open' : 'Closed';
+  const statusLabel = open == null ? 'Ordering hours unavailable' : open ? 'Ordering open' : 'Ordering closed';
 
   return (
     <>

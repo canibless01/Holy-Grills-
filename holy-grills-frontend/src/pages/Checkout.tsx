@@ -100,6 +100,10 @@ export default function Checkout() {
   const clearPendingCheckout = () => { if (pendingKey) localStore.removeItem(pendingKey); setPendingCheckout(null); };
 
   const [loading, setLoading] = useState(true);
+  const [referenceLoading, setReferenceLoading] = useState(true);
+  const [referenceError, setReferenceError] = useState('');
+  const [referenceRetry, setReferenceRetry] = useState(0);
+  const referenceCampus = useRef<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [windowStatus, setWindowStatus] = useState(null);
   // Closed-kitchen popup. Raised from two places: the status read on load, and a
@@ -213,31 +217,31 @@ export default function Checkout() {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      if (!campus?.id) { setLoading(false); return; }
-      setLoading(true);
-      try {
-        const [status, h, g, ga] = await Promise.all([
-          // The campus id is passed explicitly, so the status is read for THIS
-          // campus even before apiClient's persisted header is in place. No
-          // campus yet is a real state and must come back as is_open: null —
-          // never as "closed".
-          mockApi.orders.getDeliveryWindowStatus(campus?.id),
-          mockApi.delivery.getHostels(),
-          mockApi.delivery.getGates(),
-          mockApi.menu.getGlobalAddons().catch(() => []),
-        ]);
-        if (!active) return;
-        setWindowStatus(status);
-        setHostels(h || []);
-        setGates(g || []);
-        setGlobalAddons(Array.isArray(ga) ? ga : (ga?.addons || ga?.global_addons || []));
-      } catch (e) { console.error(e); }
-      if (active) setLoading(false);
+      setLoading(false);
+      if (!campus?.id) { setReferenceLoading(false); return; }
+      if (referenceCampus.current !== campus.id) {
+        referenceCampus.current = campus.id;
+        setHostels([]); setGates([]); setGlobalAddons([]); setWindowStatus(null);
+        setHostelId(null); setGateId(null); setSelectedAddressId(null); setDeliveryPin(null); setDeliveryFee(0);
+      }
+      setReferenceLoading(true); setReferenceError('');
+      const failures: string[] = [];
+      const read = async (label: string, task: Promise<any>, apply: (value: any) => void) => {
+        try { const value = await task; if (active) apply(value); }
+        catch { failures.push(label); }
+      };
+      await Promise.all([
+        read('ordering times', mockApi.orders.getDeliveryWindowStatus(campus.id), setWindowStatus),
+        read('hostels', mockApi.delivery.getHostels(), value => setHostels(value || [])),
+        read('gates', mockApi.delivery.getGates(), value => setGates(value || [])),
+        read('extras', mockApi.menu.getGlobalAddons(), value => setGlobalAddons(Array.isArray(value) ? value : (value?.addons || value?.global_addons || []))),
+      ]);
+      if (active) { setReferenceLoading(false); setReferenceError(failures.length ? `Could not load ${failures.join(', ')}. Your other delivery choices are still available.` : ''); }
     };
     load();
     try { const saved = JSON.parse(sessionStorage.getItem('hg_scheduled_window') || 'null'); setScheduledWindow(saved?.campus_id === campus?.id && saved?.date ? saved : null); } catch { /* ignore */ }
     return () => { active = false; };
-  }, [campus?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [campus?.id, referenceRetry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Closed kitchen on load. Only an EXPLICIT is_open === false counts: `null`
   // means the campus is not resolved yet, which is "unknown", not "closed" —
@@ -488,18 +492,19 @@ export default function Checkout() {
     let active = true;
     const hasLocation = deliveryType === 'on_campus' ? !!hostelId : deliveryType === 'off_campus' && (!!gateId || deliveryPin?.lat != null);
     if (!campus?.id || (!cart?.items?.length && !redemptionId) || !hasLocation || addressNeedsReselect || !rewardChoicesReady || pendingCheckout) return;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         // Quoting never reserves stock, claims rewards, or authorizes a payment.
         const payload = { ...buildPayload(), payment_method: 'card' as PaymentMethod };
         delete payload.wallet_amount;
-        const data = await mockApi.orders.quote(payload);
+        const data = await mockApi.orders.quote(payload, { signal: controller.signal });
         if (active) setQuoteState({ key: quoteKey, data });
       } catch (e) {
         if (active) setQuoteState({ key: quoteKey, error: e.message || msg('FE_CHECKOUT_QUOTE_FAILED', 'We could not verify your total. Please retry.') });
       }
     }, 300);
-    return () => { active = false; clearTimeout(timer); };
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [quoteKey, quoteRetry, addressNeedsReselect]);
 
   const validateCheckout = () => {
@@ -946,6 +951,8 @@ export default function Checkout() {
       {/* Delivery location */}
       <div className="hg-card">
         <h3 className="hg-section-title mb-3 flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Delivery Location</h3>
+        {referenceLoading && <p role="status" className="text-xs text-muted-foreground mb-3">Loading delivery choices…</p>}
+        {referenceError && <div role="status" className="rounded-xl border border-border p-3 mb-3 text-sm"><p>{referenceError}</p><button onClick={() => setReferenceRetry(value => value + 1)} className="font-bold text-primary underline mt-2">Retry delivery choices</button></div>}
         <div className="grid grid-cols-2 gap-3">
           <button onClick={() => { setSelectedAddressId(null); setDeliveryType('on_campus'); setHostelId(null); setGateId(null); setDeliveryFee(0); setDeliveryPin(null); setDeliveryAddress(''); setLandmark(''); setFeePreview(null); }} className={`p-3 rounded-xl border text-center transition-all ${deliveryType === 'on_campus' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30'}`}>
             <div className="text-xl mb-0.5">🏫</div><div className="text-xs font-semibold text-foreground">On Campus</div>
@@ -965,7 +972,7 @@ export default function Checkout() {
                   <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(h.delivery_fee)}</div>
                 </button>
               ))}
-              {hostels.length === 0 && <p className="text-xs text-muted-foreground col-span-2">No hostels available.</p>}
+              {hostels.length === 0 && !referenceLoading && <p className="text-xs text-muted-foreground col-span-2">No hostels are available for this campus.</p>}
             </div>
           </div>
         )}
@@ -1003,7 +1010,7 @@ export default function Checkout() {
                       <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(g.base_fee)}</div>
                     </button>
                   ))}
-                  {gates.length === 0 && <p className="text-xs text-muted-foreground col-span-2">No gates available.</p>}
+                  {gates.length === 0 && !referenceLoading && <p className="text-xs text-muted-foreground col-span-2">No gates are available for this campus. Use your delivery pin and address, or contact support if pricing is unavailable.</p>}
                 </div>
               )}
             </div>

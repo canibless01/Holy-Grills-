@@ -60,9 +60,9 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/our-story': {
     // verbatim from src/pages/OurStory.tsx — 59 chars, so no brand suffix
     bareTitle: true,
-    title: 'Holy Grills: The Student Flame Grill Built at FUTA, Akure',
+    title: 'Holy Grills — Food, Friendship & Campus Connection',
     description:
-      "Holy Grills is FUTA's student focused flame grill in Akure. Real open flame, campus delivery, Holy Points and a community that shows up together.",
+      "Born at FUTA, Holy Grills brings students together around shared plates and everyday campus moments. Our story is rooted in faith, love, energy and flavour.",
     path: '/our-story',
   },
   '/menu': {

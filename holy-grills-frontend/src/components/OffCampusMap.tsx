@@ -1,390 +1,138 @@
 import { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { LocateFixed, MapPin, Search, X, Loader2 } from 'lucide-react';
+import { LocateFixed, Search } from 'lucide-react';
+import { loadGoogleMaps } from '@/lib/googleMaps';
 import { formatKm, etaLabel } from '@/lib/deliveryUtils';
 import type { DeliveryGate } from '@/types/delivery';
-import { msg } from '@/lib/messages';
 
-// Centroid of the gates — used as the map's initial view.
-const centroid = (gates?: DeliveryGate[]): [number, number] => {
-  const valid = (gates || []).filter((g) => (g.lat ?? g.latitude) != null && (g.lng ?? g.lon ?? g.longitude) != null);
-  if (!valid.length) return [7.295, 5.14]; // Akure fallback
-  const lat = valid.reduce((s, g) => s + Number(g.lat ?? g.latitude), 0) / valid.length;
-  const lng = valid.reduce((s, g) => s + Number(g.lng ?? g.lon ?? g.longitude), 0) / valid.length;
-  return [lat, lng];
-};
-
-/** [lat, lng] for a gate, or null when the row has no usable coordinates. */
-const gateCoords = (g: DeliveryGate): [number, number] | null => {
-  const lat = g.lat ?? g.latitude;
-  const lng = g.lng ?? g.lon ?? g.longitude;
-  return typeof lat === 'number' && typeof lng === 'number' ? [lat, lng] : null;
-};
-
-// Custom pin / gate icons (divIcon avoids the broken default-marker asset issue).
-const pinIcon = L.divIcon({
-  className: 'hg-delivery-pin',
-  html: '<div style="font-size:32px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45));">📍</div>',
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-});
-const gateIcon = L.divIcon({
-  className: 'hg-delivery-gate',
-  html: '<div style="font-size:22px;line-height:1;">🚪</div>',
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-});
-const selectedGateIcon = L.divIcon({
-  className: 'hg-delivery-gate-selected',
-  html: '<div style="font-size:26px;line-height:1;filter:drop-shadow(0 0 6px #F72B13);">🚪</div>',
-  iconSize: [26, 26],
-  iconAnchor: [13, 13],
-});
-
-// Draggable user pin — reports its position on drag end.
-function DraggablePin({ position, onDragEnd }) {
-  return (
-    <Marker
-      position={position}
-      icon={pinIcon}
-      draggable
-      eventHandlers={{
-        dragend: (e) => {
-          const ll = e.target.getLatLng();
-          onDragEnd({ lat: ll.lat, lng: ll.lng });
-        },
-      }}
-    />
-  );
-}
-
-// Click-to-place — tapping the map moves the pin there.
-function ClickHandler({ onClick }) {
-  useMapEvents({
-    click: (e) => onClick({ lat: e.latlng.lat, lng: e.latlng.lng }),
-  });
-  return null;
-}
-
-// Recenter the map when the pin jumps (e.g. GPS "use my location", or a search
-// result). `nonce` forces the effect to re-run for a repeated coordinate.
-function Recenter({ center, nonce }) {
-  const map = useMap();
-  useEffect(() => {
-    if (center && center[0] != null) map.flyTo(center, 16, { duration: 0.8 });
-  }, [center?.[0], center?.[1], nonce, map]); // eslint-disable-line react-hooks/exhaustive-deps
-  return null;
-}
-
-// Fix the "all-grey / blank tiles" bug. Leaflet must measure the container
-// after it's fully visible and sized. We invalidate on ready, after several
-// increasing delays (covers CSS transitions), and on every window resize.
-function ResizeHandler() {
-  const map = useMap();
-  useEffect(() => {
-    const invalidate = () => map.invalidateSize();
-    // Staggered retries cover slow CSS transitions / lazy mount.
-    const timers = [100, 300, 600, 1000].map((ms) => setTimeout(invalidate, ms));
-    window.addEventListener('resize', invalidate);
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(invalidate) : null;
-    observer?.observe(map.getContainer());
-    const visible = () => { if (!document.hidden) invalidate(); };
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      timers.forEach(clearTimeout);
-      window.removeEventListener('resize', invalidate);
-      observer?.disconnect();
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [map]);
-  return null;
-}
-
-// ── Place search (OpenStreetMap Nominatim) ──────────────────────────────────
-// The map is OpenStreetMap, so the search that belongs with it is OSM's own
-// geocoder: no API key, no vendor swap, CORS-enabled from the browser.
-// Nominatim's usage policy asks for at most one request per second and a
-// meaningful Referer — the debounce below holds the rate down, and the requests
-// only fire while the guest is typing a query.
-const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
-const SEARCH_DEBOUNCE_MS = 1100;
-const SEARCH_MIN_CHARS = 3;
-
-type PlaceHit = { id: string; label: string; lat: number; lng: number };
-
-const shortenLabel = (label: string) => {
-  const parts = label.split(',').map((p) => p.trim()).filter(Boolean);
-  return parts.length > 1 ? `${parts[0]}, ${parts[parts.length - 1]}` : label;
-};
-
-const searchPlaces = async (query: string, signal: AbortSignal): Promise<PlaceHit[]> => {
-  const url = `${NOMINATIM_ENDPOINT}?format=jsonv2&limit=5&countrycodes=ng&addressdetails=0&q=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
-  if (!res.ok) throw new Error(`search failed (${res.status})`);
-  const rows = await res.json();
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map((r) => ({ id: String(r.place_id ?? r.osm_id ?? r.display_name), label: String(r.display_name || ''), lat: Number(r.lat), lng: Number(r.lon) }))
-    .filter((r) => r.label && Number.isFinite(r.lat) && Number.isFinite(r.lng));
-};
-
-/**
- * OffCampusMap — OpenStreetMap with a place search, clickable gate markers, a
- * draggable delivery pin, GPS "use my location", and a live fee/distance
- * preview strip.
- *
- * Props:
- *  gates          — [{ id, name, lat, lng, base_fee, ... }]
- *  pin            — { lat, lng } | null
- *  onPinChange    — (latlng) => void
- *  selectedGateId — string | null
- *  onGateSelect   — (gate) => void
- *  feePreview     — { fee, km, gateName } | null   (computed by parent)
- *  center         — [lat, lng] the campus centre, so the map opens on the
- *                   campus instantly instead of waiting for the phone's GPS
- */
-export default function OffCampusMap({
-  gates = [],
-  pin,
-  onPinChange,
-  selectedGateId,
-  onGateSelect,
-  feePreview,
-  center = null,
-}: {
-  gates?: DeliveryGate[];
-  pin?: { lat: number; lng: number } | null;
-  onPinChange?: (pin: { lat: number; lng: number }) => void;
-  selectedGateId?: string | null;
-  onGateSelect?: (gate: DeliveryGate) => void;
+type Pin = { lat: number; lng: number };
+type Props = {
+  gates?: DeliveryGate[]; pin?: Pin | null; onPinChange?: (pin: Pin) => void;
+  selectedGateId?: string | null; onGateSelect?: (gate: DeliveryGate) => void;
   feePreview?: { fee?: number; km?: number; gateName?: string } | null;
   center?: [number, number] | null;
-}) {
-  // Campus centre first (opens instantly, no GPS wait), then the gate centroid,
-  // then the last-resort Akure fallback.
-  const view = center || centroid(gates);
-  const [locating, setLocating] = useState(false);
-  const [recenter, setRecenter] = useState(null);
-  const [geoError, setGeoError] = useState('');
-  const mapRef = useRef(null);
-  const [tilesFailed, setTilesFailed] = useState(false);
-  const [tileRevision, setTileRevision] = useState(0);
-  const loadedTile = useRef(false);
-  const failedTiles = useRef(0);
-  useEffect(() => {
-    loadedTile.current = false; failedTiles.current = 0; setTilesFailed(false);
-    const timer = setTimeout(() => { if (!loadedTile.current) setTilesFailed(true); }, 12000);
-    return () => clearTimeout(timer);
-  }, [tileRevision]);
+};
+const gatePin = (gate: DeliveryGate): Pin | null => {
+  const lat = Number(gate.lat ?? gate.latitude), lng = Number(gate.lng ?? gate.lon ?? gate.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) && (gate.lat ?? gate.latitude) != null && (gate.lng ?? gate.lon ?? gate.longitude) != null ? { lat, lng } : null;
+};
 
-  // Place search state
-  const [query, setQuery] = useState('');
-  const [searching, setSearching] = useState(false);
-  const [hits, setHits] = useState<PlaceHit[]>([]);
-  const [searchError, setSearchError] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
+/** One basic Google map per visible checkout. Places loads only after a search.
+ * No routing, Street View, 3D, reverse geocoding or custom styling requests.
+ */
+export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelect, selectedGateId, feePreview, center }: Props) {
+  const element = useRef<HTMLDivElement>(null), map = useRef<any>(null), marker = useRef<any>(null);
+  const gateMarkers = useRef<any[]>([]), session = useRef<any>(null), generation = useRef(0);
+  const callbacks = useRef({ onPinChange, onGateSelect });
+  callbacks.current = { onPinChange, onGateSelect };
+  const [maps, setMaps] = useState<any>(null), [error, setError] = useState(''), [revision, setRevision] = useState(0);
+  const [query, setQuery] = useState(''), [suggestions, setSuggestions] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false), [searchError, setSearchError] = useState('');
+  const [locating, setLocating] = useState(false), [geoError, setGeoError] = useState('');
+  const initial = center ? { lat: center[0], lng: center[1] } : gates.map(gatePin).find(Boolean) || { lat: 7.295, lng: 5.14 };
 
   useEffect(() => {
-    const q = query.trim();
-    if (q.length < SEARCH_MIN_CHARS) { setHits([]); setSearching(false); setSearchError(''); return; }
-    setSearching(true);
-    setSearchError('');
     let alive = true;
-    const controller = new AbortController();
-    // Nominatim's policy is one request/second — debounce to stay well under it
-    // and to avoid a lookup for every keystroke.
-    const t = setTimeout(() => {
-      searchPlaces(q, controller.signal)
-        .then((rows) => { if (alive) { setHits(rows); setSearchOpen(true); } })
-        .catch(() => { if (alive) { setHits([]); setSearchError('Search is unavailable right now. Drop the pin manually instead.'); } })
-        .finally(() => { if (alive) setSearching(false); });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => { alive = false; controller.abort(); clearTimeout(t); };
-  }, [query]);
+    setError('');
+    loadGoogleMaps().then(async api => {
+      const { Map } = await api.importLibrary('maps');
+      if (!alive || !element.current) return;
+      map.current = new Map(element.current, { center: pin || initial, zoom: pin ? 16 : 14, mapTypeId: 'roadmap',
+        streetViewControl: false, mapTypeControl: false, fullscreenControl: false, clickableIcons: false, gestureHandling: 'cooperative' });
+      map.current.addListener('click', (event: any) => {
+        if (event.latLng) callbacks.current.onPinChange?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
+      });
+      setMaps(api);
+    }).catch(() => { if (alive) setError('The map is unavailable. You can still use GPS, or choose a gate and enter your address below.'); });
+    return () => {
+      alive = false; generation.current++;
+      const api = (window as any).google?.maps;
+      if (map.current) api?.event?.clearInstanceListeners(map.current);
+      marker.current?.setMap(null); marker.current = null;
+      gateMarkers.current.forEach(item => item.setMap(null)); gateMarkers.current = [];
+      map.current = null;
+    };
+  }, [revision]); // A pin move must not trigger another billable map load.
 
-  const pickPlace = (hit: PlaceHit) => {
-    onPinChange?.({ lat: hit.lat, lng: hit.lng });
-    setRecenter([hit.lat, hit.lng]);
-    setHits([]);
-    setSearchOpen(false);
-    setQuery('');
+  useEffect(() => {
+    if (!maps || !map.current || !pin) return;
+    if (!marker.current) {
+      marker.current = new maps.Marker({ map: map.current, position: pin, draggable: true, title: 'Your delivery pin' });
+      marker.current.addListener('dragend', (event: any) => {
+        if (event.latLng) callbacks.current.onPinChange?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
+      });
+    } else marker.current.setPosition(pin);
+    map.current.panTo(pin);
+  }, [maps, pin?.lat, pin?.lng]);
+
+  useEffect(() => {
+    if (!maps || !map.current) return;
+    gateMarkers.current.forEach(item => item.setMap(null));
+    gateMarkers.current = gates.filter(gate => gate.is_active !== false).flatMap(gate => {
+      const position = gatePin(gate);
+      if (!position) return [];
+      const item = new maps.Marker({ map: map.current, position, title: gate.name, label: gate.id === selectedGateId ? '✓' : 'G' });
+      item.addListener('click', () => callbacks.current.onGateSelect?.(gate));
+      return [item];
+    });
+  }, [maps, gates, selectedGateId]);
+
+  useEffect(() => {
+    const version = ++generation.current;
+    if (query.trim().length < 3) { setSuggestions([]); setSearching(false); return; }
+    if (!maps) return;
+    setSearchError(''); setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const places = await maps.importLibrary('places');
+        session.current ||= new places.AutocompleteSessionToken();
+        const response = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query.trim(),
+          sessionToken: session.current, includedRegionCodes: ['ng'], locationBias: { center: initial, radius: 50000 } });
+        if (generation.current === version) setSuggestions(response.suggestions || []);
+      } catch { if (generation.current === version) setSearchError('Search is unavailable. Tap the map or use GPS instead.'); }
+      finally { if (generation.current === version) setSearching(false); }
+    }, 600);
+    return () => { clearTimeout(timer); };
+  }, [query, maps]);
+
+  const choose = async (suggestion: any) => {
+    const version = ++generation.current;
+    setSearching(true); setSuggestions([]);
+    try {
+      const place = suggestion.placePrediction.toPlace();
+      await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+      if (generation.current !== version || !place.location) return;
+      callbacks.current.onPinChange?.({ lat: place.location.lat(), lng: place.location.lng() });
+      setQuery(''); session.current = null; map.current?.setZoom(16);
+    } catch { if (generation.current === version) setSearchError('That location could not load. Tap the map or use GPS instead.'); }
+    finally { if (generation.current === version) setSearching(false); }
   };
-
-  const handleUseLocation = () => {
-    if (!navigator.geolocation) { setGeoError('GPS not supported. Drop the pin manually on the map.'); return; }
+  const useLocation = () => {
     setGeoError('');
+    if (!navigator.geolocation) { setGeoError('GPS is unavailable. Choose a gate and enter your address.'); return; }
     setLocating(true);
-    // Diagnostic — trace the exact point where GPS values arrive or fail.
-    const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
-    // Low accuracy on purpose: the fee is computed from the nearest gate, not
-    // from a metre-exact fix, and the high-accuracy request is what made the
-    // first attempt hang on a phone with GPS still warming up. A cached fix up
-    // to a minute old answers instantly and is plenty for picking a gate.
-    const options = { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 };
-    let retried = false;
-
-    const onError = (err) => {
-      // One automatic retry on a timeout — a cold GPS fix often succeeds on the
-      // second ask, and the guest should not have to tap again.
-      if (!retried && err?.code === 3) {
-        retried = true;
-        navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
-        return;
-      }
-      // eslint-disable-next-line no-console
-      console.warn('[OffCampusMap] GPS error', { code: err?.code, message: err?.message, inIframe });
-      setLocating(false);
-      const msgs = {
-        1: inIframe
-          ? 'Location blocked by the preview frame — the app can\'t read GPS here. Drop the pin manually, or open the published app in its own tab.'
-          : 'Location permission denied — enable it in your browser settings, or drop the pin manually.',
-        2: 'Your location is unavailable right now — drop the pin manually on the map.',
-        3: 'Location request timed out — try again, or drop the pin manually.',
-      };
-      setGeoError(err?.code ? (msgs[err.code] || `Could not get your location (error ${err.code}). Drop the pin manually.`) : 'Could not get your location — drop the pin manually on the map.');
-    };
-
-    const onSuccess = (pos) => {
-      const ll = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      // eslint-disable-next-line no-console
-      console.log('[OffCampusMap] GPS success', { lat: ll.lat, lng: ll.lng, accuracy: pos.coords.accuracy });
-      // 1. Hand coordinates to the parent's existing location state.
-      onPinChange?.(ll);
-      // 2. Recenter the Leaflet map to the exact coordinates.
-      setRecenter([ll.lat, ll.lng]);
-      setLocating(false);
-    };
-
-    navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
+    navigator.geolocation.getCurrentPosition(position => {
+      setLocating(false); callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
+    }, () => { setLocating(false); setGeoError('Location access failed. Search, tap the map, or choose a gate and enter your address.'); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   };
 
-  // Pin move only reports the new coordinates — the parent calls calculate-fee
-  // and adopts the gate the backend returns (server-side nearest gate), instead
-  // of pre-selecting a client-side nearest gate. Gate markers stay clickable for
-  // a manual override.
-  const handlePinMove = (ll) => {
-    onPinChange?.(ll);
-  };
-
-  return (
-    <div className="space-y-2">
-      {/* Place search — for the guest who is NOT where the pin needs to be
-          (ordering from school for delivery at home). */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => hits.length && setSearchOpen(true)}
-          placeholder="Search a place, area or landmark…"
-          aria-label="Search for a delivery location"
-          className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-        />
-        {searching ? (
-          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground animate-spin" />
-        ) : query ? (
-          <button onClick={() => { setQuery(''); setHits([]); setSearchOpen(false); }} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        ) : null}
-
-        {searchOpen && hits.length > 0 && (
-          <ul className="absolute z-[1000] left-0 right-0 mt-1 rounded-xl border border-border bg-card shadow-lg overflow-hidden max-h-56 overflow-y-auto">
-            {hits.map((hit) => (
-              <li key={hit.id}>
-                <button
-                  onClick={() => pickPlace(hit)}
-                  className="w-full flex items-start gap-2 px-3 py-2.5 text-left hover:bg-primary/10 transition-colors"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                  <span className="text-xs text-foreground leading-snug">{shortenLabel(hit.label)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {searchError && <p className="mt-1 text-[11px] text-primary font-semibold">{searchError}</p>}
-      </div>
-
-      {tilesFailed && <div role="status" className="rounded-xl border border-border bg-muted p-3 text-xs space-y-2"><p>{msg('FE_MAP_TILES_UNAVAILABLE', 'The map could not load fully. Retry, use location search or GPS, or choose your gate and enter your address below.')}</p><button type="button" onClick={() => setTileRevision(value => value + 1)} className="font-bold text-primary">{msg('FE_MAP_RETRY', 'Reload map')}</button></div>}
-      <div className="rounded-2xl overflow-hidden border border-border relative" style={{ height: 300 }}>
-        <MapContainer
-          center={view}
-          zoom={16}
-          scrollWheelZoom={false}
-          zoomControl
-          style={{ height: '100%', width: '100%', zIndex: 0 }}
-          ref={mapRef}
-        >
-          <ResizeHandler />
-          <TileLayer
-            key={tileRevision}
-            eventHandlers={{ tileload: () => { loadedTile.current = true; }, tileerror: () => { failedTiles.current += 1; if (failedTiles.current >= 3) setTilesFailed(true); } }}
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={19}
-          />
-          {gates.map((g) => {
-            const c = gateCoords(g);
-            if (!c) return null;
-            return (
-              <Marker
-                key={g.id}
-                position={c}
-                icon={selectedGateId === g.id ? selectedGateIcon : gateIcon}
-                eventHandlers={{ click: () => onGateSelect(g) }}
-              />
-            );
-          })}
-          {pin && <DraggablePin position={[pin.lat, pin.lng]} onDragEnd={handlePinMove} />}
-          <ClickHandler onClick={handlePinMove} />
-          <Recenter center={recenter || (pin ? [pin.lat, pin.lng] : view)} nonce={recenter?.join(',')} />
-        </MapContainer>
-
-        {/* Use-my-location overlay button */}
-        <button
-          type="button"
-          onClick={handleUseLocation}
-          disabled={locating}
-          className="absolute top-3 right-3 z-[1000] flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/95 border border-border shadow-md text-xs font-bold text-foreground active:scale-95 transition disabled:opacity-60"
-        >
-          {locating
-            ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-            : <LocateFixed className="w-3.5 h-3.5 text-primary" />}
-          {locating ? 'Locating…' : 'Use my location'}
-        </button>
-      </div>
-
-      {geoError && (
-        <p className="text-[11px] text-primary font-semibold flex items-center gap-1.5">
-          <MapPin className="w-3 h-3 shrink-0" /> {geoError}
-        </p>
-      )}
-
-      {/* Live fee / distance preview strip */}
-      {pin ? (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/20">
-          <MapPin className="w-4 h-4 text-primary shrink-0" />
-          <div className="flex-1 text-xs text-foreground">
-            {feePreview ? (
-              <>
-                <span className="font-bold text-primary/90">₦{feePreview.fee?.toLocaleString?.() ?? feePreview.fee}</span>
-                <span className="text-muted-foreground"> — {formatKm(feePreview.km)} from {feePreview.gateName || 'gate'}</span>
-                <span className="block text-[11px] text-muted-foreground">Est. {etaLabel(feePreview.km)}</span>
-              </>
-            ) : (
-              'Drag the pin to your exact spot'
-            )}
-          </div>
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5" /> Tap the map, search a place, or use GPS to drop your delivery pin.
-        </p>
-      )}
+  return <div className="space-y-3">
+    <div className="relative">
+      <Search aria-hidden className="absolute left-3 top-3.5 w-4 h-4 text-muted-foreground" />
+      <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search a place, area or landmark…" aria-label="Search delivery location" className="w-full border border-border rounded-2xl py-3 pl-10 pr-3 bg-card" />
+      {searching && <p role="status" className="text-xs p-2">Searching…</p>}
+      {suggestions.length > 0 && <ul className="absolute z-30 w-full bg-card border border-border rounded-xl shadow-lg max-h-60 overflow-auto">
+        {suggestions.map((suggestion, index) => <li key={index}><button type="button" onClick={() => choose(suggestion)} className="w-full text-left p-3 text-sm hover:bg-muted">{suggestion.placePrediction?.text?.toString()}</button></li>)}
+      </ul>}
+      {searchError && <p role="status" className="text-xs text-destructive mt-1">{searchError}</p>}
     </div>
-  );
+    {error && <div role="status" className="p-3 rounded-xl border border-border text-sm">{error}<button type="button" onClick={() => setRevision(value => value + 1)} className="block mt-2 font-bold text-primary underline">Retry map</button></div>}
+    <div className="relative">
+      <div ref={element} role="region" aria-label="Choose your delivery pin on Google Maps" className="h-[340px] sm:h-[380px] w-full rounded-2xl overflow-hidden bg-muted" />
+      <button type="button" onClick={useLocation} disabled={locating} className="absolute top-3 right-3 flex items-center gap-2 bg-card rounded-full px-4 py-2 text-sm font-bold shadow"><LocateFixed className="w-4 h-4" />{locating ? 'Finding location…' : 'Use my location'}</button>
+    </div>
+    {geoError && <p role="status" className="text-sm text-destructive">{geoError}</p>}
+    {pin && <p className="text-xs text-muted-foreground">Drag the pin or tap the map to adjust your delivery location.</p>}
+    {feePreview?.fee != null && <div className="rounded-xl border border-primary/30 p-3 text-sm"><b>₦{feePreview.fee.toLocaleString()}</b>{feePreview.km != null && <> · {formatKm(feePreview.km)} from {feePreview.gateName}</>}{feePreview.km != null && <p className="text-xs text-muted-foreground">{etaLabel(feePreview.km)}</p>}</div>}
+  </div>;
 }

@@ -396,7 +396,9 @@ def send_notification(
     if not action_url:
         link_data = dict(template_data or {})
         if reference_type == "order" and reference_id:
-            link_data.setdefault("order_id", reference_id)
+            # Template copy uses a short display number; navigation must use
+            # the full owned order UUID from the persisted reference.
+            link_data["order_id"] = reference_id
         action_url = default_action_url(notif_type, link_data)
 
     # Guard: if neither mode supplied title/body, skip to avoid blank notifications
@@ -1076,6 +1078,10 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
         destination = _push_action_url(action_url)
         if destination:
             payload["url"] = destination
+        icon = _push_action_url('/icons/icon-192.png')
+        if icon:
+            payload['chrome_web_icon'] = icon
+            payload['firefox_icon'] = icon
         if push_image:
             from app.utils.upload_urls import is_cms_image_url
             if is_cms_image_url(push_image):

@@ -199,6 +199,12 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
         logger.error("register: required profile persistence failed for %s: %s", user_id, exc)
         raise ValueError(MSG.REGISTER_FAILED_RETRY) from exc
 
+    try:
+        from app.services.tier_service import ensure_initial_student_tier
+        ensure_initial_student_tier({'id': user_id, 'role': 'student', 'hp_earned_120day': 0})
+    except Exception as exc:
+        logger.warning('register: initial tier assignment unavailable for %s: %s', user_id, exc)
+
     # Marketing consent is separate from transactional email delivery. Save it
     # on the existing preferences row, and reuse the newsletter audience.
     preferences = db.rpc('hg_update_notification_preferences_atomic', {
@@ -327,6 +333,12 @@ def get_current_user(access_token: str, *, verified_auth_user=None, recover_welc
     )
 
     wallet = None
+    if profile and profile.get('role') == 'student' and not profile.get('current_tier_id'):
+        try:
+            from app.services.tier_service import ensure_initial_student_tier
+            profile = ensure_initial_student_tier(profile)
+        except Exception as exc:
+            logger.warning('get_current_user: initial tier recovery unavailable for %s: %s', user_id, exc)
     try:
         if include_balances:
             wallet = (

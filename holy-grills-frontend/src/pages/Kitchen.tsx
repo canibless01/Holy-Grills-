@@ -46,8 +46,9 @@ export default function Kitchen() {
 
 function KitchenWorkspace({ campusId, canManageSettings }) {
   const [tab, setTab] = useState('queue');
+  const [queuePeriod, setQueuePeriod] = useState('today');
   const {
-    authed, loading, error, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary,
+    authed, loading, error, dataWarning, refreshQueue, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary,
     settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
     batchBusy, batchResult, selectWindow, handleStatusUpdate,
     handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
@@ -56,9 +57,16 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
   if (loading) return <StaffPanelSkeleton variant="kitchen" />;
 
-  const received = queue.filter((o) => o.status === 'received' || o.status === 'paid');
-  const preparing = queue.filter((o) => o.status === 'preparing');
-  const ready = queue.filter((o) => o.status === 'ready');
+  const today = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
+  const preparationDay = order => {
+    const instant = new Date(order.is_scheduled ? order.scheduled_for : order.received_at || order.created_at).getTime();
+    return Number.isFinite(instant) ? new Date(instant + 3600000).toISOString().slice(0, 10) : null;
+  };
+  const older = queue.filter(order => preparationDay(order) !== today);
+  const visibleQueue = queuePeriod === 'today' ? queue.filter(order => preparationDay(order) === today) : older;
+  const received = visibleQueue.filter((o) => o.status === 'received' || o.status === 'paid');
+  const preparing = visibleQueue.filter((o) => o.status === 'preparing');
+  const ready = visibleQueue.filter((o) => o.status === 'ready');
 
   return (
     <div className="min-h-screen bg-background">
@@ -70,7 +78,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
           <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
             <span className="text-sm text-destructive font-medium">{error}</span>
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => void refreshQueue(true)}
               className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold"
             >
               Retry
@@ -78,6 +86,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
           </div>
         )}
 
+        {dataWarning && !error && <div role="status" className="rounded-xl border border-border p-3 text-sm">{dataWarning}<button onClick={() => void refreshQueue(true)} className="ml-2 text-primary font-bold underline">Retry updates</button></div>}
         {!error && <>
         {/* Capacity bar */}
         {capacity && (
@@ -121,6 +130,10 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
         </div>
 
         {/* Live Queue — 3-column KDS board */}
+        {tab === 'queue' && <div className="space-y-2"><div className="flex flex-wrap gap-2">
+          <button onClick={() => setQueuePeriod('today')} className={`rounded-full border px-4 py-2 text-sm font-bold ${queuePeriod === 'today' ? 'bg-primary text-white' : ''}`}>Today's preparation · {queue.length - older.length}</button>
+          <button onClick={() => setQueuePeriod('backlog')} className={`rounded-full border px-4 py-2 text-sm font-bold ${queuePeriod === 'backlog' ? 'bg-primary text-white' : ''}`}>Older / undated · {older.length}</button>
+        </div><p className="text-xs text-muted-foreground">Newest orders appear first in each stage. Older unfinished orders stay in the backlog until resolved; they are not today's new work.</p></div>}
         {tab === 'catering' && <KitchenCatering />}
         {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
         {tab === 'queue' && (
@@ -204,6 +217,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
         {/* Prep List */}
         {tab === 'batch' && (
           <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">The prep list totals meals, sides and extras for a delivery window. Move orders from received → preparing → ready here. A delivery batch is assigned to a rider after the orders are ready.</p>
             <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-1">
               {windows.map((w) => (
                 <button

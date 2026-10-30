@@ -1,4 +1,5 @@
-import { guestOrderToken, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
+import { guestOrderToken, guestOrders, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
+import { ownedOrderId } from '@/lib/orderLink';
 import { confirmAction } from '@/lib/confirmAction';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
 import OrderPaymentActions from '@/components/OrderPaymentActions';
@@ -26,9 +27,7 @@ import { msg, useMessages } from '@/lib/messages';
 // a Place ID is configured, otherwise falls back to a Google search for the brand.
 const googleReviewUrl = () => {
   const placeId = APP_CONFIG.google?.placeId;
-  return placeId
-    ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}`
-    : `https://www.google.com/search?q=${encodeURIComponent(`${APP_CONFIG.name} reviews`)}`;
+  return placeId ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}` : null;
 };
 
 export default function OrderDetail() {
@@ -39,7 +38,7 @@ export default function OrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { refreshUser, refreshCart, user } = useHolyGrill();
+  const { refreshUser, refreshCart, user, isLoading: accountLoading } = useHolyGrill();
   const { play } = useSound();
   const claimToken = new URLSearchParams(location.search).get('claim_token');
   const [order, setOrder] = useState(null);
@@ -70,13 +69,23 @@ export default function OrderDetail() {
     setOrderError(null);
     const load = async () => {
       try {
+        if (/^[a-f0-9]{8}$/i.test(id || '')) {
+          if (accountLoading) return;
+          const visible = user?.id ? await mockApi.orders.list({ limit: 100 }) : guestOrders();
+          const resolved = ownedOrderId(id, visible);
+          if (resolved) {
+            if (active) navigate(`/orders/${resolved}${location.search}${location.hash}`, { replace: true });
+            return;
+          }
+          throw new Error('Open Track Orders with your tracking code, or sign in to the account that placed this order.');
+        }
         const token = resolveClaimToken();
         const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
         if (!active) return;
         if (settleGuestCart(o)) await refreshCart();
         setOrder(o);
         setReviewSubmitted(Boolean(o.review));
-        if (o.review) setReviewAward(Number(o.review.hp_awarded) || 0);
+        if (o.review) { setReviewAward(Number(o.review.hp_awarded) || 0); setGooglePrompt(Boolean(APP_CONFIG.google?.placeId)); }
       } catch (error) { if (active) setOrderError(error); }
       if (active) setLoading(false);
     };
@@ -84,7 +93,7 @@ export default function OrderDetail() {
     // Keep the timeline fresh while the order is still moving.
     const timer = setInterval(load, 30000);
     return () => { active = false; clearInterval(timer); };
-  }, [id, user?.id, resolveClaimToken, retry]);
+  }, [id, user?.id, accountLoading, resolveClaimToken, retry]);
 
   // F5 GAP (reported): the guest "Resend tracking email" action was removed — the
   // backend exposes no tracking route at all (no /orders/<id>/resend-tracking, no
@@ -143,9 +152,8 @@ export default function OrderDetail() {
     setReviewBusy(true);
     try {
       const result = await mockApi.orders.review(id, { ...review, image_urls: reviewImages });
-      const submittedRating = result?.review?.rating ?? review.rating;
       setReviewAward(Number(result?.hp_awarded) || 0);
-      setGooglePrompt(Number(submittedRating) >= 4);
+      setGooglePrompt(Boolean(APP_CONFIG.google?.placeId));
       setReviewSubmitted(true);
       setShowReview(false);
       setReviewImages([]);
@@ -410,7 +418,7 @@ export default function OrderDetail() {
         </motion.div>
       )}
 
-      {/* Google handoff — only for happy customers (4★ and up) */}
+      {/* Voluntary Google handoff for every rating; website reviews stay here. */}
       {reviewSubmitted && googlePrompt && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -419,11 +427,11 @@ export default function OrderDetail() {
         >
           <div className="flex items-center gap-1.5 mb-1">
             <Star className="w-3.5 h-3.5 fill-white text-white" />
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">Loved it?</span>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider">Your experience matters</span>
           </div>
-          <h3 className="font-heading font-extrabold text-lg">Tell Google too!</h3>
+          <h3 className="font-heading font-extrabold text-lg">Share your experience on Google</h3>
           <p className="text-xs text-white/85 mt-1 mb-4">
-            A quick Google review helps more students find the grill.
+            Optional: help other students discover the grill. Posting on Google is separate from your website review and has no additional reward.
           </p>
           <a
             href={googleReviewUrl()}

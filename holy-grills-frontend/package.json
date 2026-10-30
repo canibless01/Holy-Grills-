@@ -32,7 +32,8 @@
     "test:worker-cache": "node scripts/test-service-worker-cache.mjs",
     "test:pwa-assets": "node scripts/test-pwa-assets.mjs",
     "test:storefront-ssr": "node scripts/test-storefront-ssr-exit.mjs",
-    "test:worker-lifecycle": "node scripts/test-worker-lifecycle.mjs"
+    "test:worker-lifecycle": "node scripts/test-worker-lifecycle.mjs",
+    "test:request-sharing": "node scripts/test-request-sharing.mjs"
   },
   "dependencies": {
     "@fontsource-variable/nunito": "^5.3.0",

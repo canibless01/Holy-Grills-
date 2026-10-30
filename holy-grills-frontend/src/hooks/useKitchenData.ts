@@ -68,54 +68,61 @@ export function useKitchenData(campusId?: string) {
     initialized.current = true;
   };
 
-  const refreshQueue = async () => {
+  const refreshing = useRef(false);
+  const lastDetails = useRef(0);
+  const mounted = useRef(true);
+  const [dataWarning, setDataWarning] = useState('');
+
+  const refreshQueue = async (initial = false) => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     const generation = scheduleGeneration.current;
     try {
-      const [q, m, s, w, cap, stg, status] = await Promise.all([
-        liveApi.kitchen.getQueue(campusId ? { campus_id: campusId } : {}),
+      const detailReads = initial || Date.now() - lastDetails.current > 30000;
+      const details = detailReads ? Promise.allSettled([
         liveApi.kitchen.getMetrics(campusId),
         liveApi.kitchen.getScheduled({ date: scheduledDate, ...(campusId ? { campus_id: campusId } : {}) }),
         liveApi.kitchen.getWindows(campusId), liveApi.menu.getKitchenCapacity(campusId),
         liveApi.kitchen.getSettings(campusId), liveApi.orders.getDeliveryWindowStatus(campusId),
-      ]);
-      applyQueue(q);
-      setMetrics(m); setWindows(w); setCapacity(cap); setSettings(stg); setWindowStatus(status);
-      if (generation === scheduleGeneration.current) setScheduled(s);
-      setError(null);
-    } catch { setError(msg('FE_KITCHEN_QUEUE_STALE', 'Kitchen updates are unavailable. The displayed orders may be out of date. Retry before preparing or handing over orders.')); }
+      ]) : null;
+      const q = await liveApi.kitchen.getQueue(campusId ? { campus_id: campusId } : {});
+      if (!mounted.current) return;
+      applyQueue(q); setError(null); setLoading(false);
+      if (details) {
+        const results = await details;
+        if (!mounted.current) return;
+        const [m, scheduledResult, w, cap, stg, status] = results;
+        if (m.status === 'fulfilled') setMetrics(m.value);
+        if (scheduledResult.status === 'fulfilled' && generation === scheduleGeneration.current) setScheduled(scheduledResult.value);
+        if (w.status === 'fulfilled') {
+          setWindows(w.value);
+          if (initial) {
+            const first = w.value.find(item => item.status === 'open')?.id || w.value[0]?.id;
+            setSelectedWindow(first);
+            if (first) liveApi.kitchen.getBatchSummary(first, campusId).then(value => { if (mounted.current) setBatchSummary(value); }).catch(() => { if (mounted.current) setDataWarning('Preparation totals could not load. Retry updates before using the prep list.'); });
+          }
+        }
+        if (cap.status === 'fulfilled') setCapacity(cap.value);
+        if (stg.status === 'fulfilled') setSettings(stg.value);
+        if (status.status === 'fulfilled') setWindowStatus(status.value);
+        const labels = ['today’s totals', 'scheduled orders', 'delivery windows', 'capacity', 'settings', 'ordering hours'];
+        const missing = results.flatMap((result, index) => result.status === 'rejected' ? [labels[index]] : []);
+        setDataWarning(missing.length ? `Some details could not load: ${missing.join(', ')}. The live order queue is available.` : '');
+        lastDetails.current = Date.now();
+      }
+    } catch {
+      if (mounted.current) setError(msg('FE_KITCHEN_QUEUE_STALE', 'Kitchen updates are unavailable. The displayed orders may be out of date. Retry before preparing or handing over orders.'));
+    } finally {
+      refreshing.current = false;
+      if (mounted.current) setLoading(false);
+    }
   };
 
   useEffect(() => {
+    mounted.current = true;
     if (!authed) { setLoading(false); return; }
-    let alive = true;
-    const init = async () => {
-      try {
-        const [q, s, w, m, cap, stg, status] = await Promise.all([
-          liveApi.kitchen.getQueue(campusId ? { campus_id: campusId } : {}),
-          liveApi.kitchen.getScheduled({ date: scheduledDate, ...(campusId ? { campus_id: campusId } : {}) }),
-          liveApi.kitchen.getWindows(campusId),
-          liveApi.kitchen.getMetrics(campusId),
-          liveApi.menu.getKitchenCapacity(campusId),
-          liveApi.kitchen.getSettings(campusId),
-          liveApi.orders.getDeliveryWindowStatus(campusId),
-        ]);
-        if (!alive) return;
-        applyQueue(q);
-        setScheduled(s); setWindows(w); setMetrics(m); setCapacity(cap); setSettings(stg); setWindowStatus(status);
-        const firstWin = w.find((x) => x.status === 'open')?.id || w[0]?.id;
-        setSelectedWindow(firstWin);
-        if (firstWin) {
-          const bs = await liveApi.kitchen.getBatchSummary(firstWin, campusId);
-          if (alive) setBatchSummary(bs);
-        }
-      } catch (e) {
-        console.error(e);
-        if (alive) setError(msg('FE_USE_KITCHEN_DATA_COULD_NOT_LOAD_KITCHEN_DATA_CHECK_YOUR', 'Could not load kitchen data. Check your connection and try again.'));
-      }
-      if (alive) setLoading(false);
-    };
-    init();
-    return () => { alive = false; };
+    void refreshQueue(true);
+    return () => { mounted.current = false; };
   }, [authed, campusId]);
 
   useEffect(() => {
@@ -204,11 +211,11 @@ export function useKitchenData(campusId?: string) {
 
   // Ordering-window status is authoritative. Legacy kitchen settings such as
   // is_accepting_orders are not consumed by order admission.
-  const open = windowStatus?.is_open === true;
+  const open = windowStatus?.is_open ?? null;
   const prepTarget = null;
 
   return {
-    authed, loading, error,
+    authed, loading, error, dataWarning, refreshQueue,
     queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, metrics, settings, capacity, windowStatus,
     open, prepTarget, flashingIds, actionLoading, batchBusy, batchResult,
     selectWindow, handleStatusUpdate, handleMarkUnavailable,

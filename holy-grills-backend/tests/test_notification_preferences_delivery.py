@@ -64,3 +64,10 @@ class NotificationDeliveryTests(unittest.TestCase):
         self.assertIn('check payment',rows[0]['body'])
         self.assertEqual(rows[0]['action_url'],'/orders/full-id')
         self.assertFalse(service._is_throttled(MagicMock(),'user','order_placed'))
+
+    def test_order_link_uses_full_reference_while_copy_keeps_display_number(self):
+        order_id='9920ce8c-1111-4111-8111-111111111111'
+        with self.app.app_context(), patch.object(service,'get_db',return_value=self.db), patch.object(service.threading,'Thread'):
+            rows=service.send_notification('user','order_placed',template_data={'order_id':'9920CE8C','name':'Student'},reference_id=order_id,reference_type='order',channels=['in_app'])
+        self.assertIn('9920CE8C',rows[0]['body'])
+        self.assertEqual(rows[0]['action_url'],'/orders/'+order_id)

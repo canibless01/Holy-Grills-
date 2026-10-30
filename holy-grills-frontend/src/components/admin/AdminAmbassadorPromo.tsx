@@ -6,56 +6,19 @@ import ImageUploader from './ImageUploader';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { openWhatsApp } from '@/lib/whatsappShare';
 
 const LINK_TOKENS = [/{{link}}/g, /{link}/g, /{{LINK}}/g];
 const personalize = (caption: string, link: string) =>
   LINK_TOKENS.reduce((out, token) => out.replace(token, link), caption || '');
 const trackingLink = (code?: string | null) => (code ? `${window.location.origin}/?ref=${code}` : '');
 
-/**
- * Share graphic + personalized caption together via the native share sheet
- * (the user picks WhatsApp from it). Browsers without file-sharing get a
- * simple fallback: save the graphic + copy the caption. We never claim the
- * image was attached automatically when it wasn't.
- */
-async function shareToWhatsApp(imageUrl: string | null, caption: string, downloadName: string) {
-  let file: File | null = null;
-  if (imageUrl) {
-    try {
-      const res = await fetch(imageUrl);
-      const blob = await res.blob();
-      const ext = blob.type.split('/')[1] || 'jpg';
-      file = new File([blob], `holy-grills-promo.${ext}`, { type: blob.type });
-    } catch {
-      file = null; // CORS/network failure → fallback below
-    }
-  }
-  const nav = navigator as any;
-  if (file && nav.canShare && nav.canShare({ files: [file] })) {
-    try {
-      await nav.share({ files: [file], text: caption, title: 'Holy Grills' });
-      return { shared: true };
-    } catch (e) {
-      if (e?.name === 'AbortError') return { shared: false, cancelled: true };
-      // fall through to manual fallback
-    }
-  }
-  // Manual fallback — image download + caption copied in one click.
-  try {
-    await navigator.clipboard.writeText(caption);
-  } catch { /* clipboard blocked — the textarea fallback still shows */ }
-  if (imageUrl) {
-    const a = document.createElement('a');
-    a.href = imageUrl;
-    a.download = downloadName || 'holy-grills-promo.jpg';
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }
-  toast({ title: msg('FE_ADMIN_AMBASSADOR_PROMO_FALLBACK', "This browser can't attach the image automatically. Save the graphic and attach it manually — the personalized caption is copied for you.") });
-  return { shared: false, fallback: true };
+/** WhatsApp deep links carry text; graphic saving is a separate action. */
+function shareToWhatsApp(_imageUrl: string | null, caption: string, _downloadName: string) {
+  // Open synchronously in the tap, before clipboard/network awaits, so mobile
+  // browsers preserve user activation and do not turn this into an image tab.
+  openWhatsApp(caption);
+  return Promise.resolve({ opened: true });
 }
 
 export default function AdminAmbassadorPromo() {

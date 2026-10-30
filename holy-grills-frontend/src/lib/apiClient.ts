@@ -11,6 +11,10 @@ const BASE_URL = API_BASE_URL;
 const TOKEN_KEY = 'hg_access_token';
 const REFRESH_KEY = 'hg_refresh_token';
 let sessionVersion = 0;
+// Share simultaneous JSON reads, never completed responses or mutations. Scope
+// includes the actual token/campus/headers so accounts and campuses cannot join
+// each other's in-flight private requests. Entries are removed on success/error.
+const pendingReads = new Map<string, Promise<any>>();
 
 // "Remember me" — when the user leaves the checkbox unchecked, tokens are
 // stored in sessionStorage so they are cleared when the browser closes.
@@ -205,16 +209,21 @@ async function request(path: string, options: RequestOptions = {}) {
   // authenticated and financial requests keep the existing 12-second default.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (options.signal?.aborted) controller.abort();
 
   let res;
   try {
     res = await fetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeoutId);
+    options.signal?.removeEventListener('abort', abortFromCaller);
     if (e.name === 'AbortError') throw new ApiError(0, 'Request timed out — the server may be starting up. Try again in a moment.');
     throw new ApiError(0, e.message || 'Network error');
   }
   clearTimeout(timeoutId);
+  options.signal?.removeEventListener('abort', abortFromCaller);
 
   // Auto-refresh on 401 (once). On a transient refresh failure (network/5xx)
   // keep the tokens so the user isn't logged out by a slow backend — surface
@@ -316,10 +325,18 @@ export const apiClient = {
     const qs = params ? '?' + new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]
     ).toString() : '';
-    return request(path + qs, { ...options, ...(headers ? { headers } : {}) });
+    const scope = campusScopeHeaders(getToken(), 'GET');
+    const key = JSON.stringify([path + qs, sessionVersion, getToken(), scope, headers || {}, options?.timeoutMs || 12000]);
+    const existing = pendingReads.get(key);
+    if (existing) return existing;
+    const pending = request(path + qs, { ...options, ...(headers ? { headers } : {}) }).finally(() => {
+      if (pendingReads.get(key) === pending) pendingReads.delete(key);
+    });
+    pendingReads.set(key, pending);
+    return pending;
   },
-  post(path: string, body?: unknown) {
-    return request(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+  post(path: string, body?: unknown, options?: { timeoutMs?: number; signal?: AbortSignal }) {
+    return request(path, { ...options, method: 'POST', body: body ? JSON.stringify(body) : undefined });
   },
   patch(path: string, body?: unknown) {
     return request(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined });

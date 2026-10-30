@@ -62,6 +62,8 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
 
     if amount >= config.get("WALLET_TOPUP_MIN", 3000) and reference_type in ("topup", "bank_transfer"):
         try:
+            if not txn_id:
+                raise ValueError('Wallet top-up has no stable transaction receipt')
             award_active_hp(
                 user_id=user_id,
                 amount=setting_or_config(
@@ -69,9 +71,14 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
                     minimum=0, maximum=100000,
                 ),
                 txn_type="earn",
-                reference_id=payment_reference,
+                # The HP ledger reference is UUID-typed. Paystack's HG-WALLET-*
+                # string was rejected, silently skipping every qualifying bonus.
+                # Callback/webhook retries share this stable wallet receipt ID.
+                reference_id=txn_id,
                 reference_type="wallet_topup",
                 notes=f"HP bonus for wallet top-up of ₦{amount:.0f}",
+                campus_id=campus_id,
+                apply_multiplier=False,  # configured flat funding bonus
             )
         except Exception as exc:
             logger.error("credit_wallet: the top-up HP bonus could not be awarded for %s (₦%s top-up): %s",

@@ -123,6 +123,7 @@ export default function Home() {
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: 'easeOut' }} className="space-y-7">
 
       <HeroCarousel onCta={handleCta} />
+      <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">Made for food, friends and the moments between. Born at FUTA, Holy Grills brings students together around shared plates, game nights and everyday campus memories.</p>
 
       <OrderSuggestionCard />
 

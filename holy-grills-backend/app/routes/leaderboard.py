@@ -10,6 +10,16 @@ logger = get_logger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
 
+def _public_hall_entry(row):
+    """Keep explicitly labelled test/audit fixtures out of public honours.
+
+    Preserve their stored results for diagnostics; ordinary names (including
+    'Testimony') are not treated as fixtures.
+    """
+    name = str(row.get('full_name') or row.get('name') or '').strip().upper()
+    return not name.startswith(('[TEST]', '[AUDIT'))
+
+
 def _period_key_for(period_type: str):
     today = today_wat()
     if period_type == "monthly":
@@ -181,6 +191,8 @@ def hall_of_fame():
             snap_entries = snap.get("entries") or []
             if snap_entries:
                 winner = snap_entries[0] if isinstance(snap_entries, list) else snap_entries
+                if not _public_hall_entry(winner):
+                    continue
                 hall.append({
                     "period_key": snap.get("period_key"),
                     "winner": winner,
@@ -192,7 +204,7 @@ def hall_of_fame():
 
         return jsonify({
             "monthly_winners": hall,
-            "inductees": inductees_raw,
+            "inductees": [row for row in inductees_raw if _public_hall_entry(row)],
         }), 200
     except Exception:
         logger.exception("hall_of_fame: lookup failed")
@@ -222,6 +234,8 @@ def hall_of_fame_inductees():
 
         inductees = []
         for row in rows:
+            if not _public_hall_entry(row):
+                continue
             uid = row.get("user_id")
             profile = {}
             if uid:

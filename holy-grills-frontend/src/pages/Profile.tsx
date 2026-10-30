@@ -29,8 +29,10 @@ export default function Profile() {
     avatar_url: user?.avatar_url || user?.profile?.photo_url || user?.profile?.avatar_url || '',
   });
   const [saving, setSaving] = useState(false);
-  const [freeSideCredits, setFreeSideCredits] = useState({ count: 0, expires_at: null });
+  const [freeSideCredits, setFreeSideCredits] = useState(null);
   const [exclusiveStatus, setExclusiveStatus] = useState(null);
+  const [rewardReadErrors, setRewardReadErrors] = useState({ sides: false, spins: false });
+  const [rewardRetry, setRewardRetry] = useState(0);
   const [departments, setDepartments] = useState([]);
   const [academicLevels, setAcademicLevels] = useState([]);
   const [showDelete, setShowDelete] = useState(false);
@@ -68,10 +70,13 @@ export default function Profile() {
   };
   useEffect(() => {
     if (!user) return;
-    liveApi.rewards.getFreeSideCredits().then(setFreeSideCredits).catch(() => {});
-    liveApi.hp.getExclusiveSpinStatus().then(setExclusiveStatus).catch(() => {});
+    let current = true;
+    setRewardReadErrors({ sides: false, spins: false });
+    liveApi.rewards.getFreeSideCredits().then(value => { if (current) setFreeSideCredits(value); }).catch(() => { if (current) setRewardReadErrors(value => ({ ...value, sides: true })); });
+    liveApi.hp.getExclusiveSpinStatus().then(value => { if (current) setExclusiveStatus(value); }).catch(() => { if (current) setRewardReadErrors(value => ({ ...value, spins: true })); });
     loadReferences();
-  }, [user?.id]);
+    return () => { current = false; };
+  }, [user?.id, rewardRetry]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -276,15 +281,16 @@ export default function Profile() {
         <div className="grid grid-cols-2 gap-3">
           <button onClick={() => navigate('/rewards')} className="rounded-xl bg-primary/5 p-3 text-center hover:bg-primary/10 transition">
             <div className="text-2xl">🏆</div>
-            <div className="font-heading font-extrabold text-lg text-foreground">{freeSideCredits?.count ?? 0}</div>
+            <div className="font-heading font-extrabold text-lg text-foreground">{rewardReadErrors.sides ? 'Unavailable' : freeSideCredits?.count ?? '…'}</div>
             <div className="text-[10px] text-muted-foreground">Free side credits</div>
           </button>
           <button onClick={() => navigate('/leaderboard')} className="rounded-xl bg-muted p-3 text-center hover:bg-muted/80 transition">
             <div className="text-2xl">🎡</div>
-            <div className="font-heading font-extrabold text-lg text-foreground">{exclusiveStatus?.total_spins ?? 0}</div>
+            <div className="font-heading font-extrabold text-lg text-foreground">{rewardReadErrors.spins ? 'Unavailable' : exclusiveStatus?.total_spins ?? '…'}</div>
             <div className="text-[10px] text-muted-foreground">Exclusive spins</div>
           </button>
         </div>
+        {(rewardReadErrors.sides || rewardReadErrors.spins) && <button onClick={() => setRewardRetry(value => value + 1)} className="text-sm font-bold text-primary underline">Retry reward balances</button>}
       </div>
 
       {/* Sound Toggle */}

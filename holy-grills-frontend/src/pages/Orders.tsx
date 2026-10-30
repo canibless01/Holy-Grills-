@@ -52,22 +52,28 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [dateFilter, setDateFilter] = useState('all');
   const [activeOrders, setActiveOrders] = useState([]);
+  const [loadError, setLoadError] = useState('');
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!isAuthenticated) { setLoading(false); return; }
+    let current = true;
+    setLoading(true); setLoadError('');
     const load = async () => {
       try {
         const [all, active] = await Promise.all([
           mockApi.orders.list({ limit: 20 }),
           mockApi.orders.getActive().catch(() => []),
         ]);
+        if (!current) return;
         setOrders(all);
         setActiveOrders(Array.isArray(active) ? active : (active ? [active] : []));
-      } catch (e) { console.error(e); }
-      setLoading(false);
+      } catch (e) { if (current) setLoadError(e.message || 'Your orders could not load. Please try again.'); }
+      if (current) setLoading(false);
     };
     load();
-  }, [isAuthenticated]);
+    return () => { current = false; };
+  }, [isAuthenticated, retry]);
 
   if (!isAuthenticated) return <Navigate to="/track-orders" replace />;
 
@@ -132,6 +138,9 @@ export default function Orders() {
       </div>
 
       {/* Active Orders */}
+      {loadError && <div role="alert" className="rounded-2xl border border-border p-4 text-sm">
+        <p>{loadError}</p><button onClick={() => setRetry(n => n + 1)} className="mt-2 font-bold text-primary underline">Retry orders</button>
+      </div>}
       {liveActive.length > 0 && (
         <div>
           <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">Active Orders</h2>
@@ -148,10 +157,10 @@ export default function Orders() {
         {pastOrders.length > 0 && (
           <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">Past Orders</h2>
         )}
-        {pastOrders.length === 0 ? (
+        {pastOrders.length === 0 && liveActive.length === 0 && !loadError ? (
           <div className="text-center py-12 space-y-3">
-            <MascotStandee mascot="waving" className="w-32 h-32 mx-auto" alt="No active orders" />
-            <p className="text-sm text-muted-foreground">No orders yet.</p>
+            <MascotStandee mascot="waving" className="w-32 h-32 mx-auto" alt="No orders in this period" />
+            <p className="text-sm text-muted-foreground">{dateFilter === 'all' ? 'No orders yet.' : 'No past orders in this period.'}</p>
             <button onClick={() => navigate('/menu')} className="px-4 py-2 rounded-xl bg-gradient-cta text-white text-xs font-bold shadow-glow">Browse Menu</button>
           </div>
         ) : (

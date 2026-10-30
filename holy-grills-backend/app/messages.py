@@ -1789,10 +1789,10 @@ class MSG:
     FE_CHECKOUT_FREE_SIDE_FAILED_TITLE     = "Could not add the free side"
 
     # Checkout — kitchen closed / scheduled orders
-    FE_CHECKOUT_KITCHEN_CLOSED_TITLE       = "The kitchen is closed"
-    FE_CHECKOUT_KITCHEN_CLOSED_OPENS       = "The kitchen is closed. It opens at {time}. You can still order now and we will schedule it for {date}."
-    FE_CHECKOUT_KITCHEN_CLOSED_NO_TIME     = "The kitchen is closed. You can still order now and we will schedule it for the next opening."
-    FE_CHECKOUT_KITCHEN_CLOSED_TODAY       = "The kitchen is closed for today. You can still order now and we will schedule it for the next opening."
+    FE_CHECKOUT_KITCHEN_CLOSED_TITLE       = "Ordering is closed"
+    FE_CHECKOUT_KITCHEN_CLOSED_OPENS       = "Ordering is closed. It opens at {time}. You can order now for {date}."
+    FE_CHECKOUT_KITCHEN_CLOSED_NO_TIME     = "Ordering is closed. You can order now for the next opening."
+    FE_CHECKOUT_KITCHEN_CLOSED_TODAY       = "Ordering is closed for today. You can order now for the next opening; the kitchen may still be preparing earlier orders."
     FE_CHECKOUT_KITCHEN_CLOSED_FULL        = "Today's slots are fully booked. You can still order now and we will schedule it for the next opening."
     FE_CHECKOUT_SCHEDULE_MY_ORDER          = "Schedule my order"
     FE_CHECKOUT_CANCEL                     = "Cancel"

@@ -138,7 +138,14 @@ const orders = {
   async walk(id, body) { return apiClient.post(`/orders/${id}/walk`, body); },
   async cancel(id, body) { return apiClient.post(`/orders/${id}/cancel`, body); },
   async review(id, body) { return apiClient.post(`/orders/${id}/review`, body); },
-  async quote(body) { return apiClient.post('/orders/quote', body); },
+  async quote(body, options?: { signal?: AbortSignal }) {
+    // Quotes are read-only; order creation/payment keep their existing policy.
+    try { return await apiClient.post('/orders/quote', body, { ...options, timeoutMs: 30000 }); }
+    catch (error) {
+      if (options?.signal?.aborted || !(error.status === 0 || error.status === 408 || error.status >= 500)) throw error;
+      return apiClient.post('/orders/quote', body, { ...options, timeoutMs: 30000 });
+    }
+  },
   async initializePayment(id, body = {}) { return apiClient.post(`/orders/${id}/payment`, body); },
   async verifyPayment(id, body = {}) { return apiClient.post(`/orders/${id}/payment/verify`, body); },
   async validatePromo(body) { return apiClient.post('/orders/validate-promo', body); },
@@ -453,7 +460,7 @@ const kitchen = {
   async getQueue(params = {}) {
     let arr = [];
     try {
-      const res = await apiClient.get('/kitchen/queue', params);
+      const res = await apiClient.get('/kitchen/queue', params, undefined, { timeoutMs: 25000 });
       if (Array.isArray(res)) {
         arr = res;
       } else if (res && typeof res === 'object') {
@@ -469,7 +476,7 @@ const kitchen = {
     } catch (e) { throw e; }
 
     const rank = { received: 0, preparing: 1, ready: 2 };
-    arr.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || Number(new Date(a.received_at || a.created_at)) - Number(new Date(b.received_at || b.created_at)));
+    arr.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || Number(new Date(b.received_at || b.created_at)) - Number(new Date(a.received_at || a.created_at)));
     return arr.map(normKitchenOrder);
   },
   async getScheduled(params = {}) {
@@ -1378,7 +1385,7 @@ const campuses = {
 const delivery = {
   async getHostels() { return unwrap(await apiClient.get('/delivery/hostels'), 'hostels'); },
   async getGates() { return unwrap(await apiClient.get('/delivery/gates'), 'gates'); },
-  async calculateFee(body) { return apiClient.post('/delivery/calculate-fee', body); },
+  async calculateFee(body) { return apiClient.post('/delivery/calculate-fee', body, { timeoutMs: 20000 }); },
 };
 
 // ========== ORDER LOCKS ==========

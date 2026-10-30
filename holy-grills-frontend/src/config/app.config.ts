@@ -55,7 +55,7 @@ export const APP_CONFIG = {
   seo: {
     defaultTitle: "Holy Grills 🔥 — Made With More Than Flame",
     defaultDescription:
-      "Made With More Than Flame. Real flame grilled chicken, wings, kebabs and crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards.",
+      "Holy Grills brings students together through real flame cooking, shared plates and campus experiences. Faith, love, flavour and moments that become memories.",
     ogType: 'website',
     twitterCard: 'summary_large_image',
     // Default social share image. App-relative is fine: useSEO runs it through
@@ -69,7 +69,7 @@ export const APP_CONFIG = {
     business: {
       type: 'Restaurant',
       description:
-        "Made With More Than Flame. Real flame grilled chicken, wings and kebabs with crispy sides, delivered hot across campus.",
+        "Born at FUTA in Akure, Holy Grills brings students together through real flame cooking, shared plates and campus experiences. Built on faith, love, energy and flavour, we strengthen connection and turn everyday gatherings into memories.",
       logo: '/icons/icon.svg',
       image: '',
       servesCuisine: ['Grilled Chicken', 'Fast Food', 'Nigerian'],
@@ -91,7 +91,7 @@ export const APP_CONFIG = {
   // straight into the review form. Left empty, the prompt falls back to a
   // Google search for the business name.
   google: {
-    placeId: '',
+    placeId: import.meta.env.VITE_GOOGLE_BUSINESS_PLACE_ID || '',
   },
 
   // Channel defaults — push and in-app notifications are ALWAYS delivered together.

@@ -53,11 +53,11 @@ export default function AdminAmbassadors() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 p-1 rounded-full bg-secondary w-fit">
+      <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-secondary w-full sm:w-fit">
         {[{ id: 'ambassadors', label: msg('FE_ADMIN_AMBASSADORS_TITLE', 'Campus Ambassadors'), icon: Users },
           { id: 'milestones', label: msg('FE_ADMIN_AMBASSADOR_MILESTONES', 'Performance milestones'), icon: Trophy }].map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>
+            className={`flex min-w-0 flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>
             <t.icon className="w-3.5 h-3.5" />{t.label}
           </button>
         ))}
@@ -105,9 +105,9 @@ function AmbassadorRow({ row, canUntag, onUntag }: { row: any; canUntag: boolean
   const name = row.profile?.full_name || row.profile?.nickname || 'Ambassador';
   const m = row.month || {};
   return (
-    <div className="rounded-2xl border border-border p-3 flex items-center gap-3 flex-wrap">
-      <div className="flex-1 min-w-[200px]">
-        <div className="font-bold text-sm text-foreground flex items-center gap-2">
+    <div className="rounded-2xl border border-border p-3 grid grid-cols-[minmax(0,1fr)_auto] gap-3 sm:flex sm:items-center sm:flex-wrap">
+      <div className="min-w-0 sm:flex-1">
+        <div className="font-bold text-sm text-foreground flex flex-wrap items-center gap-2">
           {name}
           <Pill tone="amber">Campus Ambassador</Pill>
         </div>
@@ -116,7 +116,7 @@ function AmbassadorRow({ row, canUntag, onUntag }: { row: any; canUntag: boolean
         </div>
         <div className="mt-1"><CopyLink link={row.tracking_link} /></div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center col-span-2 sm:order-none order-last w-full sm:w-auto">
         <Stat label={msg('FE_ADMIN_AMBASSADOR_SIGNUPS', 'Signups')} value={row.lifetime?.total_signups ?? 0} sub={`${m.signups ?? 0} ${msg('FE_AMBASSADOR_MONTH_ACTIVITY', 'this month').toLowerCase()}`} />
         <Stat label={msg('FE_ADMIN_AMBASSADOR_ORDERS', 'Referred orders')} value={row.lifetime?.total_orders ?? 0} sub={`${m.orders ?? 0} ${msg('FE_AMBASSADOR_MONTH_ACTIVITY', 'this month').toLowerCase()}`} />
         <Stat label={msg('FE_ADMIN_AMBASSADOR_COMPLETION', 'Sharing completion')} value={`${m.completion_rate ?? 0}%`} sub={`${m.shared_count ?? 0}/${m.assigned_count ?? 0}`} />
@@ -134,7 +134,7 @@ function AmbassadorRow({ row, canUntag, onUntag }: { row: any; canUntag: boolean
 
 function Stat({ label, value, sub }: { label: string; value: any; sub?: string }) {
   return (
-    <div className="min-w-[86px]">
+    <div className="min-w-0 break-words">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-bold">{label}</div>
       <div className="font-heading font-extrabold text-sm text-foreground">{value}</div>
       {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}

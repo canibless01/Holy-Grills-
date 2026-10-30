@@ -41,6 +41,8 @@ export const restaurantJsonLd = () => {
     '@context': 'https://schema.org',
     '@type': b.type || 'Restaurant',
     name: APP_CONFIG.name,
+    slogan: APP_CONFIG.tagline,
+    knowsAbout: ['Student connection', 'Campus community', 'Shared meals', 'Real flame cooking'],
     url: APP_CONFIG.domain,
     description: b.description || APP_CONFIG.seo.defaultDescription,
     ...(logo ? { logo } : {}),

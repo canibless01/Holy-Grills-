@@ -50,7 +50,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
           </span>
           <span className="text-[10px] text-muted-foreground font-mono truncate">#{(order.id || '').slice(0, 8).toUpperCase()}</span>
         </div>
-        <KitchenTimer receivedAt={order.received_at} targetMinutes={targetMinutes} />
+        <KitchenTimer receivedAt={order.received_at || order.created_at} targetMinutes={targetMinutes} />
       </div>
 
       {/* Customer + delivery type */}
