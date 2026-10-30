@@ -136,13 +136,25 @@ class StaleSubscriptionTests(unittest.TestCase):
 
 
 class DefaultProviderTests(unittest.TestCase):
-    def test_onesignal_is_the_default_when_it_is_configured(self):
+    """Resend leads; OneSignal absorbs the overflow.
+
+    Resend is 100/day and resets, OneSignal is 10,000/month with no rollover, so
+    spending the daily allowance first costs nothing that tomorrow cannot earn back
+    and keeps the monthly pool for the overflow.
+    """
+
+    def test_resend_is_the_default_even_when_onesignal_is_configured(self):
         with patch.object(notifications, "_get_onesignal_creds", return_value=("app", "key")):
-            self.assertEqual(notifications._configured_default_provider(), "onesignal")
+            self.assertEqual(notifications._configured_default_provider(), "resend")
 
     def test_resend_is_the_default_when_onesignal_is_not_configured(self):
         with patch.object(notifications, "_get_onesignal_creds", return_value=("", "")):
             self.assertEqual(notifications._configured_default_provider(), "resend")
+
+    def test_onesignal_is_still_reachable_as_the_fallback(self):
+        with patch.object(email_usage, "reserve_slot", return_value=("onesignal", 1)) as slot:
+            self.assertEqual(email_usage.reserve_slot("resend"), ("onesignal", 1))
+        slot.assert_called_once_with("resend")
 
     def test_an_explicit_setting_still_wins(self):
         db = MagicMock()
@@ -153,11 +165,11 @@ class DefaultProviderTests(unittest.TestCase):
             self.assertEqual(notifications.get_email_provider(scope="blast"), "resend")
 
     def test_the_router_uses_the_default_when_no_provider_is_named(self):
-        with patch.object(email, "_default_provider", return_value="onesignal"), \
+        with patch.object(email, "_default_provider", return_value="resend"), \
              patch.object(email_usage, "reserve", return_value=1), \
              patch.object(email, "_email_attempt", return_value=(True, False, False)) as attempt:
             email.send_email_routed("a@example.invalid", "A", "S", "<p>b</p>")
-        self.assertEqual(attempt.call_args.args[0], "onesignal")
+        self.assertEqual(attempt.call_args.args[0], "resend")
 
 
 class UnsubscribeComplianceTests(unittest.TestCase):

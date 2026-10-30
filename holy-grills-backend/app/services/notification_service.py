@@ -1016,13 +1016,13 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
     Resolve which email provider to use: 'resend' or 'onesignal'.
 
     Precedence: explicit override (a blast's email_provider column) > the
-    system_settings key `email_provider_{scope}_default` > OneSignal when it is
-    configured, else Resend.
+    system_settings key `email_provider_{scope}_default` > Resend.
 
-    OneSignal is the default on purpose: it has no 100/day cap, so starting there
-    keeps the scarce allowance in reserve. The router still falls over to Resend
-    whenever OneSignal refuses, is out of quota or is out of slots, so this is
-    "OneSignal, then Resend" — not "Resend only".
+    Resend leads because its allowance is 100/day and resets, while OneSignal is
+    10,000/month with no rollover: spending the daily quota first costs nothing that
+    tomorrow cannot earn back, and keeps the monthly pool for the overflow. The router
+    falls over to OneSignal whenever Resend refuses or is at today's limit, so total
+    capacity for a month is Resend's ~100/day plus OneSignal's 10,000.
 
     Matches the existing system_settings override-layer pattern used
     elsewhere in this codebase (e.g. hp_multiplier).
@@ -1051,17 +1051,19 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
 
 
 def _configured_default_provider() -> str:
-    """OneSignal when both credentials are set, otherwise Resend.
+    """Resend first. Always.
 
-    Starting on the provider without a daily cap keeps Resend's 100 sends available
-    for the windows when OneSignal is refusing, instead of spending the scarce
-    allowance first.
+    The two allowances are not interchangeable: Resend is 100/day and **resets**, while
+    OneSignal is 10,000/month with **no rollover**. Spending the daily allowance first
+    means a busy day costs nothing that another day cannot earn back, and OneSignal's
+    monthly pool stays available as the overflow absorber for the rest of the month.
+    Starting on OneSignal instead would burn a monthly entitlement that cannot be
+    replenished, and once it is gone the only thing left is 100/day.
+
+    Resend is therefore the preferred provider and OneSignal the fallback (quota
+    refusal, daily allowance reached, or delivery refused).
     """
-    try:
-        app_id, api_key = _get_onesignal_creds()
-    except Exception:                                             # noqa: BLE001
-        return "resend"
-    return "onesignal" if app_id and api_key else "resend"
+    return "resend"
 
 
 def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, html_body: str) -> bool:

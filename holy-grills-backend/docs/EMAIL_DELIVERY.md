@@ -52,18 +52,34 @@ bookkeeping outage must never stop mail.
 
 ## Which provider is tried first
 
-**OneSignal, then Resend.** `get_email_provider()` resolves
-`explicit setting → system_settings.email_provider_{scope}_default → OneSignal when
-configured, else Resend`, and `send_email_routed(provider=None)` uses the same
-resolution. Resend's 100/day is the scarce resource, so it is spent last.
+**Resend, then OneSignal.** `get_email_provider()` resolves
+`explicit setting → system_settings.email_provider_{scope}_default → Resend`, and
+`send_email_routed(provider=None)` uses the same resolution.
 
-Two consequences worth knowing:
+The two allowances are not interchangeable:
 
-* A healthy OneSignal means Resend sees almost no traffic — that is the intent, not a
-  fault. To confirm which provider a campaign used, read
-  `notification_blasts.metadata.dispatch.email.sent_by` (e.g. `{"onesignal": 1}`).
-* Anything that pinned a provider to Resend by default (guest orders, event QR codes,
-  newsletters) no longer does; they pass `provider=None` and follow the default.
+| Provider | Allowance | Resets |
+| --- | --- | --- |
+| Resend | 100 / day | Yes, at the Lagos midnight |
+| OneSignal | 10,000 / month | No rollover until the month rolls over |
+
+So the daily allowance is spent first: a busy day costs nothing that tomorrow cannot
+earn back, and OneSignal's monthly pool stays available as the overflow absorber. A
+month's practical capacity is therefore Resend's ~100/day **plus** OneSignal's 10,000 —
+roughly 13,000 — instead of 10,000 with a hard wall once the monthly pool is gone.
+
+The router switches to OneSignal when Resend refuses for quota, when our daily counter
+says Resend is at `EMAIL_DAILY_LIMIT_RESEND` (default 100), or when Resend accepts but
+delivers to nobody.
+
+### Watching the monthly pool
+
+`GET /api/admin/email-health` reports, per provider: `sent_today`, `daily_limit`,
+`sent_this_month`, `monthly_limit`, `monthly_remaining`, `monthly_exhausted`. The
+monthly figure is summed from the daily counter rows, so it needs no extra table or RPC.
+OneSignal's monthly ceiling is `EMAIL_MONTHLY_LIMIT_ONESIGNAL` (default 10,000) and is
+informational: once it is reached the only capacity left is Resend's 100/day, which the
+panel shows via `monthly_exhausted`.
 
 ## Addresses are normalised before they reach a provider
 
