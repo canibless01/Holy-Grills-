@@ -1,3 +1,5 @@
+Latest continuation and remaining-work list: [30 October 2026](REMAINING_LAUNCH_AND_AUDIT_2026_10_30.md). Older continuation notes below are historical.
+
 # Launch priorities — current status, 29 October 2026
 
 This is a current decision list, not a list of unbuilt features. Earlier audit logs record history; passing evidence here and linked domain reports supersedes older open entries. **The whole admin page-by-page/action-by-action audit is not complete.** Tested order/refund/batch/reward/ambassador/financial/campus boundaries do not certify every sidebar page. No defensible ecosystem-wide percentage exists without a fully executed action matrix.

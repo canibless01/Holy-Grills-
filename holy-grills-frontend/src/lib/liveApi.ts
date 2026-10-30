@@ -508,8 +508,8 @@ const kitchen = {
     return apiClient.patch('/kitchen/settings' + scope, { settings: settingsMap });
   },
   async batchAdvanceStatus(windowId, body, campusId?: string) { return apiClient.post(`/kitchen/batch/${windowId}/advance${campusId ? `?campus_id=${encodeURIComponent(campusId)}` : ''}`, body); },
-  async markItemUnavailable(itemId) { return apiClient.patch(`/menu/items/${itemId}`, { is_available: false, is_sold_out: true }); },
-  async markItemAvailable(itemId) { return apiClient.patch(`/menu/items/${itemId}`, { is_available: true, is_sold_out: false }); },
+  async markItemUnavailable(itemId, campusId?: string) { return apiClient.patch(`/menu/items/${itemId}/availability`, { is_available: false, ...(campusId ? { campus_id: campusId } : {}) }); },
+  async markItemAvailable(itemId, campusId?: string) { return apiClient.patch(`/menu/items/${itemId}/availability`, { is_available: true, ...(campusId ? { campus_id: campusId } : {}) }); },
 };
 
 // ========== RIDERS ==========

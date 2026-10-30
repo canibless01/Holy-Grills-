@@ -1,3 +1,5 @@
+Current remaining work: [30 October launch and full audit list](REMAINING_LAUNCH_AND_AUDIT_2026_10_30.md).
+
 # Admin audit coverage and ownership
 
 **Current executed page batches — 29 October 2026.** Each pass covers the actions/cases in its evidence; the whole admin A–Z audit is still open.
@@ -10,9 +12,10 @@
 | Delivery → Delivery area | [Centre/radius target, failed/stale reads, save/clear/force, permissions and checkout distance](ADMIN_DELIVERY_AREA_EVIDENCE_2026_10_29.md) pass |
 | Kitchen workspace / read-only settings | [Explicit super-admin campus, handoff scope, authoritative availability, failed-read recovery](KITCHEN_WORKSPACE_SCOPE_EVIDENCE_2026_10_29.md) pass; ineffective legacy switch removed in favor of existing ordering-window controls |
 | Feature Flags — global controls | [Native toggle/create/retry, override visibility, actual global-row/RLS checks](ADMIN_FEATURE_FLAGS_SCOPE_EVIDENCE_2026_10_29.md) pass; complete consumer/worker matrix remains open |
+| Kitchen prep/stock actions | [Window races/Retry, single batch submission, correct persisted campus stock endpoint](KITCHEN_ACTIONS_EVIDENCE_2026_10_30.md) pass for listed cases |
 | Remaining admin pages / actions | Still open; targeted earlier successes below do not establish whole-page approval |
 
-The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite: **771 passed**.
+The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite: **778 passed**.
 
 
 **Inventoried means mapped, not approved safe.** Opening a sidebar page, listing fields or finding an existing test does not establish that every button, role and customer outcome works. A passed loop applies only to its recorded assertions. This chat cannot certify work performed in another chat without its evidence/PR.

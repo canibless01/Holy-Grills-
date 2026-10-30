@@ -22,6 +22,20 @@ def _due_preparation(query):
             .or_(f"is_scheduled.eq.false,scheduled_for.lt.{tomorrow}T00:00:00+01:00"))
 
 
+def _attach_campus_availability(db, orders, campus_id):
+    """Expose only the campus stock switch, so kitchen controls survive reloads."""
+    ids = {item.get("menu_item_id") for order in orders for item in order.get("order_items", []) if item.get("menu_item_id")}
+    if not ids or not campus_id:
+        return orders
+    rows = (db.table("menu_item_availability").select("menu_item_id,is_available")
+            .eq("campus_id", campus_id).in_("menu_item_id", sorted(ids)).execute() or [])
+    states = {row["menu_item_id"]: bool(row.get("is_available")) for row in rows}
+    for order in orders:
+        for item in order.get("order_items", []):
+            item["campus_is_available"] = states.get(item.get("menu_item_id"), True)
+    return orders
+
+
 @kitchen_bp.route('/handoff', methods=['GET'])
 @require_role('kitchen', 'admin')
 def handoff_batches():
@@ -587,7 +601,7 @@ def live_queue():
         q = q.eq("delivery_window_id", window_id)
 
     orders = _attach_kitchen_customer_names(q.execute() or [])
-    return jsonify(orders), 200
+    return jsonify(_attach_campus_availability(db, orders, campus_id)), 200
 
 
 @kitchen_bp.route("/windows", methods=["GET"])
