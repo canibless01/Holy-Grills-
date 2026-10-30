@@ -90,58 +90,91 @@ class OneSignalPayloadTests(unittest.TestCase):
 
 
 class RoutingFallbackTests(unittest.TestCase):
-    def _route(self, onesignal_reply, resend_reply, provider="onesignal", counts=None):
-        counts = counts or {"resend": 0, "onesignal": 0}
+    """Provider choice under the reserved-slot counter.
+
+    `reserve` is patched to return the *claimed* count, mimicking
+    `hg_record_email_send` returning the row's new value.
+    """
+
+    def _route(self, onesignal_reply, resend_reply, provider="onesignal", claimed=None, headers=None,
+               transactional=True):
+        claimed = claimed or {"resend": 1, "onesignal": 1}
         with patch.object(notifications, "_get_onesignal_creds", return_value=("app", "key")), \
              patch.object(email, "_resend_api_key", return_value="key"), \
              patch.object(notifications, "_onesignal_email_post", return_value=onesignal_reply) as os_post, \
              patch.object(email.requests, "post", return_value=resend_reply) as resend_post, \
-             patch.object(email_usage, "sent_today", side_effect=lambda p: counts.get(p)), \
-             patch.object(email_usage, "record_send") as record:
+             patch.object(email_usage, "reserve", side_effect=lambda p: claimed.get(p)) as reserve, \
+             patch.object(email_usage, "release") as release:
             receipt = {}
             result = email.send_email_routed("a@example.invalid", "Audit", "Subject", "<p>Body</p>",
-                                             provider=provider, receipt=receipt)
-        return result, receipt, os_post, resend_post, record
+                                             provider=provider, receipt=receipt, headers=headers,
+                                             transactional=transactional)
+        return result, receipt, os_post, resend_post, reserve, release
 
     def test_undelivered_onesignal_email_is_delivered_by_resend(self):
-        result, receipt, _, resend_post, record = self._route(
+        result, receipt, _, resend_post, _, release = self._route(
             _reply(200, {"id": "m", "recipients": 0}), _reply(200))
         self.assertTrue(result)
         self.assertEqual(resend_post.call_count, 1)
         self.assertEqual(receipt["delivered_by"], "resend")
-        record.assert_called_once_with("resend")
+        # The wasted OneSignal slot is handed back; the Resend one is kept.
+        release.assert_called_once_with("onesignal")
 
     def test_no_duplicate_when_the_first_provider_accepted(self):
-        result, _, _, resend_post, _ = self._route(_reply(200), _reply(200))
+        result, _, _, resend_post, _, release = self._route(_reply(200), _reply(200))
         self.assertTrue(result)
         resend_post.assert_not_called()
+        release.assert_not_called()
 
     def test_ambiguous_failure_never_crosses_provider(self):
-        result, _, _, resend_post, _ = self._route(_reply(503, {}), _reply(200))
+        result, _, _, resend_post, _, release = self._route(_reply(503, {}), _reply(200))
         self.assertFalse(result)
         resend_post.assert_not_called()
+        release.assert_not_called()      # may have been accepted: stays counted
 
     def test_used_up_provider_is_bypassed_before_sending(self):
-        # The whole point of the counter: Resend is at 100/100 today, so a
-        # transactional send starts on OneSignal instead of failing 101st.
-        result, receipt, os_post, resend_post, _ = self._route(
-            _reply(200), _reply(200), provider="resend", counts={"resend": 100, "onesignal": 0})
+        # The whole point of the counter: Resend is at 100/100 today, so the 101st
+        # send starts on OneSignal instead of failing.
+        result, receipt, os_post, resend_post, _, _ = self._route(
+            _reply(200), _reply(200), provider="resend", claimed={"resend": 101, "onesignal": 1})
         self.assertTrue(result)
         self.assertEqual(os_post.call_count, 1)
         resend_post.assert_not_called()
         self.assertEqual(receipt["preempted"], "resend")
 
     def test_under_the_limit_still_uses_the_preferred_provider(self):
-        result, _, os_post, resend_post, _ = self._route(
-            _reply(200), _reply(200), provider="resend", counts={"resend": 99, "onesignal": 0})
+        result, _, os_post, resend_post, _, _ = self._route(
+            _reply(200), _reply(200), provider="resend", claimed={"resend": 100, "onesignal": 1})
         self.assertTrue(result)
         resend_post.assert_called_once()
         os_post.assert_not_called()
 
-    def test_unreadable_counter_does_not_change_routing(self):
-        with patch.object(email_usage, "daily_limit", return_value=100), \
-             patch.object(email_usage, "sent_today", return_value=None):
-            self.assertEqual(email_usage.choose_provider("resend"), "resend")
+    def test_the_slot_is_reserved_before_the_send(self):
+        _, _, _, _, reserve, _ = self._route(_reply(200), _reply(200), provider="resend")
+        reserve.assert_called_once_with("resend")
+
+    def test_a_provider_that_was_never_configured_keeps_no_slot(self):
+        with patch.object(notifications, "_get_onesignal_creds", return_value=("", "")), \
+             patch.object(email_usage, "reserve", return_value=1), \
+             patch.object(email_usage, "release") as release:
+            receipt = {}
+            result = email.send_email_routed("a@example.invalid", "Audit", "Subject", "<p>Body</p>",
+                                             provider="onesignal", receipt=receipt)
+        self.assertFalse(result)
+        release.assert_called_once_with("onesignal")
+
+    def test_newsletter_falls_back_as_marketing_and_keeps_its_resend_attempt(self):
+        headers = {"List-Unsubscribe": "<https://example.invalid/u>"}
+        result, receipt, os_post, resend_post, _, _ = self._route(
+            _reply(200), _reply(429, {"name": "daily_quota_exceeded"}), provider="resend",
+            headers=headers, transactional=False)
+        self.assertTrue(result)
+        # First attempt carried the real headers to Resend...
+        self.assertEqual(resend_post.call_args.kwargs["json"]["headers"], headers)
+        # ...and the fallback is a marketing send, so OneSignal's unsubscribe wins.
+        payload = os_post.call_args.kwargs["payload"]
+        self.assertNotIn("include_unsubscribed", payload)
+        self.assertEqual(receipt["delivered_by"], "onesignal")
 
 
 class UsageCounterTests(unittest.TestCase):
@@ -156,26 +189,63 @@ class UsageCounterTests(unittest.TestCase):
             self.assertEqual(email_usage.daily_limit("onesignal"), 0)
         with patch.dict(os.environ, {"EMAIL_DAILY_LIMIT_RESEND": "0"}):
             self.assertEqual(email_usage.daily_limit("resend"), 0)
-            self.assertFalse(email_usage.exhausted("resend"))
+            self.assertFalse(email_usage.over_limit("resend", None))   # unreadable ≠ full
 
     def test_both_providers_used_up_keeps_the_preferred_one(self):
-        with patch.object(email_usage, "sent_today", return_value=500):
-            with patch.dict(os.environ, {"EMAIL_DAILY_LIMIT_RESEND": "100", "EMAIL_DAILY_LIMIT_ONESIGNAL": "100"}):
-                self.assertEqual(email_usage.choose_provider("resend"), "resend")
+        # An over-limit attempt can still succeed on a provider that counts
+        # differently from us; dropping the mail entirely would be worse.
+        with patch.object(email_usage, "reserve", side_effect=[101, 101]), \
+             patch.object(email_usage, "release") as release, \
+             patch.dict(os.environ, {"EMAIL_DAILY_LIMIT_RESEND": "100", "EMAIL_DAILY_LIMIT_ONESIGNAL": "100"}):
+            provider, count = email_usage.reserve_slot("resend")
+        self.assertEqual((provider, count), ("resend", 101))
+        release.assert_called_once_with("onesignal")   # the unused alternate slot
+
+    def test_switching_provider_releases_the_unused_slot(self):
+        with patch.object(email_usage, "reserve", side_effect=[100, 4]), \
+             patch.object(email_usage, "release") as release, \
+             patch.dict(os.environ, {"EMAIL_DAILY_LIMIT_RESEND": "100", "EMAIL_DAILY_LIMIT_ONESIGNAL": "0"}):
+            self.assertEqual(email_usage.reserve_slot("resend"), ("resend", 100))
+        release.assert_not_called()                    # 100 of 100 is not over
+
+    def test_reserve_slot_moves_on_when_the_limit_is_passed(self):
+        with patch.object(email_usage, "reserve", side_effect=[101, 1]), \
+             patch.object(email_usage, "release") as release, \
+             patch.dict(os.environ, {"EMAIL_DAILY_LIMIT_RESEND": "100"}):
+            self.assertEqual(email_usage.reserve_slot("resend"), ("onesignal", 1))
+        release.assert_called_once_with("resend")
+
+    def test_unreadable_counter_does_not_change_routing(self):
+        with patch.object(email_usage, "reserve", return_value=None), \
+             patch.dict(os.environ, {"EMAIL_DAILY_LIMIT_RESEND": "100"}):
+            self.assertEqual(email_usage.reserve_slot("resend"), ("resend", None))
+
+    def test_release_uses_its_own_rpc(self):
+        db = MagicMock()
+        db.rpc.return_value = 3
+        with patch.object(email_usage, "get_db", return_value=db):
+            self.assertTrue(email_usage.release("resend"))
+        self.assertEqual(db.rpc.call_args.args[0], "hg_release_email_send")
+
+    def test_release_failure_is_swallowed(self):
+        db = MagicMock()
+        db.rpc.side_effect = RuntimeError("missing function")
+        with patch.object(email_usage, "get_db", return_value=db):
+            self.assertFalse(email_usage.release("resend"))
 
     def test_counter_failure_never_raises(self):
         db = MagicMock()
         db.rpc.side_effect = RuntimeError("table missing")
         with patch.object(email_usage, "get_db", return_value=db):
-            self.assertIsNone(email_usage.record_send("resend"))
+            self.assertIsNone(email_usage.reserve("resend"))
             self.assertIsNone(email_usage.sent_today("resend"))
-            self.assertFalse(email_usage.exhausted("resend"))
+            self.assertFalse(email_usage.over_limit("resend", None))   # unreadable ≠ full
 
-    def test_record_send_posts_provider_and_day(self):
+    def test_reserve_posts_provider_and_day(self):
         db = MagicMock()
         db.rpc.return_value = 7
         with patch.object(email_usage, "get_db", return_value=db):
-            self.assertEqual(email_usage.record_send("resend"), 7)
+            self.assertEqual(email_usage.reserve("resend"), 7)
         args = db.rpc.call_args.args
         self.assertEqual(args[0], "hg_record_email_send")
         self.assertEqual(db.rpc.call_args.args[1]["p_provider"], "resend")
@@ -252,11 +322,11 @@ class OneSignalSubscriptionTests(unittest.TestCase):
 
 
 class PreferenceMappingTests(unittest.TestCase):
-    def test_email_or_promotions_opt_out_disables_the_subscription(self):
+    def test_everyone_is_a_subscriber_except_an_all_email_opt_out(self):
         self.assertTrue(onesignal_email.enabled_from_preferences({}))
+        self.assertTrue(onesignal_email.enabled_from_preferences({"promotions": False}))
+        self.assertTrue(onesignal_email.enabled_from_preferences({"email_enabled": True, "promotions": False}))
         self.assertFalse(onesignal_email.enabled_from_preferences({"email_enabled": False}))
-        self.assertFalse(onesignal_email.enabled_from_preferences({"promotions": False}))
-        self.assertTrue(onesignal_email.enabled_from_preferences({"email_enabled": True, "promotions": True}))
 
 
 class SubscriptionBackfillTests(unittest.TestCase):
@@ -283,14 +353,16 @@ class SubscriptionBackfillTests(unittest.TestCase):
         summary, _ = self._run([{"id": "u1", "email": "a@example.invalid"}], linked=False)
         self.assertEqual((summary["failed"], summary["linked"]), (1, 0))
 
-    def test_opted_out_accounts_are_registered_but_not_subscribed(self):
+    def test_a_promotions_opt_out_does_not_stop_the_address_being_registered(self):
+        # OneSignal cannot deliver to an address it does not know, so declining
+        # newsletters must not cost the account its order and QR emails.
         summary, ensure = self._run([
             {"id": "u1", "email": "a@example.invalid",
              "notification_preferences": [{"promotions": False, "email_enabled": True}]},
             {"id": "u2", "email": "b@example.invalid", "email_notifications": False},
         ])
         self.assertEqual(summary["linked"], 2)
-        self.assertEqual([call.kwargs["enabled"] for call in ensure.call_args_list], [False, False])
+        self.assertEqual([call.kwargs["enabled"] for call in ensure.call_args_list], [True, False])
 
     def test_unchanged_preferences_stay_subscribed(self):
         _, ensure = self._run([{"id": "u1", "email": "a@example.invalid",

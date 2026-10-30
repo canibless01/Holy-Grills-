@@ -81,44 +81,94 @@ def sent_today(provider: str) -> int | None:
     return 0
 
 
-def record_send(provider: str) -> int | None:
-    """Count one accepted send. Never raises: bookkeeping must not fail a send."""
+def _count_result(result) -> int | None:
+    if isinstance(result, bool):                                  # bool is an int; it is not a count
+        return None
+    if isinstance(result, int):
+        return result
+    if isinstance(result, list) and result:
+        first = result[0]
+        if isinstance(first, int) and not isinstance(first, bool):
+            return first
+        if isinstance(first, dict):                               # RPC returned a row
+            try:
+                return int(first.get("hg_record_email_send") or first.get("sent_count") or 0)
+            except (TypeError, ValueError):
+                return None
+    if isinstance(result, dict):
+        try:
+            return int(result.get("sent_count") or result.get("count") or 0)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def reserve(provider: str) -> int | None:
+    """Claim one send slot for `provider` before sending.
+
+    Returns the count *after* the claim, or None when the counter is unreadable (the
+    caller then sends anyway — a bookkeeping outage must never stop mail).
+
+    Reserving before the send is what makes the fallback hold under a burst: with a
+    read-then-send, 200 simultaneous registrations can all read "98 of 100" and all
+    pick the provider that has two slots left. Here the database decides.
+    """
     if provider not in PROVIDERS:
         return None
     try:
         result = get_db().rpc("hg_record_email_send", {"p_provider": provider, "p_day": _today().isoformat()})
     except Exception as exc:                                      # noqa: BLE001
-        logger.warning("email usage: could not record a %s send: %s", provider, exc)
+        logger.warning("email usage: could not reserve a %s slot: %s", provider, exc)
         return None
-    if isinstance(result, int):
-        return result
-    if isinstance(result, list) and result:
-        return result[0] if isinstance(result[0], int) else None
-    return None
+    return _count_result(result)
 
 
-def exhausted(provider: str) -> bool:
-    """True when `provider` has already used its configured daily allowance."""
-    limit = daily_limit(provider)
-    if limit <= 0:
+def release(provider: str) -> bool:
+    """Give a claimed slot back after a send that definitely did not happen.
+
+    Not for ambiguous failures (timeout, 5xx): that message may have been accepted,
+    so it stays counted.
+    """
+    if provider not in PROVIDERS:
         return False
-    count = sent_today(provider)
-    if count is None:
-        return False                                              # unknown — do not pre-empt
-    if count >= limit:
-        logger.warning("email usage: %s has sent %s/%s today — routing to the alternate provider",
-                       provider, count, limit)
+    try:
+        get_db().rpc("hg_release_email_send", {"p_provider": provider, "p_day": _today().isoformat()})
         return True
-    return False
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("email usage: could not release a %s slot: %s", provider, exc)
+        return False
 
 
-def choose_provider(preferred: str) -> str:
-    """`preferred`, unless it is used up and the alternate is not."""
+def over_limit(provider: str, count: int | None) -> bool:
+    """Is `count` (a claimed slot) past `provider`'s configured allowance?"""
+    limit = daily_limit(provider)
+    return bool(limit > 0 and count is not None and count > limit)
+
+
+def reserve_slot(preferred: str) -> tuple[str, int | None]:
+    """Claim a slot on `preferred`, or on the other provider when it is full.
+
+    Returns (provider, count_after_claim). The slot is already counted, so the caller
+    must `release()` it if the send definitely does not happen.
+
+    When both providers are at their limit the preferred one is kept: an over-limit
+    attempt can still succeed on a provider that counts differently from us, and
+    pretending both are unusable would drop the mail entirely.
+    """
     preferred = preferred if preferred in PROVIDERS else "resend"
-    if not exhausted(preferred):
-        return preferred
+    count = reserve(preferred)
+    if not over_limit(preferred, count):
+        return preferred, count
     alternate = "onesignal" if preferred == "resend" else "resend"
-    return preferred if exhausted(alternate) else alternate
+    alt_count = reserve(alternate)
+    if over_limit(alternate, alt_count):
+        release(alternate)                                        # that slot is not used
+        logger.warning("email usage: both providers are at today's limit — keeping %s", preferred)
+        return preferred, count
+    release(preferred)
+    logger.warning("email usage: %s is at %s/%s today — sending on %s instead",
+                   preferred, count, daily_limit(preferred), alternate)
+    return alternate, alt_count
 
 
 def health() -> dict:

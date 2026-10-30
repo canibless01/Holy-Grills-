@@ -109,18 +109,18 @@ def sync_email_subscription_async(user_id, email, enabled=True):
 def enabled_from_preferences(prefs):
     """Is the account still willing to receive mail at all?
 
-    OneSignal's `enabled` flag is the coarse switch: transactional mail is sent with
-    `include_unsubscribed`, so it still arrives when this is False, while marketing
-    mail respects it. We only keep it on when the user has not opted out of email or
-    of promotions.
+    Every signed-up account is an email subscriber, whatever it answered about
+    promotions: OneSignal will not deliver to an address it does not know, so an
+    unregistered address means the order confirmation, the QR code and the password
+    reset never arrive either. Promotions are a *separate* decision, enforced by
+    `notification_preferences.category_for_notification`/`permitted_channels` before
+    anything is dispatched, and by `include_unsubscribed=False` on marketing sends.
+
+    So the only thing that switches the subscription off is the master email switch
+    (`email_enabled = False`, i.e. "no email from us at all").
     """
     prefs = prefs or {}
-    return prefs.get("email_enabled") is not False and prefs.get("promotions") is not False
-
-
-def sync_from_preferences(user_id, email, prefs):
-    """Apply a saved preference change to OneSignal (fire-and-forget)."""
-    return sync_email_subscription_async(user_id, email, enabled=enabled_from_preferences(prefs))
+    return prefs.get("email_enabled") is not False
 
 
 def backfill_email_subscriptions(limit=500, offset=0):
@@ -150,8 +150,9 @@ def backfill_email_subscriptions(limit=500, offset=0):
         if not user_id or not email or row.get("is_active") is False:
             summary["skipped"] += 1
             continue
-        # Register everyone, but only leave the address subscribed when the account
-        # has not opted out — the backfill must not quietly re-subscribe an opt-out.
+        # Everyone is registered as a subscriber; only the master email opt-out
+        # leaves it switched off. Promotion preferences do not gate this — they gate
+        # which messages we ask OneSignal to send.
         prefs = row.get("notification_preferences")
         if isinstance(prefs, list):
             prefs = prefs[0] if prefs else {}

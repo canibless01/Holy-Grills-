@@ -1011,49 +1011,93 @@ def _safe_json(response):
         return {}
 
 
+def _slot_was_wasted(receipt):
+    """Did this attempt definitely not send anything?
+
+    Only then may the reserved slot be handed back. "unknown"/"rejected" cover
+    timeouts, 5xx and unrecognised 4xx responses, where the message may already be
+    accepted by the provider — those keep their slot.
+    """
+    state = (receipt or {}).get("state")
+    return state in ("quota", "undelivered", "not_configured", "skipped")
+
+
+def _attempt_and_settle(provider, to_email, to_name, subject, html_body, headers,
+                        receipt=None, transactional=True, slot_claimed=False):
+    """One attempt, with the reserved slot kept if anything may have been sent.
+
+    `slot_claimed` is True for the first attempt, whose slot was already taken by
+    `email_usage.reserve_slot` — counting it twice would burn the allowance at half
+    the real capacity.
+    """
+    from app.services import email_usage
+    if not slot_claimed:
+        email_usage.reserve(provider)
+    accepted, quota, undeliverable = _email_attempt(
+        provider, to_email, to_name, subject, html_body, headers,
+        receipt=receipt, transactional=transactional)
+    # A quota refusal or a "delivered to nobody" answer is proof that nothing was
+    # sent, even when the caller passed no receipt to inspect.
+    if not accepted and (_slot_was_wasted(receipt) or quota or undeliverable):
+        email_usage.release(provider)
+    return accepted, quota, undeliverable
+
+
 def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None,
-                      receipt=None, transactional=True):
+                      receipt=None, transactional=None):
     """Deliver one email, preferring `provider` and switching only when it is safe.
 
-    A switch happens in exactly three situations:
-      1. the preferred provider explicitly refused for quota;
-      2. it accepted the request but delivered to nobody (no email subscription,
-         zero recipients) — nothing was sent, so the alternate cannot duplicate;
-      3. our own daily counter shows the preferred provider is already at its
-         configured allowance (see app/services/email_usage.py) — pre-emptive, and
-         only when the counter could be read.
+    Every email in the app funnels through here (orders, guest orders, marketplace,
+    events, newsletters, campaigns, admin mail), which is why the daily counter this
+    function maintains is a complete record of what each provider has sent.
+
+    The preferred provider's slot is **reserved before the send**, so under a burst
+    the database decides who switches rather than each request reading a stale count.
+    A switch then happens in exactly three situations:
+      1. the preferred provider has no slots left today (counter pre-emption);
+      2. it explicitly refused for quota;
+      3. it accepted the request but delivered to nobody (no email subscription,
+         zero recipients) — nothing was sent, so the alternate cannot duplicate.
 
     Ambiguous outcomes (timeout, 5xx, unrecognised 4xx) never switch: the first
     attempt may already be in the customer's inbox.
     """
     from app.services import email_usage
-    chosen = "onesignal" if provider == "onesignal" else "resend"
-    if headers:
-        chosen = "resend"  # Retain explicit unsubscribe/custom headers.
+    if transactional is None:
+        # A message that carries List-Unsubscribe is marketing, wherever it came from.
+        # This matters on the OneSignal path, where `include_unsubscribed` decides
+        # whether someone who opted out still gets it.
+        transactional = not headers
+    preferred = "onesignal" if provider == "onesignal" else "resend"
     if receipt is not None:
         receipt.clear()
         receipt.update({"preempted": None})
-    if not headers:
-        target = email_usage.choose_provider(chosen)
-        if target != chosen:
-            if receipt is not None:
-                receipt["preempted"] = chosen
-            chosen = target
+    if headers and preferred != "resend":
+        preferred = "resend"          # custom RFC headers only exist on the Resend path
 
-    accepted, quota, undeliverable = _email_attempt(
-        chosen, to_email, to_name, subject, html_body, headers, receipt=receipt,
-        transactional=transactional)
+    chosen, _ = email_usage.reserve_slot(preferred)
+    if chosen != preferred:
+        if receipt is not None:
+            receipt["preempted"] = preferred
+        # A List-Unsubscribe header cannot be expressed on the OneSignal payload;
+        # the OneSignal send carries the equivalent intent (marketing sends leave
+        # include_unsubscribed off, so OneSignal's own unsubscribe still applies).
+        headers = None
+        logger.info("email: %s is at today's limit — sending via %s", preferred, chosen)
+
+    accepted, quota, undeliverable = _attempt_and_settle(
+        chosen, to_email, to_name, subject, html_body, headers,
+        receipt=receipt, transactional=transactional, slot_claimed=True)
     if accepted:
-        email_usage.record_send(chosen)
         return True
-    if headers or not (quota or undeliverable):
-        return False
+    if not (quota or undeliverable):
+        return False                  # ambiguous — no second transport, slot stays counted
+
     alternate = "resend" if chosen == "onesignal" else "onesignal"
     alternate_receipt = {}
-    accepted, _, _ = _email_attempt(alternate, to_email, to_name, subject, html_body,
-                                    receipt=alternate_receipt, transactional=transactional)
-    if accepted:
-        email_usage.record_send(alternate)
+    accepted, _, _ = _attempt_and_settle(
+        alternate, to_email, to_name, subject, html_body, None,
+        receipt=alternate_receipt, transactional=transactional)
     if receipt is not None:
         receipt.setdefault("fallback", alternate_receipt)
         if accepted:
@@ -1062,9 +1106,16 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend
     return accepted
 
 
-def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str, headers: dict = None) -> bool:
-    """Raw transactional email prefers Resend, with quota-only fallback."""
-    return send_email_routed(to_email, to_name, subject, html_body, provider="resend", headers=headers)
+def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str, headers: dict = None,
+                   transactional: bool = None) -> bool:
+    """Raw email prefers Resend, with the daily counter as the fallback trigger.
+
+    `transactional` defaults to "no List-Unsubscribe header": a newsletter carries
+    those headers and is therefore marketing, so the OneSignal fallback respects
+    unsubscribes instead of reaching someone who opted out.
+    """
+    return send_email_routed(to_email, to_name, subject, html_body, provider="resend",
+                             headers=headers, transactional=transactional)
 
 
 def get_user_email_and_name(user_id: str) -> tuple:
