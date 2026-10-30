@@ -14,8 +14,8 @@ class WalletTopupHpTests(unittest.TestCase):
         self.db.rpc.return_value = {'transaction_id': self.receipt, 'new_balance': 3000}
         self.db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = {'id': self.receipt, 'amount': 3000}
 
-    def credit(self, amount, award):
-        with self.app.app_context(), patch.object(service, 'get_db', return_value=self.db), patch.object(service, 'setting_or_config', return_value=50), patch.object(service, 'award_active_hp', award):
+    def credit(self, amount, award, minimum=3000):
+        with self.app.app_context(), patch.object(service, 'get_db', return_value=self.db), patch.object(service, 'setting_or_config', side_effect=lambda db,key,default,**kwargs: 50 if key == 'wallet_topup_hp' else minimum), patch.object(service, 'award_active_hp', award):
             return service.credit_wallet('owner', amount, 'HG-WALLET-provider-reference', campus_id='campus')
 
     def test_qualifying_bonus_uses_uuid_wallet_receipt_not_paystack_string(self):
@@ -32,6 +32,13 @@ class WalletTopupHpTests(unittest.TestCase):
         award = MagicMock()
         self.credit(3000, award); self.credit(3000, award)
         self.assertEqual([call.kwargs['reference_id'] for call in award.call_args_list], [self.receipt, self.receipt])
+
+    def test_admin_topup_threshold_overrides_environment_default(self):
+        award=MagicMock()
+        self.credit(3000,award,minimum=5000)
+        award.assert_not_called()
+        self.credit(5000,award,minimum=5000)
+        award.assert_called_once()
 
     def test_below_threshold_and_missing_receipt_do_not_award_undeduplicated_hp(self):
         award = MagicMock()

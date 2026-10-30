@@ -972,8 +972,14 @@ def delivery_windows_status():
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
 
+    calendar_requested = request.args.get('calendar', '').lower() == 'true'
+    read_db = get_db()
+    if calendar_requested and campus_id:
+        from app.services.schedule_read_cache import ScheduleReadCache
+        read_db = ScheduleReadCache(read_db, campus_id)
+
     from app.services.order_service import get_ordering_window_status, find_next_available_ordering_slot
-    status = get_ordering_window_status(get_db(), campus_id)
+    status = get_ordering_window_status(read_db, campus_id)
 
     # The next bookable slot is the answer to "when can I order?" — and it is
     # needed whenever ordering is not possible right now, not only when the
@@ -985,25 +991,25 @@ def delivery_windows_status():
     if not status.get("is_open"):
         from datetime import datetime, timezone, timedelta as _td
         _now_wat = datetime.now(timezone.utc) + _td(hours=1)
-        next_slot = find_next_available_ordering_slot(get_db(), campus_id, start_date=_now_wat.date())
+        next_slot = find_next_available_ordering_slot(read_db, campus_id, start_date=_now_wat.date())
         if next_slot:
             next_avail_date = next_slot.get("date")
             next_opens_at = next_slot.get("opens_at")
 
     calendar = None
-    if request.args.get("calendar", "").lower() == "true":
+    if calendar_requested:
         calendar = []
         from datetime import datetime, timezone, timedelta as _td
         _now_wat_date = (datetime.now(timezone.utc) + _td(hours=1)).date()
         for i in range(14):
             d = _now_wat_date + _td(days=i)
-            st = get_ordering_window_status(get_db(), campus_id, for_date=d)
+            st = get_ordering_window_status(read_db, campus_id, for_date=d)
             # Today's elapsed windows cannot be selected; future openings do
             # not compare their clock against the current time.
             from app.services.order_service import _parse_hm_local
             now_wat = datetime.now(timezone.utc) + _td(hours=1)
             rows = [{**w, "date": st["date"], "is_closed": bool(w.get("is_closed")) or
-                     (i == 0 and _parse_hm_local(w.get("closes_at"), 23, 59) < now_wat.time())}
+                     (i == 0 and _parse_hm_local(w.get("closes_at"), 23, 59) <= now_wat.time())}
                     for w in st.get("windows", [])]
             bookable = [w for w in rows if not w["is_closed"] and not w["is_full"]]
             remaining = [w["remaining"] for w in bookable if w.get("remaining") is not None]

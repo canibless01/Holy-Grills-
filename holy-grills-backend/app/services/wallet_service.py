@@ -60,7 +60,8 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         except Exception:
             pass
 
-    if amount >= config.get("WALLET_TOPUP_MIN", 3000) and reference_type in ("topup", "bank_transfer"):
+    topup_min = setting_or_config(db, 'wallet_topup_min', config.get('WALLET_TOPUP_MIN', 3000), minimum=0)
+    if amount >= topup_min and reference_type in ("topup", "bank_transfer"):
         try:
             if not txn_id:
                 raise ValueError('Wallet top-up has no stable transaction receipt')
