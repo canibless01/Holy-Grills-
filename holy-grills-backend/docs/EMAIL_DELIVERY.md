@@ -145,25 +145,24 @@ as an **Email Subscription** against `external_id`:
 Declining promotions does **not** unregister the address — that would also stop the
 order and QR emails. It only stops marketing mail, which is filtered server-side.
 
-## Self-healing on the send path
+## Where subscriptions come from (and nowhere else)
 
-If OneSignal refuses a send because the address has **no Email subscription**, nothing
-was delivered — so the router fixes the cause and retries once *on OneSignal* instead of
-silently completing on Resend:
+OneSignal Email subscriptions are created or repaired only by
+`app/services/onesignal_email.py`, from four triggers:
 
-1. `_subscription_identity(to_email)` — a known account resolves to its `profiles.id`
-   (the same `external_id` the web SDK uses, so email and push land on one OneSignal
-   user); a guest gets a deterministic `guest-<uuid5(mailto:address)>` alias.
-2. `ensure_email_subscription(...)` creates the subscription.
-3. The same message is re-attempted on OneSignal.
+| Trigger | Where |
+| --- | --- |
+| Sign-up (every account, regardless of the promotions box) | `auth_service.register` |
+| Login — also the repair path for accounts that predate this | `routes/auth.py` |
+| Master email switch on/off | `PATCH /api/notifications/preferences` |
+| Existing accounts, on demand | `POST /api/admin/email-subscriptions/backfill` |
 
-Why it matters: falling straight back to Resend "works" — users get their mail — but it
-leaves OneSignal with zero subscribers and no history, and Resend is the provider that
-runs out at 100/day. That combination is invisible until the quota bites.
+**Sending never creates a subscription.** An earlier revision registered the address
+mid-send and retried; that was unnecessary machinery. A send that OneSignal refuses
+stays refused and is recorded as such.
 
-The heal only triggers on the "not subscribed / no email / email not enabled" family of
-errors. A different 2xx error (an unverified sender domain, say) is logged with the
-provider's own wording and is not retried.
+Guest addresses (event registrations, guest orders, catering) do not need a local
+subscription: OneSignal auto-creates one from `include_email_tokens` on first send.
 
 ## Observability
 

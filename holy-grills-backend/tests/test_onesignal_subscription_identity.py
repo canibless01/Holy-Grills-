@@ -169,8 +169,7 @@ class UnsubscribeComplianceTests(unittest.TestCase):
              patch.object(notifications, "_onesignal_email_post", return_value=onesignal_reply) as os_post, \
              patch.object(email.requests, "post", return_value=resend_reply) as resend_post, \
              patch.object(email_usage, "reserve", return_value=1), \
-             patch.object(email_usage, "release"), \
-             patch.object(email, "_heal_missing_subscription", return_value=False):
+             patch.object(email_usage, "release"):
             receipt = {}
             result = email.send_email_routed("a@example.invalid", "A", "S", "<p>b</p>",
                                              provider="onesignal", receipt=receipt,

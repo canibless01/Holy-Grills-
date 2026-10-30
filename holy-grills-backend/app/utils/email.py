@@ -1085,53 +1085,6 @@ def _attempt_and_settle(provider, to_email, to_name, subject, html_body, headers
     return accepted, quota, undeliverable
 
 
-def _subscription_identity(to_email):
-    """The external_id to register `to_email` under, or None.
-
-    A known account uses its profile id, which is what the web SDK's
-    `OneSignal.login(external_id)` uses — so the email lands on the same OneSignal
-    user as the push subscription. Guests (event registrations, guest orders, catering
-    enquiries) have no profile; they get a deterministic alias derived from the
-    address, so their QR code and confirmation can still be delivered and re-sending
-    to the same guest reuses one subscription instead of piling up users.
-    """
-    try:
-        from app.db import get_db
-        rows = (get_db().table("profiles").select("id,is_active")
-                .eq("email", to_email).limit(1).execute() or [])
-    except Exception as exc:                                      # noqa: BLE001
-        logger.warning("email: could not look up a profile for %s: %s", _mask_email(to_email), exc)
-        return None
-    row = rows[0] if isinstance(rows, list) and rows else (rows if isinstance(rows, dict) else None)
-    if row and row.get("id") and row.get("is_active") is not False:
-        return str(row["id"])
-    # Guest: stable per address, never collides with a profile uuid.
-    return "guest-" + str(uuid.uuid5(uuid.NAMESPACE_URL, f"mailto:{str(to_email).lower().strip()}"))
-
-
-def _heal_missing_subscription(to_email):
-    """Register the address with OneSignal so this send can be delivered.
-
-    Called only after OneSignal has *refused* the send because the address had no
-    email subscription — nothing was delivered, so retrying cannot duplicate. This is
-    what makes existing accounts (and guests) work on the first attempt instead of
-    waiting for a login or a manual backfill.
-    """
-    identity = _subscription_identity(to_email)
-    if not identity:
-        return False
-    try:
-        from app.services.onesignal_email import ensure_email_subscription
-    except Exception as exc:                                      # noqa: BLE001
-        logger.warning("email: subscription helper unavailable: %s", exc)
-        return False
-    details = {}
-    linked = ensure_email_subscription(identity, to_email, enabled=True, details=details)
-    logger.info("email: registration on demand for %s — linked=%s (%s)", _mask_email(to_email),
-                linked, details.get("http_status") or details.get("reason"))
-    return bool(linked)
-
-
 def _default_provider():
     """OneSignal when configured (no daily cap), else Resend. Never raises."""
     try:
@@ -1188,21 +1141,14 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider=None, h
     accepted, quota, undeliverable = _attempt_and_settle(
         chosen, to_email, to_name, subject, html_body, headers,
         receipt=receipt, transactional=transactional, slot_claimed=True)
-    if not accepted and chosen == "onesignal" and _onesignal_not_subscribed(receipt):
-        # Nothing was delivered and the cause is fixable: register the address with
-        # OneSignal, then retry the same message there. Falling straight back to
-        # Resend "works" but keeps leaving OneSignal with no subscribers and no
-        # history — and the fallback is the thing that runs out at 100/day.
-        if _heal_missing_subscription(to_email):
-            accepted, quota, undeliverable = _attempt_and_settle(
-                "onesignal", to_email, to_name, subject, html_body, headers,
-                receipt=receipt, transactional=transactional)
     if accepted:
         return True
-    if (not accepted and chosen == "onesignal" and not transactional
+    if (chosen == "onesignal" and not transactional
             and _onesignal_not_subscribed(receipt)):
-        # Still refused as unsubscribed, and this is a marketing send: delivering it
-        # by the other transport would override the customer's own opt-out. Skip it.
+        # Refused because the address is unsubscribed, and this is a marketing send:
+        # delivering it by the other transport would override the customer's own
+        # opt-out. Skip it instead. (Transactional mail still falls back — a receipt
+        # or a QR code must arrive.)
         logger.info("email: marketing send to %s skipped — the address is unsubscribed",
                     _mask_email(to_email))
         if receipt is not None:
