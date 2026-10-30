@@ -2101,6 +2101,8 @@ class MSG:
     FE_ADMIN_USERS_YOU_CANNOT_DEACTIVATE_YOUR_OWN_ACCOUNT               = "You cannot deactivate your own account."
     FE_ADMIN_WALLET_TRANSACTIONS_COULDN_T_LOAD_WALLET_TRANSACTIONS      = "Couldn't load wallet transactions"
     FE_ADMIN_WEBHOOKS_COULDN_T_LOAD_WEBHOOK_EVENTS                      = "Couldn't load webhook events"
+    FE_ADMIN_WEBHOOKS_RETRIED                                         = "Delivery reprocessed"
+    FE_ADMIN_WEBHOOKS_RETRY_FAILED                                    = "Retry failed"
     FE_CAMPUS_CONTEXT_USE_CAMPUS_MUST_BE_USED_WITHIN_CAMPUS             = "useCampus must be used within CampusProvider"
     FE_CAROUSEL_USE_CAROUSEL_MUST_BE_USED_WITHIN_A                      = "useCarousel must be used within a <Carousel />"
     FE_CATERING_CARD_NAME_PHONE_REQUIRED                                = "Name & phone required"

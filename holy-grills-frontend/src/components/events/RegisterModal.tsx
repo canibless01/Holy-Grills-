@@ -79,6 +79,9 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
         if (!isAllowedPaymentUrl(res.authorization_url)) {
           throw new Error(msg('FE_REGISTER_MODAL_THE_PAYMENT_LINK_DID_NOT_LOOK_SAFE_SO', 'The payment link did not look safe, so nothing was charged. Please try again.'));
         }
+        // Guests have no session to poll with, so remember the email they registered
+        // with: the event page uses it as proof to verify the reference on return.
+        if (isGuest) sessionStorage.setItem('hg_event_guest_email', guest.guest_email.trim());
         window.location.href = res.authorization_url;
         return;
       }

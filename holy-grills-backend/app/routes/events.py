@@ -863,9 +863,19 @@ def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, c
         ref_prefix = current_app.config.get("EVENT_TICKET_REF_PREFIX", "HG-EVTKT-")
         reference = ticket.get("payment_reference") or f"{ref_prefix}{str(ticket_id).replace('-', '').upper()}"
         db.table("event_tickets").eq("id", ticket_id).update({"payment_reference": reference})
-        meta = {"type": "event_ticket_payment", "ticket_id": ticket_id, "event_id": event_id}
+        meta = {
+            "type": "event_ticket_payment",
+            "ticket_id": ticket_id,
+            "event_id": event_id,
+            # What we asked for, recorded server-side at initialization. The webhook
+            # reconciles the charge against the ticket row, and this lets the
+            # verify-on-return path do the same without trusting the client.
+            "expected_amount_kobo": round(float(amount_naira) * 100),
+        }
         if user_id:
             meta["user_id"] = user_id
+        if ticket.get("campus_id"):
+            meta["campus_id"] = ticket.get("campus_id")
         pay_result = initialize_payment(
             email=email, amount_naira=amount_naira, reference=reference,
             metadata=meta, callback_url=callback_url,
@@ -977,6 +987,109 @@ def download_ticket_pdf(event_id, ticket_id):
         buf, mimetype="application/pdf", as_attachment=True,
         download_name=f"holy-grills-ticket-{ticket_id[:8]}.pdf",
     )
+
+
+@events_bp.route("/<event_id>/tickets/verify", methods=["POST"])
+@optional_auth
+@rate_limit(max_requests=20, window_seconds=60)
+def verify_event_ticket_payment(event_id):
+    """Confirm a ticket directly with Paystack after the customer returns from checkout.
+
+    The webhook is the primary confirmation path, but it is not allowed to be the only
+    one: if a delivery never lands (or fails on something we have since fixed), the
+    customer has been charged and their ticket stays `pending` forever — invisible on
+    the host's registrant list. This verifies the reference server-side, so the
+    customer's own return trip repairs the ticket.
+    ---
+    tags: [Events]
+    parameters:
+      - in: path
+        name: event_id
+        type: string
+        required: true
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [reference]
+          properties:
+            reference: {type: string}
+            guest_email: {type: string, description: required for guest tickets}
+    responses:
+      200:
+        description: Verified payment state
+      400:
+        description: Missing/invalid reference
+      403:
+        description: Not this caller's ticket
+      404:
+        description: No ticket for that reference
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    reference = str(data.get("reference") or "").strip()
+    if not reference:
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+
+    db = get_db()
+    rows = (
+        db.table("event_tickets")
+        .select("*")
+        .eq("event_id", event_id).eq("payment_reference", reference)
+        .limit(1).execute()
+    ) or []
+    if not rows:
+        return jsonify({"error": MSG.TICKET_NOT_FOUND}), 404
+    ticket = rows[0]
+    ticket_id = ticket["id"]
+
+    user_id = getattr(g, "user_id", None)
+    if ticket.get("user_id"):
+        if not user_id or str(ticket["user_id"]) != str(user_id):
+            return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
+    else:
+        provided_email = str(data.get("guest_email") or request.args.get("guest_email") or "").strip().lower()
+        if not provided_email or provided_email != (ticket.get("guest_email") or "").lower():
+            return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
+
+    if ticket.get("payment_status") == "paid":
+        return jsonify({"payment_status": "paid", "ticket_id": ticket_id}), 200
+    if str(ticket.get("status") or "").lower() in TICKET_EXCLUDED_STATUSES:
+        return jsonify({"error": MSG.EVENT_CARD_NOT_PENDING, "payment_status": ticket.get("payment_status")}), 409
+    if not current_app.config.get("PAYSTACK_SECRET_KEY"):
+        return jsonify({"error": MSG.EVENT_CARD_UNAVAILABLE}), 503
+    expected_amount = float(ticket.get("card_amount_used") or 0)
+    if expected_amount <= 0:
+        return jsonify({"error": MSG.EVENT_CARD_NOT_PENDING}), 409
+
+    from app.services.payment_service import verify_payment
+    from app.services.payment_amounts import validate_charge_amount
+    try:
+        txn = verify_payment(reference)
+    except Exception as exc:                                   # noqa: BLE001
+        logger.warning("event ticket verify: Paystack lookup failed for %s: %s", reference, exc)
+        return jsonify({"payment_status": "pending", "ticket_id": ticket_id}), 200
+    if txn.get("status") != "success":
+        return jsonify({"payment_status": "pending", "ticket_id": ticket_id}), 200
+
+    meta = txn.get("metadata") if isinstance(txn.get("metadata"), dict) else {}
+    if str(meta.get("ticket_id") or "") != str(ticket_id) or meta.get("type") != "event_ticket_payment":
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+    try:
+        breakdown = validate_charge_amount(txn, expected_amount, "paystack", label="Event ticket")
+    except ValueError as exc:
+        logger.error("event ticket verify: %s (ref %s)", exc, reference)
+        return jsonify({"error": str(exc), "payment_status": "pending", "ticket_id": ticket_id}), 409
+
+    try:
+        confirm_event_ticket_payment(
+            ticket_id, reference,
+            provider_response={**txn, "_amount_breakdown": breakdown},
+        )
+    except Exception as exc:                                   # noqa: BLE001
+        logger.error("event ticket verify: confirmation failed for %s: %s", ticket_id, exc)
+        return jsonify({"error": MSG.EVENT_CARD_SETUP_FAILED, "payment_status": "pending", "ticket_id": ticket_id}), 502
+
+    return jsonify({"payment_status": "paid", "ticket_id": ticket_id}), 200
 
 
 def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provider_response: dict = None) -> dict:
@@ -2036,6 +2149,11 @@ def my_tickets():
             "starts_at": e.get("starts_at"),
             "location": e.get("location"),
             "status": t.get("status"),
+            # Payment state is what tells the client whether the ticket is usable. Without
+            # it the "waiting for Paystack" poll matched an unpaid reservation and reported
+            # it as confirmed while the webhook had not (or had failed to) confirm anything.
+            "payment_status": t.get("payment_status"),
+            "payment_reference": t.get("payment_reference"),
             "is_guest": t.get("is_guest", False),
             "checked_in": bool(ci),
             "checked_in_at": ci.get("created_at") if isinstance(ci, dict) else None,

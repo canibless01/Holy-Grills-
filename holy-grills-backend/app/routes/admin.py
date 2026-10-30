@@ -2607,6 +2607,13 @@ def delete_spin_pool_prize(prize_id):
 # Webhook events
 # ---------------------------------------------------------------------------
 
+# What the admin UI calls a status -> what webhook_events stores.
+WEBHOOK_STATUS_ALIASES = {
+    "success": "processed", "delivered": "processed", "ok": "processed",
+    "error": "failed", "pending": "processing", "retrying": "processing", "queued": "processing",
+}
+
+
 @admin_bp.route("/webhook-events", methods=["GET"])
 @require_role("admin")
 def list_webhook_events():
@@ -2665,8 +2672,17 @@ def list_webhook_events():
     offset = max(0, offset)
 
     q = db.table("webhook_events").select("*")
+    # A delivery that FAILED used to be stored with campus_id NULL (the campus is only
+    # known once the handler succeeds), so campus-scoped admins never saw the failures —
+    # exactly the rows they need. Failures are now written with their resolved campus,
+    # and any that still have none are included here (their payload is redacted below,
+    # so this cannot leak another campus's payment data).
     if campus_id:
-        q = q.eq("campus_id", campus_id)
+        # The filter goes into a raw `or=` expression, so the id must be a real UUID
+        # first (a crafted `campus_id` could otherwise inject PostgREST filter syntax).
+        if not validate_uuid(str(campus_id)):
+            return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+        q = q.or_(f"campus_id.eq.{campus_id},and(campus_id.is.null,status.eq.failed)")
 
     provider = request.args.get("provider")
     if provider:
@@ -2674,6 +2690,10 @@ def list_webhook_events():
 
     status = request.args.get("status")
     if status:
+        # The admin UI speaks the vocabulary it renders (success/failed/pending); the
+        # table stores processed/failed/processing. Translate instead of returning
+        # nothing for "success", which made a healthy log look empty.
+        status = WEBHOOK_STATUS_ALIASES.get(status.strip().lower(), status.strip().lower())
         q = q.eq("status", status)
 
     from_date = request.args.get("from_date")
@@ -2685,7 +2705,111 @@ def list_webhook_events():
         q = q.lte("created_at", to_date + ("T23:59:59Z" if "T" not in to_date else ""))
 
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+
+    # A global (campus_id NULL) row can belong to any campus, so only super_admins get
+    # its raw payload. Everyone else still sees the delivery, its status and its error —
+    # which is what makes a failed charge visible at all.
+    if getattr(g, "user_role", None) != "super_admin":
+        rows = [
+            {**row, "payload": None, "payload_redacted": True}
+            if not row.get("campus_id") and row.get("status") == "failed" else row
+            for row in rows
+        ]
     return jsonify({"webhook_events": rows, "count": len(rows)}), 200
+
+
+@admin_bp.route("/webhook-events/<event_id>/retry", methods=["POST"])
+@require_role("admin")
+def retry_webhook_event(event_id):
+    """Re-run one failed provider delivery from the payload we stored.
+
+    Provider retries are finite (Paystack gives up after a few days) and a delivery can
+    be failed by a bug we have since fixed — an amount comparison, say. Without a replay
+    the only repair is manual SQL: the customer has been charged, but their ticket or
+    purchase stays pending. Replaying is safe: every handler is idempotent (a paid
+    ticket/order is returned untouched, wallet credits are keyed by provider reference).
+    ---
+    tags: [Admin]
+    parameters:
+      - in: path
+        name: event_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Delivery processed
+      403:
+        description: Another campus's delivery
+      404:
+        description: Delivery not found
+      409:
+        description: Delivery is processed or in flight
+    """
+    if not validate_uuid(str(event_id)):
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    db = get_db()
+    row = db.table("webhook_events").select("*").eq("id", event_id).single().execute()
+    if not row:
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+
+    payload = row.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = None
+
+    from app.routes.webhooks import _campus_for_payload, reprocess_stored_event
+
+    if getattr(g, "user_role", None) != "super_admin":
+        row_campus = row.get("campus_id")
+        if not row_campus:
+            # Failures written before we started resolving the campus have none. The
+            # payload still says whose charge it is, so a campus admin may retry it when
+            # it resolves to their own campus (and never when it resolves elsewhere).
+            if not isinstance(payload, dict):
+                return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
+            row_campus = _campus_for_payload(payload)
+        if not row_campus or row_campus != getattr(g, "campus_id", None):
+            return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
+
+    status = str(row.get("status") or "")
+    if status == "processed":
+        return jsonify({"message": "Delivery already processed", "status": status}), 200
+    if status == "processing":
+        return jsonify({"error": "Delivery is currently in flight"}), 409
+
+    provider = row.get("provider") or "paystack"
+    event_type = row.get("event_type")
+    reference = row.get("reference")
+    try:
+        campus = reprocess_stored_event(provider, event_type, payload)
+    except Exception as exc:                                  # noqa: BLE001
+        logger.warning("admin retry of webhook %s (%s/%s) failed: %s", event_id, provider, event_type, exc)
+        fields = {"status": "failed", "error": str(exc)}
+        if row.get("campus_id"):
+            fields["campus_id"] = row["campus_id"]
+        else:
+            try:
+                resolved = _campus_for_payload(payload if isinstance(payload, dict) else {})
+                if resolved:
+                    fields["campus_id"] = resolved
+            except Exception:                                 # noqa: BLE001
+                pass
+        db.table("webhook_events").eq("id", event_id).update(fields).execute()
+        return jsonify({"error": str(exc), "status": "failed", "reference": reference}), 502
+
+    fields = {"status": "processed", "error": None, "processed_at": datetime.now(timezone.utc).isoformat()}
+    if campus:
+        fields["campus_id"] = campus
+    db.table("webhook_events").eq("id", event_id).update(fields).execute()
+    return jsonify({
+        "message": "Delivery reprocessed",
+        "status": "processed",
+        "provider": provider,
+        "event_type": event_type,
+        "reference": reference,
+    }), 200
 
 # --- END OF SECTION 7 (exclusive spin pool, webhook events) ---
 

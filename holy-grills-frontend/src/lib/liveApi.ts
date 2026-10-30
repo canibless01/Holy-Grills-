@@ -248,6 +248,11 @@ const events = {
   // upcoming / past / checked_in. Replaces the old event-detail `has_ticket`
   // probe (get_event returns no per-user ticket ownership field).
   async myTickets() { return apiClient.get('/events/my-tickets'); },
+  // POST /events/<id>/tickets/verify — asks Paystack directly about the card reference
+  // returned on the checkout redirect and confirms the ticket. The webhook is still the
+  // primary path; this is the fallback that stops a paid customer being stranded when a
+  // delivery fails (verify-on-return). Body: { reference, guest_email? }.
+  async verifyTicket(id, body) { return apiClient.post(`/events/${id}/tickets/verify`, body); },
   // GET /events/<id>/tiers/comparison — enriched tiers with availability/sold-out.
   async getTierComparison(id) { return unwrap(await apiClient.get(`/events/${id}/tiers/comparison`), 'tiers'); },
   // GET /events/tiers/<tier_id>/detail — full tier + nested event.
@@ -671,6 +676,9 @@ const admin = {
   // --- Admin webhook history (GET /admin/webhook-events) ---
   // Route supports provider, status, from_date, to_date, campus_id, limit, offset.
   async getWebhookEvents(params = {}) { return unwrap(await apiClient.get('/admin/webhook-events', params), 'events', 'webhook_events'); },
+  // POST /admin/webhook-events/:id/retry — replays one FAILED provider delivery from the
+  // stored payload (idempotent). The only repair once the provider stops retrying.
+  async retryWebhookEvent(id) { return apiClient.post(`/admin/webhook-events/${id}/retry`); },
 
   // --- Academic Calendar (POST / GET / PATCH /:id under /admin/academic-calendar) ---
   // campus_id optional — omit for a platform-wide period (e.g. national holiday).

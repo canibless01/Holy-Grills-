@@ -51,28 +51,50 @@ export default function EventDetail() {
     load();
   }, [id]);
 
-  // Card payments are webhook-driven (spec §11.6). After Paystack redirects
-  // back with a `reference` query param, poll my-tickets until the ticket
-  // confirms — the webhook may lag the redirect by a few seconds.
+  // Card payments are webhook-driven (spec §11.6). After Paystack redirects back with a
+  // `reference` query param we ask the backend to verify that reference with Paystack
+  // (verify-on-return), then poll my-tickets. The webhook stays the primary path; the
+  // verify call is the fallback that stops a charged customer being stranded when a
+  // delivery fails — previously the ticket stayed `pending`, which also kept the
+  // registrant off the host's list even though the seat had been counted.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const reference = params.get('reference') || params.get('ref');
-    if (!reference || !isAuthenticated) return;
+    const guestEmail = isAuthenticated ? null : sessionStorage.getItem('hg_event_guest_email');
+    if (!reference || (!isAuthenticated && !guestEmail)) return;
     setPaystackProcessing(true);
     let cancelled = false;
+    const confirmAndClean = (found) => {
+      if (cancelled) return;
+      setTicket({ ticket_id: found?.ticket_id || found?.id, status: found?.status || 'confirmed', qr_code: found?.qr_token, tier_name: found?.tier_name, guest_email: found?.guest_email });
+      setPaystackProcessing(false);
+      toast({ title: msg('FE_EVENT_DETAIL_PAYMENT_CONFIRMED', '✅ Payment confirmed!'), description: msg('FE_EVENT_DETAIL_YOUR_TICKET_IS_READY', 'Your ticket is ready.') });
+      sessionStorage.removeItem('hg_event_guest_email');
+      window.history.replaceState({}, '', window.location.pathname);
+    };
     const poll = async (attempt) => {
       try {
-        const mine = await liveApi.events.myTickets();
-        const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
-        const found = all.find((t) => t.event_id === id);
-        if (found) {
-          if (cancelled) return;
-          setTicket({ ticket_id: found.ticket_id || found.id, status: found.status || 'confirmed', qr_code: found.qr_token, tier_name: found.tier_name, guest_email: found.guest_email });
-          setPaystackProcessing(false);
-          toast({ title: msg('FE_EVENT_DETAIL_PAYMENT_CONFIRMED', '✅ Payment confirmed!'), description: msg('FE_EVENT_DETAIL_YOUR_TICKET_IS_READY', 'Your ticket is ready.') });
-          // Clean the reference from the URL.
-          window.history.replaceState({}, '', window.location.pathname);
+        // Idempotent: if the webhook already confirmed the ticket this returns paid.
+        const verified = await liveApi.events.verifyTicket(id, guestEmail ? { reference, guest_email: guestEmail } : { reference });
+        if (verified?.payment_status === 'paid') {
+          if (isAuthenticated) {
+            const mine = await liveApi.events.myTickets();
+            const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
+            confirmAndClean(all.find((t) => t.event_id === id) || { ticket_id: verified.ticket_id });
+          } else {
+            confirmAndClean({ ticket_id: verified.ticket_id });
+          }
           return;
+        }
+        if (isAuthenticated) {
+          const mine = await liveApi.events.myTickets();
+          const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
+          const found = all.find((t) => t.event_id === id);
+          // A pending reservation is not a paid ticket: my-tickets returns the row as soon
+          // as checkout starts, so matching on event_id alone reported "Payment confirmed!"
+          // for a registration whose card payment had not (or had failed to) settle.
+          const settled = found && ['paid', 'not_required'].includes(found.payment_status);
+          if (settled) { confirmAndClean(found); return; }
         }
       } catch { /* keep polling */ }
       if (attempt < 6 && !cancelled) {

@@ -10,10 +10,23 @@ import { msg } from '@/lib/messages';
 // GET /admin/webhook-events — the platform's recent webhook delivery log.
 // Each row carries the provider, event, status, HTTP code, and timestamps so
 // admins can spot failed integrations without digging into server logs.
+//
+// The table stores `processed` / `failed` / `processing`. The UI used to expect
+// success/delivered/ok, so every healthy delivery rendered as an unknown tone
+// and the "Delivered" tile always read 0. Normalise both vocabularies here.
+const normalizedStatus = (s) => {
+  const v = String(s || '').toLowerCase();
+  if (['processed', 'success', 'delivered', 'ok'].includes(v)) return 'success';
+  if (['failed', 'error'].includes(v)) return 'failed';
+  if (['processing', 'pending', 'retrying', 'queued'].includes(v)) return 'pending';
+  return v || 'unknown';
+};
+
 const statusTone = (s) => {
-  if (s === 'success' || s === 'delivered' || s === 'ok') return 'green';
-  if (s === 'failed' || s === 'error') return 'red';
-  if (s === 'pending' || s === 'retrying' || s === 'queued') return 'amber';
+  const v = normalizedStatus(s);
+  if (v === 'success') return 'green';
+  if (v === 'failed') return 'red';
+  if (v === 'pending') return 'amber';
   return 'cocoa';
 };
 
@@ -22,6 +35,7 @@ export default function AdminWebhooks() {
   const [expanded, setExpanded] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState({ provider: '', status: '', from_date: '', to_date: '' });
+  const [retrying, setRetrying] = useState(null);
 
   const load = async () => {
     setRefreshing(true);
@@ -43,8 +57,23 @@ export default function AdminWebhooks() {
 
   useEffect(() => { load(); }, [filters.provider, filters.status, filters.from_date, filters.to_date]);
 
-  const successCount = (events || []).filter((e) => ['success', 'delivered', 'ok'].includes(e.status)).length;
-  const failedCount = (events || []).filter((e) => ['failed', 'error'].includes(e.status)).length;
+  // Replays one failed delivery from the payload the backend stored. Safe to repeat:
+  // every handler is idempotent, and this is the only repair available once the
+  // provider has stopped retrying (Paystack gives up after a few days).
+  const retryEvent = async (e) => {
+    setRetrying(e.id);
+    try {
+      await liveApi.admin.retryWebhookEvent(e.id);
+      toast({ title: msg('FE_ADMIN_WEBHOOKS_RETRIED', 'Delivery reprocessed'), description: e.reference || e.event_type || '' });
+      await load();
+    } catch (err) {
+      toast({ title: msg('FE_ADMIN_WEBHOOKS_RETRY_FAILED', "Retry failed"), description: err.message, variant: 'destructive' });
+    }
+    setRetrying(null);
+  };
+
+  const successCount = (events || []).filter((e) => normalizedStatus(e.status) === 'success').length;
+  const failedCount = (events || []).filter((e) => normalizedStatus(e.status) === 'failed').length;
 
   return (
     <div className="space-y-4">
@@ -104,14 +133,15 @@ export default function AdminWebhooks() {
         <div className="space-y-2">
           {events.map((e, i) => {
             const isOpen = expanded === (e.id || i);
-            const ok = ['success', 'delivered', 'ok'].includes(e.status);
+            const ok = normalizedStatus(e.status) === 'success';
+            const failed = normalizedStatus(e.status) === 'failed';
             const ts = e.created_at || e.received_at || e.sent_at;
             return (
               <motion.div key={e.id || i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.15) }}>
                 <Card className="overflow-hidden">
                   <button onClick={() => setExpanded(isOpen ? null : (e.id || i))} className="w-full p-3.5 flex items-center gap-3 text-left">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${ok ? 'bg-success/15' : ['failed', 'error'].includes(e.status) ? 'bg-destructive/10' : 'bg-secondary'}`}>
-                      {ok ? <Check className="w-4.5 h-4.5 text-success" /> : ['failed', 'error'].includes(e.status) ? <X className="w-4.5 h-4.5 text-destructive" /> : <AlertTriangle className="w-4.5 h-4.5 text-accent-foreground" />}
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${ok ? 'bg-success/15' : failed ? 'bg-destructive/10' : 'bg-secondary'}`}>
+                      {ok ? <Check className="w-4.5 h-4.5 text-success" /> : failed ? <X className="w-4.5 h-4.5 text-destructive" /> : <AlertTriangle className="w-4.5 h-4.5 text-accent-foreground" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -123,14 +153,25 @@ export default function AdminWebhooks() {
                         {e.http_status != null && <span className="font-mono">· HTTP {e.http_status}</span>}
                       </div>
                     </div>
-                    <Pill tone={statusTone(e.status)}>{e.status || 'unknown'}</Pill>
+                    <Pill tone={statusTone(e.status)}>{normalizedStatus(e.status)}</Pill>
                   </button>
                   {isOpen && (
                     <div className="px-3.5 pb-3.5 pt-1 border-t border-border space-y-2 animate-fade-in">
                       {e.url && <div className="text-[11px] text-muted-foreground"><span className="font-bold">URL:</span> <span className="font-mono break-all">{e.url}</span></div>}
                       {e.endpoint && <div className="text-[11px] text-muted-foreground"><span className="font-bold">Endpoint:</span> <span className="font-mono break-all">{e.endpoint}</span></div>}
                       {e.attempts != null && <div className="text-[11px] text-muted-foreground"><span className="font-bold">Attempts:</span> {e.attempts}</div>}
-                      {e.error_message && <div className="text-[11px] text-destructive font-semibold break-all">⚠ {e.error_message}</div>}
+                      {e.reference && <div className="text-[11px] text-muted-foreground"><span className="font-bold">Reference:</span> <span className="font-mono break-all">{e.reference}</span></div>}
+                      {(e.error || e.error_message) && <div className="text-[11px] text-destructive font-semibold break-all">⚠ {e.error || e.error_message}</div>}
+                      {e.payload_redacted && <div className="text-[11px] text-muted-foreground">Payload hidden — this delivery has no campus and may belong to another campus.</div>}
+                      {failed && e.id && (
+                        <button
+                          onClick={() => retryEvent(e)}
+                          disabled={retrying === e.id}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-foreground text-xs font-bold active:scale-95 transition disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${retrying === e.id ? 'animate-spin' : ''}`} /> Retry delivery
+                        </button>
+                      )}
                       {e.response_body && <pre className="text-[10px] text-muted-foreground bg-secondary rounded-lg p-2 overflow-x-auto max-h-40 whitespace-pre-wrap">{typeof e.response_body === 'string' ? e.response_body : JSON.stringify(e.response_body, null, 2)}</pre>}
                       {e.payload && <pre className="text-[10px] text-muted-foreground bg-secondary rounded-lg p-2 overflow-x-auto max-h-40 whitespace-pre-wrap">{typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload, null, 2)}</pre>}
                       <BreakdownTiles data={e.metadata || e.headers || {}} emptyTitle="" />

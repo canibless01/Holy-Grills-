@@ -15,8 +15,15 @@ logger = get_logger(__name__)
 from app.services.order_service import confirm_order_payment
 from app.services.wallet_service import credit_wallet
 from app.services.notification_service import send_notification
+from app.services.payment_amounts import expected_from_metadata, validate_charge_amount
 
 webhooks_bp = Blueprint("webhooks", __name__)
+
+# Provider event log statuses. The provider only ever retries a delivery we answered
+# with a non-2xx; anything already `processed` is acknowledged without re-applying.
+WEBHOOK_PROCESSING = "processing"
+WEBHOOK_PROCESSED = "processed"
+WEBHOOK_FAILED = "failed"
 
 
 def _claim_provider_event(provider, event_type, reference, payload):
@@ -36,6 +43,183 @@ def _claim_provider_event(provider, event_type, reference, payload):
         return "claimed"
     row = query().select("status").single().execute() or {}
     return "processed" if row.get("status") == "processed" else "busy"
+
+
+def _campus_for_payload(payload: dict):
+    """Best-effort campus for a provider event, including the ones that are about to fail.
+
+    A webhook row is only scoped to a campus when processing *succeeds* — the campus id
+    comes back from the handler. A failed event therefore used to be stored with
+    `campus_id = NULL`, and because the admin webhook log is campus-scoped, the very
+    deliveries an admin needs to see were invisible to every campus admin. Resolve it
+    from the payload when the handler never got that far.
+    """
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return None
+    meta = data.get("metadata") or data.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    if meta.get("campus_id"):
+        return meta.get("campus_id")
+    db = get_db()
+    try:
+        if meta.get("order_id"):
+            row = db.table("orders").select("campus_id").eq("id", meta["order_id"]).single().execute()
+            if row and row.get("campus_id"):
+                return row["campus_id"]
+        if meta.get("ticket_id"):
+            row = db.table("event_tickets").select("campus_id").eq("id", meta["ticket_id"]).single().execute()
+            if row and row.get("campus_id"):
+                return row["campus_id"]
+        if meta.get("user_id"):
+            row = db.table("profiles").select("campus_id").eq("id", meta["user_id"]).single().execute()
+            if row and row.get("campus_id"):
+                return row["campus_id"]
+    except Exception as exc:                                  # noqa: BLE001
+        logger.warning("webhook failure: campus lookup for ref %s failed: %s",
+                       data.get("reference") or data.get("tx_ref"), exc)
+    return None
+
+
+def _mark_event(provider, event_type, reference, fields):
+    """Update one webhook_events row, never letting a logging failure mask the outcome."""
+    if not reference:
+        return
+    try:
+        (get_db().table("webhook_events")
+         .eq("provider", provider).eq("event_type", event_type).eq("reference", reference)
+         .update(fields).execute())
+    except Exception as exc:                                  # noqa: BLE001
+        logger.error("webhook_events update failed (%s, %s, ref %s): %s",
+                     provider, event_type, reference, exc)
+
+
+def _record_event_failure(provider, event_type, reference, payload, error):
+    """Persist a failed delivery so it is visible (and retryable) in the admin log."""
+    fields = {"status": WEBHOOK_FAILED, "error": str(error)}
+    campus_id = _campus_for_payload(payload)
+    if campus_id:
+        fields["campus_id"] = campus_id
+    _mark_event(provider, event_type, reference, fields)
+    return campus_id
+
+
+def _process_provider_event(provider, event_type, data):
+    """Route one provider payload to its handler. Raises on any unrecoverable problem."""
+    if provider == "paystack":
+        if event_type == "charge.success":
+            return _handle_charge_success(data)
+        if event_type == "dedicatedaccount.assign.success":
+            return _handle_dva_assign(data)
+        if event_type == "transfer.success":
+            return _handle_transfer(data)
+        return None
+    if provider == "flutterwave":
+        if event_type == "charge.completed" and data.get("status") == "successful":
+            return _handle_flutterwave_charge_success(data)
+    return None
+
+
+def reprocess_stored_event(provider, event_type, payload):
+    """Replay one stored provider payload through the normal routing.
+
+    Used by the admin webhook log's retry action. Safe to repeat: every handler is
+    idempotent, so an already-confirmed order/ticket/purchase is returned untouched.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("Stored webhook payload is missing or not an object")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("Stored webhook payload has no data object")
+    resolved = _process_provider_event(provider, event_type, data)
+    if resolved is None:
+        resolved = _campus_for_payload(payload)
+    return resolved
+
+
+def _confirm_event_ticket_charge(db, metadata, reference, data, provider):
+    """Confirm an event ticket after a provider-verified charge.
+
+    The amount check is the fee-aware one used by orders: Paystack adds its gateway fee
+    to the settled amount whenever the customer bears it, so an exact comparison failed
+    every such ticket and left a paid registrant stuck on `payment_status = pending`
+    (invisible on the registrant list and in the email to the host).
+    """
+    ticket_id = metadata.get("ticket_id")
+    if not ticket_id:
+        raise ValueError("Missing ticket_id in metadata")
+    ticket = (db.table("event_tickets")
+              .select("id,user_id,card_amount_used,status,payment_status,campus_id")
+              .eq("id", ticket_id).single().execute())
+    if not ticket:
+        raise ValueError(f"Ticket {ticket_id} not found")
+    meta_user_id = metadata.get("user_id")
+    if meta_user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(meta_user_id):
+        raise ValueError("Ticket user mismatch")
+    if ticket.get("payment_status") == "paid":
+        logger.warning(
+            "Duplicate payment webhook for already-paid ticket %s (ref %s) — skipping",
+            ticket_id, reference,
+        )
+        return ticket.get("campus_id")
+
+    expected_amount = float(ticket.get("card_amount_used") or 0)
+    breakdown = validate_charge_amount(data, expected_amount, provider, label="Event ticket")
+    if str(ticket.get("status") or "").lower() in ("cancelled", "canceled", "expired"):
+        raise ValueError(
+            f"Ticket {ticket_id} was cancelled/expired before its card payment arrived "
+            f"(ref {reference}: ₦{float(breakdown.get('paid_kobo') or 0) / 100:,.2f} paid). "
+            "Refund this charge or re-issue the ticket."
+        )
+
+    from app.routes.events import confirm_event_ticket_payment
+    confirm_event_ticket_payment(
+        ticket_id, reference,
+        provider_response={**data, "_amount_breakdown": breakdown},
+    )
+    return ticket.get("campus_id")
+
+
+def _complete_marketplace_charge(db, metadata, reference, data, provider):
+    """Complete a marketplace purchase after a provider-verified charge.
+
+    Uses `complete_marketplace_card_purchase` (not the raw helper) so a purchase that
+    cannot be completed after the card was charged — sold out, price changed, HP or
+    wallet fell short — is refunded to the buyer's wallet instead of being silently
+    dropped by a failed webhook.
+    """
+    user_id = metadata.get("user_id")
+    listing_id = metadata.get("listing_id")
+    if not user_id or not listing_id:
+        raise ValueError("Missing marketplace purchase metadata (user_id/listing_id)")
+
+    expected_amount = expected_from_metadata(metadata, data, provider)
+    if expected_amount is None or expected_amount <= 0:
+        # A payment initialized before we recorded the expected amount. Nothing local to
+        # reconcile against, so accept the charge and say so loudly rather than strand it.
+        expected_amount = (float(data.get("amount") or 0) / 100 if provider == "paystack"
+                           else float(data.get("amount") or 0))
+        logger.warning(
+            "marketplace webhook %s has no recorded expected amount; accepting ₦%.2f as charged",
+            reference, expected_amount,
+        )
+    else:
+        validate_charge_amount(data, expected_amount, provider, label="Marketplace purchase")
+
+    from app.routes.marketplace import complete_marketplace_card_purchase
+    created = complete_marketplace_card_purchase(
+        user_id=user_id,
+        listing_id=listing_id,
+        quantity=metadata.get("quantity", 1),
+        wallet_amount=metadata.get("wallet_amount", 0.0),
+        pay_with_hp=metadata.get("pay_with_hp", False),
+        payment_reference=reference,
+        amount_paid=expected_amount,
+        refund_amount=expected_amount,
+    )
+    purchase = created[0] if isinstance(created, tuple) else created
+    return (purchase or {}).get("campus_id")
 
 
 @webhooks_bp.route("/paystack", methods=["POST"])
@@ -96,33 +280,18 @@ def paystack_webhook():
         return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 503
 
     try:
-        resolved_campus_id = None
-        if event_type == "charge.success":
-            resolved_campus_id = _handle_charge_success(data)
-        elif event_type == "dedicatedaccount.assign.success":
-            resolved_campus_id = _handle_dva_assign(data)
-        elif event_type == "transfer.success":
-            resolved_campus_id = _handle_transfer(data)
+        resolved_campus_id = _process_provider_event("paystack", event_type, data)
 
-        # Mark as processed
-        if reference:
-            update_fields = {
-                "status": "processed",
-                "processed_at": datetime.now(timezone.utc).isoformat(),
-            }
-            if resolved_campus_id:
-                update_fields["campus_id"] = resolved_campus_id
-            get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update(update_fields).execute()
+        update_fields = {
+            "status": WEBHOOK_PROCESSED,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "error": None,
+        }
+        if resolved_campus_id:
+            update_fields["campus_id"] = resolved_campus_id
+        _mark_event("paystack", event_type, reference, update_fields)
     except Exception as e:
-        # Mark as failed
-        if reference:
-            try:
-                get_db().table("webhook_events").eq("provider", "paystack").eq("event_type", event_type).eq("reference", reference).update({
-                    "status": "failed",
-                    "error": str(e),
-                }).execute()
-            except Exception:
-                pass
+        _record_event_failure("paystack", event_type, reference, payload, e)
         _notify_admin_webhook_failure(event_type, reference, str(e))
         return jsonify({"error": "Webhook processing failed"}), 500
 
@@ -185,29 +354,18 @@ def flutterwave_webhook():
         return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 503
 
     try:
-        resolved_campus_id = None
-        if event_type == "charge.completed" and data.get("status") == "successful":
-            resolved_campus_id = _handle_flutterwave_charge_success(data)
+        resolved_campus_id = _process_provider_event("flutterwave", event_type, data)
 
-        # Mark as processed
-        if reference:
-            update_fields = {
-                "status": "processed",
-                "processed_at": datetime.now(timezone.utc).isoformat(),
-            }
-            if resolved_campus_id:
-                update_fields["campus_id"] = resolved_campus_id
-            get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update(update_fields).execute()
+        update_fields = {
+            "status": WEBHOOK_PROCESSED,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "error": None,
+        }
+        if resolved_campus_id:
+            update_fields["campus_id"] = resolved_campus_id
+        _mark_event("flutterwave", event_type, reference, update_fields)
     except Exception as e:
-        # Mark as failed
-        if reference:
-            try:
-                get_db().table("webhook_events").eq("provider", "flutterwave").eq("event_type", event_type).eq("reference", reference).update({
-                    "status": "failed",
-                    "error": str(e),
-                }).execute()
-            except Exception:
-                pass
+        _record_event_failure("flutterwave", event_type, reference, payload, e)
         _notify_admin_webhook_failure(event_type, reference, str(e))
         return jsonify({"error": "Webhook processing failed"}), 500
 
@@ -261,44 +419,15 @@ def _handle_flutterwave_charge_success(data: dict):
         return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":
-        ticket_id = meta.get("ticket_id")
-        if not ticket_id:
-            raise ValueError("Missing ticket_id in metadata")
-        ticket = db.table("event_tickets").select("id,user_id,card_amount_used,status,payment_status,campus_id").eq("id", ticket_id).single().execute()
-        if not ticket:
-            raise ValueError(f"Ticket {ticket_id} not found")
-        if user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(user_id):
-            raise ValueError("Ticket user mismatch")
-        if ticket.get("payment_status") == "paid":
-            current_app.logger.warning(
-                "Duplicate payment webhook for already-paid ticket %s (ref %s) — skipping",
-                ticket_id, reference,
-            )
-            return ticket.get("campus_id")
-        expected_amount = float(ticket.get("card_amount_used") or 0)
-        if abs(amount_naira - expected_amount) > 0.01:
-            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Ticket: {expected_amount}")
-        if ticket.get("status") == "cancelled":
-            raise ValueError("Ticket is already cancelled")
-        from app.routes.events import confirm_event_ticket_payment
-        confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
-        return ticket.get("campus_id")
+        return _confirm_event_ticket_charge(db, meta, reference, data, "flutterwave")
 
     elif payment_type == "marketplace_purchase":
-        from app.routes.marketplace import _complete_marketplace_purchase
-        listing_id = meta.get("listing_id")
-        quantity = meta.get("quantity", 1)
-        wallet_amount = meta.get("wallet_amount", 0.0)
-        pay_with_hp = meta.get("pay_with_hp", False)
-        _complete_marketplace_purchase(
-            user_id=user_id,
-            listing_id=listing_id,
-            quantity=quantity,
-            wallet_amount=wallet_amount,
-            pay_with_hp=pay_with_hp,
-            payment_reference=reference,
-        )
-        return None
+        return _complete_marketplace_charge(db, meta, reference, data, "flutterwave")
+
+    elif payment_type == "wallet_topup" and not user_id:
+        # A top-up reference without an owner used to fall through to `return None`, which
+        # marked the delivery "processed" while nobody was credited. Fail loudly instead.
+        raise ValueError(f"Wallet top-up {reference} has no user_id in its metadata")
 
     elif payment_type == "wallet_topup" and user_id:
         if amount_naira <= 0:
@@ -382,18 +511,11 @@ def _handle_charge_success(data: dict):
         except Exception:
             pass  # proceed to attempt credit; RPC will handle duplicate
 
-        # Price check: ensure amount matches expected (exact)
-        try:
-            from flask import current_app as _capp
-            price_per_hp = float(_capp.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
-            expected_naira = hp_amount * price_per_hp
-            # Allow tiny floating tolerance for webhook (Paystack sends integer kobo)
-            if abs(amount_naira - expected_naira) > 0.01:
-                raise ValueError(f"HP bundle amount mismatch: webhook {amount_naira}, expected {expected_naira}")
-        except Exception as e:
-            # If price check fails, raise to mark webhook failed
-            if "mismatch" in str(e).lower():
-                raise
+        # Price check: fee-aware, exactly like orders (the customer may have been charged
+        # the gateway fee on top of the bundle price).
+        price_per_hp = float(current_app.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
+        expected_naira = hp_amount * price_per_hp
+        validate_charge_amount(data, expected_naira, "paystack", label="HP bundle")
 
         try:
             from app.services.hp_service import process_hp_bundle_purchase
@@ -426,44 +548,15 @@ def _handle_charge_success(data: dict):
         return order.get("campus_id")
 
     elif payment_type == "event_ticket_payment":
-        ticket_id = metadata.get("ticket_id")
-        if not ticket_id:
-            raise ValueError("Missing ticket_id in metadata")
-        ticket = db.table("event_tickets").select("id,user_id,card_amount_used,status,payment_status,campus_id").eq("id", ticket_id).single().execute()
-        if not ticket:
-            raise ValueError(f"Ticket {ticket_id} not found")
-        if user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(user_id):
-            raise ValueError("Ticket user mismatch")
-        if ticket.get("payment_status") == "paid":
-            current_app.logger.warning(
-                "Duplicate payment webhook for already-paid ticket %s (ref %s) — skipping",
-                ticket_id, reference,
-            )
-            return ticket.get("campus_id")
-        expected_amount = float(ticket.get("card_amount_used") or 0)
-        if abs(amount_naira - expected_amount) > 0.01:
-            raise ValueError(f"Amount mismatch. Webhook: {amount_naira}, Ticket: {expected_amount}")
-        if ticket.get("status") == "cancelled":
-            raise ValueError("Ticket is already cancelled")
-        from app.routes.events import confirm_event_ticket_payment
-        confirm_event_ticket_payment(ticket_id, reference, provider_response=data)
-        return ticket.get("campus_id")
+        return _confirm_event_ticket_charge(db, metadata, reference, data, "paystack")
 
     elif payment_type == "marketplace_purchase":
-        from app.routes.marketplace import _complete_marketplace_purchase
-        listing_id = metadata.get("listing_id")
-        quantity = metadata.get("quantity", 1)
-        wallet_amount = metadata.get("wallet_amount", 0.0)
-        pay_with_hp = metadata.get("pay_with_hp", False)
-        _complete_marketplace_purchase(
-            user_id=user_id,
-            listing_id=listing_id,
-            quantity=quantity,
-            wallet_amount=wallet_amount,
-            pay_with_hp=pay_with_hp,
-            payment_reference=reference,
-        )
-        return None
+        return _complete_marketplace_charge(db, metadata, reference, data, "paystack")
+
+    elif payment_type == "wallet_topup" and not user_id:
+        # A top-up reference without an owner used to fall through to `return None`, which
+        # marked the delivery "processed" while nobody was credited. Fail loudly instead.
+        raise ValueError(f"Wallet top-up {reference} has no user_id in its metadata")
 
     elif payment_type == "wallet_topup" and user_id:
         from app.services.wallet_payments import confirm_paystack_wallet_funding
