@@ -50,8 +50,67 @@ Limits are configuration, not policy:
 applied, RPC error, timeout) returns `None` and routing continues unchanged — a
 bookkeeping outage must never stop mail.
 
+## Which provider is tried first
+
+**Resend, then OneSignal** — unchanged from before this work. Resend is the *coded*
+default (the literal `return "resend"` at the end of `get_email_provider`, and the
+`provider="resend"` default of `send_email_routed`); the only thing that can override it
+is the pre-existing selection layer:
+
+```
+blast row's email_provider  →  system_settings.email_provider_{scope}_default  →  "resend"
+```
+
+The two allowances are not interchangeable:
+
+| Provider | Allowance | Resets |
+| --- | --- | --- |
+| Resend | 100 / day | Yes, at the Lagos midnight |
+| OneSignal | 10,000 / month | No rollover until the month rolls over |
+
+So the daily allowance is spent first: a busy day costs nothing that tomorrow cannot
+earn back, and OneSignal's monthly pool stays available as the overflow absorber. A
+month's practical capacity is therefore Resend's ~100/day **plus** OneSignal's 10,000 —
+roughly 13,000 — instead of 10,000 with a hard wall once the monthly pool is gone.
+
+The router switches to OneSignal when Resend refuses for quota, when our daily counter
+says Resend is at `EMAIL_DAILY_LIMIT_RESEND` (default 100), or when Resend accepts but
+delivers to nobody.
+
+### Watching the monthly pool
+
+`GET /api/admin/email-health` reports, per provider: `sent_today`, `daily_limit`,
+`sent_this_month`, `monthly_limit`, `monthly_remaining`, `monthly_exhausted`. The
+monthly figure is summed from the daily counter rows, so it needs no extra table or RPC.
+OneSignal's monthly ceiling is `EMAIL_MONTHLY_LIMIT_ONESIGNAL` (default 10,000) and is
+informational: once it is reached the only capacity left is Resend's 100/day, which the
+panel shows via `monthly_exhausted`.
+
+## Addresses are normalised before they reach a provider
+
+OneSignal keys an Email subscription by its token, so `a@b.com` and `a@b.com ` are
+*different* addresses: the subscription attaches to one and the send targets the other,
+which OneSignal reports as an invalid/unsubscribed identifier. `normalize_email()`
+(strip, lowercase, trim surrounding quotes/punctuation, reject lists and inner spaces)
+is applied to subscription creation, `include_email_tokens`, and every raw/guest path.
+A malformed address is skipped with `invalid_email_address` instead of being sent.
+
+## Stale "unsubscribed" subscriptions repair themselves
+
+Creating a subscription for an address that already has one returns the existing record
+unchanged — including one that is switched off. If the account's own preference says it
+wants email, `ensure_email_subscription` PATCHes
+`/apps/{app_id}/subscriptions/{id}` with `enabled: true`, and if create reports "already
+exists" it looks the subscription up and does the same. A deliberate opt-out
+(`enabled=False` requested) is never repaired.
+
 ## Per-send decision
 
+0. **Marketing mail is never re-routed after an unsubscribe.** If OneSignal refuses a
+   *marketing* send as unsubscribed, it is recorded `skipped` (`skipped_reason:
+   unsubscribed`) and stops there — delivering it through Resend would override the
+   customer's own opt-out. Transactional mail still falls back, so receipts and QR
+   codes arrive.
 1. **Claim before sending.** `reserve_slot(preferred)` increments the preferred
    provider's counter. If the claimed count is past its limit, that claim is released
    and a claim is taken on the other provider instead.
@@ -107,25 +166,24 @@ as an **Email Subscription** against `external_id`:
 Declining promotions does **not** unregister the address — that would also stop the
 order and QR emails. It only stops marketing mail, which is filtered server-side.
 
-## Self-healing on the send path
+## Where subscriptions come from (and nowhere else)
 
-If OneSignal refuses a send because the address has **no Email subscription**, nothing
-was delivered — so the router fixes the cause and retries once *on OneSignal* instead of
-silently completing on Resend:
+OneSignal Email subscriptions are created or repaired only by
+`app/services/onesignal_email.py`, from four triggers:
 
-1. `_subscription_identity(to_email)` — a known account resolves to its `profiles.id`
-   (the same `external_id` the web SDK uses, so email and push land on one OneSignal
-   user); a guest gets a deterministic `guest-<uuid5(mailto:address)>` alias.
-2. `ensure_email_subscription(...)` creates the subscription.
-3. The same message is re-attempted on OneSignal.
+| Trigger | Where |
+| --- | --- |
+| Sign-up (every account, regardless of the promotions box) | `auth_service.register` |
+| Login — also the repair path for accounts that predate this | `routes/auth.py` |
+| Master email switch on/off | `PATCH /api/notifications/preferences` |
+| Existing accounts, on demand | `POST /api/admin/email-subscriptions/backfill` |
 
-Why it matters: falling straight back to Resend "works" — users get their mail — but it
-leaves OneSignal with zero subscribers and no history, and Resend is the provider that
-runs out at 100/day. That combination is invisible until the quota bites.
+**Sending never creates a subscription.** An earlier revision registered the address
+mid-send and retried; that was unnecessary machinery. A send that OneSignal refuses
+stays refused and is recorded as such.
 
-The heal only triggers on the "not subscribed / no email / email not enabled" family of
-errors. A different 2xx error (an unverified sender domain, say) is logged with the
-provider's own wording and is not retried.
+Guest addresses (event registrations, guest orders, catering) do not need a local
+subscription: OneSignal auto-creates one from `include_email_tokens` on first send.
 
 ## Observability
 

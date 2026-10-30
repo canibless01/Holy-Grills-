@@ -36,7 +36,13 @@ PROVIDERS = ("resend", "onesignal")
 
 # Hard ceilings are configuration, not policy: an operator with a paid plan raises
 # or removes them. 0 disables pre-emption for that provider entirely.
+#
+# Daily ceilings decide who sends first; monthly ones exist because the two providers
+# meter differently — Resend is 100/day and resets, OneSignal is 10,000/month with no
+# rollover. So Resend leads (its allowance is renewed tomorrow), OneSignal absorbs the
+# overflow, and the monthly pool is what has to be watched, not the daily one.
 _DEFAULT_LIMITS = {"resend": 100, "onesignal": 0}
+_DEFAULT_MONTHLY_LIMITS = {"resend": 0, "onesignal": 10000}
 
 
 def daily_limit(provider: str) -> int:
@@ -52,6 +58,50 @@ def daily_limit(provider: str) -> int:
         logger.warning("email usage: EMAIL_DAILY_LIMIT_%s is not a number — ignoring it", provider.upper())
         return _DEFAULT_LIMITS[provider]
     return max(0, value)
+
+
+def monthly_limit(provider: str) -> int:
+    """Configured sends/month for `provider`; 0 means unlimited/untracked."""
+    if provider not in PROVIDERS:
+        return 0
+    raw = os.environ.get(f"EMAIL_MONTHLY_LIMIT_{provider.upper()}")
+    if raw is None or str(raw).strip() == "":
+        return _DEFAULT_MONTHLY_LIMITS[provider]
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("email usage: EMAIL_MONTHLY_LIMIT_%s is not a number — ignoring it",
+                       provider.upper())
+        return _DEFAULT_MONTHLY_LIMITS[provider]
+    return max(0, value)
+
+
+def sent_this_month(provider: str) -> int | None:
+    """Accepted sends recorded for `provider` in the current Lagos month.
+
+    Sums the daily rows the counter already keeps, so this needs no extra table or
+    RPC. Read with the service key (the table is service_role-only); any failure
+    returns None so a missing table never breaks a send or the admin page.
+    """
+    try:
+        month_start = _today().replace(day=1).isoformat()
+        rows = (get_db().table("email_send_counters")
+                .select("provider,sent_count,usage_date")
+                .eq("provider", provider)
+                .gte("usage_date", month_start)
+                .execute() or [])
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("email usage: monthly counter read failed (%s) — monthly total unknown", exc)
+        return None
+    total = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            total += int(row.get("sent_count") or 0)
+        except (TypeError, ValueError):
+            return None
+    return total
 
 
 def _today() -> date:
@@ -192,13 +242,23 @@ def health() -> dict:
     for provider in PROVIDERS:
         used = counts.get(provider)
         limit = daily_limit(provider)
+        month_used = sent_this_month(provider)
+        month_limit = monthly_limit(provider)
         providers.append({
             "provider": provider,
             "configured": resend_key if provider == "resend" else onesignal_ready,
             "sent_today": used,
             "daily_limit": limit or None,
             "remaining": max(0, limit - int(used)) if limit and used is not None else None,
-            # A provider at its limit is the one the router bypasses.
+            # A provider at its daily limit is the one the router bypasses.
             "exhausted": bool(limit and used is not None and int(used) >= limit),
+            # Monthly view: OneSignal's 10,000/month is the ceiling that does not
+            # renew until the month rolls over, so it is the one worth watching.
+            "sent_this_month": month_used,
+            "monthly_limit": month_limit or None,
+            "monthly_remaining": (max(0, month_limit - int(month_used))
+                                  if month_limit and month_used is not None else None),
+            "monthly_exhausted": bool(month_limit and month_used is not None
+                                      and int(month_used) >= month_limit),
         })
     return {"date": today, "providers": providers, "counters_available": bool(counts)}

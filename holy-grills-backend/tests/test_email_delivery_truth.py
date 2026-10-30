@@ -367,78 +367,30 @@ class SubscriptionDiagnosticsTests(unittest.TestCase):
         self.assertEqual(details["reason"], "onesignal_not_configured")
 
 
-class SelfHealTests(unittest.TestCase):
-    """A refused "not subscribed" send must be repaired, not just re-routed.
+class NoSendTimeRegistrationTests(unittest.TestCase):
+    """Sending must not create subscriptions.
 
-    The production logs showed tests falling back to Resend on every send: OneSignal
-    answered 200 with "not subscribed", we treated it as a miss and mailed via Resend.
-    Users got their mail, OneSignal stayed at zero subscribers, and the fallback is
-    the provider that runs out at 100/day — so the failure was invisible until it
-    mattered.
+    An earlier attempt registered the address mid-send and retried — unnecessary
+    machinery: subscriptions are created at sign-up, on login, by the admin backfill,
+    and repaired in place when a stale one is found. A refused send stays refused.
     """
 
-    def _route(self, replies, linked=True, transactional=True, provider="onesignal"):
-        db = MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = []
-        replies = list(replies)
+    def test_a_refused_send_does_not_touch_subscriptions(self):
         with patch.object(notifications, "_get_onesignal_creds", return_value=("app", "key")), \
-             patch.object(notifications, "_onesignal_email_post", side_effect=replies) as post, \
+             patch.object(notifications, "_onesignal_email_post",
+                          return_value=_reply(200, {"errors": ["All included players are not subscribed"]})) as post, \
              patch.object(email_usage, "reserve", return_value=1), \
              patch.object(email_usage, "release"), \
-             patch.object(onesignal_email, "ensure_email_subscription", return_value=linked) as ensure, \
-             patch("app.db.get_db", return_value=db):
+             patch.object(onesignal_email, "ensure_email_subscription") as ensure:
             receipt = {}
-            result = email.send_email_routed("guest@example.invalid", "Guest", "Your QR code",
-                                             "<p>qr</p>", provider=provider, receipt=receipt,
-                                             transactional=transactional)
-        return result, receipt, post, ensure
+            accepted = email.send_email_routed("a@example.invalid", "A", "S", "<p>b</p>",
+                                               provider="onesignal", receipt=receipt,
+                                               transactional=True)
+        self.assertFalse(accepted)
+        ensure.assert_not_called()                 # no surprise extra OneSignal writes
+        self.assertEqual(post.call_count, 1)       # and no retry
 
-    def test_a_missing_subscription_is_created_and_the_send_retried(self):
-        result, receipt, post, ensure = self._route([
-            _reply(200, {"id": "m0", "errors": ["All included players are not subscribed"]}),
-            _reply(200, {"id": "m1", "recipients": 1}),
-        ])
-        self.assertTrue(result)
-        ensure.assert_called_once()
-        self.assertEqual(post.call_count, 2)               # retried on OneSignal, not Resend
-        self.assertEqual(receipt["provider_message_id"], "m1")
-
-    def test_the_retry_is_not_used_when_registration_fails(self):
-        result, _, post, ensure = self._route([
-            _reply(200, {"id": "m0", "errors": ["All included players are not subscribed"]}),
-        ], linked=False)
-        self.assertFalse(result)
-        ensure.assert_called_once()
-        self.assertEqual(post.call_count, 1)               # no pointless second attempt
-
-    def test_an_unrelated_2xx_error_is_not_treated_as_a_subscription_problem(self):
-        result, _, post, ensure = self._route([_reply(200, {"errors": ["Sender domain not verified"]})])
-        self.assertFalse(result)
-        ensure.assert_not_called()
-        self.assertEqual(post.call_count, 1)
-
-    def test_a_guest_gets_a_stable_identity_and_an_account_uses_its_profile_id(self):
-        db = MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = [
-            {"id": "profile-uuid", "is_active": True}]
-        with patch("app.db.get_db", return_value=db):
-            self.assertEqual(email._subscription_identity("a@example.invalid"), "profile-uuid")
-        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = []
-        with patch("app.db.get_db", return_value=db):
-            first = email._subscription_identity("Guest@Example.invalid")
-            second = email._subscription_identity("guest@example.invalid")
-        self.assertTrue(first.startswith("guest-"))
-        self.assertEqual(first, second)                    # same guest, same alias, case-insensitive
-
-    def test_a_deactivated_account_is_not_registered(self):
-        db = MagicMock()
-        db.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = [
-            {"id": "profile-uuid", "is_active": False}]
-        with patch("app.db.get_db", return_value=db):
-            identity = email._subscription_identity("a@example.invalid")
-        self.assertTrue(identity.startswith("guest-"))
-
-    def test_email_addresses_are_masked_in_messages(self):
+    def test_addresses_are_still_masked_in_messages(self):
         self.assertEqual(email._mask_email("someone@example.com"), "s***@example.com")
         self.assertEqual(email._mask_email("nonsense"), "***")
 

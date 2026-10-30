@@ -7,8 +7,37 @@ from datetime import datetime
 _FALLBACK_PHONE_PATTERN = r'^(\+?234|0)[789]\d{9}$'
 
 
+_EMAIL_LOCAL = r"[\w.+\-]+"
+_EMAIL_DOMAIN = r"[\w.-]+\.[a-zA-Z]{2,}"
+_EMAIL_RE = re.compile(rf"^{_EMAIL_LOCAL}@{_EMAIL_DOMAIN}$")
+
+
 def validate_email(email: str) -> bool:
-    return bool(re.match(r'^[\w.+\-]+@[\w.-]+\.[a-zA-Z]{2,}$', email))
+    return bool(_EMAIL_RE.match(email or ""))
+
+
+def normalize_email(email) -> str | None:
+    """One canonical form of an address, or None when it is not one.
+
+    OneSignal keys an Email subscription by its token, so `a@b.com` and `a@b.com `
+    (or `"a@b.com",`) are *different* identifiers: the subscription attaches to the
+    tidy token while the send carries the messy one, and OneSignal flags the address
+    as invalid and refuses delivery. Addresses reach us from form fields, CSV pastes,
+    squad rosters and admin panels, so they are normalised at the boundary rather
+    than trusted.
+
+    Returns lowercase, stripped, single-@, no whitespace; None if it cannot be one.
+    """
+    if not isinstance(email, str):
+        return None
+    # Trim the junk a copy/paste or a CSV export leaves around an address.
+    candidate = " ".join(email.strip().split()).strip("'\"<>,;:").strip().lower()
+    if not candidate or len(candidate) > 254:
+        return None
+    # A comma, semicolon or inner space means a list or a typo, never one address.
+    if any(ch in candidate for ch in (",", ";", " ", "\t", "\n")) or candidate.count("@") != 1:
+        return None
+    return candidate if _EMAIL_RE.match(candidate) else None
 
 
 def validate_phone(phone: str, pattern: str = None) -> bool:
