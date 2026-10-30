@@ -1,5 +1,6 @@
 """Native kitchen action races and stock persistence, isolated HTTP only."""
 import os,signal,subprocess,tempfile,time,re
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
 from playwright.sync_api import sync_playwright,expect
@@ -12,7 +13,7 @@ def fixture(route):
     if path.endswith('/auth/me'):data={'id':'controlled','role':'super_admin','campus_id':campus,'profile':{'id':'controlled','role':'super_admin','campus_id':campus}}
     elif path.endswith('/campuses'):data=[{'id':campus,'name':'Campus A','is_active':True}]
     elif path.endswith('/kitchen/queue'):
-        data=[{'id':str(i)*8+'-1111-4111-8111-111111111111','status':'preparing' if advanced else 'received','customer_name':'Ticket '+str(i),'order_items':[{'menu_item_id':item,'name_snapshot':'Ticket meal','quantity':1,'campus_is_available':available}]} for i in (5,6)]
+        data=[{'id':str(i)*8+'-1111-4111-8111-111111111111','created_at':datetime.now(timezone.utc).isoformat(),'status':'preparing' if advanced else 'received','customer_name':'Ticket '+str(i),'order_items':[{'menu_item_id':item,'name_snapshot':'Ticket meal','quantity':1,'campus_is_available':available}]} for i in (5,6)]
         if hold_queue:held_queue=route;held_queue_data=data;return
     elif path.endswith('/kitchen/scheduled'):data={'count':0,'scheduled_orders':[]}
     elif path.endswith('/kitchen/settings'):data={'settings':{'daily_order_capacity':'20'}}

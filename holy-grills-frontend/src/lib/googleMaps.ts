@@ -7,7 +7,10 @@ export function loadGoogleMaps(): Promise<any> {
   pending = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     let timer: ReturnType<typeof setTimeout>;
+    let settled = false;
     const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer); delete (window as any).__hgGoogleMapsReady;
       if (error) { script.remove(); pending = null; reject(error); }
       else resolve((window as any).google.maps);

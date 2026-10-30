@@ -54,6 +54,10 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   }, [revision]); // A pin move must not trigger another billable map load.
 
   useEffect(() => {
+    if (!pin && map.current) map.current.setCenter(initial);
+  }, [maps, center?.[0], center?.[1]]);
+
+  useEffect(() => {
     if (!maps || !map.current || !pin) return;
     if (!marker.current) {
       marker.current = new maps.Marker({ map: map.current, position: pin, draggable: true, title: 'Your delivery pin' });

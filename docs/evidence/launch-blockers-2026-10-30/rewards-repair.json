@@ -1,0 +1,26 @@
+{
+  "scope": "confirmed owner missing top-up rewards and active students missing initial tier",
+  "topups": [
+    {
+      "wallet_receipt_id": "def63aae-ae8d-4783-b98f-efc62a562fa1",
+      "amount": 3000.0,
+      "verified_test_payment": true,
+      "award": {
+        "awarded": 50,
+        "replayed": false
+      }
+    },
+    {
+      "wallet_receipt_id": "b7b89065-8551-4dfd-846c-807f74019a97",
+      "amount": 10000.0,
+      "verified_test_payment": true,
+      "award": {
+        "awarded": 50,
+        "replayed": false
+      }
+    }
+  ],
+  "hp_added": 100,
+  "wallet_money_unchanged": true,
+  "initial_tiers_repaired": 10
+}

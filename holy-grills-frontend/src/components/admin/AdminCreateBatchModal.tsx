@@ -57,7 +57,7 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
     && (!selectedWindow?.campus_id || rider.campus_id === selectedWindow.campus_id));
   const eligibleIdsKey = eligibleOrders.map(order => order.id).sort().join(',');
   useEffect(() => {
-    if (orders === null) return;
+    if (orders === null || !windowId) return;
     const allowed = new Set(eligibleIdsKey.split(','));
     setSelected(current => new Set([...current].filter(id => allowed.has(id))));
     setRiderId(current => eligibleRiders.some(rider => rider.id === current) ? current : '');

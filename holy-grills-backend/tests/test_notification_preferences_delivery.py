@@ -63,6 +63,16 @@ class NotificationDeliveryTests(unittest.TestCase):
         self.assertIn('ABCD1234',rows[0]['body'])
         self.assertIn('check payment',rows[0]['body'])
         self.assertEqual(rows[0]['action_url'],'/orders/full-id')
+
+    def test_delivery_copy_formats_date_and_hours_without_changing_navigation(self):
+        full_id='22222222-2222-4222-8222-222222222222'
+        data={'order_id':'22222222','delivery_date':'2026-10-30','delivery_window_start':'19:30','delivery_window_end':'20:30'}
+        with self.app.app_context(), patch.object(service,'get_db',return_value=self.db), patch.object(service.threading,'Thread'):
+            rows=service.send_notification('user','order_confirmed',template_data=data,reference_id=full_id,reference_type='order',channels=['in_app'])
+        self.assertIn('Fri, 30 Oct',rows[0]['body'])
+        self.assertIn('7:30 PM',rows[0]['body'])
+        self.assertEqual(rows[0]['action_url'],'/orders/'+full_id)
+        self.assertEqual(data['delivery_date'],'2026-10-30')
         self.assertFalse(service._is_throttled(MagicMock(),'user','order_placed'))
 
     def test_order_link_uses_full_reference_while_copy_keeps_display_number(self):

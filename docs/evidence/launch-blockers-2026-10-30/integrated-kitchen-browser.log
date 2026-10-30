@@ -1,0 +1,1 @@
+PASS: stock failed-save retention, shared busy, stale-poll protection and persisted state; correct campus availability endpoint; prep stale-response rejection and failed-read retry; single scoped batch advance; summary refresh after advance

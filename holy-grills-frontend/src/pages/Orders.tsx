@@ -47,7 +47,7 @@ function OrderCard({ order, onClick, active = false }) {
 // page only serves the authenticated order history.
 export default function Orders() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useHolyGrill();
+  const { isAuthenticated, user } = useHolyGrill();
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [dateFilter, setDateFilter] = useState('all');
@@ -73,7 +73,7 @@ export default function Orders() {
     };
     load();
     return () => { current = false; };
-  }, [isAuthenticated, retry]);
+  }, [isAuthenticated, user?.id, retry]);
 
   if (!isAuthenticated) return <Navigate to="/track-orders" replace />;
 

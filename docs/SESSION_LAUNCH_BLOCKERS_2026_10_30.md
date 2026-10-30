@@ -12,28 +12,41 @@ Preserve customer/admin content and concurrent main changes. No database cleanup
 | Shared PWA / SDK worker repeatedly reloading the page | FIXED `c99ac60`, deployed through `da8299a`; real signed-in desktop/mobile observe the SDK worker switch and retain document/cache; 143ms / 128ms returns |
 | PWA technical prerequisites | PASS desktop/mobile headless; native install entry remains a device check |
 | Actual push receipt | USER CONFIRMED; disabling Chrome ad blocker helped. Screenshot shows actual order confirmation. No additional send necessary |
-| Order notification deep links | IN PROGRESS; short display ID incorrectly beat full reference UUID in default URL; fix and regression added |
-| Orders screen active order plus “No orders yet” | IN PROGRESS; empty state was testing only past orders; fix added |
-| Push logo and clearer delivery copy | IN PROGRESS; payload lacked browser icon; explicit public brand icon added. Native notification layout remains OS-controlled |
-| Welcome free side / signup eligibility | INVESTIGATING; live global config enabled, one credit / 60 days. Confirmed mailbox account received a signup credit and has zero remaining; tracing consumption. A different fresh account needs its email/ID |
-| Exclusive spins | INVESTIGATING UI errors versus genuine eligibility; no default signup/monthly spin allowance exists in the configured tier rules |
-| Wallet top-up 50 HP | IN PROGRESS; matching account has qualifying ₦10,000 and ₦3,000 top-ups without HP. Paystack string was passed into UUID HP reference; stable wallet transaction UUID fix added. ₦1,000 is below configured ₦3,000 threshold |
-| Profile reward count failures shown as zero | TODO; distinguish unavailable/loading from real zero and retry reads |
-| Google Maps migration / checkout map failures | IN PROGRESS; browser key not in managed environment; requested Maps JavaScript API + Places API (New), billing and restricted key in Vercel. Preserve address/gate fallback and server pricing |
-| Checkout slow location / quote Retry / disabled submit | INVESTIGATING; independent reference loads bundled in Promise.all, quote has generic 12-second deadline. Never bypass server-verified quote or retry charge/order mutations |
-| Delivery gate selector with missing data | TODO; show valid campus data or actionable state, preserve valid manual-address path |
-| Kitchen loading failures | INVESTIGATING; seven API reads in one Promise.all let ancillary failure block the workspace |
-| Today's kitchen queue / older backlog / newest ordering | TODO; separate today's work from older unfulfilled orders without hiding or deleting backlog |
-| Ordering cutoff versus delivery window | TODO; preserve server cutoff/scheduling logic, use “ordering closed” copy and explain prep/delivery stages |
-| Batch/window duplicate labels and preparation list | TODO; campus/date-aware labels/filtering; verify order → prep queue → ready → rider batch; do not silently delete audit windows |
-| Untiered dashboard users | INVESTIGATING; tiers use profiles.current_tier_id, not tier_id. Check student eligibility, test/staff accounts and missing assignment separately |
-| Ambassador mobile layout | IN PROGRESS; responsive cards/tabs changed to avoid fixed minimum widths/overflow |
-| WhatsApp button opening image instead | IN PROGRESS; old fallback downloaded/opened Cloudinary. WhatsApp action now opens the caption deep link synchronously; graphic saving stays separate |
-| OneSignal email approval | PROVIDER BLOCKED until review on/after 1 November 2026. User supplied rejection; all provider DNS verification records pass and domain is active. Need domain-mailbox OneSignal login and review readiness; no fabricated reason or approval claim |
-| Namecheap DNS/mailbox | CONNECTOR LIMIT: exposed tool only checks domain availability. Inspect public DNS; no DNS-account read/write capability exposed |
-| Explain admin versus OneSignal dashboard sending | TODO; app admin/automatic events → backend → OneSignal delivery; dashboard is separate manual campaign tooling. Trace exact implemented paths |
-| Google Business Profile / reviews destination | TODO; site currently supports placeId but none confirmed. Need user-owned Business Profile/Place ID; do not promise automatic export of website reviews |
-| Google search / brand positioning | TODO; read About/Terms/site voice, update metadata/structured data consistently with connection/community identity. Google controls recrawl and AI Overview |
+| Order notification deep links | FIXED; new notifications use full reference UUID; old short links resolve only against owned orders/private guest capabilities. Regression tests pass |
+| Orders screen active order plus “No orders yet” | FIXED; empty state requires no active or past orders; failed reads have retry and account changes reload safely |
+| Push logo and clearer delivery copy | FIXED source; explicit browser brand icon, readable date and 12-hour delivery times. OS notification layout and icon caching require device confirmation after rollout |
+| Welcome free side / signup eligibility | VERIFIED; confirmed account was granted one signup credit on 25 October, used 26 October 21:06 UTC; related order includes free Grilled Plantain. Zero remaining is valid; no duplicate grant |
+| Exclusive spins | VERIFIED; feature enabled but current tier rules grant zero monthly spins. Enabled feature does not grant a spin automatically; read failures now display Unavailable rather than false zero |
+| Wallet top-up 50 HP | FIXED source and owner recovery; stable wallet receipt UUID, flat 50 active HP, no multiplier. Verified both Paystack TEST payments and recovered 100 active HP; wallet money unchanged. ₦1,000 remains below ₦3,000 threshold |
+| Profile reward count failures shown as zero | FIXED; separate loading/unavailable states and retry for sides/spins |
+| Google Maps migration / checkout map failures | IMPLEMENTED; single SDK load, basic zoomable map, tap/drag pin, Places (New), GPS/gates, server fee calculation retained. Controlled browser interactions pass. LIVE GOOGLE BLOCKED until restricted VITE_GOOGLE_MAPS_API_KEY is set and deployed |
+| Checkout slow location / quote Retry / disabled submit | FIXED source; independent delivery reference loads render separately, obsolete quotes cancel, read-only quote gets bounded longer timeout and one transient retry. Never retries order creation or charges; live slow-network ordering still needs user check |
+| Delivery gate selector with missing data | FIXED; data remains campus-scoped and missing/failed reference data has an actionable message/retry |
+| Kitchen loading failures | FIXED; critical queue renders before secondary reads, ancillary failures warn separately, details refresh every 30 seconds, overlapping polls skipped. Concurrent stock/prep safeguards retained; controlled browser tests pass |
+| Today's kitchen queue / older backlog / newest ordering | FIXED; today is default, older/undated unfulfilled work is a separate visible tab; newest first; timers compact days/hours |
+| Ordering cutoff versus delivery window | FIXED copy; ordering cutoff remains server-enforced, distinct from later preparation and delivery. “Ordering closed” replaces misleading “kitchen closed” text |
+| Batch/window duplicate labels and preparation list | FIXED source; only eligible campus windows with paid ready unassigned orders shown; labels include campus/date/ID. Kitchen prep list aggregates preparation; rider batches are assigned after ready. Concurrent stale-summary/write controls pass browser test |
+| Untiered dashboard users | FIXED; verified 11 missing active-student assignments. Owner HP recovery recalculated one tier; bounded helper assigned remaining ten, preserving points/existing tiers. Signup/account restore fills missing eligible student tiers; staff excluded |
+| Ambassador mobile layout | FIXED source; tabs wrap and cards use responsive grids. Broad real-device visual sign-off remains useful |
+| WhatsApp button opening image instead | FIXED; opens wa.me composer synchronously with personalized caption/link; test exercises actual helper. Save graphics remains separate |
+| OneSignal email approval | PROVIDER BLOCKED until re-evaluation on/after 1 November. Confirmed exact login support@holygrills.online; all domain DNS checks passed. Generic rejection does not reveal private approval reason; renaming mailbox is not an evidenced fix |
+| Namecheap DNS/mailbox | VERIFIED public MX uses Namecheap forwarding; SPF includes OneSignal and Namecheap forwarding, DKIM/tracking resolve. Paid mailbox not inherently required if forwarding receives mail. Connector cannot inspect/edit DNS account |
+| Explain admin versus OneSignal dashboard sending | VERIFIED; admin manual sends and automatic app events call backend notification service, which dispatches to OneSignal push. OneSignal dashboard can also create separate manual campaigns; it is not required for each app event. Email routing is separately configured; Resend test acceptance does not prove OneSignal email approval |
+| Google Business Profile / reviews destination | IMPLEMENTED neutral voluntary CTA for all ratings; needs user-owned Business Profile Place ID as VITE_GOOGLE_BUSINESS_PLACE_ID. Website reviews cannot automatically become Google reviews |
+| Google search / brand positioning | FIXED source; homepage, primary/OG metadata and Restaurant JSON-LD now emphasize friendship/shared plates/campus connection consistent with Our Story. Google controls recrawl and AI Overview; Search Console indexing request remains owner action |
 | Final handoff/checklist | KEEP UPDATED; distinguish deployed/provider, controlled transport, user/device and blocked checks |
 
 Current evidence: `docs/evidence/deployed-recovery-2026-10-29/`. Original provider results remain in `FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md`; newest applicable results supersede historical failures.
+
+Additional requested work:
+
+| Work | Status |
+| --- | --- |
+| Menu / checkout / admin / kitchen duplicate reads | Shared in-flight JSON GET requests across callers, scoped by account/session/campus/headers/deadline; entries removed after completion/error. Controlled transport tests prove scope isolation and fresh retries. No persistent private-response cache or mutation coalescing. Kitchen also reduces secondary polling. Further page-specific profiling remains possible; no blanket latency claim. |
+| Hall of Fame “Test User F” | Stored `[TEST] userf` induction with three finishes, not hardcoded UI. Public Hall of Fame API excludes explicitly labelled test/audit entries, preserving diagnostics. Ordinary names such as Testimony remain visible. |
+| Guest email tracking | Actual production mobile browser opened existing canidesigns@gmail.com guest order using full UUID; live API also accepts its short ID and order number with private token. One labelled tracking-check email accepted via Resend; recipient inbox/click confirmation pending. No new order/payment needed. |
+| Other HP references | Reviewed active-award call sites: order/redemption/event/grant IDs are UUIDs; recurring grants use deterministic UUIDs or no reference. No second Paystack-string/UUID mismatch identified in those call sites; this is not an exhaustive historical ledger recovery. |
+
+Validation: integrated backend suite 787 passed before the final delivery-copy regression; that targeted suite also passes. Frontend typecheck/full build and controlled Google Maps, request sharing, WhatsApp and kitchen action checks pass. No new schema migration or scheduler job deployed. Evidence: `docs/evidence/launch-blockers-2026-10-30/`. Source commit/deployment verification is recorded below when completed.
+
+Remaining external dependencies: Google browser key and real-provider Maps test; owned Google Business Profile Place ID; OneSignal approval re-evaluation from domain login on/after 1 November; recipient/device confirmation of email link and branded notification appearance. Google recrawl cannot be guaranteed.

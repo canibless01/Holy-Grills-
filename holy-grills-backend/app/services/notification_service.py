@@ -372,6 +372,25 @@ def send_notification(
     if template_data is not None:
         # Inject user name if the type is personalized and name not supplied
         td = dict(template_data)
+        # Delivery notifications show readable local dates/hours while route
+        # identifiers and persisted scheduling values remain unchanged.
+        if notif_type in {'order_confirmed', 'order_scheduled_deferred', 'order_moved_up'}:
+            for key in ('delivery_date', 'scheduled_date', 'target_date'):
+                if td.get(key):
+                    try:
+                        day = datetime.fromisoformat(str(td[key])).date()
+                        td[key] = f'{day:%a}, {day.day} {day:%b}'
+                    except (ValueError, TypeError):
+                        pass
+            for key in ('delivery_window_start', 'delivery_window_end', 'deliv_start', 'deliv_end'):
+                if td.get(key):
+                    try:
+                        hour, minute = map(int, str(td[key]).split(':')[:2])
+                        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                            continue
+                        td[key] = f'{hour % 12 or 12}:{minute:02d} {"PM" if hour >= 12 else "AM"}'
+                    except (ValueError, TypeError):
+                        pass
         if get_include_name(notif_type) and "name" not in td:
             fetched_name = _fetch_user_name(user_id)
             td["name"] = fetched_name if fetched_name else "there"
