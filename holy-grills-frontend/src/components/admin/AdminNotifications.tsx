@@ -203,12 +203,29 @@ export default function AdminNotifications() {
     }
     setSendingTest(true);
     try {
-      await apiClient.post('/notifications/blasts/test', {
+      const res = await apiClient.post('/notifications/blasts/test', {
         ...intent.body(buildPayload()),
         test_email: user.email,
       });
       intent.clear();
-      toast({ title: '✅ Test sent', description: `Test notification sent to ${user.email}` });
+      // Report what the provider said, not just that the request was accepted: a
+      // test that "sent" while OneSignal had no subscription for the address is
+      // exactly the failure this page needs to make visible.
+      const receipt = res?.email;
+      if (receipt && (receipt.status === 'failed' || receipt.status === 'pending')) {
+        toast({
+          title: msg('FE_TEST_EMAIL_NOT_DELIVERED', 'Test email was not delivered'),
+          description: receipt.error || msg('FE_TEST_EMAIL_NO_RECEIPT', 'The provider did not confirm delivery.'),
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: '✅ Test sent',
+          description: receipt?.message_id
+            ? `${user.email} · ${msg('FE_TEST_EMAIL_ACCEPTED', 'accepted, id {id}', { id: receipt.message_id })}`
+            : `Test notification sent to ${user.email}`,
+        });
+      }
     } catch (e) {
       toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
     }

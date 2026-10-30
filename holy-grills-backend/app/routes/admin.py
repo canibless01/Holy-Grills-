@@ -2858,8 +2858,12 @@ def backfill_email_subscriptions():
     """Register OneSignal Email Subscriptions for accounts created before we did it.
 
     Sign-up and login already register the address; this catches the accounts that do
-    neither, which is why OneSignal could show 0 email subscribers for a live app.
-    Runs in the background so a large table does not hold the request open.
+    neither, which is why OneSignal can show 0 email subscribers for a live app.
+
+    Pass `user_id` (or `email`) to link exactly one account **synchronously** and get
+    OneSignal's own answer back — that is how you confirm a specific account is
+    subscribed before testing whether a campaign reaches it.
+    Otherwise the sweep runs in the background.
     ---
     tags: [Admin]
     parameters:
@@ -2867,15 +2871,47 @@ def backfill_email_subscriptions():
         name: body
         schema:
           properties:
+            user_id: {type: string, description: "Link one account and return OneSignal's answer"}
+            email: {type: string, description: "Same, looked up by address"}
             limit: {type: integer, default: 500}
             offset: {type: integer, default: 0}
     responses:
+      200:
+        description: One account linked (or attempted) — includes the provider's response
       202:
         description: Backfill started
       400:
-        description: Invalid range
+        description: Invalid range or identifier
+      404:
+        description: No such account
     """
     data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+
+    from app.services.onesignal_email import ensure_email_subscription
+
+    user_id = (data.get("user_id") or "").strip() or None
+    email = (data.get("email") or "").strip().lower() or None
+    if user_id or email:
+        if user_id and not validate_uuid(user_id):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        query = get_db().table("profiles").select("id,email,is_active,email_notifications")
+        query = query.eq("id", user_id) if user_id else query.eq("email", email)
+        profile = query.limit(1).execute() or []
+        profile = profile[0] if isinstance(profile, list) and profile else (profile if isinstance(profile, dict) else None)
+        if not profile:
+            return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+        details = {}
+        linked = ensure_email_subscription(
+            profile.get("id"), profile.get("email"),
+            enabled=profile.get("email_notifications") is not False, details=details)
+        # 200 either way: the response *is* the diagnosis, not a failure of the call.
+        return jsonify({"linked": bool(linked), "profile": {
+            "id": profile.get("id"), "email": profile.get("email"),
+            "is_active": profile.get("is_active"),
+        }, "onesignal": details}), 200
+
     try:
         limit = int(data.get("limit", 500))
         offset = int(data.get("offset", 0))

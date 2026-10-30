@@ -61,23 +61,34 @@ def _ensure_user(app_id, api_key, external_id):
     return False
 
 
-def ensure_email_subscription(user_id, email, enabled=True):
+def ensure_email_subscription(user_id, email, enabled=True, details=None):
     """Link `email` to the OneSignal user `user_id`. Returns True when linked.
+
+    Pass a dict as `details` to collect what OneSignal actually answered, which the
+    admin endpoint returns so a failure can be diagnosed without reading server logs.
 
     `enabled=False` marks an existing subscription unsubscribed (the user opted out
     of email in the app), which stops OneSignal mailing them even if a send slips
     through. No-op when OneSignal is not configured.
     """
+    if details is None:
+        details = {}
+    details.setdefault("user_id", user_id)
+    details.setdefault("email", email)
     if not user_id or not email or "@" not in str(email):
+        details.update({"linked": False, "reason": "missing_user_or_email"})
         return False
     try:
         app_id, api_key = _creds()
     except Exception as exc:                                      # noqa: BLE001
         logger.warning("onesignal: credentials unavailable: %s", exc)
+        details.update({"linked": False, "reason": "credentials_unavailable"})
         return False
     if not app_id or not api_key:
+        details.update({"linked": False, "reason": "onesignal_not_configured"})
         return False
     if not _ensure_user(app_id, api_key, user_id):
+        details.update({"linked": False, "reason": "user_create_failed"})
         return False
     try:
         response = requests.post(
@@ -88,12 +99,30 @@ def ensure_email_subscription(user_id, email, enabled=True):
         )
     except requests.RequestException as exc:
         logger.warning("onesignal: email subscription for %s failed: %s", user_id, type(exc).__name__)
+        details.update({"linked": False, "reason": f"network_{type(exc).__name__}"})
         return False
+    body = {}
+    try:
+        parsed = response.json()
+        if isinstance(parsed, dict):
+            body = parsed
+    except (ValueError, TypeError):
+        body = {}
+    subscription = body.get("subscription") if isinstance(body.get("subscription"), dict) else {}
+    details.update({
+        "http_status": response.status_code,
+        "subscription_id": subscription.get("id") or body.get("id"),
+        "subscription_type": subscription.get("type"),
+        "enabled": subscription.get("enabled", enabled),
+        "errors": body.get("errors") or (None if response.ok else response.text[:300]),
+    })
     if response.status_code in (200, 201, 202):
         logger.info("onesignal: email subscription %s for user %s", "enabled" if enabled else "disabled", user_id)
+        details["linked"] = True
         return True
     logger.warning("onesignal: email subscription for %s rejected (%s): %s",
                    user_id, response.status_code, response.text[:200])
+    details["linked"] = False
     return False
 
 

@@ -329,6 +329,70 @@ class PreferenceMappingTests(unittest.TestCase):
         self.assertFalse(onesignal_email.enabled_from_preferences({"email_enabled": False}))
 
 
+class SubscriptionDiagnosticsTests(unittest.TestCase):
+    """The admin endpoint returns OneSignal's own answer, so a failure is visible."""
+
+    def test_success_reports_the_subscription_id(self):
+        details = {}
+        body = {"subscription": {"id": "sub-1", "type": "Email", "enabled": True}}
+        with patch.object(onesignal_email, "_creds", return_value=("app-id", "api-key")), \
+             patch.object(onesignal_email.requests, "post",
+                          side_effect=[_reply(201, {}), _reply(200, body)]):
+            linked = onesignal_email.ensure_email_subscription("user-1", "a@example.invalid",
+                                                              details=details)
+        self.assertTrue(linked)
+        self.assertTrue(details["linked"])
+        self.assertEqual(details["subscription_id"], "sub-1")
+        self.assertEqual(details["subscription_type"], "Email")
+        self.assertEqual(details["http_status"], 200)
+
+    def test_a_rejection_reports_the_provider_error(self):
+        details = {}
+        with patch.object(onesignal_email, "_creds", return_value=("app-id", "api-key")), \
+             patch.object(onesignal_email.requests, "post",
+                          side_effect=[_reply(200, {}),
+                                       _reply(400, {"errors": ["Email token is invalid"]})]):
+            linked = onesignal_email.ensure_email_subscription("user-1", "bad@example.invalid",
+                                                              details=details)
+        self.assertFalse(linked)
+        self.assertFalse(details["linked"])
+        self.assertEqual(details["errors"], ["Email token is invalid"])
+        self.assertEqual(details["http_status"], 400)
+
+    def test_unconfigured_says_so_instead_of_failing_silently(self):
+        details = {}
+        with patch.object(onesignal_email, "_creds", return_value=("", "")):
+            self.assertFalse(onesignal_email.ensure_email_subscription("user-1", "a@example.invalid",
+                                                                      details=details))
+        self.assertEqual(details["reason"], "onesignal_not_configured")
+
+
+class TestBlastReceiptTests(unittest.TestCase):
+    def test_receipt_is_read_from_the_delivery_row(self):
+        from app.routes import notifications as notification_routes
+        db = MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = [
+            {"status": "sent", "provider_message_id": "m-1", "delivered_at": "now", "error_message": None}]
+        with patch.object(notification_routes, "get_db", return_value=db):
+            receipt = notification_routes._await_email_delivery("blast-1")
+        self.assertEqual(receipt["status"], "sent")
+        self.assertEqual(receipt["message_id"], "m-1")
+
+    def test_no_record_before_the_deadline_reports_pending(self):
+        from app.routes import notifications as notification_routes
+        db = MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = []
+        with patch.object(notification_routes, "get_db", return_value=db), \
+             patch.object(notification_routes, "get_db", return_value=db):
+            receipt = notification_routes._await_email_delivery("blast-1", timeout=0.01)
+        self.assertEqual(receipt["status"], "pending")
+
+    def test_a_failed_read_returns_none_rather_than_raising(self):
+        from app.routes import notifications as notification_routes
+        with patch.object(notification_routes, "get_db", side_effect=RuntimeError("db down")):
+            self.assertIsNone(notification_routes._await_email_delivery("blast-1", timeout=0.01))
+
+
 class SubscriptionBackfillTests(unittest.TestCase):
     def _run(self, rows, linked=True):
         db = MagicMock()

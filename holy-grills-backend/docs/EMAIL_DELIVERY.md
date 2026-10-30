@@ -115,6 +115,27 @@ order and QR emails. It only stops marketing mail, which is filtered server-side
 * `notification_blasts.metadata.dispatch` — per-channel sent/failed/skipped counts,
   written after dispatch settles, plus `email_delivery_failed` when no email got through.
 
+## Subscribing accounts that already exist
+
+Registration, login and the preference switch keep new sessions covered. For accounts
+created before this existed (or that never log in again), there are two options:
+
+| Option | How |
+| --- | --- |
+| One account, verified | `POST /api/admin/email-subscriptions/backfill {"user_id": "<profiles.id>"}` — synchronous, returns OneSignal's own answer (`subscription_id`, `http_status`, `errors`, or a `reason` such as `onesignal_not_configured`) |
+| Everyone | `POST /api/admin/email-subscriptions/backfill {}` (or the button on the campaign page) — background sweep, 500 profiles per call, pass `offset` for the next page |
+
+Either way the address is looked up from `profiles`, never from the request body, so an
+admin can only link an account that exists.
+
+## Proving a single send works
+
+`POST /api/notifications/blasts/test` now returns `email: {status, message_id,
+delivered_at, error}` read from `notification_deliveries` (it waits up to ~6 s for the
+dispatch thread). `status: "sent"` means the provider accepted with a message id;
+`"failed"` carries the provider's error; `"pending"` means no answer arrived in time.
+The campaign page's **Test to Me** button surfaces that verdict.
+
 ## Deploy checklist
 
 1. Apply `20261030140000_email_send_counters.sql` and `20261030170000_email_send_release.sql`.
