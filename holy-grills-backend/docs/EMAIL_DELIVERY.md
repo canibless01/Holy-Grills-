@@ -52,9 +52,14 @@ bookkeeping outage must never stop mail.
 
 ## Which provider is tried first
 
-**Resend, then OneSignal.** `get_email_provider()` resolves
-`explicit setting → system_settings.email_provider_{scope}_default → Resend`, and
-`send_email_routed(provider=None)` uses the same resolution.
+**Resend, then OneSignal** — unchanged from before this work. Resend is the *coded*
+default (the literal `return "resend"` at the end of `get_email_provider`, and the
+`provider="resend"` default of `send_email_routed`); the only thing that can override it
+is the pre-existing selection layer:
+
+```
+blast row's email_provider  →  system_settings.email_provider_{scope}_default  →  "resend"
+```
 
 The two allowances are not interchangeable:
 

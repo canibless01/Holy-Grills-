@@ -46,8 +46,7 @@ class EmailQuotaFallback(unittest.TestCase):
  def test_raw_guest_and_qr_sender_enters_the_quota_router(self):
   with patch.object(email,'send_email_routed',return_value=True) as route:
    self.assertTrue(email.send_email_raw('audit@example.invalid','Audit','Subject','Body'))
-  # provider=None: the configured default decides (OneSignal, falling back to Resend).
-  self.assertIsNone(route.call_args.kwargs['provider'])
+  self.assertEqual(route.call_args.kwargs['provider'],'resend')
  def test_notification_override_uses_same_router(self):
   with patch.object(email,'get_user_email_and_name',return_value=('audit@example.invalid','Audit')),patch.object(notifications,'get_email_provider',return_value='onesignal'),patch.object(email,'send_email_routed',return_value=True) as route:
    notifications._dispatch_email_async('user','Subject','Body','receipt');self.assertEqual(route.call_args.kwargs['provider'],'onesignal')

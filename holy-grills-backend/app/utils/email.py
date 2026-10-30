@@ -1085,16 +1085,7 @@ def _attempt_and_settle(provider, to_email, to_name, subject, html_body, headers
     return accepted, quota, undeliverable
 
 
-def _default_provider():
-    """OneSignal when configured (no daily cap), else Resend. Never raises."""
-    try:
-        from app.services.notification_service import _configured_default_provider
-        return _configured_default_provider()
-    except Exception:                                             # noqa: BLE001
-        return "resend"
-
-
-def send_email_routed(to_email, to_name, subject, html_body, *, provider=None, headers=None,
+def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None,
                       receipt=None, transactional=None):
     """Deliver one email, preferring `provider` and switching only when it is safe.
 
@@ -1119,8 +1110,6 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider=None, h
         # This matters on the OneSignal path, where `include_unsubscribed` decides
         # whether someone who opted out still gets it.
         transactional = not headers
-    if provider not in ("resend", "onesignal"):
-        provider = _default_provider()
     preferred = "onesignal" if provider == "onesignal" else "resend"
     if receipt is not None:
         receipt.clear()
@@ -1172,16 +1161,14 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider=None, h
 
 
 def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str, headers: dict = None,
-                   transactional: bool = None, provider: str = None) -> bool:
-    """Raw email — guest orders, event QR codes, catering, admin mail.
+                   transactional: bool = None) -> bool:
+    """Raw email prefers Resend, with the daily counter as the fallback trigger.
 
-    `provider=None` means "whichever provider is configured as the default"
-    (OneSignal when it is set up, else Resend), with the other one as the automatic
-    fallback. `transactional` defaults to "no List-Unsubscribe header": a newsletter
-    carries those headers and is therefore marketing, so unsubscribes are respected
-    on either transport.
+    `transactional` defaults to "no List-Unsubscribe header": a newsletter carries
+    those headers and is therefore marketing, so the OneSignal fallback respects
+    unsubscribes instead of reaching someone who opted out.
     """
-    return send_email_routed(to_email, to_name, subject, html_body, provider=provider,
+    return send_email_routed(to_email, to_name, subject, html_body, provider="resend",
                              headers=headers, transactional=transactional)
 
 

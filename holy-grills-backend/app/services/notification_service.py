@@ -1018,11 +1018,10 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
     Precedence: explicit override (a blast's email_provider column) > the
     system_settings key `email_provider_{scope}_default` > Resend.
 
-    Resend leads because its allowance is 100/day and resets, while OneSignal is
-    10,000/month with no rollover: spending the daily quota first costs nothing that
-    tomorrow cannot earn back, and keeps the monthly pool for the overflow. The router
-    falls over to OneSignal whenever Resend refuses or is at today's limit, so total
-    capacity for a month is Resend's ~100/day plus OneSignal's 10,000.
+    Resend is the coded default, as it was before this work: 100/day that resets, so
+    spending it first keeps OneSignal's 10,000/month (no rollover) as the overflow. The
+    router still falls over to OneSignal whenever Resend refuses or is at today's
+    limit, so a month's capacity is Resend's ~100/day plus OneSignal's 10,000.
 
     Matches the existing system_settings override-layer pattern used
     elsewhere in this codebase (e.g. hp_multiplier).
@@ -1046,23 +1045,8 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
             if provider in ("resend", "onesignal"):
                 return provider
     except Exception as exc:
-        logger.warning("email: provider setting unreadable — using the default provider: %s", exc)
-    return _configured_default_provider()
-
-
-def _configured_default_provider() -> str:
-    """Resend first. Always.
-
-    The two allowances are not interchangeable: Resend is 100/day and **resets**, while
-    OneSignal is 10,000/month with **no rollover**. Spending the daily allowance first
-    means a busy day costs nothing that another day cannot earn back, and OneSignal's
-    monthly pool stays available as the overflow absorber for the rest of the month.
-    Starting on OneSignal instead would burn a monthly entitlement that cannot be
-    replenished, and once it is gone the only thing left is 100/day.
-
-    Resend is therefore the preferred provider and OneSignal the fallback (quota
-    refusal, daily allowance reached, or delivery refused).
-    """
+        logger.warning("email: provider setting unreadable — falling back to the default provider: %s",
+                        exc)
     return "resend"
 
 
