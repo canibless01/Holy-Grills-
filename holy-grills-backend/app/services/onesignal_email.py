@@ -54,10 +54,12 @@ def _ensure_user(app_id, api_key, external_id):
         logger.warning("onesignal: create user %s failed: %s", external_id, type(exc).__name__)
         return False
     if response.status_code in (200, 201, 202, 409):
+        logger.info("onesignal: user %s ready (%s)", external_id, response.status_code)
         return True
-    # 404 app id / 401 key: nothing to retry, and saying so once is enough.
+    # 404 app id / 401 key: nothing to retry, and saying so once is enough. The body
+    # is the only place OneSignal says *why*, so keep it in the log.
     logger.warning("onesignal: create user %s rejected (%s): %s",
-                   external_id, response.status_code, response.text[:200])
+                   external_id, response.status_code, response.text[:300])
     return False
 
 
@@ -152,26 +154,53 @@ def enabled_from_preferences(prefs):
     return prefs.get("email_enabled") is not False
 
 
+def _preferences_by_user(user_ids):
+    """email_enabled per account, best effort.
+
+    Read separately rather than as an embedded relation: this client's PostgREST
+    query builder has no nested select support, and an embedded select that fails
+    took the whole sweep down with it (see the .range() bug below).
+    """
+    if not user_ids:
+        return {}
+    try:
+        from app.db import get_db
+        rows = (get_db().table("notification_preferences")
+                .select("user_id,email_enabled")
+                .in_("user_id", list(user_ids))
+                .limit(len(user_ids)).execute() or [])
+    except Exception as exc:                                      # noqa: BLE001
+        logger.warning("onesignal: backfill could not read preferences (defaulting to on): %s", exc)
+        return {}
+    return {row.get("user_id"): row for row in rows if isinstance(row, dict) and row.get("user_id")}
+
+
 def backfill_email_subscriptions(limit=500, offset=0):
     """Register the email subscription for accounts that predate this sync.
 
     New sign-ups and logins are covered already; this is for the accounts that never
     sign in again — the reason OneSignal reported 0 email subscribers on an app with
     plenty of active accounts. Returns a small summary; never raises.
+
+    Paging uses limit/offset: `TableQuery` in app/db.py implements those, not
+    `range()` — the first version of this function called `.range()` and every sweep
+    died with `'TableQuery' object has no attribute 'range'` before reading a row.
     """
     summary = {"checked": 0, "linked": 0, "failed": 0, "skipped": 0}
     try:
         from app.db import get_db
         rows = (get_db().table("profiles")
-                .select("id,email,is_active,email_notifications,notification_preferences(promotions,email_enabled)")
-                .range(offset, offset + max(0, int(limit)) - 1)
+                .select("id,email,is_active,email_notifications")
+                .order("created_at")
+                .limit(max(1, int(limit)))
+                .offset(max(0, int(offset)))
                 .execute() or [])
     except Exception as exc:                                      # noqa: BLE001
         logger.warning("onesignal: backfill could not read profiles: %s", exc)
         return summary
+    rows = [row for row in rows if isinstance(row, dict)]
+    preferences = _preferences_by_user([row.get("id") for row in rows if row.get("id")])
     for row in rows:
-        if not isinstance(row, dict):
-            continue
         summary["checked"] += 1
         email = row.get("email")
         user_id = row.get("id")
@@ -182,15 +211,18 @@ def backfill_email_subscriptions(limit=500, offset=0):
         # Everyone is registered as a subscriber; only the master email opt-out
         # leaves it switched off. Promotion preferences do not gate this — they gate
         # which messages we ask OneSignal to send.
-        prefs = row.get("notification_preferences")
-        if isinstance(prefs, list):
-            prefs = prefs[0] if prefs else {}
-        prefs = dict(prefs or {})
+        prefs = dict(preferences.get(user_id) or {})
         if row.get("email_notifications") is False:
             prefs["email_enabled"] = False
-        if ensure_email_subscription(user_id, email, enabled=enabled_from_preferences(prefs)):
+        details = {}
+        if ensure_email_subscription(user_id, email, enabled=enabled_from_preferences(prefs),
+                                     details=details):
             summary["linked"] += 1
         else:
             summary["failed"] += 1
+            # One line per failure with the provider's answer: a sweep that silently
+            # reports "0 linked" is what sent us to the server logs in the first place.
+            logger.warning("onesignal: backfill could not link %s: %s", user_id,
+                           details.get("errors") or details.get("reason") or details)
     logger.info("onesignal: email subscription backfill %s", summary)
     return summary

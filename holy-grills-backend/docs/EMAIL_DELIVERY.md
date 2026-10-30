@@ -107,10 +107,38 @@ as an **Email Subscription** against `external_id`:
 Declining promotions does **not** unregister the address — that would also stop the
 order and QR emails. It only stops marketing mail, which is filtered server-side.
 
+## Self-healing on the send path
+
+If OneSignal refuses a send because the address has **no Email subscription**, nothing
+was delivered — so the router fixes the cause and retries once *on OneSignal* instead of
+silently completing on Resend:
+
+1. `_subscription_identity(to_email)` — a known account resolves to its `profiles.id`
+   (the same `external_id` the web SDK uses, so email and push land on one OneSignal
+   user); a guest gets a deterministic `guest-<uuid5(mailto:address)>` alias.
+2. `ensure_email_subscription(...)` creates the subscription.
+3. The same message is re-attempted on OneSignal.
+
+Why it matters: falling straight back to Resend "works" — users get their mail — but it
+leaves OneSignal with zero subscribers and no history, and Resend is the provider that
+runs out at 100/day. That combination is invisible until the quota bites.
+
+The heal only triggers on the "not subscribed / no email / email not enabled" family of
+errors. A different 2xx error (an unverified sender domain, say) is logged with the
+provider's own wording and is not retried.
+
 ## Observability
 
-* `GET /api/admin/email-health` — today's claimed counts, limits, remaining headroom and
-  whether each provider is configured. Shown in the admin campaign page.
+* `GET /api/admin/email-health` — today's claimed counts, limits, remaining headroom,
+  whether each provider is configured, and `onesignal_app_id` /
+  `onesignal_api_key_present` / `onesignal_api_key_type` /
+  `onesignal_app_id_looks_valid`. A wrong `ONESIGNAL_APP_ID` writes subscriptions into a
+  different app and looks identical to "nothing reaches OneSignal", so it is reported
+  explicitly. Shown in the admin campaign page.
+* `onesignal:` log lines now carry the provider's answer — `create user … rejected
+  (401): <body>`, `email subscription for … rejected (400): {"errors":[…]}`,
+  `no email subscription for a***@example.com — provider said: …`, and one line per
+  failed link in a backfill sweep. Addresses are masked.
 * `notification_deliveries` — one row per notification × channel with the real outcome.
 * `notification_blasts.metadata.dispatch` — per-channel sent/failed/skipped counts,
   written after dispatch settles, plus `email_delivery_failed` when no email got through.
@@ -124,6 +152,12 @@ created before this existed (or that never log in again), there are two options:
 | --- | --- |
 | One account, verified | `POST /api/admin/email-subscriptions/backfill {"user_id": "<profiles.id>"}` — synchronous, returns OneSignal's own answer (`subscription_id`, `http_status`, `errors`, or a `reason` such as `onesignal_not_configured`) |
 | Everyone | `POST /api/admin/email-subscriptions/backfill {}` (or the button on the campaign page) — background sweep, 500 profiles per call, pass `offset` for the next page |
+
+The sweep pages with `limit()`/`offset()` and reads preferences in a second query: this
+repo's PostgREST builder (`TableQuery` in `app/db.py`) has no `range()` and no nested
+select, and the first version used both — so every sweep died with
+`'TableQuery' object has no attribute 'range'` before reading a single profile. There is
+now a test for the query shape.
 
 Either way the address is looked up from `profiles`, never from the request body, so an
 admin can only link an account that exists.
