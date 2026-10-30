@@ -241,7 +241,10 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     # Best-effort and off the request path: registration must not depend on it.
     try:
         from app.services.onesignal_email import sync_email_subscription_async
-        sync_email_subscription_async(user_id, email, enabled=True)
+        # The newsletter tick box at sign-up is what subscribes them to promotions:
+        # declining it leaves the address registered but not subscribed to marketing
+        # mail (transactional mail still arrives).
+        sync_email_subscription_async(user_id, email, enabled=bool(promotional_emails))
     except Exception as exc:                                      # noqa: BLE001
         logger.warning("register: OneSignal email subscription sync unavailable for %s: %s", user_id, exc)
 

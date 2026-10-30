@@ -106,6 +106,23 @@ def sync_email_subscription_async(user_id, email, enabled=True):
     ).start()
 
 
+def enabled_from_preferences(prefs):
+    """Is the account still willing to receive mail at all?
+
+    OneSignal's `enabled` flag is the coarse switch: transactional mail is sent with
+    `include_unsubscribed`, so it still arrives when this is False, while marketing
+    mail respects it. We only keep it on when the user has not opted out of email or
+    of promotions.
+    """
+    prefs = prefs or {}
+    return prefs.get("email_enabled") is not False and prefs.get("promotions") is not False
+
+
+def sync_from_preferences(user_id, email, prefs):
+    """Apply a saved preference change to OneSignal (fire-and-forget)."""
+    return sync_email_subscription_async(user_id, email, enabled=enabled_from_preferences(prefs))
+
+
 def backfill_email_subscriptions(limit=500, offset=0):
     """Register the email subscription for accounts that predate this sync.
 
@@ -117,7 +134,7 @@ def backfill_email_subscriptions(limit=500, offset=0):
     try:
         from app.db import get_db
         rows = (get_db().table("profiles")
-                .select("id,email,is_active")
+                .select("id,email,is_active,email_notifications,notification_preferences(promotions,email_enabled)")
                 .range(offset, offset + max(0, int(limit)) - 1)
                 .execute() or [])
     except Exception as exc:                                      # noqa: BLE001
@@ -133,7 +150,15 @@ def backfill_email_subscriptions(limit=500, offset=0):
         if not user_id or not email or row.get("is_active") is False:
             summary["skipped"] += 1
             continue
-        if ensure_email_subscription(user_id, email, enabled=True):
+        # Register everyone, but only leave the address subscribed when the account
+        # has not opted out — the backfill must not quietly re-subscribe an opt-out.
+        prefs = row.get("notification_preferences")
+        if isinstance(prefs, list):
+            prefs = prefs[0] if prefs else {}
+        prefs = dict(prefs or {})
+        if row.get("email_notifications") is False:
+            prefs["email_enabled"] = False
+        if ensure_email_subscription(user_id, email, enabled=enabled_from_preferences(prefs)):
             summary["linked"] += 1
         else:
             summary["failed"] += 1

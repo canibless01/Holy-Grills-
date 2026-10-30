@@ -44,6 +44,10 @@ const STATUS_STYLE = {
   sent: { tone: 'green', icon: CheckCircle2, label: msg('FE_BLAST_PROCESSED', 'Processed') },
   scheduled: { tone: 'amber', icon: Clock, label: 'Scheduled' },
   pending: { tone: 'cocoa', icon: AlertCircle, label: 'Pending' },
+  // A blast that errored mid-send used to render as "Pending", which read as
+  // "still on its way" when it had actually stopped.
+  failed: { tone: 'red', icon: AlertCircle, label: msg('FE_BLAST_FAILED', 'Failed') },
+  sending: { tone: 'amber', icon: Clock, label: msg('FE_BLAST_SENDING', 'Sending') },
 };
 
 export default function AdminNotifications() {

@@ -2143,6 +2143,8 @@ class MSG:
     FE_EMAIL_TIPS_SPEED                                               = "How quickly did it arrive?"
     FE_EMAIL_TIPS_RENDER                                              = "Does it render correctly, and do the links work?"
     FE_EMAIL_TIPS_SENDER                                              = "A clear subject and one consistent sender address help most."
+    FE_BLAST_FAILED                                                   = "Failed"
+    FE_BLAST_SENDING                                                  = "Sending"
     FE_BLAST_EMAIL_DELIVERY                                           = "Email delivered to {sent}, failed for {failed}."
     FE_BLAST_PUSH_DELIVERY                                            = "Push delivered to {sent}, failed for {failed}."
     FE_BLAST_EMAIL_FAILED                                             = "Email not delivered"

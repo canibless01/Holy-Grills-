@@ -251,6 +251,14 @@ class OneSignalSubscriptionTests(unittest.TestCase):
         self.assertFalse(onesignal_email.ensure_email_subscription("user-1", "not-an-email"))
 
 
+class PreferenceMappingTests(unittest.TestCase):
+    def test_email_or_promotions_opt_out_disables_the_subscription(self):
+        self.assertTrue(onesignal_email.enabled_from_preferences({}))
+        self.assertFalse(onesignal_email.enabled_from_preferences({"email_enabled": False}))
+        self.assertFalse(onesignal_email.enabled_from_preferences({"promotions": False}))
+        self.assertTrue(onesignal_email.enabled_from_preferences({"email_enabled": True, "promotions": True}))
+
+
 class SubscriptionBackfillTests(unittest.TestCase):
     def _run(self, rows, linked=True):
         db = MagicMock()
@@ -274,6 +282,20 @@ class SubscriptionBackfillTests(unittest.TestCase):
     def test_a_failed_link_is_counted_not_raised(self):
         summary, _ = self._run([{"id": "u1", "email": "a@example.invalid"}], linked=False)
         self.assertEqual((summary["failed"], summary["linked"]), (1, 0))
+
+    def test_opted_out_accounts_are_registered_but_not_subscribed(self):
+        summary, ensure = self._run([
+            {"id": "u1", "email": "a@example.invalid",
+             "notification_preferences": [{"promotions": False, "email_enabled": True}]},
+            {"id": "u2", "email": "b@example.invalid", "email_notifications": False},
+        ])
+        self.assertEqual(summary["linked"], 2)
+        self.assertEqual([call.kwargs["enabled"] for call in ensure.call_args_list], [False, False])
+
+    def test_unchanged_preferences_stay_subscribed(self):
+        _, ensure = self._run([{"id": "u1", "email": "a@example.invalid",
+                                "notification_preferences": {"promotions": True}}])
+        self.assertTrue(ensure.call_args.kwargs["enabled"])
 
     def test_unreadable_profiles_returns_an_empty_summary(self):
         db = MagicMock()
