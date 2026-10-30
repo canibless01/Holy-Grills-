@@ -940,15 +940,20 @@ def send_blast(blast_id: str) -> dict:
 
 
 def summarize_blast_deliveries(blast_id: str) -> dict:
-    """Count what actually left the building for one blast, per channel."""
+    """Count what actually left the building for one blast, per channel and provider."""
     db = get_db()
-    rows = db.table("notification_deliveries").select("channel,status").eq("blast_id", blast_id).execute() or []
+    rows = (db.table("notification_deliveries")
+            .select("channel,status,provider").eq("blast_id", blast_id).execute() or [])
     summary = {}
     for row in rows:
         channel = row.get("channel") or "unknown"
-        bucket = summary.setdefault(channel, {"sent": 0, "failed": 0, "skipped": 0, "other": 0})
+        bucket = summary.setdefault(channel, {"sent": 0, "failed": 0, "skipped": 0, "other": 0,
+                                              "sent_by": {}})
         status = str(row.get("status") or "other")
         bucket[status if status in bucket else "other"] += 1
+        if status == "sent":
+            provider = row.get("provider") or "unknown"
+            bucket["sent_by"][provider] = bucket["sent_by"].get(provider, 0) + 1
     return summary
 
 
@@ -1009,11 +1014,19 @@ def _get_onesignal_creds() -> tuple:
 def get_email_provider(scope: str = "transactional", override: str = None) -> str:
     """
     Resolve which email provider to use: 'resend' or 'onesignal'.
-    Precedence: explicit override (e.g. a specific blast's email_provider
-    column) > system_settings key `email_provider_{scope}_default` >
-    hardcoded fallback 'resend'. scope: 'transactional' | 'blast'.
+
+    Precedence: explicit override (a blast's email_provider column) > the
+    system_settings key `email_provider_{scope}_default` > OneSignal when it is
+    configured, else Resend.
+
+    OneSignal is the default on purpose: it has no 100/day cap, so starting there
+    keeps the scarce allowance in reserve. The router still falls over to Resend
+    whenever OneSignal refuses, is out of quota or is out of slots, so this is
+    "OneSignal, then Resend" — not "Resend only".
+
     Matches the existing system_settings override-layer pattern used
     elsewhere in this codebase (e.g. hp_multiplier).
+    scope: 'transactional' | 'blast'.
     """
     if override in ("resend", "onesignal"):
         return override
@@ -1033,9 +1046,22 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
             if provider in ("resend", "onesignal"):
                 return provider
     except Exception as exc:
-        logger.warning("email: provider setting unreadable — falling back to the default provider: %s",
-                        exc)
-    return "resend"
+        logger.warning("email: provider setting unreadable — using the default provider: %s", exc)
+    return _configured_default_provider()
+
+
+def _configured_default_provider() -> str:
+    """OneSignal when both credentials are set, otherwise Resend.
+
+    Starting on the provider without a daily cap keeps Resend's 100 sends available
+    for the windows when OneSignal is refusing, instead of spending the scarce
+    allowance first.
+    """
+    try:
+        app_id, api_key = _get_onesignal_creds()
+    except Exception:                                             # noqa: BLE001
+        return "resend"
+    return "onesignal" if app_id and api_key else "resend"
 
 
 def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
@@ -1056,6 +1082,10 @@ def _record_delivery(notification_id, channel, receipt, *, blast_id=None, user_i
     state = (receipt or {}).get("state") or "unknown"
     status = {"accepted": "sent", "accepted_fallback": "sent", "not_configured": "skipped",
               "skipped": "skipped"}.get(state, "failed")
+    # Which transport actually delivered it. "sent" alone cannot distinguish
+    # "OneSignal accepted" from "OneSignal refused and Resend delivered", which is
+    # exactly the question that cost a day of guessing from TLS headers, so the
+    # provider is recorded in the error-free case too.
     provider = (receipt or {}).get("delivered_by") or (receipt or {}).get("provider")
     row = {
         "notification_id": notification_id,
@@ -1064,6 +1094,14 @@ def _record_delivery(notification_id, channel, receipt, *, blast_id=None, user_i
         "provider_message_id": (receipt or {}).get("provider_message_id"),
         "error_message": (receipt or {}).get("error"),
     }
+    # Optional columns: recorded when the database has them, silently dropped when it
+    # does not, so this never needs a migration to keep working.
+    extra = {}
+    if provider:
+        extra["provider"] = provider
+    if state == "accepted_fallback":
+        extra["status_detail"] = (f"delivered by {provider} after "
+                                  f"{(receipt or {}).get('preempted') or 'the first provider'} refused")
     if blast_id:
         row["blast_id"] = blast_id
     if user_id:
@@ -1075,10 +1113,20 @@ def _record_delivery(notification_id, channel, receipt, *, blast_id=None, user_i
         existing = (db.table("notification_deliveries")
                     .select("id").eq("notification_id", notification_id).eq("channel", channel)
                     .limit(1).execute() or [])
-        if existing:
-            db.table("notification_deliveries").eq("id", existing[0]["id"]).update(row).execute()
-        else:
-            db.table("notification_deliveries").insert(row).execute()
+        def _write(payload):
+            if existing:
+                db.table("notification_deliveries").eq("id", existing[0]["id"]).update(payload).execute()
+            else:
+                db.table("notification_deliveries").insert(payload).execute()
+
+        try:
+            _write({**row, **extra})
+        except Exception as exc:                                  # noqa: BLE001
+            if not extra:
+                raise
+            # The richer columns are not present yet: keep the essential record.
+            logger.info("delivery record: provider columns unavailable (%s) — saving the basic row", exc)
+            _write(row)
     except Exception as exc:                                      # noqa: BLE001
         # A missing table/column must not fail the send that already happened.
         logger.warning("delivery record could not be saved for %s (%s): %s", notification_id, channel, exc)

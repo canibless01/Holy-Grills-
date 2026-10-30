@@ -50,8 +50,46 @@ Limits are configuration, not policy:
 applied, RPC error, timeout) returns `None` and routing continues unchanged — a
 bookkeeping outage must never stop mail.
 
+## Which provider is tried first
+
+**OneSignal, then Resend.** `get_email_provider()` resolves
+`explicit setting → system_settings.email_provider_{scope}_default → OneSignal when
+configured, else Resend`, and `send_email_routed(provider=None)` uses the same
+resolution. Resend's 100/day is the scarce resource, so it is spent last.
+
+Two consequences worth knowing:
+
+* A healthy OneSignal means Resend sees almost no traffic — that is the intent, not a
+  fault. To confirm which provider a campaign used, read
+  `notification_blasts.metadata.dispatch.email.sent_by` (e.g. `{"onesignal": 1}`).
+* Anything that pinned a provider to Resend by default (guest orders, event QR codes,
+  newsletters) no longer does; they pass `provider=None` and follow the default.
+
+## Addresses are normalised before they reach a provider
+
+OneSignal keys an Email subscription by its token, so `a@b.com` and `a@b.com ` are
+*different* addresses: the subscription attaches to one and the send targets the other,
+which OneSignal reports as an invalid/unsubscribed identifier. `normalize_email()`
+(strip, lowercase, trim surrounding quotes/punctuation, reject lists and inner spaces)
+is applied to subscription creation, `include_email_tokens`, and every raw/guest path.
+A malformed address is skipped with `invalid_email_address` instead of being sent.
+
+## Stale "unsubscribed" subscriptions repair themselves
+
+Creating a subscription for an address that already has one returns the existing record
+unchanged — including one that is switched off. If the account's own preference says it
+wants email, `ensure_email_subscription` PATCHes
+`/apps/{app_id}/subscriptions/{id}` with `enabled: true`, and if create reports "already
+exists" it looks the subscription up and does the same. A deliberate opt-out
+(`enabled=False` requested) is never repaired.
+
 ## Per-send decision
 
+0. **Marketing mail is never re-routed after an unsubscribe.** If OneSignal refuses a
+   *marketing* send as unsubscribed, it is recorded `skipped` (`skipped_reason:
+   unsubscribed`) and stops there — delivering it through Resend would override the
+   customer's own opt-out. Transactional mail still falls back, so receipts and QR
+   codes arrive.
 1. **Claim before sending.** `reserve_slot(preferred)` increments the preferred
    provider's counter. If the claimed count is past its limit, that claim is released
    and a claim is taken on the other provider instead.

@@ -872,12 +872,16 @@ def _onesignal_email_payload(app_id, to_email, subject, html_body, transactional
     makes "sent" campaigns never turn up (and land in spam when they do). The
     idempotency key stops a retried request from mailing the customer twice.
     """
+    from app.utils.validators import normalize_email
     from_email = (os.environ.get("ONESIGNAL_EMAIL_FROM") or os.environ.get("EMAIL_FROM")
                   or "noreply@holygrills.online")
     payload = {
         "app_id": app_id,
         "target_channel": "email",
-        "include_email_tokens": [to_email],
+        # OneSignal keys the subscription by this token, so it must be the same
+        # canonical string the subscription was created with — a stray space or comma
+        # makes it a different identifier and the send is refused as "not subscribed".
+        "include_email_tokens": [normalize_email(to_email) or to_email],
         "email_subject": subject,
         "email_body": html_body,
         "email_from_address": from_email,
@@ -894,11 +898,10 @@ def _onesignal_email_payload(app_id, to_email, subject, html_body, transactional
     return payload
 
 
-# OneSignal's own words when the token it was given has no Email subscription. This is
-# not a transient failure — it means nothing was delivered and the address was never
-# registered, so it is safe (and useful) to fix the cause and retry.
-_UNSUBSCRIBED_MARKERS = ("not subscribed", "no email", "email not enabled", "no valid",
-                         "no recipients", "invalid email")
+# A refusal that means "this address is unsubscribed" — the one case where falling
+# back to the other transport would deliver mail somebody opted out of.
+_UNSUBSCRIBED_MARKERS = ("not subscribed", "unsubscribed", "no email", "email not enabled",
+                         "no valid", "no recipients", "invalid email")
 
 
 def _onesignal_not_subscribed(receipt):
@@ -921,6 +924,16 @@ def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None
     second transport, because the message may already be in flight.
     """
     response = None
+    from app.utils.validators import normalize_email
+    canonical = normalize_email(to_email)
+    if not canonical:
+        # Never hand a malformed token to a provider: it would register or target an
+        # identifier that can never receive mail.
+        logger.warning("email: refusing to send to a malformed address (%r)", str(to_email)[:60])
+        if receipt is not None:
+            receipt.update({"provider": provider, "state": "skipped", "error": "invalid_email_address"})
+        return False, False, False
+    to_email = canonical
     try:
         if provider == "onesignal":
             from app.services.notification_service import _get_onesignal_creds, _onesignal_email_post, _ONESIGNAL_BASE
@@ -1119,7 +1132,16 @@ def _heal_missing_subscription(to_email):
     return bool(linked)
 
 
-def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None,
+def _default_provider():
+    """OneSignal when configured (no daily cap), else Resend. Never raises."""
+    try:
+        from app.services.notification_service import _configured_default_provider
+        return _configured_default_provider()
+    except Exception:                                             # noqa: BLE001
+        return "resend"
+
+
+def send_email_routed(to_email, to_name, subject, html_body, *, provider=None, headers=None,
                       receipt=None, transactional=None):
     """Deliver one email, preferring `provider` and switching only when it is safe.
 
@@ -1144,6 +1166,8 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend
         # This matters on the OneSignal path, where `include_unsubscribed` decides
         # whether someone who opted out still gets it.
         transactional = not headers
+    if provider not in ("resend", "onesignal"):
+        provider = _default_provider()
     preferred = "onesignal" if provider == "onesignal" else "resend"
     if receipt is not None:
         receipt.clear()
@@ -1175,6 +1199,16 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend
                 receipt=receipt, transactional=transactional)
     if accepted:
         return True
+    if (not accepted and chosen == "onesignal" and not transactional
+            and _onesignal_not_subscribed(receipt)):
+        # Still refused as unsubscribed, and this is a marketing send: delivering it
+        # by the other transport would override the customer's own opt-out. Skip it.
+        logger.info("email: marketing send to %s skipped — the address is unsubscribed",
+                    _mask_email(to_email))
+        if receipt is not None:
+            receipt["state"] = "skipped"
+            receipt["skipped_reason"] = "unsubscribed"
+        return False
     if not (quota or undeliverable):
         return False                  # ambiguous — no second transport, slot stays counted
 
@@ -1192,14 +1226,16 @@ def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend
 
 
 def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str, headers: dict = None,
-                   transactional: bool = None) -> bool:
-    """Raw email prefers Resend, with the daily counter as the fallback trigger.
+                   transactional: bool = None, provider: str = None) -> bool:
+    """Raw email — guest orders, event QR codes, catering, admin mail.
 
-    `transactional` defaults to "no List-Unsubscribe header": a newsletter carries
-    those headers and is therefore marketing, so the OneSignal fallback respects
-    unsubscribes instead of reaching someone who opted out.
+    `provider=None` means "whichever provider is configured as the default"
+    (OneSignal when it is set up, else Resend), with the other one as the automatic
+    fallback. `transactional` defaults to "no List-Unsubscribe header": a newsletter
+    carries those headers and is therefore marketing, so unsubscribes are respected
+    on either transport.
     """
-    return send_email_routed(to_email, to_name, subject, html_body, provider="resend",
+    return send_email_routed(to_email, to_name, subject, html_body, provider=provider,
                              headers=headers, transactional=transactional)
 
 

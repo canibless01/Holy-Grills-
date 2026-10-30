@@ -96,7 +96,9 @@ class EntryPointTests(unittest.TestCase):
         with patch.object(email_utils, "send_email_routed", return_value=True) as routed:
             email_utils.send_email_raw("guest@example.invalid", "Guest", "Confirmed", "<p>ok</p>")
         routed.assert_called_once()
-        self.assertEqual(routed.call_args.kwargs["provider"], "resend")
+        # No explicit provider: the router resolves the configured default (OneSignal
+        # when it is set up, else Resend), so the caller cannot pin a transport.
+        self.assertIsNone(routed.call_args.kwargs["provider"])
 
     def test_notification_dispatch_uses_the_router(self):
         from app.services import notification_service as notifications
