@@ -1,3 +1,5 @@
+**Reset update — 30 October:** the authorized database cleanup is now completed and independently verified. See [completed reset and preserved configuration](PRE_LAUNCH_RESET_COMPLETED_2026_10_30.md). Earlier “not executed” notes below are historical. Real owner/admin setup and final release smoke remain.
+
 # Remaining work after the kitchen action run — 30 October 2026
 
 This is work still requiring verification and fixes where tests expose defects. Most underlying features already exist; this is not a list of features that must all be built. Historical A/B ownership is not evidence that a second chat finished its share. The whole admin page-by-page audit remains incomplete.

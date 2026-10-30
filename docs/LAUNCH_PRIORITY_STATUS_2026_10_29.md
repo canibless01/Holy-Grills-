@@ -1,3 +1,5 @@
+**Reset update — 30 October:** the authorized database cleanup is now completed and independently verified. See [completed reset and preserved configuration](PRE_LAUNCH_RESET_COMPLETED_2026_10_30.md). Earlier “not executed” notes below are historical. Real owner/admin setup and final release smoke remain.
+
 Latest continuation and remaining-work list: [30 October 2026](REMAINING_LAUNCH_AND_AUDIT_2026_10_30.md). Older continuation notes below are historical.
 
 # Launch priorities — current status, 29 October 2026
