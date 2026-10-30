@@ -1,0 +1,14 @@
+{
+  "mode": "controlled empty HTML with actual local production CSP headers; real Nominatim transport; not deployed map UI",
+  "cases": [
+    {
+      "policy": "before fix",
+      "error": "TypeError"
+    },
+    {
+      "policy": "after fix",
+      "status": 200,
+      "result_count": 1
+    }
+  ]
+}

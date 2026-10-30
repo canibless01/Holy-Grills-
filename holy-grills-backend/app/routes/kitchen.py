@@ -1,9 +1,13 @@
 from flask import Blueprint, request, jsonify, g
+import math
+from app.utils.campus_scope import assert_can_modify, resolve_write_campus
+from app.utils.validators import validate_uuid
+from app.middleware.auth import resolve_scoped_campus_id
 from app.middleware.auth import require_role, fetch_or_403
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.tz import today_wat, WAT_OFFSET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
@@ -12,8 +16,102 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 kitchen_bp = Blueprint("kitchen", __name__)
+def _due_preparation(query):
+    tomorrow = (today_wat() + timedelta(days=1)).isoformat()
+    return (query.in_("payment_status", ["paid", "partially_refunded"])
+            .or_(f"is_scheduled.eq.false,scheduled_for.lt.{tomorrow}T00:00:00+01:00"))
+
+
+def _today_preparation(query):
+    """A recurring window is a template; preparation belongs to one WAT date."""
+    start = today_wat().isoformat() + 'T00:00:00+01:00'
+    end = (today_wat() + timedelta(days=1)).isoformat() + 'T00:00:00+01:00'
+    return (query.in_('payment_status', ['paid', 'partially_refunded'])
+            .not_.is_('delivery_window_id', 'null')
+            .or_(f'and(is_scheduled.eq.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),'
+                 f'and(is_scheduled.eq.false,created_at.gte.{start},created_at.lt.{end})'))
+
+
+def _attach_campus_availability(db, orders, campus_id):
+    """Expose only the campus stock switch, so kitchen controls survive reloads."""
+    ids = {item.get("menu_item_id") for order in orders for item in order.get("order_items", []) if item.get("menu_item_id")}
+    if not ids or not campus_id:
+        return orders
+    rows = (db.table("menu_item_availability").select("menu_item_id,is_available")
+            .eq("campus_id", campus_id).in_("menu_item_id", sorted(ids)).execute() or [])
+    states = {row["menu_item_id"]: bool(row.get("is_available")) for row in rows}
+    for order in orders:
+        for item in order.get("order_items", []):
+            item["campus_is_available"] = states.get(item.get("menu_item_id"), True)
+    return orders
+
+
+@kitchen_bp.route('/handoff', methods=['GET'])
+@require_role('kitchen', 'admin')
+def handoff_batches():
+    campus, error = _resolve_kitchen_campus_id()
+    if error: return error
+    if not campus: return jsonify({'error': MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
+    db = get_db()
+    batches = (db.table('delivery_batches').select('id,zone,status,rider_id,delivery_date,campus_id')
+               .eq('campus_id', campus).in_('status', ['open', 'assigned'])
+               .or_(f'delivery_date.lte.{today_wat().isoformat()},delivery_date.is.null')
+               .order('created_at').limit(100).execute()) or []
+    riders = (db.table('profiles').select('id,full_name').eq('campus_id', campus)
+              .eq('role', 'rider').eq('is_active', True).order('full_name').execute()) or []
+    orders = []
+    if batches:
+        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
+                 .eq('campus_id', campus).in_('batch_id', [batch['id'] for batch in batches])
+                 .in_('status', ['ready', 'assigned']))
+        orders = _attach_kitchen_customer_names(_due_preparation(query).execute() or [])
+    for batch in batches:
+        batch['orders'] = [order for order in orders if order.get('batch_id') == batch['id']]
+    return jsonify({'batches': [batch for batch in batches if batch['orders']], 'riders': riders}), 200
+
+
+@kitchen_bp.route('/handoff/<batch_id>/assign', methods=['POST'])
+@require_role('kitchen', 'admin')
+def assign_handoff_rider(batch_id):
+    body = request.get_json(silent=True)
+    if (not validate_uuid(batch_id) or not isinstance(body, dict) or set(body) != {'rider_id'}
+            or not validate_uuid(body.get('rider_id'))):
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    from app.routes.admin import _batch_transaction, _batch_saved_effects
+    receipt, error = _batch_transaction('update', batch_id, body)
+    if error: return error
+    _batch_saved_effects('update', receipt, body)
+    return jsonify({key: receipt.get(key) for key in ('id', 'status', 'rider_id', 'orders_assigned')}), 200
+
 units_bp = Blueprint("measurement_units", __name__)
 stock_bp = Blueprint("stock_items", __name__)
+
+def _stock_adjustment(db, params, request_id):
+    if request_id is not None:
+        if not isinstance(request_id, str) or not validate_uuid(request_id):
+            return None, (jsonify({"error": MSG.INVALID_INPUT}), 400)
+        params["p_request_id"] = request_id
+    try:
+        return db.rpc("hg_adjust_stock_balance", params), None
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get("code"))
+        status = {"23514": 400, "23505": 409, "42501": 403, "P0002": 404}.get(code, 503)
+        message = {"23514": MSG.STOCK_ADJUSTMENT_REJECTED, "23505": MSG.STOCK_INTENT_CONFLICT,
+                   "42501": MSG.RESOURCE_ACCESS_DENIED, "P0002": MSG.STOCK_ITEM_NOT_FOUND}.get(code, MSG.SERVICE_UNAVAILABLE)
+        return None, (jsonify({"error": message}), status)
+
+
+def _attach_kitchen_customer_names(orders):
+    # Only names belonging to already-authorized order rows are fetched. Kitchen
+    # tickets do not need customer phone numbers, email or profile financials.
+    user_ids = list({o['user_id'] for o in orders if o.get('user_id')})
+    names = {}
+    for offset in range(0, len(user_ids), 100):
+        rows = get_db().table('profiles').select('id,full_name').in_('id', user_ids[offset:offset+100]).execute() or []
+        names.update({row['id']: row.get('full_name') for row in rows})
+    for order in orders:
+        order['customer_name'] = names.get(order.get('user_id')) or order.get('guest_name')
+    return orders
 
 
 def _today_start_iso():
@@ -92,11 +190,16 @@ def create_stock_item():
         description: Stock item created
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     required = ["name", "purchase_unit_id", "usage_unit_id", "conversion_factor", "low_stock_threshold"]
     for f in required:
         if data.get(f) is None or data.get(f) == "":
             return jsonify({"error": MSG.STOCK_FIELD_REQUIRED.format(field=f)}), 400
+    if not isinstance(data["name"], str) or not 1 <= len(data["name"].strip()) <= 128 or any(not isinstance(data[k], str) or not validate_uuid(data[k]) for k in ("purchase_unit_id", "usage_unit_id")):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    data["name"] = data["name"].strip()
 
     try:
         conversion_factor = float(data["conversion_factor"])
@@ -104,12 +207,14 @@ def create_stock_item():
         current_balance = float(data.get("current_balance", 0))
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
+    if any(isinstance(data.get(k), bool) for k in ("conversion_factor", "low_stock_threshold", "current_balance")) or not all(math.isfinite(v) for v in (conversion_factor, low_stock_threshold, current_balance)) or low_stock_threshold < 0 or current_balance < 0:
+        return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
     if conversion_factor <= 0:
         return jsonify({"error": MSG.STOCK_CONVERSION_FACTOR_INVALID}), 400
+    if current_balance != 0:
+        return jsonify({"error": MSG.STOCK_OPENING_BALANCE_USE_LEDGER}), 400
 
-    campus_id = getattr(g, "campus_id", None)
-    if getattr(g, "user_role", None) == "super_admin" and data.get("campus_id"):
-        campus_id = data["campus_id"]
+    campus_id = resolve_write_campus(data.get("campus_id"))
     if not campus_id:
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
 
@@ -146,7 +251,7 @@ def list_stock_items():
     """
     db = get_user_client()
     q = db.table("stock_items").select("*")
-    campus_id = request.args.get("campus_id") or getattr(g, "campus_id", None)
+    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -192,20 +297,24 @@ def log_stock_purchase(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="*", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
     item = existing
+    assert_can_modify(item.get("campus_id"))
 
     try:
         qty_entered = float(data["quantity"])
         cost = float(data.get("cost", 0)) if data.get("cost") is not None else None
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
+    if isinstance(data["quantity"], bool) or isinstance(data.get("cost"), bool) or not math.isfinite(qty_entered) or qty_entered <= 0 or (cost is not None and (not math.isfinite(cost) or cost < 0)):
+        return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
     conv_factor = float(item.get("conversion_factor") or 1.0)
     usage_qty = qty_entered * conv_factor
 
-    result = db.rpc("hg_adjust_stock_balance", {
+    result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": "purchase", "p_quantity_entered": qty_entered,
         "p_delta_usage_units": usage_qty, "p_unit_id": item.get("purchase_unit_id"),
         "p_cost": cost, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
-    })
+    }, data.get("request_id"))
+    if error: return error
     row = result[0] if isinstance(result, list) else result
 
     return jsonify({
@@ -253,17 +362,21 @@ def log_stock_usage(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="*", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
     item = existing
+    assert_can_modify(item.get("campus_id"))
 
     try:
         qty_entered = float(data["quantity"])
     except (TypeError, ValueError):
         return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
+    if isinstance(data["quantity"], bool) or not math.isfinite(qty_entered) or (entry_type != "correction" and qty_entered <= 0):
+        return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
 
-    result = db.rpc("hg_adjust_stock_balance", {
+    result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": entry_type, "p_quantity_entered": qty_entered,
         "p_delta_usage_units": -qty_entered, "p_unit_id": item.get("usage_unit_id"),
         "p_cost": None, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
-    })
+    }, data.get("request_id"))
+    if error: return error
     row = result[0] if isinstance(result, list) else result
     if row["is_low_stock"]:
         _alert_admin_low_stock(item, row["new_balance"])
@@ -314,8 +427,10 @@ def _resolve_kitchen_campus_id():
     if getattr(g, "user_role", None) == "super_admin":
         campus_id = request.args.get("campus_id")
         if not campus_id:
-            return None, (jsonify({"error": "campus_id is required for super_admin"}), 400)
-        return campus_id, None
+            return None, (jsonify({"error": MSG.CAMPUS_ID_REQUIRED}), 400)
+        if not validate_uuid(campus_id):
+            return None, (jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400)
+        return campus_id.lower(), None
     return getattr(g, "campus_id", None), None
 
 
@@ -401,7 +516,9 @@ def update_kitchen_settings():
       400:
         description: "settings object missing or empty"
     """
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     settings = data.get("settings")
     if not settings or not isinstance(settings, dict):
         return jsonify({"error": MSG.KITCHEN_SETTINGS_REQUIRED}), 400
@@ -413,6 +530,25 @@ def update_kitchen_settings():
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
+    if "max_delivery_radius_km" in settings:
+        raw_radius = settings["max_delivery_radius_km"]
+        try:
+            if isinstance(raw_radius, bool):
+                raise ValueError
+            radius = float(raw_radius)
+            if not math.isfinite(radius) or radius <= 0:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({"error": MSG.DELIVERY_RADIUS_INVALID}), 400
+        settings = {**settings, "max_delivery_radius_km": radius}
+    previous_capacity = None
+    if "daily_order_capacity" in settings:
+        value = settings["daily_order_capacity"]
+        if isinstance(value, bool) or not str(value).isdigit():
+            return jsonify({"error": MSG.WINDOW_CAPACITY_INVALID}), 400
+        previous = db.table("kitchen_settings").select("value").eq("key", "daily_order_capacity").eq("campus_id", campus_id).single().execute()
+        if previous and str(previous.get("value", "")).isdigit():
+            previous_capacity = int(previous["value"])
     updated = {}
     for key, value in settings.items():
         payload = {
@@ -425,7 +561,21 @@ def update_kitchen_settings():
         result = db.table("kitchen_settings").upsert(payload, on_conflict="key,campus_id").execute()
         updated[key] = (result[0] if isinstance(result, list) and result else payload)
 
-    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated}), 200
+    moved = 0
+    if previous_capacity is not None and int(settings["daily_order_capacity"]) > previous_capacity:
+        try:
+            from app.routes.admin import _move_up_deferred_orders
+            rows = db.table("ordering_windows").select("*").eq("campus_id", campus_id).execute() or []
+            # Fill dates in chronological order before considering next week's slots.
+            for offset in range(14):
+                target = today_wat() + timedelta(days=offset)
+                dated = [row for row in rows if str(row.get("date")) == target.isoformat()]
+                candidates = dated or [row for row in rows if not row.get("date") and row.get("weekday") == target.weekday()]
+                for window in sorted(candidates, key=lambda row: str(row.get("opens_at") or "")):
+                    moved += _move_up_deferred_orders(db, {}, window, force=True, target_dates=[target])
+        except Exception as exc:
+            logger.error("Daily capacity saved, but deferred move-up failed for campus %s: %s", campus_id, exc)
+    return jsonify({"message": MSG.KITCHEN_SETTINGS_UPDATED, "settings": updated, "orders_moved_up": moved}), 200
           
 @kitchen_bp.route("/queue", methods=["GET"])
 @require_role("kitchen", "admin")
@@ -449,18 +599,19 @@ def live_queue():
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,status,notes,received_at,preparing_at,delivery_windows(label,ends_at),order_items(name_snapshot,quantity)")
-        .in_("status", ["received", "preparing"])
+        .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        .in_("status", ["received", "paid", "preparing", "ready"])
     )
+    q = _today_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    q = q.order("received_at")
+    q = q.order("received_at", ascending=False)
     window_id = request.args.get("window_id")
     if window_id:
         q = q.eq("delivery_window_id", window_id)
 
-    orders = q.execute()
-    return jsonify(orders), 200
+    orders = _attach_kitchen_customer_names(q.execute() or [])
+    return jsonify(_attach_campus_availability(db, orders, campus_id)), 200
 
 
 @kitchen_bp.route("/windows", methods=["GET"])
@@ -479,22 +630,33 @@ def delivery_windows():
         return err
     db = get_user_client()
     now = datetime.now(timezone.utc).isoformat()
-    q = db.table("delivery_windows").select("id,label,starts_at,ends_at,status").gte("ends_at", now)
+    q = db.table("delivery_windows").select("*")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    windows = q.order("starts_at").execute() or []
-
-    window_ids = [w["id"] for w in windows]
+    from app.services.delivery_window_schedule import upcoming_delivery_windows, WAT
+    from datetime import time
+    day_start = datetime.combine(today_wat(), time.min, WAT)
+    windows = upcoming_delivery_windows(q.execute() or [], now=day_start, days=1, open_only=False)
+    windows = [window for window in windows if datetime.fromisoformat(
+        window['starts_at'].replace('Z', '+00:00')).astimezone(WAT).date() == today_wat()]
+    for window in windows:
+        window['label'] = f"{today_wat().isoformat()} · {window.get('label') or 'Daily preparation'}"
+    window_ids = list({window["id"] for window in windows})
     counts = {}
-    for wid in window_ids:
-        oq = db.table("orders").select("id").eq("delivery_window_id", wid)
-        if campus_id:
-            oq = oq.eq("campus_id", campus_id)
-        rows = oq.execute() or []
-        counts[wid] = len(rows)
-
-    for w in windows:
-        w["order_count"] = counts.get(w["id"], 0)
+    if window_ids:
+        oq = (db.table("orders").select("id,delivery_window_id,is_scheduled,scheduled_for,created_at")
+              .in_("delivery_window_id", window_ids).in_("payment_status", ["paid", "partially_refunded"])
+              .not_.in_("status", ["cancelled", "refunded"]))
+        if campus_id: oq = oq.eq("campus_id", campus_id)
+        for order in oq.execute() or []:
+            stamp = order.get("scheduled_for") if order.get("is_scheduled") else order.get("created_at")
+            if stamp:
+                day = datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).astimezone(WAT).date().isoformat()
+                key = (order["delivery_window_id"], day)
+                counts[key] = counts.get(key, 0) + 1
+    for window in windows:
+        day = datetime.fromisoformat(window["starts_at"].replace("Z", "+00:00")).astimezone(WAT).date().isoformat()
+        window["order_count"] = counts.get((window["id"], day), 0)
 
     return jsonify(windows), 200
 
@@ -525,6 +687,11 @@ def scheduled_orders():
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
+    try:
+        from app.utils.admin_helpers import as_date
+        selected_date = as_date(request.args.get("date") or today_wat().isoformat())
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     db = get_user_client()
     # Scheduled orders: is_scheduled=True AND status='received' (not yet activated).
     # The DB enum does not include a 'scheduled' status value; the is_scheduled
@@ -533,12 +700,15 @@ def scheduled_orders():
     q = (
         db.table("orders")
         .select(
-            "id,status,notes,scheduled_for,is_scheduled,received_at,created_at,"
+            "id,user_id,guest_name,status,notes,scheduled_for,is_scheduled,received_at,created_at,"
             "delivery_windows(id,label,starts_at,ends_at),"
-            "order_items(name_snapshot,quantity,price_snapshot)"
+            "order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         )
         .eq("is_scheduled", "true")
-        .eq("status", "received")
+        .in_("payment_status", ["paid", "partially_refunded"])
+        .gte("scheduled_for", f"{selected_date.isoformat()}T00:00:00+01:00")
+        .lt("scheduled_for", f"{(selected_date + timedelta(days=1)).isoformat()}T00:00:00+01:00")
+        .in_("status", ["received", "paid"])
     )
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -547,8 +717,8 @@ def scheduled_orders():
     if window_id:
         q = q.eq("delivery_window_id", window_id)
 
-    orders = q.execute() or []
-    return jsonify({"scheduled_orders": orders, "count": len(orders)}), 200
+    orders = _attach_kitchen_customer_names(q.execute() or [])
+    return jsonify({"scheduled_orders": orders, "count": len(orders), "date": selected_date.isoformat()}), 200
 
 
 @kitchen_bp.route("/metrics", methods=["GET"])
@@ -572,7 +742,9 @@ def kitchen_metrics():
         return err
     db = get_user_client()
     today_start = _today_start_iso()  # same WAT-midnight helper as menu.py/order_service.py
-    q = db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id").gte("created_at", today_start)
+    from app.routes.menu import _today_fulfilment_filter
+    q = (db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
+         .or_(_today_fulfilment_filter()).in_("payment_status", ["paid", "partially_refunded"]))
     if campus_id:
         q = q.eq("campus_id", campus_id)
 
@@ -584,7 +756,7 @@ def kitchen_metrics():
 
     prep_times = []
     for o in orders:
-        received = o.get("received_at") or o.get("preparing_at")
+        received = o.get("preparing_at") or o.get("received_at")
         ready = o.get("ready_at")
         if received and ready:
             try:
@@ -648,10 +820,11 @@ def batch_summary(window_id):
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,status,order_items(name_snapshot,quantity)")
+        .select("id,status,order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .eq("delivery_window_id", window_id)
-        .in_("status", ["received", "preparing", "ready"])
+        .in_("status", ["received", "paid", "preparing", "ready"])
     )
+    q = _today_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     orders = q.execute() or []
@@ -706,15 +879,23 @@ def batch_advance(batch_id):
     if err:
         return err
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     from_status_filter = data.get("from_status")
-    notes = data.get("notes", f"Batch advance by kitchen ({batch_id[:8]})")
+    notes = data.get("notes") or MSG.ORDER_KITCHEN_BATCH_NOTE
+    if from_status_filter and from_status_filter not in ("received", "paid", "preparing"):
+        return jsonify({"error": MSG.ORDER_KITCHEN_PREPARATION_ONLY}), 400
+    if not isinstance(notes, str) or len(notes) > 500:
+        return jsonify({"error": MSG.ORDER_ITEM_NOTES_INVALID}), 400
 
     q = (
         db.table("orders")
         .select("id,status")
         .eq("delivery_window_id", batch_id)
+        .in_("status", ["received", "paid", "preparing"])
     )
+    q = _today_preparation(q)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.not_.in_("status", ["delivered", "cancelled", "refunded", "delivery_attempted", "unclaimed"])
@@ -723,14 +904,12 @@ def batch_advance(batch_id):
 
     orders = q.execute() or []
     if not orders:
-        return jsonify({"error": "No advanceable orders found in this batch", "batch_id": batch_id}), 404
+        return jsonify({"error": MSG.ORDER_KITCHEN_BATCH_EMPTY, "batch_id": batch_id}), 404
 
     NEXT_STATUS = {
+        "paid": "preparing",
         "received": "preparing",
         "preparing": "ready",
-        "ready": "assigned",
-        "assigned": "out_for_delivery",
-        "out_for_delivery": "delivered",
     }
 
     advanced = []

@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-21",
+  "mode": "Isolated real database transaction, final ROLLBACK; no fixture changes retained by this SQL proof",
+  "cases": [
+    {
+      "case_name": "lower academic level blocked",
+      "passed": true
+    },
+    {
+      "case_name": "unpaid fulfilment rejected and two orders insufficient",
+      "passed": true
+    },
+    {
+      "case_name": "foreign graduation and own semester do not open claims",
+      "passed": true
+    },
+    {
+      "case_name": "own graduation dates inclusive in WAT",
+      "passed": true
+    },
+    {
+      "case_name": "post-award counter failure rolls back ledger balance and marker",
+      "passed": true
+    },
+    {
+      "case_name": "award counter and marker commit together",
+      "passed": true
+    },
+    {
+      "case_name": "lifetime replay survives level period and config changes",
+      "passed": true
+    },
+    {
+      "case_name": "historical receipt repairs unset marker without new award",
+      "passed": true
+    },
+    {
+      "case_name": "anonymous body guard rejects claim",
+      "passed": true
+    }
+  ]
+}

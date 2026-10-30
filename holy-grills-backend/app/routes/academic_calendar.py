@@ -29,7 +29,7 @@ academic_calendar_bp = Blueprint("academic_calendar", __name__)
 admin_academic_calendar_bp = Blueprint("admin_academic_calendar", __name__)
 
 # Mirrors the DB CHECK academic_calendar_period_type_check. Keep in sync.
-PERIOD_TYPES = ("semester", "exam", "break", "holiday", "orientation")
+PERIOD_TYPES = ("semester", "exam", "break", "holiday", "orientation", "graduation")
 
 
 def _requested_campus():
@@ -50,6 +50,14 @@ def _parse_date(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+
+
+def _description(value):
+    if value is None:
+        return ""
+    if not isinstance(value, str) or len(value) > 2000:
+        raise ValueError("invalid description")
+    return value.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +106,9 @@ def get_current_academic_period():
             .lte("start_date", today_str).gte("end_date", today_str)
         )
         q = campus_or_global(q, campus_id)
-        rows = q.order("start_date", ascending=False).limit(1).execute() or []
+        rows = q.order("start_date", ascending=False).execute() or []
+        # A matching campus period takes precedence over a newer global entry.
+        rows.sort(key=lambda row: (bool(campus_id and row.get("campus_id") == campus_id), row.get("start_date") or ""), reverse=True)
     except (SupabaseError, requests.RequestException) as e:
         logger.error("get_current_academic_period failed: %s", e)
         return jsonify({"error": MSG.ACADEMIC_CALENDAR_UNAVAILABLE}), 503
@@ -118,10 +128,11 @@ def list_academic_calendar_entries():
     List academic calendar entries (admin only).
     """
     db = get_user_client()
-    requested, error = _requested_campus()
-    if error:
-        return error
-    campus_id = resolve_scoped_campus_id(requested)  # admin: own campus (param ignored); super_admin: param or all
+    try:
+        requested = as_campus_id(request.args.get("campus_id"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+    campus_id = resolve_scoped_campus_id(requested)
     try:
         # none_means_all=True: an admin always has a campus_id by this point (B-27), so this only changes
         # behavior for super_admin with no ?campus_id= — they see every campus's entries, not just globals.
@@ -158,7 +169,7 @@ def create_academic_calendar_entry():
         start_date = _parse_date(as_text(data["start_date"], 10))
         end_date = _parse_date(as_text(data["end_date"], 10))
         is_active = as_bool(data.get("is_active", True))
-        description = str(data.get("description") or "").strip()
+        description = _description(data.get("description"))
     except ValueError:
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     ok, message = validate_choice(period_type, PERIOD_TYPES, "period_type")
@@ -174,6 +185,8 @@ def create_academic_calendar_entry():
     except ValueError:
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
     campus_id = resolve_write_campus(requested_campus)  # 403 if a campus admin names another campus; None = global for super_admin
+    if "campus_id" in data and requested_campus is None and getattr(g, "user_role", None) == "super_admin":
+        campus_id = None
 
     now = datetime.now(timezone.utc).isoformat()
     payload = {
@@ -230,7 +243,7 @@ def update_academic_calendar_entry(entry_id):
             if key in payload:
                 payload[key] = as_text(payload[key], limit)
         if "description" in payload:
-            payload["description"] = str(payload["description"] or "").strip()
+            payload["description"] = _description(payload["description"])
         if "is_active" in payload:
             payload["is_active"] = as_bool(payload["is_active"])
         for key in ("start_date", "end_date"):

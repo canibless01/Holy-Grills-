@@ -1,10 +1,19 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, Response, redirect
+from app.constants import APP_TAGLINE_DEFAULT
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
-from app.services.notification_service import send_blast
-from app.db import get_user_client
+from app.services.notification_service import send_blast, resolve_segment_user_ids
+from app.db import get_user_client, SupabaseError
+from app.utils.validators import validate_uuid
+from app.utils.campus_scope import assert_can_modify
+from app.db import get_db
 from app.messages import MSG
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
+import os
+from app.utils.campus_scope import resolve_write_campus
+from app.utils.admin_helpers import as_instant
+import base64
+from app.services.blast_contracts import rich_fields, validate_segment
 
 logger = get_logger(__name__)
 
@@ -235,27 +244,12 @@ def get_preferences():
       200:
         description: Notification preference settings
     """
-    db = get_user_client()
-    prefs = (
-        db.table("notification_preferences")
-        .select("*")
-        .eq("user_id", g.user_id)
-        .single()
-        .execute()
-    )
-
-    if not prefs:
-        prefs = {
-            "user_id": g.user_id,
-            "push_enabled": True,
-            "email_enabled": True,
-            "order_updates": True,
-            "promotions": True,
-            "hp_updates": True,
-            "delivery_updates": True,
-        }
-
-    return jsonify(prefs), 200
+    from app.services.notification_preferences import effective_preferences
+    try:
+        return jsonify(effective_preferences(get_db(),g.user_id)), 200
+    except Exception:
+        logger.exception("Notification preferences unavailable for %s",g.user_id)
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @notifications_bp.route("/preferences", methods=["PATCH"])
@@ -281,53 +275,33 @@ def update_preferences():
         description: Preferences updated
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
     allowed = {"push_enabled", "email_enabled", "order_updates", "promotions", "hp_updates", "delivery_updates"}
-    update = {k: bool(v) for k, v in data.items() if k in allowed}
+    if not isinstance(data, dict) or any(not isinstance(v, bool) for k, v in data.items() if k in allowed):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    update = {k: v for k, v in data.items() if k in allowed}
     if not update:
         return jsonify({"error": MSG.NOTIF_NO_VALID_PREFS}), 400
 
-    update["updated_at"] = datetime.now(timezone.utc).isoformat()
-
     try:
-        defaults = {
-            "user_id": g.user_id,
-            "push_enabled": True,
-            "email_enabled": True,
-            "order_updates": True,
-            "promotions": True,
-            "hp_updates": True,
-            "delivery_updates": True,
-        }
-        defaults.update(update)
-        db.table("notification_preferences").upsert(defaults, on_conflict="user_id").execute()
-
-        result = (
-            db.table("notification_preferences")
-            .select("*")
-            .eq("user_id", g.user_id)
-            .single()
-            .execute()
-        )
+        result = get_db().rpc('hg_update_notification_preferences_atomic',{'p_user_id':g.user_id,'p_preferences':update})
+        # Mirror the master email switch into OneSignal. "No promotions" is handled
+        # server-side before dispatch, so that choice must not unregister the address —
+        # otherwise declining a newsletter would also stop order/QR emails.
+        if "email_enabled" in update:
+            try:
+                from app.services.onesignal_email import sync_email_subscription_async
+                profile = get_db().table("profiles").select("email").eq("id", g.user_id).single().execute() or {}
+                if profile.get("email"):
+                    sync_email_subscription_async(g.user_id, profile["email"], enabled=update["email_enabled"])
+            except Exception as exc:                              # noqa: BLE001
+                logger.warning("OneSignal email subscription sync failed for %s: %s", g.user_id, exc)
         if isinstance(result, dict):
             result["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
         return jsonify(result), 200
     except Exception as exc:
-        err = str(exc)
-        if "does not exist" in err or "schema cache" in err or "relation" in err:
-            merged = {
-                "user_id": g.user_id,
-                "push_enabled": True,
-                "email_enabled": True,
-                "order_updates": True,
-                "promotions": True,
-                "hp_updates": True,
-                "delivery_updates": True,
-            }
-            merged.update({k: v for k, v in update.items() if k != "updated_at"})
-            merged["message"] = MSG.NOTIFICATION_PREFERENCES_UPDATED
-            return jsonify(merged), 200
-        raise
+        logger.exception("Notification preference save failed for %s", g.user_id)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @notifications_bp.route("/blasts", methods=["GET"])
@@ -402,6 +376,30 @@ def get_blast(blast_id):
     return jsonify(blast), 200
 
 
+@notifications_bp.route("/blasts/<blast_id>/retry", methods=["POST"])
+@require_role("admin")
+def retry_blast(blast_id):
+    if not validate_uuid(blast_id):
+        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
+    db = get_user_client()
+    blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    if not blast:
+        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
+    assert_can_modify(blast.get("campus_id"))
+    if blast.get("status") == "sent":
+        return jsonify({"already_processed": True}), 200
+    if blast.get("status") not in ("failed", "sending"):
+        return jsonify({"error": MSG.BLAST_RETRY_BUSY}), 409
+    try:
+        result = send_blast(blast_id)
+        if result.get("skipped"):
+            return jsonify({"error": MSG.BLAST_RETRY_BUSY}), 409
+        return jsonify(result), 200
+    except Exception:
+        logger.exception("Campaign retry failed for %s", blast_id)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+
+
 @notifications_bp.route("/blasts", methods=["POST"])
 @require_role("admin")
 def create_blast():
@@ -426,20 +424,68 @@ def create_blast():
         description: Blast created and sent
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    try:
+        rich, rich_plain = rich_fields(data)
+        data = {**data, "body": data.get("body") or rich_plain}
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     required = ["title", "body", "channels"]
     for f in required:
         if not data.get(f):
             return jsonify({"error": f"'{f}' is required"}), 400
 
-    data["created_by"] = g.user_id
-    campus_id = getattr(g, 'campus_id', None)
-    if campus_id and "campus_id" not in data:
-        data["campus_id"] = campus_id
-    if "target_segment" in data:
-        data["segment"] = data.pop("target_segment")
-    if "send_at" in data:
-        data["scheduled_at"] = data.pop("send_at")
+    if (not isinstance(data["title"], str) or not data["title"].strip() or len(data["title"]) > 200
+            or not isinstance(data["body"], str) or not data["body"].strip() or len(data["body"]) > 10000
+            or not isinstance(data["channels"], list) or not data["channels"]
+            or any(c not in ("in_app", "email", "push") for c in data["channels"])):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    campus_id = resolve_write_campus(data.get("campus_id"))
+    action_url = data.get("action_url")
+    if action_url is not None:
+        from urllib.parse import unquote
+        if not isinstance(action_url, str) or len(action_url) > 1000:
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        action_url = action_url.strip() or None
+        if action_url:
+            decoded = unquote(unquote(action_url))
+            if not decoded.startswith("/") or decoded.startswith("//") or "\\" in decoded or any(ord(c) < 32 for c in decoded):
+                return jsonify({"error": MSG.INVALID_INPUT}), 400
+    segment = data.get("target_segment", data.get("segment", {}))
+    try:
+        segment = validate_segment(segment)
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if campus_id:
+        if any(segment.get(k) not in (None, "", campus_id) for k in ("campus", "campus_id")):
+            return jsonify({"error": MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}), 403
+        segment = {**segment, "campus_id": campus_id}
+    scheduled_at = data.get("send_at", data.get("scheduled_at"))
+    request_id = data.get("request_id")
+    if request_id is not None and (not isinstance(request_id, str) or not validate_uuid(request_id)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    email_provider = data.get("email_provider")
+    if email_provider not in (None, "resend", "onesignal"):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if scheduled_at:
+        try:
+            scheduled_at = as_instant(scheduled_at)
+            if datetime.fromisoformat(scheduled_at) <= datetime.now(timezone.utc):
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+    # Never let clients supply receipts, recipient counts or worker status.
+    data = {"title": data["title"].strip(), "body": data["body"].strip(),
+            "channels": list(dict.fromkeys(data["channels"])), "segment": segment,
+            "campus_id": campus_id, "created_by": g.user_id, "scheduled_at": scheduled_at,
+            "email_provider": email_provider, "action_url": action_url}
+    
+    data.update(rich)
+
+    if request_id:
+        data["id"] = request_id
 
     if data.get("scheduled_at"):
         data["status"] = "scheduled"
@@ -448,6 +494,14 @@ def create_blast():
 
     try:
         blast = db.table("notification_blasts").insert(data).execute()
+    except SupabaseError as exc:
+        if request_id and str((exc.details or {}).get("code")) == "23505":
+            existing = db.table("notification_blasts").select("*").eq("id", request_id).single().execute()
+            if existing and all(existing.get(k) == v for k, v in data.items() if k != "status"):
+                return jsonify({"blast": existing, "already_created": True}), 200
+            return jsonify({"error": MSG.INVALID_INPUT}), 409
+        logger.exception("create_blast failed")
+        return jsonify({"error": MSG.NOTIFICATION_BLAST_CREATE_FAILED}), 503
     except Exception as e:
         err_msg = str(getattr(e, "details", {}).get("message", "")) if hasattr(e, "details") and e.details else str(e)
         if "policy" in err_msg.lower() or "permission" in err_msg.lower() or "rls" in err_msg.lower():
@@ -461,3 +515,445 @@ def create_blast():
         return jsonify({"blast": blast_row, "sent_to": result["sent_to"]}), 201
 
     return jsonify({"blast": blast_row, "message": "Blast scheduled"}), 201
+
+
+@notifications_bp.route("/blasts/<blast_id>/cancel", methods=["POST"])
+@require_role("admin")
+def cancel_blast(blast_id):
+    db = get_user_client()
+    row = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    if not row:
+        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
+    assert_can_modify(row.get("campus_id"))
+    if row.get("status") == "cancelled":
+        return jsonify(row), 200
+    if row.get("status") not in ("scheduled", "pending"):
+        return jsonify({"error": MSG.BLAST_CANCELLATION_TOO_LATE}), 409
+    updated = db.table("notification_blasts").eq("id", blast_id).eq("status", row["status"]).update({"status": "cancelled"})
+    if not updated:
+        return jsonify({"error": MSG.BLAST_CANCELLATION_TOO_LATE}), 409
+    return jsonify(updated[0] if isinstance(updated, list) else updated), 200
+
+
+@notifications_bp.route("/blasts/preview", methods=["POST"])
+@require_role("admin")
+def preview_blast():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    campus = resolve_write_campus(data.get("campus_id"))
+    segment = data.get("target_segment", data.get("segment", {}))
+    try:
+        segment = validate_segment(segment)
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if campus and any(segment.get(k) not in (None, "", campus) for k in ("campus", "campus_id")):
+        return jsonify({"error": MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}), 403
+    try:
+        target_campus = campus or segment.get("campus_id") or segment.get("campus")
+        ids = resolve_segment_user_ids(segment, campus_id=target_campus, db=get_db())
+    except Exception:
+        logger.exception("Blast audience preview failed")
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+    return jsonify({"recipient_count": len(ids)}), 200
+
+
+def _await_email_delivery(blast_id, timeout=6.0, interval=0.4):
+    """The recorded email outcome for a just-dispatched blast, or None.
+
+    Reads `notification_deliveries`, which the dispatch thread writes once the
+    provider answers, so the admin sees the provider's own verdict instead of a
+    generic "sent".
+    """
+    import time as _time
+    if not blast_id:
+        return None
+    deadline = _time.monotonic() + timeout
+    while True:
+        try:
+            rows = (get_db().table("notification_deliveries")
+                    .select("status,provider_message_id,error_message,delivered_at")
+                    .eq("blast_id", blast_id).eq("channel", "email")
+                    .limit(1).execute() or [])
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("test blast %s: delivery record unreadable: %s", blast_id, exc)
+            return None
+        if rows:
+            row = rows[0] if isinstance(rows, list) else rows
+            return {
+                "status": row.get("status"),
+                "message_id": row.get("provider_message_id"),
+                "delivered_at": row.get("delivered_at"),
+                "error": row.get("error_message"),
+            }
+        if _time.monotonic() >= deadline:
+            return {"status": "pending",
+                    "error": "no delivery record yet — the provider has not answered"}
+        _time.sleep(interval)
+
+
+@notifications_bp.route("/blasts/test", methods=["POST"])
+@require_role("admin")
+def send_test_blast():
+    """
+    Send a test notification to the current admin user only.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            title: {type: string}
+            body: {type: string}
+            channels: {type: array, items: {type: string}}
+            test_email: {type: string}
+            body_html: {type: string}
+            images: {type: array}
+            cta_blocks: {type: array}
+            push_image: {type: string}
+    responses:
+      200:
+        description: Test notification sent
+    """
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    
+    # A preview may only target the authenticated administrator, never an
+    # arbitrary email/account submitted in the body. Reuse campaign dispatch.
+    try:
+        rich, rich_plain = rich_fields(data)
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    title, body = data.get('title',''), data.get('body') or rich_plain
+    channels = data.get('channels',['in_app'])
+    if (not isinstance(title,str) or not title.strip() or len(title)>200 or
+        not isinstance(body,str) or not body.strip() or len(body)>10000 or
+        not isinstance(channels,list) or not channels or any(c not in ('in_app','email','push') for c in channels)):
+        return jsonify({'error':MSG.INVALID_INPUT}),400
+    db = get_user_client()
+    profile = db.table('profiles').select('email,campus_id').eq('id',g.user_id).single().execute()
+    if not profile:
+        return jsonify({'error':MSG.NOTIF_BLAST_NOT_FOUND}),404
+    if data.get('test_email') and data['test_email'] != profile.get('email'):
+        return jsonify({'error':MSG.NOTIFICATION_BLAST_CAMPUS_DENIED}),403
+    provider = data.get('email_provider')
+    if provider not in (None,'resend','onesignal'):
+        return jsonify({'error':MSG.INVALID_INPUT}),400
+    action_url = data.get('action_url') or None
+    if action_url:
+        from app.services.blast_contracts import web_url
+        if not web_url(action_url) or not action_url.startswith('/'):
+            return jsonify({'error':MSG.INVALID_INPUT}),400
+    payload = {'title':title.strip(), 'body':body.strip(),'channels':list(dict.fromkeys(channels)),
+               'segment':{'user_ids':[g.user_id]}, 'campus_id':profile.get('campus_id'),
+               'created_by':g.user_id,'status':'pending','action_url':action_url,
+               'email_provider':provider,**rich}
+    request_id=data.get('request_id')
+    if request_id is not None:
+        if not isinstance(request_id,str) or not validate_uuid(request_id):
+            return jsonify({'error':MSG.INVALID_INPUT}),400
+        payload['id']=request_id
+    try:
+        try:
+            result=db.table('notification_blasts').insert(payload).execute()
+            blast=result[0] if isinstance(result,list) else result
+        except SupabaseError as exc:
+            if not request_id or str((exc.details or {}).get('code'))!='23505':raise
+            blast=db.table('notification_blasts').select('*').eq('id',request_id).single().execute()
+            if not blast or any(blast.get(k)!=v for k,v in payload.items() if k!='status'):
+                return jsonify({'error':MSG.INVALID_INPUT}),409
+        result=send_blast(blast['id'])
+        # Email leaves on its own thread, so wait briefly for the delivery record and
+        # report what the provider actually said. "Sent" without this is how a test
+        # could look successful while nothing was ever delivered.
+        email_receipt = _await_email_delivery(blast['id'])
+        return jsonify({'blast_id':blast['id'],'sent_to':result['sent_to'],'channels':channels,
+                        'test_user_id':g.user_id,'email':email_receipt}),200
+    except Exception:
+        logger.exception('Self-only notification preview failed')
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503
+
+
+# ── Email Analytics Tracking Endpoints ────────────────────────────────────────
+
+@notifications_bp.route("/tracking/open/<blast_id>.png", methods=["GET"])
+def track_email_open(blast_id):
+    """
+    Track email open via 1x1 transparent pixel.
+    Called when email client loads the tracking pixel.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: path
+        name: blast_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: 1x1 transparent PNG pixel
+    """
+    try:
+        db = get_db()
+        
+        # Get blast to check if tracking is enabled
+        blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+        if not blast or not blast.get("tracking_enabled"):
+            # Return pixel anyway to avoid broken images, but don't track
+            pass
+        else:
+            # Record the open event
+            # Using metadata JSONB field to store analytics
+            current_metadata = blast.get("metadata") or {}
+            open_events = current_metadata.get("open_events", [])
+            
+            # Add open event with timestamp
+            open_events.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "ip": request.remote_addr,
+                "user_agent": request.headers.get("User-Agent", "")[:200]
+            })
+            
+            # Keep only last 1000 opens to avoid bloat
+            open_events = open_events[-1000:]
+            
+            current_metadata["open_events"] = open_events
+            current_metadata["open_count"] = len(open_events)
+            current_metadata["last_opened_at"] = datetime.now(timezone.utc).isoformat()
+            
+            db.table("notification_blasts").update({
+                "metadata": current_metadata
+            }).eq("id", blast_id).execute()
+            
+    except Exception as e:
+        # Never fail the pixel request - just log the error
+        logger.warning(f"Failed to track email open for blast {blast_id}: {e}")
+    
+    # Return 1x1 transparent PNG pixel (smallest valid PNG)
+    pixel_data = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    return Response(
+        pixel_data,
+        mimetype="image/png",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@notifications_bp.route("/tracking/click", methods=["GET"])
+def track_email_click():
+    """
+    Track email link click and redirect to destination.
+    Called when user clicks a tracked link in email.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: query
+        name: blast_id
+        type: string
+        required: true
+      - in: query
+        name: url
+        type: string
+        required: true
+      - in: query
+        name: label
+        type: string
+    responses:
+      302:
+        description: Redirect to destination URL
+      400:
+        description: Missing required parameters
+    """
+    blast_id = request.args.get("blast_id")
+    destination_url = request.args.get("url")
+    link_label = request.args.get("label", "Unknown")
+    
+    if not blast_id or not destination_url:
+        return jsonify({"error": "Missing blast_id or url parameter"}), 400
+    
+    try:
+        db = get_db()
+        
+        # Get blast to check if tracking is enabled
+        blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+        if not blast or not blast.get("tracking_enabled"):
+            # Just redirect without tracking
+            pass
+        else:
+            # Record the click event
+            current_metadata = blast.get("metadata") or {}
+            click_events = current_metadata.get("click_events", [])
+            
+            # Add click event
+            click_events.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "url": destination_url,
+                "label": link_label,
+                "ip": request.remote_addr,
+                "user_agent": request.headers.get("User-Agent", "")[:200]
+            })
+            
+            # Keep only last 1000 clicks to avoid bloat
+            click_events = click_events[-1000:]
+            
+            # Track clicks per link
+            link_clicks = current_metadata.get("link_clicks", {})
+            if destination_url not in link_clicks:
+                link_clicks[destination_url] = {
+                    "url": destination_url,
+                    "label": link_label,
+                    "count": 0
+                }
+            link_clicks[destination_url]["count"] += 1
+            
+            current_metadata["click_events"] = click_events
+            current_metadata["link_clicks"] = link_clicks
+            current_metadata["click_count"] = len(click_events)
+            
+            db.table("notification_blasts").update({
+                "metadata": current_metadata
+            }).eq("id", blast_id).execute()
+            
+    except Exception as e:
+        # Log error but still redirect
+        logger.warning(f"Failed to track email click for blast {blast_id}: {e}")
+    
+    # Redirect to destination
+    return redirect(destination_url, code=302)
+
+
+@notifications_bp.route("/blasts/<blast_id>/analytics", methods=["GET"])
+@require_role("admin")
+def get_blast_analytics(blast_id):
+    """
+    Get analytics data for a specific email blast.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: path
+        name: blast_id
+        type: string
+        required: true
+    responses:
+      200:
+        description: Analytics data
+      404:
+        description: Blast not found
+    """
+    try:
+        db = get_db()
+        blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+        
+        if not blast:
+            return jsonify({"error": "Blast not found"}), 404
+        
+        metadata = blast.get("metadata") or {}
+        
+        # Calculate analytics
+        recipient_count = blast.get("recipient_count", 0)
+        open_count = metadata.get("open_count", 0)
+        click_count = metadata.get("click_count", 0)
+        
+        open_rate = (open_count / recipient_count * 100) if recipient_count > 0 else 0
+        click_rate = (click_count / recipient_count * 100) if recipient_count > 0 else 0
+        click_to_open_rate = (click_count / open_count * 100) if open_count > 0 else 0
+        
+        analytics = {
+            "blast_id": blast_id,
+            "recipient_count": recipient_count,
+            "open_count": open_count,
+            "click_count": click_count,
+            "open_rate": round(open_rate, 2),
+            "click_rate": round(click_rate, 2),
+            "click_to_open_rate": round(click_to_open_rate, 2),
+            "last_opened_at": metadata.get("last_opened_at"),
+            "link_clicks": metadata.get("link_clicks", {}),
+            "recent_opens": metadata.get("open_events", [])[-10:],  # Last 10 opens
+            "recent_clicks": metadata.get("click_events", [])[-10:]  # Last 10 clicks
+        }
+        
+        return jsonify(analytics), 200
+        
+    except Exception as e:
+        logger.exception(f"Failed to get analytics for blast {blast_id}")
+        return jsonify({"error": f"Failed to get analytics: {str(e)}"}), 500
+
+
+@notifications_bp.route("/blasts/test-deliverability", methods=["POST"])
+@require_role("admin")
+def test_email_deliverability():
+    """
+    Test email deliverability by sending a test email to a spam testing service.
+    Returns recommendations for improving deliverability.
+    ---
+    tags: [Notifications]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            test_email: {type: string, description: "Email address to send test to (e.g., mail-tester address)"}
+            title: {type: string}
+            body: {type: string}
+    responses:
+      200:
+        description: Test email sent
+      400:
+        description: Invalid input
+    """
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    
+    test_email = data.get("test_email")
+    title = data.get("title", "Test Email")
+    body = data.get("body", "This is a test email for deliverability checking.")
+    
+    if not test_email:
+        return jsonify({"error": "test_email is required"}), 400
+    
+    try:
+        from app.utils.email import send_email_raw, _build_html
+        
+        # Build a test email with typical content
+        html_body = _build_html(
+            "Test User",
+            body,
+            os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT),
+        )
+        
+        # Send the test email
+        send_email_raw(
+            to_email=test_email,
+            to_name="Test User",
+            subject=f"[DELIVERABILITY TEST] {title}",
+            html_body=html_body,
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": f"Test email sent to {test_email}. Check the spam testing service for results.",
+            "recommendations": [
+                "Ensure SPF, DKIM, and DMARC records are properly configured",
+                "Avoid using spam trigger words in subject lines",
+                "Include a clear unsubscribe link for marketing emails",
+                "Use a consistent sender name and email address",
+                "Monitor your sender reputation regularly",
+                "Keep your email list clean and engaged",
+                "Test emails before sending to large lists",
+                "Use double opt-in for new subscribers",
+            ]
+        }), 200
+        
+    except Exception as e:
+        logger.exception("Failed to send deliverability test email")
+        return jsonify({"error": f"Failed to send test: {str(e)}"}), 503
+

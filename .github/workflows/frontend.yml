@@ -1,0 +1,71 @@
+# Frontend CI (Track B, B6)
+# ============================================================================
+# Gates every change to the frontend bundle on the same checks that were run
+# locally during the SSR work:
+#
+#   typecheck -> lint -> build (client + SSR + pre-render) -> serve -> smoke
+#
+# The smoke suite asserts real HTML per public route (title, canonical, OG,
+# JSON-LD, rendered markup), that every route App.tsx declares still resolves,
+# that unknown paths are real 404s, and that the SPA fallback stays an empty
+# shell — so a broken pre-render or a desynced route list fails the build before
+# it reaches the host.
+name: Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'holy-grills-frontend/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'holy-grills-frontend/**'
+      - '.github/workflows/frontend.yml'
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: holy-grills-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: holy-grills-frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Navigation policy tests (Phase 7)
+        run: npm run test:safe-navigation
+
+      - name: Render-safety helper tests (admin data shapes)
+        run: npm run test:value-text
+
+      - name: Settings-merge tests (admin vs user value precedence)
+        run: npm run test:settings-merge
+
+      - name: Build (client + SSR + pre-render)
+        run: npm run build
+
+      - name: Serve the built output
+        run: |
+          npm run serve -- 4174 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:4174/ && break
+            sleep 1
+          done
+
+      - name: Smoke tests
+        run: npm run smoke -- http://localhost:4174

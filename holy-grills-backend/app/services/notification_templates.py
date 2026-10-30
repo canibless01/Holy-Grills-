@@ -32,8 +32,11 @@ NON_CRITICAL_FALLBACKS: dict = {
     "streak_count":   "your streak",
     "gift_sender":    "someone",
     "batch_id":       "your batch",
-    "platform":       "social media",
+    "platform":       "Holy Grills",
+    "brand":          "Holy Grills",
     "currency":       os.environ.get("HP_CURRENCY_NAME", "HP"),
+    "welcome_hp":     os.environ.get("WELCOME_BONUS_HP", "50"),
+    "free_side_credits": "1",
     "referral_count": "your referrals",
     # Additional MSG-placeholder non-critical fallbacks
     "from_tier":      "your previous tier",
@@ -141,6 +144,8 @@ _NON_PERSONALIZED_TYPES: frozenset = frozenset({
 #   channels     — None = derive from EMAIL_TYPES in notification_service;
 #                  list  = hard override (e.g. in_app+push only, no email)
 NOTIFICATION_TEMPLATES: dict = {
+    'free_side_credits_granted': {'title': MSG.FREE_SIDE_CREDITS_TITLE, 'body': MSG.FREE_SIDE_CREDITS_BODY, 'include_name': True, 'channels': None},
+    'exclusive_spin_granted': {'title': MSG.EXCLUSIVE_SPIN_GRANTED_TITLE, 'body': MSG.EXCLUSIVE_SPIN_GRANTED_BODY, 'include_name': True, 'channels': None},
 
     # ── Auth / Account ─────────────────────────────────────────────────────────
     "password_changed": {
@@ -177,7 +182,7 @@ NOTIFICATION_TEMPLATES: dict = {
     # ── Non-personalized: Auth/Security ───────────────────────────────────────
     "welcome_email": {
         "title":        MSG.NOTIF_WELCOME_TITLE,
-        "body":         MSG.NOTIF_WELCOME_BODY,
+        "body":         MSG.NOTIF_WELCOME_BODY,  # Will be overridden dynamically based on bonuses
         "include_name": False,
         "channels":     None,
     },
@@ -250,6 +255,12 @@ NOTIFICATION_TEMPLATES: dict = {
         "body":         "{body}",
         "include_name": False,
         "channels":     None,
+    },
+    "order_placed": {
+        "title": MSG.ORDER_SAVED_NOTIFICATION_TITLE,
+        "body": MSG.ORDER_SAVED_NOTIFICATION_BODY,
+        "include_name": True,
+        "channels": None,
     },
     "order_confirmed": {
         "title":        MSG.ORDER_CONFIRMED_TITLE,
@@ -1179,8 +1190,8 @@ NOTIFICATION_TEMPLATES: dict = {
         "channels":     None,
     },
     "order_moved_up": {
-        "title":        "Order Moved Up!",
-        "body":         "Good news — your order originally requested for {originally_requested_date} has room today! Now scheduled for {target_date}, delivery between {deliv_start}–{deliv_end}.",
+        "title":        MSG.ORDER_MOVED_UP_TITLE,
+        "body":         MSG.ORDER_MOVED_UP_BODY,
         "include_name": True,
         "channels":     None,
     },
@@ -1244,6 +1255,10 @@ def render_notification_template(
     body_tmpl: str = tmpl["body"]
     include_name: bool = tmpl.get("include_name", True)
     channels_override = tmpl.get("channels")  # None or explicit list
+    
+    # Special handling for welcome_email: select body variant based on bonuses
+    if notif_type == "welcome_email" and "welcome_body" in template_data:
+        body_tmpl = template_data["welcome_body"]
 
     # Collect all placeholder keys referenced in title + body
     all_keys = _placeholders(title_tmpl) | _placeholders(body_tmpl)

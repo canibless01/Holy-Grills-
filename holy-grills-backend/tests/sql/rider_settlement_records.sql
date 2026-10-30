@@ -1,0 +1,46 @@
+-- Existing settlement records and RLS; no transfer is sent. All fixtures roll back.
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+DO $audit$
+DECLARE ids uuid[]; rider uuid; admin uuid; stranger uuid;
+ c uuid:=gen_random_uuid(); other_c uuid:=gen_random_uuid(); b uuid:=gen_random_uuid();
+ summary record; changed integer; stamp timestamptz:=clock_timestamp();
+BEGIN
+ SELECT array_agg(id) INTO ids FROM (SELECT id FROM public.profiles WHERE full_name ILIKE '%audit%' AND is_active ORDER BY id LIMIT 3) q;
+ rider:=ids[1];admin:=ids[2];stranger:=ids[3];
+ IF stranger IS NULL THEN RAISE EXCEPTION 'isolated audit profiles required'; END IF;
+ INSERT INTO public.campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Settlement','audit-settle-'||c),(other_c,'[AUDIT rollback] Other','audit-settle-'||other_c);
+ UPDATE public.profiles SET campus_id=c,role='rider' WHERE id=rider;
+ UPDATE public.profiles SET campus_id=c,role='admin' WHERE id=admin;
+ UPDATE public.profiles SET campus_id=other_c,role='admin' WHERE id=stranger;
+ INSERT INTO public.delivery_batches(id,rider_id,status,campus_id,rider_pay_total,completed_at) VALUES(b,rider,'completed',c,500.25,now());
+ INSERT INTO public.delivery_batches(rider_id,status,campus_id,rider_pay_total,completed_at) VALUES(rider,'completed',c,NULL,now()),(rider,'assigned',c,9999,NULL);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',rider)::text,true);
+ PERFORM set_config('role','authenticated',true);
+ SELECT * INTO summary FROM public.hg_rider_earnings(now());
+ IF summary.completed_batches<>2 OR summary.total_earnings<>500.25 OR summary.total_paid<>0 OR summary.unpriced_batches<>1 THEN RAISE EXCEPTION 'rider summary incorrect'; END IF;
+ UPDATE public.delivery_batches SET rider_paid_at=stamp WHERE id=b; GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>0 THEN RAISE EXCEPTION 'rider can settle own batch'; END IF;
+ PERFORM set_config('role','none',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',stranger)::text,true);
+ PERFORM set_config('role','authenticated',true);
+ IF EXISTS(SELECT 1 FROM public.hg_admin_rider_payments(c,now()) WHERE rider_id=rider) THEN RAISE EXCEPTION 'cross-campus earnings exposed'; END IF;
+ UPDATE public.delivery_batches SET rider_paid_at=stamp WHERE id=b; GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>0 THEN RAISE EXCEPTION 'cross-campus admin can settle batch'; END IF;
+ PERFORM set_config('role','none',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',admin)::text,true);
+ PERFORM set_config('role','authenticated',true);
+ UPDATE public.delivery_batches SET rider_paid_at=stamp,rider_paid_by=admin WHERE id=b AND status='completed' AND rider_paid_at IS NULL AND rider_pay_total=500.25; GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>1 THEN RAISE EXCEPTION 'admin could not record payment'; END IF;
+ UPDATE public.delivery_batches SET rider_paid_at=clock_timestamp() WHERE id=b AND rider_paid_at IS NULL; GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>0 THEN RAISE EXCEPTION 'payment replay changed record'; END IF;
+ SELECT * INTO summary FROM public.hg_admin_rider_payments(c,now()) WHERE rider_id=rider;
+ IF summary.total_earned<>500.25 OR summary.total_paid<>500.25 OR summary.outstanding<>0 OR summary.unpriced_batches<>1 THEN RAISE EXCEPTION 'admin paid totals incorrect'; END IF;
+ UPDATE public.delivery_batches SET rider_paid_at=NULL,rider_paid_by=NULL WHERE id=b AND rider_paid_at=stamp; GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>1 THEN RAISE EXCEPTION 'undo failed'; END IF;
+ SELECT * INTO summary FROM public.hg_admin_rider_payments(c,now()) WHERE rider_id=rider;
+ IF summary.total_paid<>0 OR summary.outstanding<>500.25 THEN RAISE EXCEPTION 'undo totals incorrect'; END IF;
+ PERFORM set_config('role','none',true);
+END $audit$;
+ROLLBACK;
+SELECT 'rider/admin earnings, unpriced/incomplete exclusion, mark-paid replay, undo totals and role/campus boundaries passed; fixtures rolled back' AS evidence;

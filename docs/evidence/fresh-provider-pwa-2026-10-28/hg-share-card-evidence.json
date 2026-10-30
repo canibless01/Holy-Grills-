@@ -1,0 +1,16 @@
+{
+  "origin": "http://127.0.0.1:5250",
+  "case": "actual order share-card composition from real Cloudinary template; native device not emulated",
+  "cloudinary_successes": 1,
+  "preview": {
+    "dimensions": [
+      1080,
+      1080
+    ],
+    "mime": "image/png",
+    "bytes": 1191402
+  },
+  "native_share_available": false,
+  "clipboard_contains_order_link": true,
+  "copy_fallback_clicked": true
+}

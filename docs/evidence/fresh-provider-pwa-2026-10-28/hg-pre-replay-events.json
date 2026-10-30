@@ -1,0 +1,32 @@
+[
+  {
+    "case": "card",
+    "reference": "HG-ORDER-d337ba53459244bc86596eac3be1684c",
+    "pre_manual_replay_http_status": 200,
+    "existing_webhook_rows": [
+      {
+        "id": "d75c0af5-8683-4a9f-94fa-50a1f9f1e41b",
+        "status": "processed",
+        "created_at": "2026-10-28T16:01:44.65283+00:00",
+        "processed_at": "2026-10-28T16:01:48.426282+00:00",
+        "provider": "paystack",
+        "event_type": "charge.success"
+      }
+    ]
+  },
+  {
+    "case": "wallet",
+    "reference": "HG-WALLET-491f30d146f7426880302b01d1569310",
+    "pre_manual_replay_http_status": 200,
+    "existing_webhook_rows": [
+      {
+        "id": "20f501cb-aaf9-41c9-b3c4-9023db771cbd",
+        "status": "processed",
+        "created_at": "2026-10-28T16:07:14.029799+00:00",
+        "processed_at": "2026-10-28T16:07:16.295839+00:00",
+        "provider": "paystack",
+        "event_type": "charge.success"
+      }
+    ]
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "origin": "https://www.holygrills.online",
+  "cases": [
+    {
+      "path": "/",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "cache_control": "public, max-age=0, must-revalidate",
+      "csp_present": true,
+      "worker_scope_header": null
+    },
+    {
+      "path": "/manifest.json",
+      "status": 200,
+      "content_type": "application/manifest+json; charset=utf-8",
+      "cache_control": "no-cache",
+      "csp_present": true,
+      "worker_scope_header": null
+    },
+    {
+      "path": "/service-worker.js",
+      "status": 200,
+      "content_type": "application/javascript; charset=utf-8",
+      "cache_control": "no-cache",
+      "csp_present": true,
+      "worker_scope_header": "/"
+    }
+  ]
+}

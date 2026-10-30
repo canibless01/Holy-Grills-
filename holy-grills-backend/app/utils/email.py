@@ -1,13 +1,16 @@
 """
-Email dispatch via Resend (https://resend.com).
-All calls are fire-and-forget. Falls back gracefully if RESEND_API_KEY is not configured.
+Application email dispatch with preferred provider and quota-only failover.
+The caller receives False for an unavailable or uncertain outcome; no speculative retry.
 
 Resend REST API: POST https://api.resend.com/emails
 Auth: Authorization: Bearer <RESEND_API_KEY>
 """
 
 import os
+import uuid
+
 import requests
+from app.constants import APP_TAGLINE_DEFAULT
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -15,192 +18,132 @@ logger = get_logger(__name__)
 
 RESEND_BASE = "https://api.resend.com"
 
+
+def public_api_base():
+    """Accept a backend origin or its /api URL consistently across email links."""
+    base = (os.environ.get('API_PUBLIC_URL') or 'https://holygrills.online/api').rstrip('/')
+    return base if base.endswith('/api') else base + '/api'
+
+# Fixed two-line brand sign-off used by every transactional/rich/ticket email.
+# Kept as constants (rather than the configurable APP_TAGLINE) so every mail
+# ends on the same two brand lines regardless of environment overrides.
+EMAIL_SIGNOFF_LINE_1 = "Made with more than flame ❤️‍🔥,"
+EMAIL_SIGNOFF_LINE_2 = "Holy Grills Team."
+
 TEMPLATES = {
     "order_confirmed": {
         "subject": MSG.EMAIL_ORDER_CONFIRMED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Your order #{d.get('order_id','')[:8].upper()} has been received and is heading to the kitchen.
+        "body": lambda d: f"""Your order #{d.get('order_id','')[:8].upper()} has been received and is heading to the kitchen.
 
 Total: ₦{d.get('total', 0):,.0f}
-Estimated delivery: {d.get('window_label', 'your selected window')}
-
-Track your order in the app.
-
-— {d.get('app_tagline', '')}
-""",
+Estimated delivery: {d.get('window_label', 'your selected window')}""",
+        "cta_buttons": lambda d: [{"label": "Track Your Order", "url": f"https://holygrills.online/orders/{d.get('order_id', '')}", "primary": True}],
     },
     "hp_earned": {
         "subject": MSG.EMAIL_HP_EARNED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""You earned {d.get('hp', 0)} {d.get('currency', 'HP')} on your recent order. Keep ordering to build your {d.get('currency', 'HP')} balance and unlock rewards!
 
-You earned {d.get('hp', 0)} {d.get('currency', 'HP')} on your recent order. Keep ordering to build your {d.get('currency', 'HP')} balance and unlock rewards!
-
-Your balance: {d.get('active_hp', 0)} {d.get('currency', 'HP')} active | {d.get('pending_hp', 0)} {d.get('currency', 'HP')} pending
-
-— {d.get('app_tagline', '')}
-""",
+Your balance: {d.get('active_hp', 0)} {d.get('currency', 'HP')} active | {d.get('pending_hp', 0)} {d.get('currency', 'HP')} pending""",
+        "cta_buttons": lambda d: [{"label": "See What You Can Unlock", "url": "https://holygrills.online/rewards", "primary": True}],
     },
     "tier_upgrade": {
         "subject": MSG.EMAIL_TIER_UPGRADE,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Congratulations — you've reached {d.get('tier_name', '')} tier!
+        "body": lambda d: f"""Congratulations — you've reached {d.get('tier_name', '')} tier!
 
 Your new benefits:
 {d.get('perks', '')}
 
-Keep earning to maintain your status.
-
-— {d.get('app_tagline', '')}
-""",
+Enjoy your new perks!""",
+        "cta_buttons": lambda d: [{"label": "View Your Perks", "url": "https://holygrills.online/rewards", "primary": True}],
     },
     "wallet_funded": {
-        "subject": MSG.EMAIL_WALLET_FUNDED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": "Your Wallet is Funded! 🎉",
+        "body": lambda d: f"""Your {d.get('app_name', '')} wallet has been credited with ₦{d.get('amount', 0):,.0f}.
 
-Your {d.get('app_name', '')} wallet has been credited with ₦{d.get('amount', 0):,.0f}.
-
-New balance: ₦{d.get('new_balance', 0):,.0f}
-
-— {d.get('app_tagline', '')}
-""",
+New balance: ₦{d.get('new_balance', 0):,.0f}""",
+        "cta_buttons": lambda d: [{"label": "Treat Yourself", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "password_reset": {
         "subject": MSG.EMAIL_PASSWORD_RESET,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""We received a request to reset your password.
 
-We received a request to reset your password. Click the link below:
-
-{d.get('reset_link', '')}
-
-This link expires in 1 hour. If you didn't request this, ignore this email.
-
-— {d.get('app_tagline', '')}
-""",
+This link expires in 1 hour. If you didn't request this, you can safely ignore this email.""",
+        "cta_buttons": lambda d: [{"label": "Reset Password", "url": d.get('reset_link', ''), "primary": True}],
     },
     "birthday_bonus": {
         "subject": MSG.EMAIL_BIRTHDAY_BONUS,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""Happy Birthday! As a gift, we've added {d.get('hp', 150)} {d.get('currency', 'HP')} to your account.
 
-Happy Birthday! As a gift, we've added {d.get('hp', 150)} {d.get('currency', 'HP')} to your account.
-
-Head to the app and treat yourself on us!
-
-— {d.get('app_tagline', '')}
-""",
+Treat yourself on us!""",
+        "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "referral_completed": {
         "subject": MSG.EMAIL_REFERRAL_COMPLETED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""Great news — a friend you referred just placed their first order on {d.get('app_name', '')}.
 
-Great news — a friend you referred just placed their first order on {d.get('app_name', '')}.
-
-You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} (active, no monthly cap). Spend it on your next order!
-
-— {d.get('app_tagline', '')}
-""",
+You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} (active, no monthly cap). Spend it on your next order!""",
+        "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "abandoned_cart": {
         "subject": MSG.EMAIL_ABANDONED_CART,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""You left some items in your cart. Come back and complete your order — your {d.get('currency', 'HP')} is waiting!
 
-You left some items in your cart. Come back and complete your order — your {d.get('currency', 'HP')} is waiting!
-
-{d.get('items_summary', '')}
-
-— {d.get('app_tagline', '')}
-""",
+{d.get('items_summary', '')}""",
+        "cta_buttons": lambda d: [{"label": "Complete Your Order", "url": "https://holygrills.online/checkout", "primary": True}],
     },
     "reward_redeemed": {
-        "subject": MSG.EMAIL_REWARD_REDEEMED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": "Your Reward is Confirmed! 🎁",
+        "body": lambda d: f"""You redeemed: {d.get('reward_name', '')} for {d.get('hp_spent', 0)} {d.get('currency', 'HP')}.
 
-You redeemed: {d.get('reward_name', '')} for {d.get('hp_spent', 0)} {d.get('currency', 'HP')}.
-
-Our team will fulfil your reward within {d.get('fulfilment_time', '24 hours')}.
-
-— {d.get('app_tagline', '')}
-""",
+Our team will fulfil your reward within {d.get('fulfilment_time', '24 hours')}.""",
     },
     "tier_grace_period": {
         "subject": MSG.EMAIL_TIER_GRACE,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Your {d.get('currency', 'HP')} activity has dipped below the {d.get('tier_name', 'your tier')} threshold.
+        "body": lambda d: f"""Your {d.get('currency', 'HP')} activity has dipped below the {d.get('tier_name', 'your tier')} threshold.
 You have {d.get('grace_days', 7)} days to place an order and keep your tier status.
 
-— {d.get('app_tagline', '')}
-""",
+You've got this!""",
+        "cta_buttons": lambda d: [{"label": "Place an Order", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "tier_dropped": {
-        "subject": MSG.EMAIL_TIER_DROPPED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": "Your Tier Status Updated",
+        "body": lambda d: f"""Your grace period has ended and your tier has been updated.
 
-Your grace period has ended and your tier has been updated.
-Keep ordering to climb back up!
-
-— {d.get('app_tagline', '')}
-""",
+Start earning to climb back — we're rooting for you!""",
+        "cta_buttons": lambda d: [{"label": "Start Climbing", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "hp_expired": {
         "subject": MSG.EMAIL_HP_EXPIRED,
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""{d.get('amount', 0)} {d.get('currency', 'HP')} has decayed due to {d.get('inactivity_days', 120)} days of inactivity.
 
-{d.get('amount', 0)} {d.get('currency', 'HP')} has decayed due to {d.get('inactivity_days', 120)} days of inactivity.
-Place an order to protect your remaining balance!
-
-— {d.get('app_tagline', '')}
-""",
+Order now to protect your remaining balance!""",
+        "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "monthly_birthday_report": {
         "subject": lambda d: f"🎂 Birthday Report — {d.get('month', 'This Month')} ({d.get('count', 0)} users)",
-        "body": lambda d: f"""
-Hi {d.get('name', 'Admin')},
-
-Here are the {d.get('app_name', '')} users with birthdays in {d.get('month', 'this month')}:
+        "body": lambda d: f"""Here are the {d.get('app_name', '')} users with birthdays in {d.get('month', 'this month')}:
 
 {d.get('summary_text', 'No birthdays this month.')}
 
 Total: {d.get('count', 0)} user{'s' if d.get('count', 0) != 1 else ''}
 
-You can use this list to send birthday wishes, create flyers, or DM them directly.
-
-— {d.get('app_tagline', '')}
-""",
+Use this list for birthday outreach.""",
+        "skip_greeting": True,
+        "skip_signoff": True,
     },
     "event_tickets_export": {
         "subject": lambda d: f"Event Registrants — {d.get('event_title', 'Event')}",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Please find attached the registrant list for {d.get('event_title', 'your event')}.
+        "body": lambda d: f"""Please find attached the registrant list for {d.get('event_title', 'your event')}.
 
 Total registrants: {d.get('count', 0)}
 
-{d.get('registrant_table', '')}
-
-— {d.get('app_tagline', '')}
-""",
+{d.get('registrant_table', '')}""",
+        "skip_greeting": True,
+        "skip_signoff": True,
     },
     "event_ticket_qr": {
         "subject": lambda d: f"🎟️ Your Ticket for {d.get('event_title', 'Event')}",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
-
-Here is your ticket for {d.get('event_title', '')}!
+        "body": lambda d: f"""Here is your ticket for {d.get('event_title', '')}!
 
 Date: {d.get('event_date', 'TBA')}
 Location: {d.get('event_location', 'TBA')}
@@ -208,36 +151,27 @@ Ticket ID: {d.get('ticket_id', '')}
 
 Please show your QR code at the door to check in.
 
-Create an account to earn HP for this event!
-
-— {d.get('app_tagline', '')}
-""",
+Create an account to earn HP for this event!""",
     },
     "squad_invite": {
         "subject": lambda d: f"You've been invited to join a squad order on {d.get('app_name', 'Holy Grills')}!",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "body": lambda d: f"""{d.get('organizer', 'A friend')} added you to a squad order on {d.get('app_name', 'Holy Grills')}!
 
-{d.get('organizer', 'A friend')} added you to a squad order on {d.get('app_name', 'Holy Grills')}!
-
-Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.
-
-— {d.get('app_tagline', '')}
-""",
+Join the squad order in the app to choose your meal and earn {d.get('currency', 'HP')}.""",
+        "cta_buttons": lambda d: [{"label": "Accept Invitation", "url": d.get('invite_link', ''), "primary": True}],
+    },
+    "guest_order_moved_up": {
+        "subject": lambda d: MSG.ORDER_MOVED_UP_TITLE,
+        "body": lambda d: MSG.ORDER_MOVED_UP_BODY.format(**d),
     },
     "guest_order_confirmed": {
-        "subject": lambda d: f"Guest Order Confirmed — {d.get('app_name', 'Holy Grills')}",
-        "body": lambda d: f"""
-Hi {d.get('name', 'there')},
+        "subject": lambda d: f"Your Order #{d.get('order_id', '')[:8].upper()} is Confirmed!",
+        "body": lambda d: f"""Your order #{d.get('order_id', '')[:8].upper()} has been placed successfully!
 
-Your order #{d.get('order_id', '')} has been placed successfully!
+Tracking code: {d.get('claim_token', '')}
 
-Claim token: {d.get('claim_token', '')}
-
-Create an account or log in with this email to claim your order and earn {d.get('currency', 'HP')}.
-
-— {d.get('app_tagline', '')}
-""",
+You can use this code to track your order or create an account with this email to claim your order and earn {d.get('currency', 'HP')}.""",
+        "cta_buttons": lambda d: [{"label": "Track Your Order", "url": f"https://holygrills.online/track-orders?order_number={d.get('order_id', '')}&claim_token={d.get('claim_token', '')}", "primary": True}],
     },
 }
 
@@ -249,30 +183,547 @@ def _resend_api_key() -> str:
 
 import html as _html
 
-def _build_html(name: str, body_text: str, app_tagline: str) -> str:
-    """Wrap plain-text body in a minimal responsive HTML shell."""
+def _wrap_url_with_tracking(url: str, blast_id: str, label: str = "") -> str:
+    """Wrap a URL with tracking redirect if blast_id is provided."""
+    if not blast_id or not url:
+        return url
+    
+    # Get API base URL
+    api_base = public_api_base()
+    
+    # Don't track mailto: or tel: links
+    if url.startswith("mailto:") or url.startswith("tel:"):
+        return url
+    
+    # Wrap URL with tracking endpoint
+    import urllib.parse
+    tracking_url = f"{api_base}/notifications/tracking/click?blast_id={blast_id}&url={urllib.parse.quote(url, safe='')}&label={urllib.parse.quote(label, safe='')}"
+    return tracking_url
+
+
+def _build_html(name: str, body_text: str, app_tagline: str = "", **kwargs) -> str:
+    """Build a branded responsive HTML email with inline CSS.
+
+    ``app_tagline`` is accepted for call-site compatibility and template data
+    use; the sign-off itself is the fixed EMAIL_SIGNOFF brand line.
+    """
     safe_name = _html.escape(str(name or "there"))
-    safe_tagline = _html.escape(str(app_tagline or ""))
+    safe_signoff_1 = _html.escape(EMAIL_SIGNOFF_LINE_1)
+    safe_signoff_2 = _html.escape(EMAIL_SIGNOFF_LINE_2)
+
+    # Extract optional components
+    hero_image = kwargs.get("hero_image")
+    headline = kwargs.get("headline")
+    cta_buttons = kwargs.get("cta_buttons", [])  # List of {"label": "...", "url": "...", "primary": True/False}
+    secondary_section = kwargs.get("secondary_section")  # {"title": "...", "text": "...", "link": "...", "link_text": "..."}
+    social_links = kwargs.get("social_links", {})  # {"whatsapp": "...", "tiktok": "...", etc.}
+    unsubscribe_url = kwargs.get("unsubscribe_url")
+    
+    # Control greeting/sign-off visibility (prevents duplication when templates include their own)
+    skip_greeting = kwargs.get("skip_greeting", False)
+    skip_signoff = kwargs.get("skip_signoff", False)
+    skip_thank_you = kwargs.get("skip_thank_you", False)  # For transactional emails
+    
+    # Email tracking parameters
+    blast_id = kwargs.get("blast_id")  # For tracking opens/clicks
+    track_links = kwargs.get("track_links", False)  # Whether to wrap links with tracking
+    
+    # Brand colors
+    brand_red = "#E01616"
+    brand_red_hover = "#B81212"
+    bg_color = "#FFF5F0"
+    card_bg = "#FFFFFF"
+    text_color = "#1A1A1A"
+    muted_color = "#666666"
+    
+    # Build body HTML
     body_html = _html.escape(body_text.strip()).replace("\n", "<br>")
-    return (
-        f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
-        f"<p>Hi {safe_name},</p>"
-        f"<p>{body_html}</p>"
-        f"<br><p style='color:#888;font-size:12px'>— {safe_tagline}</p>"
-        f"</body></html>"
-    )
+    
+    # Wordmark URL (absolute)
+    wordmark_url = "https://holygrills.online/brand/wordmark.png"
+    
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Holy Grills</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset */
+        body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+        table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
+        img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
+        
+        /* All-screen responsive — ensures proper rendering on all devices */
+        @media only screen and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .fluid {{ max-width: 100% !important; height: auto !important; }}
+            .stack-column {{ display: block !important; width: 100% !important; max-width: 100% !important; }}
+        }}
+        
+        /* Tablet responsive */
+        @media only screen and (min-width: 621px) and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 600px !important; }}
+        }}
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 620px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px 16px !important; }}
+            .email-header {{ padding: 24px 20px 16px !important; }}
+            .email-footer {{ padding: 24px 20px !important; }}
+            .fluid {{ max-width: 100% !important; height: auto !important; }}
+            .stack-column {{ display: block !important; width: 100% !important; max-width: 100% !important; }}
+            h1 {{ font-size: 24px !important; }}
+            h2 {{ font-size: 18px !important; }}
+            p {{ font-size: 15px !important; }}
+            .cta-button {{ padding: 12px 24px !important; font-size: 15px !important; }}
+        }}
+        
+        /* Small mobile */
+        @media only screen and (max-width: 400px) {{
+            .email-padding {{ padding: 16px 12px !important; }}
+            .email-header {{ padding: 20px 16px 12px !important; }}
+            .email-footer {{ padding: 20px 16px !important; }}
+            h1 {{ font-size: 22px !important; }}
+            p {{ font-size: 14px !important; }}
+        }}
+        
+        /* Dark mode */
+        @media (prefers-color-scheme: dark) {{
+            .email-bg {{ background-color: #1A1A1A !important; }}
+            .email-card {{ background-color: #2A2A2A !important; }}
+            .email-text {{ color: #F5F5F5 !important; }}
+            .email-muted {{ color: #AAAAAA !important; }}
+            .email-footer {{ background-color: #1F1F1F !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: {bg_color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;" class="email-bg">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: {bg_color};" class="email-bg">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px;" class="email-container">
+                    <!-- Card -->
+                    <tr>
+                        <td style="background-color: {card_bg}; border-radius: 16px; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);" class="email-card">
+                            <!-- Header with wordmark -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 32px 40px 24px 40px; text-align: center;">
+                                        <a href="https://holygrills.online" style="text-decoration: none;">
+                                            <img src="{wordmark_url}" alt="Holy Grills" width="180" style="display: block; margin: 0 auto; max-width: 180px; height: auto;">
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0 40px;">
+                                        <div style="height: 1px; background: linear-gradient(to right, transparent, rgba(0,0,0,0.1), transparent);"></div>
+                                    </td>
+                                </tr>
+                            </table>"""
+    
+    # Hero image (optional)
+    if hero_image:
+        html += f"""
+                            <!-- Hero Image -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 24px 40px 0 40px;">
+                                        <img src="{_html.escape(hero_image)}" alt="" width="520" style="display: block; width: 100%; max-width: 520px; height: auto; border-radius: 12px;" class="fluid">
+                                    </td>
+                                </tr>
+                            </table>"""
+    
+    # Main content
+    html += f"""
+                            <!-- Content -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 32px 40px;">"""
+    
+    # Greeting (optional — skip for emails that have their own greeting in body)
+    if not skip_greeting:
+        html += f"""
+                                        <p style="margin: 0 0 16px 0; font-size: 18px; color: {text_color};" class="email-text">Hello {safe_name} 👋</p>"""
+    
+    # Headline (optional)
+    if headline:
+        html += f"""
+                                        <h1 style="margin: 0 0 20px 0; font-size: 28px; font-weight: 700; color: {text_color}; line-height: 1.3;" class="email-text">{_html.escape(headline)}</h1>"""
+    
+    # Body text
+    html += f"""
+                                        <div style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: {text_color};" class="email-text">
+                                            {body_html}
+                                        </div>"""
+    
+    # CTA buttons
+    if cta_buttons:
+        html += """
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 24px 0;">
+                                            <tr>"""
+        for btn in cta_buttons:
+            is_primary = btn.get("primary", True)
+            btn_bg = brand_red if is_primary else "transparent"
+            btn_color = "#FFFFFF" if is_primary else brand_red
+            btn_border = f"2px solid {brand_red}" if not is_primary else "none"
+            
+            # Wrap URL with tracking if enabled
+            btn_url = btn.get("url", "")
+            if track_links and blast_id:
+                btn_url = _wrap_url_with_tracking(btn_url, blast_id, btn.get("label", ""))
+            
+            html += f"""
+                                                <td style="padding: 0 8px 8px 0;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                                        <tr>
+                                                            <td style="border-radius: 12px; background-color: {btn_bg}; border: {btn_border};">
+                                                                <a href="{_html.escape(btn_url)}" style="display: inline-block; padding: 14px 28px; font-size: 16px; font-weight: 600; color: {btn_color}; text-decoration: none; border-radius: 12px;" target="_blank">{_html.escape(btn['label'])}</a>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>"""
+        html += """
+                                            </tr>
+                                        </table>"""
+    
+    # Secondary section (optional)
+    if secondary_section:
+        html += f"""
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 24px 0; padding: 24px; background-color: {bg_color}; border-radius: 12px;">
+                                            <tr>
+                                                <td>
+                                                    <h2 style="margin: 0 0 12px 0; font-size: 20px; font-weight: 600; color: {text_color};" class="email-text">{_html.escape(secondary_section.get('title', ''))}</h2>
+                                                    <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.5; color: {muted_color};" class="email-muted">{_html.escape(secondary_section.get('text', ''))}</p>
+                                                    <a href="{_html.escape(secondary_section.get('link', '#'))}" style="font-size: 15px; font-weight: 600; color: {brand_red}; text-decoration: none;">{_html.escape(secondary_section.get('link_text', 'Learn more'))} →</a>
+                                                </td>
+                                            </tr>
+                                        </table>"""
+    
+    # Sign-off (optional — skip for emails that have their own sign-off in body)
+    if not skip_signoff:
+        html += f"""
+                                        <p style="margin: 32px 0 14px 0; font-size: 15px; color: {muted_color};" class="email-muted">{safe_signoff_1}</p>
+                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_signoff_2}</p>"""
+    else:
+        # Still need to close the content table cell
+        html += ""
+    html += """
+                                    </td>
+                                </tr>
+                            </table>"""
+    
+    # Footer
+    html += f"""
+                            <!-- Footer -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #F5F5F5; border-top: 1px solid rgba(0,0,0,0.08);" class="email-footer">
+                                <tr>
+                                    <td style="padding: 32px 40px; text-align: center;">"""
+    
+    # Social icons
+    if social_links:
+        html += """
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto 20px auto;">
+                                            <tr>"""
+        social_icons = {
+            "whatsapp": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/whatsapp.svg",
+            "tiktok": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/tiktok.svg",
+            "facebook": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/facebook.svg",
+            "instagram": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/instagram.svg",
+            "youtube": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/youtube.svg"
+        }
+        for platform, url in social_links.items():
+            if url and platform in social_icons:
+                html += f"""
+                                                <td style="padding: 0 6px;">
+                                                    <a href="{_html.escape(url)}" style="display: inline-block; width: 32px; height: 32px; background-color: {brand_red}; border-radius: 50%; text-align: center; line-height: 32px;" target="_blank">
+                                                        <img src="{social_icons[platform]}" alt="{platform}" width="18" height="18" style="display: inline-block; vertical-align: middle; filter: brightness(0) invert(1);">
+                                                    </a>
+                                                </td>"""
+        html += """
+                                            </tr>
+                                        </table>"""
+    
+    # Thank you line (optional — skip for transactional emails where it's not relevant)
+    if not skip_thank_you:
+        html += f"""
+                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">Thank you for being part of our community!</p>"""
+    html += f"""
+                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">
+                                            <a href="mailto:support@holygrills.online" style="color: {brand_red}; text-decoration: none;">support@holygrills.online</a>
+                                        </p>"""
+    
+    # Unsubscribe link
+    if unsubscribe_url:
+        html += f"""
+                                        <p style="margin: 0 0 12px 0; font-size: 12px; color: {muted_color};" class="email-muted">
+                                            <a href="{_html.escape(unsubscribe_url)}" style="color: {muted_color}; text-decoration: underline;">Unsubscribe from these emails</a>
+                                        </p>"""
+    
+    # Copyright
+    html += f"""
+                                        <p style="margin: 0; font-size: 12px; color: {muted_color};" class="email-muted">Copyright © 2026 Holy Grills. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>"""
+    
+    # Add tracking pixel if blast_id is provided
+    if blast_id:
+        api_base = public_api_base()
+        tracking_pixel_url = f"{api_base}/notifications/tracking/open/{blast_id}.png"
+        html += f"""
+                    <tr>
+                        <td style="padding: 0;">
+                            <img src="{tracking_pixel_url}" width="1" height="1" style="display: block; width: 1px; height: 1px;" alt="" />
+                        </td>
+                    </tr>"""
+    
+    html += f"""
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>"""
+    
+    return html
 
 
-def send_email(to_email: str, to_name: str, template_key: str, data: dict = None, provider: str = None) -> bool:
+def _build_rich_html(name: str, body_html: str, images: list, cta_blocks: list, app_tagline: str) -> str:
+    """
+    Build a branded responsive HTML email with rich content (images, CTA buttons).
+    
+    Args:
+        name: Recipient's name
+        body_html: Rich HTML content (already formatted)
+        images: List of image blocks {url, alt, link?}
+        cta_blocks: List of CTA blocks {label, url, style}
+        app_tagline: accepted for call-site compatibility; the sign-off is
+                     the fixed two-line EMAIL_SIGNOFF brand lines
+
+    Returns:
+        Complete HTML email string
+    """
+    safe_name = _html.escape(str(name or "there"))
+    safe_signoff_1 = _html.escape(EMAIL_SIGNOFF_LINE_1)
+    safe_signoff_2 = _html.escape(EMAIL_SIGNOFF_LINE_2)
+    
+    # Brand colors
+    brand_red = "#E01616"
+    brand_red_hover = "#B81212"
+    
+    # Wordmark URL (absolute)
+    wordmark_url = "https://holygrills.online/brand/wordmark.png"
+    
+    # Build images section
+    images_html = ""
+    if images:
+        images_html = '<div style="padding: 24px 40px 0;">'
+        for img in images:
+            img_url = img.get("url", "")
+            img_alt = _html.escape(img.get("alt", ""))
+            img_link = img.get("link")
+            
+            if img_link:
+                images_html += f'''
+                <div style="margin-bottom: 16px;">
+                    <a href="{_html.escape(img_link)}" target="_blank" rel="noopener noreferrer">
+                        <img src="{_html.escape(img_url)}" alt="{img_alt}" style="width: 100%; height: auto; border-radius: 12px; display: block;" />
+                    </a>
+                </div>
+                '''
+            else:
+                images_html += f'''
+                <div style="margin-bottom: 16px;">
+                    <img src="{_html.escape(img_url)}" alt="{img_alt}" style="width: 100%; height: auto; border-radius: 12px; display: block;" />
+                </div>
+                '''
+        images_html += '</div>'
+    
+    # Build CTA buttons section
+    cta_html = ""
+    if cta_blocks:
+        cta_html = '<table style="margin: 0 0 24px 0;"><tbody><tr>'
+        for cta in cta_blocks:
+            label = _html.escape(cta.get("label", "Click here"))
+            url = _html.escape(cta.get("url", "#"))
+            style = cta.get("style", "primary")
+            is_primary = style == "primary"
+            
+            bg_color = brand_red if is_primary else "transparent"
+            text_color = "#FFFFFF" if is_primary else brand_red
+            border = "none" if is_primary else f"2px solid {brand_red}"
+            
+            cta_html += f'''
+            <td style="padding: 0 8px 8px 0;">
+                <table>
+                    <tbody>
+                        <tr>
+                            <td style="border-radius: 12px; background-color: {bg_color}; border: {border};">
+                                <a href="{url}" style="display: inline-block; padding: 14px 28px; font-size: 16px; font-weight: 600; color: {text_color}; text-decoration: none; border-radius: 12px;" target="_blank" rel="noopener noreferrer">
+                                    {label}
+                                </a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </td>
+            '''
+        cta_html += '</tr></tbody></table>'
+    
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Holy Grills</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset */
+        body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+        table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
+        img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
+        
+        /* All-screen responsive — ensures proper rendering on all devices */
+        @media only screen and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+        }}
+        
+        /* Tablet responsive */
+        @media only screen and (min-width: 621px) and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 600px !important; }}
+        }}
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 620px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px 16px !important; }}
+            .email-header {{ padding: 24px 20px 16px !important; }}
+            .email-footer {{ padding: 24px 20px !important; }}
+            h1 {{ font-size: 24px !important; }}
+            h2 {{ font-size: 18px !important; }}
+            p {{ font-size: 15px !important; }}
+        }}
+        
+        /* Small mobile */
+        @media only screen and (max-width: 400px) {{
+            .email-padding {{ padding: 16px 12px !important; }}
+            .email-header {{ padding: 20px 16px 12px !important; }}
+            .email-footer {{ padding: 20px 16px !important; }}
+            h1 {{ font-size: 22px !important; }}
+            p {{ font-size: 14px !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #FFF5F0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; border: 0; border-spacing: 0; background-color: #FFF5F0;">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <table role="presentation" class="email-container" style="width: 600px; max-width: 600px; border-collapse: collapse; border: 0; border-spacing: 0; background-color: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                    
+                    <!-- Header with wordmark -->
+                    <tr>
+                        <td class="email-header" style="padding: 32px 40px 24px; text-align: center;">
+                            <img src="{wordmark_url}" alt="Holy Grills" style="max-width: 180px; height: auto;" />
+                        </td>
+                    </tr>
+                    
+                    <!-- Divider -->
+                    <tr>
+                        <td style="padding: 0 40px;">
+                            <div style="height: 1px; background: linear-gradient(to right, transparent, rgba(0,0,0,0.1), transparent);"></div>
+                        </td>
+                    </tr>
+                    
+                    <!-- Images -->
+                    {images_html}
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td class="email-padding" style="padding: 32px 40px;">
+                            <!-- Greeting -->
+                            <p style="margin: 0 0 16px 0; font-size: 18px; color: #1A1A1A;">
+                                Hello {safe_name} 👋
+                            </p>
+                            
+                            <!-- Body HTML -->
+                            <div style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #1A1A1A;">
+                                {body_html}
+                            </div>
+                            
+                            <!-- CTA Buttons -->
+                            {cta_html}
+                            
+                            <!-- Sign-off -->
+                            <p style="margin: 32px 0 14px 0; font-size: 15px; color: #666666;">
+                                {safe_signoff_1}
+                            </p>
+                            <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1A1A1A;">
+                                {safe_signoff_2}
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="email-footer" style="background-color: #F5F5F5; border-top: 1px solid rgba(0,0,0,0.08); padding: 32px 40px; text-align: center;">
+                            <p style="margin: 0 0 12px 0; font-size: 14px; color: #666666;">
+                                Thank you for being part of our community!
+                            </p>
+                            <p style="margin: 0 0 12px 0; font-size: 14px; color: #666666;">
+                                <a href="mailto:support@holygrills.online" style="color: {brand_red}; text-decoration: none;">support@holygrills.online</a>
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #666666;">
+                                Copyright © 2026 Holy Grills. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>'''
+    
+    return html
+
+
+def send_email(to_email: str, to_name: str, template_key: str, data: dict = None, provider: str = None, blast_id: str = None) -> bool:
     """
     Send a transactional email via whichever provider get_email_provider
     resolves to. Template resolution: email_templates DB row (admin-edited)
     takes precedence; falls back to the hardcoded TEMPLATES dict if no row
     exists for this template_key.
+    
+    Args:
+        blast_id: Optional blast ID for tracking opens/clicks (for notification blasts)
     """
     data = data or {}
     data.setdefault("name", to_name)
-    data.setdefault("app_tagline", os.environ.get("APP_TAGLINE", "Holy Grills FUTA"))
+    data.setdefault("app_tagline", os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT))
     data.setdefault("app_name", os.environ.get("APP_NAME", "Holy Grills"))
     data.setdefault("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
 
@@ -303,6 +754,17 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         subject_tpl = template["subject"]
         subject = subject_tpl(data) if callable(subject_tpl) else subject_tpl
         body_text = template["body"](data)
+        # Extract optional template parameters
+        cta_buttons_tpl = template.get("cta_buttons")
+        cta_buttons = cta_buttons_tpl(data) if callable(cta_buttons_tpl) else cta_buttons_tpl or []
+        skip_greeting = template.get("skip_greeting", False)
+        skip_signoff = template.get("skip_signoff", False)
+        skip_thank_you = template.get("skip_thank_you", False)
+    else:
+        cta_buttons = []
+        skip_greeting = False
+        skip_signoff = False
+        skip_thank_you = False
 
     _app_name = data.get("app_name", os.environ.get("APP_NAME", "Holy Grills"))
     _currency = data.get("currency", os.environ.get("HP_CURRENCY_NAME", "HP"))
@@ -310,86 +772,404 @@ def send_email(to_email: str, to_name: str, template_key: str, data: dict = None
         subject = subject.replace("{platform}", _app_name).replace("{currency}", _currency)
     body_text = body_text.replace("{platform}", _app_name).replace("{currency}", _currency)
 
-    html_body = _build_html(to_name or "there", body_text, data.get("app_tagline", ""))
+    # Determine if we should track links (only for notification blasts with tracking enabled)
+    track_links = False
+    if blast_id:
+        try:
+            from app.db import get_db
+            db = get_db()
+            blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+            track_links = blast.get("tracking_enabled", False) if blast else False
+        except Exception:
+            track_links = False
+    
+    html_body = _build_html(
+        to_name or "there",
+        body_text,
+        data.get("app_tagline", ""),
+        cta_buttons=cta_buttons,
+        skip_greeting=skip_greeting,
+        skip_signoff=skip_signoff,
+        skip_thank_you=skip_thank_you,
+        blast_id=blast_id,
+        track_links=track_links,
+    )
 
-    from app.services.notification_service import get_email_provider, _dispatch_email_via_onesignal
+    from app.services.notification_service import get_email_provider
     chosen = get_email_provider(scope="transactional", override=provider)
+    return send_email_routed(to_email, to_name, subject, html_body, provider=chosen)
 
-    if chosen == "onesignal":
-        return _dispatch_email_via_onesignal(to_email, to_name, subject, html_body)
 
-    api_key = _resend_api_key()
-    if not api_key:
-        logger.debug("send_email: RESEND_API_KEY not configured — skipping email to %s", to_email)
-        return False
-    from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
-    from_name = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
-    payload = {"from": f"{from_name} <{from_email}>", "to": [to_email], "subject": subject, "html": html_body}
-    try:
-        from app.utils.retry import with_retry
-
-        @with_retry(max_attempts=3, backoff=0.5)
-        def _post():
-            return requests.post(
-                f"{RESEND_BASE}/emails",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=payload, timeout=10,
-            )
-
-        resp = _post()
-        if resp.status_code not in (200, 201):
-            logger.warning("Resend email error %s for %s: %s", resp.status_code, to_email, resp.text[:200])
-            return False
+def _email_quota_rejection(response):
+    """Only an explicit provider refusal may switch transports safely."""
+    if response.status_code == 429:
         return True
-    except Exception as e:
-        logger.error("Email send failed for %s: %s", to_email, e)
+    if response.status_code not in (400, 403):
         return False
-
-
-def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
-    """
-    Send a raw HTML email via Resend (no template lookup).
-    Used for dynamically assembled bodies (birthday report, event export, etc.).
-    Returns True on success, False on failure (never raises).
-    """
-    api_key = _resend_api_key()
-    if not api_key:
-        logger.debug("send_email_raw: RESEND_API_KEY not configured — skipping email to %s", to_email)
+    try:
+        detail = response.json()
+    except (ValueError, TypeError):
         return False
+    if not isinstance(detail, dict):
+        return False
+    name = str(detail.get("name") or detail.get("code") or "").lower()
+    if name in {"daily_quota_exceeded", "monthly_quota_exceeded", "quota_exceeded", "rate_limit_exceeded"}:
+        return True
+    # OneSignal reports its monthly email allowance in the errors field.
+    errors = detail.get("errors")
+    if isinstance(errors, str):
+        errors = [errors]
+    return isinstance(errors, list) and any(
+        isinstance(value, str) and "email" in value.lower()
+        and "limit" in value.lower() and "exceed" in value.lower()
+        and ("monthly" in value.lower() or "daily" in value.lower())
+        for value in errors)
 
-    from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
-    from_name  = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
 
+def _provider_errors(detail) -> str:
+    """Flatten a provider error envelope to one line for the delivery receipt."""
+    errors = detail.get("errors") if isinstance(detail, dict) else None
+    if isinstance(errors, str):
+        return errors
+    if isinstance(errors, list):
+        parts = []
+        for item in errors:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("title") or item.get("code") or item))
+        return "; ".join(parts)
+    if isinstance(detail, dict):
+        return str(detail.get("message") or detail.get("error") or "")
+    return ""
+
+
+def _email_undeliverable(response, detail) -> bool:
+    """True when the provider explicitly delivered to nobody.
+
+    This is the "campaign was sent but no inbox ever received it" case: OneSignal
+    accepts the request and answers with an error body (no email subscription, no
+    valid recipients) or with `recipients: 0`. Nothing was sent, so trying the other
+    provider cannot produce a duplicate — only an actual delivery.
+    """
+    if not isinstance(detail, dict):
+        return False
+    if detail.get("errors"):
+        return True
+    recipients = detail.get("recipients")
+    if isinstance(recipients, bool):
+        return True
+    if isinstance(recipients, (int, float)) and recipients <= 0:
+        return True
+    return False
+
+
+def _onesignal_email_payload(app_id, to_email, subject, html_body, transactional):
+    """Body for POST /notifications targeting one email address.
+
+    `email_from_address` is the part that was missing: without it OneSignal sends
+    from its own no-reply address on a domain the app has not verified, which is what
+    makes "sent" campaigns never turn up (and land in spam when they do). The
+    idempotency key stops a retried request from mailing the customer twice.
+    """
+    from app.utils.validators import normalize_email
+    from_email = (os.environ.get("ONESIGNAL_EMAIL_FROM") or os.environ.get("EMAIL_FROM")
+                  or "noreply@holygrills.online")
     payload = {
-        "from": f"{from_name} <{from_email}>",
-        "to":   [to_email],
-        "subject": subject,
-        "html": html_body,
+        "app_id": app_id,
+        "target_channel": "email",
+        # OneSignal keys the subscription by this token, so it must be the same
+        # canonical string the subscription was created with — a stray space or comma
+        # makes it a different identifier and the send is refused as "not subscribed".
+        "include_email_tokens": [normalize_email(to_email) or to_email],
+        "email_subject": subject,
+        "email_body": html_body,
+        "email_from_address": from_email,
+        "email_from_name": os.environ.get("EMAIL_FROM_NAME", "Holy Grills"),
+        "idempotency_key": str(uuid.uuid4()),
     }
+    sender_domain = os.environ.get("ONESIGNAL_EMAIL_SENDER_DOMAIN")
+    if sender_domain:
+        payload["email_sender_domain"] = sender_domain
+    # Transactional mail (receipts, tickets, password resets) must reach the customer
+    # even if they unsubscribed from marketing; marketing blasts must respect it.
+    if transactional:
+        payload["include_unsubscribed"] = True
+    return payload
 
-    try:
-        from app.utils.retry import with_retry
 
-        @with_retry(max_attempts=3, backoff=0.5)
-        def _post():
-            return requests.post(
-                f"{RESEND_BASE}/emails",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type":  "application/json",
-                },
-                json=payload,
-                timeout=10,
-            )
+# A refusal that means "this address is unsubscribed" — the one case where falling
+# back to the other transport would deliver mail somebody opted out of.
+_UNSUBSCRIBED_MARKERS = ("not subscribed", "unsubscribed", "no email", "email not enabled",
+                         "no valid", "no recipients", "invalid email")
 
-        resp = _post()
-        if resp.status_code not in (200, 201):
-            logger.warning("Resend raw email error %s for %s: %s", resp.status_code, to_email, resp.text[:200])
-            return False
-        return True
-    except Exception as e:
-        logger.error("Raw email send failed for %s: %s", to_email, e)
+
+def _onesignal_not_subscribed(receipt):
+    """Did OneSignal refuse because the address has no Email subscription?"""
+    if not receipt or receipt.get("provider") != "onesignal":
         return False
+    text = str(receipt.get("error") or "").lower()
+    return any(marker in text for marker in _UNSUBSCRIBED_MARKERS)
+
+
+def _email_attempt(provider, to_email, to_name, subject, html_body, headers=None,
+                   receipt=None, transactional=True):
+    """One delivery attempt.
+
+    Returns (accepted, quota_rejected, undeliverable):
+      * accepted      — the provider took it (message id present, no errors)
+      * quota_rejected— an explicit out-of-quota refusal (safe to switch provider)
+      * undeliverable — the provider accepted but delivered to nobody (also safe)
+    Anything else (timeout, 5xx, an unrecognised 4xx) is ambiguous: no retry, no
+    second transport, because the message may already be in flight.
+    """
+    response = None
+    from app.utils.validators import normalize_email
+    canonical = normalize_email(to_email)
+    if not canonical:
+        # Never hand a malformed token to a provider: it would register or target an
+        # identifier that can never receive mail.
+        logger.warning("email: refusing to send to a malformed address (%r)", str(to_email)[:60])
+        if receipt is not None:
+            receipt.update({"provider": provider, "state": "skipped", "error": "invalid_email_address"})
+        return False, False, False
+    to_email = canonical
+    try:
+        if provider == "onesignal":
+            from app.services.notification_service import _get_onesignal_creds, _onesignal_email_post, _ONESIGNAL_BASE
+            app_id, api_key = _get_onesignal_creds()
+            if not app_id or not api_key:
+                if receipt is not None:
+                    receipt.update({"provider": provider, "state": "not_configured"})
+                return False, False, False
+            # Custom RFC unsubscribe headers cannot safely be translated to an
+            # undocumented provider field. Preserve the caller's Resend path.
+            if headers:
+                if receipt is not None:
+                    receipt.update({"provider": provider, "state": "skipped"})
+                return False, False, False
+            payload = _onesignal_email_payload(app_id, to_email, subject, html_body, transactional)
+            response = _onesignal_email_post(f"{_ONESIGNAL_BASE}/notifications",
+                                      headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
+                                      payload=payload)
+            accepted = undeliverable = False
+            detail = {}
+            try:
+                detail = response.json()
+            except (ValueError, TypeError):
+                detail = {}
+            if not isinstance(detail, dict):
+                detail = {}
+            if response.status_code in (200, 202):
+                # A 2xx with an errors body, or recipients: 0, means nothing was sent:
+                # OneSignal accepted the request but had no email subscription to
+                # deliver to. That is a miss, not a success.
+                undeliverable = _email_undeliverable(response, detail)
+                accepted = bool(detail.get("id")) and not undeliverable
+            if undeliverable:
+                # Say *why* in the log, not just that it was a miss: "status 200" alone
+                # is what made this take a support round trip to diagnose.
+                logger.warning("onesignal: no email subscription for %s — provider said: %s",
+                               _mask_email(to_email), _provider_errors(detail) or "no recipients")
+            if receipt is not None:
+                receipt.update({
+                    "provider": provider,
+                    "http_status": response.status_code,
+                    "provider_message_id": detail.get("id"),
+                    "provider_recipients": detail.get("recipients"),
+                    "error": None if accepted else (_provider_errors(detail) or None),
+                })
+        else:
+            api_key = _resend_api_key()
+            if not api_key:
+                if receipt is not None:
+                    receipt.update({"provider": provider, "state": "not_configured"})
+                return False, False, False
+            from_email = os.environ.get("EMAIL_FROM", "noreply@holygrills.online")
+            from_name = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
+            payload = {"from": f"{from_name} <{from_email}>", "to": [to_email], "subject": subject, "html": html_body}
+            if headers:
+                payload["headers"] = dict(headers)
+            response = requests.post(f"{RESEND_BASE}/emails",
+                                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                                     json=payload, timeout=10)
+            accepted = response.status_code in (200, 201)
+            detail = {}
+            if accepted:
+                try:
+                    detail = response.json()
+                except (ValueError, TypeError):
+                    detail = {}
+                accepted = isinstance(detail, dict) and bool(detail.get("id")) and not detail.get("error")
+            if receipt is not None:
+                receipt.update({
+                    "provider": provider,
+                    "http_status": response.status_code,
+                    "provider_message_id": detail.get("id") if isinstance(detail, dict) else None,
+                    "error": None if accepted else (_provider_errors(detail) or None),
+                })
+            undeliverable = False
+        if accepted:
+            if receipt is not None:
+                receipt.update({"state": "accepted"})
+            return True, False, False
+        quota = _email_quota_rejection(response)
+        if not undeliverable:
+            # A 4xx that names "no valid recipients / not subscribed" also means
+            # nothing was delivered — safe to use the other transport.
+            undeliverable = (response.status_code in (400, 404)
+                             and any(marker in (_provider_errors(_safe_json(response)) or "").lower()
+                                     for marker in ("not subscribed", "no valid", "no recipients",
+                                                    "no email", "invalid email", "email not enabled")))
+        if receipt is not None and receipt.get("state") != "accepted":
+            receipt.setdefault("error", _provider_errors(_safe_json(response)) or None)
+            receipt["state"] = "undelivered" if undeliverable else ("rejected" if not quota else "quota")
+        logger.warning("Email provider %s rejected delivery with status %s (quota=%s, undelivered=%s)",
+                       provider, response.status_code, quota, undeliverable)
+        return False, quota, undeliverable
+    except Exception as exc:
+        # A timeout/connection reset may follow provider acceptance. A second
+        # transport here could deliver the same message twice.
+        logger.warning("Email provider %s outcome unavailable: %s", provider, type(exc).__name__)
+        if receipt is not None:
+            receipt.update({"provider": provider, "state": "unknown", "error": type(exc).__name__})
+        return False, False, False
+
+
+def _mask_email(address):
+    """a**@example.com — enough to debug, not enough to leak a customer list into logs."""
+    text = str(address or "")
+    if "@" not in text:
+        return "***"
+    local, _, domain = text.partition("@")
+    return f"{local[:1]}***@{domain}"
+
+
+def _safe_json(response):
+    try:
+        detail = response.json()
+        return detail if isinstance(detail, dict) else {}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
+def _slot_was_wasted(receipt):
+    """Did this attempt definitely not send anything?
+
+    Only then may the reserved slot be handed back. "unknown"/"rejected" cover
+    timeouts, 5xx and unrecognised 4xx responses, where the message may already be
+    accepted by the provider — those keep their slot.
+    """
+    state = (receipt or {}).get("state")
+    return state in ("quota", "undelivered", "not_configured", "skipped")
+
+
+def _attempt_and_settle(provider, to_email, to_name, subject, html_body, headers,
+                        receipt=None, transactional=True, slot_claimed=False):
+    """One attempt, with the reserved slot kept if anything may have been sent.
+
+    `slot_claimed` is True for the first attempt, whose slot was already taken by
+    `email_usage.reserve_slot` — counting it twice would burn the allowance at half
+    the real capacity.
+    """
+    from app.services import email_usage
+    if not slot_claimed:
+        email_usage.reserve(provider)
+    accepted, quota, undeliverable = _email_attempt(
+        provider, to_email, to_name, subject, html_body, headers,
+        receipt=receipt, transactional=transactional)
+    # A quota refusal or a "delivered to nobody" answer is proof that nothing was
+    # sent, even when the caller passed no receipt to inspect.
+    if not accepted and (_slot_was_wasted(receipt) or quota or undeliverable):
+        email_usage.release(provider)
+    return accepted, quota, undeliverable
+
+
+def send_email_routed(to_email, to_name, subject, html_body, *, provider="resend", headers=None,
+                      receipt=None, transactional=None):
+    """Deliver one email, preferring `provider` and switching only when it is safe.
+
+    Every email in the app funnels through here (orders, guest orders, marketplace,
+    events, newsletters, campaigns, admin mail), which is why the daily counter this
+    function maintains is a complete record of what each provider has sent.
+
+    The preferred provider's slot is **reserved before the send**, so under a burst
+    the database decides who switches rather than each request reading a stale count.
+    A switch then happens in exactly three situations:
+      1. the preferred provider has no slots left today (counter pre-emption);
+      2. it explicitly refused for quota;
+      3. it accepted the request but delivered to nobody (no email subscription,
+         zero recipients) — nothing was sent, so the alternate cannot duplicate.
+
+    Ambiguous outcomes (timeout, 5xx, unrecognised 4xx) never switch: the first
+    attempt may already be in the customer's inbox.
+    """
+    from app.services import email_usage
+    if transactional is None:
+        # A message that carries List-Unsubscribe is marketing, wherever it came from.
+        # This matters on the OneSignal path, where `include_unsubscribed` decides
+        # whether someone who opted out still gets it.
+        transactional = not headers
+    preferred = "onesignal" if provider == "onesignal" else "resend"
+    if receipt is not None:
+        receipt.clear()
+        receipt.update({"preempted": None})
+    if headers and preferred != "resend":
+        preferred = "resend"          # custom RFC headers only exist on the Resend path
+
+    chosen, _ = email_usage.reserve_slot(preferred)
+    if chosen != preferred:
+        if receipt is not None:
+            receipt["preempted"] = preferred
+        # A List-Unsubscribe header cannot be expressed on the OneSignal payload;
+        # the OneSignal send carries the equivalent intent (marketing sends leave
+        # include_unsubscribed off, so OneSignal's own unsubscribe still applies).
+        headers = None
+        logger.info("email: %s is at today's limit — sending via %s", preferred, chosen)
+
+    accepted, quota, undeliverable = _attempt_and_settle(
+        chosen, to_email, to_name, subject, html_body, headers,
+        receipt=receipt, transactional=transactional, slot_claimed=True)
+    if accepted:
+        return True
+    if (chosen == "onesignal" and not transactional
+            and _onesignal_not_subscribed(receipt)):
+        # Refused because the address is unsubscribed, and this is a marketing send:
+        # delivering it by the other transport would override the customer's own
+        # opt-out. Skip it instead. (Transactional mail still falls back — a receipt
+        # or a QR code must arrive.)
+        logger.info("email: marketing send to %s skipped — the address is unsubscribed",
+                    _mask_email(to_email))
+        if receipt is not None:
+            receipt["state"] = "skipped"
+            receipt["skipped_reason"] = "unsubscribed"
+        return False
+    if not (quota or undeliverable):
+        return False                  # ambiguous — no second transport, slot stays counted
+
+    alternate = "resend" if chosen == "onesignal" else "onesignal"
+    alternate_receipt = {}
+    accepted, _, _ = _attempt_and_settle(
+        alternate, to_email, to_name, subject, html_body, None,
+        receipt=alternate_receipt, transactional=transactional)
+    if receipt is not None:
+        receipt.setdefault("fallback", alternate_receipt)
+        if accepted:
+            receipt["state"] = "accepted_fallback"
+            receipt["delivered_by"] = alternate
+    return accepted
+
+
+def send_email_raw(to_email: str, to_name: str, subject: str, html_body: str, headers: dict = None,
+                   transactional: bool = None) -> bool:
+    """Raw email prefers Resend, with the daily counter as the fallback trigger.
+
+    `transactional` defaults to "no List-Unsubscribe header": a newsletter carries
+    those headers and is therefore marketing, so the OneSignal fallback respects
+    unsubscribes instead of reaching someone who opted out.
+    """
+    return send_email_routed(to_email, to_name, subject, html_body, provider="resend",
+                             headers=headers, transactional=transactional)
 
 
 def get_user_email_and_name(user_id: str) -> tuple:
@@ -430,40 +1210,132 @@ def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str
         buffered = io.BytesIO()
         img.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px 0;" />'
+        qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px auto;" />'
     except Exception as e:
         logger.error("send_qr_ticket_email: Failed to generate local base64 QR code for ticket %s: %s", ticket_id, e)
         # Fail closed instead of leaking ticket_id to third-party external server
         return False
 
     safe_title = _html.escape(str(event_title or ""))
-    safe_name = _html.escape(str(name or "there"))
     safe_date = _html.escape(str(event_date or "TBA"))
     safe_location = _html.escape(str(event_location or "TBA"))
     safe_ticket_id = _html.escape(str(ticket_id or ""))
-    safe_email = _html.escape(str(email or ""))
 
-    app_tagline = _html.escape(os.environ.get("APP_TAGLINE", "Holy Grills FUTA"))
     subject = f"🎟️ Your Ticket for {event_title}"
 
-    html_body = (
-        f"<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
-        f"<h2>🎟️ Your Ticket for {safe_title}</h2>"
-        f"<p>Hi {safe_name},</p>"
-        f"<p>Thank you for registering! Here are your official ticket details:</p>"
-        f"<ul>"
-        f"<li><strong>Event:</strong> {safe_title}</li>"
-        f"<li><strong>Date:</strong> {safe_date}</li>"
-        f"<li><strong>Location:</strong> {safe_location}</li>"
-        f"<li><strong>Ticket ID:</strong> <code>{safe_ticket_id}</code></li>"
-        f"</ul>"
-        f"<p>Present this QR code at the door for check-in:</p>"
-        f"{qr_img_tag}"
-        f"<div style='background-color:#f0f8ff;border-left:4px solid #0080ff;padding:12px;margin:20px 0;'>"
-        f"<strong>Earn Rewards!</strong> Create an account with {safe_email} to earn HP for this event and unlock exclusive perks!"
-        f"</div>"
-        f"<br><p style='color:#888;font-size:12px'>— {app_tagline}</p>"
-        f"</body></html>"
-    )
+    body_text = f"""Here is your ticket for {safe_title}!
+
+Date: {safe_date}
+Location: {safe_location}
+Ticket ID: {safe_ticket_id}
+
+Your QR code is shown below — please show it at the door for check-in.
+
+Create an account to earn HP for this event!"""
+
+    # Build HTML with shared layout, but we need to embed the QR code
+    # So we'll build a custom HTML that uses the shared layout structure
+    brand_red = "#E01616"
+    bg_color = "#FFF5F0"
+    card_bg = "#FFFFFF"
+    text_color = "#1A1A1A"
+    muted_color = "#666666"
+    wordmark_url = "https://holygrills.online/brand/wordmark.png"
+    safe_name = _html.escape(str(name or "there"))
+    safe_signoff_1 = _html.escape(EMAIL_SIGNOFF_LINE_1)
+    safe_signoff_2 = _html.escape(EMAIL_SIGNOFF_LINE_2)
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Holy Grills</title>
+    <style>
+        body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+        table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
+        img {{ -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }}
+        @media only screen and (max-width: 768px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+        }}
+        @media only screen and (max-width: 620px) {{
+            .email-container {{ width: 100% !important; max-width: 100% !important; }}
+            .email-padding {{ padding: 20px 16px !important; }}
+            .email-header {{ padding: 24px 20px 16px !important; }}
+            .email-footer {{ padding: 24px 20px !important; }}
+            h1 {{ font-size: 24px !important; }}
+            p {{ font-size: 15px !important; }}
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .email-bg {{ background-color: #1A1A1A !important; }}
+            .email-card {{ background-color: #2A2A2A !important; }}
+            .email-text {{ color: #F5F5F5 !important; }}
+            .email-muted {{ color: #AAAAAA !important; }}
+            .email-footer {{ background-color: #1F1F1F !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: {bg_color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;" class="email-bg">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: {bg_color};" class="email-bg">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px;" class="email-container">
+                    <tr>
+                        <td style="background-color: {card_bg}; border-radius: 16px; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);" class="email-card">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 32px 40px 24px 40px; text-align: center;" class="email-header">
+                                        <a href="https://holygrills.online" style="text-decoration: none;">
+                                            <img src="{wordmark_url}" alt="Holy Grills" width="180" style="display: block; margin: 0 auto; max-width: 180px; height: auto;">
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0 40px;">
+                                        <div style="height: 1px; background: linear-gradient(to right, transparent, rgba(0,0,0,0.1), transparent);"></div>
+                                    </td>
+                                </tr>
+                            </table>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding: 32px 40px;" class="email-padding">
+                                        <p style="margin: 0 0 16px 0; font-size: 18px; color: {text_color};" class="email-text">Hello {safe_name} 👋</p>
+                                        <h1 style="margin: 0 0 20px 0; font-size: 28px; font-weight: 700; color: {text_color}; line-height: 1.3;" class="email-text">🎟️ Your Ticket for {safe_title}</h1>
+                                        <div style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: {text_color};" class="email-text">
+                                            <p style="margin: 0 0 12px 0;"><strong>Date:</strong> {safe_date}</p>
+                                            <p style="margin: 0 0 12px 0;"><strong>Location:</strong> {safe_location}</p>
+                                            <p style="margin: 0 0 12px 0;"><strong>Ticket ID:</strong> <code>{safe_ticket_id}</code></p>
+                                        </div>
+                                        <div style="text-align: center; margin: 24px 0;">
+                                            <p style="margin: 0 0 12px 0; font-size: 15px; color: {text_color};" class="email-text">Show this QR code at the door for check-in:</p>
+                                            {qr_img_tag}
+                                        </div>
+                                        <div style="margin: 24px 0; padding: 20px; background-color: #FFF5F0; border-radius: 12px; border-left: 4px solid {brand_red};">
+                                            <p style="margin: 0; font-size: 15px; color: {text_color};" class="email-text"><strong>Earn Rewards!</strong> Create an account with this email to earn HP for this event and unlock exclusive perks!</p>
+                                        </div>
+                                        <p style="margin: 32px 0 14px 0; font-size: 15px; color: {muted_color};" class="email-muted">{safe_signoff_1}</p>
+                                        <p style="margin: 0; font-size: 16px; font-weight: 600; color: {text_color};" class="email-text">{safe_signoff_2}</p>
+                                    </td>
+                                </tr>
+                            </table>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #F5F5F5; border-top: 1px solid rgba(0,0,0,0.08);" class="email-footer">
+                                <tr>
+                                    <td style="padding: 32px 40px; text-align: center;" class="email-footer">
+                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: {muted_color};" class="email-muted">
+                                            <a href="mailto:support@holygrills.online" style="color: {brand_red}; text-decoration: none;">support@holygrills.online</a>
+                                        </p>
+                                        <p style="margin: 0; font-size: 12px; color: {muted_color};" class="email-muted">Copyright © 2026 Holy Grills. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>"""
 
     return send_email_raw(to_email=email, to_name=name, subject=subject, html_body=html_body)

@@ -1,0 +1,9 @@
+{
+  "fresh_guest_displayed_number_code_lookup_opens_native_order_without_campus_gate": true,
+  "signed_in_device_token_claim_recovers_lost_committed_response_and_clears_only_own_reference": true,
+  "pending_guest_payment_stays_token_accessible_without_owner_mutation": true,
+  "wrong_tracking_proof_and_postclaim_guest_token_denied": true,
+  "two_accounts_compete_one_owner_and_one_conflict": true,
+  "authenticated_direct_privileged_claim_rpc_denied": true,
+  "pending_payment_claim_rejected_by_actual_backend": true
+}

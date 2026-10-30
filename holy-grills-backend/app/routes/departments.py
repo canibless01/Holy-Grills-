@@ -15,8 +15,8 @@ Admin:
 
 import re
 import requests
-from flask import Blueprint, request, jsonify
-from app.middleware.auth import require_role, optional_auth
+from flask import Blueprint, request, jsonify, g
+from app.middleware.auth import require_role, optional_auth, resolve_scoped_campus_id
 from app.db import get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.admin_helpers import get_json_object, as_bool, as_int, as_text, db_error_response
@@ -80,7 +80,7 @@ def list_departments():
         requested = as_campus_id(request.args.get("campus_id"))
     except ValueError:
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
-    campus_id = public_campus(requested)
+    campus_id = getattr(g, "campus_id", None) if getattr(g, "user_id", None) and getattr(g, "user_role", None) != "super_admin" else public_campus(requested)
     try:
         q = db.table("departments").select("id,name,slug,faculty,sort_order,campus_id").eq("is_active", True)
         faculty_filter = request.args.get("faculty")
@@ -124,13 +124,14 @@ def list_faculties():
         requested = as_campus_id(request.args.get("campus_id"))
     except ValueError:
         return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
-    campus_id = public_campus(requested)
+    campus_id = getattr(g, "campus_id", None) if getattr(g, "user_id", None) and getattr(g, "user_role", None) != "super_admin" else public_campus(requested)
     try:
-        q = db.table("departments").select("faculty,campus_id").eq("is_active", True)
+        q = db.table("departments").select("name,faculty,campus_id").eq("is_active", True)
         rows = campus_or_global(q, campus_id).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         logger.error("list_faculties failed: %s", e)
         return jsonify({"error": MSG.REFERENCE_DATA_UNAVAILABLE}), 503
+    rows = prefer_campus_rows(rows, lambda row: row["name"].strip().lower())
     faculties = sorted({r["faculty"] for r in rows if r.get("faculty")})
     return jsonify({"faculties": faculties}), 200
 
@@ -193,11 +194,20 @@ def admin_list_departments():
     """
     db = get_user_client()
     q = db.table("departments").select("*")
+    try:
+        campus_id = resolve_scoped_campus_id(as_campus_id(request.args.get("campus_id")))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+    q = campus_or_global(q, campus_id, none_means_all=True)
     if request.args.get("faculty"):
         q = q.eq("faculty", request.args["faculty"])
     if request.args.get("is_active") is not None:
         q = q.eq("is_active", request.args.get("is_active").lower() == "true")
-    rows = q.order("sort_order", ascending=True).execute() or []
+    try:
+        rows = q.order("sort_order", ascending=True).execute() or []
+    except (SupabaseError, requests.RequestException) as exc:
+        logger.warning("Academic admin list unavailable: %s", type(exc).__name__)
+        return jsonify({"error": MSG.REFERENCE_DATA_UNAVAILABLE}), 503
     return jsonify({"departments": rows, "count": len(rows)}), 200
 
 

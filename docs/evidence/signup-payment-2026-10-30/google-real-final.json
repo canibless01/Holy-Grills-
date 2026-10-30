@@ -1,0 +1,8 @@
+{
+  "test": "real deployed Google Maps SDK; browser GPS emulation; no orders/payments/accounts created",
+  "google_errors": [],
+  "real_google_sdk_loaded": true,
+  "gps_emulation_error_visible": false,
+  "map_rendered": true,
+  "permissions_policy": "geolocation=(self), camera=(), microphone=()"
+}

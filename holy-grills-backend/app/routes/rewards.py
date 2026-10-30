@@ -3,7 +3,10 @@
 import math
 from decimal import Decimal, ROUND_FLOOR
 from flask import Blueprint, request, jsonify, g
-from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id, optional_auth
+from app.middleware.auth import (
+    require_auth, require_role, resolve_scoped_campus_id, optional_auth,
+    resolve_admin_write_campus,
+)
 from app.services.hp_service import get_hp_balance
 from app.services.notification_service import send_notification
 from app.db import get_db, get_user_client
@@ -14,6 +17,33 @@ from datetime import datetime, timezone
 logger = get_logger(__name__)
 
 rewards_bp = Blueprint("rewards", __name__)
+
+
+@rewards_bp.route('/gift-campaign', methods=['GET', 'POST'])
+@require_auth
+def customer_gift_campaign():
+    from app.services.gift_campaigns import read_config, claim, eligible_preview, features_ready
+    if request.method == 'POST':
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data.get('campaign_id'):
+            return jsonify({'error': MSG.GIFT_CAMPAIGN_INVALID}), 400
+        try: return jsonify(claim(g.user_id, data['campaign_id'])), 200
+        except ValueError as exc: return jsonify({'error': str(exc)}), 400
+        except Exception: return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
+    try:
+        config, _, _ = read_config(get_db(), getattr(g, 'campus_id', None))
+        history = (get_user_client().table('exclusive_spin_fulfillments')
+                   .select('id,prize_name,created_at,result_snapshot').eq('user_id', g.user_id)
+                   .eq('result_snapshot->>source', 'gift_campaign')
+                   .eq('result_snapshot->>prize_type', 'campaign_bundle')
+                   .order('created_at', ascending=False).limit(20).execute()) or []
+        now = datetime.now(timezone.utc)
+        active = config.get('enabled') and datetime.fromisoformat(config['starts_at']) <= now < datetime.fromisoformat(config['ends_at']) and features_ready(get_db(), config)
+        owned = any(row.get('result_snapshot', {}).get('campaign_id') == config.get('id') for row in history)
+        visible = active and getattr(g, 'user_role', None) == 'student' and (owned or eligible_preview(get_db(), g.user_id, config, getattr(g, 'jwt_payload', None)))
+        campaign = config if visible else None
+        return jsonify({'campaign': campaign, 'history': history}), 200
+    except Exception: return jsonify({'error': MSG.GIFT_CAMPAIGN_UNAVAILABLE}), 503
 
 # Mirrors the DB CHECK rewards_fulfillment_type_check. Keep in sync.
 _FULFILLMENT_TYPES = ("simple", "menu_item")
@@ -109,8 +139,11 @@ def _with_flash_status(reward: dict, flash: dict = None) -> dict:
     return result
 
 
-def _flash_for_rewards(rewards: list) -> dict:
+def _flash_for_rewards(rewards: list, campus_id: str = None) -> dict:
     """{reward_id: available flash row} for a list of rewards, in one windows query. Never raises."""
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("flash_redemptions", campus_id or getattr(g, "campus_id", None)):
+        return {}
     try:
         db = get_db()
         windows = _active_flash_windows(db, [r["id"] for r in rewards if r.get("id")])
@@ -158,6 +191,8 @@ def list_rewards():
     campus_id = _get_campus_id()
     if campus_id:
         q = q.or_(f"campus_id.eq.{campus_id},campus_id.is.null")
+    elif getattr(g, "user_role", None) != "super_admin":
+        q = q.is_("campus_id", "null")
 
     reward_type = request.args.get("category") or request.args.get("reward_type")
     if reward_type:
@@ -174,11 +209,12 @@ def list_rewards():
         if expires_at and expires_at < now:
             continue
         result.append(r)
-    flash_by_reward = _flash_for_rewards(result)
+    flash_by_reward = _flash_for_rewards(result, campus_id=campus_id)
     return jsonify([_with_flash_status(r, flash_by_reward.get(r.get("id"))) for r in result]), 200
 
 
 @rewards_bp.route("/<reward_id>", methods=["GET"])
+@optional_auth
 def get_reward(reward_id):
     """
     Get reward detail.
@@ -200,11 +236,12 @@ def get_reward(reward_id):
     reward = db.table("rewards").select("*,hp_tiers(name,slug)").eq("id", reward_id).single().execute()
     if not reward:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
-    try:
-        _, flash = _is_flash_active(get_db(), reward["id"])
-    except Exception:
-        logger.warning("flash status lookup failed for reward %s", reward_id, exc_info=True)
-        flash = None
+    from app.routes.events import _get_campus_id
+    campus_id = _get_campus_id()
+    if reward.get("campus_id") not in (campus_id, None) and not (
+            getattr(g, "user_role", None) == "super_admin" and not campus_id):
+        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+    flash = _flash_for_rewards([reward], campus_id=campus_id).get(reward["id"])
     return jsonify(_with_flash_status(reward, flash)), 200
 
 
@@ -289,14 +326,26 @@ def redeem_reward(reward_id):
             return jsonify({"error": MSG.REWARD_EXPIRED}), 400
         return jsonify({"error": err_str}), 400
 
-    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "pending"}
+    redemption_row = rpc_res if isinstance(rpc_res, dict) else {"id": str(rpc_res), "user_id": g.user_id, "reward_id": reward_id, "hp_cost_snapshot": hp_cost, "status": "fulfilled"}
     redemption_id = redemption_row.get("id") or redemption_row.get("redemption_id") or str(rpc_res)
+    hp_cost = redemption_row.get("hp_cost_snapshot", hp_cost)
+    earned_name = reward["name"]
+    try:
+        from app.services.reward_promises import earned_reward
+        saved = get_db().table("reward_redemptions").select("reward_id,reward_snapshot").eq("id", redemption_id).eq("user_id", g.user_id).single().execute()
+        if saved and (promise := earned_reward(saved)):
+            earned_name = promise["name"]
+            redemption_row = {**redemption_row, "reward_snapshot": promise}
+    except Exception as exc:
+        # The debit is already committed. A display lookup outage must not turn
+        # the completed redemption into a failure/retry instruction.
+        logger.warning("Earned reward display lookup unavailable: %s", type(exc).__name__)
 
     try:
         send_notification(
             user_id=g.user_id,
             notif_type="reward_redeemed",
-            template_data={"name": reward["name"], "hp": hp_cost},
+            template_data={"name": earned_name, "hp": hp_cost},
             reference_id=redemption_id,
             reference_type="reward_redemption",
         )
@@ -358,6 +407,8 @@ def admin_list_redemptions():
     if reward_id:
         q = q.eq("reward_id", reward_id)
     rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    from app.services.reward_promises import display_earned_reward
+    rows = [display_earned_reward(row) for row in rows]
     return jsonify({"redemptions": rows, "count": len(rows)}), 200
 
 
@@ -532,6 +583,26 @@ def admin_update_redemption(redemption_id):
 _ECONOMICS_FIELDS = ("food_cost", "packaging_cost", "menu_price", "production_cost", "perceived_value", "margin_share_pct")
 
 
+def _validate_reward_fields(data):
+    for alias, canonical in (("quantity_available", "stock_quantity"), ("category", "reward_type")):
+        if alias in data:
+            if canonical in data and data[canonical] != data[alias]:
+                return MSG.INVALID_INPUT
+            data[canonical] = data.pop(alias)
+    if "name" in data and (not isinstance(data["name"], str) or not data["name"].strip()):
+        return MSG.INVALID_INPUT
+    if "reward_type" in data and data["reward_type"] not in ("food", "merch", "event"):
+        return MSG.INVALID_INPUT
+    for key in ("stock_quantity", "hp_cost"):
+        if key not in data or (key == "stock_quantity" and data[key] is None):
+            continue
+        value = data[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or int(value) != value or value < (1 if key == "hp_cost" else 0) or value > 2147483647:
+            return MSG.INVALID_INPUT
+        data[key] = int(value)
+    return None
+
+
 def _apply_reward_economics(db, data: dict):
     """
     When a cost basis is supplied, derive reward_value (and hp_cost, if the admin didn't set one) with
@@ -541,6 +612,8 @@ def _apply_reward_economics(db, data: dict):
     try:
         for field in _ECONOMICS_FIELDS:
             if data.get(field) is not None:
+                if isinstance(data[field], bool):
+                    raise ValueError
                 data[field] = float(data[field])
                 if not math.isfinite(data[field]) or data[field] < 0:
                     raise ValueError
@@ -550,10 +623,11 @@ def _apply_reward_economics(db, data: dict):
         return MSG.REWARD_ECONOMICS_INVALID
 
     packaging = data.get("packaging_cost") or 0.0
-    if data.get("food_cost") is not None and data.get("menu_price") is not None:
+    reward_type = data.get("reward_type")
+    if reward_type in (None, "food") and data.get("food_cost") is not None and data.get("menu_price") is not None:
         from app.services.economics_service import calculate_food_reward_value
         value = calculate_food_reward_value(db, data["food_cost"], packaging, data["menu_price"], data.get("margin_share_pct"))
-    elif data.get("production_cost") is not None and data.get("perceived_value") is not None:
+    elif reward_type in (None, "merch") and data.get("production_cost") is not None and data.get("perceived_value") is not None:
         from app.services.economics_service import calculate_merch_reward_value
         value = calculate_merch_reward_value(db, data["production_cost"], packaging, data["perceived_value"], data.get("margin_share_pct"))
     else:
@@ -562,7 +636,37 @@ def _apply_reward_economics(db, data: dict):
     if not data.get("hp_cost"):
         from app.services.economics_service import calculate_hp_price
         data["hp_cost"] = calculate_hp_price(db, value)
+    if data["hp_cost"] <= 0 or data["hp_cost"] > 2147483647:
+        return MSG.REWARD_ECONOMICS_INVALID
+    from app.services.economics_service import calculate_hp_liability
+    data["hp_liability"] = calculate_hp_liability(db, data["hp_cost"])
     return None
+
+
+@rewards_bp.route("/admin/economics-preview", methods=["POST"])
+@require_role("admin")
+def preview_reward_economics():
+    """Read-only preview using exactly the create/update pricing functions."""
+    raw = request.get_json(silent=True)
+    if not isinstance(raw, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if raw.get("reward_type") not in (None, "food", "merch"):
+        return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+    data = {key: raw[key] for key in (*_ECONOMICS_FIELDS, "reward_type") if key in raw}
+    try:
+        error = _apply_reward_economics(get_user_client(), data)
+        if error:
+            return jsonify({"error": error}), 400
+        if data.get("hp_cost") is None:
+            return jsonify({"complete": False}), 200
+        if data["hp_cost"] <= 0:
+            return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+        return jsonify({"complete": True, "hp_cost": data["hp_cost"],
+                        "reward_value": data["reward_value"],
+                        "hp_liability": data["hp_liability"]}), 200
+    except Exception:
+        logger.exception("Reward price preview unavailable")
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @rewards_bp.route("", methods=["POST"])
@@ -591,13 +695,22 @@ def create_reward():
         description: Reward created
     """
     db = get_user_client()
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     if data.get("name") is None:
         return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field="name")}), 400
+    field_error = _validate_reward_fields(data)
+    if field_error:
+        return jsonify({"error": field_error}), 400
     if data.get("fulfillment_type") is not None and data["fulfillment_type"] not in _FULFILLMENT_TYPES:
         return jsonify({"error": MSG.REWARD_FULFILLMENT_TYPE_INVALID}), 400
     # hp_cost may be left out when a cost basis is given: it is then derived from the economics settings.
-    economics_error = _apply_reward_economics(db, data)
+    try:
+        economics_error = _apply_reward_economics(db, data)
+    except Exception:
+        logger.exception("Reward creation pricing unavailable")
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     if economics_error:
         return jsonify({"error": economics_error}), 400
     if data.get("hp_cost") is None:
@@ -608,7 +721,10 @@ def create_reward():
     if "quantity_available" in data:
         data["stock_quantity"] = data.pop("quantity_available")
     data["is_active"] = data.get("is_active", True)
-    data["campus_id"] = data.get("campus_id") or getattr(g, "campus_id", None)
+    # Honour the admin campus switcher: super_admin writes land on the selected
+    # campus, or on NULL (global) when "All Campuses" is selected. Campus admins
+    # are always pinned to their own campus (any supplied value ignored).
+    data["campus_id"] = resolve_admin_write_campus(data.get("campus_id"))
     result = db.table("rewards").insert(data)
     created = result[0] if isinstance(result, list) else result
 
@@ -652,9 +768,12 @@ def update_reward_image(reward_id):
 
     db = get_user_client()
     q = db.table("rewards").eq("id", reward_id)
-    campus_id = getattr(g, "campus_id", None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    # Super admins manage every campus's and global rewards; only campus admins
+    # are pinned to their own campus (RLS enforces the same boundary).
+    if getattr(g, "user_role", None) != "super_admin":
+        campus_id = getattr(g, "campus_id", None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
     result = q.update({
         "image_url": image_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -690,17 +809,61 @@ def update_reward(reward_id):
         description: Reward updated
     """
     db = get_user_client()
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    field_error = _validate_reward_fields(data)
+    if field_error:
+        return jsonify({"error": field_error}), 400
     if data.get("fulfillment_type") is not None and data["fulfillment_type"] not in _FULFILLMENT_TYPES:
         return jsonify({"error": MSG.REWARD_FULFILLMENT_TYPE_INVALID}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    existing = db.table("rewards").select("*").eq("id", reward_id).single().execute()
+    if not existing:
+        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+    expected_version = data.pop("expected_updated_at", None)
+    if expected_version is not None and expected_version != existing.get("updated_at"):
+        return jsonify({"error": MSG.REWARD_EDIT_CONFLICT}), 409
+    for key in _ECONOMICS_FIELDS:
+        if key not in data or data[key] is None:
+            continue
+        try:
+            if isinstance(data[key], bool) or not math.isfinite(float(data[key])) or float(data[key]) < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+    try:
+        changed = ("reward_type" in data and data["reward_type"] != existing.get("reward_type")) or any(key in data and (None if data[key] is None else float(data[key])) !=
+                      (None if existing.get(key) is None else float(existing[key])) for key in _ECONOMICS_FIELDS)
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.REWARD_ECONOMICS_INVALID}), 400
+    if changed:
+        pricing = {"reward_type": data.get("reward_type", existing.get("reward_type")), **{key: data.get(key, existing.get(key)) for key in _ECONOMICS_FIELDS}}
+        try:
+            error = _apply_reward_economics(db, pricing)
+            if error or pricing.get("hp_cost", 0) <= 0:
+                return jsonify({"error": error or MSG.REWARD_ECONOMICS_INVALID}), 400
+            data.update({key: pricing[key] for key in ("hp_cost", "reward_value", "hp_liability")})
+            for key in _ECONOMICS_FIELDS:
+                if key in data:
+                    data[key] = pricing.get(key)
+        except Exception:
+            logger.exception("Reward repricing unavailable")
+            return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     q = db.table("rewards").eq("id", reward_id)
-    campus_id = getattr(g, "campus_id", None)
-    if campus_id:
-        q = q.eq("campus_id", campus_id)
+    # Super admins edit global and any campus's rewards; campus admins stay
+    # pinned to their own campus (same role rule as the image route).
+    if getattr(g, "user_role", None) != "super_admin":
+        campus_id = getattr(g, "campus_id", None)
+        if campus_id:
+            q = q.eq("campus_id", campus_id)
+    if "updated_at" in existing:
+        q = q.eq("updated_at", existing["updated_at"]) if existing["updated_at"] is not None else q.is_("updated_at", "null")
     result = q.update(data)
     if not result:
-        return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
+        return jsonify({"error": MSG.REWARD_EDIT_CONFLICT}), 409
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -724,7 +887,10 @@ def delete_reward(reward_id):
     """
     db = get_user_client()
     q = db.table("rewards").select("id").eq("id", reward_id)
-    campus_id = getattr(g, "campus_id", None)
+    # Super admins may remove global and any campus's rewards; campus admins are
+    # restricted to their own campus. RLS applies the same boundary server-side.
+    is_super_admin = getattr(g, "user_role", None) == "super_admin"
+    campus_id = None if is_super_admin else getattr(g, "campus_id", None)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     existing = q.limit(1).execute()
@@ -759,6 +925,20 @@ def my_redemptions():
         .order("created_at", ascending=False)
         .execute()
     )
+    # Catalog RLS can hide an inactive reward, but an earned entitlement must
+    # retain its name in the owner's history and delivery chooser. Only hydrate
+    # public display fields for reward IDs obtained from the authorized rows.
+    from app.services.reward_promises import display_earned_reward
+    redemptions = [display_earned_reward(row) for row in (redemptions or [])]
+    hidden_ids = sorted({row['reward_id'] for row in redemptions
+                         if row.get('reward_id') and not row.get('rewards')})
+    if hidden_ids:
+        display_rows = (get_db().table('rewards').select('id,name,reward_type,hp_cost,image_url')
+                        .in_('id', hidden_ids).execute()) or []
+        display_by_id = {row['id']: row for row in display_rows}
+        for row in redemptions or []:
+            if not row.get('rewards') and row.get('reward_id') in display_by_id:
+                row['rewards'] = display_by_id[row['reward_id']]
     return jsonify(redemptions), 200
 
 
@@ -819,7 +999,11 @@ def create_flash_sale():
     if not (0 < discount_pct < 1):
         return jsonify({"error": MSG.FLASH_DISCOUNT_RANGE_INVALID}), 400
 
-    campus_id = getattr(g, "campus_id", None)
+    # The sale inherits the reward's own campus. Super admins may open a sale on
+    # any reward (global or another campus's); campus admins are limited to their
+    # own campus's rewards (plus global ones, which carry no campus_id).
+    is_super_admin = getattr(g, "user_role", None) == "super_admin"
+    campus_id = None if is_super_admin else getattr(g, "campus_id", None)
     reward = db.table("rewards").select("id,campus_id").eq("id", reward_id).single().execute()
     if not reward:
         return jsonify({"error": MSG.REWARD_NOT_FOUND}), 404
@@ -869,7 +1053,7 @@ def choose_redemption_delivery(redemption_id):
       200:
         description: Choice saved
       400:
-        description: Invalid mode, reward not fulfilled yet, or delivery already chosen
+        description: Invalid mode, reward not ready yet, or reward already attached
       404:
         description: Redemption not found
     """
@@ -882,7 +1066,7 @@ def choose_redemption_delivery(redemption_id):
     # Ownership is checked with the user's own session (RLS + explicit user_id filter).
     row = (
         db.table("reward_redemptions")
-        .select("id,user_id,status,reward_id,delivery_mode,attached_order_id")
+        .select("id,user_id,status,reward_id,delivery_mode,attached_order_id,used_at")
         .eq("id", redemption_id).eq("user_id", g.user_id)
         .single().execute()
     )
@@ -890,9 +1074,9 @@ def choose_redemption_delivery(redemption_id):
         return jsonify({"error": MSG.REWARD_REDEMPTION_NOT_FOUND}), 404
     if row.get("status") != "fulfilled":
         return jsonify({"error": MSG.REWARD_NOT_READY_FOR_DELIVERY}), 400
-    # 'instant' is the column default, so it means "not chosen yet"; anything else, or an order already
-    # holding this reward, means the choice is made.
-    if row.get("attached_order_id") or row.get("delivery_mode") != "instant":
+    # Choices remain editable until an order claims the entitlement. Retrying a
+    # saved choice after a lost response succeeds through the same compare-and-set.
+    if row.get("attached_order_id") or row.get("used_at"):
         return jsonify({"error": MSG.DELIVERY_ALREADY_CHOSEN}), 400
 
     # reward_redemptions has no UPDATE policy for the owner (only admins), so a write through the user's
@@ -901,7 +1085,8 @@ def choose_redemption_delivery(redemption_id):
     updated = (
         get_db().table("reward_redemptions")
         .eq("id", redemption_id).eq("user_id", g.user_id)
-        .eq("status", "fulfilled").eq("delivery_mode", row["delivery_mode"]).eq("attached_order_id", None)
+        .eq("status", "fulfilled").eq("delivery_mode", row["delivery_mode"])
+        .is_("attached_order_id", "null").is_("used_at", "null")
         .update({"delivery_mode": mode})
     )
     if not updated:

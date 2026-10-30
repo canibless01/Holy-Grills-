@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FF4E2D" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>You're offline — Holy Grills</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --flame: #FF4E2D;
+      --flame-dark: #E03E1D;
+      --accent: #FFB400;
+      --bg: #FFF5F0;
+      --card: #FFFFFF;
+      --text: #1A1A1A;
+      --muted: #6B6B6B;
+      --border: rgba(0, 0, 0, 0.08);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 28rem;
+      width: 100%;
+    }
+
+    /* Flame icon — pure CSS, no external dependency */
+    .flame {
+      width: 5rem;
+      height: 5rem;
+      margin: 0 auto 1.25rem;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .flame-circle {
+      width: 5rem;
+      height: 5rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--flame), var(--accent));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(255, 78, 45, 0.25);
+    }
+
+    .flame-emoji {
+      font-size: 2.25rem;
+      line-height: 1;
+    }
+
+    .title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+
+    .subtitle {
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      color: var(--muted);
+      margin-bottom: 1.75rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .card-icon {
+      font-size: 1.25rem;
+      margin-bottom: 0.375rem;
+    }
+
+    .card-text {
+      font-size: 0.8125rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .retry-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.875rem 1.5rem;
+      border: none;
+      border-radius: 9999px;
+      background: linear-gradient(135deg, var(--flame), var(--flame-dark));
+      color: #FFFFFF;
+      font-size: 0.9375rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 4px 12px rgba(255, 78, 45, 0.3);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .retry-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(255, 78, 45, 0.4);
+    }
+
+    .retry-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 8px rgba(255, 78, 45, 0.25);
+    }
+
+    .retry-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .spinner {
+      display: none;
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #FFFFFF;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    .retry-btn.loading .spinner {
+      display: block;
+    }
+
+    .retry-btn.loading .btn-text {
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status {
+      margin-top: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-height: 1.125rem;
+    }
+
+    .status.online {
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    .footer {
+      margin-top: 2rem;
+      font-size: 0.6875rem;
+      color: var(--muted);
+      opacity: 0.7;
+    }
+
+    .footer a {
+      color: var(--flame);
+      text-decoration: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1A1A1A;
+        --card: #2A2A2A;
+        --text: #F5F5F5;
+        --muted: #A0A0A0;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="flame">
+      <div class="flame-circle">
+        <span class="flame-emoji">🔥</span>
+      </div>
+    </div>
+
+    <h1 class="title">You're offline</h1>
+    <p class="subtitle">
+      The flame went out — check your connection and try again.
+      Your orders and Holy Points are safe.
+    </p>
+
+    <div class="card">
+      <div class="card-icon">📡</div>
+      <p class="card-text">
+        Make sure Wi-Fi or mobile data is turned on.
+        If you're on a campus network, you may need to re-authenticate.
+      </p>
+    </div>
+
+    <button class="retry-btn" id="retry-btn" onclick="retry()">
+      <span class="btn-text">Try again</span>
+      <div class="spinner"></div>
+    </button>
+
+    <p class="status" id="status"></p>
+
+    <div class="footer">
+      Holy Grills 🔥 — Made With More Than Flame
+    </div>
+  </div>
+
+  <script>
+    const btn = document.getElementById('retry-btn');
+    const status = document.getElementById('status');
+
+    function updateOnlineStatus() {
+      if (navigator.onLine) {
+        status.textContent = "You're back online! Redirecting…";
+        status.className = 'status online';
+        setTimeout(function() {
+          window.location.replace('/');
+        }, 800);
+      } else {
+        status.textContent = '';
+        status.className = 'status';
+      }
+    }
+
+    function retry() {
+      btn.classList.add('loading');
+      btn.disabled = true;
+      status.textContent = 'Checking connection…';
+      status.className = 'status';
+
+      // Try to fetch the root to see if we're back online
+      fetch('/', { method: 'HEAD', cache: 'no-store' })
+        .then(function() {
+          updateOnlineStatus();
+        })
+        .catch(function() {
+          btn.classList.remove('loading');
+          btn.disabled = false;
+          status.textContent = 'Still offline — please check your connection.';
+          status.className = 'status';
+        });
+    }
+
+    // Listen for online/offline events
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', function() {
+      status.textContent = '';
+      status.className = 'status';
+    });
+
+    // Check on load
+    if (navigator.onLine) {
+      updateOnlineStatus();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,537 @@
+import { guestOrderToken, guestOrders, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
+import { ownedOrderId } from '@/lib/orderLink';
+import { confirmAction } from '@/lib/confirmAction';
+import OrderRewardSummary from '@/components/OrderRewardSummary';
+import OrderPaymentActions from '@/components/OrderPaymentActions';
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ChevronLeft, MapPin, Clock, CreditCard, Flame, Star, RefreshCw, Share2, X, Check, Package, Bike, Phone, User, Gift } from 'lucide-react';
+import { mockApi } from '@/lib/mockApi';
+import { liveApi } from '@/lib/liveApi';
+import { safeCallHref } from '@/lib/safeNavigation';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useSound } from '@/lib/SoundProvider';
+import { formatNaira, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_FLOW, getOrderCustomer, ORDER_STATUS_COLORS_ON_DARK } from '@/lib/hgUtils';
+import ShareSheet from '@/components/ShareSheet';
+import SquadMembersPanel from '@/components/SquadMembersPanel';
+import MascotStandee from '@/components/mascot/MascotStandee';
+import ImageUploader from '@/components/admin/ImageUploader';
+import ModalPortal from '@/components/ModalPortal';
+import { toast } from '@/components/ui/use-toast';
+import APP_CONFIG from '@/config/app.config';
+import { msg, useMessages } from '@/lib/messages';
+
+// Google review handoff — deep-links into the Business Profile review form when
+// a Place ID is configured, otherwise falls back to a Google search for the brand.
+const googleReviewUrl = () => {
+  const placeId = APP_CONFIG.google?.placeId;
+  return placeId ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}` : null;
+};
+
+export default function OrderDetail() {
+  useMessages();
+  const reviewBusyRef = useRef(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewAward, setReviewAward] = useState(0);
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { refreshUser, refreshCart, user, isLoading: accountLoading } = useHolyGrill();
+  const { play } = useSound();
+  const claimToken = new URLSearchParams(location.search).get('claim_token');
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [orderError, setOrderError] = useState(null);
+  const [retry, setRetry] = useState(0);
+  const [claiming, setClaiming] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+  const [review, setReview] = useState({ rating: 5, kitchen_rating: 4, rider_rating: 5, comment: '' });
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [reviewImages, setReviewImages] = useState([]);
+  const [googlePrompt, setGooglePrompt] = useState(false);
+  const [callLink, setCallLink] = useState(null);
+  const [callingRider, setCallingRider] = useState(false);
+
+  // Keep the device's proof until ownership is actually linked. Signing in
+  // alone does not make an unclaimed guest order visible through account RLS.
+  const resolveClaimToken = useCallback(() => {
+    if (claimToken) return claimToken;
+    return guestOrderToken(id) || null;
+  }, [claimToken, id]);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setOrder(null);
+    setOrderError(null);
+    const load = async () => {
+      try {
+        if (/^[a-f0-9]{8}$/i.test(id || '')) {
+          if (accountLoading) return;
+          const visible = user?.id ? await mockApi.orders.list({ limit: 100 }) : guestOrders();
+          const resolved = ownedOrderId(id, visible);
+          if (resolved) {
+            if (active) navigate(`/orders/${resolved}${location.search}${location.hash}`, { replace: true });
+            return;
+          }
+          throw new Error('Open Track Orders with your tracking code, or sign in to the account that placed this order.');
+        }
+        const token = resolveClaimToken();
+        const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
+        if (!active) return;
+        if (settleGuestCart(o)) await refreshCart();
+        setOrder(o);
+        setReviewSubmitted(Boolean(o.review));
+        if (o.review) { setReviewAward(Number(o.review.hp_awarded) || 0); setGooglePrompt(Boolean(APP_CONFIG.google?.placeId)); }
+      } catch (error) { if (active) setOrderError(error); }
+      if (active) setLoading(false);
+    };
+    load();
+    // Keep the timeline fresh while the order is still moving.
+    const timer = setInterval(load, 30000);
+    return () => { active = false; clearInterval(timer); };
+  }, [id, user?.id, accountLoading, resolveClaimToken, retry]);
+
+  // F5 GAP (reported): the guest "Resend tracking email" action was removed — the
+  // backend exposes no tracking route at all (no /orders/<id>/resend-tracking, no
+  // tracking-link endpoint), so the button could only 404. The guest-facing order
+  // page keeps its status timeline and share sheet; restore the resend UI together
+  // with a POST /orders/<id>/resend-tracking route.
+
+  const handleCancel = async () => {
+    const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
+    const prompt = isScheduled ? 'Cancel this scheduled order? Your slot will be released.' : 'Cancel this order? You will be refunded.';
+    if (!(await confirmAction({ title: prompt, destructive: true }))) return;
+    try {
+      if (isScheduled) await mockApi.orders.cancelScheduled(id);
+      else await mockApi.orders.cancel(id, { reason: 'Changed my mind' });
+      await refreshUser();
+      const o = await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {});
+      setOrder(o);
+    } catch (e) { alert(e.message); }
+  };
+
+  const handleReorder = async () => {
+    try {
+      const result = await mockApi.orders.reorder(id);
+      const items = result?.items || result?.order_items || result?.cart_items || [];
+      for (const item of items) {
+        if (item.is_available !== false) {
+          await mockApi.cart.add({ menu_item_id: item.menu_item_id, quantity: item.quantity || 1 });
+        }
+      }
+      navigate('/cart');
+    } catch (e) { console.error(e); }
+  };
+
+  const handleClaim = async () => {
+    const token = resolveClaimToken();
+    if (!token || claiming) return;
+    setClaiming(true);
+    try {
+      await mockApi.orders.claim(id, { claim_token: token });
+      // Saved ownership is authoritative even if optional account hydration fails.
+      setOrder(current => current ? { ...current, user_id: user.id, claim_token: null } : current);
+      forgetGuestOrder(id);
+      const params = new URLSearchParams(location.search);
+      params.delete('claim_token');
+      navigate({ pathname: location.pathname, search: params.toString() ? '?' + params.toString() : '' }, { replace: true });
+      toast({ title: msg('FE_ORDER_DETAIL_ORDER_LINKED_TO_YOUR_ACCOUNT', '✅ Order linked to your account'), description: msg('FE_ORDER_DETAIL_YOU_CAN_NOW_TRACK_IT_FROM_YOUR_ORDERS', 'You can now track it from your orders.') });
+      await Promise.allSettled([refreshUser(), mockApi.orders.get(id).then(setOrder)]);
+    } catch (error) {
+      toast({ title: msg('FE_GUEST_CLAIM_FAILED', 'Could not link this order'), description: error.message, variant: 'destructive' });
+    } finally { setClaiming(false); }
+  };
+
+  const handleReview = async () => {
+    if (reviewBusyRef.current) return;
+    reviewBusyRef.current = true;
+    setReviewBusy(true);
+    try {
+      const result = await mockApi.orders.review(id, { ...review, image_urls: reviewImages });
+      setReviewAward(Number(result?.hp_awarded) || 0);
+      setGooglePrompt(Boolean(APP_CONFIG.google?.placeId));
+      setReviewSubmitted(true);
+      setShowReview(false);
+      setReviewImages([]);
+      play('review_submitted');
+      try { await refreshUser(); } catch { /* The stored review remains successful. */ }
+    } catch (e) {
+      toast({ title: msg('FE_ORDER_DETAIL_REVIEW_FAILED', 'Review failed'), description: e.message || msg('FE_REVIEW_RETRY', 'Please try again in a moment.'), variant: 'destructive' });
+    } finally {
+      reviewBusyRef.current = false;
+      setReviewBusy(false);
+    }
+  };
+
+  // Call rider — fetch a secure tel: link from GET /orders/<id>/call-rider
+  // instead of trusting an embedded field on the order object.
+  const handleCallRider = async () => {
+    // S7 — the backend supplies the number, and only tel:/https: links are
+    // followed. Anything else is reported as unavailable rather than navigated to.
+    if (callLink) { window.location.href = callLink; return; }
+    setCallingRider(true);
+    try {
+      const res = await liveApi.orders.callRider(id);
+      const link = safeCallHref(res?.rider?.call_link || res?.call_link || res?.call_url);
+      if (link) { setCallLink(link); window.location.href = link; }
+      else toast({ title: msg('FE_ORDER_DETAIL_CALL_UNAVAILABLE', 'Call unavailable'), description: msg('FE_ORDER_DETAIL_NO_RIDER_CALL_LINK_RIGHT_NOW', 'No rider call link right now.'), variant: 'destructive' });
+    } catch (e) { toast({ title: msg('FE_ORDER_DETAIL_CALL_FAILED', 'Call failed'), description: e.message, variant: 'destructive' }); }
+    setCallingRider(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4 animate-fade-in pb-4">
+        <div className="h-5 w-28 bg-muted rounded animate-pulse" />
+        <div className="h-32 bg-muted rounded-2xl animate-pulse" />
+        <div className="h-40 bg-muted rounded-2xl animate-pulse" />
+        <div className="h-48 bg-muted rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="text-center py-16 space-y-4">
+        <MascotStandee mascot="worried" className="w-32 h-32 mx-auto" alt="Order not found" />
+        <p role="alert" className="text-sm text-muted-foreground">{orderError?.message || msg('FE_ORDER_DETAIL_ORDER_NOT_FOUND', 'Order not found')}</p>
+        <button type="button" onClick={() => setRetry(n => n + 1)} className="px-4 py-2 rounded-xl border border-border text-sm">{msg('FE_GUEST_TRACK_RETRY', 'Retry')}</button>
+        <button onClick={() => navigate('/orders')} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Back to orders</button>
+      </div>
+    );
+  }
+
+  const statusIndex = ORDER_STATUS_FLOW.indexOf(order.status);
+  const etaMin = order.delivery_batch ? ({ preparing: 25, ready: 15, assigned: 18, out_for_delivery: 12 }[order.status] || 0) : 0;
+  const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
+  const canCancel = order.status === 'received' || isScheduled;
+  const canReview = order.status === 'delivered' && !reviewSubmitted;
+  const canReorder = ['delivered', 'cancelled'].includes(order.status);
+
+  return (
+    <div className="space-y-4 animate-fade-in pb-4 max-w-2xl mx-auto">
+      <button onClick={() => navigate('/orders')} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <ChevronLeft className="w-4 h-4" /> Back to orders
+      </button>
+
+      {/* Status Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-2xl bg-gradient-dark p-5 text-white shadow-card"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${ORDER_STATUS_COLORS_ON_DARK[order.status] || ORDER_STATUS_COLORS[order.status]}`}>
+            {ORDER_STATUS_LABELS[order.status] || order.status}
+          </span>
+          <span className="text-xs text-white/70 font-mono">#{(order.order_number || order.id || '').toUpperCase()}</span>
+        </div>
+
+        {/* Progress Timeline */}
+        {order.status !== 'cancelled' && order.status !== 'refunded' && (
+          <div className="flex items-center gap-0.5 mt-4">
+            {ORDER_STATUS_FLOW.map((step, i) => (
+              <React.Fragment key={step}>
+                <div className="flex flex-col items-center">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${i <= statusIndex ? 'bg-gradient-cta text-white' : 'bg-white/15 text-white/50'}`}>
+                    {i < statusIndex ? <Check className="w-3.5 h-3.5 text-white" /> : i + 1}
+                  </div>
+                  <span className="text-[8px] mt-1 font-semibold whitespace-nowrap text-white/70">{ORDER_STATUS_LABELS[step].split(' ')[0]}</span>
+                </div>
+                {i < ORDER_STATUS_FLOW.length - 1 && (
+                  <div className={`flex-1 h-0.5 rounded-full ${i < statusIndex ? 'bg-primary' : 'bg-white/15'}`} />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
+      {/* Items */}
+      <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
+        <h3 className="font-bold text-sm text-foreground mb-3">Items Ordered</h3>
+        <div className="space-y-2">
+          {(order.order_items || []).map((item, i) => (
+            <div key={i} className="flex items-center justify-between text-sm">
+              <div className="min-w-0">
+                <span className="font-medium text-foreground">{item.quantity}× {item.name_snapshot}</span>
+                <OrderItemCustomizations item={item} />
+                {order.notes && <p className="text-xs text-muted-foreground mt-0.5">📝 {order.notes}</p>}
+              </div>
+              <span className="font-semibold text-foreground shrink-0 ml-2">{formatNaira(item.line_total)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-border mt-3 pt-3 space-y-1">
+          {order.discount_amount > 0 && (
+            <div className="flex justify-between text-xs text-success">
+              <span>Discount</span><span>-{formatNaira(order.discount_amount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold">
+            <span className="text-foreground">Total</span>
+            <span className="text-foreground">{formatNaira(order.total_amount)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Squad members — order-scoped management (the squad roster is untouched) */}
+      {order.is_squad_order && (
+        <SquadMembersPanel orderId={order.id} delivered={order.status === 'delivered'} />
+      )}
+
+      {/* Order Details */}
+      <div className="rounded-2xl bg-card border border-border p-4 space-y-3 shadow-card">
+        <div className="flex items-center gap-3 text-sm">
+          <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div><div className="text-xs text-muted-foreground">{isScheduled ? 'Scheduled for' : 'Placed'}</div><div className="font-semibold text-foreground">{formatDateTime(isScheduled ? (order.scheduled_for || order.scheduled_date || order.created_at) : order.created_at)}</div></div>
+        </div>
+        {(() => { const c = getOrderCustomer(order); return (c.name || c.phone) ? (
+          <div className="flex items-center gap-3 text-sm">
+            <User className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div><div className="text-xs text-muted-foreground">Ordered by</div><div className="font-semibold text-foreground">{c.display}{c.phone ? ` · ${c.phone}` : ''}</div></div>
+          </div>
+        ) : null; })()}
+        {order.delivered_at && (
+          <div className="flex items-center gap-3 text-sm">
+            <Check className="w-4 h-4 text-success shrink-0" />
+            <div><div className="text-xs text-muted-foreground">Delivered</div><div className="font-semibold text-foreground">{formatDateTime(order.delivered_at)}</div></div>
+          </div>
+        )}
+        <div className="flex items-center gap-3 text-sm">
+          <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div><div className="text-xs text-muted-foreground">Delivery to</div><div className="font-semibold text-foreground">{order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div></div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <Package className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div><div className="text-xs text-muted-foreground">Window</div><div className="font-semibold text-foreground">{order.delivery_window?.label || msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned')}</div></div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <CreditCard className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div>
+            <div className="text-xs text-muted-foreground">Payment ({order.payment_status})</div>
+            <div className="font-semibold text-foreground">
+              {order.wallet_amount_used > 0 && `Wallet: ${formatNaira(order.wallet_amount_used)}`}
+              {order.wallet_amount_used > 0 && order.card_amount_used > 0 && ' + '}
+              {order.card_amount_used > 0 && `Card: ${formatNaira(order.card_amount_used)}`}
+            </div>
+          </div>
+        </div>
+        {order.hp_earned > 0 && (
+          <div className="flex items-center gap-3 text-sm">
+            <Flame className="w-4 h-4 text-primary shrink-0" />
+            <div><div className="text-xs text-muted-foreground">HP Earned</div><div className="font-semibold text-primary">+{order.hp_earned} HP</div></div>
+          </div>
+        )}
+        {order.hp_redeemed > 0 && (
+          <div className="flex items-center gap-3 text-sm">
+            <Flame className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div><div className="text-xs text-muted-foreground">HP Redeemed</div><div className="font-semibold text-foreground">-{order.hp_redeemed} HP</div></div>
+          </div>
+        )}
+      </div>
+
+      {/* Rider Info */}
+      {order.delivery_batch && (
+        <div className="rounded-2xl bg-card border border-border p-4 space-y-3 shadow-card">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
+              <Bike className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Rider</div>
+              <div className="font-semibold text-sm text-foreground">{order.assigned_rider?.name || `Rider #${order.delivery_batch.rider_id}`}</div>
+            </div>
+            <span className="ml-auto text-xs font-bold text-muted-foreground capitalize">{order.delivery_batch.status}</span>
+          </div>
+          {etaMin > 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20">
+              <Clock className="w-4 h-4 text-primary" />
+              <div className="text-sm font-bold text-primary">Arriving in ~{etaMin} min</div>
+            </div>
+          )}
+          <button onClick={handleCallRider} disabled={callingRider} className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-success text-white text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-60">
+            <Phone className="w-4 h-4" /> {callingRider ? 'Connecting…' : 'Call Rider'}
+          </button>
+        </div>
+      )}
+
+      {/* Guest claim prompt — an account links the order and unlocks its HP. */}
+      {!user && resolveClaimToken() && !order.user_id && (
+        <div className="rounded-2xl bg-gradient-cta p-4 text-white shadow-glow flex items-center gap-3">
+          <Gift className="w-8 h-8 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-sm">Create an account to claim this order</div>
+            <div className="text-xs text-white/80 mt-0.5">Link it to your profile and earn HP on it.</div>
+          </div>
+          <button
+            onClick={() => navigate('/register', { state: { from: location.pathname + location.search } })}
+            className="shrink-0 px-3.5 py-2 rounded-full bg-card text-primary text-xs font-bold active:scale-95 transition-transform"
+          >
+            Sign up
+          </button>
+        </div>
+      )}
+
+      <OrderRewardSummary order={order} />
+      {user?.role === 'student' && !order.user_id && resolveClaimToken() && !['paid', 'partially_refunded', 'refunded'].includes(order.payment_status) && <p className="text-xs text-muted-foreground">{msg('FE_GUEST_CLAIM_PAYMENT_PENDING', 'Complete payment for this guest order before linking it to your account.')}</p>}
+      <OrderPaymentActions order={order} claimToken={resolveClaimToken()} onUpdated={async () => setOrder(await mockApi.orders.get(id, resolveClaimToken() ? { claim_token: resolveClaimToken() } : {}))} />
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2">
+        {canCancel && (
+          <button onClick={handleCancel} className="flex-1 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-bold text-sm hover:bg-destructive/20 transition-colors">
+            {isScheduled ? 'Cancel Scheduled Order' : 'Cancel Order'}
+          </button>
+        )}
+        {canReorder && (
+          <button onClick={handleReorder} className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:border-primary/30 transition-colors">
+            <RefreshCw className="w-4 h-4" /> Reorder
+          </button>
+        )}
+        <button onClick={() => setShowShare(true)} className="flex-1 py-3 rounded-xl bg-card border border-border text-foreground font-bold text-sm flex items-center justify-center gap-1.5 hover:border-primary/30 transition-colors">
+          <Share2 className="w-4 h-4" /> Share
+        </button>
+        {user?.role === 'student' && !order.user_id && resolveClaimToken() && ['paid', 'partially_refunded', 'refunded'].includes(order.payment_status) && (
+          <button onClick={handleClaim} disabled={claiming} className="flex-1 py-3 rounded-xl bg-gradient-cta text-white font-bold text-sm shadow-glow disabled:opacity-60">
+            Link to my account
+          </button>
+        )}
+        {canReview && (
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowReview(true)} className="flex-1 py-3 rounded-xl bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-1.5 shadow-glow">
+            <Star className="w-4 h-4" /> Review
+          </motion.button>
+        )}
+      </div>
+
+      {reviewSubmitted && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl bg-success/10 border border-success/20 p-4 flex items-center gap-2">
+          <Check className="w-5 h-5 text-success shrink-0" />
+          <div>
+            <div className="font-bold text-sm text-success">Review submitted!</div>
+            <div className="text-xs text-success">{reviewAward > 0 ? msg('FE_REVIEW_HP_AWARDED', 'You earned {hp} HP (pending)', { hp: reviewAward }) : msg('FE_REVIEW_NO_HP', 'No HP was awarded for this review.')}</div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Voluntary Google handoff for every rating; website reviews stay here. */}
+      {reviewSubmitted && googlePrompt && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl bg-gradient-cta p-5 text-white shadow-glow"
+        >
+          <div className="flex items-center gap-1.5 mb-1">
+            <Star className="w-3.5 h-3.5 fill-white text-white" />
+            <span className="text-[10px] font-extrabold uppercase tracking-wider">Your experience matters</span>
+          </div>
+          <h3 className="font-heading font-extrabold text-lg">Share your experience on Google</h3>
+          <p className="text-xs text-white/85 mt-1 mb-4">
+            Optional: help other students discover the grill. Posting on Google is separate from your website review and has no additional reward.
+          </p>
+          <a
+            href={googleReviewUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-full bg-card text-foreground font-bold text-sm active:scale-95 transition"
+          >
+            <Star className="w-4 h-4 fill-accent text-accent" /> Leave a Google review
+          </a>
+        </motion.div>
+      )}
+
+      {/* Review Modal */}
+      {showReview && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}>
+          <div role="dialog" aria-modal="true" aria-label={msg('FE_REVIEW_DIALOG', 'Rate Your Order')} className="bg-card rounded-3xl p-6 w-full max-w-md animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-heading font-bold text-lg text-foreground">{msg('FE_REVIEW_DIALOG', 'Rate Your Order')}</h3>
+              <button aria-label={msg('FE_REVIEW_CLOSE', 'Close review')} disabled={reviewBusy} onClick={() => { if (!reviewBusyRef.current) setShowReview(false); }}><X className="w-5 h-5 text-muted-foreground" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Overall Rating</label>
+                <div className="flex gap-1 mt-2">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button key={s} disabled={reviewBusy} aria-label={msg('FE_REVIEW_RATING_STARS', 'Overall rating: {stars} stars', { stars: s })} aria-pressed={review.rating === s} onClick={() => setReview({ ...review, rating: s })}>
+                      <Star className={`w-8 h-8 transition-transform ${s <= review.rating ? 'fill-accent text-accent scale-110' : 'text-muted-foreground'}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Kitchen Rating</label>
+                <div className="flex gap-1 mt-2">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button key={s} disabled={reviewBusy} aria-label={msg('FE_REVIEW_KITCHEN_RATING_STARS', 'Kitchen rating: {stars} stars', { stars: s })} aria-pressed={review.kitchen_rating === s} onClick={() => setReview({ ...review, kitchen_rating: s })}>
+                      <Star className={`w-6 h-6 ${s <= review.kitchen_rating ? 'fill-accent text-accent' : 'text-muted-foreground'}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Rider Rating</label>
+                <div className="flex gap-1 mt-2">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button key={s} disabled={reviewBusy} aria-label={msg('FE_REVIEW_RIDER_RATING_STARS', 'Rider rating: {stars} stars', { stars: s })} aria-pressed={review.rider_rating === s} onClick={() => setReview({ ...review, rider_rating: s })}>
+                      <Star className={`w-6 h-6 ${s <= review.rider_rating ? 'fill-accent text-accent' : 'text-muted-foreground'}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <textarea
+                disabled={reviewBusy}
+                maxLength={2000}
+                value={review.comment}
+                onChange={(e) => setReview({ ...review, comment: e.target.value })}
+                placeholder="Tell us about your experience..."
+                className="w-full p-3 rounded-xl border border-border text-sm resize-none focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                rows={3}
+              />
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Add photos (optional)</label>
+                {reviewImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {reviewImages.map((url, i) => (
+                      <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-border">
+                        <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                        <button type="button" onClick={() => setReviewImages((prev) => prev.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center"><X className="w-3 h-3" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {reviewImages.length < 3 && (
+                  <div className="mt-2">
+                    <ImageUploader value="" onChange={(url) => { if (url) setReviewImages((prev) => [...prev, url]); }} folder="reviews" label="a photo" />
+                  </div>
+                )}
+              </div>
+              <button onClick={handleReview} disabled={reviewBusy} className="w-full py-3.5 disabled:opacity-50 rounded-xl bg-gradient-cta text-white font-bold shadow-glow">
+                {reviewBusy ? msg('FE_REVIEW_SUBMITTING', 'Submitting…') : msg('FE_REVIEW_SUBMIT', 'Submit Review')}
+              </button>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      <ShareSheet
+        open={showShare}
+        onClose={() => setShowShare(false)}
+        type="order"
+        payload={{
+          orderId: order.id,
+          headline: 'My Holy Grills order',
+          value: formatNaira(order.total_amount || 0),
+          caption: 'Just got my grill on 🔥',
+          link: `${window.location.origin}/orders/${order.id}`,
+        }}
+      />
+    </div>
+  );
+}

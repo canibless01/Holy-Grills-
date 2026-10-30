@@ -1,0 +1,603 @@
+{
+  "mode": "actual deployed signed-in existing audit student; existing prior order history; no new orders/payments/emails or account creation",
+  "actor_id": "49e8d44e-1c18-4e4e-a03a-0c72bfc806a1",
+  "campus_id": "47f42df1-5327-4f31-83fa-93172755f11b",
+  "profiles": [
+    {
+      "profile": "mobile emulation",
+      "requests": [
+        {
+          "path": "https://holygrills.online/",
+          "document": true,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/index-SikphLvq.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/index-BQ2bnhvL.css",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/nunito-latin-wght-normal-BzFMHfZw.woff2",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/auth/me",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/banners",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/sections",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/early-supporters",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/icons/icon.svg",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/gift-campaign",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/sections",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/assets/Dashboard-BrbPxTwp.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/appConfig-C0uaTxhC.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/Skeleton-DRK9oXMJ.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/shopping-bag-DQ6USYtd.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/copy-Df6P9Eke.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/timer-Cu00fQub.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/config/public",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/assets/Menu-CeLbVP48.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/config/public",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/config/public",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/",
+          "document": true,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/index-SikphLvq.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/index-BQ2bnhvL.css",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/nunito-latin-wght-normal-BzFMHfZw.woff2",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/auth/me",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/banners",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/sections",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/early-supporters",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/icons/icon.svg",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/",
+          "document": true,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/index-SikphLvq.js",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/index-BQ2bnhvL.css",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holygrills.online/assets/nunito-latin-wght-normal-BzFMHfZw.woff2",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/auth/me",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/icons/icon.svg",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/banners",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/sections",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/early-supporters",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/icons/icon.svg",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holygrills.online/icons/icon.svg",
+          "document": false,
+          "method": "GET",
+          "campus": null
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/auth/me",
+          "document": false,
+          "method": "GET",
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        }
+      ],
+      "responses": [
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/banners",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/auth/me",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/sections",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b",
+          "titles": [
+            "Challenges",
+            "Referrals",
+            "Michael A",
+            "Nnamani B.C.",
+            "",
+            "",
+            "Adesola T.",
+            "Emould M. ",
+            "Adeleke D.",
+            "Afolabi P.O.",
+            "Owoeye I.B.",
+            "Ehimetalor P.",
+            "Made fresh",
+            "Daily streaks",
+            "Rewards",
+            "Marinated deep",
+            "Real fire",
+            "Events",
+            "\u200eLeaderboard",
+            "Spin wheel",
+            "Order Locks",
+            "Ember tier icon",
+            "[AUDIT PROVIDER] Share composition",
+            "Hall of Fame",
+            "Basted often. ",
+            "Marketplace",
+            "Filani O.P.",
+            "Omoayena A.",
+            "Flame tier icon",
+            "Blaze tier icon",
+            "Holy tier icon",
+            "[AUDIT PROVIDER] tier containment"
+          ]
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/early-supporters",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "status": 200,
+          "campus": "47f42df1-5327-4f31-83fa-93172755f11b"
+        }
+      ],
+      "console_errors": [
+        "Failed to load resource: the server responded with a status of 404 ()",
+        "rt: Request timed out \u2014 the server may be starting up. Try again in a moment.\n    at Ya (https://holygrills.online/assets/index-SikphLvq.js:418:42157)\n    at async https://holygrills.online/assets/index-SikphLvq.js:426:290740",
+        "Failed to load resource: the server responded with a status of 404 ()",
+        "rt: Request timed out \u2014 the server may be starting up. Try again in a moment.\n    at Ya (https://holygrills.online/assets/index-SikphLvq.js:418:42157)\n    at async https://holygrills.online/assets/index-SikphLvq.js:426:290740",
+        "Cart refresh failed: rt: Request timed out \u2014 the server may be starting up. Try again in a moment.\n    at Ya (https://holygrills.online/assets/index-SikphLvq.js:418:42157)\n    at async https://holygrills.online/assets/index-SikphLvq.js:426:158027\n    at async Promise.allSettled (index 0)",
+        "Notif refresh failed: rt: Request timed out \u2014 the server may be starting up. Try again in a moment.\n    at Ya (https://holygrills.online/assets/index-SikphLvq.js:418:42157)\n    at async https://holygrills.online/assets/index-SikphLvq.js:426:159267\n    at async Promise.allSettled (index 1)",
+        "rt: Request timed out \u2014 the server may be starting up. Try again in a moment.\n    at Ya (https://holygrills.online/assets/index-SikphLvq.js:418:42157)\n    at async https://holygrills.online/assets/index-SikphLvq.js:426:290740",
+        "rt: Request timed out \u2014 the server may be starting up. Try again in a moment.\n    at Ya (https://holygrills.online/assets/index-SikphLvq.js:418:42157)\n    at async https://holygrills.online/assets/index-SikphLvq.js:426:290740"
+      ],
+      "authenticated": true,
+      "account_ui_restored": true,
+      "before_headings": [
+        "Provider audit slide 1",
+        "Feast together. Earn together.",
+        "Made the long way.",
+        "Made fresh",
+        "Marinated deep",
+        "Real fire",
+        "Basted often. ",
+        "Eat. Earn. Come Back \u2764\ufe0f\u200d\ud83d\udd25.",
+        "The First Believers \ud83d\udc9b",
+        "Your crowd. Our fire.",
+        "Straight from students."
+      ],
+      "before_cache": [
+        {
+          "key": [
+            "published-storefront",
+            "47f42df1-5327-4f31-83fa-93172755f11b",
+            "sections"
+          ],
+          "status": "success",
+          "fetch": "idle",
+          "rows": 32,
+          "updated": 1793294165067,
+          "error": ""
+        },
+        {
+          "key": [
+            "published-storefront",
+            "47f42df1-5327-4f31-83fa-93172755f11b",
+            "banners"
+          ],
+          "status": "success",
+          "fetch": "idle",
+          "rows": 2,
+          "updated": 1793294156822,
+          "error": ""
+        },
+        {
+          "key": [
+            "published-storefront",
+            "47f42df1-5327-4f31-83fa-93172755f11b",
+            "early-supporters"
+          ],
+          "status": "pending",
+          "fetch": "fetching",
+          "rows": null,
+          "updated": 0,
+          "error": ""
+        }
+      ],
+      "failed_requests": [
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/gift-campaign",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/sections",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/config/public",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/config/public",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/config/public",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/feature-flags",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/auth/me",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "path": "https://holy-grills-backend.onrender.com/api/storefront/operating-hours",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "existing_orders_read_status": 200,
+      "existing_order_count": 3,
+      "pass": false,
+      "failure": "Locator expected to be visible\nActual value: None\nError: element(s) not found \nCall log:\n  - Expect \"to_be_visible\" with timeout 10000ms\n  - waiting for locator(\"img[fetchpriority=\\\"high\\\"]\").first\n\nAria snapshot:\n- banner:\n  - link \"Holy Grills logo\":\n    - /url: /\n    - img \"Holy Grills logo\"\n  - button \"Cart\":\n    - img\n  - button \"Notifications\":\n    - img\n  - status \"Loading account\"\n- main:\n  - status \"Home highlights\": Loading the latest from the grill\u2026\n  - link \"0 Holy Points\":\n    - /url: /dashboard\n    - img\n    - text: 0 Holy Points\n  - link \"\u2014 Monthly Rank\":\n    - /url: /leaderboard\n    - img\n    - text: \u2014 Monthly Rank\n  - status \"Home banners\": Loading the latest from the grill\u2026\n  - heading \"From the grill\" [level=2]\n  - img\n  - text: Squad Orders\n  - heading \"Feast together. Earn together.\" [level=2]\n  - paragraph: Your people. One order.\n  - img\n  - text: Squad deal\n  - img\n  - text: Delivery perk\n  - img\n  - text: Shared rewards 1 Start a squad \u203a 2 Fill the plates \u203a 3 Share and earn\n  - link \"Start a squad order\":\n    - /url: /menu\n    - text: Start a squad order\n    - img\n  - text: How it's made\n  - heading \"Made the long way.\" [level=2]\n  - paragraph: The care behind every plate.\n  - text: Holy Points\n  - heading \"Eat. Earn. Come Back \u2764\ufe0f\u200d\ud83d\udd25.\" [level=2]\n  - paragraph: Earned by eating. Spent everywhere.\n  - link \"Earn on orders Every plate counts.\":\n    - /url: /menu\n    - img\n    - text: Earn on orders Every plate counts.\n  - link \"Leaderboard Climb the ranks",
+      "document_marker": "signed-preserved",
+      "worker": {
+        "controller": "https://holygrills.online/service-worker.js",
+        "registrations": [
+          {
+            "active": "https://holygrills.online/service-worker.js",
+            "waiting": null,
+            "installing": null
+          }
+        ]
+      },
+      "after_cache": [
+        {
+          "key": [
+            "published-storefront",
+            "47f42df1-5327-4f31-83fa-93172755f11b",
+            "sections"
+          ],
+          "status": "pending",
+          "fetch": "fetching",
+          "rows": null,
+          "updated": 0,
+          "error": ""
+        },
+        {
+          "key": [
+            "published-storefront",
+            "47f42df1-5327-4f31-83fa-93172755f11b",
+            "banners"
+          ],
+          "status": "pending",
+          "fetch": "fetching",
+          "rows": null,
+          "updated": 0,
+          "error": ""
+        },
+        {
+          "key": [
+            "published-storefront",
+            "47f42df1-5327-4f31-83fa-93172755f11b",
+            "early-supporters"
+          ],
+          "status": "pending",
+          "fetch": "fetching",
+          "rows": null,
+          "updated": 0,
+          "error": ""
+        }
+      ],
+      "final_headings": [
+        "From the grill",
+        "Feast together. Earn together.",
+        "Made the long way.",
+        "Eat. Earn. Come Back \u2764\ufe0f\u200d\ud83d\udd25.",
+        "The First Believers \ud83d\udc9b",
+        "Straight from students."
+      ],
+      "worker_events": [
+        {
+          "event": "document",
+          "data": "https://holygrills.online/",
+          "at": 1793294154837
+        },
+        {
+          "event": "register",
+          "data": "/service-worker.js",
+          "at": 1793294156460
+        },
+        {
+          "event": "controllerchange",
+          "data": "https://holygrills.online/service-worker.js",
+          "at": 1793294157552
+        },
+        {
+          "event": "register",
+          "data": "https://holygrills.online/service-worker.js?appId=471bd695-2342-4521-aa0f-8c93d7ce805f&sdkVersion=160610",
+          "at": 1793294174810
+        },
+        {
+          "event": "controllerchange",
+          "data": "https://holygrills.online/service-worker.js?appId=471bd695-2342-4521-aa0f-8c93d7ce805f&sdkVersion=160610",
+          "at": 1793294175506
+        },
+        {
+          "event": "document",
+          "data": "https://holygrills.online/",
+          "at": 1793294175698
+        },
+        {
+          "event": "register",
+          "data": "/service-worker.js",
+          "at": 1793294176046
+        },
+        {
+          "event": "controllerchange",
+          "data": "https://holygrills.online/service-worker.js",
+          "at": 1793294177550
+        },
+        {
+          "event": "document",
+          "data": "https://holygrills.online/",
+          "at": 1793294177934
+        },
+        {
+          "event": "register",
+          "data": "/service-worker.js",
+          "at": 1793294178167
+        }
+      ]
+    }
+  ]
+}

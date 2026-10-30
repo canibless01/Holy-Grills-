@@ -1,0 +1,136 @@
+{
+  "mode": "real mobile browser reads with pass-through fetch timing instrumentation; no response fixtures",
+  "settle_seconds": 15,
+  "headings": [
+    "Provider audit slide 1"
+  ],
+  "fetches": [
+    {
+      "path": "storefront/feature-flags",
+      "status": 200,
+      "ms": 1774
+    },
+    {
+      "path": "messages",
+      "status": 200,
+      "ms": 1827
+    },
+    {
+      "path": "storefront/banners",
+      "status": 200,
+      "ms": 2119
+    },
+    {
+      "path": "storefront/operating-hours",
+      "status": 200,
+      "ms": 3203
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 3562
+    },
+    {
+      "path": "menu/items",
+      "status": 200,
+      "ms": 5143
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 5539
+    },
+    {
+      "path": "storefront/config/public",
+      "status": 200,
+      "ms": 6232
+    },
+    {
+      "path": "storefront/early-supporters",
+      "status": 200,
+      "ms": 6619
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 7031
+    },
+    {
+      "path": "storefront/banners",
+      "status": 200,
+      "ms": 7420
+    },
+    {
+      "path": "campuses",
+      "status": 200,
+      "ms": 7677
+    },
+    {
+      "path": "hp/tiers",
+      "status": 200,
+      "ms": 8128
+    },
+    {
+      "path": "storefront/feature-flags",
+      "status": 200,
+      "ms": 8566
+    },
+    {
+      "path": "orders/delivery-windows/status",
+      "status": 200,
+      "ms": 9948
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 10302
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 10658
+    },
+    {
+      "path": "storefront/config/public",
+      "status": 200,
+      "ms": 11387
+    },
+    {
+      "path": "storefront/banners",
+      "status": 200,
+      "ms": 4131
+    },
+    {
+      "path": "storefront/config/public",
+      "error": "AbortError",
+      "ms": 12000
+    },
+    {
+      "path": "storefront/operating-hours",
+      "status": 200,
+      "ms": 5202
+    },
+    {
+      "path": "storefront/banners",
+      "status": 200,
+      "ms": 5545
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 5943
+    },
+    {
+      "path": "storefront/sections",
+      "status": 200,
+      "ms": 6579
+    },
+    {
+      "path": "storefront/early-supporters",
+      "status": 200,
+      "ms": 6957
+    }
+  ],
+  "errors": [],
+  "note": "One public configuration read aborted at its 12-second deadline; successful hero rendering does not establish consistent startup performance."
+}

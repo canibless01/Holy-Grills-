@@ -209,7 +209,7 @@ def flash_redeem(reward_id):
         description: No active flash sale, sold out, insufficient HP, or window closed
     """
     from app.services.feature_flags import is_feature_enabled
-    if not is_feature_enabled("flash_redemptions"):
+    if not is_feature_enabled("flash_redemptions", getattr(g, "campus_id", None)):
         return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="Flash redemptions")}), 403
     from app.services.hp_service import process_flash_redeem
     try:
@@ -284,11 +284,93 @@ def list_hp_bundles():
     }), 200
 
 
+@hp_bp.route("/bundles/initialize", methods=["POST"])
+@require_auth
+def initialize_hp_bundle():
+    """
+    Initialize an HP bundle purchase via Paystack.
+    Generates a unique reference and returns authorization_url.
+    Metadata is set to enforce replay protection on purchase verification.
+    ---
+    tags: [HP]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          required: [hp_amount]
+          properties:
+            hp_amount: {type: integer, minimum: 100, example: 500}
+    responses:
+      200:
+        description: Payment initialized
+      400:
+        description: Validation error
+    """
+    from app.services.payment_service import initialize_payment
+    import uuid
+    from datetime import datetime, timezone
+
+    data = request.get_json(force=True) or {}
+    try:
+        hp_amount = int(data.get("hp_amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": resolve_msg(MSG.HP_BUNDLE_MIN, min_hp=current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))}), 400
+
+    min_purchase = int(current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))
+    if hp_amount < min_purchase:
+        return jsonify({"error": resolve_msg(MSG.HP_BUNDLE_MIN, min_hp=min_purchase)}), 400
+
+    price_per_hp = float(current_app.config.get("HP_BUNDLE_PRICE_PER_HP", 5.0))
+    naira = round(hp_amount * price_per_hp, 2)
+
+    # Fetch user email for Paystack
+    db = get_user_client()
+    profile = db.table("profiles").select("email").eq("id", g.user_id).single().execute()
+    email = (profile or {}).get("email")
+    if not email:
+        return jsonify({"error": "User email not found"}), 400
+
+    # Unique reference: hp_bundle_{user}_{timestamp}_{uuid_short}
+    short_uuid = uuid.uuid4().hex[:8]
+    ts = int(datetime.now(timezone.utc).timestamp())
+    reference = f"hp_bundle_{g.user_id[:8]}_{ts}_{short_uuid}"
+
+    metadata = {
+        "purpose": "hp_bundle",
+        "user_id": g.user_id,
+        "hp_amount": hp_amount,
+        "type": "hp_bundle",  # for webhook routing isolation
+        # Server-recorded amount for fee-aware reconciliation in the webhook/verify path.
+        "expected_amount_kobo": round(naira * 100),
+    }
+
+    try:
+        init_data = initialize_payment(
+            email=email,
+            amount_naira=naira,
+            reference=reference,
+            metadata=metadata,
+        )
+    except Exception as e:
+        logger.error("initialize_hp_bundle failed for user %s: %s", g.user_id, e)
+        return jsonify({"error": f"Payment initialization failed: {str(e)}"}), 400
+
+    return jsonify({
+        "authorization_url": init_data.get("authorization_url"),
+        "reference": reference,
+        "hp_amount": hp_amount,
+        "naira": naira,
+        "price_per_hp": price_per_hp,
+    }), 200
+
+
 @hp_bp.route("/bundles/purchase", methods=["POST"])
 @require_auth
 def purchase_hp_bundle():
     """
     Purchase an HP bundle (event hosts). Charges card via Paystack reference, credits HP.
+    Stricter checks: verifies metadata purpose, user_id, hp_amount, and exact amount match.
     ---
     tags: [HP]
     parameters:
@@ -308,9 +390,12 @@ def purchase_hp_bundle():
     """
     db = get_user_client()
     from app.services.hp_service import process_hp_bundle_purchase
-    data = request.get_json(force=True)
-    hp_amount = int(data.get("hp_amount", 0))
-    reference = data.get("paystack_reference", "").strip()
+    data = request.get_json(force=True) or {}
+    try:
+        hp_amount = int(data.get("hp_amount", 0))
+    except (TypeError, ValueError):
+        hp_amount = 0
+    reference = (data.get("paystack_reference") or "").strip()
 
     min_purchase = int(current_app.config.get("HP_BUNDLE_MIN_PURCHASE", 100))
     if hp_amount < min_purchase:
@@ -337,12 +422,44 @@ def purchase_hp_bundle():
         txn_data = verify_payment(reference)
         if txn_data.get("status") != "success":
             return jsonify({"error": MSG.HP_PAYMENT_NOT_CONFIRMED.format(status=txn_data.get("status"))}), 402
-        paid_kobo = txn_data.get("amount", 0)
-        expected_kobo = int(naira_paid * 100)
-        if paid_kobo < expected_kobo:
-            return jsonify({"error": MSG.HP_PAYMENT_MISMATCH.format(expected=naira_paid, received=paid_kobo / 100)}), 402
+
+        # --- Stricter metadata verification (B-4) ---
+        meta = txn_data.get("metadata") or {}
+        # Paystack sometimes nests custom fields under metadata.custom_fields, but our initialize puts them top-level
+        purpose = meta.get("purpose") or meta.get("type")
+        # For backwards compatibility, also check if purpose is in metadata dict directly
+        if purpose != "hp_bundle":
+            # Allow type == hp_bundle as well (we set both)
+            if meta.get("purpose") != "hp_bundle" and meta.get("type") != "hp_bundle":
+                return jsonify({"error": "Payment reference is not for HP bundle purchase"}), 400
+
+        meta_user_id = meta.get("user_id")
+        if meta_user_id and str(meta_user_id) != str(g.user_id):
+            return jsonify({"error": "Payment reference does not belong to this user"}), 400
+
+        meta_hp_amount = meta.get("hp_amount")
+        if meta_hp_amount is not None:
+            try:
+                if int(meta_hp_amount) != int(hp_amount):
+                    return jsonify({"error": f"HP amount mismatch: payment was for {meta_hp_amount} HP, requested {hp_amount} HP"}), 400
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid hp_amount in payment metadata"}), 400
+
+        # Fee-aware amount check (same rule as orders/wallet): the customer may have
+        # been charged Paystack's gateway fee on top of the bundle price, so a strict
+        # equality test rejected charges that had already gone through.
+        from app.services.payment_amounts import validate_charge_amount
+        try:
+            validate_charge_amount(txn_data, naira_paid, "paystack", label="HP bundle")
+        except ValueError:
+            return jsonify({"error": MSG.HP_PAYMENT_MISMATCH.format(expected=naira_paid, received=int(txn_data.get("amount", 0)) / 100)}), 402
+
     except Exception as e:
-        return jsonify({"error": MSG.HP_PAYMENT_VERIFY_FAILED.format(error=str(e))}), 402
+        # Preserve our own 400 errors, only wrap verification failures
+        err_msg = str(e)
+        if "Payment reference is not for" in err_msg or "does not belong" in err_msg or "HP amount mismatch" in err_msg or "Payment mismatch" in err_msg:
+            return jsonify({"error": err_msg}), 400
+        return jsonify({"error": MSG.HP_PAYMENT_VERIFY_FAILED.format(error=err_msg)}), 402
 
     try:
         result = process_hp_bundle_purchase(
@@ -363,6 +480,37 @@ def purchase_hp_bundle():
                 "idempotent": True,
             }), 201
         return jsonify({"error": str(e)}), 400
+
+
+def _transfer_order_eligibility(db, user_id):
+    # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
+    # min_orders is read from system_settings first (admin-editable), falling back to
+    # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
+    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
+    _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
+    min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
+    completed_orders = (
+        db.table("orders")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("status", "delivered")
+        .execute()
+    )
+    # execute() returns a list on success, None / dict / empty on no-rows edge cases
+    if isinstance(completed_orders, list):
+        completed_count = len(completed_orders)
+    elif isinstance(completed_orders, dict) and completed_orders.get("id"):
+        completed_count = 1
+    else:
+        completed_count = 0
+    return min_orders, completed_count
+
+
+@hp_bp.route("/transfer-eligibility", methods=["GET"])
+@require_auth
+def transfer_order_eligibility():
+    minimum, delivered = _transfer_order_eligibility(get_user_client(), g.user_id)
+    return jsonify({"minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum}), 200
 
 
 @hp_bp.route("/transfer", methods=["POST"])
@@ -421,26 +569,7 @@ def transfer_hp():
 
     db = get_user_client()
 
-    # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
-    # min_orders is read from system_settings first (admin-editable), falling back to
-    # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
-    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
-    _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
-    min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
-    completed_orders = (
-        db.table("orders")
-        .select("id")
-        .eq("user_id", g.user_id)
-        .eq("status", "delivered")
-        .execute()
-    )
-    # execute() returns a list on success, None / dict / empty on no-rows edge cases
-    if isinstance(completed_orders, list):
-        completed_count = len(completed_orders)
-    elif isinstance(completed_orders, dict) and completed_orders.get("id"):
-        completed_count = 1
-    else:
-        completed_count = 0
+    min_orders, completed_count = _transfer_order_eligibility(db, g.user_id)
     if completed_count < min_orders:
         return jsonify({
             "error": resolve_msg(MSG.HP_TRANSFER_MIN_ORDERS, min_orders=min_orders, completed=completed_count),
@@ -459,7 +588,10 @@ def transfer_hp():
         return jsonify({"error": "You can only transfer HP to students on your own campus."}), 400
 
     sender_name = (sender or {}).get("full_name", "Someone")
-    recipient_name = recipient.get("full_name", "Someone")
+    # Nickname-first, the same rule every other surface uses (the recipient is
+    # named by their nickname in notifications and on the leaderboard).
+    from app.services.squad_service import resolve_display_name
+    recipient_name = resolve_display_name(profile=recipient) or "Someone"
 
     balance = get_hp_balance(g.user_id)
     if balance.get("active", 0) < amount:

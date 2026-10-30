@@ -34,7 +34,7 @@ def get_cart():
     db = get_user_client()
     items = (
         db.table("cart_items")
-        .select("*,menu_items(id,name,price,image_url,is_available,hp_earn_value,hp_earn)")
+        .select("*,menu_items(id,name,price,image_url,is_available,hp_earn_value,hp_earn,hp_multiplier)")
         .eq("user_id", g.user_id)
         .order("created_at")
         .execute()
@@ -45,11 +45,25 @@ def get_cart():
     has_unavailable = False
     for item in items:
         menu = item.get("menu_items") or {}
+        if menu:
+            from app.routes.menu import _apply_campus_availability
+            _apply_campus_availability(db, menu, getattr(g, 'campus_id', None))
+        from app.services.order_service import _resolve_item_variations, _resolve_item_addons
+        invalid_choices = False
+        try:
+            variations, resolved_variations = _resolve_item_variations(db, dict(menu, id=item['menu_item_id']), item.get('selected_variations') or [])
+            addons, resolved_addons = _resolve_item_addons(db, dict(menu, id=item['menu_item_id']), item.get('selected_addons') or [])
+            menu['base_price'] = menu.get('price', 0)
+            menu['price'] = round(float(menu['base_price']) + float(variations) + addons, 2)
+            item['modifier_summary'] = [v['option_name'] for v in resolved_variations] + [a['name_snapshot'] for a in resolved_addons]
+        except ValueError as exc:
+            invalid_choices = True
+            item['selection_error'] = str(exc)
         qty = float(item.get("quantity", 1))
         subtotal += qty * float(menu.get("price", 0))
         hp_earn_preview += int(qty) * int(menu.get("hp_earn_value") or menu.get("hp_earn") or 0)
         # Surface unavailability flag on each item
-        item["is_unavailable"] = not bool(menu.get("is_available", True))
+        item["is_unavailable"] = invalid_choices or not bool(menu.get("is_available", True))
         if item["is_unavailable"]:
             has_unavailable = True
 
@@ -114,7 +128,7 @@ def add_to_cart():
     )
     if not menu_item:
         return jsonify({"error": MSG.MENU_ITEM_NOT_FOUND}), 404
-    if campus_id and menu_item.get("campus_id") != campus_id:
+    if campus_id and menu_item.get("campus_id") not in (None, campus_id):
         return jsonify({"error": MSG.CART_MENU_ITEM_NOT_FOUND}), 404
 
     now = datetime.now(timezone.utc).isoformat()
@@ -130,6 +144,13 @@ def add_to_cart():
 
     existing = None
     for item in user_items:
+        existing_options = item.get('options') or {}
+        if not isinstance(existing_options, dict):
+            import json
+            try:
+                existing_options = json.loads(existing_options)
+            except (ValueError, TypeError):
+                existing_options = {}
         item_vars = item.get("selected_variations") or []
         item_addons = item.get("selected_addons") or []
         if item.get("options") and isinstance(item.get("options"), dict):
@@ -138,7 +159,7 @@ def add_to_cart():
             if not item_addons and item["options"].get("selected_addons"):
                 item_addons = item["options"]["selected_addons"]
 
-        if item_vars == selected_variations and item_addons == selected_addons:
+        if item_vars == selected_variations and item_addons == selected_addons and existing_options.get("notes", "") == notes:
             existing = item
             break
 

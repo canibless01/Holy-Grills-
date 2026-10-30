@@ -15996,8 +15996,14 @@ nonsensitive`
 | `latitude` | `numeric(10,7)` | YES | `NULL` | Data field storing latitude for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 | `longitude` | `numeric(10,7)` | YES | `NULL` | Data field storing longitude for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
 | `is_default` | `boolean` | NO | `false` | Data field storing is default for user_addresses record. | API Endpoint | upon record creation | not applicable / NULL if omitted | None |
+| `campus_id` | `uuid` | YES | `NULL` | Foreign key referencing campuses.id; the campus this address belongs to (ON DELETE SET NULL). | API / JWT Auth Context | upon record creation | NULL when the owner's campus is unknown | campuses.id |
+| `delivery_type` | `text` | YES | `NULL` | How this address is delivered: `on_campus` or `off_campus`. Enforced by the `user_addresses_delivery_type_check` CHECK constraint (NULL or one of the two values). Saved so checkout can replay the selection instead of re-asking. | API Endpoint (POST/PATCH /auth/addresses) | upon record creation / update | NULL for rows saved before this was persisted, and for an address whose delivery type was never chosen | `delivery_location_id` |
+| `delivery_location_id` | `uuid` | YES | `NULL` | The referenced delivery target, with the SAME meaning `orders.delivery_location_id` has: a `hostels.id` when `delivery_type` is `on_campus`, a `gates.id` when it is `off_campus`. Deliberately has no foreign key because it points at one of two tables. Validated on write against the caller's campus. | API Endpoint (POST/PATCH /auth/addresses) | upon record creation / update | NULL when no delivery type was chosen, or for rows saved before this was persisted | `delivery_type` |
 | `created_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
 | `updated_at` | `timestamp with time zone` | NO | `now()` | Audit timestamp tracking creation or last modification time. | PostgreSQL now() | upon record creation | never NULL | None |
+
+**Constraints:**
+- `user_addresses_delivery_type_check` — CHECK (`delivery_type` IS NULL OR `delivery_type` IN ('on_campus','off_campus')). APPLIED.
 
 **Indexes:**
 - `idx_user_addresses_default` ON (`user_id`)
@@ -16005,8 +16011,11 @@ nonsensitive`
 - `uq_user_addresses_default` ON (`user_id`)
 
 **RLS Policies:**
-- `user_addresses: admins all`
-- `user_addresses: users crud own`
+- `user_addresses: unified access` — a user reads and writes only their own rows; a campus admin can access rows of their campus.
+
+**Triggers:**
+- `updated_at` maintained automatically.
+- One default address per user (setting a new default un-defaults the others).
 
 ---
 

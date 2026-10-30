@@ -1,0 +1,121 @@
+{
+  "mode": "real browser against modified local frontend/backend and actual provider data; original authorized student; read-only; no redemption or HP mutation",
+  "pages": [
+    {
+      "path": "/dashboard",
+      "final_path": "/dashboard",
+      "overall_rank_5_visible": true,
+      "fake_rank_zero": false,
+      "rank_5_visible": true,
+      "rewards_low_stock_lock_visible": false,
+      "api": [
+        {
+          "endpoint": "auth/me",
+          "status": 200
+        },
+        {
+          "endpoint": "hp/tiers",
+          "status": 200,
+          "rows": 4
+        },
+        {
+          "endpoint": "leaderboard/my-rank",
+          "status": 200,
+          "rank": null
+        },
+        {
+          "endpoint": "leaderboard/my-rank",
+          "status": 200,
+          "rank": 5
+        }
+      ]
+    },
+    {
+      "path": "/leaderboard",
+      "final_path": "/leaderboard",
+      "overall_rank_5_visible": false,
+      "fake_rank_zero": false,
+      "rank_5_visible": false,
+      "rewards_low_stock_lock_visible": false,
+      "api": [
+        {
+          "endpoint": "auth/me",
+          "status": 200
+        },
+        {
+          "endpoint": "leaderboard/hall-of-fame",
+          "status": 200
+        },
+        {
+          "endpoint": "hp/tiers",
+          "status": 200,
+          "rows": 4
+        },
+        {
+          "endpoint": "leaderboard",
+          "status": 200,
+          "students": 3
+        },
+        {
+          "endpoint": "hp/tiers",
+          "status": 200,
+          "rows": 4
+        },
+        {
+          "endpoint": "leaderboard",
+          "status": 200,
+          "students": 3
+        },
+        {
+          "endpoint": "leaderboard/my-rank",
+          "status": 200,
+          "rank": null
+        },
+        {
+          "endpoint": "leaderboard",
+          "status": 200,
+          "students": 5
+        },
+        {
+          "endpoint": "leaderboard/my-rank",
+          "status": 200,
+          "rank": 5
+        }
+      ]
+    },
+    {
+      "path": "/rewards",
+      "final_path": "/rewards",
+      "overall_rank_5_visible": false,
+      "fake_rank_zero": false,
+      "rank_5_visible": false,
+      "rewards_low_stock_lock_visible": false,
+      "api": [
+        {
+          "endpoint": "auth/me",
+          "status": 200
+        },
+        {
+          "endpoint": "hp/tiers",
+          "status": 200,
+          "rows": 4
+        },
+        {
+          "endpoint": "hp/tiers",
+          "status": 200,
+          "rows": 4
+        },
+        {
+          "endpoint": "rewards",
+          "status": 200,
+          "rows": 24
+        }
+      ]
+    }
+  ],
+  "controlled_stock_display": {
+    "mode": "controlled GET fixture only; no redemption clicked",
+    "redeem_buttons": 2,
+    "out_of_stock_labels": 1
+  }
+}

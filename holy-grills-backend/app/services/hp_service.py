@@ -156,6 +156,9 @@ def _get_hp_multiplier(campus_id: str = None) -> float:
     silently ignored while the broadcast told users it was live. The expiry is read at the same scope
     as the multiplier row that won. Returns 1.0 if disabled, expired, or invalid.
     """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("hp_multiplier", campus_id):
+        return 1.0
     try:
         db = get_db()
         scope, raw = None, None
@@ -240,7 +243,7 @@ def _tier_multiplier_for_slug(tier_slug) -> float:
         return 1.0
 
 
-def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None) -> int:
+def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None, *, include_addons=False, net_food_spend=None) -> int:
     """Pure calculation — no DB writes. Extracted from award_food_order_hp."""
     tier_multiplier = 1.0
     if user_id:
@@ -257,27 +260,9 @@ def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = No
     menu_multiplier = _get_menu_multiplier(campus_id)
 
     if order_items:
-        base_hp = 0
-        multiplied_base_hp = 0
-        total_hp = 0
-        for item in order_items:
-            if item.get("is_addon") or not item.get("price_snapshot"):
-                continue
-            line_base_hp = int(
-                float(item.get("price_snapshot") or 0)
-                * int(item.get("quantity") or 1)
-                * food_earn_rate
-            )
-            base_hp += line_base_hp
-            try:
-                item_multiplier = float(item.get("hp_multiplier_snapshot") or 1.0)
-            except (TypeError, ValueError):
-                item_multiplier = 1.0
-            if item_multiplier not in (0.5, 1.0, 2.0):
-                item_multiplier = 1.0
-            multiplied_line_hp = round(line_base_hp * item_multiplier * event_multiplier * menu_multiplier)
-            multiplied_base_hp += multiplied_line_hp
-            total_hp += round(multiplied_line_hp * tier_multiplier)
+        from app.services.food_hp_plan import food_hp_lines
+        lines = food_hp_lines(order_items, food_earn_rate, include_addons=include_addons, net_food_spend=net_food_spend)
+        total_hp = sum(round(round(line['base_hp'] * line['hp_multiplier'] * event_multiplier * menu_multiplier) * tier_multiplier) for line in lines)
     else:
         # Same order of operations as the per-item branch (event x menu first, tier on top). This branch used to
         # skip the menu multiplier and add the tier bonus to the unmultiplied base, so the two paths disagreed
@@ -309,7 +294,8 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
 
     if isinstance(res, dict) and res.get("error"):
         logger.warning("unlock_pending_hp failed: %s", res["error"])
-        return {"unlocked": 0}
+        from app.messages import MSG
+        raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
     unlocked_amount = res.get("unlocked_amount", 0) if isinstance(res, dict) else 0
 
@@ -544,6 +530,7 @@ def award_signup_bonus(user_id: str) -> dict:
     )
     if already:
         return {"awarded": 0, "reason": "Already received"}
+    profile = db.table('profiles').select('campus_id').eq('id', user_id).single().execute() or {}
     return award_active_hp(
         user_id=user_id,
         amount=amount,
@@ -551,6 +538,8 @@ def award_signup_bonus(user_id: str) -> dict:
         reference_id=user_id,
         reference_type="signup_bonus",
         source_type="signup",
+        apply_multiplier=False,
+        campus_id=profile.get('campus_id'),
         notes=f"Welcome to {current_app.config.get('APP_NAME', 'Holy Grills')} — {amount} HP signup gift",
     )
 

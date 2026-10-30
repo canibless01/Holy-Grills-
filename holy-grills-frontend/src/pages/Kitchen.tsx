@@ -1,0 +1,323 @@
+import OrderItemCustomizations from '@/components/OrderItemCustomizations';
+import { useState } from 'react';
+import { Navigate } from 'react-router-dom';
+import { Calendar, Package, Zap, Check, ChefHat } from 'lucide-react';
+import { useKitchenData } from '@/hooks/useKitchenData';
+import { formatDateTime } from '@/lib/hgUtils';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
+import KitchenHeader from '@/components/kitchen/KitchenHeader';
+import KitchenOrderCard from '@/components/kitchen/KitchenOrderCard';
+import KitchenSettings from '@/components/kitchen/KitchenSettings';
+import KitchenCatering from '@/components/kitchen/KitchenCatering';
+import KitchenHandoff from '@/components/kitchen/KitchenHandoff';
+import { msg } from '@/lib/messages';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { useCampus } from '@/lib/campusContext';
+import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
+
+const TABS = [
+  { id: 'queue', label: 'Live Queue' },
+  { id: 'handoff', label: msg('FE_KITCHEN_HANDOFF', 'Handoff') },
+  { id: 'scheduled', label: 'Scheduled' },
+  { id: 'batch', label: 'Prep List' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'catering', label: msg('FE_CATERING_KITCHEN', 'Catering') },
+];
+
+const COLUMN_ACCENTS = {
+  received: { dot: 'bg-brand-brown/50', badge: 'tone-info', label: 'New Orders' },
+  preparing: { dot: 'bg-accent', badge: 'tone-warn', label: 'In Preparation' },
+  ready: { dot: 'bg-success', badge: 'tone-success', label: 'Ready for Pickup' },
+};
+
+export default function Kitchen() {
+  const { user, isLoading } = useHolyGrill();
+  const { adminCampusId } = useCampus();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const campusId = isSuperAdmin ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  if (isLoading) return <StaffPanelSkeleton variant="kitchen" />;
+  return <>
+    {isSuperAdmin && <div className="flex items-center justify-end gap-3 border-b border-border bg-card px-4 py-2"><AdminCampusSelector /></div>}
+    {isSuperAdmin && !campusId
+      ? <p className="p-6 text-sm text-muted-foreground">{msg('FE_KITCHEN_SELECT_CAMPUS', 'Select a campus to open its kitchen workspace.')}</p>
+      : <KitchenWorkspace key={campusId || 'own-campus'} campusId={campusId} canManageSettings={user?.role === 'admin' || isSuperAdmin} />}
+  </>;
+}
+
+function KitchenWorkspace({ campusId, canManageSettings }) {
+  const [tab, setTab] = useState('queue');
+  const {
+    authed, loading, error, dataWarning, refreshQueue, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, batchSummaryLoading, batchSummaryError,
+    settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
+    batchBusy, batchResult, itemAvailability, availabilityBusy, selectWindow, handleStatusUpdate,
+    handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
+  } = useKitchenData(campusId);
+
+  if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
+  if (loading) return <StaffPanelSkeleton variant="kitchen" />;
+
+  const today = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
+  const preparationDay = order => {
+    const instant = new Date(order.is_scheduled ? order.scheduled_for : order.received_at || order.created_at).getTime();
+    return Number.isFinite(instant) ? new Date(instant + 3600000).toISOString().slice(0, 10) : null;
+  };
+  const visibleQueue = queue.filter(order => preparationDay(order) === today);
+  const received = visibleQueue.filter((o) => o.status === 'received' || o.status === 'paid');
+  const preparing = visibleQueue.filter((o) => o.status === 'preparing');
+  const ready = visibleQueue.filter((o) => o.status === 'ready');
+
+  return (
+    <div className="min-h-screen bg-background">
+      <KitchenHeader canManageSettings={canManageSettings && !error} open={open} deliveryWindow={windows.find(window => window.id === selectedWindow) || windows[0] || null} />
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 space-y-4 animate-fade-in">
+        {/* Error state */}
+        {error && (
+          <div className="rounded-2xl tone-error border border-destructive/30 p-4 flex items-center justify-between gap-3">
+            <span className="text-sm text-destructive font-medium">{error}</span>
+            <button
+              onClick={() => void refreshQueue(true)}
+              className="px-3 py-1.5 rounded-xl bg-destructive text-white text-xs font-bold"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {dataWarning && !error && <div role="status" className="rounded-xl border border-border p-3 text-sm">{dataWarning}<button onClick={() => void refreshQueue(true)} className="ml-2 text-primary font-bold underline">Retry updates</button></div>}
+        {!error && <>
+        {/* Capacity bar */}
+        {capacity && (
+          <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-primary" />
+              <span className="text-sm font-bold text-foreground">Today's Capacity</span>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              <span className="font-bold text-foreground tabular-nums">{capacity.orders_today ?? 0}</span>
+              <span>/</span>
+              <span className="tabular-nums">{capacity.daily_order_capacity ?? msg('FE_KITCHEN_NO_DAILY_LIMIT', 'No daily limit')}</span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'tone-error' : 'tone-success'}`}>
+                {(capacity.is_at_capacity ?? (capacity.remaining != null && capacity.remaining <= 0)) ? 'AT CAPACITY' : capacity.daily_order_capacity == null ? msg('FE_KITCHEN_NO_DAILY_LIMIT', 'No daily limit') : `${Math.max(0, capacity.daily_order_capacity - (capacity.orders_today ?? 0))} LEFT`}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Metrics */}
+        {metrics && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <MetricCard value={metrics?.total_orders ?? 0} label="Total Today" color="text-foreground" />
+            <MetricCard value={metrics?.orders_by_status?.preparing || 0} label="Preparing" color="text-info" />
+            <MetricCard value={metrics?.orders_by_status?.ready || 0} label="Ready" color="text-success" />
+            <MetricCard value={`${metrics?.avg_prep_time_minutes ?? '—'}m`} label="Avg Prep" color="text-primary" />
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 rounded-full bg-secondary sticky top-14 z-20">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'queue' && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_STOCK_HELP', 'Stock switches affect new orders in this campus. Existing paid orders still need to be prepared.')}</p>}
+        {/* Live Queue — 3-column KDS board */}
+        {tab === 'queue' && <p className="text-sm font-semibold">Today's preparation · {visibleQueue.length} orders. Grouped by today's delivery window; older orders remain in admin history.</p>}
+        {tab === 'catering' && <KitchenCatering />}
+        {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
+        {tab === 'queue' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
+            {['received', 'preparing', 'ready'].map((status) => {
+              const orders = status === 'received' ? received : status === 'preparing' ? preparing : ready;
+              const accent = COLUMN_ACCENTS[status];
+              return (
+                <div key={status} className="space-y-2.5">
+                  <div className="flex items-center justify-between px-1 sticky top-[3.5rem] z-10 lg:static lg:z-auto">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${accent.dot}`} />
+                      <h3 className="text-xs font-extrabold uppercase tracking-wide text-foreground">{accent.label}</h3>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accent.badge}`}>{orders.length}</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {orders.map((order) => (
+                      <KitchenOrderCard
+                        key={order.id}
+                        order={order}
+                        itemAvailability={itemAvailability}
+                        availabilityBusy={availabilityBusy}
+                        onStatusUpdate={handleStatusUpdate}
+                        onMarkUnavailable={handleMarkUnavailable}
+                        onMarkAvailable={handleMarkAvailable}
+                        actionLoading={actionLoading}
+                        targetMinutes={prepTarget}
+                        isNew={flashingIds.has(order.id)}
+                      />
+                    ))}
+                    {orders.length === 0 && (
+                      <div className="rounded-2xl border-2 border-dashed border-border py-10 text-center">
+                        <ChefHat className="w-6 h-6 text-muted-foreground/40 mx-auto mb-1.5" />
+                        <p className="text-xs text-muted-foreground font-medium">No {status === 'received' ? 'new' : status === 'preparing' ? 'cooking' : 'ready'} orders</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Scheduled */}
+        {tab === 'scheduled' && <div className="space-y-2"><label className="text-sm font-semibold">{msg('FE_KITCHEN_SCHEDULE_DATE', 'Preparation date')}<input type="date" value={scheduledDate} onChange={event => selectScheduledDate(event.target.value)} className="ml-3 rounded-xl border border-border bg-card p-2" /></label>{scheduledDate > new Date(Date.now() + 3600000).toISOString().slice(0, 10) && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_SCHEDULE_PREVIEW', 'Future orders are shown for planning only. Preparation opens on their scheduled day.')}</p>}{scheduledLoading && <p role="status">{msg('FE_LOOKUP_SEARCHING', 'Searching…')}</p>}{scheduled?.error && <button onClick={() => selectScheduledDate(scheduledDate)}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button>}</div>}
+        {tab === 'scheduled' && scheduled && !scheduled.error && (
+          <div className="space-y-3">
+            <div className="rounded-2xl bg-card border border-border p-3 text-xs text-foreground flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              <span><span className="font-bold">{scheduled.count}</span> scheduled order(s) awaiting promotion to the queue</span>
+            </div>
+            {scheduled.scheduled_orders.map((order) => (
+              <div key={order.id} className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-foreground font-mono">#{(order.id || '').slice(0, 8).toUpperCase()}</span>
+                  <span className="text-xs text-primary font-semibold">{formatDateTime(order.scheduled_for)}</span>
+                </div>
+                <div className="space-y-1 mb-2">
+                  {(order.order_items || []).map((item, i) => (
+                    <div key={i} className="text-sm text-foreground"><span className="font-bold">{item.quantity}×</span> {item.name_snapshot}<OrderItemCustomizations item={item} /></div>
+                  ))}
+                </div>
+                <div className="text-xs text-muted-foreground mb-2.5">Window: {order.delivery_windows?.label || '—'}</div>
+                <button
+                  onClick={() => handleStatusUpdate(order.id, 'preparing')}
+                  disabled={actionLoading === order.id || scheduledDate > new Date(Date.now() + 3600000).toISOString().slice(0, 10)}
+                  className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
+                >
+                  {actionLoading === order.id ? 'Promoting…' : 'Promote to Preparing'}
+                </button>
+              </div>
+            ))}
+            {scheduled.scheduled_orders.length === 0 && (
+              <div className="text-center py-12">
+                <Calendar className="w-9 h-9 text-muted-foreground/40 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No scheduled orders.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Prep List */}
+        {tab === 'batch' && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">The prep list totals meals, sides and extras for a delivery window. Move orders from received → preparing → ready here. A delivery batch is assigned to a rider after the orders are ready.</p>
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-1">
+              {windows.map((w) => (
+                <button
+                  key={w.id}
+                  onClick={() => selectWindow(w.id)}
+                  disabled={batchBusy}
+                  className={`shrink-0 px-3.5 py-2.5 rounded-2xl border text-left transition-all ${selectedWindow === w.id ? 'bg-primary border-primary text-white shadow-glow' : 'bg-card border-border text-foreground'}`}
+                >
+                  <div className="text-xs font-bold">{w.label}</div>
+                  <div className={`text-[10px] ${selectedWindow === w.id ? 'text-white/80' : 'text-muted-foreground'}`}>
+                    {w.order_count ?? 0} orders · <span className="capitalize">{w.status}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {batchSummaryLoading && <p role="status" className="text-sm text-muted-foreground">{msg('FE_KITCHEN_PREP_LOADING', 'Updating preparation list…')}</p>}
+            {batchSummaryError && <div role="alert" className="rounded-xl tone-error p-3 text-sm">
+              <p>{msg('FE_KITCHEN_PREP_FAILED', 'Preparation list could not be loaded. Retry before advancing this window.')}</p>
+              <button onClick={() => selectWindow(selectedWindow)} className="mt-2 font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+            </div>}
+            {batchResult && (
+              <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-bold text-foreground">{batchResult.label}</span>
+                  <button onClick={clearBatchResult} className="text-muted-foreground text-xs font-bold hover:text-muted">✕</button>
+                </div>
+                <div className="flex gap-2.5">
+                  <div className="flex-1 rounded-xl tone-success border border-success/30 p-2.5 text-center">
+                    <div className="text-lg font-heading font-extrabold text-success tabular-nums">{batchResult.advanced}</div>
+                    <div className="text-[10px] text-success font-semibold uppercase tracking-wide">advanced</div>
+                  </div>
+                  <div className="flex-1 rounded-xl tone-warn border border-warn/40 p-2.5 text-center">
+                    <div className="text-lg font-heading font-extrabold text-warn tabular-nums">{batchResult.skipped}</div>
+                    <div className="text-[10px] text-warn font-semibold uppercase tracking-wide">skipped</div>
+                  </div>
+                </div>
+                {batchResult.skipped > 0 && Object.keys(batchResult.skippedReasons).length > 0 && (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {Object.entries(batchResult.skippedReasons).map(([reason, count]) => (
+                      <span key={reason} className="text-[10px] font-semibold px-2 py-1 rounded-md tone-warn">{count}× {reason}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {batchSummary && batchSummary.total_orders > 0 && (
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  onClick={() => handleBatchAdvance(selectedWindow, { from_status: 'received', notes: 'Started preparing batch' }, 'Received → Preparing')}
+                  disabled={batchBusy || batchSummaryLoading}
+                  className="flex flex-col items-center gap-0.5 py-3 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Start Preparing</span>
+                  <span className="text-[9px] font-normal text-white/80">received → preparing</span>
+                </button>
+                <button
+                  onClick={() => handleBatchAdvance(selectedWindow, { from_status: 'preparing', notes: 'Marked batch ready' }, 'Preparing → Ready')}
+                  disabled={batchBusy || batchSummaryLoading}
+                  className="flex flex-col items-center gap-0.5 py-3 rounded-xl bg-success text-white text-xs font-bold disabled:opacity-50 active:scale-[0.98] transition-all"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Mark Ready</span>
+                  <span className="text-[9px] font-normal text-white/80">preparing → ready</span>
+                </button>
+              </div>
+            )}
+
+            {batchSummary && (
+              <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
+                <h3 className="font-bold text-sm text-foreground mb-1">Consolidated Prep List</h3>
+                <p className="text-xs text-muted-foreground mb-3">{batchSummary.total_orders} orders in this window</p>
+                <div className="space-y-2">
+                  {batchSummary.summary.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-muted">
+                      <span className="text-sm font-medium text-foreground">{item.item_name}</span>
+                      <span className="font-bold text-foreground tabular-nums">{item.total_quantity}×</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Settings */}
+        {tab === 'settings' && settings && (
+          <KitchenSettings settings={settings} capacity={capacity} windowStatus={windowStatus} canManageSettings={canManageSettings} />
+        )}
+        </>}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ value, label, color }) {
+  return (
+    <div className="rounded-2xl bg-card border border-border p-3 text-center shadow-card">
+      <div className={`font-heading font-extrabold text-xl tabular-nums ${color}`}>{value}</div>
+      <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide mt-0.5">{label}</div>
+    </div>
+  );
+}

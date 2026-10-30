@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.db import get_user_client
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from datetime import date, datetime, timezone, timedelta
 from dateutil.parser import isoparse
 from app.utils.tz import today_wat, WAT_OFFSET
@@ -763,10 +764,13 @@ def hp_analytics():
     hp_txns = q.execute() or []
 
     # hp_transactions.amount is always positive (CHECK amount > 0); the direction lives in `type`.
-    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn")
-    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend")
+    # B-9: exclude hp_transfer_received from earned and hp_transfer_sent from spent, report transfers separately
+    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn" and t.get("source") != "hp_transfer_received")
+    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
     expired = sum(t["amount"] for t in hp_txns if t.get("type") == "expire")
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
+    transfer_received = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_received")
+    transfer_sent = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_sent")
 
     # All 4 Tiers check
     tiers = db.table("hp_tiers").select("id,name,slug,min_points").order("sort_order").execute() or []
@@ -798,6 +802,8 @@ def hp_analytics():
         "hp_spent": spent,
         "hp_expired": expired,
         "hp_pending": pending,
+        "hp_transfer_received": transfer_received,
+        "hp_transfer_sent": transfer_sent,
         "hp_in_circulation": earned - spent - expired,
         "redemption_rate": round(spent / earned * 100, 1) if earned > 0 else 0,
         "tier_distribution": tier_distribution,
@@ -1548,7 +1554,11 @@ def marketplace_analytics():
         q_l = q_l.eq("campus_id", campus_id)
     listings = q_l.execute() or []
     low_stock = []
-    low_stock_threshold = current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5)
+    low_stock_threshold = setting_or_config(
+        db, "low_code_inventory_threshold",
+        current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5),
+        minimum=0, maximum=10000,
+    )
     for l in listings:
         if l.get("listing_type") in _CODE_LISTING_TYPES:
             codes = db.table("marketplace_access_codes").select("id").eq("listing_id", l["id"]).eq("status", "available").execute() or []

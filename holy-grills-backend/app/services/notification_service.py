@@ -1,15 +1,20 @@
 """
 Notification Service — dispatches in-app, email, and push notifications.
 All notification records written to the notifications table.
-Throttling via notification_log (daily cap + 6-hour same-type gap for non-critical types).
+Throttling via notification_log (configured daily cap and same-type gap).
 Email and push dispatch via OneSignal (fire-and-forget, never raises).
 """
 
 import os
+import time
+import uuid
 import threading
+from urllib.parse import urljoin, urlsplit
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
-from app.db import get_db, get_user_client
+from app.constants import APP_TAGLINE_DEFAULT
+from app.db import get_db, get_user_client, SupabaseError
+from app.services.notification_preferences import effective_preferences, permitted_channels, REQUEST_TYPES
 from flask import current_app
 from app.utils.logger import get_logger
 from app.utils.retry import with_retry
@@ -22,16 +27,21 @@ def _onesignal_post(url: str, headers: dict, payload: dict) -> "http_requests.Re
     return http_requests.post(url, headers=headers, json=payload, timeout=10)
 
 
+def _onesignal_email_post(url: str, headers: dict, payload: dict):
+    """One email attempt; uncertain outcomes must not be retried implicitly."""
+    return http_requests.post(url, headers=headers, json=payload, timeout=10)
+
+
 _ONESIGNAL_BASE = os.environ.get("ONESIGNAL_BASE_URL", "https://api.onesignal.com")
 
 # Critical notification types — operational / transactional: never throttled.
 # Everything else is subject to the 6-hour same-type gap and daily cap.
 _CRITICAL_NOTIF_TYPES = frozenset({
     # Order
-    "order_confirmed", "order_preparing", "order_ready", "order_assigned",
+    "order_placed", "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
     "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
-    "order_refunded", "order_unclaimed",
+    "order_refunded", "order_unclaimed", "order_moved_up", "order_scheduled_deferred", "gift_campaign_granted",
     "order_thank_you", "satisfaction_check", "reengagement_nudge",
     # HP
     "hp_earned", "hp_unlocked", "hp_decay_applied", "hp_transfer_recipient", "hp_admin_grant",
@@ -50,6 +60,8 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "birthday_bonus", "graduation_hp", "hall_of_fame", "prize_fulfilment_update",
     "membership_anniversary", "order_lock_redeemed",
     "flash_sale_redeemed", "exclusive_spin_won",
+    "free_side_credits_granted", "exclusive_spin_granted",
+    "catering_request", "marketplace_request", "admin_catering_request", "admin_vendor_request", "vendor_request_submitted",
     # Milestones / badges: several can be awarded in one go (e.g. referral 5 and 10), each must arrive
     "milestone_achieved",
     # Streaks
@@ -180,7 +192,7 @@ def get_notification_channels(notif_type: str, extra: list = None) -> list:
         # Order (7)
         "order_confirmed", "order_delivered", "order_refunded",
         "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
-        "scheduled_order_cancelled",
+        "scheduled_order_cancelled", "order_moved_up", "order_scheduled_deferred",
         # Guest (1)
         "guest_order_claimed",
         # Wallet (2) — withdrawal types removed entirely
@@ -220,6 +232,94 @@ def _fetch_user_name(user_id: str) -> str:
         return ""
 
 
+
+# Where a notification opens, by type, when the caller did not say. Most
+# callers pass template_data and nothing else, so without this every in-app row
+# and every push was a dead end. A caller's explicit action_url always wins.
+#
+# Order matters: the first prefix that matches wins, so `squad_order_ready`
+# (an order) is listed before `squad_` (the squad page), and `order_streak` /
+# `order_lock*` before `order_`.
+_ACTION_URL_PREFIXES = (
+    ("admin_hof_induction", "/admin?section=leaderboard"),
+    ("low_inventory", "/admin?section=store"),
+    ("low_stock_ingredient", "/admin?section=store"),
+    ("menu_item_sold_out", "/admin?section=menu"),
+    ("webhook_failure", "/admin?section=webhooks"),
+    ("system_alert", "/admin?section=webhooks"),
+    ("gift_granted", "/kitchen"),
+    ("gift_rider_assigned", "/orders/{order_id}"),
+    ("gift_returned", "/rewards"),
+    ("gift_campaign", "/rewards"),
+    ("first_order_gift", "/rewards"),
+    ("ambassador_grant", "/rewards"),
+    ("graduation_hp", "/rewards"),
+    ("membership_anniversary", "/rewards"),
+    ("milestone_", "/rewards"),
+    ("multiplier_", "/rewards"),
+    ("new_reward", "/rewards"),
+    ("streak_cycle", "/streak"),
+    ("catering_request", "/admin?section=catering"),
+    ("admin_catering_request", "/admin?section=catering"),
+    ("marketplace_request", "/admin?section=marketplace"),
+    ("admin_vendor_request", "/admin?section=marketplace"),
+    ("rider_", "/rider"),
+    ("kitchen_", "/kitchen"),
+    ("squad_order", "/orders/{order_id}"),
+    ("guest_order", "/orders/{order_id}"),
+    ("scheduled_order", "/orders/{order_id}"),
+    ("order_streak", "/streak"),
+    ("order_lock", "/order-locks"),
+    ("order_", "/orders/{order_id}"),
+    ("review_", "/orders/{order_id}"),
+    ("share_", "/orders/{order_id}"),
+    ("abandoned_cart", "/cart"),
+    ("wallet_", "/wallet"),
+    ("hp_transfer", "/rewards"),
+    ("hp_gift", "/rewards"),
+    ("hp_", "/rewards"),
+    ("referral_", "/referrals"),
+    ("reward_", "/rewards"),
+    ("flash_sale_", "/rewards"),
+    ("exclusive_spin", "/rewards"),
+    ("free_side", "/rewards"),
+    ("prize_fulfilment", "/rewards"),
+    ("tier_", "/rewards"),
+    ("birthday_", "/rewards"),
+    ("winback_", "/rewards"),
+    ("login_streak", "/streak"),
+    ("checkin_", "/streak"),
+    ("event_", "/events"),
+    ("catering_", "/events"),
+    ("vendor_", "/marketplace"),
+    ("marketplace_", "/marketplace"),
+    ("squad_", "/squads"),
+    ("leaderboard", "/leaderboard"),
+    ("hall_of_fame", "/hall-of-fame"),
+    ("account_", "/profile"),
+    ("welcome", "/profile"),
+    ("email_verification", "/profile"),
+    ("password_", "/profile"),
+)
+
+
+def default_action_url(notif_type: str, data: dict = None) -> str:
+    """Path a notification should open, or None when the type has no page.
+
+    A placeholder that the caller did not supply degrades to the section root
+    (`/orders/{order_id}` -> `/orders`) rather than to a dead end.
+    """
+    data = data or {}
+    for prefix, template in _ACTION_URL_PREFIXES:
+        if not notif_type.startswith(prefix):
+            continue
+        try:
+            return template.format(**data)
+        except (KeyError, IndexError):
+            return template.split("{", 1)[0].rstrip("/") or "/"
+    return None
+
+
 def send_notification(
     user_id: str,
     notif_type: str,
@@ -234,6 +334,7 @@ def send_notification(
     metadata: dict = None,
     campus_id: str = None,
     email_provider: str = None,
+    strict: bool = False,
 ) -> list:
     """
     Write notification record(s) for each channel and dispatch externally.
@@ -272,6 +373,25 @@ def send_notification(
     if template_data is not None:
         # Inject user name if the type is personalized and name not supplied
         td = dict(template_data)
+        # Delivery notifications show readable local dates/hours while route
+        # identifiers and persisted scheduling values remain unchanged.
+        if notif_type in {'order_confirmed', 'order_scheduled_deferred', 'order_moved_up'}:
+            for key in ('delivery_date', 'scheduled_date', 'target_date'):
+                if td.get(key):
+                    try:
+                        day = datetime.fromisoformat(str(td[key])).date()
+                        td[key] = f'{day:%a}, {day.day} {day:%b}'
+                    except (ValueError, TypeError):
+                        pass
+            for key in ('delivery_window_start', 'delivery_window_end', 'deliv_start', 'deliv_end'):
+                if td.get(key):
+                    try:
+                        hour, minute = map(int, str(td[key]).split(':')[:2])
+                        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                            continue
+                        td[key] = f'{hour % 12 or 12}:{minute:02d} {"PM" if hour >= 12 else "AM"}'
+                    except (ValueError, TypeError):
+                        pass
         if get_include_name(notif_type) and "name" not in td:
             fetched_name = _fetch_user_name(user_id)
             td["name"] = fetched_name if fetched_name else "there"
@@ -291,6 +411,15 @@ def send_notification(
         # Apply template channel override only when caller didn't specify channels
         if channels is None and channels_override is not None:
             channels = channels_override
+
+    # Where a tap should land: callers may state it, the type otherwise decides.
+    if not action_url:
+        link_data = dict(template_data or {})
+        if reference_type == "order" and reference_id:
+            # Template copy uses a short display number; navigation must use
+            # the full owned order UUID from the persisted reference.
+            link_data["order_id"] = reference_id
+        action_url = default_action_url(notif_type, link_data)
 
     # Guard: if neither mode supplied title/body, skip to avoid blank notifications
     if not title or not body:
@@ -321,28 +450,19 @@ def send_notification(
 
     db = get_db()
 
-    # One profile read serves both the user's channel switches and the campus default below.
-    _profile = {}
-    if notif_type not in _CRITICAL_NOTIF_TYPES or campus_id is None:
-        try:
-            _profile = (
-                db.table("profiles")
-                .select("campus_id,push_enabled,email_notifications")
-                .eq("id", user_id)
-                .single()
-                .execute()
-            ) or {}
-        except Exception as e:
-            logger.warning("send_notification: profile lookup failed for %s: %s", user_id, e)
-
-    # User channel switches (Settings). Critical / security types always go through.
-    if notif_type not in _CRITICAL_NOTIF_TYPES:
-        if _profile.get("push_enabled") is False:
-            channels = [c for c in channels if c != "push"]
-        if _profile.get("email_notifications") is False:
-            channels = [c for c in channels if c != "email"]
-        if not channels:
-            return []
+    # Read both persisted controls for every category, including transactional
+    # types. A read outage must not turn an opt-out into an external send.
+    try:
+        _profile = db.table("profiles").select("campus_id,push_enabled,email_notifications").eq("id",user_id).single().execute() or {}
+        prefs = effective_preferences(db,user_id,_profile)
+        channels = permitted_channels(notif_type,channels,prefs)
+    except Exception:
+        logger.exception("Notification preferences unavailable for %s; dispatch skipped",user_id)
+        if strict:
+            raise
+        return []
+    if not channels:
+        return []
 
     # ── Throttle check (non-critical types only, fails open) ──────────────────
     if _is_throttled(db, user_id, notif_type):
@@ -353,6 +473,7 @@ def send_notification(
         return []
 
     records = []
+    created_records = 0
 
     # Build merged metadata: internal fields + any caller-supplied extras
     merged_meta = {
@@ -384,31 +505,62 @@ def send_notification(
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
+        if (notif_type in REQUEST_TYPES and reference_id) or notif_type.startswith("blast_"):
+            # Existing primary-key uniqueness serializes retries per recipient,
+            # request and channel, without another ledger/index/table.
+            record["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                f"holy-grills:request-notification:{user_id}:{notif_type}:{reference_type}:{reference_id}:{channel}"))
+        if notif_type.startswith("blast_"):
+            prior = db.table("notifications").select("id").eq("user_id", user_id).eq("type", notif_type).eq("channel", channel).limit(1).execute() or []
+            if prior:
+                continue
         try:
             result = db.table("notifications").insert(record)
             saved = result[0] if isinstance(result, list) else result
             records.append(saved)
+            created_records += 1
 
             if channel == "email":
+                # Extract rich content from metadata if present
+                rich_content = {}
+                if merged_meta.get("body_html"):
+                    rich_content["body_html"] = merged_meta["body_html"]
+                if merged_meta.get("images"):
+                    rich_content["images"] = merged_meta["images"]
+                if merged_meta.get("cta_blocks"):
+                    rich_content["cta_blocks"] = merged_meta["cta_blocks"]
+                
+                # Pass blast_id for tracking if this is a blast
+                blast_id_for_tracking = None
+                if notif_type.startswith("blast_"):
+                    blast_id_for_tracking = reference_id
+                
                 t = threading.Thread(
                     target=_dispatch_email_async,
-                    args=(user_id, title, body, saved.get("id", ""), email_provider),
+                    args=(user_id, title, body, saved.get("id", ""), email_provider, rich_content if rich_content else None, blast_id_for_tracking),
                     daemon=True,
                 )
                 t.start()
             elif channel == "push":
                 t = threading.Thread(
                     target=_dispatch_push_async,
-                    args=(user_id, title, body, action_url, saved.get("id", ""), urgency),
+                    args=(user_id, title, body, action_url, saved.get("id", ""), urgency, merged_meta.get("push_image")),
                     daemon=True,
                 )
                 t.start()
         except Exception as e:
+            if record.get('id') and isinstance(e,SupabaseError) and str(e.details.get('code'))=='23505':
+                existing=db.table('notifications').select('*').eq('id',record['id']).eq('user_id',user_id).single().execute()
+                if existing:
+                    records.append(existing)
+                    continue  # Saved receipt replay never dispatches externally again.
             logger.error("Error saving %s notification for %s: %s", channel, user_id, e)
+            if strict:
+                raise
 
     # Log to notification_log for throttle tracking (one entry per send call,
     # regardless of how many channels were used).
-    if records:
+    if created_records:
         _log_notification(db, user_id, notif_type)
 
     return records
@@ -425,7 +577,8 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     if db is None:
         db = get_db()  # the scheduled-task caller has no request/user JWT to scope with
 
-    segment = segment or {}
+    from app.services.blast_contracts import validate_segment
+    segment = validate_segment(segment or {})
 
     # ── Step 1: DB-level filters on profiles ────────────────────────────────
     profiles_q = (
@@ -474,10 +627,29 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
             .single()
             .execute()
         )
-        if tier_row:
-            profiles_q = profiles_q.eq("current_tier_id", tier_row["id"])
+        if not tier_row:
+            return set()
+        profiles_q = profiles_q.eq("current_tier_id", tier_row["id"])
 
-    profiles = profiles_q.execute() or []
+    if segment.get('user_ids'):
+        profiles_q = profiles_q.in_('id', segment['user_ids'])
+    def _read_all(query):
+        rows, offset = [], 0
+        while True:
+            page = query.offset(offset).limit(500).execute() or []
+            rows.extend(page)
+            if len(page)<500:return rows
+            offset+=len(page)
+
+    def _related(table, fields, key, ids, refine=lambda q:q):
+        rows=[]
+        ordered=sorted(ids)
+        for start in range(0,len(ordered),100):
+            query=refine(db.table(table).select(fields).in_(key,ordered[start:start+100])).order('id')
+            rows.extend(_read_all(query))
+        return rows
+
+    profiles = _read_all(profiles_q.order('id'))
 
     # ── Step 2: In-Python filters (require cross-table lookups) ─────────────
     user_ids: set = {p["id"] for p in profiles}
@@ -503,13 +675,7 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     # Pending HP — check hp_transactions with status='pending'
     if segment.get("has_pending_hp") is not None and user_ids:
         want = bool(segment["has_pending_hp"])
-        pending_rows = (
-            db.table("hp_transactions")
-            .select("user_id, amount")
-            .in_("user_id", list(user_ids))
-            .eq("status", "pending")
-            .execute() or []
-        )
+        pending_rows = _related('hp_transactions','user_id,amount','user_id',user_ids,lambda q:q.eq('status','pending'))
         # Aggregate pending HP per user
         pending_agg = {}
         for r in pending_rows:
@@ -539,16 +705,7 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     last_order_days = segment.get("last_order_days")
     if last_order_days and str(last_order_days) != "any" and user_ids:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=int(last_order_days))).isoformat()
-        recent_uids = {
-            r["user_id"]
-            for r in (
-                db.table("orders")
-                .select("user_id")
-                .in_("user_id", list(user_ids))
-                .gte("created_at", cutoff)
-                .execute() or []
-            )
-        }
+        recent_uids = {r['user_id'] for r in _related('orders','user_id','user_id',user_ids,lambda q:q.gte('created_at',cutoff))}
         _shrink(recent_uids)
 
     # Has an order currently in progress right now -- distinct from last_order_days (recency) and
@@ -559,26 +716,18 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     if has_active_order is not None and user_ids:
         want = bool(has_active_order)
         TERMINAL = ["delivered", "cancelled", "refunded"]
-        active_uids = {
-            r["user_id"]
-            for r in (
-                db.table("orders")
-                .select("user_id")
-                .in_("user_id", list(user_ids))
-                .not_.in_("status", TERMINAL)
-                .execute() or []
-            )
-        }
+        active_uids = {r['user_id'] for r in _related('orders','user_id','user_id',user_ids,lambda q:q.not_.in_('status',TERMINAL))}
         _shrink(active_uids if want else user_ids - active_uids)
+
+    if segment.get('has_cart') is not None and user_ids:
+        carts = _related('cart_items','user_id','user_id',user_ids)
+        cart_uids={row['user_id'] for row in carts}
+        _shrink(cart_uids if segment['has_cart'] else user_ids-cart_uids)
 
     # Total orders band
     total_orders_filter = segment.get("total_orders")
     if total_orders_filter and str(total_orders_filter) != "any" and user_ids:
-        order_rows = (
-            db.table("orders").select("user_id")
-            .in_("user_id", list(user_ids))
-            .execute() or []
-        )
+        order_rows = _related('orders','user_id','user_id',user_ids)
         counts: dict = {}
         for r in order_rows:
             uid = r["user_id"]
@@ -597,55 +746,26 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     # Has referral
     if segment.get("has_referral") is not None and user_ids:
         want = bool(segment["has_referral"])
-        ref_uids = {
-            r["referrer_id"]
-            for r in (
-                db.table("referrals").select("referrer_id")
-                .in_("referrer_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        ref_uids = {r['referrer_id'] for r in _related('referrals','referrer_id','referrer_id',user_ids)}
         _shrink(ref_uids if want else user_ids - ref_uids)
 
     # Has squad order — no squad_orders table; squad orders are in orders where is_squad_order=True
     # organizer = orders.user_id
     if segment.get("has_squad_order") is not None and user_ids:
         want = bool(segment["has_squad_order"])
-        squad_uids = {
-            r["user_id"]
-            for r in (
-                db.table("orders").select("user_id")
-                .eq("is_squad_order", True)
-                .in_("user_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        squad_uids = {r['user_id'] for r in _related('orders','user_id','user_id',user_ids,lambda q:q.eq('is_squad_order',True))}
         _shrink(squad_uids if want else user_ids - squad_uids)
 
     # Has reviewed — real table is order_reviews (no reviews table in live DB)
     if segment.get("has_reviewed") is not None and user_ids:
         want = bool(segment["has_reviewed"])
-        rev_uids = {
-            r["user_id"]
-            for r in (
-                db.table("order_reviews").select("user_id")
-                .in_("user_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        rev_uids = {r['user_id'] for r in _related('order_reviews','user_id','user_id',user_ids)}
         _shrink(rev_uids if want else user_ids - rev_uids)
 
     # Has shared — real table is order_share_events (no social_shares table)
     if segment.get("has_shared") is not None and user_ids:
         want = bool(segment["has_shared"])
-        share_uids = {
-            r["user_id"]
-            for r in (
-                db.table("order_share_events").select("user_id")
-                .in_("user_id", list(user_ids))
-                .execute() or []
-            )
-        }
+        share_uids = {r['user_id'] for r in _related('order_share_events','user_id','user_id',user_ids)}
         _shrink(share_uids if want else user_ids - share_uids)
 
     # Event attendance band
@@ -653,18 +773,10 @@ def resolve_segment_user_ids(segment: dict, campus_id: str = None, db=None) -> s
     event_attendance = segment.get("event_attendance")
     if event_attendance and str(event_attendance) != "any" and user_ids:
         # Step A: get ticket_id → user_id for users in our set
-        ticket_rows = (
-            db.table("event_tickets").select("id,user_id")
-            .in_("user_id", list(user_ids))
-            .execute() or []
-        )
+        ticket_rows = _related('event_tickets','id,user_id','user_id',user_ids)
         ticket_to_user = {r["id"]: r["user_id"] for r in ticket_rows}
         # Step B: count check-ins per user via ticket ownership
-        checkin_rows = (
-            db.table("event_checkins").select("ticket_id")
-            .in_("ticket_id", list(ticket_to_user.keys()))
-            .execute() or []
-        ) if ticket_to_user else []
+        checkin_rows = _related('event_checkins','ticket_id','ticket_id',set(ticket_to_user))
         att: dict = {}
         for r in checkin_rows:
             uid = ticket_to_user.get(r["ticket_id"])
@@ -710,18 +822,39 @@ def send_blast(blast_id: str) -> dict:
 
     Title/body may use {name} — it is substituted with the recipient's first name.
     """
-    db = get_user_client()
+    db = get_db()
     blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
     if not blast:
         raise ValueError("Blast not found")
 
+    from app.services.blast_contracts import rich_fields
+    rich, _ = rich_fields({**blast, 'body_html':blast.get('body_html') or '', 'push_image':blast.get('push_image') or ''})
+
     # Only a blast that is waiting to go out can be sent (scheduled = cron, pending = immediate send from the route).
-    if blast.get("status") not in ("scheduled", "pending"):
+    metadata = dict(blast.get("metadata") or {})
+    now = datetime.now(timezone.utc)
+    previous_token = metadata.get("worker_token")
+    if blast.get("status") == "sending":
+        claimed_at = metadata.get("worker_claimed_at") or blast.get("created_at")
+        try:
+            claimed_at = datetime.fromisoformat(claimed_at.replace("Z", "+00:00"))
+            if now - claimed_at < timedelta(minutes=15):
+                return {"sent_to": 0, "skipped": "worker lease active"}
+        except (AttributeError, TypeError, ValueError):
+            return {"sent_to": 0, "skipped": "invalid worker lease"}
+    elif blast.get("status") not in ("scheduled", "pending", "failed"):
         return {"sent_to": 0, "skipped": "not in a sendable state"}
+    if blast.get("status") == "scheduled" and blast.get("scheduled_at"):
+        if datetime.fromisoformat(blast["scheduled_at"].replace("Z", "+00:00")) > now:
+            return {"sent_to": 0, "skipped": "not due"}
 
     segment = blast.get("segment") or {}
     campus_id = segment.get("campus_id") or segment.get("campus") or blast.get("campus_id")
     user_ids = resolve_segment_user_ids(segment, campus_id=campus_id, db=db)
+    if isinstance(metadata.get("recipient_ids"), list):
+        user_ids &= set(metadata["recipient_ids"])
+    token = str(uuid.uuid4())
+    metadata.update({"recipient_ids": sorted(user_ids), "recipient_count": len(user_ids), "worker_token": token, "worker_claimed_at": now.isoformat()})
 
     # Claim the blast atomically before sending. The update only matches while the status is still what we read,
     # so of two runs racing on the same blast (two cron jobs, or a manual re-trigger during a scheduled run)
@@ -730,7 +863,8 @@ def send_blast(blast_id: str) -> dict:
         db.table("notification_blasts")
         .eq("id", blast_id)
         .eq("status", blast.get("status"))
-        .update({"status": "sending"})
+        .eq("metadata->>worker_token", previous_token)
+        .update({"status": "sending", "metadata": metadata})
     )
     if not claimed:
         return {"sent_to": 0, "skipped": "already claimed by another run"}
@@ -739,38 +873,117 @@ def send_blast(blast_id: str) -> dict:
     channels = blast.get("channels", ["in_app"])
     title_tpl = blast.get("title", "")
     body_tpl = blast.get("body", "")
-    has_name = "{name}" in title_tpl or "{name}" in body_tpl
+    body_html_tpl = rich.get('body_html', '')
+    images = rich.get('images', [])
+    cta_blocks = rich.get('cta_blocks', [])
+    push_image = rich.get('push_image', '')
+    has_name = "{name}" in title_tpl or "{name}" in body_tpl or "{name}" in body_html_tpl
     count = 0
 
     try:
-        for uid in user_ids:
+        for uid in sorted(user_ids):
             notif_title = title_tpl
             notif_body = body_tpl
+            notif_body_html = body_html_tpl
             if has_name:
                 full_name = _fetch_user_name(uid)
                 first = (full_name or "").split()[0] if full_name else "there"
                 notif_title = title_tpl.replace("{name}", first)
                 notif_body = body_tpl.replace("{name}", first)
+                import html as _html
+                notif_body_html = body_html_tpl.replace("{name}", _html.escape(first))
+            
+            # Pass rich content through metadata
+            rich_metadata = {}
+            if notif_body_html:
+                rich_metadata["body_html"] = notif_body_html
+            if images:
+                rich_metadata["images"] = images
+            if cta_blocks:
+                rich_metadata["cta_blocks"] = cta_blocks
+            if push_image:
+                rich_metadata["push_image"] = push_image
+            
             send_notification(
                 user_id=uid,
                 notif_type=f"blast_{blast_id}",
                 title=notif_title,
                 body=notif_body,
                 channels=channels,
-                email_provider=blast.get("email_provider"),  # Part B4 — per-blast provider override
+                email_provider=get_email_provider(scope="blast", override=blast.get("email_provider")),
+                action_url=blast.get("action_url"),
+                reference_id=blast_id,
+                reference_type="notification_blast",
+                metadata=rich_metadata,
+                strict=True,
             )
             count += 1
+            metadata["processed_count"] = count
+            if not db.table("notification_blasts").eq("id", blast_id).eq("status", "sending").eq("metadata->>worker_token", token).update({"metadata": metadata}):
+                return {"sent_to": count, "skipped": "worker lease lost"}
     except Exception:
         # Do not leave the blast stuck in 'sending'; do not put it back to 'scheduled' either (that would resend
         # to everyone already notified). 'failed' makes it visible and needs an explicit decision.
         try:
-            db.table("notification_blasts").eq("id", blast_id).update({"status": "failed"})
+            db.table("notification_blasts").eq("id", blast_id).eq("metadata->>worker_token", token).update({"status": "failed"})
         except Exception as ue:
             logger.error("send_blast: could not mark blast %s failed: %s", blast_id, ue)
         raise
 
-    db.table("notification_blasts").eq("id", blast_id).update({"status": "sent"})
+    records = db.table("notifications").select("id").eq("type", f"blast_{blast_id}").execute() or []
+    metadata["notification_records"] = len(records)
+    db.table("notification_blasts").eq("id", blast_id).eq("status", "sending").eq("metadata->>worker_token", token).update({"status": "sent", "metadata": metadata})
+    # Delivery truth (provider accepted / rejected / delivered to nobody) is written
+    # by the channel threads into notification_deliveries; fold it back onto the blast.
+    _record_blast_delivery_summary(blast_id, token)
     return {"sent_to": count}
+
+
+def summarize_blast_deliveries(blast_id: str) -> dict:
+    """Count what actually left the building for one blast, per channel and provider."""
+    db = get_db()
+    rows = (db.table("notification_deliveries")
+            .select("channel,status,provider").eq("blast_id", blast_id).execute() or [])
+    summary = {}
+    for row in rows:
+        channel = row.get("channel") or "unknown"
+        bucket = summary.setdefault(channel, {"sent": 0, "failed": 0, "skipped": 0, "other": 0,
+                                              "sent_by": {}})
+        status = str(row.get("status") or "other")
+        bucket[status if status in bucket else "other"] += 1
+        if status == "sent":
+            provider = row.get("provider") or "unknown"
+            bucket["sent_by"][provider] = bucket["sent_by"].get(provider, 0) + 1
+    return summary
+
+
+def _record_blast_delivery_summary(blast_id: str, token: str, delay: float = 20.0):
+    """After dispatch, record the real per-channel outcome on the blast.
+
+    Emails go out on their own threads, so the counts are only meaningful once they
+    have had time to finish. `status` stays "sent" (the blast *was* dispatched — push
+    and in-app may well have worked); `metadata.dispatch` carries the truth about
+    each channel so the panel can show "12 emails failed" instead of a green tick.
+    """
+    def run():
+        try:
+            time.sleep(delay)
+            summary = summarize_blast_deliveries(blast_id)
+            db = get_db()
+            row = db.table("notification_blasts").select("metadata").eq("id", blast_id).single().execute() or {}
+            metadata = dict(row.get("metadata") or {})
+            metadata["dispatch"] = {**summary, "recorded_at": datetime.now(timezone.utc).isoformat()}
+            email_stats = summary.get("email") or {}
+            if email_stats.get("sent", 0) == 0 and email_stats.get("failed", 0) > 0:
+                metadata["email_delivery_failed"] = True
+                logger.error("blast %s: %s email(s) failed and none were delivered — "
+                             "check the email provider configuration and today's send counters",
+                             blast_id, email_stats.get("failed"))
+            (db.table("notification_blasts").eq("id", blast_id)
+             .update({"metadata": metadata}).execute())
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("blast %s: delivery summary unavailable: %s", blast_id, exc)
+    threading.Thread(target=run, daemon=True).start()
 
 
 def mark_read(notification_id: str, user_id: str) -> dict | None:
@@ -801,11 +1014,18 @@ def _get_onesignal_creds() -> tuple:
 def get_email_provider(scope: str = "transactional", override: str = None) -> str:
     """
     Resolve which email provider to use: 'resend' or 'onesignal'.
-    Precedence: explicit override (e.g. a specific blast's email_provider
-    column) > system_settings key `email_provider_{scope}_default` >
-    hardcoded fallback 'resend'. scope: 'transactional' | 'blast'.
+
+    Precedence: explicit override (a blast's email_provider column) > the
+    system_settings key `email_provider_{scope}_default` > Resend.
+
+    Resend is the coded default, as it was before this work: 100/day that resets, so
+    spending it first keeps OneSignal's 10,000/month (no rollover) as the overflow. The
+    router still falls over to OneSignal whenever Resend refuses or is at today's
+    limit, so a month's capacity is Resend's ~100/day plus OneSignal's 10,000.
+
     Matches the existing system_settings override-layer pattern used
     elsewhere in this codebase (e.g. hp_multiplier).
+    scope: 'transactional' | 'blast'.
     """
     if override in ("resend", "onesignal"):
         return override
@@ -831,62 +1051,158 @@ def get_email_provider(scope: str = "transactional", override: str = None) -> st
 
 
 def _dispatch_email_via_onesignal(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
+    """Preferred OneSignal email, with bounded quota-only alternate routing."""
+    from app.utils.email import send_email_routed
+    return send_email_routed(to_email, to_name, subject, html_body, provider="onesignal")
+
+
+def _record_delivery(notification_id, channel, receipt, *, blast_id=None, user_id=None):
+    """Persist one channel's real delivery outcome in notification_deliveries.
+
+    The blast used to be marked "sent" as soon as the notification *rows* existed,
+    so a campaign whose emails the provider never delivered looked identical to a
+    successful one. This is the record the admin panel reads to tell them apart.
     """
-    Send email via OneSignal's email channel. Returns True on success, False
-    on failure (never raises) — same contract as send_email_raw.
-    """
+    if not notification_id:
+        return
+    state = (receipt or {}).get("state") or "unknown"
+    status = {"accepted": "sent", "accepted_fallback": "sent", "not_configured": "skipped",
+              "skipped": "skipped"}.get(state, "failed")
+    # Which transport actually delivered it. "sent" alone cannot distinguish
+    # "OneSignal accepted" from "OneSignal refused and Resend delivered", which is
+    # exactly the question that cost a day of guessing from TLS headers, so the
+    # provider is recorded in the error-free case too.
+    provider = (receipt or {}).get("delivered_by") or (receipt or {}).get("provider")
+    row = {
+        "notification_id": notification_id,
+        "channel": channel,
+        "status": status,
+        "provider_message_id": (receipt or {}).get("provider_message_id"),
+        "error_message": (receipt or {}).get("error"),
+    }
+    # Optional columns: recorded when the database has them, silently dropped when it
+    # does not, so this never needs a migration to keep working.
+    extra = {}
+    if provider:
+        extra["provider"] = provider
+    if state == "accepted_fallback":
+        extra["status_detail"] = (f"delivered by {provider} after "
+                                  f"{(receipt or {}).get('preempted') or 'the first provider'} refused")
+    if blast_id:
+        row["blast_id"] = blast_id
+    if user_id:
+        row["user_id"] = user_id
+    if status == "sent":
+        row["delivered_at"] = datetime.now(timezone.utc).isoformat()
     try:
-        app_id, api_key = _get_onesignal_creds()
-        if not app_id or not api_key:
-            return False
-        payload = {
-            "app_id": app_id,
-            "target_channel": "email",
-            "include_email_tokens": [to_email],
-            "email_subject": subject,
-            "email_body": html_body,
-        }
-        resp = _onesignal_post(
-            f"{_ONESIGNAL_BASE}/notifications",
-            headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
-            payload=payload,
-        )
-        if resp.status_code not in (200, 202):
-            logger.warning("OneSignal email error %s for %s: %s", resp.status_code, to_email, resp.text[:200])
-            return False
-        return True
-    except Exception as e:
-        logger.error("OneSignal email dispatch error for %s: %s", to_email, e)
-        return False
+        db = get_db()
+        existing = (db.table("notification_deliveries")
+                    .select("id").eq("notification_id", notification_id).eq("channel", channel)
+                    .limit(1).execute() or [])
+        def _write(payload):
+            if existing:
+                db.table("notification_deliveries").eq("id", existing[0]["id"]).update(payload).execute()
+            else:
+                db.table("notification_deliveries").insert(payload).execute()
+
+        try:
+            _write({**row, **extra})
+        except Exception as exc:                                  # noqa: BLE001
+            if not extra:
+                raise
+            # The richer columns are not present yet: keep the essential record.
+            logger.info("delivery record: provider columns unavailable (%s) — saving the basic row", exc)
+            _write(row)
+    except Exception as exc:                                      # noqa: BLE001
+        # A missing table/column must not fail the send that already happened.
+        logger.warning("delivery record could not be saved for %s (%s): %s", notification_id, channel, exc)
+    return {"provider": provider, "receipt": receipt}
 
 
-def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None):
+def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None, rich_content: dict = None, blast_id: str = None):
     """
     Send a transactional email to the user's registered email address, via
     whichever provider get_email_provider resolves to.
+    
+    rich_content: optional dict with body_html, images, cta_blocks for rich email content
+    blast_id: optional blast ID for tracking opens/clicks
     """
     try:
-        from app.utils.email import get_user_email_and_name, send_email_raw, _build_html
+        from app.utils.email import get_user_email_and_name, send_email_routed, _build_html, _build_rich_html
         email, name = get_user_email_and_name(user_id)
         if not email:
             return
 
         chosen = get_email_provider(scope="transactional", override=provider)
-        app_tagline = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
-        html_body = _build_html(name or "there", body, app_tagline)
-
-        if chosen == "onesignal":
-            _dispatch_email_via_onesignal(email, name or "there", subject, html_body)
+        app_tagline = os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT)
+        
+        # Use rich HTML builder if rich content is provided
+        if rich_content and (rich_content.get("body_html") or rich_content.get("images") or rich_content.get("cta_blocks")):
+            html_body = _build_rich_html(
+                name or "there",
+                rich_content.get("body_html", body),
+                rich_content.get("images", []),
+                rich_content.get("cta_blocks", []),
+                app_tagline,
+            )
         else:
-            api_key = os.environ.get("RESEND_API_KEY", "")
-            if not api_key:
-                return
-            send_email_raw(email, name or "there", subject, html_body)
+            # Pass blast_id for tracking if provided
+            track_links = False
+            if blast_id:
+                try:
+                    db = get_db()
+                    blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
+                    track_links = blast.get("tracking_enabled", False) if blast else False
+                except Exception:
+                    track_links = False
+            
+            html_body = _build_html(
+                name or "there",
+                body,
+                app_tagline,
+                blast_id=blast_id,
+                track_links=track_links,
+            )
+
+        receipt = {}
+        # A campaign email is marketing (respect unsubscribes); everything else is
+        # transactional (must reach the customer even if they opted out of promos).
+        accepted = send_email_routed(
+            email, name or "there", subject, html_body, provider=chosen,
+            receipt=receipt, transactional=not blast_id,
+        )
+        if not accepted:
+            logger.warning("Email to %s was not delivered by %s (subject %r, blast %s)",
+                           email, chosen, subject, blast_id or "-")
+        _record_delivery(notification_id, "email", receipt, blast_id=blast_id, user_id=user_id)
     except Exception as e:
         logger.error("Email dispatch error for user %s: %s", user_id, e)
 
 
-def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None):
+def _push_action_url(raw):
+    """OS-level browser navigation needs an absolute, safe web destination."""
+    if not isinstance(raw, str):
+        return None
+    target = raw.strip()
+    if not target or target.startswith("//") or "\\" in target or any(ord(c) < 32 for c in target):
+        return None
+    try:
+        base = os.environ.get("FRONTEND_URL", "").strip().rstrip("/")
+        if target.startswith("/") and urlsplit(base).scheme in ("https", "http"):
+            target = urljoin(base + "/", target)
+        parsed = urlsplit(target)
+        if parsed.username or parsed.password:
+            return None
+        if parsed.scheme == "https" and parsed.hostname:
+            return target
+        if parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"):
+            return target
+    except ValueError:
+        pass
+    return None
+
+
+def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None, push_image: str = None):
     """
     Send a push notification via OneSignal using user_id as external_id.
     Requires user to have a registered push subscription with their user_id as external_id.
@@ -907,8 +1223,20 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
             "headings": {"en": title},
             "contents": {"en": body},
         }
-        if action_url:
-            payload["url"] = action_url
+        # Reuse this UUID throughout the existing transport retry loop.
+        payload["idempotency_key"] = str(uuid.uuid4())
+        destination = _push_action_url(action_url)
+        if destination:
+            payload["url"] = destination
+        icon = _push_action_url('/icons/icon-192.png')
+        if icon:
+            payload['chrome_web_icon'] = icon
+            payload['firefox_icon'] = icon
+        if push_image:
+            from app.utils.upload_urls import is_cms_image_url
+            if is_cms_image_url(push_image):
+                payload['chrome_web_image'] = push_image
+                payload['big_picture'] = push_image
         if urgency == "high":
             payload["priority"] = 10                          # Android: max priority
             payload["ios_interruption_level"] = "time-sensitive"  # iOS 15+: breaks Focus
@@ -918,7 +1246,15 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
             headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
             payload=payload,
         )
-        if resp.status_code not in (200, 202):
+        ok = resp.status_code in (200, 202)
+        if not ok:
             logger.warning("OneSignal push error %s for user %s: %s", resp.status_code, user_id, resp.text[:200])
+        _record_delivery(notification_id, "push", {
+            "provider": "onesignal",
+            "state": "accepted" if ok else "rejected",
+            "http_status": resp.status_code,
+            "provider_message_id": (resp.json() or {}).get("id") if ok else None,
+            "error": None if ok else resp.text[:300],
+        }, user_id=user_id)
     except Exception as e:
         logger.error("Push dispatch error for user %s: %s", user_id, e)

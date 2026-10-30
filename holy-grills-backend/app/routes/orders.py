@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, optional_auth
 from app.middleware.rate_limit import rate_limit
 from app.services import order_service
-from app.services.hp_service import earn_pending_hp
 from app.db import get_db, get_user_client
 from app.messages import MSG, resolve_msg
 from app.utils.tz import today_wat, WAT_OFFSET
@@ -49,7 +48,9 @@ def _assigned_rider_contact(db, order: dict) -> dict | None:
 @optional_auth
 @rate_limit("RATE_LIMIT_ORDERS_REQUESTS", "RATE_LIMIT_ORDERS_WINDOW")
 def create_order():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error":MSG.JSON_OBJECT_REQUIRED}),400
 
     # Authenticated vs guest order identity override checks (Secure from client-supplied manipulation)
     user_id = g.user_id
@@ -130,7 +131,7 @@ def create_order():
       400:
         description: Validation error
     """
-    if not data.get("items"):
+    if not isinstance(data.get("items"), list) or (not data["items"] and not data.get("redemption_id")):
         return jsonify({"error": MSG.ORDER_ITEMS_REQUIRED}), 400
     if not data.get("payment_method"):
         return jsonify({"error": MSG.ORDER_PAYMENT_METHOD_REQUIRED}), 400
@@ -142,7 +143,7 @@ def create_order():
     if is_guest:
         for field in ["guest_name", "guest_phone", "guest_email"]:
             if not data.get(field):
-                return jsonify({"error": f"'{field}' required for guest checkout"}), 400
+                return jsonify({"error": MSG.GUEST_DETAILS_REQUIRED}), 400
         if data.get("payment_method") in ("wallet", "split"):
             return jsonify({"error": MSG.ORDER_WALLET_LOGIN_REQUIRED}), 400
     from app.services.order_service import OrderingWindowUnavailable
@@ -151,16 +152,68 @@ def create_order():
         if isinstance(order, dict):
             order["message"] = MSG.ORDER_PLACED
         return jsonify(order), 201
+    except order_service.OrderPriceChanged as e:
+        return jsonify({"error":str(e),"code":"PRICE_CHANGED","quote":e.quote}),409
     except OrderingWindowUnavailable as e:
-        resp = {"error": str(e)}
+        # Stable machine-readable code — the client decides "offer to schedule"
+        # from this, never from the message text. next_available_date/next_opens_at
+        # tell it which slot to offer.
+        resp = {"error": str(e), "code": getattr(e, "code", None) or "ORDERING_WINDOW_CLOSED"}
         if getattr(e, "next_available_date", None):
             resp["next_available_date"] = e.next_available_date
+        if getattr(e, "next_opens_at", None):
+            resp["next_opens_at"] = e.next_opens_at
         return jsonify(resp), 409
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error("create_order failed: %s", e)
         return jsonify({"error": MSG.ORDER_CREATE_FAILED}), 500
+
+
+@orders_bp.route('/quote', methods=['POST'])
+@optional_auth
+def quote_order():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error':MSG.JSON_OBJECT_REQUIRED}),400
+    try:
+        return jsonify(order_service.create_order(g.user_id, data, quote_only=True)),200
+    except ValueError as e:
+        return jsonify({'error':str(e)}),400
+    except Exception:
+        logger.exception('Checkout quote unavailable')
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503
+
+
+def _order_payment_response(order_id, verify=False):
+    from app.services import order_payments
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    try:
+        order = order_payments.authorized_order(order_id, g.user_id, data.get('claim_token'))
+        result = order_payments.verify(order) if verify else order_payments.initialize(order)
+        return jsonify(result), 200
+    except order_payments.OrderPaymentError as exc:
+        return jsonify({'error': str(exc)}), exc.status
+    except Exception:
+        logger.exception('Order payment unavailable for %s', order_id)
+        return jsonify({'error': MSG.ORDER_PAYMENT_UNAVAILABLE}), 503
+
+
+@orders_bp.route('/<order_id>/payment', methods=['POST'])
+@optional_auth
+@rate_limit('RATE_LIMIT_ORDERS_REQUESTS', 'RATE_LIMIT_ORDERS_WINDOW')
+def initialize_order_payment(order_id):
+    return _order_payment_response(order_id)
+
+
+@orders_bp.route('/<order_id>/payment/verify', methods=['POST'])
+@optional_auth
+@rate_limit('RATE_LIMIT_ORDERS_REQUESTS', 'RATE_LIMIT_ORDERS_WINDOW')
+def verify_order_payment(order_id):
+    return _order_payment_response(order_id, verify=True)
 
 
 @orders_bp.route("", methods=["GET"])
@@ -187,7 +240,7 @@ def list_orders():
         description: Order list
     """
     db = get_user_client()
-    q = db.table("orders").select("*,order_items(*)").eq("user_id", g.user_id)
+    q = db.table("orders").select("*,order_items(*,order_addon_selections(name_snapshot,quantity))").eq("user_id", g.user_id)
 
     status = request.args.get("status")
     if status:
@@ -205,6 +258,45 @@ def list_orders():
 
     orders = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
     return jsonify(orders), 200
+
+
+@orders_bp.route('/track', methods=['GET'])
+@optional_auth
+def track_guest_order():
+    """Resolve a full UUID or displayed order number using its private token."""
+    import uuid as _uuid
+    import re
+    number = (request.args.get('order_number') or '').strip().lstrip('#')
+    token = request.args.get('claim_token')
+    
+    # Validate claim token format
+    try:
+        _uuid.UUID(token or '')
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({'error': MSG.ORDER_INVALID_CLAIM}), 403
+    
+    if not number or len(number)>80 or not re.fullmatch(r'[A-Za-z0-9-]+',number):
+        return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+    
+    # Tracking emails previously used an eight-character UUID prefix. Resolve
+    # that legacy identifier only WITH its full private token, never by prefix.
+    if re.fullmatch(r'[A-Fa-f0-9]{8}', number):
+        row = (get_db().table('orders').select('id,user_id,claim_token')
+               .eq('claim_token', token).limit(1).single().execute())
+        if not row or row.get('user_id') or not str(row['id']).lower().startswith(number.lower()):
+            return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+        oid = row['id']
+    else:
+        try:
+            oid = str(_uuid.UUID(number))
+        except ValueError:
+            row = (get_db().table('orders').select('id,user_id,claim_token')
+                   .ilike('order_number',number).limit(1).single().execute())
+            if not row or row.get('user_id') or not hmac.compare_digest(str(row.get('claim_token') or ''), str(token)):
+                return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+            oid = row['id']
+
+    return get_order.__wrapped__(oid)
 
 
 @orders_bp.route("/<order_id>", methods=["GET"])
@@ -238,7 +330,7 @@ def get_order(order_id):
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
     claim_token = request.args.get("claim_token")
-    _select = "*,order_items(*),delivery_windows(*),delivery_batches(rider_id,zone,status)"
+    _select = "*,order_items(*,order_addon_selections(name_snapshot,quantity)),delivery_windows(*),delivery_batches(rider_id,zone,status)"
 
     db = get_user_client()
     order = None
@@ -267,6 +359,12 @@ def get_order(order_id):
         if not claim_token or not hmac.compare_digest(str(order.get("claim_token") or ""), str(claim_token)):
             return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
 
+    # Service reads are permitted only after the ownership/token checks above.
+    from app.services.order_reward_summary import food_hp_reward_summary
+    order['food_hp_reward'] = food_hp_reward_summary(get_db(), order)
+    from app.services.order_delivery_details import order_delivery_details
+    order['delivery_address'], order['delivery_window'] = order_delivery_details(get_db(), order)
+
     # Resolve the assigned rider from the persisted batch/profile relation.
     # No phone number is embedded in the response or codebase.
     if g.user_id or claim_token:
@@ -286,6 +384,9 @@ def get_order(order_id):
             {**m, "display_name": names.get(m.get("user_id"), m["email"])} for m in members
         ]
 
+    if g.user_id and order.get("user_id") == g.user_id:
+        reviews = db.table("order_reviews").select("id,rating,kitchen_rating,rider_rating,comment,hp_awarded,image_urls").eq("order_id", order_id).eq("user_id", g.user_id).limit(1).execute() or []
+        order["review"] = reviews[0] if reviews else None
     return jsonify(order), 200
 
 
@@ -366,7 +467,7 @@ def update_status(order_id):
         )
         return jsonify(result), 200
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), getattr(e, "http_status", 400)
 
 
 @orders_bp.route("/<order_id>/walk", methods=["POST"])
@@ -426,7 +527,7 @@ def walk_order_status(order_id):
         )
         return jsonify(result), 200
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), getattr(e, "http_status", 400)
 
 
 @orders_bp.route("/<order_id>/review/images", methods=["POST"])
@@ -492,84 +593,63 @@ def submit_review(order_id):
       400:
         description: Already reviewed or order not yet delivered
     """
-    db = get_user_client()
-    data = request.get_json(force=True) or {}
-
-    order = db.table("orders").select("user_id,status,campus_id").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-    if order.get("user_id") != g.user_id:
-        return jsonify({"error": MSG.ORDER_ACCESS_DENIED}), 403
-    if order.get("status") != "delivered":
-        return jsonify({"error": MSG.ORDER_REVIEW_DELIVERED_ONLY}), 400
-
-    existing_review = (
-        db.table("order_reviews")
-        .select("id")
-        .eq("order_id", order_id)
-        .eq("user_id", g.user_id)
-        .execute()
-    )
-    if existing_review:
-        return jsonify({"error": MSG.ORDER_ALREADY_REVIEWED}), 400
-
-    def _clamp_rating(val):
-        """Parse and clamp a rating value to 1–5, or return None if not provided."""
-        if val is None:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+    def rating(key, optional=False):
+        value = data.get(key)
+        if value is None and optional:
             return None
-        try:
-            return max(1, min(5, int(val)))
-        except (TypeError, ValueError):
-            return None
-
-    # Build review payload — kitchen_rating and rider_rating are optional columns
-    # added in migration 16. Included only when the caller provides them so that
-    # a missing column never causes an insert failure before the migration runs.
-    from app.db import SupabaseError as _SupabaseError
-    review_payload = {
-        "order_id": order_id,
-        "user_id": g.user_id,
-        "rating": max(1, min(5, int(data.get("rating", 5)))),
-        "comment": data.get("comment", ""),
-        "hp_awarded": 0,
-        "campus_id": order.get("campus_id"),
-        "kitchen_rating": _clamp_rating(data.get("kitchen_rating")),
-        "rider_rating":   _clamp_rating(data.get("rider_rating")),
-    }
-
+        if isinstance(value, bool) or value is None:
+            raise ValueError()
+        number = int(value)
+        if str(number) != str(value).strip() or number not in range(1, 6):
+            raise ValueError()
+        return number
     try:
-        review = db.table("order_reviews").insert(review_payload)
-    except _SupabaseError as e:
-        err_text = (str(e) + str(getattr(e, "details", ""))).lower()
-        if "unique" in err_text or "duplicate" in err_text:
-            # A second concurrent submit landed between our own existence check and this insert
-            return jsonify({"error": MSG.ORDER_ALREADY_REVIEWED}), 400
-        # Only fall back if the error is specifically about missing columns.
-        # Re-raise anything else so real DB errors are not silently swallowed.
-        if "column" not in err_text or "does not exist" not in err_text:
-            raise
-        fallback = {k: v for k, v in review_payload.items()
-                    if k not in ("kitchen_rating", "rider_rating")}
-        review = db.table("order_reviews").insert(fallback)
-
-    review_row = review[0] if isinstance(review, list) else review
-    review_id = review_row["id"]
-
+        overall, kitchen, rider = rating('rating'), rating('kitchen_rating', True), rating('rider_rating', True)
+        comment = data.get('comment') or ''
+        images = data.get('image_urls') or []
+        from app.utils.upload_urls import is_trusted_upload_url
+        if not isinstance(comment, str) or len(comment) > 2000:
+            raise ValueError()
+        if not isinstance(images, list) or len(images) > 3 or not all(is_trusted_upload_url(u) for u in images):
+            raise ValueError()
+    except (ValueError, TypeError, OverflowError):
+        return jsonify({"error": MSG.ORDER_REVIEW_INVALID}), 400
+    # The existing shared multiplier is a timed release-gated setting. The
+    # transaction enforces the monthly allowance and records its actual award.
+    from app.services.hp_service import _get_hp_multiplier
     try:
-        _row = db.table("system_settings").select("value").eq("key", "review_hp").is_("campus_id", "null").single().execute()
-        hp_amount = int(_row["value"]) if _row and _row.get("value") is not None else current_app.config["REVIEW_HP"]
+        db = get_db()
+        settings = db.table('system_settings').select('key,value').in_('key', ['review_hp','monthly_pending_cap']).is_('campus_id', 'null').execute() or []
+        values = {row['key']:row['value'] for row in settings}
+        hp = int(values.get('review_hp', current_app.config['REVIEW_HP']))
+        cap = int(values.get('monthly_pending_cap', 1000))
+        hp = round(hp * _get_hp_multiplier(getattr(g, 'campus_id', None)))
+        if hp<0 or cap<0:
+            raise ValueError('Invalid review HP configuration')
+        result = db.rpc('hg_submit_order_review_atomic', {
+            'p_user_id':g.user_id,'p_order_id':order_id,'p_rating':overall,
+            'p_kitchen_rating':kitchen,'p_rider_rating':rider,'p_comment':comment,
+            'p_hp_amount':hp,'p_monthly_cap':cap,'p_image_urls':images,
+        })
     except Exception:
-        hp_amount = current_app.config["REVIEW_HP"]
-    earn_pending_hp(
-        user_id=g.user_id,
-        amount=hp_amount,
-        source_type="review",
-        reference_id=review_id,
-        notes="HP for leaving a review",
-    )
-    get_db().table("order_reviews").eq("id", review_id).update({"hp_awarded": hp_amount})
-
-    return jsonify({"review": review_row, "hp_awarded": hp_amount, "message": MSG.REVIEW_SUBMITTED}), 201
+        logger.exception('Atomic review submission unavailable for %s', order_id)
+        return jsonify({'error':MSG.SERVICE_UNAVAILABLE}), 503
+    errors = {
+        'forbidden':(MSG.ORDER_ACCESS_DENIED,403),
+        'order_not_found':(MSG.ORDER_NOT_FOUND,404),
+        'not_delivered':(MSG.ORDER_REVIEW_DELIVERED_ONLY,400),
+        'already_reviewed':(MSG.ORDER_ALREADY_REVIEWED,409),
+        'invalid_review':(MSG.ORDER_REVIEW_INVALID,400),
+    }
+    if not isinstance(result, dict) or not result.get('success'):
+        code = result.get('error') if isinstance(result, dict) else 'review_failed'
+        message,status=errors.get(code,(MSG.SERVICE_UNAVAILABLE,503))
+        return jsonify({'error':message,'code':code}),status
+    result['message']=MSG.REVIEW_SUBMITTED
+    return jsonify(result),201
 
 
 @orders_bp.route("/<order_id>/claim", methods=["POST"])
@@ -601,47 +681,126 @@ def claim_guest_order(order_id):
     except ValueError:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
-    data = request.get_json(force=True) or {}
-    claim_token = data.get("claim_token")
-    if not claim_token:
-        return jsonify({"error": MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
-
-    # A guest order has user_id NULL, so the student's own token cannot even SELECT it (RLS), and the
-    # orders trigger blocks a user changing user_id directly. The server therefore does the lookup and
-    # the claim with the service client. This is safe because: (1) @require_auth already verified the
-    # caller, (2) p_user_id is g.user_id from that verified token, never from the request body, and
-    # (3) claim_guest_order() re-checks the claim token inside the database.
-    admin_db = get_db()
-
-    order = admin_db.table("orders").select("id,user_id,claim_token").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-
-    if order.get("user_id"):
-        return jsonify({"error": MSG.ORDER_ALREADY_CLAIMED}), 400
-
-    if not order.get("claim_token") or not hmac.compare_digest(str(order["claim_token"]), str(claim_token)):
-        return jsonify({"error": MSG.ORDER_INVALID_CLAIM}), 403
-
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    claim_token = data.get('claim_token')
     try:
-        result = admin_db.rpc("claim_guest_order", {
-            "p_order_id": order_id,
-            "p_user_id": g.user_id,
-            "p_claim_token": claim_token,
+        if not isinstance(claim_token, str):
+            raise ValueError()
+        claim_token = str(_uuid.UUID(claim_token))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({'error': MSG.ORDER_CLAIM_TOKEN_REQUIRED}), 400
+    if getattr(g, 'user_role', None) != 'student':
+        return jsonify({'error': MSG.ORDER_ACCESS_DENIED}), 403
+    admin_db = get_db()
+    try:
+        result = admin_db.rpc('claim_guest_order', {
+            'p_order_id': order_id, 'p_user_id': g.user_id, 'p_claim_token': claim_token,
         })
-        if isinstance(result, dict) and result.get("success"):
-            # After the claim the student owns the order, so the normal user client can read it back.
-            claimed_order = get_user_client().table("orders").select("*").eq("id", order_id).single().execute()
-            if claimed_order and claimed_order.get("status") == "delivered" and not claimed_order.get("hp_credited_at"):
-                # A guest who was delivered before claiming would otherwise never get
-                # the HP a logged-in customer earns automatically on delivery.
-                from app.services.order_service import _handle_delivery_rewards
-                _handle_delivery_rewards(claimed_order)
-        if isinstance(result, dict):
-            result["message"] = MSG.ORDER_CLAIMED
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    except Exception:
+        logger.exception('Guest claim unavailable for %s', order_id)
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+    if not isinstance(result, dict) or not result.get('success'):
+        code = result.get('error') if isinstance(result, dict) else None
+        errors = {'order_not_found': (MSG.ORDER_NOT_FOUND, 404),
+                  'invalid_claim': (MSG.ORDER_INVALID_CLAIM, 403),
+                  'already_claimed': (MSG.ORDER_ALREADY_CLAIMED, 409),
+                  'campus_mismatch': (MSG.GUEST_CLAIM_CAMPUS_MISMATCH, 403),
+                  'payment_pending': (MSG.GUEST_CLAIM_PAYMENT_PENDING, 409),
+                  'forbidden': (MSG.ORDER_ACCESS_DENIED, 403)}
+        message, status = errors.get(code, (MSG.SERVICE_UNAVAILABLE, 503))
+        return jsonify({'error': message, 'code': code or 'unavailable'}), status
+    # The owner change is committed. An optional balance read/HP recovery failure
+    # must not turn a successful claim into a false failure. Own retries recover.
+    try:
+        claimed_order = admin_db.table('orders').select('*').eq('id', order_id).single().execute()
+        if claimed_order and claimed_order.get('user_id') == g.user_id and claimed_order.get('status') == 'delivered' and claimed_order.get('payment_status') in ('paid','partially_refunded') and not claimed_order.get('hp_credited_at'):
+            from app.services.order_service import _handle_delivery_rewards
+            _handle_delivery_rewards(claimed_order)
+    except Exception:
+        logger.exception('Guest claim saved; delivery reward recovery pending for %s', order_id)
+        result = {**result, 'rewards_pending': True}
+    return jsonify({**result, 'message': MSG.ORDER_CLAIMED}), 200
+
+
+def _atomic_refund_response(order_id, customer_cancel=False, scheduled_only=False):
+    """Keep money, refund counters and terminal state in one database transaction."""
+    from decimal import Decimal, InvalidOperation
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    reason = data.get('reason') or (MSG.ORDER_CUSTOMER_CANCEL_REASON if customer_cancel else '')
+    if not isinstance(reason, str) or not reason.strip():
+        return jsonify({'error': MSG.ORDER_REFUND_REASON_REQUIRED}), 400
+    reason = reason.strip()
+    request_key = 'customer-cancel' if customer_cancel else data.get('idempotency_key')
+    if not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 200:
+        return jsonify({'error': MSG.ORDER_INTENT_INVALID}), 400
+    amount = None
+    if not customer_cancel and data.get('refund_amount') is None:
+        return jsonify({'error': MSG.ORDER_REFUND_AMOUNT_REQUIRED}), 400
+    if not customer_cancel and data.get('refund_amount') is not None:
+        try:
+            value = Decimal(str(data['refund_amount']))
+            if isinstance(data['refund_amount'], bool) or not value.is_finite() or value <= 0:
+                raise InvalidOperation()
+            amount = float(value.quantize(Decimal('0.01')))
+        except (InvalidOperation, ValueError, OverflowError):
+            return jsonify({'error': MSG.REFUND_AMOUNT_INVALID}), 400
+    before = get_user_client().table('orders').select('id,user_id,is_scheduled,status').eq('id', order_id).single().execute()
+    if not before:
+        return jsonify({'error': MSG.ORDER_NOT_FOUND}), 404
+    if not customer_cancel and before.get('status') == 'delivered' and data.get('acknowledge_delivered') is not True:
+        return jsonify({'error': MSG.ORDER_REFUND_DELIVERED_ACK_REQUIRED}), 400
+    if customer_cancel and before.get('user_id') != g.user_id:
+        return jsonify({'error': MSG.ORDER_CANCEL_NOT_OWNER}), 403
+    if scheduled_only and not before.get('is_scheduled'):
+        return jsonify({'error': MSG.ORDER_NOT_SCHEDULED_PENDING}), 409
+    try:
+        result = get_db().rpc('hg_refund_order_atomic', {
+            'p_order_id': order_id, 'p_actor_id': g.user_id, 'p_request_key': request_key,
+            'p_requested_amount': amount, 'p_reason': reason, 'p_customer_cancel': customer_cancel,
+        })
+    except Exception:
+        logger.exception('Atomic order refund unavailable for %s', order_id)
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+    failures = {
+        'forbidden': (MSG.ORDER_ACCESS_DENIED, 403),
+        'order_not_found': (MSG.ORDER_NOT_FOUND, 404),
+        'cannot_cancel': (MSG.ORDER_CANCEL_WRONG_STATUS, 409),
+        'invalid_intent': (MSG.ORDER_INTENT_INVALID, 400),
+        'invalid_amount': (MSG.REFUND_AMOUNT_INVALID, 400),
+        'guest_refund_manual_required': (MSG.GUEST_REFUND_MANUAL_REQUIRED, 400),
+        'refund_conservation': (MSG.REFUND_ALREADY_FULL, 409),
+    }
+    if not isinstance(result, dict) or not result.get('success'):
+        code = result.get('error') if isinstance(result, dict) else 'refund_failed'
+        logger.warning('Atomic refund refused for %s: %s', order_id, code)
+        message, status = failures.get(code, (MSG.SERVICE_UNAVAILABLE, 503))
+        return jsonify({'error': message, 'code': code}), status
+    result['message'] = MSG.ORDER_CANCELLED_OK if customer_cancel else MSG.ORDER_REFUND_SUCCESS
+    result['refund_errors'] = []
+    if not result.get('idempotent'):
+        try:
+            from app.services.notification_service import send_notification
+            send_notification(user_id=before['user_id'], notif_type='order_refunded',
+                title=MSG.ORDER_REFUND_TITLE,
+                body=MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{result.get('refund_amount', 0):.0f}", reason=reason),
+                reference_id=order_id, reference_type='order', channels=['push','in_app','email'])
+        except Exception:
+            logger.exception('Refund notification unavailable for order %s', order_id)
+        # A full refund closes the order ('refunded'); partial refunds leave it
+        # 'delivered' and stay eligible. Remove fully-refunded orders from
+        # ambassador performance. The reversal is idempotent, so retries converge.
+        try:
+            after = get_user_client().table('orders').select('status').eq('id', order_id).single().execute()
+            if after and after.get('status') == 'refunded':
+                from app.services import ambassador_service
+                ambassador_service.reverse_attributed_order(order_id, reason[:300])
+        except Exception:
+            logger.exception('Ambassador attribution reversal failed for refunded order %s', order_id)
+    return jsonify(result), 200
 
 
 @orders_bp.route("/<order_id>/refund", methods=["POST"])
@@ -649,7 +808,8 @@ def claim_guest_order(order_id):
 def refund_order(order_id):
     """
     Initiate a refund for an order (admin only).
-    Transitions the order to 'refunded' status and credits the entire refund amount to wallet.
+    Credits collected payments to the customer wallet atomically. Partial refunds retain
+    preparation status; full refunds close the order. Retry with the same request key.
     ---
     tags: [Orders]
     parameters:
@@ -661,8 +821,9 @@ def refund_order(order_id):
         name: body
         required: true
         schema:
-          required: [reason]
+          required: [reason, idempotency_key]
           properties:
+            idempotency_key: {type: string, description: "Stable key for this refund intent and its retries"}
             reason: {type: string, description: "Reason for the refund"}
             refund_amount: {type: number, description: "Partial refund amount in Naira. Defaults to remaining refundable amount."}
     responses:
@@ -673,119 +834,7 @@ def refund_order(order_id):
       404:
         description: Order not found
     """
-    data = request.get_json(force=True) or {}
-    reason = data.get("reason", "").strip()
-    if not reason:
-        return jsonify({"error": MSG.ORDER_REFUND_REASON_REQUIRED}), 400
-
-    db = get_user_client()
-    order = db.table("orders").select("id,status,total_amount,user_id,payment_status,wallet_amount_used,card_amount_used,payment_reference,notes").eq("id", order_id).single().execute()
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-
-    # Pre-checks for final canceled / unrefundable states
-    if order.get("status") == "cancelled" and order.get("payment_status") != "paid":
-        return jsonify({"error": MSG.REFUND_UNPAID_CANCELLED}), 400
-
-    wallet_amount_used = float(order.get("wallet_amount_used") or 0)
-    card_amount_used = float(order.get("card_amount_used") or 0)
-    refund_amount = float(data.get("refund_amount") or (wallet_amount_used + card_amount_used))
-    if refund_amount <= 0:
-        return jsonify({"error": MSG.REFUND_AMOUNT_INVALID}), 400
-
-    try:
-        reservation = db.rpc("hg_reserve_order_refund", {
-            "p_order_id": order_id,
-            "p_requested_amount": refund_amount,
-        })
-    except Exception as exc:
-        logger.error("refund_order: hg_reserve_order_refund failed for %s: %s", order_id, exc)
-        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
-
-    if not isinstance(reservation, dict) or "success" not in reservation:
-        logger.error("refund_order: hg_reserve_order_refund returned unexpected response for %s: %r", order_id, reservation)
-        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
-    elif not reservation.get("success"):
-        if reservation.get("error") == "invalid_amount":
-            refundable = reservation.get("refundable_total", 0)
-            if refundable <= 0:
-                return jsonify({"error": "This order has already been fully refunded."}), 400
-            return jsonify({"error": f"Invalid refund amount. Remaining refundable: {refundable}"}), 400
-        return jsonify({"error": reservation.get("error", "Could not reserve refund")}), 400
-
-    wallet_refund_allocation = reservation["wallet_allocation"]
-    card_refund_allocation = reservation["card_allocation"]
-    total_wallet_credit = wallet_refund_allocation + card_refund_allocation
-
-    if not order.get("user_id") and total_wallet_credit > 0:
-        return jsonify({"error": MSG.GUEST_REFUND_MANUAL_REQUIRED}), 400
-
-    wallet_credited = False
-    if total_wallet_credit > 0 and order.get("user_id"):
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=order["user_id"],
-                amount=total_wallet_credit,
-                payment_reference=f"REFUND-{order_id[:8].upper()}",
-                reference_id=order_id,
-                reference_type="refund",
-                notes=f"Refund for order #{order_id[:8].upper()}: {reason}",
-            )
-            wallet_credited = True
-        except Exception as exc:
-            return jsonify({"error": f"Wallet credit failed: {str(exc)}"}), 400
-
-    # State transition for order
-    from app.services import order_service
-    try:
-        order_service.update_order_status(
-            order_id=order_id,
-            new_status="refunded",
-            changed_by=g.user_id,
-            notes=f"Refund: {reason}",
-        )
-    except ValueError as e:
-        # Ignore transition error if already refunded (allows multiple partial refunds)
-        if order.get("status") != "refunded":
-            return jsonify({"error": str(e)}), 400
-
-    # Construct rich notes snapshot for history tracking
-    new_notes = f"[REFUNDED by {g.user_id[:8]}] {reason}"
-    if card_refund_allocation > 0:
-        new_notes += f" [CARD_PORTION_TO_WALLET: {card_refund_allocation}]"
-
-    updated_notes = (order.get("notes") or "") + " | " + new_notes
-
-    db.table("orders").eq("id", order_id).update({
-        "notes": updated_notes,
-        "refunded_at": datetime.now(timezone.utc).isoformat(),
-    })
-
-    from app.services.notification_service import send_notification
-    if order.get("user_id"):
-        try:
-            send_notification(
-                user_id=order["user_id"],
-                notif_type="order_refunded",
-                title=MSG.ORDER_REFUND_TITLE,
-                body=MSG.ORDER_REFUND_BODY_WALLET.format(amount=f"{refund_amount:.0f}", reason=reason),
-                reference_id=order_id,
-                reference_type="order",
-                channels=["push", "in_app", "email"],
-            )
-        except Exception:
-            pass
-
-    return jsonify({
-        "message": MSG.ORDER_REFUND_SUCCESS,
-        "order_id": order_id,
-        "status": "refunded",
-        "refund_amount": refund_amount,
-        "reason": reason,
-        "wallet_credited": wallet_credited,
-        "card_refunded": False,
-    }), 200
+    return _atomic_refund_response(order_id)
 
 
 @orders_bp.route("/scheduled", methods=["GET"])
@@ -820,11 +869,11 @@ def list_scheduled_orders():
         return jsonify({"error": MSG.PAGINATION_PARAMS_INVALID}), 400
     orders = (
         db.table("orders")
-        .select("*,order_items(name_snapshot,quantity,price_snapshot,line_total),"
+        .select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity)),"
                 "delivery_windows(label,starts_at,ends_at)")
         .eq("user_id", g.user_id)
         .eq("is_scheduled", "true")
-        .eq("status", "received")
+        .in_("status", ["received", "paid"])
         .order("scheduled_for", ascending=True)
         .limit(limit)
         .offset(offset)
@@ -864,89 +913,7 @@ def cancel_scheduled_order(order_id):
       404:
         description: Order not found
     """
-    db = get_user_client()
-    order = (
-        db.table("orders")
-        .select("id,user_id,status,is_scheduled,total_amount,wallet_amount_used,card_amount_used,hp_redeemed,payment_status")
-        .eq("id", order_id)
-        .single()
-        .execute()
-    )
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-    if order.get("user_id") != g.user_id:
-        return jsonify({"error": MSG.ORDER_CANCEL_NOT_OWNER}), 403
-    is_scheduled = order.get("is_scheduled") in (True, "true", "t")
-    if not is_scheduled or order.get("status") != "received":
-        return jsonify({"error": MSG.ORDER_NOT_SCHEDULED_PENDING}), 409
-
-    data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Scheduled order cancelled by customer")
-
-    try:
-        order_service.update_order_status(order_id, "cancelled", g.user_id, reason)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    wallet_refunded = 0.0
-    wallet_amount_used = float(order.get("wallet_amount_used") or 0)
-    if wallet_amount_used > 0:
-        from app.services.wallet_service import credit_wallet
-        credit_wallet(
-            user_id=g.user_id,
-            amount=wallet_amount_used,
-            payment_reference=f"scheduled-cancel-{order_id[:8].upper()}",
-            reference_id=order_id,
-            reference_type="refund",
-            notes=f"Refund for cancelled scheduled order #{order_id[:8].upper()}",
-        )
-        wallet_refunded = wallet_amount_used
-
-    # The card half is only real money once the webhook confirms it — every order is
-    # created payment_status='pending' with card_amount_used already set — so refunding it
-    # here refunded money that was never collected, repeatably. Same bug the plain cancel
-    # path had. The wallet half above is always refunded: it is debited at creation.
-    card_amount_used = float(order.get("card_amount_used") or 0)
-    if card_amount_used > 0 and str(order.get("payment_status") or "").lower() != "paid":
-        logger.warning(
-            "cancel_scheduled_order: order %s cancelled with payment_status=%r — the card "
-            "half (%s) was never collected and is not refunded",
-            order_id, order.get("payment_status"), card_amount_used)
-        card_amount_used = 0.0
-    if card_amount_used > 0:
-        from app.services.wallet_service import credit_wallet
-        credit_wallet(
-            user_id=g.user_id, amount=card_amount_used,
-            payment_reference=f"scheduled-cancel-card-{order_id[:8].upper()}",
-            reference_id=order_id, reference_type="refund",
-            notes=f"Card-portion refund for cancelled scheduled order #{order_id[:8].upper()}",
-        )
-        wallet_refunded += card_amount_used
-
-    # HP and a claimed reward are restored by update_order_status() on the
-    # received->cancelled transition, above in this same request: one implementation for
-    # every cancel path, fired exactly once. Doing it here too would credit HP twice.
-
-    # Restore order lock if one was used
-    try:
-        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
-        if lock:
-            get_db().table("order_locks").eq("id", lock["id"]).update({
-                "status": "active",
-                "order_id": None,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-    except Exception as exc:
-        # The lock stays consumed and the customer loses what they paid for it. This must
-        # be visible to whoever investigates, and is reversible by hand.
-        logger.error("cancel_scheduled_order: order lock not restored for order %s: %s", order_id, exc)
-
-    return jsonify({
-        "message": MSG.ORDER_CANCELLED_OK,
-        "order_id": order_id,
-        "status": "cancelled",
-        "wallet_refunded": wallet_refunded,
-    }), 200
+    return _atomic_refund_response(order_id, customer_cancel=True, scheduled_only=True)
 
 
 @orders_bp.route("/active", methods=["GET"])
@@ -964,7 +931,7 @@ def active_order():
     TERMINAL = ["delivered", "cancelled", "refunded"]
     rows = (
         db.table("orders")
-        .select("*,order_items(id,menu_item_id,name_snapshot,quantity,price_snapshot,line_total)")
+        .select("*,order_items(id,menu_item_id,name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .eq("user_id", g.user_id)
         .not_.in_("status", TERMINAL)
         .order("created_at", ascending=False)
@@ -990,48 +957,72 @@ def list_delivery_windows():
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
     now = datetime.now(timezone.utc).isoformat()
-    q = db.table("delivery_windows").select("*").gte("ends_at", now).eq("status", "open")
+    q = db.table("delivery_windows").select("*").eq("status", "open")
     if campus_id:
         q = q.eq("campus_id", campus_id)
-    windows = q.order("starts_at").execute() or []
+    from app.services.delivery_window_schedule import upcoming_delivery_windows
+    windows = upcoming_delivery_windows(q.execute() or [])
     return jsonify(windows), 200
 
 
 @orders_bp.route("/delivery-windows/status", methods=["GET"])
+@optional_auth
 def delivery_windows_status():
     db = get_user_client()
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
 
-    from app.services.order_service import get_ordering_window_status, find_next_available_ordering_slot
-    status = get_ordering_window_status(db, campus_id)
+    calendar_requested = request.args.get('calendar', '').lower() == 'true'
+    read_db = get_db()
+    if calendar_requested and campus_id:
+        from app.services.schedule_read_cache import ScheduleReadCache
+        read_db = ScheduleReadCache(read_db, campus_id)
 
+    from app.services.order_service import get_ordering_window_status, find_next_available_ordering_slot
+    status = get_ordering_window_status(read_db, campus_id)
+
+    # The next bookable slot is the answer to "when can I order?" — and it is
+    # needed whenever ordering is not possible right now, not only when the
+    # kitchen is at capacity. Search from TODAY so a kitchen that has not opened
+    # yet offers today (find_next_available_ordering_slot skips windows that have
+    # already closed, so after closing time this lands on the next open day).
     next_avail_date = None
     next_opens_at = None
-    if not status.get("any_capacity_remaining"):
+    if not status.get("is_open"):
         from datetime import datetime, timezone, timedelta as _td
         _now_wat = datetime.now(timezone.utc) + _td(hours=1)
-        next_slot = find_next_available_ordering_slot(db, campus_id, start_date=(_now_wat + _td(days=1)).date())
+        next_slot = find_next_available_ordering_slot(read_db, campus_id, start_date=_now_wat.date())
         if next_slot:
             next_avail_date = next_slot.get("date")
             next_opens_at = next_slot.get("opens_at")
 
     calendar = None
-    if request.args.get("calendar", "").lower() == "true":
+    if calendar_requested:
         calendar = []
         from datetime import datetime, timezone, timedelta as _td
         _now_wat_date = (datetime.now(timezone.utc) + _td(hours=1)).date()
-        for i in range(7):
+        for i in range(14):
             d = _now_wat_date + _td(days=i)
-            st = get_ordering_window_status(db, campus_id, for_date=d)
+            st = get_ordering_window_status(read_db, campus_id, for_date=d)
+            # Today's elapsed windows cannot be selected; future openings do
+            # not compare their clock against the current time.
+            from app.services.order_service import _parse_hm_local
+            now_wat = datetime.now(timezone.utc) + _td(hours=1)
+            rows = [{**w, "date": st["date"], "is_closed": bool(w.get("is_closed")) or
+                     (i == 0 and _parse_hm_local(w.get("closes_at"), 23, 59) <= now_wat.time())}
+                    for w in st.get("windows", [])]
+            bookable = [w for w in rows if not w["is_closed"] and not w["is_full"]]
+            remaining = [w["remaining"] for w in bookable if w.get("remaining") is not None]
             calendar.append({
-                "date": st["date"],
-                "is_open": st["is_open"],
-                "any_capacity_remaining": st["any_capacity_remaining"],
+                "date": st["date"], "is_open": bool(bookable),
+                "any_capacity_remaining": bool(bookable), "windows": rows,
+                "remaining": min(remaining) if remaining else None,
+                "reason": "open" if bookable else st.get("reason"),
             })
 
     return jsonify({
         "is_open": status.get("is_open", False),
+        "reason": status.get("reason"),
         "windows": status.get("windows", []),
         "any_capacity_remaining": status.get("any_capacity_remaining", False),
         "next_available_date": next_avail_date,
@@ -1086,6 +1077,8 @@ def validate_promo():
       400:
         description: Invalid, expired, or inapplicable code
     """
+    if not getattr(g, 'user_id', None):
+        return jsonify({'error': MSG.ORDER_PROMO_SIGN_IN}), 401
     data = request.get_json(force=True) or {}
     code = (data.get("code") or "").strip()
     try:
@@ -1109,7 +1102,7 @@ def validate_promo():
             return jsonify({"error": MSG.ORDER_PROMO_INVALID.format(code=code)}), 400
 
     try:
-        result = order_service._apply_promo(getattr(g, "user_id", None), code, subtotal)
+        result = order_service._apply_promo(getattr(g, "user_id", None), code, subtotal, campus_id=campus_id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -1118,6 +1111,7 @@ def validate_promo():
         "code": code.upper(),
         "calculated_discount": result["discount"],
         "promo_code_id": result["promo_code_id"],
+        "requires_quote": result.get("requires_quote", False),
         "message": MSG.PROMO_CODE_VALID,
     }), 200
 
@@ -1149,146 +1143,7 @@ def cancel_order(order_id):
       404:
         description: Order not found
     """
-    db = get_user_client()
-    order = (
-        db.table("orders")
-        .select("id,user_id,status,total_amount,wallet_amount_used,card_amount_used,hp_redeemed,payment_status")
-        .eq("id", order_id)
-        .single()
-        .execute()
-    )
-    if not order:
-        return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
-    if order.get("user_id") != g.user_id:
-        return jsonify({"error": MSG.ORDER_CANCEL_NOT_OWNER}), 403
-    # Only "received" orders can be cancelled by the customer (kitchen hasn't started yet).
-    # "received" means no kitchen work has begun, so cancellation is always safe regardless
-    # of time-of-day — the ordering-window check has been intentionally removed here.
-    if order.get("status") != "received":
-        return jsonify({"error": MSG.ORDER_CANCEL_WRONG_STATUS}), 409
-
-    data = request.get_json(force=True, silent=True) or {}
-    reason = data.get("reason", "Cancelled by customer")
-
-    try:
-        order_service.update_order_status(order_id, "cancelled", g.user_id, reason)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    # ── Refund: wallet→wallet, card→wallet ────────────────────────────────────
-    # ONLY money that actually left the account is refundable. A card order is created
-    # with payment_status='pending' and card_amount_used already set, so refunding
-    # before the webhook confirmed the charge credited the customer for a payment that
-    # never happened — repeatable, i.e. free money. The admin refund route
-    # (POST /<id>/refund) already refuses this case with REFUND_UNPAID_CANCELLED;
-    # this is the same guard on the customer path.
-    wallet_refunded = 0.0
-    wallet_amount = float(order.get("wallet_amount_used") or 0)
-    card_amount = float(order.get("card_amount_used") or 0)
-    paid = str(order.get("payment_status") or "").lower() == "paid"
-
-    # CONFIRMED against the live database: hg_create_order_atomic debits the wallet half
-    # at creation, in the same transaction, through debit_wallet_atomic; the card half
-    # only arrives later, by webhook. So on a pending split order the wallet half is
-    # already gone and must come back — while the card half, never collected, must not.
-    # The refund is capped at wallet_amount_used, which is exactly the amount debited.
-    refund_wallet_when_unpaid = True
-
-    refund_errors = []
-    if not paid:
-        # The card half was never collected. The wallet half was, at creation.
-        logger.warning(
-            "cancel_order: order %s cancelled with payment_status=%r — refunding the wallet "
-            "half (%s) only; the card half (%s) was never collected.",
-            order_id, order.get("payment_status"), wallet_amount, card_amount)
-        if not refund_wallet_when_unpaid:
-            wallet_amount = 0.0
-        card_amount = 0.0
-
-    if wallet_amount > 0:
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=g.user_id,
-                amount=wallet_amount,
-                payment_reference=f"cancel-{order_id[:8].upper()}",
-                reference_id=order_id,
-                reference_type="refund",
-                notes=f"Refund for cancelled order #{order_id[:8].upper()}",
-            )
-            wallet_refunded += wallet_amount
-        except Exception as exc:
-            logger.error("cancel_order: wallet refund failed for %s: %s", order_id, exc)
-            refund_errors.append("wallet")
-
-    if card_amount > 0:
-        # Card payments refund to wallet
-        try:
-            from app.services.wallet_service import credit_wallet
-            credit_wallet(
-                user_id=g.user_id,
-                amount=card_amount,
-                payment_reference=f"cancel-card-{order_id[:8].upper()}",
-                reference_id=order_id,
-                reference_type="refund",
-                notes=f"Card refund to wallet for cancelled order #{order_id[:8].upper()}",
-            )
-            wallet_refunded += card_amount
-        except Exception as exc:
-            logger.error("cancel_order: card-portion refund failed for %s: %s", order_id, exc)
-            refund_errors.append("card")
-
-    # Restore order lock if one was used
-    try:
-        lock = get_db().table("order_locks").select("id").eq("order_id", order_id).eq("status", "used").single().execute()
-        if lock:
-            get_db().table("order_locks").eq("id", lock["id"]).update({
-                "status": "active",
-                "order_id": None,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).execute()
-    except Exception as exc:
-        # Same as cancel_scheduled_order: the customer paid for this lock and it stays
-        # consumed if the restore fails. Log it — it is fixable by hand.
-        logger.error("cancel_order: order lock not restored for order %s: %s", order_id, exc)
-
-    from app.services.notification_service import send_notification
-    try:
-        send_notification(
-            user_id=g.user_id,
-            notif_type="order_refunded",
-            title=MSG.ORDER_REFUND_TITLE,
-            body=MSG.ORDER_REFUND_BODY_WALLET.format(
-                amount=f"{wallet_refunded:.0f}", reason=reason
-            ) if wallet_refunded > 0 else MSG.ORDER_CANCELLED_BODY,
-            reference_id=order_id,
-            reference_type="order",
-            channels=["push", "in_app", "email"],
-        )
-    except Exception:
-        pass
-
-    response = {
-        "message": MSG.ORDER_CANCELLED_OK,
-        "order_id": order_id,
-        "status": "cancelled",
-        "wallet_refunded": wallet_refunded,
-        "refund_errors": refund_errors,
-    }
-    if not paid:
-        # Say what actually happened: a split order's wallet half was debited at checkout
-        # and is being returned, while a card-only order had nothing collected at all.
-        # Without this the client cannot tell "refunded ₦0" from "the refund failed".
-        response["payment_status"] = order.get("payment_status")
-        response["refunded_reason"] = (
-            "the wallet half was debited at checkout and has been returned; "
-            "the card half was never collected"
-            if wallet_refunded > 0 else
-            "nothing was charged on this order"
-        )
-        if refund_errors:
-            response["refund_errors"] = refund_errors
-    return jsonify(response), 200
+    return _atomic_refund_response(order_id, customer_cancel=True)
 
 
 @orders_bp.route("/<order_id>/reorder", methods=["POST"])
@@ -1542,18 +1397,24 @@ def add_squad_members(order_id):
     if not order:
         return jsonify({"error": MSG.ORDER_NOT_FOUND}), 404
 
+    # B-8: refuse to add members to an already delivered order (true split would overpay)
+    if order.get("status") == "delivered":
+        return jsonify({"error": "Cannot add squad members to a delivered order"}), 409
+
     data = request.get_json(force=True) or {}
     emails = [e.strip().lower() for e in (data.get("emails") or []) if e and e.strip()]
     user_ids = [u.strip() for u in (data.get("user_ids") or []) if u and u.strip()]
     if user_ids:
         try:
-            u_profiles = db.table("profiles").select("id,email").in_("id", user_ids).execute() or []
+            # Use service client for user_id -> email lookup (privacy + RLS)
+            u_profiles = get_db().table("profiles").select("id,email,campus_id").in_("id", user_ids).execute() or []
             for p in (u_profiles if isinstance(u_profiles, list) else []):
                 if p.get("email"):
+                    # Same-campus check for user_ids as well
+                    if order.get("campus_id") and p.get("campus_id") and p.get("campus_id") != order.get("campus_id"):
+                        continue
                     emails.append(p["email"].strip().lower())
         except Exception as exc:
-            # The invitee list loses these users: they are not emailed, and the caller
-            # is told the invite succeeded.
             logger.warning("squad invite: profile lookup failed for %s, those users are not invited: %s",
                            user_ids, exc)
     emails = list(dict.fromkeys(emails))
@@ -1588,9 +1449,21 @@ def add_squad_members(order_id):
             results.append({"email": email, "status": "already_added"})
             continue
 
-        profile = (
-            db.table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("email", email).single().execute()
-        )
+        # B-7: profile lookup must use service client, only id and campus_id, same-campus only
+        profile = None
+        try:
+            svc = get_db()
+            prof_row = svc.table("profiles").select("id,campus_id").eq("email", email).single().execute()
+            if prof_row:
+                # Same-campus guard: accept only if profile campus matches order campus
+                if order_campus_id and prof_row.get("campus_id") and prof_row.get("campus_id") != order_campus_id:
+                    profile = None  # treat as not found for privacy / campus isolation
+                else:
+                    profile = prof_row
+        except Exception as exc:
+            logger.warning("squad invite: service lookup failed for %s: %s", email, exc)
+            profile = None
+
         member_payload = {
             "order_id": order_id,
             "email": email,
@@ -1605,27 +1478,36 @@ def add_squad_members(order_id):
             member_payload["user_id"] = profile["id"]
 
         try:
-            db.table("squad_members").insert(member_payload)
+            db.table("squad_members").insert(member_payload).execute()
         except Exception:
             results.append({"email": email, "status": "error"})
             continue
-        successfully_added_names.append(resolve_display_name(profile=profile) if profile else email)
+
+        # For display, resolve via service client without leaking to caller
+        display_name = email
+        if profile:
+            try:
+                # Resolve display name via service client (nickname-first)
+                from app.services.squad_service import resolve_display_name as _resolve
+                full_prof = get_db().table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("id", profile["id"]).single().execute()
+                display_name = _resolve(profile=full_prof) if full_prof else email
+            except Exception:
+                display_name = email
+        successfully_added_names.append(display_name)
 
         if squad_id_for_order:
             try:
                 db.table("squad_roster").insert({
                     "squad_id": squad_id_for_order, "email": email,
                     "user_id": profile["id"] if profile else None,
-                })
+                }).execute()
             except Exception as exc:
-                # Usually a duplicate (already on the roster), but a database failure
-                # looks identical from here and would leave the member off the roster.
                 logger.warning("squad roster: insert failed for %s on order %s: %s", email, order_id, exc)
 
         if not profile:
-            # Send auto-invite for referral vector
+            # Send auto-invite for referral vector — only for truly unregistered emails after B-7 fix
             ref_code = organizer_profile.get("referral_code", "")
-            invite_link = f"{frontend_url}/register?ref={ref_code}&email={email}" if ref_code else f"{frontend_url}/register"
+            invite_link = f"{frontend_url}/register?ref={ref_code}&email={email}" if ref_code else f"{frontend_url}/register?email={email}"
             try:
                 from app.utils.email import send_email
                 send_email(
@@ -1637,7 +1519,7 @@ def add_squad_members(order_id):
                         "invite_link": invite_link,
                     },
                 )
-                db.table("squad_members").eq("order_id", order_id).eq("email", email).update({"invite_sent": True})
+                db.table("squad_members").eq("order_id", order_id).eq("email", email).update({"invite_sent": True}).execute()
             except Exception:
                 pass
             results.append({"email": email, "status": "invited"})
@@ -1667,6 +1549,7 @@ def add_squad_members(order_id):
             pass
 
     # If order is already delivered and split_hp is enabled, distribute HP now
+    # Note: delivered check above already returns 409, so this branch is now only for race safety
     if split_hp and order.get("status") == "delivered" and order.get("hp_earned", 0) > 0:
         from app.services.squad_service import distribute_squad_hp
         distribute_squad_hp(order_id, order["hp_earned"], g.user_id, campus_id=order_campus_id)

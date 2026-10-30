@@ -7,6 +7,7 @@ from app.db import get_db, get_user_client
 from app.services.hp_service import award_active_hp
 
 from app.utils.logger import get_logger
+from app.utils.settings import setting_or_config
 
 logger = get_logger(__name__)
 from flask import current_app
@@ -59,15 +60,26 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         except Exception:
             pass
 
-    if amount >= config.get("WALLET_TOPUP_MIN", 3000) and reference_type in ("topup", "bank_transfer"):
+    topup_min = setting_or_config(db, 'wallet_topup_min', config.get('WALLET_TOPUP_MIN', 3000), minimum=0)
+    if amount >= topup_min and reference_type in ("topup", "bank_transfer"):
         try:
+            if not txn_id:
+                raise ValueError('Wallet top-up has no stable transaction receipt')
             award_active_hp(
                 user_id=user_id,
-                amount=config.get("WALLET_TOPUP_HP", 50),
+                amount=setting_or_config(
+                    db, "wallet_topup_hp", config.get("WALLET_TOPUP_HP", 50),
+                    minimum=0, maximum=100000,
+                ),
                 txn_type="earn",
-                reference_id=payment_reference,
+                # The HP ledger reference is UUID-typed. Paystack's HG-WALLET-*
+                # string was rejected, silently skipping every qualifying bonus.
+                # Callback/webhook retries share this stable wallet receipt ID.
+                reference_id=txn_id,
                 reference_type="wallet_topup",
                 notes=f"HP bonus for wallet top-up of ₦{amount:.0f}",
+                campus_id=campus_id,
+                apply_multiplier=False,  # configured flat funding bonus
             )
         except Exception as exc:
             logger.error("credit_wallet: the top-up HP bonus could not be awarded for %s (₦%s top-up): %s",

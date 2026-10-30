@@ -3,12 +3,15 @@ Delivery Location routes — hostels, gates, fee calculation, admin CRUD.
 """
 
 import math
+import requests
 from flask import Blueprint, request, jsonify, g
 from app.middleware.auth import require_role, optional_auth, resolve_scoped_campus_id
-from app.db import get_db, get_user_client
+from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
 from datetime import datetime, timezone
+from app.utils.admin_helpers import as_number, as_text, as_bool, as_uuid, db_error_response
+from app.utils.campus_scope import resolve_write_campus, assert_can_modify
 
 logger = get_logger(__name__)
 
@@ -18,6 +21,45 @@ delivery_bp = Blueprint("delivery", __name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _location_fields(data, money_fields):
+    if not isinstance(data, dict):
+        raise ValueError
+    result = dict(data)
+    if "name" in result:
+        result["name"] = as_text(result["name"], 200)
+    if "is_active" in result:
+        if not isinstance(result["is_active"], bool):
+            raise ValueError
+    for field in money_fields:
+        if field in result:
+            result[field] = as_number(result[field], minimum=0)
+    if "gate_id" in result:
+        result["gate_id"] = as_uuid(result["gate_id"])
+    if "campus_id" in result:
+        result["campus_id"] = as_uuid(result["campus_id"])
+    return result
+
+
+def _valid_hostel_gate(db, gate_id, campus_id):
+    return not gate_id or bool(db.table("gates").select("id").eq("id", gate_id).eq("campus_id", campus_id).eq("is_active", True).single().execute())
+
+def _admin_location(db, table, location_id):
+    try:
+        valid_id = as_uuid(location_id)
+        if not valid_id:
+            raise ValueError
+    except ValueError:
+        return None, (jsonify({"error": MSG.INVALID_INPUT}), 400)
+    try:
+        row = db.table(table).select("*").eq("id", valid_id).single().execute()
+    except (SupabaseError, requests.RequestException) as exc:
+        return None, db_error_response(exc, "delivery_location_lookup")
+    if not row:
+        return None, (jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404)
+    assert_can_modify(row.get("campus_id"))
+    return row, None
+
 
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
     """Return the great-circle distance in kilometres between two lat/lon points."""
@@ -55,7 +97,7 @@ def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[
     """
     Calculate off-campus delivery fee for a given gate.
     Returns (fee_in_naira, distance_km_or_None).
-    If user coordinates are absent, falls back to gate.min_fee.
+    If user coordinates are absent, charges the greater of the base and minimum fee.
     """
     base_fee = float(gate.get("base_fee") or 0)
     rate_per_km = float(gate.get("rate_per_km") or 0)
@@ -72,7 +114,7 @@ def calculate_off_campus_fee(gate: dict, user_lat=None, user_lon=None) -> tuple[
             return round(max(fee, min_fee), 2), round(dist, 3)
         except Exception as e:
             raise ValueError(f"Coordinate validation failed: {str(e)}")
-    return round(min_fee, 2), None
+    return round(max(base_fee, min_fee), 2), None
 
 
 def is_within_delivery_area(db, lat: float, lon: float, campus_id: str | None) -> bool:
@@ -137,6 +179,7 @@ def find_nearest_gate(db, lat: float, lon: float, campus_id: str | None) -> dict
 from app.routes.events import _require_campus_selection
 
 @delivery_bp.route("/hostels", methods=["GET"])
+@optional_auth
 def list_hostels():
     """
     List all active on-campus hostels with their delivery fees for the selected campus.
@@ -158,12 +201,13 @@ def list_hostels():
         if isinstance(hostels, list):
             hostels = [h for h in hostels if h.get("campus_id") == campus_id or h.get("campus_id") is None]
     except Exception as e:
-        logger.warning("list_hostels: query failed, returning empty list: %s", e)
-        hostels = []
+        logger.warning("list_hostels unavailable: %s", type(e).__name__)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     return jsonify({"hostels": hostels}), 200
 
 
 @delivery_bp.route("/gates", methods=["GET"])
+@optional_auth
 def list_gates():
     """
     List all active delivery gates (used for off-campus fee calculation) for the selected campus.
@@ -185,8 +229,8 @@ def list_gates():
         if isinstance(gates, list):
             gates = [g_row for g_row in gates if g_row.get("campus_id") == campus_id or g_row.get("campus_id") is None]
     except Exception as e:
-        logger.warning("list_gates: query failed, returning empty list: %s", e)
-        gates = []
+        logger.warning("list_gates unavailable: %s", type(e).__name__)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     return jsonify({"gates": gates}), 200
 
 
@@ -250,7 +294,25 @@ def calculate_fee():
 
     if not location_id:
         if data.get("delivery_type") == "off_campus" and user_lat is not None and user_lon is not None:
-            campus_id = data.get("campus_id") or getattr(g, "campus_id", None)
+            # The reference resolver (events._get_campus_id): ?campus_id=, then the
+            # X-Campus-ID header the campus gate sends, then the signed-in session.
+            # Reading only the body and g.campus_id meant a guest -- who has no
+            # g.campus_id, and whose fee request carries no campus_id in the body --
+            # resolved to None. is_within_delivery_area() fails open on None (no
+            # radius check at all) and find_nearest_gate() drops its campus filter,
+            # so the nearest gate was picked from EVERY campus and the fee priced
+            # against a gate the guest does not belong to.
+            from app.routes.events import _get_campus_id
+            campus_id = _get_campus_id()
+            if not campus_id:
+                # Same refusal /delivery/hostels and /delivery/gates already give.
+                # Without a campus there is no radius to check and no gate pool to
+                # pick from, and create_order refuses such an order anyway — so a
+                # quote priced off some other campus's gate would only mislead.
+                return jsonify({
+                    "error": "Please select a campus to continue",
+                    "code": "CAMPUS_SELECTION_REQUIRED",
+                }), 400
             if not is_within_delivery_area(db, user_lat, user_lon, campus_id):
                 return jsonify({"error": MSG.DELIVERY_OUTSIDE_AREA}), 400
             nearest = find_nearest_gate(db, user_lat, user_lon, campus_id)
@@ -339,13 +401,15 @@ def admin_list_hostels():
     """
     db = get_user_client()
     try:
-        campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+        campus_id = resolve_scoped_campus_id(as_uuid(request.args.get("campus_id")))
         q = db.table("hostels").select("*,gates(name)").order("name")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         hostels = q.execute() or []
-    except Exception:
-        hostels = []
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "admin_list_hostels")
     return jsonify({"hostels": hostels}), 200
 
 
@@ -374,19 +438,22 @@ def admin_create_hostel():
         description: Missing required field
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("delivery_fee",))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     for f in ["name", "delivery_fee"]:
         if data.get(f) is None:
-            return jsonify({"error": f"'{f}' is required"}), 400
+            return jsonify({"error": MSG.FIELD_REQUIRED.format(field=f)}), 400
 
-    if getattr(g, 'user_role', None) == "super_admin":
-        campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "campus_id is required for super_admin"}), 400
-    else:
-        campus_id = getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    campus_id = resolve_write_campus(data.get("campus_id"))
+    if not campus_id:
+        return jsonify({"error": MSG.CAMPUS_ID_REQUIRED}), 400
+    try:
+        if not _valid_hostel_gate(db, data.get("gate_id"), campus_id):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "hostel_gate_lookup")
     record = {
         "name": data["name"],
         "delivery_fee": float(data["delivery_fee"]),
@@ -399,8 +466,8 @@ def admin_create_hostel():
     try:
         result = db.table("hostels").insert(record)
         return jsonify(result[0] if isinstance(result, list) else result), 201
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)
 
 
 @delivery_bp.route("/admin/hostels/<hostel_id>", methods=["PATCH"])
@@ -422,19 +489,30 @@ def admin_update_hostel(hostel_id):
         description: Hostel not found
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("delivery_fee",))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    existing, error = _admin_location(db, "hostels", hostel_id)
+    if error:
+        return error
+    try:
+        if not _valid_hostel_gate(db, data.get("gate_id"), existing.get("campus_id")):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "hostel_gate_lookup")
     allowed = {"name", "gate_id", "delivery_fee", "is_active"}
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
-        return jsonify({"error": "No valid fields to update"}), 400
+        return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     try:
         result = db.table("hostels").eq("id", hostel_id).update(update)
         if not result:
-            return jsonify({"error": "Hostel not found"}), 404
+            return jsonify({"error": MSG.DELIVERY_HOSTEL_NOT_FOUND}), 404
         return jsonify(result[0] if isinstance(result, list) else result), 200
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)
 
 
 @delivery_bp.route("/admin/hostels/<hostel_id>", methods=["DELETE"])
@@ -456,16 +534,19 @@ def admin_delete_hostel(hostel_id):
         description: Hostel not found
     """
     db = get_user_client()
+    existing, error = _admin_location(db, "hostels", hostel_id)
+    if error:
+        return error
     try:
         result = db.table("hostels").eq("id", hostel_id).update({
             "is_active": False,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         if not result:
-            return jsonify({"error": "Hostel not found"}), 404
-        return jsonify({"message": "Hostel deactivated", "hostel_id": hostel_id}), 200
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": MSG.DELIVERY_HOSTEL_NOT_FOUND}), 404
+        return jsonify({"message": MSG.DELIVERY_HOSTEL_HIDDEN, "hostel_id": hostel_id}), 200
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)
 
 
 def _gate_coordinates(lat, lon):
@@ -499,13 +580,15 @@ def admin_list_gates():
     """
     db = get_user_client()
     try:
-        campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+        campus_id = resolve_scoped_campus_id(as_uuid(request.args.get("campus_id")))
         q = db.table("gates").select("*").order("name")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         gates = q.execute() or []
-    except Exception:
-        gates = []
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "admin_list_gates")
     return jsonify({"gates": gates}), 200
 
 
@@ -537,18 +620,16 @@ def admin_create_gate():
         description: Missing required field
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("base_fee", "rate_per_km", "min_fee"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     if not data.get("name"):
-        return jsonify({"error": "'name' is required"}), 400
+        return jsonify({"error": MSG.FIELD_REQUIRED.format(field="name")}), 400
 
-    if getattr(g, 'user_role', None) == "super_admin":
-        campus_id = data.get("campus_id") or getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "campus_id is required for super_admin"}), 400
-    else:
-        campus_id = getattr(g, 'campus_id', None)
-        if not campus_id:
-            return jsonify({"error": "Unable to resolve campus for this request"}), 400
+    campus_id = resolve_write_campus(data.get('campus_id'))
+    if not campus_id:
+        return jsonify({'error': MSG.CAMPUS_ID_REQUIRED}), 400
     try:
         lat, lon = _gate_coordinates(data.get("lat"), data.get("lon"))
     except ValueError as e:
@@ -568,8 +649,8 @@ def admin_create_gate():
     try:
         result = db.table("gates").insert(record)
         return jsonify(result[0] if isinstance(result, list) else result), 201
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)
 
 
 @delivery_bp.route("/admin/gates/<gate_id>", methods=["PATCH"])
@@ -591,24 +672,30 @@ def admin_update_gate(gate_id):
         description: Gate not found
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
+    try:
+        data = _location_fields(request.get_json(force=True, silent=True), ("base_fee", "rate_per_km", "min_fee"))
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    existing, error = _admin_location(db, "gates", gate_id)
+    if error:
+        return error
     allowed = {"name", "lat", "lon", "base_fee", "rate_per_km", "min_fee", "is_active"}
     update = {k: v for k, v in data.items() if k in allowed}
     if not update:
-        return jsonify({"error": "No valid fields to update"}), 400
+        return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
     if "lat" in update or "lon" in update:
         try:
-            update["lat"], update["lon"] = _gate_coordinates(update.get("lat"), update.get("lon"))
+            update["lat"], update["lon"] = _gate_coordinates(update.get("lat", existing.get("lat")), update.get("lon", existing.get("lon")))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     try:
         result = db.table("gates").eq("id", gate_id).update(update)
         if not result:
-            return jsonify({"error": "Gate not found"}), 404
+            return jsonify({"error": MSG.DELIVERY_GATE_NOT_FOUND}), 404
         return jsonify(result[0] if isinstance(result, list) else result), 200
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)
 
 
 @delivery_bp.route("/admin/gates/<gate_id>", methods=["DELETE"])
@@ -630,13 +717,16 @@ def admin_delete_gate(gate_id):
         description: Gate not found
     """
     db = get_user_client()
+    existing, error = _admin_location(db, "gates", gate_id)
+    if error:
+        return error
     try:
         result = db.table("gates").eq("id", gate_id).update({
             "is_active": False,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         if not result:
-            return jsonify({"error": "Gate not found"}), 404
-        return jsonify({"message": "Gate deactivated", "gate_id": gate_id}), 200
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": MSG.DELIVERY_GATE_NOT_FOUND}), 404
+        return jsonify({"message": MSG.DELIVERY_GATE_HIDDEN, "gate_id": gate_id}), 200
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)

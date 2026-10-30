@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Primary meta -->
+    <title>Holy Grills — Grilled Food &amp; Connection in FUTA, Akure</title>
+    <meta name="description" content="Student-built flame grill at FUTA, Akure. Fresh open-flame wings, skewers, plates and buns, shared meals, Squad Orders and evening delivery." />
+    <meta name="theme-color" content="#FF4E2D" />
+    <meta name="author" content="Holy Grills" />
+    <meta name="keywords" content="Holy Grill, FUTA, flame grill, chicken, wings, kebabs, food delivery, student food, campus community, friendship, student connection, Holy Points, rewards, leaderboard" />
+
+    <!-- PWA / mobile web app -->
+    <link rel="manifest" href="/manifest.json" />
+    <!-- iOS home-screen icon must be a real PNG — SVG is ignored and the
+         launcher falls back to a generic tile. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Holy Grills" />
+    <meta name="application-name" content="Holy Grills" />
+
+    <!-- Favicons — PNG (with SVG where supported). Exactly ONE brand icon per
+         purpose: a stale inline data-URI emoji icon used to be declared after
+         the brand icon and, because browsers take the LAST suitable icon, the
+         tab showed a generic flame emoji instead of the brand mark. -->
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+
+    <!-- Canonical -->
+    <link rel="canonical" href="https://holygrills.online/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Holy Grills" />
+    <meta property="og:title" content="Holy Grills — Grilled Food &amp; Connection in FUTA, Akure" />
+    <meta property="og:description" content="Student-built flame grill at FUTA, Akure. Fresh open-flame wings, skewers, plates and buns, shared meals, Squad Orders and evening delivery." />
+    <meta property="og:url" content="https://holygrills.online/" />
+    <meta property="og:image" content="https://holygrills.online/og-cover.jpg" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Holy Grills — Grilled Food &amp; Connection in FUTA, Akure" />
+    <meta name="twitter:description" content="Student-built flame grill at FUTA, Akure. Fresh open-flame wings, skewers, plates and buns, shared meals, Squad Orders and evening delivery." />
+    <meta name="twitter:image" content="https://holygrills.online/og-cover.jpg" />
+
+    <!-- Fonts are self-hosted (S9): @fontsource-variable/nunito is imported by
+         src/main.tsx, so no third-party font origin is contacted on page load.
+         Fraunces was loaded here but never referenced by any style — removed. -->
+    <!-- Performance: preconnect to origins -->
+    <link rel="preconnect" href="https://images.unsplash.com" />
+    <link rel="dns-prefetch" href="https://images.unsplash.com" />
+
+    <!-- Structured data: Restaurant -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Restaurant",
+      "name": "Holy Grills",
+      "description": "Holy Grills is a student built flame grill serving FUTA, Akure. Marinated deep, grilled on real open flame and basted again and again, every plate is made fresh. Order during the day and we deliver in the evening to school gates and on and off campus hostels. Wings, skewers, plates, buns and shareable feasts, with sides picked your way. We started with one grill outside a hostel, and food is still the heart of it. But Holy Grills is really about bringing students together. Start a Squad Order with your people, earn Holy Points every time you show up, and find what's happening on campus. Bring your people. We bring the fire. Faith. Love. Energy. Flavor.",
+      "servesCuisine": ["Grill", "Chicken", "Fast Food"],
+      "priceRange": "₦",
+      "areaServed": "FUTA",
+      "url": "https://holygrills.online/",
+      "logo": "https://holygrills.online/og-cover.jpg",
+      "image": "https://holygrills.online/og-cover.jpg",
+      "acceptsReservations": "False"
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Dev-sandbox guard: run before the app modules execute.
+         If this page is served by the Vite dev server, any service worker left
+         behind by an earlier session is torn down along with its caches. A
+         cache-serving worker in development can serve a stale React bundle
+         alongside a fresh react-dom, which crashes the app on load. -->
+    <script>
+      (function () {
+        try {
+          if (!('serviceWorker' in navigator)) return;
+          // The dev server injects /@vite/client; production builds never have it.
+          if (!document.querySelector('script[src*="/@vite/client"]')) return;
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            return Promise.all(regs.map(function (r) { return r.unregister(); }));
+          }).then(function () {
+            return window.caches ? caches.keys() : [];
+          }).then(function (keys) {
+            return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+          }).catch(function () {});
+        } catch (e) { /* non-fatal */ }
+      })();
+    </script>
+  </body>
+</html>

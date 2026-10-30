@@ -1,0 +1,18 @@
+{
+  "mode": "actual React Menu/Home components; controlled transport only",
+  "first_transient_failure_recovers_without_refresh": true,
+  "one_shared_resource_request_per_attempt": {
+    "sections": 2,
+    "banners": 2,
+    "early-supporters": 2
+  },
+  "return_to_home_keeps_last_good_content_during_outage": true,
+  "reconnect_updates_all_sections": true,
+  "draft_and_document_preserved": true,
+  "successful_cms_edit_invalidates_fresh_content_immediately": true,
+  "genuine_empty_response_removes_old_content": true,
+  "cold_failure_has_working_retry": true,
+  "thirteen_second_read_survives_twenty_second_public_deadline_without_retry": true,
+  "unauthorized_not_automatically_retried": true,
+  "campus_caches_and_late_responses_isolated": true
+}
