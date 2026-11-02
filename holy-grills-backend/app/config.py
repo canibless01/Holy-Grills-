@@ -104,11 +104,10 @@ class Config:
     #
     # flask_cors' try_match() calls pattern.match() for any compiled regex in the
     # origins list, so a pattern covers every preview without opening CORS up.
-    # Turn it off with ALLOW_VERCEL_PREVIEWS=false once you no longer need it.
-    # Off by default: a preview origin is any `holy-grills*.vercel.app` deployment,
-    # which includes every fork and every stale preview URL. Set
-    # ALLOW_VERCEL_PREVIEWS=true while actively testing on previews.
-    ALLOW_VERCEL_PREVIEWS = os.environ.get("ALLOW_VERCEL_PREVIEWS", "false").strip().lower() == "true"
+    # ON by default: preview deployments are where the app is tested, so they must
+    # reach the API. Turn it off with ALLOW_VERCEL_PREVIEWS=false once testing moves
+    # off previews — it covers every fork and stale preview URL, not just yours.
+    ALLOW_VERCEL_PREVIEWS = os.environ.get("ALLOW_VERCEL_PREVIEWS", "true").strip().lower() != "false"
     CORS_ORIGIN_PATTERNS = (
         [re.compile(r"^https://holy-grills[a-z0-9-]*\.vercel\.app$")] if ALLOW_VERCEL_PREVIEWS else []
     )

@@ -110,22 +110,33 @@ class SecurityHeaderTests(unittest.TestCase):
 
 
 class PreviewOriginTests(unittest.TestCase):
-    def test_preview_origins_are_not_allowed_by_default(self):
-        from app.config import Config
-        self.assertFalse(Config.ALLOW_VERCEL_PREVIEWS)
-        self.assertEqual([], list(Config.CORS_ORIGIN_PATTERNS))
+    """Preview deployments are the test surface, so preview origins are allowed.
 
-    def test_the_flag_restores_them_while_testing(self):
+    The switch exists so the pattern can be closed once testing moves off previews —
+    it matches every `holy-grills*.vercel.app` host, including forks.
+    """
+
+    def test_preview_origins_are_allowed_by_default(self):
+        from app.config import Config
+        self.assertTrue(Config.ALLOW_VERCEL_PREVIEWS)
+        self.assertEqual(1, len(Config.CORS_ORIGIN_PATTERNS))
+        pattern = Config.CORS_ORIGIN_PATTERNS[0]
+        self.assertTrue(pattern.match("https://holy-grills-git-main-scope.vercel.app"))
+        self.assertTrue(pattern.match("https://holy-grills-abc123.vercel.app"))
+        self.assertIsNone(pattern.match("https://evil-vercel.app"))
+        self.assertIsNone(pattern.match("https://holygrills.online"))
+
+    def test_the_switch_closes_them(self):
         env = {k: v for k, v in os.environ.items() if k != "ALLOW_VERCEL_PREVIEWS"}
         env.update(SUPA)
-        env["ALLOW_VERCEL_PREVIEWS"] = "true"
+        env["ALLOW_VERCEL_PREVIEWS"] = "false"
         with mock.patch.dict(os.environ, env, clear=True):
             import importlib
 
             import app.config as config_module
             reloaded = importlib.reload(config_module)
-            self.assertTrue(reloaded.Config.ALLOW_VERCEL_PREVIEWS)
-            self.assertEqual(1, len(reloaded.Config.CORS_ORIGIN_PATTERNS))
+            self.assertFalse(reloaded.Config.ALLOW_VERCEL_PREVIEWS)
+            self.assertEqual([], list(reloaded.Config.CORS_ORIGIN_PATTERNS))
         importlib.reload(config_module)
 
 

@@ -300,7 +300,7 @@ reports `error:invalid_url_missing_redis_scheme` when a value is set but unusabl
 | Behaviour | Before | Now |
 |---|---|---|
 | API docs `/api/docs/` | always public | 404 unless `DEBUG`/`TESTING` or `API_DOCS_ENABLED=true` |
-| `ALLOW_VERCEL_PREVIEWS` | default **true** (any `holy-grills*.vercel.app` origin allowed) | default **false**; set `true` only while testing previews |
+| `ALLOW_VERCEL_PREVIEWS` | default **true** — any `holy-grills*.vercel.app` origin allowed | default **true** (previews are the test surface); set `false` to close the pattern |
 | Rate limits | in-process counters — multiplied by worker count, reset on deploy | Redis counters when `REDIS_URL` is set; in-process only as a fallback |
 | `/api/health` detail | raw driver text (`host:port`, credentials in URLs) | failure class only (`unreachable:connection_refused`, `error:timeout`, …); full text in DEBUG |
 | API response headers | none | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, plus HSTS over TLS |
@@ -309,3 +309,28 @@ Rate limits now key on `hg:rl:<endpoint>:<ip-or-user>:<window slot>` in Redis wi
 slightly longer than the window, so every worker and every service share one count. If
 Redis is unreachable the limiter logs once and counts in-process for up to 60 seconds
 before retrying, so an outage degrades accuracy instead of failing open or blocking logins.
+
+### Closing the API docs (Flasgger) on the live API
+
+The switch is **`API_DOCS_ENABLED`**, read by `create_app` in `app/__init__.py`:
+
+| `API_DOCS_ENABLED` | Where | Result |
+|---|---|---|
+| absent, empty, `false` | Railway web service | `/api/docs/`, `/api/docs/apispec.json`, `/api/docs/static/*` all **404** |
+| `true` / `1` / `yes` / `on` | Railway web service | docs served (temporary viewing only) |
+
+`DEBUG`/`TESTING` also opens them, which is why local runs and the test suite still have
+Swagger. To close them on Railway: open the **web** service → Variables → delete
+`API_DOCS_ENABLED` (or set it to `false`) → redeploy. Setting it on worker/beat has no
+effect; they serve no HTTP.
+
+Verify with `GET https://holygrills-production.up.railway.app/api/docs/` → expect 404, and
+`GET /api/health` → expect 200. Reopen only by temporarily setting the variable again.
+
+### Vercel previews and CORS
+
+`ALLOW_VERCEL_PREVIEWS` defaults to **true** so preview deployments (where the app is
+tested) can call the API. The pattern is `^https://holy-grills[a-z0-9-]*\.vercel\.app$`,
+which covers every branch and hash preview of this repo — and, by design, any fork using
+the same project name. Set `ALLOW_VERCEL_PREVIEWS=false` on Railway once testing stops
+using previews.
