@@ -126,7 +126,7 @@ reports.
 | `EMAIL_FROM_NAME` | Email | Defaults `Holy Grills` |
 | `ONESIGNAL_APP_ID` | Web push | Push disabled while empty |
 | `ONESIGNAL_API_KEY` | Web push | Server-side push sends |
-| `REDIS_URL` | Celery `worker` + `beat` (abandoned carts, scheduled jobs, newsletter batches) | Defaults to `redis://localhost:6379/0` — no broker on Render, so those background jobs never run |
+| `REDIS_URL` | Celery `worker` + `beat` (abandoned carts, scheduled jobs, newsletter batches) | Also the fallback broker when `CELERY_BROKER_URL` is unset **or empty**. Defaults to `redis://localhost:6379/0` |
 | `WHATSAPP_SUPPORT_NUMBER` | Support button **fallback only** | Only used when the campus has no `system_settings` row. Per-campus rows in `system_settings.whatsapp_support_number` are the real source |
 | `WHATSAPP_SUPPORT_MESSAGE` | Prefilled chat text, fallback only | same |
 
@@ -232,3 +232,20 @@ GET https://holy-grills-backend.onrender.com/apidocs        # the API list
 
 Then, on the site: log in, place a small order, upload an image in Admin → Storefront, and
 trigger a password reset (to confirm the email links to `holygrill.app`, not localhost).
+
+## Broker URL resolution (Celery worker)
+
+`app/tasks/celery_app.py` resolves the broker as
+`CELERY_BROKER_URL` → `REDIS_URL` → `redis://localhost:6379/0`, ignoring blank or
+whitespace-only values, and the result backend as
+`CELERY_RESULT_BACKEND` → the same URL as the broker.
+
+Blank values are skipped deliberately. `os.environ.get("CELERY_BROKER_URL", default)`
+only uses the default when the variable is *absent*, so a variable created but left
+empty — which is what a platform reference like `${{Redis.REDIS_URL}}` resolves to when
+the service name or variable name does not match — evaluates to `""`. Celery then treats
+the broker as unset and falls back to `amqp://guest@localhost:5672`, and the worker
+fails with `Cannot connect to amqp://guest:**@127.0.0.1:5672//: [Errno 111] Connection
+refused` even though Redis is running. If that error ever reappears, check the worker
+service's own variables: they must be non-empty **on the worker**, not just on the web
+service.

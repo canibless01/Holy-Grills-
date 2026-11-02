@@ -2,10 +2,29 @@ from celery import Celery
 from celery.schedules import crontab
 import os
 
+_FALLBACK_REDIS_URL = "redis://localhost:6379/0"
+
+
+def _redis_url() -> str:
+    """The broker/result URL, never empty.
+
+    `os.environ.get(key, default)` returns "" when the key exists but is empty, and an
+    empty broker URL makes kombu fall back to amqp://guest@localhost:5672 — which is
+    why a blank Railway reference surfaces as "Cannot connect to amqp://guest:**@
+    127.0.0.1:5672" instead of a Redis error. Chain to REDIS_URL, exactly as
+    app/config.py does, so a blank CELERY_BROKER_URL still reaches Redis.
+    """
+    for name in ("CELERY_BROKER_URL", "REDIS_URL"):
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return _FALLBACK_REDIS_URL
+
+
 celery_app = Celery(
     "holy_grills",
-    broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    backend=os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"),
+    broker=_redis_url(),
+    backend=(os.environ.get("CELERY_RESULT_BACKEND") or "").strip() or _redis_url(),
     include=["app.tasks.scheduled"],
 )
 
