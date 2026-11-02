@@ -100,7 +100,7 @@ export function routeFamilies(paths = readRoutePaths()) {
 
 /** Origin of the Flask API, from the same env var the bundle uses. */
 function apiOrigin() {
-  const raw = process.env.VITE_API_BASE_URL || 'https://holy-grills-backend.onrender.com';
+  const raw = process.env.VITE_API_BASE_URL || 'https://holygrills-production.up.railway.app';
   try {
     return new URL(raw).origin;
   } catch {

@@ -76,7 +76,13 @@ def health():
         checks["supabase_auth"] = f"unreachable:{str(exc)[:80]}"
 
     # ── Redis ─────────────────────────────────────────────────────────────────
-    redis_url = os.environ.get("REDIS_URL", "")
+    # Normalised first: redis-py rejects anything without redis:// | rediss:// | unix:
+    # with a long library ValueError, and a bare host:port (what Railway's Connect tab
+    # shows for the public proxy) is the usual cause. Repairing it here means the check
+    # reports whether Redis actually answers, not how the string was pasted.
+    from app.utils.redis_url import normalize_redis_url
+    raw_redis = os.environ.get("REDIS_URL", "")
+    redis_url = normalize_redis_url(raw_redis)
     if redis_url:
         try:
             import redis as _redis
@@ -85,6 +91,9 @@ def health():
             checks["redis"] = MSG.HEALTH_CONNECTED
         except Exception as exc:
             checks["redis"] = f"error:{str(exc)[:80]}"
+    elif raw_redis.strip():
+        # Set, but nothing usable: say so instead of reporting "not configured".
+        checks["redis"] = "error:invalid_url_missing_redis_scheme"
     else:
         checks["redis"] = MSG.HEALTH_NOT_CONFIGURED
 

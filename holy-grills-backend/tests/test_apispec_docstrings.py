@@ -11,6 +11,7 @@ return 200.
 
 import os
 import unittest
+from unittest import mock
 
 for _k, _v in (
     ("SUPABASE_URL", "https://example.supabase.co"),
@@ -39,8 +40,16 @@ def _spec_blocks(doc):
 class TestApiSpecDocstrings(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Production serves no API docs unless the flag is on (see create_app), so the
+        # spec has to be opened deliberately for these tests to exercise it at all.
+        cls._docs_flag = mock.patch.dict(os.environ, {"API_DOCS_ENABLED": "true"})
+        cls._docs_flag.start()
         cls.app = create_app(config_map["production"])
         cls.client = cls.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._docs_flag.stop()
 
     def test_every_docstring_yaml_parses(self):
         """The regression: an orphaned `400:` block in messages.py took the whole
@@ -82,3 +91,36 @@ class TestApiSpecDocstrings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ApiDocsAreClosedByDefaultTests(unittest.TestCase):
+    """The docs map the whole API surface, so production must not serve them.
+
+    Anyone who guesses /api/docs/ would otherwise get every route, admin path and
+    payload example in one page. They open only for DEBUG/TESTING or when
+    API_DOCS_ENABLED is set.
+    """
+
+    def _app_without_flag(self):
+        env = {k: v for k, v in os.environ.items() if k != "API_DOCS_ENABLED"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            return create_app(config_map["production"])
+
+    def test_the_ui_and_the_spec_both_404(self):
+        client = self._app_without_flag().test_client()
+        for path in ("/api/docs/", "/api/docs/apispec.json", "/api/docs/static/swagger-ui.css"):
+            with self.subTest(path=path):
+                self.assertEqual(404, client.get(path).status_code)
+
+    def test_the_flag_opens_them(self):
+        env = {k: v for k, v in os.environ.items() if k != "API_DOCS_ENABLED"}
+        env["API_DOCS_ENABLED"] = "true"
+        with mock.patch.dict(os.environ, env, clear=True):
+            client = create_app(config_map["production"]).test_client()
+        self.assertEqual(200, client.get("/api/docs/apispec.json").status_code)
+
+    def test_debug_alone_is_enough_for_local_work(self):
+        env = {k: v for k, v in os.environ.items() if k != "API_DOCS_ENABLED"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            client = create_app(config_map["development"]).test_client()
+        self.assertEqual(200, client.get("/api/docs/apispec.json").status_code)
