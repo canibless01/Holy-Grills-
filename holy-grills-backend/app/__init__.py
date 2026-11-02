@@ -108,6 +108,26 @@ def create_app(config_class=Config):
         max_age=86400,
     )
 
+    @app.after_request
+    def security_headers(response):
+        """Baseline hardening for every API response.
+
+        The frontend gets these from vercel.json, but the API answered with none of them:
+        a sniffed JSON body could be rendered as HTML, the API could be framed, and
+        referrers leaked path detail between origins. HSTS is only sent over TLS —
+        browsers ignore it on plain http, and sending it from a local run would pin
+        localhost.
+        """
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy",
+                                    "geolocation=(self), camera=(), microphone=()")
+        if request.is_secure:
+            response.headers.setdefault("Strict-Transport-Security",
+                                        "max-age=31536000; includeSubDomains")
+        return response
+
     @app.before_request
     def handle_options_preflight():
         if request.method == "OPTIONS":
