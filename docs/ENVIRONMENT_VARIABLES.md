@@ -179,7 +179,8 @@ Set only if you want to override. Every one of these is read with a default in
 `CALLBACK_WINDOW_MINUTES`, `NEWSLETTER_BATCH_SIZE`, `WINBACK_DAY1/2/3`,
 `ORDERING_WINDOW_OPEN_TIME`, `ORDERING_WINDOW_CLOSE_TIME`, `EXCLUSIVE_SPIN_VALIDITY_DAYS`,
 `EXCLUSIVE_SPIN_TEMPLATE_ITEMS`, `MARKETPLACE_DEFAULT_VENDOR_NAME`,
-`PAYSTACK_SANDBOX_MOCK_NUBAN`, `API_PUBLIC_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+`PAYSTACK_SANDBOX_MOCK_NUBAN`, `API_PUBLIC_URL`, `API_DOCS_ENABLED`,
+`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
 
 ---
 
@@ -190,7 +191,7 @@ Vercel environment behaves like the current deployment.
 
 | Variable | Fallback in code | Purpose |
 |---|---|---|
-| `VITE_API_BASE_URL` | `https://holy-grills-backend.onrender.com/api` | API origin |
+| `VITE_API_BASE_URL` | `https://holygrills-production.up.railway.app/api` | API origin (Railway) |
 | `VITE_SITE_URL` | `https://holygrill.app` | Canonical URLs, `og:url`, JSON-LD |
 | `VITE_ASSET_CDN_URL` | `https://media.base44.com/images/public` | Mascots / logos |
 | `VITE_ONESIGNAL_APP_ID` | *(empty → push disabled)* | Web push |
@@ -220,14 +221,14 @@ RESEND_API_KEY=re_...
 EMAIL_FROM=noreply@holygrills.ng
 PAYSTACK_SECRET_KEY=sk_live_...
 PAYSTACK_PUBLIC_KEY=pk_live_...
-REDIS_URL=<Render Redis internal URL>
+REDIS_URL=<Railway Redis internal URL>
 ```
 
 ## 7. Verify
 
 ```
-GET https://holy-grills-backend.onrender.com/api/health     # or any documented route
-GET https://holy-grills-backend.onrender.com/apidocs        # the API list
+GET https://holygrills-production.up.railway.app/api/health          # the deployment is up
+GET https://holygrills-production.up.railway.app/api/docs/           # 404 in production unless API_DOCS_ENABLED=true
 ```
 
 Then, on the site: log in, place a small order, upload an image in Admin → Storefront, and
@@ -249,3 +250,28 @@ fails with `Cannot connect to amqp://guest:**@127.0.0.1:5672//: [Errno 111] Conn
 refused` even though Redis is running. If that error ever reappears, check the worker
 service's own variables: they must be non-empty **on the worker**, not just on the web
 service.
+
+## 8. Backend-host values after the Render → Railway move
+
+The frontend origin (`https://holygrills.online`) did not change; only the API moved.
+Anything that names the **backend** must use the Railway origin:
+
+| Where | Value |
+|---|---|
+| Vercel `VITE_API_BASE_URL` | `https://holygrills-production.up.railway.app/api` |
+| Backend `API_PUBLIC_URL` | `https://holygrills-production.up.railway.app/api` |
+| Paystack webhook URL | `https://holygrills-production.up.railway.app/api/webhooks/paystack` |
+| Backend `FRONTEND_URL` | `https://holygrills.online` (unchanged — links point at the site) |
+| Supabase Auth Site URL / redirects | `https://holygrills.online` (unchanged — auth is frontend) |
+| OneSignal site origin, Google Maps referrer | `https://holygrills.online` (unchanged) |
+
+`API_PUBLIC_URL` is what email open-tracking pixels, click-tracking redirects and the
+newsletter one-click unsubscribe header are built from. Its in-code default is the Railway
+URL; set it explicitly so a future host move cannot quietly break tracking.
+
+### API docs are closed in production
+
+`/api/docs/` (Flasgger) publishes every route, admin path and payload example on one page.
+`create_app` now registers it only when `DEBUG`/`TESTING` is on or `API_DOCS_ENABLED` is
+`true`; otherwise `/api/docs/`, `/api/docs/apispec.json` and `/api/docs/static/*` all 404.
+Set `API_DOCS_ENABLED=true` temporarily on a staging service if you need to browse them.

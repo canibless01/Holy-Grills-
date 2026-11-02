@@ -1,7 +1,7 @@
 // HolyGrill Live API — drop-in replacement for mockApi that calls the real backend.
 // Every method mirrors mockApi's signature so components only change their import.
 // Base URL + JWT token handling live in ./apiClient. Verified against the live
-// backend at https://holy-grills-backend.onrender.com/api (Aug 2026).
+// backend at https://holygrills-production.up.railway.app/api (Railway, Nov 2026).
 import { apiClient, ApiError, login as apiLogin, clearTokens, setTokens, isAuthenticated, getToken, API_BASE_URL } from './apiClient';
 import { getOrderCustomer } from './hgUtils';
 import { hpTierName } from './valueText';

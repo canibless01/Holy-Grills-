@@ -115,44 +115,57 @@ def create_app(config_class=Config):
             response.status_code = 204
             return response
 
-    swagger_config = {
-        "headers": [],
-        "specs": [
-            {
-                "endpoint": "apispec",
-                "route": "/api/docs/apispec.json",
-                "rule_filter": lambda rule: True,
-                "model_filter": lambda tag: True,
-            }
-        ],
-        "static_url_path": "/api/docs/static",
-        "swagger_ui": True,
-        "specs_route": "/api/docs/",
-    }
+    # ── API documentation is staff-only ───────────────────────────────────────
+    # /api/docs/ publishes every route, parameter, example and admin path in one
+    # page. Nobody needs that at runtime, and serving it hands a stranger a map of
+    # the whole surface, so it is off in production unless explicitly switched on.
+    # Local development and the test suite keep it: DEBUG/TESTING alone opens it.
     import os as _os
-    _app_name = _os.environ.get("APP_NAME", "Holy Grills")
-    swagger_template = {
-        "swagger": "2.0",
-        "info": {
-            "title": f"{_app_name} API",
-            "description": f"Backend API for the {_app_name} platform — HP economy, food ordering, marketplace, events, wallet, and admin operations.",
-            "version": "1.0.0",
-            "contact": {"email": _os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")},
-        },
-        "securityDefinitions": {
-            "BearerAuth": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "Authorization",
-                "description": "JWT Bearer token. Format: 'Bearer <token>'",
-            }
-        },
-        "security": [{"BearerAuth": []}],
-        "basePath": "/api",
-        "consumes": ["application/json"],
-        "produces": ["application/json"],
-    }
-    Swagger(app, config=swagger_config, template=swagger_template)
+    _docs_flag = (_os.environ.get("API_DOCS_ENABLED") or "").strip().lower()
+    _docs_open = bool(
+        app.config.get("DEBUG") or app.config.get("TESTING")
+        or _docs_flag in ("1", "true", "yes", "on")
+    )
+    if _docs_open:
+        _app_name = _os.environ.get("APP_NAME", "Holy Grills")
+        swagger_config = {
+            "headers": [],
+            "specs": [
+                {
+                    "endpoint": "apispec",
+                    "route": "/api/docs/apispec.json",
+                    "rule_filter": lambda rule: True,
+                    "model_filter": lambda tag: True,
+                }
+            ],
+            "static_url_path": "/api/docs/static",
+            "swagger_ui": True,
+            "specs_route": "/api/docs/",
+        }
+        swagger_template = {
+            "swagger": "2.0",
+            "info": {
+                "title": f"{_app_name} API",
+                "description": f"Backend API for the {_app_name} platform — HP economy, food ordering, marketplace, events, wallet, and admin operations.",
+                "version": "1.0.0",
+                "contact": {"email": _os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")},
+            },
+            "securityDefinitions": {
+                "BearerAuth": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "Authorization",
+                    "description": "JWT Bearer token. Format: 'Bearer <token>'",
+                }
+            },
+            "security": [{"BearerAuth": []}],
+            "basePath": "/api",
+            "consumes": ["application/json"],
+            "produces": ["application/json"],
+        }
+        Swagger(app, config=swagger_config, template=swagger_template)
+    else:
+        app.logger.info("API docs disabled (set API_DOCS_ENABLED=true to expose /api/docs/)")
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(users_bp, url_prefix="/api/users")

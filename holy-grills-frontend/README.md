@@ -25,7 +25,7 @@ npm run dev
 
 This frontend currently uses two backend connections:
 
-- Its Flask REST API calls target `https://holy-grills-backend.onrender.com/api`, configured in `src/lib/apiClient.js`.
+- Its Flask REST API calls target `https://holygrills-production.up.railway.app/api`, configured in `src/lib/apiClient.ts`.
 - Account and authentication operations use the Base44 client; configure the Base44 environment values below in Vercel.
 
 ## Deploy this frontend on Vercel

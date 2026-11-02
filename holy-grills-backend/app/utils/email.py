@@ -21,7 +21,7 @@ RESEND_BASE = "https://api.resend.com"
 
 def public_api_base():
     """Accept a backend origin or its /api URL consistently across email links."""
-    base = (os.environ.get('API_PUBLIC_URL') or 'https://holygrills.online/api').rstrip('/')
+    base = (os.environ.get('API_PUBLIC_URL') or 'https://holygrills-production.up.railway.app/api').rstrip('/')
     return base if base.endswith('/api') else base + '/api'
 
 # Fixed two-line brand sign-off used by every transactional/rich/ticket email.
