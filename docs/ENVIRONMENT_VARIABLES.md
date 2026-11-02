@@ -126,7 +126,7 @@ reports.
 | `EMAIL_FROM_NAME` | Email | Defaults `Holy Grills` |
 | `ONESIGNAL_APP_ID` | Web push | Push disabled while empty |
 | `ONESIGNAL_API_KEY` | Web push | Server-side push sends |
-| `REDIS_URL` | Celery `worker` + `beat` (abandoned carts, scheduled jobs, newsletter batches) | Also the fallback broker when `CELERY_BROKER_URL` is unset **or empty**. Defaults to `redis://localhost:6379/0` |
+| `REDIS_URL` | Celery `worker` + `beat` (abandoned carts, scheduled jobs, newsletter batches) | Must include a scheme. Also the fallback broker when `CELERY_BROKER_URL` is unset **or empty**. Defaults to `redis://localhost:6379/0` |
 | `WHATSAPP_SUPPORT_NUMBER` | Support button **fallback only** | Only used when the campus has no `system_settings` row. Per-campus rows in `system_settings.whatsapp_support_number` are the real source |
 | `WHATSAPP_SUPPORT_MESSAGE` | Prefilled chat text, fallback only | same |
 
@@ -275,3 +275,22 @@ URL; set it explicitly so a future host move cannot quietly break tracking.
 `create_app` now registers it only when `DEBUG`/`TESTING` is on or `API_DOCS_ENABLED` is
 `true`; otherwise `/api/docs/`, `/api/docs/apispec.json` and `/api/docs/static/*` all 404.
 Set `API_DOCS_ENABLED=true` temporarily on a staging service if you need to browse them.
+
+### Redis URL formats accepted
+
+`REDIS_URL` is passed through `normalize_redis_url()` (`app/utils/redis_url.py`) before
+anything uses it, because dashboard pastes are not always connection strings:
+
+| You paste | It becomes |
+|---|---|
+| `redis://host:6379/0`, `rediss://…`, `unix://…` | unchanged |
+| `host:6379` (Railway Connect tab, public proxy) | `redis://host:6379` |
+| `http://host:6379` / `https://host:6379` | `redis://…` / `rediss://…` |
+| `amqp://…` or any other scheme | rejected for Redis, passed through for Celery |
+| empty / whitespace / `""` | treated as not configured |
+
+Without the scheme, redis-py raises `Redis URL must specify one of the following schemes
+(redis://, rediss://, unix:/` and `/api/health` reported that as `error:…`. It now
+reports `error:invalid_url_missing_redis_scheme` when a value is set but unusable, and
+`not_configured` when it is absent. Inside Railway, prefer the private URL
+(`redis://…@redis.railway.internal:6379`) so traffic never leaves the project.

@@ -2,6 +2,7 @@ import os
 import re
 
 from dotenv import load_dotenv
+from app.utils.redis_url import normalize_broker_url, normalize_redis_url
 
 from app.constants import APP_TAGLINE_DEFAULT
 
@@ -136,9 +137,16 @@ class Config:
     ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID", "")
     ONESIGNAL_API_KEY = os.environ.get("ONESIGNAL_API_KEY", "")
 
-    REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    # Normalised so a dashboards' bare host:port works and a misconfigured value
+    # degrades to "" instead of an opaque redis-py/kombu error at first use.
+    REDIS_URL = (normalize_redis_url(os.environ.get("REDIS_URL"))
+                 or "redis://localhost:6379/0")
+    CELERY_BROKER_URL = (normalize_broker_url(os.environ.get("CELERY_BROKER_URL"))
+                         or normalize_redis_url(os.environ.get("REDIS_URL"))
+                         or "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND = (normalize_redis_url(os.environ.get("CELERY_RESULT_BACKEND"))
+                             or normalize_redis_url(os.environ.get("REDIS_URL"))
+                             or "redis://localhost:6379/0")
 
     # ── Registration / validation ──────────────────────────────────────────────
     MINIMUM_AGE = int(os.environ.get("MINIMUM_AGE", "16"))
