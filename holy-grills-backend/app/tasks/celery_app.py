@@ -28,6 +28,12 @@ celery_app = Celery(
     include=["app.tasks.scheduled"],
 )
 
+# Celery 6.0 stops honouring broker_connection_retry for startup retries and warns
+# (CPendingDeprecationWarning) unless this is set explicitly. Retrying on startup is
+# what we want: the worker on Railway often starts before Redis is reachable, and a
+# refused first connection must not kill the process.
+celery_app.conf.broker_connection_retry_on_startup = True
+
 class ContextTask(celery_app.Task):
     def __call__(self, *args, **kwargs):
         from app import create_app
