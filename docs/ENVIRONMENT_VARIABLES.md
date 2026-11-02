@@ -294,3 +294,18 @@ Without the scheme, redis-py raises `Redis URL must specify one of the following
 reports `error:invalid_url_missing_redis_scheme` when a value is set but unusable, and
 `not_configured` when it is absent. Inside Railway, prefer the private URL
 (`redis://…@redis.railway.internal:6379`) so traffic never leaves the project.
+
+## 9. Launch hardening defaults
+
+| Behaviour | Before | Now |
+|---|---|---|
+| API docs `/api/docs/` | always public | 404 unless `DEBUG`/`TESTING` or `API_DOCS_ENABLED=true` |
+| `ALLOW_VERCEL_PREVIEWS` | default **true** (any `holy-grills*.vercel.app` origin allowed) | default **false**; set `true` only while testing previews |
+| Rate limits | in-process counters — multiplied by worker count, reset on deploy | Redis counters when `REDIS_URL` is set; in-process only as a fallback |
+| `/api/health` detail | raw driver text (`host:port`, credentials in URLs) | failure class only (`unreachable:connection_refused`, `error:timeout`, …); full text in DEBUG |
+| API response headers | none | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, plus HSTS over TLS |
+
+Rate limits now key on `hg:rl:<endpoint>:<ip-or-user>:<window slot>` in Redis with a TTL
+slightly longer than the window, so every worker and every service share one count. If
+Redis is unreachable the limiter logs once and counts in-process for up to 60 seconds
+before retrying, so an outage degrades accuracy instead of failing open or blocking logins.
