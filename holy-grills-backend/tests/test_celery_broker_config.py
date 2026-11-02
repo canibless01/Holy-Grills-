@@ -55,5 +55,18 @@ class BrokerResolutionTests(unittest.TestCase):
         importlib.reload(module)   # leave the module as the rest of the suite expects it
 
 
+class RetryOnStartupTests(unittest.TestCase):
+    """Celery 6.0 stops honouring broker_connection_retry for startup retries.
+
+    Setting this explicitly is what silences the CPendingDeprecationWarning, and it is
+    also the behaviour we want: the worker usually starts before Redis is reachable, so
+    a refused first connection must be retried rather than ending the process.
+    """
+
+    def test_startup_retries_are_enabled(self):
+        from app.tasks.celery_app import celery_app
+        self.assertTrue(celery_app.conf.broker_connection_retry_on_startup)
+
+
 if __name__ == "__main__":
     unittest.main()
