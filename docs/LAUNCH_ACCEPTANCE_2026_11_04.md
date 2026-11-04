@@ -64,3 +64,12 @@ The owner acknowledged the requested check; that is not yet confirmation of inbo
 ## Validation and data cleanliness
 
 Backend suite: **980 passed**. Frontend TypeScript and full client/SSR/prerender production build passed, including message and QR checks. Twenty database transaction scripts passed. All acceptance/event fixture profiles were checked absent afterward. No test accounts, orders, balances, event tickets, check-ins or rewards were retained; no provider charge, refund or broadcast was made. The only requested outbound action was the owner's password-reset test. Schema/source fixes are permanent; test data is not.
+
+
+## Post-push deployment recheck and owner response
+
+At 21:46 WAT the newest cron receipt was still 21:15 WAT (31 minutes old). This supersedes any inference that earlier successful runs prove present worker health. GitHub deployment checks reported the `8d51b3e` worker **failed**, although its API and beat succeeded. The newer `1002f59` worker deployment reported success, with API/beat still pending at that observation; fresh job completion is not yet proven. Railway logs are required to identify the worker failure's cause. No Railway management/token or direct Redis credential is connected here.
+
+The checked-in Procfile had an explicit `--concurrency=2`, overriding the configuration's one-process default. Removed that override so `CELERY_WORKER_CONCURRENCY` (default 1) controls the checked-in worker command. An independently configured Railway Start Command can still override it and must be checked.
+
+The owner reports **no reset email received**. Supabase's accepted response/recovery timestamp establishes a send attempt, not inbox receipt. SMTP delivery, filtering and hosted template configuration remain unresolved.
