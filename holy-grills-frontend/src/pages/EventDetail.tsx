@@ -235,12 +235,11 @@ export default function EventDetail() {
       {checkinResult && (
         <div className="rounded-2xl bg-success/10 border border-success/20 p-4 text-center animate-count-up">
           <div className="text-4xl mb-2">✅</div>
-          <h3 className="font-heading font-bold text-lg text-success">Check-in Successful!</h3>
+          <h3 className="font-heading font-bold text-lg text-success">{checkinResult.replayed ? msg('FE_EVENT_CHECKIN_REPLAY', 'Your check-in is already confirmed') : 'Check-in Successful!'}</h3>
           <div className="flex items-center justify-center gap-1 mt-2">
             <Flame className="w-5 h-5 text-primary" />
-            <span className="font-bold text-primary text-sm">{msg('FE_EVENT_ACTIVE_HP', '+{amount} HP added to your active balance', { amount: checkinResult.hp_added_to_active })}</span>
+            <span className="font-bold text-primary text-sm">{checkinResult.replayed ? msg('FE_EVENT_HP_RECEIPT', '{amount} HP recorded for this check-in', { amount: checkinResult.hp_added_to_active }) : msg('FE_EVENT_ACTIVE_HP', '+{amount} HP added to your active balance', { amount: checkinResult.hp_added_to_active })}</span>
           </div>
-          <p className="text-xs text-success mt-1">HP unlocks once your next order is delivered</p>
         </div>
       )}
 

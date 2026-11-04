@@ -1,3 +1,5 @@
+> 4 November update: the event admission/HP/monthly-counter/event-milestone transaction is now implemented and applied. See [current acceptance evidence and remaining limits](LAUNCH_ACCEPTANCE_2026_11_04.md). The investigation below is historical, not the current implementation status.
+
 # Event check-in HP recovery — implementation checkpoint
 
 Status: **investigated, not implemented or verified**. Saved against main `cbdb1ca` on 15 October 2026 so the next session can continue without treating this area as complete. No event migration was applied, no event source changed, and no event fixtures or balances were modified by this investigation.

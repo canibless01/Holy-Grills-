@@ -124,5 +124,6 @@ def health():
         "status": overall,
         "api": current_app.config.get("APP_NAME", "Holy Grills"),
         "version": MSG.API_VERSION,
+        "revision": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("RENDER_GIT_COMMIT"),
         "checks": checks,
     }), 200

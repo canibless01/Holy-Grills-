@@ -12,6 +12,8 @@ from app.utils.logger import get_logger
 from app.utils.tz import today_wat
 from app.utils.settings import get_validated_setting
 from app.messages import MSG
+import os
+import socket
 
 logger = get_logger(__name__)
 
@@ -26,7 +28,9 @@ def _log_cron_execution(job_name: str, status: str, result: dict = None, error: 
             "entity_type": "cron_jobs",
             "entity_id": job_name,
             "action": f"scheduled_execution_{status}",
-            "after_value": {"status": status, "result": result, "error": error},
+            "after_value": {"status": status, "result": result, "error": error,
+                            "revision": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("RENDER_GIT_COMMIT"),
+                            "worker_node": socket.gethostname()},
         }).execute()
     except Exception as e:
         logger.warning("_log_cron_execution failed for %s: %s", job_name, e)

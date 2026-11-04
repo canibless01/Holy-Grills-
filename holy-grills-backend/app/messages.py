@@ -414,6 +414,8 @@ class MSG:
     FE_BLAST_LINK = "Destination path (optional)"
     FE_ONBOARDING_ENABLE_GIFT = "Enable first-order gift"
     FE_EVENT_ACTIVE_HP = "+{amount} HP added to your active balance"
+    FE_EVENT_CHECKIN_REPLAY = "Your check-in is already confirmed"
+    FE_EVENT_HP_RECEIPT = "{amount} HP recorded for this check-in"
 
     CHECKOUT_REWARD_UNAVAILABLE = 'This reward is no longer available for this order. Choose another reward or save rewards for later.'
     CHECKOUT_MONTHLY_DELIVERY_NAME = 'Monthly free delivery'

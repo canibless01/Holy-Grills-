@@ -71,7 +71,7 @@ class PlatformBoundaryTests(unittest.TestCase):
                  'event_door_tokens': [{'event_id': EVENT, 'qr_token': 'door'}],
                  'event_tickets': [{'id': TICKET, 'event_id': EVENT, 'user_id': USER, 'status': 'confirmed', 'payment_status': 'paid'}],
                  'event_checkins': [{'id': B, 'ticket_id': TICKET}]})
-        with self.app.test_request_context(method='POST', json={'qr_token': 'door', 'ticket_id': TICKET}), patch.object(events, 'get_user_client', return_value=db), patch.object(events, 'get_db', return_value=db), patch.object(events, 'award_active_hp', return_value={'awarded': 50, 'replayed': False}) as award, patch('app.services.milestone_service.check_milestone_trigger'):
+        with self.app.test_request_context(method='POST', json={'qr_token': 'door', 'ticket_id': TICKET}), patch.object(events, 'get_user_client', return_value=db), patch.object(events, 'get_db', return_value=db), patch.object(events, 'admit_event_ticket', return_value={'hp_added_to_active':50,'hp_added_to_pending':0,'recovered':True}) as admit, patch('app.services.milestone_service.check_milestone_trigger'):
             self.identity()
             response, status = events.checkin.__wrapped__(EVENT)
             self.assertEqual(status, 200)
@@ -79,7 +79,7 @@ class PlatformBoundaryTests(unittest.TestCase):
             self.assertEqual(response.json['hp_added_to_active'], 50)
             self.assertEqual(response.json['hp_added_to_pending'], 0)
             self.assertEqual(db.writes, [])
-            self.assertEqual(award.call_args.kwargs['reference_id'], EVENT)
+            self.assertEqual(admit.call_args.args[:2],(EVENT,TICKET))
     def test_calendar_explicit_global_selection_beats_super_admin_header_only(self):
         payload = {'name': 'Audit term', 'period_type': 'semester', 'academic_year': '2026/2027', 'start_date': '2026-10-14', 'end_date': '2026-10-15', 'campus_id': None}
         for role, expected in [('super_admin', None), ('admin', A)]:

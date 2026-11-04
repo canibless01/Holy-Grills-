@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g, current_app, abort
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.middleware.rate_limit import rate_limit
 from app.utils.email import send_qr_ticket_email
-from app.services.hp_service import award_active_hp
+from app.services.event_admission import admit_event_ticket
 from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
 from app.messages import MSG
 from app.utils.settings import setting_or_config
@@ -267,85 +267,18 @@ def checkin(event_id):
         if ticket.get("qr_expires_at") and datetime.fromisoformat(ticket["qr_expires_at"].replace("Z", "+00:00")) <= datetime.now(timezone.utc):
             return jsonify({"error": MSG.EVENT_TICKET_NOT_ADMISSIBLE}), 409
 
-        # Check existing check-in
-        existing_checkin = get_db().table("event_checkins").select("id").eq("ticket_id", ticket_id_str).execute() or []
-        recovering = bool(existing_checkin)
-
-        # Insert check-in record - B-6: use service client for the insert only, after validation
-        checked_by = getattr(g, "user_id", None)
-        try:
-            if not recovering:
-                get_db().table("event_checkins").insert({
-                    "ticket_id": ticket_id_str,
-                    "checked_in_by": checked_by,
-                    "qr_code": clean_token or ticket_id_str,
-                    "campus_id": event.get("campus_id"),
-                }).execute()
-        except SupabaseError as insert_err:
-            err_str = str(insert_err)
-            if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                recovering = True
-            else:
-                raise
-
-        # A guest-supplied email is contact data, not proof of account ownership.
-        # Credit only the attendee already bound to the validated ticket. Guest
-        # account linking requires a separate authenticated ownership flow.
+        receipt = admit_event_ticket(event_id, ticket_id_str, getattr(g, "user_id", None),
+                                     clean_token, getattr(g, "campus_id", None))
         target_user_id = ticket.get("user_id")
         if target_user_id:
-            event = db.table("events").select("hp_reward,hp_per_attendee,title,campus_id").eq("id", event_id).single().execute()
-            # Fallback HP for an event that sets no reward of its own: the seeded
-            # setting decides, env is the floor — so the admin UI row is real.
-            default_checkin_hp = setting_or_config(
-                db, "event_checkin_hp", current_app.config.get("EVENT_CHECKIN_HP", 50),
-                minimum=0, maximum=10000,
-            )
-            hp_amount = event.get("hp_per_attendee") if event else None
-            if hp_amount is None:
-                hp_amount = event.get("hp_reward") if event else None
-            if hp_amount is None:
-                hp_amount = default_checkin_hp
-
-            prior_reward = get_db().table("hp_transactions").select("id").eq("user_id", target_user_id).eq("reference_type", "event").eq("reference_id", event_id).limit(1).execute() or []
-            if recovering and (hp_amount <= 0 or prior_reward):
-                return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
-            hp_result = award_active_hp(
-                user_id=target_user_id,
-                amount=hp_amount,
-                source_type="event", reference_type="event",
-                reference_id=event_id,
-                campus_id=event.get("campus_id"),
-                notes=f"Event check-in HP: {event.get('title', '') if event else ''}",
-            ) if hp_amount > 0 else {"awarded": 0}
-            if recovering and hp_result.get("replayed"):
-                return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
-
-            try:
-                from app.services.milestone_service import check_milestone_trigger
-                check_milestone_trigger(target_user_id, "first_event", 1)
-                check_milestone_trigger(target_user_id, "event_checkins", 1)
-            except Exception as exc:
-                # The HP was credited; only the badge trigger was lost. Record who to re-run for.
-                logger.warning("checkin: milestone trigger failed for %s (event %s): %s",
-                               target_user_id, event_id, exc)
-
-            msg_text = MSG.EVENT_CHECKIN_SUCCESS
-            return jsonify({
-                "message": msg_text,
-                "hp_added_to_pending": 0,
-                "hp_added_to_active": hp_result.get("awarded", 0),
-                "recovered": recovering,
-            }), 200
-
-        # Still guest without account
-        if recovering:
-            return jsonify({"error": MSG.TICKET_ALREADY_CHECKED_IN}), 400
-        return jsonify({
-            "message": MSG.EVENT_CHECKIN_SUCCESS,
-            "hp_added_to_pending": 0,
-            "is_guest": True,
-            "prompt_create_account": MSG.GUEST_ACCOUNT_PROMPT,
-        }), 200
+            from app.services.milestone_service import notify_milestone_achieved
+            for milestone in receipt.get("milestone_receipts", []):
+                notify_milestone_achieved(target_user_id, milestone["milestone_id"],
+                                          hp_awarded=milestone["hp_awarded"])
+        response = {**receipt, "message": MSG.EVENT_CHECKIN_SUCCESS}
+        if receipt.get("is_guest"):
+            response["prompt_create_account"] = MSG.GUEST_ACCOUNT_PROMPT
+        return jsonify(response), 200
 
     except Exception as e:
         logger.error("checkin failed for event %s: %s", event_id, e)

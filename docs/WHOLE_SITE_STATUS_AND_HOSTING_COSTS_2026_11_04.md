@@ -66,3 +66,6 @@ These are local startup measurements, not observed Railway billing savings. Task
 ## Verification for this change
 
 974 backend tests passed, including four new background-context/import checks. Frontend TypeScript check and the complete client/SSR/prerender production build passed, including the new direct Google review-link tests. `git diff --check` passed. No production test data is retained by these code checks.
+
+
+Follow-through on the owner's detailed checklist: [4 November acceptance run](LAUNCH_ACCEPTANCE_2026_11_04.md), including 20 real rollback scripts, the enabled-event transaction fix and explicit remaining coverage.

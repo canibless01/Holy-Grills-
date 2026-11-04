@@ -1,4 +1,5 @@
 -- Real order admission/debits at capacity two, followed by deferred move-up.
+-- The move-up fixture keeps delivery open until end-of-day so evening runs do not test an already-closed delivery window.
 -- No provider calls; isolated existing audit identity and fully rolled-back fixtures.
 BEGIN;
 SET LOCAL request.jwt.claims='{"role":"service_role"}';
@@ -18,7 +19,7 @@ BEGIN
  UPDATE public.wallets SET balance=5000 WHERE user_id=u;
  INSERT INTO public.kitchen_settings(campus_id,key,value) VALUES(c,'daily_order_capacity','2');
  INSERT INTO public.delivery_windows(id,label,opens_at,closes_at,campus_id)
- VALUES(d1,'[AUDIT rollback] Today','19:00','20:00',c),(d2,'[AUDIT rollback] Tomorrow','19:00','20:00',c);
+ VALUES(d1,'[AUDIT rollback] Today','19:00','23:59:59',c),(d2,'[AUDIT rollback] Tomorrow','19:00','20:00',c);
  INSERT INTO public.ordering_windows(id,campus_id,date,opens_at,closes_at,capacity,linked_delivery_window_id)
  VALUES(w1,c,today,'00:00','23:59:59',2,d1),(w2,c,today+1,'00:00','23:59:59',2,d2);
  INSERT INTO public.menu_categories(id,name,slug,campus_id) VALUES(category,'[AUDIT rollback] Capacity','audit-cap-'||category,c);
@@ -53,7 +54,7 @@ BEGIN
  UPDATE public.kitchen_settings SET value='3' WHERE campus_id=c AND key='daily_order_capacity';
  receipts:=public.hg_move_deferred_orders_atomic(actor,w1,today);
  IF jsonb_array_length(receipts)<>1 OR (receipts->0->>'id')::uuid IS DISTINCT FROM deferred
- OR receipts->0->>'deliv_start'<>'19:00' OR receipts->0->>'deliv_end'<>'20:00'
+ OR receipts->0->>'deliv_start'<>'19:00' OR receipts->0->>'deliv_end'<>'23:59'
  OR (SELECT (scheduled_for AT TIME ZONE 'Africa/Lagos')::date FROM public.orders WHERE id=deferred)<>today
  OR (SELECT delivery_window_id FROM public.orders WHERE id=deferred) IS DISTINCT FROM d1
  OR (SELECT capacity_deferred FROM public.orders WHERE id=deferred)

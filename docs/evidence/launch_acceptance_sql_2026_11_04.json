@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-04",
+  "timezone": "Africa/Lagos",
+  "execution": "Live database transactions; all fixture changes rolled back; no provider charges or dispatch.",
+  "checks": [
+    {
+      "script": "multi_gift_campaign_checkout.sql",
+      "passed": true
+    },
+    {
+      "script": "late_payment_and_refund_conservation.sql",
+      "passed": true
+    },
+    {
+      "script": "physical_reward_delivery_refund.sql",
+      "passed": true
+    },
+    {
+      "script": "earned_reward_promises.sql",
+      "passed": true
+    },
+    {
+      "script": "delivery_reward_financial_recovery.sql",
+      "passed": true
+    },
+    {
+      "script": "ambassador_checkout.sql",
+      "passed": true
+    },
+    {
+      "script": "ambassador_role_boundaries.sql",
+      "passed": true
+    },
+    {
+      "script": "order_streak_atomic_recovery.sql",
+      "passed": true
+    },
+    {
+      "script": "rider_settlement_records.sql",
+      "passed": true
+    },
+    {
+      "script": "kitchen_stock_availability.sql",
+      "passed": true
+    },
+    {
+      "script": "admin_academic_role_loop.sql",
+      "passed": true
+    },
+    {
+      "script": "admin_calendar_consumer_loop.sql",
+      "passed": true
+    },
+    {
+      "script": "admin_delivery_area_scope.sql",
+      "passed": true
+    },
+    {
+      "script": "admin_delivery_location_loop.sql",
+      "passed": true
+    },
+    {
+      "script": "admin_feature_flag_global_scope.sql",
+      "passed": true
+    },
+    {
+      "script": "backend_financial_helper_privileges.sql",
+      "passed": true
+    },
+    {
+      "script": "capacity_two_order_admission.sql",
+      "passed": true
+    },
+    {
+      "script": "kitchen_handoff_and_due_day.sql",
+      "passed": true
+    },
+    {
+      "script": "batch_delivery_date_isolation.sql",
+      "passed": true
+    },
+    {
+      "script": "event_admission_atomic_rollback.sql",
+      "passed": true
+    }
+  ]
+}
