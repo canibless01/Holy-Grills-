@@ -1,3 +1,4 @@
+import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -16,6 +17,7 @@ import { msg } from '@/lib/messages';
 
 export default function ItemDetail() {
   const { id } = useParams();
+  const { campusId } = useCampus();
   const navigate = useNavigate();
   const { addToCart, toggleSavedItem, isSavedItem, isAuthenticated: isAuthed } = useHolyGrill();
   const { play } = useSound();
@@ -35,11 +37,11 @@ export default function ItemDetail() {
       setLoading(true);
       setError(null);
       try {
-        const detail = await mockApi.menu.getItem(id);
+        const [detail, addons] = await Promise.all([
+          mockApi.menu.getItem(id, { campus_id: campusId }, 15000),
+          mockApi.menu.getAddons(id, { campus_id: campusId }, 15000).catch(() => ({ addon_groups: [] })),
+        ]);
         setItem(detail);
-        // Addons are optional — a failure here must NOT block the item page
-        // from rendering (this was the cause of the persistent "retry" screen).
-        const addons = await mockApi.menu.getAddons(id).catch(() => ({ addon_groups: [] }));
         setAddonGroups(addons.addon_groups || []);
         const init = {};
         (detail.variation_groups || []).forEach((vg) => { init[vg.id] = []; });
@@ -52,7 +54,7 @@ export default function ItemDetail() {
       setLoading(false);
     };
     load();
-  }, [id, retryCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, retryCount, campusId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleVariation = (groupId, optionId, maxSelections) => {
     setSelections((prev) => {

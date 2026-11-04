@@ -11,10 +11,15 @@ const BASE_URL = API_BASE_URL;
 const TOKEN_KEY = 'hg_access_token';
 const REFRESH_KEY = 'hg_refresh_token';
 let sessionVersion = 0;
-// Share simultaneous JSON reads, never completed responses or mutations. Scope
+// Default reads share only simultaneous requests. Explicit catalogue reads may
+// retain short-lived results; financial reads and mutations are never cached. Scope
 // includes the actual token/campus/headers so accounts and campuses cannot join
 // each other's in-flight private requests. Entries are removed on success/error.
 const pendingReads = new Map<string, Promise<any>>();
+// Opt-in catalogue metadata only. Financial and order reads never use this cache.
+const catalogReads = new Map<string, { value: any; expires: number }>();
+let catalogVersion = 0;
+function invalidateCatalogReads() { catalogVersion += 1; catalogReads.clear(); }
 
 // "Remember me" — when the user leaves the checkbox unchecked, tokens are
 // stored in sessionStorage so they are cleared when the browser closes.
@@ -41,7 +46,7 @@ export function getRefreshToken() {
 }
 
 export function setTokens(access, refresh, rotating = false) {
-  if (!rotating) sessionVersion += 1;
+  if (!rotating) { sessionVersion += 1; invalidateCatalogReads(); }
   // Clear both stores first so a stale token from the other storage can't
   // linger and cause isAuthenticated() to read a phantom session.
   localStore.removeItem(TOKEN_KEY);
@@ -55,6 +60,7 @@ export function setTokens(access, refresh, rotating = false) {
 
 export function clearTokens() {
   sessionVersion += 1;
+  invalidateCatalogReads();
   localStore.removeItem(TOKEN_KEY);
   localStore.removeItem(REFRESH_KEY);
   sessionStore.removeItem(TOKEN_KEY);
@@ -243,6 +249,7 @@ async function request(path: string, options: RequestOptions = {}) {
   }
 
   const data = await res.json().catch(() => null);
+  if (options.method && !['GET', 'HEAD'].includes(options.method)) invalidateCatalogReads();
 
   if (!res.ok) {
     throw new ApiError(res.status, data?.error || data?.message || `Request failed (${res.status})`, data);
@@ -321,24 +328,36 @@ export const apiClient = {
    * kitchen-status read, which must be scoped to the campus the guest is
    * actually ordering from even if the persisted header has not landed yet.
    */
-  get(path: string, params?: Record<string, unknown>, headers?: Record<string, string>, options?: { timeoutMs?: number }) {
+  get(path: string, params?: Record<string, unknown>, headers?: Record<string, string>, options?: { timeoutMs?: number; cacheMs?: number }) {
     const qs = params ? '?' + new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]
     ).toString() : '';
+    const { cacheMs = 0, ...requestOptions } = options || {};
     const scope = campusScopeHeaders(getToken(), 'GET');
-    const key = JSON.stringify([path + qs, sessionVersion, getToken(), scope, headers || {}, options?.timeoutMs || 12000]);
+    const key = JSON.stringify([path + qs, sessionVersion, getToken(), scope, headers || {}, options?.timeoutMs || 12000, cacheMs ? catalogVersion : null]);
+    const cached = cacheMs ? catalogReads.get(key) : null;
+    if (cached && cached.expires > Date.now()) return Promise.resolve(structuredClone(cached.value));
+    const version = catalogVersion;
     const existing = pendingReads.get(key);
-    if (existing) return existing;
-    const pending = request(path + qs, { ...options, ...(headers ? { headers } : {}) }).finally(() => {
+    if (existing) return cacheMs ? existing.then(value => structuredClone(value)) : existing;
+    const pending = request(path + qs, { ...requestOptions, ...(headers ? { headers } : {}) }).then(value => {
+      if (cacheMs && version === catalogVersion) {
+        if (catalogReads.size >= 100) catalogReads.delete(catalogReads.keys().next().value!);
+        catalogReads.set(key, { value: structuredClone(value), expires: Date.now() + Math.min(cacheMs, 60000) });
+      }
+      return value;
+    }).finally(() => {
       if (pendingReads.get(key) === pending) pendingReads.delete(key);
     });
     pendingReads.set(key, pending);
-    return pending;
+    return cacheMs ? pending.then(value => structuredClone(value)) : pending;
   },
   post(path: string, body?: unknown, options?: { timeoutMs?: number; signal?: AbortSignal }) {
+    invalidateCatalogReads();
     return request(path, { ...options, method: 'POST', body: body ? JSON.stringify(body) : undefined });
   },
   patch(path: string, body?: unknown) {
+    invalidateCatalogReads();
     return request(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined });
   },
   getRaw(path: string, params?: Record<string, unknown>) {
@@ -348,6 +367,7 @@ export const apiClient = {
     return requestRaw(path + qs);
   },
   delete(path: string, body?: unknown) {
+    invalidateCatalogReads();
     return request(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined });
   },
   setTokens,

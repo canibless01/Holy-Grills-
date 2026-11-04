@@ -9,6 +9,9 @@ class Query:
  def eq(self,k,v):self.filters.append(lambda r:r.get(k)==v);return self
  def in_(self,k,values):self.filters.append(lambda r:r.get(k) in values);return self
  def neq(self,k,v):self.filters.append(lambda r:r.get(k)!=v);return self
+ def or_(self,expression):
+  assert expression=="reference_type.is.null,reference_type.neq.hp_transfer"
+  self.filters.append(lambda row:row.get("reference_type")!="hp_transfer");return self
  def gte(self,k,v):self.filters.append(lambda r:r.get(k,'')>=v);return self
  def order(self,*_,**__):return self
  def offset(self,n):self.skip=n;return self
@@ -49,3 +52,7 @@ class LivePersonalRank(unittest.TestCase):
    self.assertEqual([r['user_id'] for r in response.json['rankings']],['other','me'])
    self.assertEqual([r['rank'] for r in response.json['rankings']],[1,2])
    self.assertNotIn('email',response.get_data(as_text=True))
+
+ def test_earnings_with_null_reference_still_count(self):
+  db=self.fixture();db.rows['hp_transactions'][0]['reference_type']=None
+  self.assertEqual(self.result(db)['rank_entry']['hp_total'],100)

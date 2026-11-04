@@ -334,3 +334,19 @@ tested) can call the API. The pattern is `^https://holy-grills[a-z0-9-]*\.vercel
 which covers every branch and hash preview of this repo — and, by design, any fork using
 the same project name. Set `ALLOW_VERCEL_PREVIEWS=false` on Railway once testing stops
 using previews.
+
+### Railway background-work launch profile (4 November 2026)
+
+All values are optional; these defaults now apply in code. Put overrides in shared
+Railway variables used by API/worker/beat so job monitoring shows the same cadence.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CELERY_WORKER_CONCURRENCY` | `1` | Worker processes; an explicit CLI `--concurrency` overrides it. |
+| `CELERY_CAMPAIGN_SCAN_MINUTES` | `15` | Newsletter queue scan interval. |
+| `CELERY_SCHEDULED_ORDER_SCAN_MINUTES` | `15` | Scheduled-order staff-notice scan; live kitchen visibility remains immediate. |
+| `CELERY_RECOVERY_SCAN_MINUTES` | `60` | Abandoned-cart and post-delivery nudge scans. |
+
+Scan intervals must divide a whole hour: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30 or
+60. Payment confirmation, checkout, customer order notifications and live queue
+updates do not wait for these schedules. Do not start a second beat scheduler.

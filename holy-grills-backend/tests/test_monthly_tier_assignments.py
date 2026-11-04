@@ -40,8 +40,8 @@ class MonthlyTierAssignments(unittest.TestCase):
         self.app = Flask(__name__); self.db = DB()
     def run_grants(self, twice=False):
         with self.app.app_context(), patch('app.tasks.scheduled.get_db', return_value=self.db), patch('app.services.tier_service.get_db', return_value=self.db), patch('app.services.hp_service.award_active_hp') as award, patch('app.utils.tz.today_wat', return_value=date(2026, 10, 1)), patch('app.utils.tz.wat_month_start_utc', return_value='2026-10-01'):
-            grant_monthly_tier_perks.run.__wrapped__(None)
-            if twice: grant_monthly_tier_perks.run.__wrapped__(None)
+            grant_monthly_tier_perks.run()
+            if twice: grant_monthly_tier_perks.run()
             return [c.kwargs for c in award.call_args_list]
     def test_each_tier_routes_to_its_assigned_reward_and_replay_key(self):
         calls = self.run_grants(twice=True)

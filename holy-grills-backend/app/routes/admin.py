@@ -1582,18 +1582,30 @@ _CRON_INTERVAL_MINUTES = {
     "hp-decay-check":                (1440, "daily @ 05:00 WAT"),
     "reset-monthly-leaderboard":     (44640, "1st of month @ 00:01 WAT"),
     "reset-weekly-leaderboard":      (10080, "every Monday @ 00:01 WAT"),
-    "scan-abandoned-carts":          (30, "every 30 minutes"),
+    "scan-abandoned-carts":          (60, "every 60 minutes"),
     "win-back-notifications":        (1440, "daily @ 10:00 WAT"),
     "check-order-locks":             (1440, "daily @ 09:00 WAT"),
     "reset-monthly-hp-tracker":      (44640, "1st of month @ 00:05 WAT"),
     "membership-anniversary-awards": (1440, "daily @ 06:00 WAT"),
     "send-scheduled-blasts":         (15, "every 15 minutes"),
-    "process-scheduled-orders":      (5, "every 5 minutes"),
-    "check-post-delivery-nudges":    (30, "every 30 minutes"),
+    "process-scheduled-orders":      (15, "every 15 minutes"),
+    "check-post-delivery-nudges":    (60, "every 60 minutes"),
     "grant-monthly-tier-perks":      (44640, "1st of month @ 00:05 WAT"),
-    "send-newsletter-campaigns":     (5, "every 5 minutes"),
+    "send-newsletter-campaigns":     (15, "every 15 minutes"),
     "sweep-pending-squad-hp":        (1440, "daily @ 05:30 WAT"),
 }
+
+
+def _cron_intervals():
+    from app.tasks.celery_app import celery_app
+    intervals = dict(_CRON_INTERVAL_MINUTES)
+    for job, key in (("scan-abandoned-carts", "abandoned-cart-scan"),
+                     ("process-scheduled-orders", "process-scheduled-orders"),
+                     ("check-post-delivery-nudges", "check-post-delivery-nudges"),
+                     ("send-newsletter-campaigns", "send-newsletter-campaigns")):
+        minutes = 60 // len(celery_app.conf.beat_schedule[key]["schedule"].minute)
+        intervals[job] = (minutes, f"every {minutes} minutes")
+    return intervals
 
 
 def _age_minutes(iso_value, now):
@@ -1886,20 +1898,18 @@ def cron_status():
     # ADM-43. status now distinguishes ok / failed / overdue / never_run using the *last success*,
     # not just the last trigger (a job that keeps failing every run used to show as "ok").
     db = get_db()
-    KNOWN_JOBS = list(_CRON_INTERVAL_MINUTES)
+    intervals = _cron_intervals()
+    KNOWN_JOBS = list(intervals)
     try:
         now = datetime.now(timezone.utc)
         status_map = {}
+        rows = db.rpc("hg_cron_execution_summary", {"p_jobs": KNOWN_JOBS}) or []
+        summaries = {row["job"]: row for row in rows}
         for job in KNOWN_JOBS:
-            rows = (
-                db.table("admin_audit_logs")
-                .select("entity_id,action,created_at,after_value,actor_id")
-                .eq("entity_type", "cron_jobs").eq("entity_id", job)
-                .order("created_at", ascending=False).limit(20).execute()
-            ) or []
-            last = rows[0] if rows else None
-            last_success = next((r for r in rows if r.get("action") == "scheduled_execution_success"), None)
-            interval, cadence = _CRON_INTERVAL_MINUTES[job]
+            summary = summaries.get(job, {})
+            last = summary.get("last_run")
+            last_success = summary.get("last_success")
+            interval, cadence = intervals[job]
             if not last:
                 status = "never_run"
             elif str(last.get("action", "")).endswith("_failed"):

@@ -214,10 +214,14 @@ def _enrich_item(item, counts, at_capacity):
     return item
 
 
-def _apply_campus_availability(db, item, campus_id):
+_UNLOADED_AVAILABILITY = object()
+
+
+def _apply_campus_availability(db, item, campus_id, availability=_UNLOADED_AVAILABILITY):
     if not campus_id:
         return item
-    availability = db.table('menu_item_availability').select('is_available,daily_limit,price_override,opens_at,closes_at').eq('menu_item_id', item['id']).eq('campus_id', campus_id).single().execute()
+    if availability is _UNLOADED_AVAILABILITY:
+        availability = db.table('menu_item_availability').select('is_available,daily_limit,price_override,opens_at,closes_at').eq('menu_item_id', item['id']).eq('campus_id', campus_id).single().execute()
     if availability:
         item['campus_availability'] = availability
         item['is_available'] = bool(item.get('is_available')) and bool(availability.get('is_available')) and is_within_availability_window(availability.get('opens_at'), availability.get('closes_at'))

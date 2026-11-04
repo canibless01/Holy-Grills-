@@ -40,6 +40,13 @@ def get_cart():
         .execute()
     ) or []
 
+    campus_id = getattr(g, 'campus_id', None)
+    item_ids = sorted({item['menu_item_id'] for item in items if item.get('menu_item_id')})
+    availability_rows = (db.table('menu_item_availability')
+        .select('menu_item_id,is_available,daily_limit,price_override,opens_at,closes_at')
+        .eq('campus_id', campus_id).in_('menu_item_id', item_ids).execute() or []) if campus_id and item_ids else []
+    availability = {row['menu_item_id']: row for row in availability_rows}
+
     subtotal = 0.0
     hp_earn_preview = 0
     has_unavailable = False
@@ -47,7 +54,7 @@ def get_cart():
         menu = item.get("menu_items") or {}
         if menu:
             from app.routes.menu import _apply_campus_availability
-            _apply_campus_availability(db, menu, getattr(g, 'campus_id', None))
+            _apply_campus_availability(db, menu, campus_id, availability=availability.get(item['menu_item_id']))
         from app.services.order_service import _resolve_item_variations, _resolve_item_addons
         invalid_choices = False
         try:

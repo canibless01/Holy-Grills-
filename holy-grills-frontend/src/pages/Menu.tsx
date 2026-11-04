@@ -99,7 +99,7 @@ export default function Menu() {
   // Quick add — if the item needs required modifiers, send to detail page
   const handleAdd = async (item) => {
     try {
-      const [detail, addons] = await Promise.all([mockApi.menu.getItem(item.id), mockApi.menu.getAddons(item.id)]);
+      const [detail, addons] = await Promise.all([mockApi.menu.getItem(item.id, { campus_id: campusId }, 15000), mockApi.menu.getAddons(item.id, { campus_id: campusId }, 15000)]);
       const hasRequired =
         (detail.variation_groups || []).some((vg) => vg.is_required) ||
         (addons.addon_groups || []).some((ag) => ag.is_required);

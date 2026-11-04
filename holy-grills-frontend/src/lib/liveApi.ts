@@ -92,10 +92,10 @@ const addresses = {
 
 // ========== MENU ==========
 const menu = {
-  async getItems(params = {}) { return apiClient.get('/menu/items', params); },
-  async getItem(id) { return apiClient.get(`/menu/items/${id}`); },
-  async getAddons(id) { return apiClient.get(`/menu/items/${id}/addons`); },
-  async getCategories(params = {}) { return apiClient.get('/menu/categories', params); },
+  async getItems(params: Record<string, any> = {}) { return apiClient.get('/menu/items', params, undefined, { cacheMs: params.available_only === 'true' ? 15000 : 0 }); },
+  async getItem(id, params = {}, cacheMs = 0) { return apiClient.get(`/menu/items/${id}`, params, undefined, { cacheMs }); },
+  async getAddons(id, params = {}, cacheMs = 0) { return apiClient.get(`/menu/items/${id}/addons`, params, undefined, { cacheMs }); },
+  async getCategories(params = {}) { return apiClient.get('/menu/categories', params, undefined, { cacheMs: 60000 }); },
   async getGlobalAddons() { return apiClient.get('/menu/addons'); },
   async getKitchenCapacity(campusId?: string) { return apiClient.get('/menu/kitchen-capacity', undefined, campusId ? { 'X-Campus-ID': campusId } : undefined); },
 };
@@ -293,7 +293,7 @@ const users = {
 const hp = {
   async getBalance() { return apiClient.get('/hp/balance'); },
   async getTransactions(params = {}) { return apiClient.get('/hp/transactions', params); },
-  async getTiers() { return apiClient.get('/hp/tiers'); },
+  async getTiers() { return apiClient.get('/hp/tiers', undefined, undefined, { cacheMs: 60000 }); },
   async transfer(body) { return apiClient.post('/hp/transfer', body); },
   async flashRedeem(rewardId) { return apiClient.post(`/hp/flash-redeem/${rewardId}`); },
   async getUnlockHistory(params = {}) { return unwrap(await apiClient.get('/hp/unlock-history', params), 'unlocks', 'history'); },

@@ -55,6 +55,13 @@ class ContextTask(celery_app.Task):
 
 celery_app.Task = ContextTask
 
+def _scan_schedule(variable, default_minutes):
+    minutes = int(os.environ.get(variable) or default_minutes)
+    if minutes not in (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60):
+        raise ValueError(f"{variable} must be a whole-hour divisor between 1 and 60")
+    return crontab(minute=0 if minutes == 60 else f"*/{minutes}")
+
+
 celery_app.conf.beat_schedule = {
     "reset-monthly-leaderboard": {
         "task": "app.tasks.scheduled.reset_monthly_leaderboard",
@@ -86,11 +93,11 @@ celery_app.conf.beat_schedule = {
     },
     "send-newsletter-campaigns": {
         "task": "app.tasks.scheduled.send_newsletter_campaigns",
-        "schedule": crontab(minute="*/5"),
+        "schedule": _scan_schedule("CELERY_CAMPAIGN_SCAN_MINUTES", 15),
     },
     "abandoned-cart-scan": {
         "task": "app.tasks.scheduled.scan_abandoned_carts",
-        "schedule": crontab(minute="*/30"),
+        "schedule": _scan_schedule("CELERY_RECOVERY_SCAN_MINUTES", 60),
     },
     "monthly-birthday-report": {
         "task": "app.tasks.scheduled.monthly_birthday_report",
@@ -98,7 +105,7 @@ celery_app.conf.beat_schedule = {
     },
     "process-scheduled-orders": {
         "task": "app.tasks.scheduled.process_scheduled_orders",
-        "schedule": crontab(minute="*/5"),
+        "schedule": _scan_schedule("CELERY_SCHEDULED_ORDER_SCAN_MINUTES", 15),
     },
     # ── New Feature Tasks ─────────────────────────────────────────────────────
     "win-back-notifications": {
@@ -132,7 +139,7 @@ celery_app.conf.beat_schedule = {
     # app/tasks/scheduled.py, unscheduled, for a manual one-off trigger if ever needed.
     "check-post-delivery-nudges": {
         "task": "app.tasks.scheduled.check_post_delivery_nudges",
-        "schedule": crontab(minute="*/30"),
+        "schedule": _scan_schedule("CELERY_RECOVERY_SCAN_MINUTES", 60),
     },
 }
 
@@ -145,7 +152,7 @@ celery_app.conf.task_acks_late = True
 celery_app.conf.worker_prefetch_multiplier = 1
 
 # Bound the default process count on Railway; explicit CLI/env settings can override.
-celery_app.conf.worker_concurrency = max(1, int(os.environ.get("CELERY_WORKER_CONCURRENCY") or "2"))
+celery_app.conf.worker_concurrency = max(1, int(os.environ.get("CELERY_WORKER_CONCURRENCY") or "1"))
 
 # Result expiry — keep task results for 1 hour
 celery_app.conf.result_expires = 3600

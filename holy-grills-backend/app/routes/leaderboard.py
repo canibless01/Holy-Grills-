@@ -104,7 +104,7 @@ def get_leaderboard():
             db.table("hp_transactions")
             .select("user_id,amount")
             .eq("type", "earn")
-            .neq("reference_type", "hp_transfer")  # exclude transfers so two colluding accounts
+            .or_("reference_type.is.null,reference_type.neq.hp_transfer")  # exclude transfers so two colluding accounts
             .gte("created_at", period_start)        # can't inflate rank by shuffling HP between themselves
         )
         if campus_id:
@@ -339,7 +339,7 @@ def my_rank():
             totals = {row["id"]: row.get("hp_balance") or 0 for row in profiles}
         else:
             transactions = _rank_pages(lambda: db.table("hp_transactions").select("id,user_id,amount")
-                                       .eq("type", "earn").neq("reference_type", "hp_transfer")
+                                       .eq("type", "earn").or_("reference_type.is.null,reference_type.neq.hp_transfer")
                                        .eq("campus_id", campus_id).gte("created_at", _period_start_utc_iso(period_type)).order("id"))
             totals = {}
             for transaction in transactions:

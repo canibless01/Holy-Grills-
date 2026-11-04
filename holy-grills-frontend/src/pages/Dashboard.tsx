@@ -17,7 +17,7 @@ import TierIcon from '@/components/TierIcon';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { user, hpBalance, wallet, streak, refreshStreak } = useHolyGrill();
+  const { user, hpBalance, wallet, streak } = useHolyGrill();
   const [recentOrders, setRecentOrders] = useState([]);
   const [orderLocks, setOrderLocks] = useState([]);
   const rank = useCurrentRank();
@@ -39,7 +39,6 @@ export default function Dashboard() {
         ]);
         setRecentOrders(Array.isArray(orders) ? orders : []);
         setOrderLocks(Array.isArray(locks) ? locks : []);
-        refreshStreak();
       } catch (e) { console.error(e); }
       setLoading(false);
     };
