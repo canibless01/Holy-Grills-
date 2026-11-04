@@ -71,3 +71,49 @@ class StockControlsTests(unittest.TestCase):
    g.user_id=U;g.user_role='admin';g.campus_id=A
    response,status=kitchen.log_stock_purchase.__wrapped__(R)
   self.assertEqual(status,200);self.assertEqual(Decimal(adjust.call_args.args[1]['p_delta_usage_units']),Decimal('0.3'));self.assertEqual(response.json['added_usage_units'],0.3)
+
+ def edit(self,body=None,row=None,role='admin'):
+  body=body if body is not None else {'name':'  Flour renamed  ','low_stock_threshold':5,'expected':{'name':'Flour','low_stock_threshold':3}}
+  with self.app.test_request_context(method='PATCH',json=body),patch.object(kitchen,'get_user_client',return_value=self.db),patch.object(kitchen,'fetch_or_403',return_value=(row or self.previous(),None)):
+   g.user_id=U;g.user_role=role;g.campus_id=A
+   return kitchen.edit_stock_item.__wrapped__(R)
+
+ def test_edit_compares_metadata_in_atomic_update_without_touching_accounting(self):
+  self.q.update.return_value=[{**self.previous(),'name':'Flour renamed','low_stock_threshold':5}]
+  response,status=self.edit();self.assertEqual(status,200);self.assertEqual(response.json['current_balance'],12)
+  self.q.update.assert_called_once_with({'name':'Flour renamed','low_stock_threshold':5})
+  self.assertEqual(self.q.eq.call_args_list,[unittest.mock.call('id',R),unittest.mock.call('name','Flour'),unittest.mock.call('low_stock_threshold',3)])
+
+ def test_edit_matching_response_loss_retry_does_not_write_again(self):
+  response,status=self.edit(row={**self.previous(),'name':'Flour renamed','low_stock_threshold':5})
+  self.assertEqual(status,200);self.assertEqual(response.json['current_balance'],12);self.q.update.assert_not_called()
+
+ def test_edit_stale_snapshot_and_concurrent_loser_are_conflicts(self):
+  _,status=self.edit(row={**self.previous(),'name':'Someone else changed it'});self.assertEqual(status,409);self.q.update.assert_not_called()
+  self.q.update.return_value=[];_,status=self.edit();self.assertEqual(status,409)
+
+ def test_edit_denies_foreign_campus_but_super_admin_can_edit_it(self):
+  from werkzeug.exceptions import Forbidden
+  with self.assertRaises(Forbidden):self.edit(row={**self.previous(),'campus_id':B})
+  self.q.update.assert_not_called();self.q.update.return_value=[self.previous()]
+  _,status=self.edit(row={**self.previous(),'campus_id':B},role='super_admin');self.assertEqual(status,200)
+
+ def test_edit_refuses_accounting_fields_and_invalid_snapshots(self):
+  valid={'name':'Flour renamed','low_stock_threshold':5,'expected':{'name':'Flour','low_stock_threshold':3}}
+  for body in ([1],{**valid,'conversion_factor':5},{**valid,'current_balance':100},{**valid,'campus_id':B},{**valid,'name':' '},{**valid,'low_stock_threshold':True},{**valid,'low_stock_threshold':float('inf')},{**valid,'low_stock_threshold':-1},{**valid,'low_stock_threshold':'5'},{**valid,'low_stock_threshold':10**400},{**valid,'expected':None},{**valid,'expected':{'name':'Flour'}}):
+   with self.subTest(body=body):_,status=self.edit(body);self.assertEqual(status,400)
+  self.q.update.assert_not_called()
+
+ def test_edit_duplicate_and_database_failure_are_clear_without_details(self):
+  for code,http,expected in [('23505',409,409),('42501',403,403),('XX000',500,503)]:
+   with self.subTest(code=code):
+    self.q.update.side_effect=SupabaseError('sensitive database detail',http,{'code':code})
+    response,status=self.edit();self.assertEqual(status,expected);self.assertNotIn('sensitive',response.json['error'])
+
+ def test_edit_preserves_missing_and_unavailable_lookup_responses(self):
+  with self.app.test_request_context(method='PATCH',json={'name':'Flour','low_stock_threshold':5,'expected':{'name':'Flour','low_stock_threshold':3}}),patch.object(kitchen,'get_user_client',return_value=self.db):
+   for status in (404,503):
+    failure=(self.app.json.response({'error':'controlled'}),status)
+    with patch.object(kitchen,'fetch_or_403',return_value=(None,failure)):
+     _,actual=kitchen.edit_stock_item.__wrapped__(R);self.assertEqual(actual,status)
+  self.q.update.assert_not_called()

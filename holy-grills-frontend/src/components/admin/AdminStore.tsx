@@ -41,6 +41,7 @@ function StockWorkspace({ campusId }) {
   const [usageModal, setUsageModal] = useState(null);
   const [addModal, setAddModal] = useState(false);
   const [ledgerItem, setLedgerItem] = useState(null);
+  const [editItem, setEditItem] = useState(null);
 
   // Build a {id: name} lookup so stock cards/modals can show the human-readable
   // unit name. The backend returns usage_unit_id / purchase_unit_id (UUIDs), not
@@ -92,14 +93,17 @@ function StockWorkspace({ campusId }) {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionTitle icon={Boxes} title={msg('FE_STOCK_TITLE', "Ingredient Stock")} sub={msg('FE_STOCK_SUBTITLE', "Track purchases, usage, and low-stock alerts")} />
+        <div className="flex items-center gap-3">
+        <button onClick={load} className="text-xs font-bold text-primary hover:underline">{msg('FE_STOCK_REFRESH', 'Refresh stock')}</button>
         <button
           onClick={() => setAddModal(true)}
           className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition"
         >
           <Plus className="w-3.5 h-3.5" /> {msg('FE_STOCK_ADD', "Add Item")}
         </button>
+        </div>
       </div>
 
       {/* Items list */}
@@ -126,12 +130,14 @@ function StockWorkspace({ campusId }) {
               onPurchase={() => setPurchaseModal(item)}
               onUsage={() => setUsageModal(item)}
               onLedger={() => setLedgerItem(item)}
+              onEdit={() => setEditItem(item)}
             />
           ))}
         </div>
       )}
 
       {/* Modals */}
+      {editItem && <EditItemModal item={editItem} unitName={unitName} onClose={() => setEditItem(null)} onDone={() => { setEditItem(null); load(); }} />}
       {purchaseModal && (
         <PurchaseModal
           item={purchaseModal}
@@ -168,7 +174,7 @@ function StockWorkspace({ campusId }) {
 }
 
 // ── Stock card ──
-function StockCard({ item, unitName, onPurchase, onUsage, onLedger }) {
+function StockCard({ item, unitName, onPurchase, onUsage, onLedger, onEdit }) {
   const low = item.is_low_stock;
   const usageUnitName = unitName(item.usage_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units');
   return (
@@ -188,6 +194,7 @@ function StockCard({ item, unitName, onPurchase, onUsage, onLedger }) {
       {item.low_stock_threshold != null && (
         <div className="text-[10px] text-muted-foreground mb-3">{msg('FE_STOCK_THRESHOLD_VALUE', 'Threshold: {threshold} {unit}', { threshold: item.low_stock_threshold, unit: usageUnitName })}</div>
       )}
+      <button onClick={onEdit} className="mb-3 text-xs font-bold text-primary hover:underline">{msg('FE_STOCK_EDIT', 'Edit ingredient')}</button>
       <div className="flex gap-2">
         <button
           onClick={onPurchase}
@@ -204,6 +211,40 @@ function StockCard({ item, unitName, onPurchase, onUsage, onLedger }) {
       </div>
     </Card>
   );
+}
+
+function EditItemModal({ item, unitName, onClose, onDone }) {
+  const [name, setName] = useState(item.name);
+  const [threshold, setThreshold] = useState(String(item.low_stock_threshold));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const writing = useRef(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    if (writing.current) return;
+    if (!name.trim() || name.trim().length > 128) { setError(msg('FE_STOCK_NAME_INVALID', 'Enter a name between 1 and 128 characters.')); return; }
+    const value = threshold.trim() ? Number(threshold) : NaN;
+    if (!Number.isFinite(value) || value < 0) { setError(msg('FE_STOCK_THRESHOLD_INVALID', 'Enter a finite, non-negative threshold.')); return; }
+    writing.current = true; setSaving(true); setError('');
+    try {
+      await liveApi.admin.updateStockItem(item.id, {
+        name: name.trim(), low_stock_threshold: value,
+        expected: { name: item.name, low_stock_threshold: Number(item.low_stock_threshold) },
+      });
+      toast({ title: msg('FE_STOCK_EDIT_SAVED', 'Ingredient saved') });
+      onDone();
+    } catch (e) { setError(e.message || msg('FE_STOCK_EDIT_FAILED', 'The ingredient could not be saved. Please try again.')); }
+    finally { writing.current = false; setSaving(false); }
+  };
+  return <Modal open onClose={() => { if (!writing.current) onClose(); }} title={msg('FE_STOCK_EDIT', 'Edit ingredient')}>
+    <form onSubmit={submit} aria-busy={saving} className="space-y-3">
+      <Field label={msg('FE_STOCK_NAME', 'Name')}><TextInput aria-label={msg('FE_STOCK_NAME', 'Name')} value={name} maxLength={128} disabled={saving} onChange={e => setName(e.target.value)} /></Field>
+      <Field label={msg('FE_STOCK_THRESHOLD', 'Low Stock Threshold')} hint={unitName(item.usage_unit_id)}><TextInput aria-label={msg('FE_STOCK_THRESHOLD', 'Low Stock Threshold')} type="number" inputMode="decimal" min="0" step="any" value={threshold} disabled={saving} onChange={e => setThreshold(e.target.value)} /></Field>
+      <p className="text-xs text-muted-foreground">{msg('FE_STOCK_EDIT_UNITS_FIXED', 'Units and conversion stay fixed so recorded purchases and usage keep their meaning. Use the ledger to correct quantities.')}</p>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <button type="submit" disabled={saving} className="w-full px-4 py-2 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">{saving ? msg('FE_STOCK_SAVING', 'Saving…') : msg('FE_STOCK_EDIT_SAVE', 'Save ingredient')}</button>
+    </form>
+  </Modal>;
 }
 
 // ── Purchase modal ──

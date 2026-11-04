@@ -8,7 +8,7 @@ The owner assigned the launch-remaining category to a new chat and this chat the
 
 ## Next general-site work
 
-1. Stock lifecycle: metadata edit/archive/restore, historical unit/conversion protection, reporting/reconciliation/export. These do not yet have a complete native implementation/sign-off.
+1. Stock lifecycle: archive/restore, reporting/reconciliation/export. Metadata editing now has a native form and protected endpoint, with accounting fields fixed and stale-edit detection; its added browser cases still require execution in an environment that permits Chromium. See the metadata-edit evidence below.
 2. Remaining dashboard/analytics/economics/leaderboard/report filters, pagination, exports and arithmetic against controlled actions.
 3. Review moderation and customer rating aggregation/reflection.
 4. Remaining user/staff/profile/campus administration and native role/action matrix beyond completed reference-data batches.
@@ -19,3 +19,9 @@ The owner assigned the launch-remaining category to a new chat and this chat the
 9. Disabled marketplace/subscription and broader catering/event management variants, coordinating with the launch chat for currently enabled events and shared payment/reward boundaries.
 
 This list is not a statement that all these features are absent or broken. Existing A/B evidence remains valid; closure applies to the actual cases tested. The whole admin page-by-page audit is still incomplete. Launch acceptance stays with the other chat; current-source/deployment and live recipient/device confirmations should not be inferred from this stock-control batch.
+
+## Ingredient metadata editing continuation
+
+Added native name/threshold editing, a list refresh control, strict endpoint validation, own-campus/super-admin authorization, duplicate-name responses, atomic displayed-value comparison, and matching response-loss replay. Units, conversion, balance and ledger rows are never included in the update. This reuses existing columns and grants; no migration, new table or live-data mutation was needed.
+
+Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_METADATA_EDIT_EVIDENCE_2026_11_04.md). The launch chat's worker dependency fix `e704c5c` was integrated before testing. This closes the implementation and backend-contract part of metadata editing; it does not close archive/restore or the entire Store page.

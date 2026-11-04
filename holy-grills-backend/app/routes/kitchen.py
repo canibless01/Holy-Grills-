@@ -313,6 +313,59 @@ def list_stock_items():
     return jsonify(items), 200
 
 
+@stock_bp.route("/<stock_item_id>", methods=["PATCH"])
+@require_role("admin")
+def edit_stock_item(stock_item_id):
+    """Edit metadata only; compare the displayed values atomically on write.
+
+    Unit/conversion/balance changes belong to accounting, not this form. A
+    matching retry returns the current row without repeating a write.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"name", "low_stock_threshold", "expected"}:
+        return jsonify({"error": MSG.STOCK_EDIT_FIELDS_INVALID}), 400
+    expected = data.get("expected")
+    if not isinstance(expected, dict) or set(expected) != {"name", "low_stock_threshold"}:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    for values in (data, expected):
+        if not isinstance(values.get("name"), str) or not 1 <= len(values["name"].strip()) <= 128:
+            return jsonify({"error": MSG.FE_STOCK_NAME_INVALID}), 400
+        threshold = values.get("low_stock_threshold")
+        try:
+            valid_threshold = not isinstance(threshold, bool) and isinstance(threshold, (int, float)) and math.isfinite(threshold) and threshold >= 0
+        except OverflowError:
+            valid_threshold = False
+        if not valid_threshold:
+            return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
+    patch = {"name": data["name"].strip(), "low_stock_threshold": data["low_stock_threshold"]}
+    db = get_user_client()
+    existing, error = fetch_or_403(db, "stock_items", stock_item_id, not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
+    if error:
+        return error
+    assert_can_modify(existing.get("campus_id"))
+    if all(existing.get(key) == value for key, value in patch.items()):
+        return jsonify(existing), 200
+    if any(existing.get(key) != value for key, value in expected.items()):
+        return jsonify({"error": MSG.STOCK_EDIT_CONFLICT}), 409
+    try:
+        # Filters are evaluated by PostgreSQL with the update, not just above.
+        rows = (db.table("stock_items").eq("id", stock_item_id)
+                .eq("name", expected["name"])
+                .eq("low_stock_threshold", expected["low_stock_threshold"])
+                .update(patch))
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get("code", ""))
+        if code == "23505":
+            return jsonify({"error": MSG.STOCK_ITEM_ALREADY_EXISTS}), 409
+        if code == "42501" or exc.status_code in (401, 403):
+            return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
+        logger.warning("edit_stock_item failed (%s)", code)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+    if not rows:
+        return jsonify({"error": MSG.STOCK_EDIT_CONFLICT}), 409
+    return jsonify(rows[0] if isinstance(rows, list) else rows), 200
+
+
 @stock_bp.route("/<stock_item_id>/purchase", methods=["POST"])
 @require_role("admin")
 def log_stock_purchase(stock_item_id):
