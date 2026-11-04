@@ -73,3 +73,10 @@ At 21:46 WAT the newest cron receipt was still 21:15 WAT (31 minutes old). This 
 The checked-in Procfile had an explicit `--concurrency=2`, overriding the configuration's one-process default. Removed that override so `CELERY_WORKER_CONCURRENCY` (default 1) controls the checked-in worker command. An independently configured Railway Start Command can still override it and must be checked.
 
 The owner reports **no reset email received**. Supabase's accepted response/recovery timestamp establishes a send attempt, not inbox receipt. SMTP delivery, filtering and hosted template configuration remain unresolved.
+
+
+## Confirmed worker startup cause — owner-provided logs
+
+The worker traceback identifies `kombu.exceptions.VersionMismatch`: the installed transport requires redis-py >=6.1, while requirements pin redis-py 5.2.1. Kombu was an unpinned transitive dependency. Added an explicit `kombu==5.6.2` pin, matching the tested environment and compatible with the existing Celery 5.4.0 / Redis 5.2.1 stack. Direct Redis-transport client-selection tests now cover both ordinary and prefixed clients, without network/provider calls; the earlier memory-broker probe could not catch this transport mismatch. `pip check` passed. No job, reward amount or provider routing changed. Railway must rebuild dependencies on the pushed revision; successful deployment status alone does not prove a fresh completed job.
+
+Brevo logs provided by the owner show both reset requests as Sent followed by Error, from `noreply@holygrills.online` to the owner, with zero delivered. This establishes SMTP handoff to Brevo but failed downstream delivery. The detailed Error/SMTP response is still needed; no sender/DNS cause is assumed from the event labels. No additional reset email was sent during this investigation.
