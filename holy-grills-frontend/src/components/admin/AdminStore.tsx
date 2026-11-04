@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Boxes, Plus, Minus, AlertTriangle, History, PackagePlus, PackageMinus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import {
   Card,
@@ -17,12 +19,20 @@ import {
 } from './ui/AdminKit';
 
 const USAGE_TYPES = [
-  { id: 'usage', label: 'Usage' },
-  { id: 'waste', label: 'Waste' },
-  { id: 'correction', label: 'Correction' },
+  { id: 'usage', label: msg('FE_STOCK_USAGE', "Usage") },
+  { id: 'waste', label: msg('FE_STOCK_WASTE', "Waste") },
+  { id: 'correction', label: msg('FE_STOCK_CORRECTION', "Correction") },
 ];
 
 export default function AdminStore() {
+  const { adminCampusId } = useCampus();
+  const { user } = useHolyGrill();
+  const campusId = user?.role === 'super_admin' ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  if (!campusId) return <p className="p-6 text-sm text-muted-foreground">{msg('FE_STOCK_SELECT_CAMPUS', 'Select a campus to manage its ingredient stock.')}</p>;
+  return <StockWorkspace key={campusId} campusId={campusId} />;
+}
+
+function StockWorkspace({ campusId }) {
   const [items, setItems] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +52,7 @@ export default function AdminStore() {
     setLoadError(false);
     try {
       const [stockRes, unitRes] = await Promise.all([
-        liveApi.admin.getStockItems(),
+        liveApi.admin.getStockItems({ campus_id: campusId }),
         liveApi.admin.getMeasurementUnits(),
       ]);
       // unwrap() already extracted the rows (or returned []).
@@ -52,7 +62,7 @@ export default function AdminStore() {
       setLoadError(true);
     }
     setLoading(false);
-  }, []);
+  }, [campusId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -75,20 +85,20 @@ export default function AdminStore() {
     <div className="space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatTile icon={Boxes} label="Tracked Items" value={items.length} iconClass="text-primary" iconBg="bg-primary/10" />
-        <StatTile icon={AlertTriangle} label="Low Stock" value={lowCount} iconClass="text-destructive" iconBg="bg-destructive/10" />
+        <StatTile icon={Boxes} label={msg('FE_STOCK_TRACKED', "Tracked Items")} value={items.length} iconClass="text-primary" iconBg="bg-primary/10" />
+        <StatTile icon={AlertTriangle} label={msg('FE_STOCK_LOW_STOCK', "Low Stock")} value={lowCount} iconClass="text-destructive" iconBg="bg-destructive/10" />
         <StatTile icon={PackagePlus} label={msg('FE_STOCK_ITEMS_WITH_STOCK', 'Ingredients with stock')} value={items.filter(i => Number(i.current_balance) > 0).length} iconClass="text-success" iconBg="bg-success/15" />
-        <StatTile icon={PackageMinus} label="Tracked Units" value={units.length} iconClass="text-accent-foreground" iconBg="bg-accent/25" />
+        <StatTile icon={PackageMinus} label={msg('FE_STOCK_TRACKED_UNITS', "Tracked Units")} value={units.length} iconClass="text-accent-foreground" iconBg="bg-accent/25" />
       </div>
 
       {/* Actions */}
       <div className="flex items-center justify-between">
-        <SectionTitle icon={Boxes} title="Ingredient Stock" sub="Track purchases, usage, and low-stock alerts" />
+        <SectionTitle icon={Boxes} title={msg('FE_STOCK_TITLE', "Ingredient Stock")} sub={msg('FE_STOCK_SUBTITLE', "Track purchases, usage, and low-stock alerts")} />
         <button
           onClick={() => setAddModal(true)}
           className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition"
         >
-          <Plus className="w-3.5 h-3.5" /> Add Item
+          <Plus className="w-3.5 h-3.5" /> {msg('FE_STOCK_ADD', "Add Item")}
         </button>
       </div>
 
@@ -97,11 +107,11 @@ export default function AdminStore() {
         <Card className="p-6">
           <EmptyState
             icon={Boxes}
-            title="No stock items yet"
-            body="Add your first ingredient to start tracking purchases and usage."
+            title={msg('FE_STOCK_EMPTY', "No stock items yet")}
+            body={msg('FE_STOCK_EMPTY_HELP', "Add your first ingredient to start tracking purchases and usage.")}
             action={
               <button onClick={() => setAddModal(true)} className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold">
-                Add First Item
+                {msg('FE_STOCK_ADD_FIRST', "Add First Item")}
               </button>
             }
           />
@@ -141,6 +151,7 @@ export default function AdminStore() {
       {addModal && (
         <AddItemModal
           units={units}
+          campusId={campusId}
           onClose={() => setAddModal(false)}
           onDone={() => { setAddModal(false); load(); }}
         />
@@ -159,14 +170,14 @@ export default function AdminStore() {
 // ── Stock card ──
 function StockCard({ item, unitName, onPurchase, onUsage, onLedger }) {
   const low = item.is_low_stock;
-  const usageUnitName = unitName(item.usage_unit_id) || 'units';
+  const usageUnitName = unitName(item.usage_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units');
   return (
     <Card className={`p-4 ${low ? 'border-destructive/40 bg-destructive/5' : ''}`}>
       <div className="flex items-start justify-between gap-2 mb-2">
         <button onClick={onLedger} className="text-left min-w-0 flex-1 hover:underline">
           <div className="font-bold text-sm text-foreground truncate">{item.name}</div>
         </button>
-        {low && <Pill tone="red"><AlertTriangle className="w-2.5 h-2.5" /> Low</Pill>}
+        {low && <Pill tone="red"><AlertTriangle className="w-2.5 h-2.5" /> {msg('FE_STOCK_LOW', "Low")}</Pill>}
       </div>
       <div className="flex items-baseline gap-1.5 mb-3">
         <span className="font-heading font-extrabold text-2xl text-foreground tabular-nums">
@@ -175,20 +186,20 @@ function StockCard({ item, unitName, onPurchase, onUsage, onLedger }) {
         <span className="text-xs text-muted-foreground font-semibold">{usageUnitName}</span>
       </div>
       {item.low_stock_threshold != null && (
-        <div className="text-[10px] text-muted-foreground mb-3">Threshold: {item.low_stock_threshold} {usageUnitName}</div>
+        <div className="text-[10px] text-muted-foreground mb-3">{msg('FE_STOCK_THRESHOLD_VALUE', 'Threshold: {threshold} {unit}', { threshold: item.low_stock_threshold, unit: usageUnitName })}</div>
       )}
       <div className="flex gap-2">
         <button
           onClick={onPurchase}
           className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-success/10 text-success text-xs font-bold hover:bg-success/15 active:scale-95 transition"
         >
-          <PackagePlus className="w-3.5 h-3.5" /> Purchase
+          <PackagePlus className="w-3.5 h-3.5" /> {msg('FE_STOCK_PURCHASE', "Purchase")}
         </button>
         <button
           onClick={onUsage}
           className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-secondary text-foreground text-xs font-bold hover:bg-secondary/80 active:scale-95 transition"
         >
-          <PackageMinus className="w-3.5 h-3.5" /> Usage
+          <PackageMinus className="w-3.5 h-3.5" /> {msg('FE_STOCK_USAGE', "Usage")}
         </button>
       </div>
     </Card>
@@ -202,41 +213,44 @@ function PurchaseModal({ item, unitName, onClose, onDone }) {
   const [cost, setCost] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const writing = useRef(false);
   const [err, setErr] = useState('');
-  const purchaseUnitName = unitName(item.purchase_unit_id) || 'units';
+  const purchaseUnitName = unitName(item.purchase_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units');
 
   const submit = async () => {
-    const quantity = parseFloat(qty);
-    if (!quantity || quantity <= 0) { setErr('Enter a valid quantity'); return; }
-    setSaving(true); setErr('');
+    if (writing.current) return;
+    const quantity = Number(qty);
+    if (!qty.trim() || !Number.isFinite(quantity) || quantity <= 0) { setErr(msg('FE_STOCK_POSITIVE_QUANTITY', 'Enter a finite quantity greater than zero.')); return; }
+    if (cost.trim() && (!Number.isFinite(Number(cost)) || Number(cost) < 0)) { setErr(msg('FE_STOCK_COST_INVALID', 'Enter a finite, non-negative cost.')); return; }
+    writing.current = true; setSaving(true); setErr('');
     try {
       await liveApi.admin.logStockPurchase(item.id, intent.body({
         quantity,
-        cost: cost ? parseFloat(cost) : 0,
+        cost: cost.trim() ? Number(cost) : null,
         notes: notes.trim() || undefined,
       }));
       intent.clear();
       toast({ title: msg('FE_ADMIN_STORE_PURCHASE_LOGGED', '✓ Purchase logged'), description: msg('FE_ADMIN_STORE_QUANTITY_PURCHASE_UNIT_NAME_ADDED_TO', '{quantity} {purchase_unit_name} added to {name}', { quantity: quantity, purchase_unit_name: purchaseUnitName, name: item.name }) });
       onDone();
-    } catch (e) { setErr(e.message || 'Failed to log purchase'); }
-    setSaving(false);
+    } catch (e) { setErr(e.message || msg('FE_STOCK_PURCHASE_FAILED', "Failed to log purchase")); }
+    writing.current = false; setSaving(false);
   };
 
   return (
-    <Modal open onClose={onClose} title={`Log Purchase — ${item.name}`}>
+    <Modal open onClose={saving ? () => {} : onClose} title={msg('FE_STOCK_PURCHASE_TITLE', 'Log Purchase — {name}', { name: item.name })}>
       <div className="space-y-3">
-        <Field label={`Quantity (${purchaseUnitName})`} hint="How many did you buy?">
-          <TextInput type="number" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="e.g. 10" autoFocus />
+        <Field label={msg('FE_STOCK_QUANTITY_LABEL', 'Quantity ({unit})', { unit: purchaseUnitName })} hint={msg('FE_STOCK_PURCHASE_QTY_HELP', "How many did you buy?")}>
+          <TextInput aria-label={msg('FE_STOCK_QUANTITY', 'Quantity')} type="number" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={msg('FE_STOCK_EXAMPLE_TEN', "e.g. 10")} autoFocus />
         </Field>
-        <Field label="Cost (₦)" hint="Total purchase cost, optional">
-          <TextInput type="number" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 5000" />
+        <Field label={msg('FE_STOCK_COST_LABEL', "Cost (₦)")} hint={msg('FE_STOCK_COST_HELP', "Total purchase cost, optional")}>
+          <TextInput aria-label={msg('FE_STOCK_COST_LABEL', 'Cost (₦)')} type="number" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} placeholder={msg('FE_STOCK_EXAMPLE_COST', "e.g. 5000")} />
         </Field>
-        <Field label="Notes (optional)">
-          <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supplier, receipt no, etc." />
+        <Field label={msg('FE_STOCK_NOTES', "Notes (optional)")}>
+          <TextInput aria-label={msg('FE_STOCK_NOTES', 'Notes (optional)')} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={msg('FE_STOCK_SUPPLIER_PLACEHOLDER', "Supplier, receipt no, etc.")} />
         </Field>
         {err && <p className="text-xs font-bold text-destructive">{err}</p>}
         <button onClick={submit} disabled={saving} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
-          {saving ? 'Saving…' : 'Log Purchase'}
+          {saving ? msg('FE_STOCK_SAVING', "Saving…") : msg('FE_STOCK_PURCHASE_SAVE', "Log Purchase")}
         </button>
       </div>
     </Modal>
@@ -250,12 +264,14 @@ function UsageModal({ item, unitName, onClose, onDone }) {
   const [type, setType] = useState('usage');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const writing = useRef(false);
   const [err, setErr] = useState('');
 
   const submit = async () => {
-    const quantity = parseFloat(qty);
-    if (!quantity || quantity <= 0) { setErr('Enter a valid quantity'); return; }
-    setSaving(true); setErr('');
+    if (writing.current) return;
+    const quantity = Number(qty);
+    if (!qty.trim() || !Number.isFinite(quantity) || (type === 'correction' ? quantity === 0 : quantity <= 0)) { setErr(type === 'correction' ? msg('FE_STOCK_CORRECTION_INVALID', 'Enter a finite, non-zero correction.') : msg('FE_STOCK_POSITIVE_QUANTITY', 'Enter a finite quantity greater than zero.')); return; }
+    writing.current = true; setSaving(true); setErr('');
     try {
       await liveApi.admin.logStockUsage(item.id, intent.body({
         quantity,
@@ -272,17 +288,17 @@ function UsageModal({ item, unitName, onClose, onDone }) {
         }),
       });
       onDone();
-    } catch (e) { setErr(e.message || 'Failed to log usage'); }
-    setSaving(false);
+    } catch (e) { setErr(e.message || msg('FE_STOCK_USAGE_FAILED', "Failed to log usage")); }
+    writing.current = false; setSaving(false);
   };
 
   return (
-    <Modal open onClose={onClose} title={`Log Usage — ${item.name}`}>
+    <Modal open onClose={saving ? () => {} : onClose} title={msg('FE_STOCK_USAGE_TITLE', 'Log Usage — {name}', { name: item.name })}>
       <div className="space-y-3">
-        <Field label={`Quantity (${unitName(item.usage_unit_id) || 'units'})`} hint="How many were used?">
-          <TextInput type="number" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="e.g. 5" autoFocus />
+        <Field label={msg('FE_STOCK_QUANTITY_LABEL', 'Quantity ({unit})', { unit: unitName(item.usage_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units') })} hint={msg('FE_STOCK_USAGE_QTY_HELP', "How many were used?")}>
+          <TextInput aria-label={msg('FE_STOCK_QUANTITY', 'Quantity')} type="number" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={msg('FE_STOCK_EXAMPLE_FIVE', "e.g. 5")} autoFocus />
         </Field>
-        <Field label="Type">
+        <Field label={msg('FE_STOCK_TYPE', "Type")}>
           <div className="flex gap-2 mt-1">
             {USAGE_TYPES.map((t) => (
               <button
@@ -295,12 +311,13 @@ function UsageModal({ item, unitName, onClose, onDone }) {
             ))}
           </div>
         </Field>
-        <Field label="Notes (optional)">
-          <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason, batch, etc." />
+        {type === 'correction' && <p className="text-xs text-muted-foreground">{msg('FE_STOCK_CORRECTION_HELP', 'Positive corrections remove usage units; negative corrections add usage units. The ledger records the change.')}</p>}
+        <Field label={msg('FE_STOCK_NOTES', "Notes (optional)")}>
+          <TextInput aria-label={msg('FE_STOCK_NOTES', 'Notes (optional)')} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={msg('FE_STOCK_REASON_PLACEHOLDER', "Reason, batch, etc.")} />
         </Field>
         {err && <p className="text-xs font-bold text-destructive">{err}</p>}
         <button onClick={submit} disabled={saving} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
-          {saving ? 'Saving…' : 'Log Usage'}
+          {saving ? msg('FE_STOCK_SAVING', "Saving…") : msg('FE_STOCK_USAGE_SAVE', "Log Usage")}
         </button>
       </div>
     </Modal>
@@ -308,87 +325,89 @@ function UsageModal({ item, unitName, onClose, onDone }) {
 }
 
 // ── Add item modal ──
-function AddItemModal({ onClose, onDone }: {
+function AddItemModal({ onClose, onDone, units = [], campusId }: {
   onClose?: () => void;
   onDone?: () => void;
-  /** Caller passes its cached units; this modal loads its own on open. */
-  units?: unknown;
+  units?: { id: string; name: string }[];
+  campusId: string;
 }) {
+  const intent = useCmsCreateIntent();
   const [name, setName] = useState('');
-  const [units, setUnits] = useState(null); // null = loading, [] = none configured
   const [purchaseUnitId, setPurchaseUnitId] = useState('');
   const [usageUnitId, setUsageUnitId] = useState('');
   const [conversionFactor, setConversionFactor] = useState('');
   const [threshold, setThreshold] = useState('');
   const [saving, setSaving] = useState(false);
+  const writing = useRef(false);
   const [err, setErr] = useState('');
 
-  // Units load when THIS form opens (not on page load) — GET /measurement-units.
-  useEffect(() => {
-    liveApi.admin.getMeasurementUnits()
-      .then((list) => setUnits(Array.isArray(list) ? list : []))
-      .catch(() => setUnits([]));
-  }, []);
-
   const submit = async () => {
-    if (!name.trim()) { setErr('Name is required'); return; }
-    if (!usageUnitId) { setErr('Usage unit is required'); return; }
-    setSaving(true); setErr('');
+    if (writing.current) return;
+    if (!name.trim() || name.trim().length > 128) { setErr(msg('FE_STOCK_NAME_INVALID', 'Enter a name between 1 and 128 characters.')); return; }
+    if (!usageUnitId) { setErr(msg('FE_STOCK_USAGE_UNIT_REQUIRED', 'Select a usage unit.')); return; }
+    const conversion = conversionFactor.trim() ? Number(conversionFactor) : 1;
+    const lowThreshold = threshold.trim() ? Number(threshold) : 0;
+    if (!Number.isFinite(conversion) || conversion <= 0 || !Number.isFinite(lowThreshold) || lowThreshold < 0) { setErr(msg('FE_STOCK_UNITS_INVALID', 'Conversion must be positive and the threshold must be non-negative.')); return; }
+    writing.current = true; setSaving(true); setErr('');
     try {
-      await liveApi.admin.createStockItem({
+      await liveApi.admin.createStockItem(intent.body({
+        campus_id: campusId,
         name: name.trim(),
         purchase_unit_id: purchaseUnitId || usageUnitId,
         usage_unit_id: usageUnitId,
-        conversion_factor: conversionFactor ? parseFloat(conversionFactor) : 1,
-        low_stock_threshold: threshold ? parseFloat(threshold) : 0,
-      });
+        conversion_factor: conversion,
+        low_stock_threshold: lowThreshold,
+      }));
+      intent.clear();
       toast({ title: msg('FE_ADMIN_STORE_ITEM_ADDED', '✓ Item added'), description: msg('FE_ADMIN_STORE_NAME_IS_NOW_TRACKED', '{name} is now tracked', { name: name.trim() }) });
       onDone();
-    } catch (e) { setErr(e.message || 'Failed to add item'); }
-    setSaving(false);
+    } catch (e) { setErr(e.message || msg('FE_STOCK_ADD_FAILED', "Failed to add item")); }
+    writing.current = false; setSaving(false);
   };
 
   return (
-    <Modal open onClose={onClose} title="Add Stock Item">
+    <Modal open onClose={saving ? () => {} : onClose} title={msg('FE_STOCK_ADD_TITLE', "Add Stock Item")}>
       <div className="space-y-3">
-        <Field label="Name" hint="e.g. Spices, Oil, Spoons">
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Ingredient name" autoFocus />
+        <Field label={msg('FE_STOCK_NAME', "Name")} hint={msg('FE_STOCK_NAME_HELP', "e.g. Spices, Oil, Spoons")}>
+          <TextInput aria-label={msg('FE_STOCK_NAME', 'Name')} maxLength={128} value={name} onChange={(e) => setName(e.target.value)} placeholder={msg('FE_STOCK_NAME_PLACEHOLDER', "Ingredient name")} autoFocus />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Purchase Unit" hint="Unit the item is bought in">
+          <Field label={msg('FE_STOCK_PURCHASE_UNIT', "Purchase Unit")} hint={msg('FE_STOCK_PURCHASE_UNIT_HELP', "Unit the item is bought in")}>
             <select
+              aria-label={msg('FE_STOCK_PURCHASE_UNIT', 'Purchase Unit')}
               value={purchaseUnitId}
               onChange={(e) => setPurchaseUnitId(e.target.value)}
-              disabled={units == null}
+              disabled={!units.length || saving}
               className="w-full mt-1 p-2.5 rounded-xl border border-border bg-card text-sm text-foreground disabled:opacity-50"
             >
-              <option value="">{units == null ? 'Loading units…' : 'Select unit'}</option>
+              <option value="">{msg('FE_STOCK_SELECT_UNIT', "Select unit")}</option>
               {(units || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
-          <Field label="Usage Unit" hint="Unit the item is counted in">
+          <Field label={msg('FE_STOCK_USAGE_UNIT', "Usage Unit")} hint={msg('FE_STOCK_USAGE_UNIT_HELP', "Unit the item is counted in")}>
             <select
+              aria-label={msg('FE_STOCK_USAGE_UNIT', 'Usage Unit')}
               value={usageUnitId}
               onChange={(e) => setUsageUnitId(e.target.value)}
-              disabled={units == null}
+              disabled={!units.length || saving}
               className="w-full mt-1 p-2.5 rounded-xl border border-border bg-card text-sm text-foreground disabled:opacity-50"
             >
-              <option value="">{units == null ? 'Loading units…' : 'Select unit'}</option>
+              <option value="">{msg('FE_STOCK_SELECT_UNIT', "Select unit")}</option>
               {(units || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Conversion Factor" hint="Units per purchase unit">
-            <TextInput type="number" inputMode="decimal" value={conversionFactor} onChange={(e) => setConversionFactor(e.target.value)} placeholder="e.g. 40" />
+          <Field label={msg('FE_STOCK_CONVERSION', "Conversion Factor")} hint={msg('FE_STOCK_CONVERSION_HELP', "Units per purchase unit")}>
+            <TextInput aria-label={msg('FE_STOCK_CONVERSION', 'Conversion Factor')} type="number" inputMode="decimal" value={conversionFactor} onChange={(e) => setConversionFactor(e.target.value)} placeholder={msg('FE_STOCK_EXAMPLE_CONVERSION', "e.g. 40")} />
           </Field>
-          <Field label="Low Stock Threshold" hint="In usage units">
-            <TextInput type="number" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} placeholder="e.g. 20" />
+          <Field label={msg('FE_STOCK_THRESHOLD', "Low Stock Threshold")} hint={msg('FE_STOCK_THRESHOLD_HELP', "In usage units")}>
+            <TextInput aria-label={msg('FE_STOCK_THRESHOLD', 'Low Stock Threshold')} type="number" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} placeholder={msg('FE_STOCK_EXAMPLE_THRESHOLD', "e.g. 20")} />
           </Field>
         </div>
         {err && <p className="text-xs font-bold text-destructive">{err}</p>}
-        <button onClick={submit} disabled={saving} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
-          {saving ? 'Saving…' : 'Add Item'}
+        <button onClick={submit} disabled={saving || !units.length} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
+          {saving ? msg('FE_STOCK_SAVING', "Saving…") : msg('FE_STOCK_ADD', "Add Item")}
         </button>
       </div>
     </Modal>
@@ -397,48 +416,46 @@ function AddItemModal({ onClose, onDone }: {
 
 // ── Ledger modal ──
 function LedgerModal({ item, unitName, onClose }) {
-  const [entries, setEntries] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [page, setPage] = useState(0);
+  const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await liveApi.admin.getStockItemLedger(item.id);
-        // unwrap() already handles the entries/ledger/transactions keys.
-        setEntries(res);
-      } catch { setEntries([]); }
-      setLoading(false);
-    })();
-  }, [item.id]);
-
-  return (
-    <Modal open onClose={onClose} title={`Ledger — ${item.name}`}>
-      {loading ? (
-        <div className="py-8 flex justify-center"><div className="w-6 h-6 border-2 border-border border-t-primary rounded-full animate-spin" /></div>
-      ) : !entries || entries.length === 0 ? (
-        <EmptyState icon={History} title="No entries yet" body="Purchases and usage will appear here in reverse order." />
-      ) : (
-        <div className="space-y-2">
-          {entries.map((e, i) => {
-            const isPurchase = (e.type || e.entry_type) === 'purchase';
-            const qty = e.quantity ?? e.qty ?? 0;
-            return (
-              <div key={e.id || i} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isPurchase ? 'bg-success/15' : 'bg-accent/25'}`}>
-                  {isPurchase ? <Plus className="w-4 h-4 text-success" /> : <Minus className="w-4 h-4 text-accent-foreground" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-foreground capitalize">{e.type || e.entry_type || 'usage'}</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {qty} {unitName(item.usage_unit_id) || 'units'} · {e.logged_by || e.created_by || '—'} · {new Date(e.created_at || e.logged_at).toLocaleString()}
-                  </div>
-                  {e.notes && <div className="text-[11px] text-muted-foreground mt-0.5 italic">"{e.notes}"</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Modal>
-  );
+  const [error, setError] = useState(false);
+  const generation = useRef(0);
+  const load = useCallback(async () => {
+    const current = ++generation.current;
+    setLoading(true); setError(false);
+    try {
+      const value = await liveApi.admin.getStockItemLedgerPage(item.id, { limit: 50, offset: page * 50 });
+      if (current !== generation.current) return;
+      setEntries(value.ledger || []); setMore(!!value.has_more);
+    } catch { if (current === generation.current) { setError(true); setEntries([]); } }
+    finally { if (current === generation.current) setLoading(false); }
+  }, [item.id, page]);
+  useEffect(() => { void load(); return () => { ++generation.current; }; }, [load]);
+  return <Modal open onClose={onClose} title={msg('FE_STOCK_LEDGER_TITLE', 'Ledger — {name}', { name: item.name })}>
+    {loading ? <p role="status">{msg('FE_ADMIN_FLAGS_LOADING', 'Loading…')}</p>
+      : error ? <div role="alert"><p>{msg('FE_STOCK_LEDGER_FAILED', 'Stock history could not be loaded.')}</p><button className="mt-2 font-bold text-primary" onClick={load}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>
+      : entries.length === 0 ? <EmptyState icon={History} title={msg('FE_STOCK_LEDGER_EMPTY', 'No entries yet')} body={msg('FE_STOCK_LEDGER_EMPTY_HELP', 'Purchases and adjustments appear here, newest first.')} />
+      : <div className="space-y-2">{entries.map(e => {
+        const delta = Number(e.quantity_in_usage_units || 0);
+        const purchase = e.type === 'purchase';
+        return <div key={e.id} className="flex gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
+          <div className="w-8 h-8 shrink-0 flex items-center justify-center">{delta >= 0 ? <Plus className="w-4 h-4 text-success" /> : <Minus className="w-4 h-4 text-destructive" />}</div>
+          <div className="min-w-0 text-xs space-y-1">
+            <p className="text-sm font-bold capitalize">{e.type}</p>
+            <p>{e.quantity_entered} {e.measurement_units?.name || unitName(e.unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units')}</p>
+            <p>{msg('FE_STOCK_LEDGER_CHANGE', 'Balance change: {delta} {unit}', { delta: `${delta > 0 ? '+' : ''}${delta}`, unit: unitName(item.usage_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units') })}</p>
+            {purchase && e.cost != null && <p>{msg('FE_STOCK_LEDGER_COST', 'Purchase cost: ₦{cost}', { cost: Number(e.cost).toLocaleString() })}</p>}
+            <p className="text-muted-foreground">{e.profiles?.full_name || '—'} · {new Date(e.created_at).toLocaleString()}</p>
+            {e.notes && <p className="italic break-words">{e.notes}</p>}
+          </div>
+        </div>;
+      })}</div>}
+    {!loading && !error && <div className="mt-3 flex items-center justify-between gap-3">
+      <button disabled={page === 0} onClick={() => setPage(value => value - 1)} className="font-bold text-primary disabled:opacity-40">{msg('FE_STOCK_PREVIOUS', 'Previous')}</button>
+      <span className="text-xs">{msg('FE_STOCK_PAGE', 'Page {number}', { number: page + 1 })}</span>
+      <button disabled={!more} onClick={() => setPage(value => value + 1)} className="font-bold text-primary disabled:opacity-40">{msg('FE_STOCK_NEXT', 'Next')}</button>
+    </div>}
+  </Modal>;
 }

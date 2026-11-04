@@ -1,3 +1,5 @@
+General-site continuation: [4 November ownership and progress](GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md).
+
 Current remaining work: [30 October launch and full audit list](REMAINING_LAUNCH_AND_AUDIT_2026_10_30.md).
 
 # Admin audit coverage and ownership
@@ -13,9 +15,10 @@ Current remaining work: [30 October launch and full audit list](REMAINING_LAUNCH
 | Kitchen workspace / read-only settings | [Explicit super-admin campus, handoff scope, authoritative availability, failed-read recovery](KITCHEN_WORKSPACE_SCOPE_EVIDENCE_2026_10_29.md) pass; ineffective legacy switch removed in favor of existing ordering-window controls |
 | Feature Flags — global controls | [Native toggle/create/retry, override visibility, actual global-row/RLS checks](ADMIN_FEATURE_FLAGS_SCOPE_EVIDENCE_2026_10_29.md) pass; complete consumer/worker matrix remains open |
 | Kitchen prep/stock actions | [Window races/Retry, single batch submission, correct persisted campus stock endpoint](KITCHEN_ACTIONS_EVIDENCE_2026_10_30.md) pass for listed cases |
+| Store / ingredient stock — current controls | [Native create/adjust/history, scopes/retries, paging and actual direct-write protection](ADMIN_STOCK_CONTROLS_EVIDENCE_2026_11_04.md) pass for listed cases; edit/archive/restore and broader inventory reports remain open |
 | Remaining admin pages / actions | Still open; targeted earlier successes below do not establish whole-page approval |
 
-The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite: **778 passed**.
+The domain ownership/history below remains context rather than a current whole-page pass list. Latest integrated backend suite in the general-site continuation: **993 passed**.
 
 
 **Inventoried means mapped, not approved safe.** Opening a sidebar page, listing fields or finding an existing test does not establish that every button, role and customer outcome works. A passed loop applies only to its recorded assertions. This chat cannot certify work performed in another chat without its evidence/PR.

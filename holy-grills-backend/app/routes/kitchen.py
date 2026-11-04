@@ -8,6 +8,7 @@ from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.tz import today_wat, WAT_OFFSET
 from datetime import datetime, timezone, timedelta, date
+from decimal import Decimal, localcontext
 
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
@@ -229,6 +230,15 @@ def create_stock_item():
     if not campus_id:
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
 
+    request_id = data.get("request_id")
+    if request_id is not None and (not isinstance(request_id, str) or not validate_uuid(request_id)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if not validate_uuid(str(campus_id)):
+        return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+
+    campus_id = str(campus_id).lower()
+    data["purchase_unit_id"] = data["purchase_unit_id"].lower()
+    data["usage_unit_id"] = data["usage_unit_id"].lower()
     item_record = {
         "name": data["name"],
         "purchase_unit_id": data["purchase_unit_id"],
@@ -240,11 +250,39 @@ def create_stock_item():
     if campus_id:
         item_record["campus_id"] = campus_id
 
+    if request_id:
+        item_record["id"] = request_id.lower()
+
+    def replay():
+        existing = (db.table("stock_items").select("*").eq("id", request_id.lower()).single().execute())
+        if not existing:
+            return None
+        same = all(existing.get(key) == item_record[key] for key in ("name", "purchase_unit_id", "usage_unit_id", "campus_id"))
+        same = same and all(float(existing.get(key, -1)) == item_record[key] for key in ("conversion_factor", "low_stock_threshold"))
+        if not same:
+            return jsonify({"error": MSG.STOCK_INTENT_CONFLICT}), 409
+        return jsonify({**existing, "idempotent": True}), 200
+
     try:
+        if request_id:
+            previous = replay()
+            if previous:
+                return previous
         result = db.table("stock_items").insert(item_record).execute()
-    except SupabaseError as e:
-        detail = (getattr(e, "details", None) or {}).get("message", "invalid unit reference")[:150]
-        return jsonify({"error": MSG.STOCK_ITEM_CREATE_FAILED.format(detail=detail)}), 400
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get("code", ""))
+        if code == "23505":
+            if request_id:
+                previous = replay()
+                if previous:
+                    return previous
+            return jsonify({"error": MSG.STOCK_ITEM_ALREADY_EXISTS}), 409
+        if code == "23503":
+            return jsonify({"error": MSG.STOCK_UNIT_REFERENCE_INVALID}), 400
+        if code == "42501" or exc.status_code in (401, 403):
+            return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
+        logger.warning("create_stock_item failed (%s)", code)
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     created = result[0] if isinstance(result, list) else result
     return jsonify(created), 201
 
@@ -301,7 +339,11 @@ def log_stock_purchase(stock_item_id):
         description: Purchase logged
     """
     db = get_db()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+    if data.get("notes") is not None and (not isinstance(data["notes"], str) or len(data["notes"]) > 1000):
+        return jsonify({"error": MSG.STOCK_NOTES_INVALID}), 400
     if data.get("quantity") is None:
         return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
 
@@ -318,11 +360,18 @@ def log_stock_purchase(stock_item_id):
     if isinstance(data["quantity"], bool) or isinstance(data.get("cost"), bool) or not math.isfinite(qty_entered) or qty_entered <= 0 or (cost is not None and (not math.isfinite(cost) or cost < 0)):
         return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
     conv_factor = float(item.get("conversion_factor") or 1.0)
-    usage_qty = qty_entered * conv_factor
+    # The RPC compares numeric conversion exactly. Avoid binary float noise
+    # (for example 0.1 * 3 becoming 0.30000000000000004).
+    with localcontext() as context:
+        context.prec = 64
+        exact_usage_qty = Decimal(str(qty_entered)) * Decimal(str(conv_factor))
+    usage_qty = float(exact_usage_qty)
+    if not math.isfinite(usage_qty):
+        return jsonify({"error": MSG.STOCK_QUANTITY_COST_INVALID}), 400
 
     result, error = _stock_adjustment(db, {
         "p_stock_item_id": stock_item_id, "p_type": "purchase", "p_quantity_entered": qty_entered,
-        "p_delta_usage_units": usage_qty, "p_unit_id": item.get("purchase_unit_id"),
+        "p_delta_usage_units": str(exact_usage_qty), "p_unit_id": item.get("purchase_unit_id"),
         "p_cost": cost, "p_notes": data.get("notes"), "p_logged_by": g.user_id,
     }, data.get("request_id"))
     if error: return error
@@ -362,7 +411,11 @@ def log_stock_usage(stock_item_id):
         description: Usage logged and low stock alert evaluated
     """
     db = get_db()
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+    if data.get("notes") is not None and (not isinstance(data["notes"], str) or len(data["notes"]) > 1000):
+        return jsonify({"error": MSG.STOCK_NOTES_INVALID}), 400
     if data.get("quantity") is None:
         return jsonify({"error": MSG.STOCK_QUANTITY_INVALID}), 400
 
@@ -420,14 +473,24 @@ def get_stock_ledger(stock_item_id):
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="id", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
 
-    ledger_rows = (
-        db.table("stock_ledger")
-        .select("*,profiles!logged_by(full_name,email),measurement_units!unit_id(name)")
+    paged = "limit" in request.args or "offset" in request.args
+    try:
+        limit = int(request.args.get("limit", 50)); offset = int(request.args.get("offset", 0))
+        if not 1 <= limit <= 200 or offset < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"error": MSG.STOCK_LEDGER_PAGE_INVALID}), 400
+    query = (db.table("stock_ledger")
+        .select("*,profiles!logged_by(full_name),measurement_units!unit_id(name)")
         .eq("stock_item_id", stock_item_id)
-        .order("created_at", ascending=False)
-        .execute()
-    ) or []
-    return jsonify({"ledger": ledger_rows, "count": len(ledger_rows)}), 200
+        .order("created_at", ascending=False).order("id", ascending=False))
+    if paged:
+        query = query.limit(limit + 1).offset(offset)
+    ledger_rows = query.execute() or []
+    if not paged:
+        return jsonify({"ledger": ledger_rows, "count": len(ledger_rows)}), 200
+    return jsonify({"ledger": ledger_rows[:limit], "count": len(ledger_rows[:limit]),
+                    "limit": limit, "offset": offset, "has_more": len(ledger_rows) > limit}), 200
 
 
 def _resolve_kitchen_campus_id():

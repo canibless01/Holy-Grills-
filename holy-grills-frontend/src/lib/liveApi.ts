@@ -1363,10 +1363,11 @@ const admin = {
   async fulfillExclusiveSpinPrize(id, body = { status: 'fulfilled' }) { return apiClient.patch(`/admin/exclusive-spin-prizes/${id}`, body); },
 
   // --- Stock / Ingredient Tracking (GET/POST /admin/stock-items, POST /:id/purchase, /:id/usage, GET /:id/ledger) ---
-  async getStockItems() { return unwrap(await apiClient.get('/admin/stock-items'), 'items', 'stock_items'); },
+  async getStockItems(params = {}) { return unwrap(await apiClient.get('/admin/stock-items', params), 'items', 'stock_items'); },
   async createStockItem(body) { return apiClient.post('/admin/stock-items', body); },
   async logStockPurchase(id, body) { return apiClient.post(`/admin/stock-items/${id}/purchase`, body); },
   async logStockUsage(id, body) { return apiClient.post(`/admin/stock-items/${id}/usage`, body); },
+  async getStockItemLedgerPage(id, params = {}) { return apiClient.get(`/admin/stock-items/${id}/ledger`, params); },
   async getStockItemLedger(id) { return unwrap(await apiClient.get(`/admin/stock-items/${id}/ledger`), 'entries', 'ledger', 'transactions'); },
   // Measurement units (GET /measurement-units → [{id, name}]) — powers the unit
   // dropdowns on the stock item form, which submits purchase_unit_id / usage_unit_id.
