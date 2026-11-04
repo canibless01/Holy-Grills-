@@ -1,3 +1,4 @@
+import { sundayOffer } from '@/lib/sundayClosure';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ICONS, ICON_SIZES } from '@/config/icons';
@@ -57,8 +58,10 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
   const nextDate = status?.next_available_date || null;
   const nextTime = status?.next_opens_at || null;
 
-  const body =
-    reason === 'closed_today'
+  const sunday = sundayOffer(nextDate);
+  const body = sunday.sunday
+    ? (sunday.mondayNext ? msg('FE_SUNDAY_MONDAY_BODY', 'We don’t open on Sundays. Place your order today and we’ll prepare and deliver it on Monday.') : msg('FE_SUNDAY_NEXT_BODY', 'We don’t open on Sundays. You can still place your order for the next available delivery day.'))
+    : reason === 'closed_today'
       ? msg('FE_CHECKOUT_KITCHEN_CLOSED_TODAY', 'Ordering is closed for today. You can order now for the next opening; the kitchen may still be preparing earlier orders.')
       : reason === 'full'
         ? msg('FE_CHECKOUT_KITCHEN_CLOSED_FULL', "Today's slots are fully booked. You can still order now and we will schedule it for the next opening.")
@@ -139,7 +142,7 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
           <div className="px-6 pt-8 pb-6 text-center">
             <FlameMark className="w-16 h-16 mx-auto mb-4" />
             <h2 className="font-heading font-extrabold text-xl text-foreground">
-              {msg('FE_CHECKOUT_KITCHEN_CLOSED_TITLE', 'Ordering is closed')}
+              {sunday.sunday ? msg('FE_SUNDAY_CLOSED_TITLE', 'We’re closed on Sundays') : msg('FE_CHECKOUT_KITCHEN_CLOSED_TITLE', 'Ordering is closed')}
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{body}</p>
 
@@ -162,7 +165,7 @@ export default function CheckoutKitchenClosedPopup({ status, open, busy = false,
                 {busy ? (
                   <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Scheduling…</>
                 ) : (
-                  <>{msg('FE_CHECKOUT_SCHEDULE_MY_ORDER', 'Schedule my order')} <ArrowRight size={ICON_SIZES.sm} /></>
+                  <>{(sunday.mondayNext ? msg('FE_SUNDAY_ORDER_MONDAY', 'Order for Monday') : msg('FE_CHECKOUT_SCHEDULE_MY_ORDER', 'Schedule my order'))} <ArrowRight size={ICON_SIZES.sm} /></>
                 )}
               </button>
               <button

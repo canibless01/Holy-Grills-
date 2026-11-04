@@ -23,8 +23,8 @@ export default function InstallPrompt() {
   const [showIOS, setShowIOS] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
   const isIOS = typeof navigator !== 'undefined' && (/iphone|ipad|ipod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+  const isMobile = isIOS || (typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent));
   const recentlyDismissed = () => {
     const saved = Number(localStore.getItem(DISMISS_KEY));
     return saved > 1 && Date.now() >= saved && Date.now() - saved < 7 * 86400000;
@@ -114,7 +114,7 @@ export default function InstallPrompt() {
               <li><Share2 className="inline w-4 h-4 mr-2" />{msg('FE_INSTALL_IOS_SHARE', 'In Safari, tap Share.')}</li>
               <li><Plus className="inline w-4 h-4 mr-2" />{msg('FE_INSTALL_IOS_ADD', 'Choose Add to Home Screen, then tap Add.')}</li>
               <li>{msg('FE_INSTALL_OPEN_APP', 'Open Holy Grills from your home screen to continue.')}</li>
-            </ol> : <p className="text-sm text-foreground">{msg('FE_INSTALL_BROWSER_HELP', 'Open this site in Chrome or Edge, open the browser menu and choose Install app or Add to Home Screen. If it is already installed, open Holy Grills from your home screen.')}</p>}
+            </ol> : <p className="text-sm text-foreground">{msg('FE_INSTALL_BROWSER_HELP', 'Open this site in a regular Chrome or Edge tab, then choose Install app or Add to Home Screen from the browser menu. Private tabs and some in-app browsers do not support installation. If it is already installed, open Holy Grills from your home screen.')}</p>}
             <button onClick={dismiss} className="mt-5 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">
               {msg('FE_INSTALL_GOT_IT', 'Got it')}
             </button>

@@ -17,3 +17,15 @@ def test_configuration_fetches_once_per_request_and_preserves_date_filters():
     other=ScheduleReadCache(db,'campus')
     other.table('ordering_windows')
     assert query.execute.call_count==2
+
+
+def test_plain_status_read_also_reuses_its_schedule_snapshot():
+    from flask import Flask
+    from unittest.mock import MagicMock, patch
+    from app.routes import orders
+    db=MagicMock();snapshot=MagicMock()
+    with Flask(__name__).test_request_context('/orders/delivery-windows/status'),patch.object(orders,'get_user_client',return_value=db),patch.object(orders,'get_db',return_value=db),patch('app.routes.events._get_campus_id',return_value='campus'),patch('app.services.schedule_read_cache.ScheduleReadCache',return_value=snapshot) as cache,patch('app.services.order_service.get_ordering_window_status',return_value={'is_open':True,'windows':[]}) as status:
+        response,code=orders.delivery_windows_status()
+    assert code==200 and response.json['is_open'] is True
+    cache.assert_called_once_with(db,'campus')
+    status.assert_called_once_with(snapshot,'campus')

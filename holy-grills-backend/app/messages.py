@@ -17,6 +17,12 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_SUNDAY_CLOSED_TITLE = "We’re closed on Sundays"
+    FE_SUNDAY_MONDAY_BODY = "We don’t open on Sundays. Place your order today and we’ll prepare and deliver it on Monday."
+    FE_SUNDAY_NEXT_BODY = "We don’t open on Sundays. You can still place your order for the next available delivery day."
+    FE_SUNDAY_ORDER_MONDAY = "Order for Monday"
+    FE_SUNDAY_DELIVERY_IN = "Next delivery in"
+
     FE_LOGIN_STREAK_WEEK_PROGRESS = "{done}/{total} this week"
     FE_LOGIN_STREAK_DAY_COUNT = "day streak"
     FE_LOGIN_STREAK_DAILY_FLAMES = "Daily check-in flames"
@@ -75,7 +81,7 @@ class MSG:
     FE_INSTALL_IOS_SHARE = "In Safari, tap Share."
     FE_INSTALL_IOS_ADD = "Choose Add to Home Screen, then tap Add."
     FE_INSTALL_OPEN_APP = "Open Holy Grills from your home screen to continue."
-    FE_INSTALL_BROWSER_HELP = "Open this site in Chrome or Edge, open the browser menu and choose Install app or Add to Home Screen. If it is already installed, open Holy Grills from your home screen."
+    FE_INSTALL_BROWSER_HELP = "Open this site in a regular Chrome or Edge tab, then choose Install app or Add to Home Screen from the browser menu. Private tabs and some in-app browsers do not support installation. If it is already installed, open Holy Grills from your home screen."
     FE_INSTALL_GOT_IT = "Got it"
     FE_INSTALL_HOME_SCREEN = "Add to your Home Screen"
     FE_INSTALL_PROFILE_ACTION = "Install Holy Grills on this device"

@@ -7,6 +7,7 @@ import Footer from './Footer';
 import { useCampus } from '@/lib/campusContext';
 import MascotCelebrationOverlay from './mascot/MascotCelebrationOverlay';
 import PushSoftPrompt from './notifications/PushSoftPrompt';
+import SundayClosureNotice from './SundayClosureNotice';
 
 export default function Layout() {
   useMessages();
@@ -30,6 +31,7 @@ export default function Layout() {
       <MascotCelebrationOverlay />
       <PromoFlyerPopup />
       <PushSoftPrompt />
+      <SundayClosureNotice />
     </div>
   );
 }

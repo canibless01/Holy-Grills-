@@ -976,7 +976,7 @@ def delivery_windows_status():
 
     calendar_requested = request.args.get('calendar', '').lower() == 'true'
     read_db = get_db()
-    if calendar_requested and campus_id:
+    if campus_id:
         from app.services.schedule_read_cache import ScheduleReadCache
         read_db = ScheduleReadCache(read_db, campus_id)
 

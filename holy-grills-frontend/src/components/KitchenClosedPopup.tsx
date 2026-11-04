@@ -1,3 +1,7 @@
+import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
+import { sessionStore } from '@/lib/storage';
+import { sundayOffer, sundayDismissKey } from '@/lib/sundayClosure';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ICONS, ICON_SIZES } from '@/config/icons';
@@ -28,15 +32,18 @@ const parts = (ms) => {
 const pad = (n) => String(n).padStart(2, '0');
 
 export default function KitchenClosedPopup({ status, scheduledWindows = [] }) {
+  const { campusId } = useCampus();
   const [open, setOpen] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  const dismissed = typeof window !== 'undefined' && sessionStorage.getItem('hg_kc_dismissed') === '1';
+  const sunday = sundayOffer(status?.next_available_date, now);
+  const dismissKey = sunday.sunday ? sundayDismissKey(campusId || 'global', sunday.date) : 'hg_kc_dismissed';
+  const dismissed = sessionStore.getItem(dismissKey) === '1';
 
   // Explicit closed only — `unknown` (no campus yet) must never trigger this.
   useEffect(() => {
-    if (status && status.unknown !== true && status.is_open === false && !dismissed) setOpen(true);
+    setOpen(!!status && status.unknown !== true && status.is_open === false && !dismissed);
   }, [status, dismissed]);
 
   // Live clock — drives the reopening countdown.
@@ -52,7 +59,7 @@ export default function KitchenClosedPopup({ status, scheduledWindows = [] }) {
 
   const close = () => {
     setOpen(false);
-    try { sessionStorage.setItem('hg_kc_dismissed', '1'); } catch { /* ignore */ }
+    sessionStore.setItem(dismissKey, '1');
   };
 
   return (
@@ -79,12 +86,12 @@ export default function KitchenClosedPopup({ status, scheduledWindows = [] }) {
             {!scheduling ? (
               <div className="px-6 pt-8 pb-6 text-center">
                 <FlameMark className="w-16 h-16 mx-auto mb-4" />
-                <h2 className="font-heading font-extrabold text-xl text-foreground">The grill is resting 🔥</h2>
-                <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">Next window soon.</p>
+                <h2 className="font-heading font-extrabold text-xl text-foreground">{sunday.sunday ? msg('FE_SUNDAY_CLOSED_TITLE', 'We’re closed on Sundays') : 'The grill is resting 🔥'}</h2>
+                <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">{sunday.sunday ? (sunday.mondayNext ? msg('FE_SUNDAY_MONDAY_BODY', 'We don’t open on Sundays. Place your order today and we’ll prepare and deliver it on Monday.') : msg('FE_SUNDAY_NEXT_BODY', 'We don’t open on Sundays. You can still place your order for the next available delivery day.')) : 'Next window soon.'}</p>
 
                 {t && (
                   <div className="mt-5">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Opens in</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">{sunday.sunday ? msg('FE_SUNDAY_DELIVERY_IN', 'Next delivery in') : 'Opens in'}</p>
                     <div className="flex items-stretch justify-center gap-2">
                       {[
                         { v: pad(t.h), l: 'hrs' },
@@ -105,7 +112,7 @@ export default function KitchenClosedPopup({ status, scheduledWindows = [] }) {
                     onClick={() => setScheduling(true)}
                     className="w-full py-3.5 rounded-full bg-gradient-cta text-white font-bold text-sm shadow-glow flex items-center justify-center gap-2 active:scale-95 transition"
                   >
-                    Schedule my order <ArrowRight size={ICON_SIZES.sm} />
+                    {sunday.mondayNext ? msg('FE_SUNDAY_ORDER_MONDAY', 'Order for Monday') : 'Schedule my order'} <ArrowRight size={ICON_SIZES.sm} />
                   </button>
                   <button onClick={close} className="w-full py-2 text-sm text-muted-foreground font-semibold hover:text-foreground transition">
                     Maybe later
@@ -118,7 +125,7 @@ export default function KitchenClosedPopup({ status, scheduledWindows = [] }) {
                   status={status}
                   windows={scheduledWindows}
                   onBack={() => setScheduling(false)}
-                  onConfirm={() => { setOpen(false); setScheduling(false); }}
+                  onConfirm={() => { close(); setScheduling(false); }}
                 />
               </div>
             )}

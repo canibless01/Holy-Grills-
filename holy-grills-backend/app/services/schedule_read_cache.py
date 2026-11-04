@@ -1,4 +1,4 @@
-"""Request-local configuration snapshots for the multi-day calendar.
+"""Request-local configuration snapshots for status and multi-day calendar reads.
 
 Orders stay live reads. No cross-request cache, writes or shared user state.
 """
