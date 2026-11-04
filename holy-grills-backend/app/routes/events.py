@@ -274,7 +274,7 @@ def checkin(event_id):
             from app.services.milestone_service import notify_milestone_achieved
             for milestone in receipt.get("milestone_receipts", []):
                 notify_milestone_achieved(target_user_id, milestone["milestone_id"],
-                                          hp_awarded=milestone["hp_awarded"])
+                                          hp_awarded=milestone["hp_awarded"], completion_id=milestone.get("completion_id"))
         response = {**receipt, "message": MSG.EVENT_CHECKIN_SUCCESS}
         if receipt.get("is_guest"):
             response["prompt_create_account"] = MSG.GUEST_ACCOUNT_PROMPT

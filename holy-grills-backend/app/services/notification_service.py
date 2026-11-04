@@ -505,7 +505,9 @@ def send_notification(
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
-        if (notif_type in REQUEST_TYPES and reference_id) or notif_type.startswith("blast_"):
+        if ((notif_type in REQUEST_TYPES and reference_id)
+                or (notif_type == "milestone_achieved" and reference_type == "milestone_completion" and reference_id)
+                or notif_type.startswith("blast_")):
             # Existing primary-key uniqueness serializes retries per recipient,
             # request and channel, without another ledger/index/table.
             record["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,

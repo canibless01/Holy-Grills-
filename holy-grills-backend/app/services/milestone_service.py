@@ -219,7 +219,9 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     # Check if already completed (for this period / lifetime)
     already = _is_already_completed(db, user_id, milestone_id, period_key)
     if already:
-        return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True}
+        if trigger_type in SELF_DECLARED_TRIGGERS:
+            return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True}
+        return _complete_active_milestone(get_db(), user_id, milestone, hp_awarded, period_key)
 
     db = get_db()
 
@@ -260,6 +262,9 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
 
     # Campus of the user who is completing it (this row is what campus admins see through RLS)
     campus_id = _get_user_campus_id(db, user_id)
+
+    if trigger_type not in SELF_DECLARED_TRIGGERS:
+        return _complete_active_milestone(db, user_id, milestone, hp_awarded, period_key, campus_id=campus_id)
 
     # Record completion first to defend against concurrent race conditions before awarding HP.
     # The row's own id anchors the HP transaction, so every period gets its own idempotency slot.
@@ -339,38 +344,11 @@ def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int)
             if progress < target:
                 continue
 
-            if _is_already_completed(db, user_id, mid, period_key):
-                continue
-
-            hp = int(m.get("hp_awarded") or 0)
-
-            # Insert completion FIRST to defend against race conditions before awarding HP
             try:
-                um_result = db.table("user_milestones").insert({
-                    "user_id": user_id,
-                    "milestone_id": mid,
-                    "hp_awarded": hp,
-                    "period_key": period_key,
-                    "campus_id": campus_id,
-                })
-                completion_id = _first_id(um_result)
-            except Exception as ie:
-                err_str = str(ie)
-                if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                    continue
-                if _is_already_completed(db, user_id, mid, period_key):
-                    continue
-                # Not recorded and not a duplicate: award nothing rather than pay HP with no completion row.
-                logger.warning("check_milestone_trigger: user_milestones insert failed for user %s milestone %s: %s", user_id, mid, ie)
-                continue
-
-            actual_hp = _award_milestone_hp(
-                db, user_id, mid, m.get("title", ""), hp, "active",
-                campus_id=campus_id, completion_id=completion_id,
-            )
-            if actual_hp != hp:
-                _record_actual_hp(db, user_id, mid, period_key, actual_hp, "check_milestone_trigger")
-            notify_milestone_achieved(user_id, mid, hp_awarded=actual_hp)
+                _complete_active_milestone(db, user_id, m, int(m.get("hp_awarded") or 0),
+                                           period_key, campus_id=campus_id)
+            except Exception as exc:
+                logger.warning("Milestone %s remains recoverable for %s: %s", mid, user_id, exc)
 
     except Exception as e:
         logger.warning("check_milestone_trigger: error for user %s trigger %s: %s", user_id, trigger_type, e)
@@ -394,44 +372,9 @@ def admin_grant_milestone(admin_id: str, user_id: str, milestone_id: str, target
 
     # The recipient's rows are not the admin's own; check with the service client, not the admin's session.
     db = get_db()
-    already = _is_already_completed(db, user_id, milestone_id, period_key)
-    if already:
-        return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True}
-
-    effective_campus_id = target_campus_id if target_campus_id is not None else milestone.get("campus_id")
-
-    # Record completion first to defend against concurrent race conditions before awarding HP
-    try:
-        um_result = db.table("user_milestones").insert({
-            "user_id": user_id,
-            "milestone_id": milestone_id,
-            "hp_awarded": hp,
-            "period_key": period_key,
-            "campus_id": effective_campus_id,
-            "granted_by_admin_id": admin_id,
-        })
-        completion_id = _first_id(um_result)
-    except Exception as e:
-        err_str = str(e)
-        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True, "hp_awarded": 0}
-        logger.warning("admin_grant_milestone: user_milestones insert failed: %s", e)
-        if _is_already_completed(db, user_id, milestone_id, period_key):
-            return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True, "hp_awarded": 0}
-        # Not recorded and not a duplicate: do not pay HP with no completion row. The admin needs to see the failure.
-        raise RuntimeError(MSG.MILESTONE_CHECK_FAILED) from e
-
-    # issued_by_admin_id also stops the live promo multiplier applying to a manual grant.
-    actual_hp = _award_milestone_hp(
-        db, user_id, milestone_id, milestone.get("title", ""), hp, "active",
-        issued_by_admin_id=admin_id, campus_id=effective_campus_id, completion_id=completion_id,
-    )
-    if actual_hp != hp:
-        _record_actual_hp(db, user_id, milestone_id, period_key, actual_hp, "admin_grant_milestone")
-
-    notify_milestone_achieved(user_id, milestone_id, hp_awarded=actual_hp)
-
-    return {"milestone": milestone, "hp_awarded": actual_hp, "awarded_by": admin_id}
+    result = _complete_active_milestone(db, user_id, milestone, hp, period_key,
+                                        campus_id=target_campus_id, admin_id=admin_id)
+    return {**result, "awarded_by": admin_id}
 
 
 def check_and_award_pwa_push_bonus(user_id: str, *, award: bool = False) -> dict:
@@ -481,7 +424,29 @@ def check_and_award_pwa_push_bonus(user_id: str, *, award: bool = False) -> dict
     }
 
 
-def notify_milestone_achieved(user_id: str, milestone_id: str, hp_awarded: int = None) -> None:
+def _complete_active_milestone(db, user_id, milestone, hp, period_key, *, campus_id=None, admin_id=None):
+    if campus_id is None:
+        campus_id = _get_user_campus_id(db, user_id)
+    if hp > 0 and admin_id is None:
+        from app.services.hp_service import _get_hp_multiplier
+        multiplier = _get_hp_multiplier(campus_id)
+        if multiplier > 1:
+            hp = round(hp * multiplier)
+    receipt = db.rpc("hg_complete_active_milestone", {
+        "p_user_id": user_id, "p_milestone_id": milestone["id"], "p_period_key": period_key,
+        "p_hp_amount": hp, "p_admin_id": admin_id,
+    })
+    if not isinstance(receipt, dict) or receipt.get("error") or not receipt.get("completed") or not receipt.get("completion_id"):
+        raise RuntimeError(MSG.MILESTONE_CHECK_FAILED)
+    notify_milestone_achieved(user_id, milestone["id"], hp_awarded=receipt.get("recorded_hp_awarded", 0),
+                              completion_id=receipt["completion_id"])
+    result = {**receipt, "milestone": milestone, "already_completed": bool(receipt.get("replayed"))}
+    if receipt.get("replayed"):
+        result["message"] = MSG.MILESTONE_ALREADY_COMPLETED
+    return result
+
+
+def notify_milestone_achieved(user_id: str, milestone_id: str, hp_awarded: int = None, completion_id: str = None) -> None:
     """
     Shared notification hook for all milestone/badge awards.
     Always fires push + in_app together. No email for gamification events.
@@ -504,8 +469,8 @@ def notify_milestone_achieved(user_id: str, milestone_id: str, hp_awarded: int =
             notif_type="milestone_achieved",
             title=_title,
             body=_body,
-            reference_id=milestone_id,
-            reference_type="milestone",
+            reference_id=completion_id or milestone_id,
+            reference_type="milestone_completion" if completion_id else "milestone",
             channels=["push", "in_app"],
         )
     except Exception as e:
