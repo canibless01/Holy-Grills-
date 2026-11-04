@@ -86,3 +86,6 @@ Remaining operational confirmation:
 3. Observe the first ordinary weekly/monthly production executions on their scheduled dates. Controlled task/database verification is complete; manually replaying real-user rewards is unnecessary.
 
 External launch checks not re-tested in this pass: Google Business Profile/review Place ID and Search Console ownership, physical-device GPS/native PWA eligibility, and a new real outbound email/push or card charge. Existing OneSignal work was left intact, as the owner reported it resolved. These are not represented as newly proven by the database/browser tests above.
+
+
+Update, 4 November: direct Google Business review-link support supersedes the Place-ID requirement in this historical report. See [current whole-site status](WHOLE_SITE_STATUS_AND_HOSTING_COSTS_2026_11_04.md).

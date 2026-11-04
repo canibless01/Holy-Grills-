@@ -1,3 +1,4 @@
+import { googleReviewUrl as configuredGoogleReviewUrl } from '@/lib/googleReviews';
 import { settlePaidCart } from '@/lib/paidCart';
 import { guestOrderToken, guestOrders, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { ownedOrderId } from '@/lib/orderLink';
@@ -24,12 +25,8 @@ import { toast } from '@/components/ui/use-toast';
 import APP_CONFIG from '@/config/app.config';
 import { msg, useMessages } from '@/lib/messages';
 
-// Google review handoff — deep-links into the Business Profile review form when
-// a Place ID is configured, otherwise falls back to a Google search for the brand.
-const googleReviewUrl = () => {
-  const placeId = APP_CONFIG.google?.placeId;
-  return placeId ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}` : null;
-};
+// The owner can configure a direct Google review link or an optional Place ID.
+const googleReviewUrl = () => configuredGoogleReviewUrl(APP_CONFIG.google);
 
 export default function OrderDetail() {
   useMessages();
@@ -86,7 +83,7 @@ export default function OrderDetail() {
         if (settleGuestCart(o) || await settlePaidCart(o).catch(() => false)) await refreshCart();
         setOrder(o);
         setReviewSubmitted(Boolean(o.review));
-        if (o.review) { setReviewAward(Number(o.review.hp_awarded) || 0); setGooglePrompt(Boolean(APP_CONFIG.google?.placeId)); }
+        if (o.review) { setReviewAward(Number(o.review.hp_awarded) || 0); setGooglePrompt(Boolean(googleReviewUrl())); }
       } catch (error) { if (active) setOrderError(error); }
       if (active) setLoading(false);
     };
@@ -154,7 +151,7 @@ export default function OrderDetail() {
     try {
       const result = await mockApi.orders.review(id, { ...review, image_urls: reviewImages });
       setReviewAward(Number(result?.hp_awarded) || 0);
-      setGooglePrompt(Boolean(APP_CONFIG.google?.placeId));
+      setGooglePrompt(Boolean(googleReviewUrl()));
       setReviewSubmitted(true);
       setShowReview(false);
       setReviewImages([]);

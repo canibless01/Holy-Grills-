@@ -28,3 +28,6 @@ Existing referral, delivery reward, HP unlock, replay and ownership tests remain
 6. OneSignal email approval remains a provider review item on/after 1 November 2026. App email defaults remain Resend and push remains OneSignal.
 
 No backend hosting migration, SMTP-provider change, broadcast, new payment, or cleanup/deletion was performed in this round. Earlier migration instructions remain in `LAUNCH_DAILY_WINDOW_SEO_SMTP_MIGRATION_2026_10_30.md`.
+
+
+Update, 4 November: direct Google Business review-link support supersedes the Place-ID requirement in this historical report. See [current whole-site status](WHOLE_SITE_STATUS_AND_HOSTING_COSTS_2026_11_04.md).

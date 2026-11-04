@@ -44,7 +44,7 @@ celery_app.conf.broker_connection_retry_on_startup = True
 @lru_cache(maxsize=1)
 def _worker_flask_app():
     from app import create_app
-    return create_app()
+    return create_app(background=True)
 
 
 class ContextTask(celery_app.Task):

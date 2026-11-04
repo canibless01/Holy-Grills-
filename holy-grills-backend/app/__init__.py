@@ -2,8 +2,6 @@ import uuid
 
 import requests
 from flask import Flask, request
-from flask_cors import CORS
-from flasgger import Swagger
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -11,43 +9,6 @@ from app.config import Config
 from app.db import SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
-from app.routes.health import health_bp
-from app.routes.messages import messages_bp
-from app.routes.auth import auth_bp, users_bp
-from app.routes.menu import menu_bp
-from app.routes.orders import orders_bp
-from app.routes.hp import hp_bp
-from app.routes.wallet import wallet_bp
-from app.routes.rewards import rewards_bp
-from app.routes.marketplace import marketplace_bp
-from app.routes.events import events_bp
-from app.routes.referrals import referrals_bp
-from app.routes.notifications import notifications_bp, push_bp
-from app.routes.admin import admin_bp
-from app.routes.kitchen import kitchen_bp, units_bp, stock_bp
-from app.routes.riders import riders_bp
-from app.routes.leaderboard import leaderboard_bp
-from app.routes.challenges import challenges_bp
-from app.routes.webhooks import webhooks_bp
-from app.routes.storefront import storefront_bp
-from app.routes.analytics import analytics_bp
-from app.routes.cart import cart_bp
-from app.routes.saved_for_later import saved_bp
-from app.routes.order_locks import order_locks_bp
-from app.routes.admin_gifts import admin_gifts_bp
-from app.routes.delivery import delivery_bp
-from app.routes.graduation import graduation_bp
-from app.routes.campuses import campuses_bp
-from app.routes.departments import departments_bp, admin_departments_bp
-from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
-from app.routes.academic_calendar import academic_calendar_bp, admin_academic_calendar_bp
-from app.routes.free_sides import free_sides_bp
-from app.routes.exclusive_spin import exclusive_spin_bp
-from app.routes.admin_feature_flags import admin_flags_bp
-from app.routes.uploads import uploads_bp
-from app.routes.squads import squads_bp
-from app.routes.admin_economics import admin_economics_bp
-from app.routes.ambassadors import ambassadors_bp
 
 # SQLSTATE codes raised by Postgres/PostgREST that mean "the caller sent something wrong", not "the server is broken":
 # 22P02 bad text representation (e.g. malformed UUID), 22007/22008 bad date/time, 22003 number out of range,
@@ -58,7 +19,7 @@ _CLIENT_ERROR_CODES = {"22P02", "22007", "22008", "22003", "22001", "23502", "23
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 
 
-def create_app(config_class=Config):
+def create_app(config_class=Config, *, background=False):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
@@ -91,6 +52,51 @@ def create_app(config_class=Config):
                     _key + " is unset or still the public default ('" + _INSECURE_DEFAULT_SECRET + "'). "
                     "Set a real secret via the SECRET_KEY / JWT_SECRET environment variables before starting in production."
                 )
+
+    # Scheduled tasks need application config and an isolated Flask context,
+    # while the HTTP API alone needs blueprints, Swagger and CORS middleware.
+    if background:
+        return app
+
+    from flask_cors import CORS
+    from flasgger import Swagger
+    from app.routes.health import health_bp
+    from app.routes.messages import messages_bp
+    from app.routes.auth import auth_bp, users_bp
+    from app.routes.menu import menu_bp
+    from app.routes.orders import orders_bp
+    from app.routes.hp import hp_bp
+    from app.routes.wallet import wallet_bp
+    from app.routes.rewards import rewards_bp
+    from app.routes.marketplace import marketplace_bp
+    from app.routes.events import events_bp
+    from app.routes.referrals import referrals_bp
+    from app.routes.notifications import notifications_bp, push_bp
+    from app.routes.admin import admin_bp
+    from app.routes.kitchen import kitchen_bp, units_bp, stock_bp
+    from app.routes.riders import riders_bp
+    from app.routes.leaderboard import leaderboard_bp
+    from app.routes.challenges import challenges_bp
+    from app.routes.webhooks import webhooks_bp
+    from app.routes.storefront import storefront_bp
+    from app.routes.analytics import analytics_bp
+    from app.routes.cart import cart_bp
+    from app.routes.saved_for_later import saved_bp
+    from app.routes.order_locks import order_locks_bp
+    from app.routes.admin_gifts import admin_gifts_bp
+    from app.routes.delivery import delivery_bp
+    from app.routes.graduation import graduation_bp
+    from app.routes.campuses import campuses_bp
+    from app.routes.departments import departments_bp, admin_departments_bp
+    from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
+    from app.routes.academic_calendar import academic_calendar_bp, admin_academic_calendar_bp
+    from app.routes.free_sides import free_sides_bp
+    from app.routes.exclusive_spin import exclusive_spin_bp
+    from app.routes.admin_feature_flags import admin_flags_bp
+    from app.routes.uploads import uploads_bp
+    from app.routes.squads import squads_bp
+    from app.routes.admin_economics import admin_economics_bp
+    from app.routes.ambassadors import ambassadors_bp
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 

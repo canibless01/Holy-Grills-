@@ -86,11 +86,10 @@ export const APP_CONFIG = {
     },
   },
 
-  // Google Business Profile — powers the post-review "Tell Google too" prompt.
-  // Paste your Place ID (from your Business Profile dashboard) to deep-link
-  // straight into the review form. Left empty, the prompt falls back to a
-  // Google search for the business name.
+  // Google's “Ask for reviews” link works without a Places API/billing setup.
+  // A Place ID remains an optional alternative for existing configurations.
   google: {
+    reviewUrl: import.meta.env.VITE_GOOGLE_REVIEW_URL || '',
     placeId: import.meta.env.VITE_GOOGLE_BUSINESS_PLACE_ID || '',
   },
 

@@ -350,3 +350,7 @@ Railway variables used by API/worker/beat so job monitoring shows the same caden
 Scan intervals must divide a whole hour: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30 or
 60. Payment confirmation, checkout, customer order notifications and live queue
 updates do not wait for these schedules. Do not start a second beat scheduler.
+
+## Google Business review link — 4 November 2026
+
+Set `VITE_GOOGLE_REVIEW_URL` in **Vercel**, then rebuild/redeploy the frontend. Use the Business Profile “Ask for reviews” HTTPS link (`g.page/.../review`); no Places API key or billing setup is required for this handoff. The owner-provided link is configured on the `holy-grills` project. The older `VITE_GOOGLE_BUSINESS_PLACE_ID` is optional fallback only. This does not change Google Maps/Places SDK billing or keys. Do not place these frontend variables only on Railway.
