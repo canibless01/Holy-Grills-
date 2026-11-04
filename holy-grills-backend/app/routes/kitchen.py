@@ -7,7 +7,7 @@ from app.middleware.auth import require_role, fetch_or_403
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
 from app.utils.tz import today_wat, WAT_OFFSET
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
@@ -24,8 +24,12 @@ def _due_preparation(query):
 
 def _today_preparation(query):
     """A recurring window is a template; preparation belongs to one WAT date."""
-    start = today_wat().isoformat() + 'T00:00:00+01:00'
-    end = (today_wat() + timedelta(days=1)).isoformat() + 'T00:00:00+01:00'
+    return _preparation_range(query, today_wat(), today_wat())
+
+
+def _preparation_range(query, first_day, last_day):
+    start = first_day.isoformat() + 'T00:00:00+01:00'
+    end = (last_day + timedelta(days=1)).isoformat() + 'T00:00:00+01:00'
     return (query.in_('payment_status', ['paid', 'partially_refunded'])
             .not_.is_('delivery_window_id', 'null')
             .or_(f'and(is_scheduled.eq.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),'
@@ -55,16 +59,23 @@ def handoff_batches():
     db = get_db()
     batches = (db.table('delivery_batches').select('id,zone,status,rider_id,delivery_date,campus_id')
                .eq('campus_id', campus).in_('status', ['open', 'assigned'])
-               .or_(f'delivery_date.lte.{today_wat().isoformat()},delivery_date.is.null')
+               .or_(f'delivery_date.eq.{today_wat().isoformat()},delivery_date.is.null')
                .order('created_at').limit(100).execute()) or []
     riders = (db.table('profiles').select('id,full_name').eq('campus_id', campus)
               .eq('role', 'rider').eq('is_active', True).order('full_name').execute()) or []
     orders = []
     if batches:
-        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
+        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,delivery_type,delivery_location_id,delivery_window_id,is_scheduled,scheduled_for,created_at,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
                  .eq('campus_id', campus).in_('batch_id', [batch['id'] for batch in batches])
                  .in_('status', ['ready', 'assigned']))
-        orders = _attach_kitchen_customer_names(_due_preparation(query).execute() or [])
+        orders = _attach_kitchen_customer_names(_today_preparation(query).execute() or [])
+    hostel_ids = sorted({order.get("delivery_location_id") for order in orders
+                         if order.get("delivery_type") == "on_campus" and order.get("delivery_location_id")})
+    hostels = (db.table("hostels").select("id,name").eq("campus_id", campus).in_("id", hostel_ids).execute() or []) if hostel_ids else []
+    names = {hostel["id"]: hostel["name"] for hostel in hostels}
+    for order in orders:
+        order["stop_label"] = names.get(order.get("delivery_location_id"), "Off-campus delivery")
+    orders.sort(key=lambda order: (order["stop_label"], order["id"]))
     for batch in batches:
         batch['orders'] = [order for order in orders if order.get('batch_id') == batch['id']]
     return jsonify({'batches': [batch for batch in batches if batch['orders']], 'riders': riders}), 200
@@ -602,7 +613,14 @@ def live_queue():
         .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
-    q = _today_preparation(q)
+    try:
+        first_day = date.fromisoformat(request.args.get('from_date') or today_wat().isoformat())
+        last_day = date.fromisoformat(request.args.get('to_date') or first_day.isoformat())
+        if last_day < first_day or (last_day - first_day).days > 30:
+            raise ValueError()
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    q = _preparation_range(q, first_day, last_day)
     if campus_id:
         q = q.eq("campus_id", campus_id)
     q = q.order("received_at", ascending=False)

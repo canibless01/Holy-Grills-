@@ -553,7 +553,7 @@ class MSG:
 
     # ── Abandoned Cart ───────────────────────────────────────────────────────
     ABANDONED_CART_TITLE          = "Your cart is waiting 🛒"
-    ABANDONED_CART_BODY           = "You left items in your cart. Come back and complete your order before they sell out!"
+    ABANDONED_CART_BODY           = "Your cart is waiting. Complete checkout and payment to confirm your order before items sell out!"
 
     # ── Events ────────────────────────────────────────────────────────────────
 
@@ -1063,7 +1063,7 @@ class MSG:
 
     # ── Login streak week ─────────────────────────────────────────────────────
     LOGIN_STREAK_WEEK_COMPLETE_TITLE = "Week {week} Streak Complete! 🔥"
-    LOGIN_STREAK_WEEK_COMPLETE_BODY  = "You earned {hp} {currency} for completing your check-in week. Keep it going!"
+    LOGIN_STREAK_WEEK_COMPLETE_BODY  = "Congratulations! You completed the week of {week_start} with {missed_days} missed days (up to 2 allowed). You earned {hp} pending {currency}. Keep it going!"
 
     # ── Login streak reclaim ──────────────────────────────────────────────────
     LOGIN_STREAK_RECLAIM_TITLE       = "Missed Day Recovered ✅"
@@ -1125,7 +1125,7 @@ class MSG:
     NOTIF_LOGIN_STREAK_CHECKIN_TITLE  = "\U0001f525 {streak_count}-Day Streak!"
     NOTIF_LOGIN_STREAK_CHECKIN_BODY   = "You checked in {streak_count} days in a row, {name}. Keep it up!"
     NOTIF_LOGIN_STREAK_CYCLE_FAILED_TITLE = "\U0001f494 Check-In Cycle Reset"
-    NOTIF_LOGIN_STREAK_CYCLE_FAILED_BODY  = "Too many missed days this week, {name} — you're back to Week 1. Fresh start! \U0001f4aa"
+    NOTIF_LOGIN_STREAK_CYCLE_FAILED_BODY  = "You missed {missed_days} days in the week of {week_start}, {name}. Up to 2 are allowed, so your cycle has restarted at Week 1. Check in today for a fresh start!"
     NOTIF_LOGIN_STREAK_RECLAIM_TITLE  = "Missed Day Recovered \u2705"
     NOTIF_LOGIN_STREAK_RECLAIM_BODY   = "Your missed check-in was recovered, {name}. Streak saved!"
 

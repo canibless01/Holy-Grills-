@@ -193,7 +193,8 @@ def list_all_orders():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = resolve_scoped_campus_id(requested_campus)
     try:
-        q = db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        q = (db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+             .in_("payment_status", ["paid", "partially_refunded", "refunded"]))
         if campus_id:
             q = q.eq("campus_id", campus_id)
         if status:

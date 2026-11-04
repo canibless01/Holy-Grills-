@@ -16,6 +16,7 @@ export default function KitchenHandoff({ campusId = undefined }: { campusId?: st
   useEffect(() => {
     let active = true;
     const refresh = async () => {
+      if (document.visibilityState === 'hidden') return;
       try { const value = await liveApi.kitchen.getHandoff(campusId); if (active) { setData(value); setError(false); } }
       catch { if (active) setError(true); }
     };
@@ -41,7 +42,7 @@ export default function KitchenHandoff({ campusId = undefined }: { campusId?: st
     {(data?.batches || []).map(batch => <section key={batch.id} className="rounded-2xl border border-border bg-card p-4 space-y-3">
       <div className="flex items-center justify-between gap-2"><strong>{batch.zone || msg('FE_BATCH_LABEL', 'Delivery batch')}</strong><span className="text-xs text-muted-foreground">{batch.delivery_date}</span></div>
       {batch.orders.map(order => <div key={order.id} className="border-b border-border pb-2 text-sm">
-        <p className="font-semibold">{order.customer_name || order.guest_name} · #{order.id.slice(0, 8).toUpperCase()}</p>
+        <p className="font-semibold">{order.stop_label} · {order.customer_name || order.guest_name} · #{order.id.slice(0, 8).toUpperCase()}</p>
         {(order.order_items || []).map((item, index) => <div key={index}>{item.quantity}× {item.name_snapshot}<OrderItemCustomizations item={item} /></div>)}
       </div>)}
       <label className="block text-xs font-bold">{msg('FE_KITCHEN_HANDOFF_RIDER', 'Rider')}<select aria-label={msg('FE_KITCHEN_HANDOFF_RIDER', 'Rider')} value={selected[batch.id] ?? batch.rider_id ?? ''} onChange={event => setSelected(current => ({ ...current, [batch.id]: event.target.value }))} className="mt-1 block w-full rounded-xl border border-border bg-background p-3 text-sm" disabled={!!busy}>

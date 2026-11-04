@@ -40,7 +40,11 @@ def with_cron_logging(job_name: str):
         def wrapper(*args, **kwargs):
             try:
                 res = func(*args, **kwargs)
-                if isinstance(res, dict) and res.get("skipped"):
+                failed = isinstance(res, dict) and (res.get("error") or any(
+                    isinstance(value, dict) and value.get("error") for value in res.values()))
+                if failed:
+                    _log_cron_execution(job_name, "failed", result=res)
+                elif isinstance(res, dict) and res.get("skipped"):
                     _log_cron_execution(job_name, "skipped", result=res)
                 else:
                     _log_cron_execution(job_name, "success", result=res if isinstance(res, dict) else {"result": str(res)})
@@ -959,10 +963,9 @@ def monthly_birthday_report(self):
 def process_scheduled_orders(self):
     """
     Runs: Every 5 minutes.
-    Finds scheduled orders whose delivery window start time has arrived and
-    notifies kitchen/admin staff so they can begin preparation.
-    Orders are placed with is_scheduled=True; they stay at status='received'
-    but are hidden from the kitchen board until this task fires.
+    Notify kitchen/admin once per paid order on its WAT preparation date.
+    The live queue independently includes today's orders immediately; delivery
+    start time must not delay preparation. Older orders are left in history.
     """
     db = get_db()
     try:
@@ -976,6 +979,8 @@ def process_scheduled_orders(self):
     try:
         now = datetime.now(timezone.utc)
         from app.services.notification_service import send_notification
+        day_start = today_wat().isoformat() + "T00:00:00+01:00"
+        day_end = (today_wat() + timedelta(days=1)).isoformat() + "T00:00:00+01:00"
 
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
@@ -990,7 +995,8 @@ def process_scheduled_orders(self):
                     .in_("status", ["received", "paid"])
                     .eq("payment_status", "paid")
                     .eq("campus_id", campus_id)
-                    .lte("scheduled_for", now.isoformat())
+                    .gte("scheduled_for", day_start)
+                    .lt("scheduled_for", day_end)
                     .execute()
                 ) or []
             except Exception as e:
@@ -1015,7 +1021,12 @@ def process_scheduled_orders(self):
             except Exception:
                 staff = []
 
-            dedup_cutoff = (now - timedelta(minutes=10)).isoformat()
+            # One lookup per campus, using durable order/user references. Never
+            # search an unselected body or remind staff again every ten minutes.
+            notices = (db.table("notifications").select("reference_id,user_id")
+                       .eq("type", "scheduled_order_due").eq("campus_id", campus_id)
+                       .in_("reference_id", [order["id"] for order in due_orders]).execute()) or []
+            notified = {(str(row.get("reference_id")), row.get("user_id")) for row in notices}
 
             processed = 0
             skipped = 0
@@ -1023,36 +1034,24 @@ def process_scheduled_orders(self):
                 order_id = order["id"]
                 short_id = order_id[:8].upper()
 
-                try:
-                    already_sent = (
-                        db.table("notifications")
-                        .select("id")
-                        .eq("type", "scheduled_order_due")
-                        .eq("campus_id", campus_id)
-                        .gte("created_at", dedup_cutoff)
-                        .execute()
-                    )
-                    already_sent_for_order = any(
-                        short_id in str(n.get("body", "") or "")
-                        for n in (already_sent or [])
-                    )
-                except Exception:
-                    already_sent_for_order = False
-
-                if already_sent_for_order:
-                    skipped += 1
-                    continue
-
+                sent = False
                 for member in staff:
+                    if (str(order_id), member["id"]) in notified:
+                        continue
                     try:
                         send_notification(
                             user_id=member["id"],
                             notif_type="scheduled_order_due",
                             template_data={"order_id": short_id},
+                            reference_id=order_id, reference_type="order",
                             campus_id=campus_id,
                         )
+                        sent = True
                     except Exception as e:
                         logger.warning("process_scheduled_orders: notify failed for staff %s: %s", member["id"], e)
+                if not sent:
+                    skipped += 1
+                    continue
                 processed += 1
 
             results[campus_id] = {"processed": processed, "skipped": skipped, "checked_at": now.isoformat()}

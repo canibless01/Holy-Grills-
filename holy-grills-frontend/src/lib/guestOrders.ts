@@ -22,7 +22,17 @@ export function saveGuestOrder(order, claimToken = order?.claim_token, cartItems
 
 // A verified paid order removes only the exact cart rows submitted for it.
 // New/edited rows and another campus's cart must survive a delayed callback.
+export function clearPaidCheckout(order) {
+  if (!order?.id || !order.campus_id || !['paid', 'partially_refunded'].includes(order.payment_status)) return;
+  const key = `hg_pending_checkout:${order.user_id || 'guest'}:${order.campus_id}`;
+  try {
+    const checkpoint = JSON.parse(localStore.getItem(key) || 'null');
+    if (checkpoint?.order_id === order.id) localStore.removeItem(key);
+  } catch { /* A malformed checkpoint is not evidence of a completed payment. */ }
+}
+
 export function settleGuestCart(order) {
+  clearPaidCheckout(order);
   if (!order || order.user_id || !['paid', 'partially_refunded'].includes(order.payment_status)) return false;
   const receipt = read().find(row => row.id === order.id);
   if (!receipt?.cart_items) return false;

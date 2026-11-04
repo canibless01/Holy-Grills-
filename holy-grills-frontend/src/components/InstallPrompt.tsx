@@ -23,6 +23,7 @@ export default function InstallPrompt() {
   const [showIOS, setShowIOS] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
   const isIOS = typeof navigator !== 'undefined' && (/iphone|ipad|ipod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
   const recentlyDismissed = () => {
     const saved = Number(localStore.getItem(DISMISS_KEY));
@@ -49,10 +50,10 @@ export default function InstallPrompt() {
   }, []);
 
   useEffect(() => {
-    if (!isIOS || isStandalone() || recentlyDismissed()) return;
-    const timer = setTimeout(() => setShowIOS(true), 4000);
+    if (!isMobile || isStandalone() || recentlyDismissed()) return;
+    const timer = setTimeout(() => setShow(true), 4000);
     return () => clearTimeout(timer);
-  }, [isIOS]);
+  }, [isMobile]);
 
   const handleInstall = async () => {
     if (busy) return;

@@ -1,6 +1,7 @@
 from celery import Celery
 from celery.schedules import crontab
 import os
+from functools import lru_cache
 
 from app.utils.redis_url import normalize_broker_url
 
@@ -40,10 +41,15 @@ celery_app = Celery(
 # refused first connection must not kill the process.
 celery_app.conf.broker_connection_retry_on_startup = True
 
+@lru_cache(maxsize=1)
+def _worker_flask_app():
+    from app import create_app
+    return create_app()
+
+
 class ContextTask(celery_app.Task):
     def __call__(self, *args, **kwargs):
-        from app import create_app
-        app = create_app()
+        app = _worker_flask_app()
         with app.app_context():
             return self.run(*args, **kwargs)
 
@@ -137,6 +143,9 @@ celery_app.conf.timezone = "Africa/Lagos"
 # These settings do not serialize runs; individual job locks provide that guard.
 celery_app.conf.task_acks_late = True
 celery_app.conf.worker_prefetch_multiplier = 1
+
+# Bound the default process count on Railway; explicit CLI/env settings can override.
+celery_app.conf.worker_concurrency = max(1, int(os.environ.get("CELERY_WORKER_CONCURRENCY") or "2"))
 
 # Result expiry — keep task results for 1 hour
 celery_app.conf.result_expires = 3600

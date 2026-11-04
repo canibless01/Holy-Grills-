@@ -1,3 +1,4 @@
+import { rememberPaymentCart, settlePaidCart } from '@/lib/paidCart';
 import ScheduleOrderPanel from '@/components/ScheduleOrderPanel';
 import { guestOrders as readGuestOrders, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
@@ -682,8 +683,20 @@ export default function Checkout() {
     finally { orderRequest.current = null; }
     const order = result?.order || result;
     if (!order?.id) throw new Error(msg('FE_CHECKOUT_CONFIRMATION_MISSING', 'We could not confirm the saved order. Recover this checkout before trying another order.'));
-    clearPendingCheckout();
-    if (rewardStateKey) localStore.removeItem(rewardStateKey);
+    if (['cancelled', 'refunded'].includes(order.status)) {
+      clearPendingCheckout();
+      throw new Error('This checkout has closed. Your cart is still available; review it and try again.');
+    }
+    if (pendingKey) {
+      try {
+        const checkpoint = JSON.parse(localStore.getItem(pendingKey) || 'null');
+        if (checkpoint) {
+          const saved = { ...checkpoint, order_id: order.id };
+          localStore.setItem(pendingKey, JSON.stringify(saved)); setPendingCheckout(saved);
+        }
+      } catch { /* Existing checkout recovery remains available in state. */ }
+    }
+    rememberPaymentCart(order, cart?.items);
     let paymentError = '';
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
@@ -704,6 +717,8 @@ export default function Checkout() {
         order.payment_status = 'paid';
       } catch (e) {
         paymentError = e.message || msg('FE_ORDER_PAYMENT_UNAVAILABLE', 'Payment is unavailable. Your order is saved; please retry here.');
+        toast({ title: 'Payment not completed', description: paymentError, variant: 'destructive' });
+        return;
       }
     }
     
@@ -712,7 +727,12 @@ export default function Checkout() {
       if (settleGuestCart(order)) await refreshCart();
     }
     
-    if (order.payment_status === 'paid') play('order_placed');
+    if (order.payment_status === 'paid') {
+      clearPendingCheckout();
+      if (rewardStateKey) localStore.removeItem(rewardStateKey);
+      if (await settlePaidCart(order).catch(() => false)) await refreshCart();
+      play('order_placed');
+    }
     setReschedule(null);
     // Get the session ID for guest orders tracking
     const sessionId = !isAuthenticated ? sessionStorage.getItem('hg_checkout_session') : null;

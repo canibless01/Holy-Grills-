@@ -1,3 +1,4 @@
+import { settlePaidCart } from '@/lib/paidCart';
 import { guestOrderToken, paymentReturnToken, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import OrderRewardSummary from '@/components/OrderRewardSummary';
@@ -44,7 +45,7 @@ export default function OrderConfirmation() {
   const reloadOrder = async () => {
     const updated = await mockApi.orders.get(id, claimToken ? { claim_token: claimToken } : {});
     if (claimToken) saveGuestOrder(updated, claimToken);
-    if (settleGuestCart(updated)) await refreshCart();
+    if (settleGuestCart(updated) || await settlePaidCart(updated).catch(() => false)) await refreshCart();
     setOrder(updated);
   };
   const giftItemName = order?.order_items?.find(item => item.options_snapshot?.is_gift === true)?.name_snapshot;
@@ -58,7 +59,7 @@ export default function OrderConfirmation() {
           if (claimToken) saveGuestOrder(o, claimToken);
           
           if (o?.payment_status === 'paid') {
-            if (settleGuestCart(o)) await refreshCart();
+            if (settleGuestCart(o) || await settlePaidCart(o).catch(() => false)) await refreshCart();
             playSound('order_placed');
             setTimeout(() => triggerMascotCelebration('cheering'), 900);
           }

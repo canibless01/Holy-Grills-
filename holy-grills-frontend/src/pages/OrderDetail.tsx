@@ -1,3 +1,4 @@
+import { settlePaidCart } from '@/lib/paidCart';
 import { guestOrderToken, guestOrders, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { ownedOrderId } from '@/lib/orderLink';
 import { confirmAction } from '@/lib/confirmAction';
@@ -82,7 +83,7 @@ export default function OrderDetail() {
         const token = resolveClaimToken();
         const o = await mockApi.orders.get(id, token ? { claim_token: token } : {});
         if (!active) return;
-        if (settleGuestCart(o)) await refreshCart();
+        if (settleGuestCart(o) || await settlePaidCart(o).catch(() => false)) await refreshCart();
         setOrder(o);
         setReviewSubmitted(Boolean(o.review));
         if (o.review) { setReviewAward(Number(o.review.hp_awarded) || 0); setGooglePrompt(Boolean(APP_CONFIG.google?.placeId)); }

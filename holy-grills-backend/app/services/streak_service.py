@@ -262,12 +262,14 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
         }
 
     # New week — evaluate the previous week, then start fresh
-    prev_week_start = stored_week_start or (current_week_start - timedelta(weeks=1))
+    prev_week_start = current_week_start - timedelta(weeks=1)
+    previous_state = week_state if stored_week_start == prev_week_start else {}
+    missed_days = 7 - _effective_checkins(previous_state)
     week_completed, cycle_week, consecutive_weeks, hp_awarded = _evaluate_week(
         db=db,
         user_id=user_id,
         prev_week_start=prev_week_start,
-        week_state=week_state,
+        week_state=previous_state,
         cycle_week=cycle_week,
         consecutive_weeks=consecutive_weeks,
     )
@@ -279,7 +281,7 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
             send_notification(
                 user_id=user_id,
                 notif_type="streak_cycle_failed",
-                template_data={},
+                template_data={"missed_days": missed_days, "week_start": prev_week_start.isoformat()},
             )
         except Exception:
             pass  # non-critical — never block streak processing
@@ -310,6 +312,10 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
     }
 
 
+def _effective_checkins(week_state):
+    return sum(1 for day in range(7) if week_state.get(str(day)) in ("checked", "reclaimed"))
+
+
 def _evaluate_week(
     db, user_id: str,
     prev_week_start: date, week_state: dict,
@@ -320,14 +326,14 @@ def _evaluate_week(
       (week_completed: bool, new_cycle_week: int, new_consecutive: int, hp_awarded: int)
     """
     # Count effective days (checked + reclaimed) out of 7
-    effective_days = len(week_state)  # every entry is 'checked' or 'reclaimed'
+    effective_days = _effective_checkins(week_state)
     missed_unremedied = 7 - effective_days  # days that passed with NO action
 
     hp_awarded = 0
     if missed_unremedied <= 2:
         # Week completed
         consecutive_weeks += 1
-        hp_awarded = _award_login_streak_hp(db, user_id, cycle_week, consecutive_weeks, prev_week_start)
+        hp_awarded = _award_login_streak_hp(db, user_id, cycle_week, consecutive_weeks, prev_week_start, missed_days=missed_unremedied)
         # Advance to next week in cycle (capped at 4)
         new_cycle_week = min(cycle_week + 1, 4) if cycle_week < 4 else 4
         return True, new_cycle_week, consecutive_weeks, hp_awarded
@@ -350,7 +356,7 @@ def _streak_reference_id(user_id: str, kind: str, period: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"holygrills:{kind}:{user_id}:{period}"))
 
 
-def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks: int, week_start: date) -> int:
+def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks: int, week_start: date, missed_days: int = 0) -> int:
     """
     Award HP for completing a check-in week. Reads from login_streak_rewards table.
     Week 4+ uses the week_number=4 row.
@@ -413,7 +419,7 @@ def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks:
         send_notification(
             user_id=user_id,
             notif_type="checkin_streak_week",
-            template_data={"week": cycle_week, "hp": actual_hp},
+            template_data={"week": cycle_week, "hp": actual_hp, "missed_days": missed_days, "week_start": week_start.isoformat()},
         )
     except Exception as e:
         logger.warning("_award_login_streak_hp: failed for %s: %s", user_id, e)

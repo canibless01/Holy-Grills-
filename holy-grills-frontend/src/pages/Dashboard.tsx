@@ -17,7 +17,7 @@ import TierIcon from '@/components/TierIcon';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { hpBalance, wallet, streak, refreshStreak } = useHolyGrill();
+  const { user, hpBalance, wallet, streak, refreshStreak } = useHolyGrill();
   const [recentOrders, setRecentOrders] = useState([]);
   const [orderLocks, setOrderLocks] = useState([]);
   const rank = useCurrentRank();
@@ -96,7 +96,7 @@ export default function Dashboard() {
   const quickActions = [
     { label: 'Events', subtitle: 'Earn HP', icon: Calendar, to: '/events', bg: 'bg-brand-brown' },
     { label: 'Marketplace', subtitle: 'Browse deals', icon: ShoppingBag, to: '/marketplace', bg: 'bg-accent' },
-    { label: 'Leaderboard', subtitle: rank?.unranked ? 'Not ranked yet' : `${rank?.period_type === 'all_time' ? 'Overall' : 'Monthly'} rank ${rank?.rank ? '#' + myRank : '—'}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary', span: 'col-span-2 sm:col-span-1' },
+    { label: 'Leaderboard', subtitle: user?.role !== 'student' ? 'Student rankings' : rank?.unranked ? 'Not ranked yet' : `${rank?.period_type === 'all_time' ? 'Overall' : 'Monthly'} rank ${rank?.rank ? '#' + myRank : '—'}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary', span: 'col-span-2 sm:col-span-1' },
   ];
 
   if (loading) return <DashboardSkeleton />;

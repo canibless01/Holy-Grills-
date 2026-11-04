@@ -63,6 +63,8 @@ NON_CRITICAL_FALLBACKS: dict = {
     "remaining":      "limited",
     "hp_earned":      "0",
     "rank":           "your",
+    "missed_days":    "0",
+    "week_start":     "the completed week",
     "grace_days":     "7",
     "total_hp":       "some",   # used in HP_EARNED_TITLE as {total_hp}
     "level":          "your",   # used in GRADUATION_BONUS_BODY as {level}

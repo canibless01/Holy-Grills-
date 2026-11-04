@@ -1180,6 +1180,7 @@ def dashboard_summary():
     q = (
         db.table("orders")
         .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used,card_refund_total,wallet_refund_total")
+        .in_("payment_status", ["paid", "partially_refunded", "refunded"])
         .gte("created_at", today_start)
         .lt("created_at", today_end)
     )

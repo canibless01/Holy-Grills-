@@ -76,10 +76,10 @@ export default function Menu() {
       if (!background) setLoading(true);
       if (!background) setError(null);
       try {
-        const params: Record<string, string> = {};
+        const params: Record<string, string> = { campus_id: campusId };
         if (activeCategory) params.category = activeCategory;
         if (search) params.q = search;
-        params.available_only = 'false';
+        params.available_only = 'true';
         const result = await mockApi.menu.getItems(params);
         const sortedItems = (result.items || []).slice().sort((a, b) => {
           const priceDiff = (Number(a.price) || 0) - (Number(b.price) || 0);
@@ -99,8 +99,7 @@ export default function Menu() {
   // Quick add — if the item needs required modifiers, send to detail page
   const handleAdd = async (item) => {
     try {
-      const detail = await mockApi.menu.getItem(item.id);
-      const addons = await mockApi.menu.getAddons(item.id);
+      const [detail, addons] = await Promise.all([mockApi.menu.getItem(item.id), mockApi.menu.getAddons(item.id)]);
       const hasRequired =
         (detail.variation_groups || []).some((vg) => vg.is_required) ||
         (addons.addon_groups || []).some((ag) => ag.is_required);

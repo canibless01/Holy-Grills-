@@ -170,6 +170,7 @@ export default function Leaderboard() {
       )}
 
       {/* Pinned user rank */}
+      {user && user.role !== 'student' && view === 'user' && <p role="status" className="text-sm text-muted-foreground">Staff accounts do not compete in the student leaderboard. Use a student account to earn a rank.</p>}
       {!myRank && !error && user?.role === 'student' && view === 'user' && <p role="status" className="text-sm text-muted-foreground">Not ranked for this period yet. Earn HP to join this leaderboard.</p>}
       {myRank && (
         <div className="sticky top-16 z-20 rounded-2xl bg-gradient-dark p-3 text-white shadow-card">

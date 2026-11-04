@@ -240,7 +240,8 @@ def list_orders():
         description: Order list
     """
     db = get_user_client()
-    q = db.table("orders").select("*,order_items(*,order_addon_selections(name_snapshot,quantity))").eq("user_id", g.user_id)
+    q = (db.table("orders").select("*,order_items(*,order_addon_selections(name_snapshot,quantity))")
+         .eq("user_id", g.user_id).in_("payment_status", ["paid", "partially_refunded", "refunded"]))
 
     status = request.args.get("status")
     if status:
@@ -933,6 +934,7 @@ def active_order():
         db.table("orders")
         .select("*,order_items(id,menu_item_id,name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .eq("user_id", g.user_id)
+        .in_("payment_status", ["paid", "partially_refunded"])
         .not_.in_("status", TERMINAL)
         .order("created_at", ascending=False)
         .limit(1)

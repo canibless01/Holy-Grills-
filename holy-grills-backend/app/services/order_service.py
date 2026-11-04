@@ -1445,7 +1445,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     # Guests (user_id is None) don't have a server-side cart to clear.
     # Skip on an idempotent replay (same idempotency_key called twice) — the
     # cart was already cleared the first time this order was actually created.
-    if user_id and raw_items and not result.get("idempotent"):
+    if user_id and raw_items and not result.get("idempotent") and order.get("payment_status") == "paid":
         try:
             db.table("cart_items").eq("user_id", user_id).delete()
         except Exception as cart_exc:

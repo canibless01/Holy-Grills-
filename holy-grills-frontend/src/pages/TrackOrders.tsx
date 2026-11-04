@@ -156,7 +156,7 @@ export default function TrackOrders() {
     setLookupBusy(false);
   };
 
-  const all = [...guestOrders, ...activeOrders];
+  const all = [...guestOrders, ...activeOrders].filter(order => ['paid', 'partially_refunded', 'refunded'].includes(order.payment_status));
 
   return (
     <div className="space-y-4 animate-fade-in pb-4">

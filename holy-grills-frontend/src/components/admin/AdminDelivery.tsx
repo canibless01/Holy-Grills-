@@ -197,7 +197,7 @@ export default function AdminDelivery() {
               {hostels.map((h) => (
                 <div key={h.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-2 shadow-card">
                   <MapPin className="w-4 h-4 text-primary shrink-0" />
-                  <div className="flex-1 min-w-0"><div className="font-bold text-xs text-foreground truncate">{h.name}</div><div className="text-[11px] text-muted-foreground">Fee {formatNaira(h.delivery_fee)}</div></div>
+                  <div className="flex-1 min-w-0"><div className="font-bold text-xs text-foreground truncate">{h.name}</div><div className="text-[11px] text-muted-foreground">Fee {formatNaira(h.delivery_fee)} · {h.gates?.name || gates.find(gate => gate.id === h.gate_id)?.name || 'Gate not linked — excluded from automatic gate batches'}</div></div>
                   <Pill tone={h.is_active === false ? 'red' : 'green'}>{h.is_active === false ? msg('FE_LOCATION_HIDDEN_SHORT', 'Hidden') : msg('FE_LOCATION_ACTIVE', 'Active')}</Pill>
                   {canEditZone(h) && <div className="flex flex-col gap-1"><button aria-label={`${msg('FE_LOCATION_EDIT_HOSTEL', 'Edit hostel')} ${h.name}`} onClick={() => setZoneModal({ type: 'hostel', item: h })} className="p-1.5 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                     {h.is_active === false && <button disabled={!!zoneBusy} onClick={() => restoreZone('hostel',h.id)} className="text-xs text-primary font-bold">{msg('FE_LOCATION_RESTORE', 'Restore')}</button>}</div>}

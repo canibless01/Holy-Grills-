@@ -46,12 +46,13 @@ export default function Kitchen() {
 
 function KitchenWorkspace({ campusId, canManageSettings }) {
   const [tab, setTab] = useState('queue');
+  const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const {
     authed, loading, error, dataWarning, refreshQueue, queue, scheduled, scheduledDate, scheduledLoading, selectScheduledDate, windows, selectedWindow, batchSummary, batchSummaryLoading, batchSummaryError,
     settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
     batchBusy, batchResult, itemAvailability, availabilityBusy, selectWindow, handleStatusUpdate,
     handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
-  } = useKitchenData(campusId);
+  } = useKitchenData(campusId, dateRange.from, dateRange.to);
 
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
   if (loading) return <StaffPanelSkeleton variant="kitchen" />;
@@ -61,7 +62,8 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
     const instant = new Date(order.is_scheduled ? order.scheduled_for : order.received_at || order.created_at).getTime();
     return Number.isFinite(instant) ? new Date(instant + 3600000).toISOString().slice(0, 10) : null;
   };
-  const visibleQueue = queue.filter(order => preparationDay(order) === today);
+  const firstDay = dateRange.from || today, lastDay = dateRange.to || firstDay;
+  const visibleQueue = queue.filter(order => { const day = preparationDay(order); return day && day >= firstDay && day <= lastDay; });
   const received = visibleQueue.filter((o) => o.status === 'received' || o.status === 'paid');
   const preparing = visibleQueue.filter((o) => o.status === 'preparing');
   const ready = visibleQueue.filter((o) => o.status === 'ready');
@@ -129,7 +131,14 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
 
         {tab === 'queue' && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_STOCK_HELP', 'Stock switches affect new orders in this campus. Existing paid orders still need to be prepared.')}</p>}
         {/* Live Queue — 3-column KDS board */}
-        {tab === 'queue' && <p className="text-sm font-semibold">Today's preparation · {visibleQueue.length} orders. Grouped by today's delivery window; older orders remain in admin history.</p>}
+        {tab === 'queue' && <section className="space-y-2">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs font-bold">From<input aria-label="Preparation from date" type="date" max={today} value={firstDay} onChange={event => { const value = event.target.value; if (value) setDateRange({ from: value, to: value }); }} className="block rounded-xl border border-border bg-card p-2" /></label>
+            <label className="text-xs font-bold">To<input aria-label="Preparation to date" type="date" min={firstDay} max={today} value={lastDay} onChange={event => { if (event.target.value) setDateRange(current => ({ ...current, to: event.target.value })); }} className="block rounded-xl border border-border bg-card p-2" /></label>
+            <button onClick={() => setDateRange({ from: '', to: '' })} className="rounded-full border border-border px-3 py-2 text-xs font-bold">Today</button>
+          </div>
+          <p className="text-sm font-semibold">{firstDay} to {lastDay} · {visibleQueue.length} paid orders. Historical tickets are read-only; preparation and handoff use today’s orders.</p>
+        </section>}
         {tab === 'catering' && <KitchenCatering />}
         {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
         {tab === 'queue' && (
@@ -148,8 +157,9 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
                   </div>
                   <div className="space-y-2.5">
                     {orders.map((order) => (
+                      <fieldset key={order.id} disabled={preparationDay(order) !== today} className={preparationDay(order) !== today ? 'opacity-70' : ''}>
+                      {preparationDay(order) !== today && <p className="text-xs text-muted-foreground">{preparationDay(order)} · History</p>}
                       <KitchenOrderCard
-                        key={order.id}
                         order={order}
                         itemAvailability={itemAvailability}
                         availabilityBusy={availabilityBusy}
@@ -160,6 +170,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
                         targetMinutes={prepTarget}
                         isNew={flashingIds.has(order.id)}
                       />
+                      </fieldset>
                     ))}
                     {orders.length === 0 && (
                       <div className="rounded-2xl border-2 border-dashed border-border py-10 text-center">

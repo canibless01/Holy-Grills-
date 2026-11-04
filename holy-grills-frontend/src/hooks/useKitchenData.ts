@@ -19,7 +19,7 @@ import { msg } from '@/lib/messages';
  * Polls the live order queue, detects newly-arrived orders (sound + flash),
  * and exposes the handlers the KDS board needs.
  */
-export function useKitchenData(campusId?: string) {
+export function useKitchenData(campusId?: string, fromDate = '', toDate = '') {
   const [queue, setQueue] = useState([]);
   const [scheduled, setScheduled] = useState(null);
   const [scheduledDate, setScheduledDate] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 10));
@@ -126,7 +126,7 @@ export function useKitchenData(campusId?: string) {
         liveApi.kitchen.getWindows(campusId), liveApi.menu.getKitchenCapacity(campusId),
         liveApi.kitchen.getSettings(campusId), liveApi.orders.getDeliveryWindowStatus(campusId),
       ]) : null;
-      const q = await liveApi.kitchen.getQueue(campusId ? { campus_id: campusId } : {});
+      const q = await liveApi.kitchen.getQueue({ ...(campusId ? { campus_id: campusId } : {}), ...(fromDate ? { from_date: fromDate, to_date: toDate || fromDate } : {}) });
       if (queueRequest !== queueGeneration.current) return;
       applyQueue(q, stockRevision); setError(null); setLoading(false);
       if (details) {
@@ -168,13 +168,15 @@ export function useKitchenData(campusId?: string) {
     if (!authed) { setLoading(false); return; }
     void refreshQueue(true);
     return () => { ++queueGeneration.current; ++summaryGeneration.current; };
-  }, [authed, campusId]);
+  }, [authed, campusId, fromDate, toDate]);
 
   useEffect(() => {
     if (!authed) return;
-    const interval = setInterval(refreshQueue, 10000);
-    return () => clearInterval(interval);
-  }, [authed, scheduledDate, campusId]);
+    const poll = () => { if (document.visibilityState === 'visible') void refreshQueue(); };
+    const interval = setInterval(poll, 10000);
+    document.addEventListener('visibilitychange', poll);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', poll); };
+  }, [authed, scheduledDate, campusId, fromDate, toDate]);
 
   const selectScheduledDate = async (date) => {
     if (!date) return;
