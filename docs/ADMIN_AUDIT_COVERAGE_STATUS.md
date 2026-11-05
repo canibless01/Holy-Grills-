@@ -61,3 +61,7 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 ### Reviews and tier arithmetic — 5 November 2026
 
 [Targeted evidence](ADMIN_REVIEWS_AND_REPORT_ARITHMETIC_2026_11_05.md) covers the native Reviews read/filter/detail/page/search/retry controls and campus switching, stable backend page order, selected-campus tier activity isolation, controlled report arithmetic, and rating-fallback duplicate handling. No review promotion/manual moderation write workflow is claimed. Full reporting/moderation and whole-admin coverage remain open.
+
+### Review follow-up controls — 5 November 2026
+
+[Native mutation and real SQL evidence](ADMIN_REVIEW_FOLLOWUP_EVIDENCE_2026_11_05.md) now covers setting/clearing follow-up flags, repeated/failed/stale writes, campus boundaries and unchanged score/HP. Real public rating aggregation with duplicate item lines is verified in rolled-back fixtures. No review deletion, score censorship or promotion workflow is implied.

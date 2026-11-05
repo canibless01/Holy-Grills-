@@ -37,3 +37,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Review and arithmetic continuation — 5 November
 
 [Recorded review/report cases](ADMIN_REVIEWS_AND_REPORT_ARITHMETIC_2026_11_05.md): tier report activity is campus-scoped even when a member has other-campus history; controlled overview/redemption/tier arithmetic and multi-chunk reads are verified. Reviews now respects selected campus, resets/discards stale view state, uses stable page order and labels its average as page-specific. The rating fallback no longer weights a review repeatedly for repeated menu lines. Native review read/filter/detail/retry checks and 1,056 backend tests passed. Manual moderation writes, live public rating aggregation/reflection, wider refund/history/chart/export reporting and the remaining role/action pages are still open.
+
+## Review follow-up closure — 5 November
+
+[Follow-up evidence](ADMIN_REVIEW_FOLLOWUP_EVIDENCE_2026_11_05.md): native set/clear controls now use the existing flag field with campus checks, expected timestamps, response-loss replay and audit calls. Browser checks, 1,067 backend tests and fresh Supabase rollback role/public-average tests pass. Flagging does not remove scores or change HP. Public menu browser presentation remains separate; next is user/staff administration.

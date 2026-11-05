@@ -2404,6 +2404,43 @@ def list_reviews():
     reviews = res.get("data") or []
     return jsonify({"reviews": reviews, "total": res.get("count") or 0, "limit": limit, "offset": offset}), 200
 
+@admin_bp.route("/reviews/<review_id>/flag", methods=["PATCH"])
+@require_role("admin")
+def flag_review(review_id):
+    """Mark an existing review for staff follow-up; never edit ratings or awards."""
+    data = get_json_object()
+    if data is None or set(data) != {"is_flagged", "expected_flagged", "expected_updated_at"}:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if not isinstance(data["is_flagged"], bool) or (data["expected_flagged"] is not None and not isinstance(data["expected_flagged"], bool)):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    try:
+        expected_time = as_instant(data["expected_updated_at"]) if data["expected_updated_at"] is not None else None
+    except ValueError:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    db = get_user_client()
+    existing, error = fetch_or_403(db, "order_reviews", review_id, not_found_msg=MSG.REVIEW_NOT_FOUND)
+    if error:
+        return error
+    assert_can_modify(existing.get("campus_id"))
+    if existing.get("is_flagged") is data["is_flagged"]:
+        return jsonify(existing), 200
+    if existing.get("is_flagged") is not data["expected_flagged"]:
+        return jsonify({"error": MSG.REVIEW_FLAG_CONFLICT}), 409
+    patch = {"is_flagged": data["is_flagged"], "updated_at": datetime.now(timezone.utc).isoformat()}
+    try:
+        query = db.table("order_reviews").eq("id", review_id)
+        query = query.is_("is_flagged", "null") if data["expected_flagged"] is None else query.eq("is_flagged", data["expected_flagged"])
+        query = query.is_("updated_at", "null") if expected_time is None else query.eq("updated_at", expected_time)
+        rows = query.update(patch)
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "flag_review")
+    if not rows:
+        return jsonify({"error": MSG.REVIEW_FLAG_CONFLICT}), 409
+    row = rows[0] if isinstance(rows, list) else rows
+    _audit(g.user_id, "order_reviews", review_id, "review_follow_up", before_data={"is_flagged": existing.get("is_flagged")}, after_data={"is_flagged": row.get("is_flagged")}, target_campus_id=existing.get("campus_id"))
+    return jsonify(row), 200
+
+
 # --- END OF SECTION 6 (HP bulk-grant/report, campuses, reviews) ---
 
 

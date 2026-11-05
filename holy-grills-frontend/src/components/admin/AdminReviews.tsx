@@ -163,6 +163,8 @@ function ReviewsWorkspace({ campusId }) {
                       <p className="text-xs text-muted-foreground italic">No written review.</p>
                     )}
 
+                    <ReviewFlagControl review={r} onSaved={load} />
+
                     {/* Sub-ratings */}
                     {(r.kitchen_rating || r.rider_rating || r.food_rating || r.delivery_rating) && (
                       <div className="grid grid-cols-2 gap-3">
@@ -202,4 +204,30 @@ function ReviewsWorkspace({ campusId }) {
       )}
     </div>
   );
+}
+
+function ReviewFlagControl({ review, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const writing = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const submit = async () => {
+    if (writing.current) return;
+    writing.current = true; setSaving(true); setError('');
+    try {
+      await liveApi.admin.setReviewFlag(review.id, {
+        is_flagged: !review.is_flagged,
+        expected_flagged: review.is_flagged ?? null,
+        expected_updated_at: review.updated_at ?? null,
+      });
+      if (mounted.current) onSaved();
+    } catch (e) { if (mounted.current) setError(e.message || msg('FE_REVIEWS_FLAG_FAILED', 'The review flag could not be saved. Please try again.')); }
+    finally { writing.current = false; if (mounted.current) setSaving(false); }
+  };
+  return <div className="space-y-2">
+    <p className="text-xs text-muted-foreground">{msg('FE_REVIEWS_FLAG_HELP', "Flags help staff follow up. They do not change the customer's score or HP.")}</p>
+    <button onClick={submit} disabled={saving} className="px-3 py-2 rounded-xl bg-secondary text-foreground text-xs font-bold disabled:opacity-50">{saving ? msg('FE_REVIEWS_FLAG_SAVING', 'Saving flag…') : review.is_flagged ? msg('FE_REVIEWS_RESOLVE_ACTION', 'Clear follow-up flag') : msg('FE_REVIEWS_FLAG_ACTION', 'Flag for follow-up')}</button>
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+  </div>;
 }
