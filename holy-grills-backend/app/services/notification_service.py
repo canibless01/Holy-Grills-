@@ -505,6 +505,8 @@ def send_notification(
             "metadata": merged_meta,
             "campus_id": campus_id,
         }
+        if channel in ("email", "push"):
+            record["metadata"] = {**merged_meta, "_dispatch_version": 1, "email_provider": email_provider}
         if ((notif_type in REQUEST_TYPES and reference_id)
                 or (notif_type == "milestone_achieved" and reference_type == "milestone_completion" and reference_id)
                 or (notif_type == "checkin_reclaimed" and reference_type == "streak_reclaim" and reference_id)
@@ -1123,64 +1125,43 @@ def _record_delivery(notification_id, channel, receipt, *, blast_id=None, user_i
     return {"provider": provider, "receipt": receipt}
 
 
-def _dispatch_email_async(user_id: str, subject: str, body: str, notification_id: str, provider: str = None, rich_content: dict = None, blast_id: str = None):
-    """
-    Send a transactional email to the user's registered email address, via
-    whichever provider get_email_provider resolves to.
-    
-    rich_content: optional dict with body_html, images, cta_blocks for rich email content
-    blast_id: optional blast ID for tracking opens/clicks
-    """
-    try:
-        from app.utils.email import get_user_email_and_name, send_email_routed, _build_html, _build_rich_html
-        email, name = get_user_email_and_name(user_id)
-        if not email:
-            return
+def _prepare_notification_email(user_id, subject, body, provider=None, rich_content=None, blast_id=None, recipient=None):
+    from app.utils.email import get_user_email_and_name, _build_html, _build_rich_html
+    email, name = (recipient["email"], recipient.get("name")) if recipient else get_user_email_and_name(user_id)
+    if not email:
+        return None
+    chosen = get_email_provider(scope="transactional", override=provider)
+    tagline = os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT)
+    if rich_content and any(rich_content.get(key) for key in ("body_html", "images", "cta_blocks")):
+        html = _build_rich_html(name or "there", rich_content.get("body_html", body),
+                                rich_content.get("images", []), rich_content.get("cta_blocks", []), tagline)
+    else:
+        track_links = False
+        if blast_id:
+            blast = get_db().table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute() or {}
+            track_links = bool(blast.get("tracking_enabled"))
+        html = _build_html(name or "there", body, tagline, blast_id=blast_id, track_links=track_links)
+    return {"to_email": email, "to_name": name or "there", "subject": subject,
+            "html_body": html, "provider": chosen, "transactional": not bool(blast_id)}
 
-        chosen = get_email_provider(scope="transactional", override=provider)
-        app_tagline = os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT)
-        
-        # Use rich HTML builder if rich content is provided
-        if rich_content and (rich_content.get("body_html") or rich_content.get("images") or rich_content.get("cta_blocks")):
-            html_body = _build_rich_html(
-                name or "there",
-                rich_content.get("body_html", body),
-                rich_content.get("images", []),
-                rich_content.get("cta_blocks", []),
-                app_tagline,
-            )
-        else:
-            # Pass blast_id for tracking if provided
-            track_links = False
-            if blast_id:
-                try:
-                    db = get_db()
-                    blast = db.table("notification_blasts").select("tracking_enabled").eq("id", blast_id).single().execute()
-                    track_links = blast.get("tracking_enabled", False) if blast else False
-                except Exception:
-                    track_links = False
-            
-            html_body = _build_html(
-                name or "there",
-                body,
-                app_tagline,
-                blast_id=blast_id,
-                track_links=track_links,
-            )
 
-        receipt = {}
-        # A campaign email is marketing (respect unsubscribes); everything else is
-        # transactional (must reach the customer even if they opted out of promos).
-        accepted = send_email_routed(
-            email, name or "there", subject, html_body, provider=chosen,
-            receipt=receipt, transactional=not blast_id,
-        )
-        if not accepted:
-            logger.warning("Email to %s was not delivered by %s (subject %r, blast %s)",
-                           email, chosen, subject, blast_id or "-")
-        _record_delivery(notification_id, "email", receipt, blast_id=blast_id, user_id=user_id)
-    except Exception as e:
-        logger.error("Email dispatch error for user %s: %s", user_id, e)
+def _deliver_email_attempt(prepared):
+    from app.utils.email import send_email_routed
+    receipt = {}
+    accepted = send_email_routed(**prepared, receipt=receipt)
+    receipt.setdefault("state", "accepted" if accepted else "unknown")
+    receipt.setdefault("provider", prepared["provider"])
+    return receipt
+
+
+def _dispatch_email_async(user_id, subject, body, notification_id, provider=None, rich_content=None, blast_id=None):
+    from app.services.notification_outbox import dispatch_notification
+    return dispatch_notification(notification_id)
+
+
+def _dispatch_push_async(user_id, title, body, action_url, notification_id, urgency=None, push_image=None):
+    from app.services.notification_outbox import dispatch_notification
+    return dispatch_notification(notification_id)
 
 
 def _push_action_url(raw):
@@ -1206,7 +1187,37 @@ def _push_action_url(raw):
     return None
 
 
-def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None, push_image: str = None):
+def _prepare_notification_push(user_id, title, body, action_url, urgency=None, push_image=None, idempotency_key=None):
+    app_id, _ = _get_onesignal_creds()
+    payload = {
+        "app_id": app_id,
+        "include_aliases": {"external_id": [user_id]},
+        "target_channel": "push",
+        "headings": {"en": title},
+        "contents": {"en": body},
+    }
+    # Reuse this UUID throughout the existing transport retry loop.
+    payload["idempotency_key"] = idempotency_key or str(uuid.uuid4())
+    destination = _push_action_url(action_url)
+    if destination:
+        payload["url"] = destination
+    icon = _push_action_url('/icons/icon-192.png')
+    if icon:
+        payload['chrome_web_icon'] = icon
+        payload['firefox_icon'] = icon
+    if push_image:
+        from app.utils.upload_urls import is_cms_image_url
+        if is_cms_image_url(push_image):
+            payload['chrome_web_image'] = push_image
+            payload['big_picture'] = push_image
+    if urgency == "high":
+        payload["priority"] = 10                          # Android: max priority
+        payload["ios_interruption_level"] = "time-sensitive"  # iOS 15+: breaks Focus
+
+    return payload
+
+
+def _deliver_push_attempt(user_id: str, title: str, body: str, action_url: str, notification_id: str, urgency: str = None, push_image: str = None, prepared=None, idempotency_key=None):
     """
     Send a push notification via OneSignal using user_id as external_id.
     Requires user to have a registered push subscription with their user_id as external_id.
@@ -1218,47 +1229,29 @@ def _dispatch_push_async(user_id: str, title: str, body: str, action_url: str, n
     try:
         app_id, api_key = _get_onesignal_creds()
         if not app_id or not api_key:
-            return
+            return {"state": "retry", "provider": "onesignal", "error": "push_not_configured"}
 
-        payload = {
-            "app_id": app_id,
-            "include_aliases": {"external_id": [user_id]},
-            "target_channel": "push",
-            "headings": {"en": title},
-            "contents": {"en": body},
-        }
-        # Reuse this UUID throughout the existing transport retry loop.
-        payload["idempotency_key"] = str(uuid.uuid4())
-        destination = _push_action_url(action_url)
-        if destination:
-            payload["url"] = destination
-        icon = _push_action_url('/icons/icon-192.png')
-        if icon:
-            payload['chrome_web_icon'] = icon
-            payload['firefox_icon'] = icon
-        if push_image:
-            from app.utils.upload_urls import is_cms_image_url
-            if is_cms_image_url(push_image):
-                payload['chrome_web_image'] = push_image
-                payload['big_picture'] = push_image
-        if urgency == "high":
-            payload["priority"] = 10                          # Android: max priority
-            payload["ios_interruption_level"] = "time-sensitive"  # iOS 15+: breaks Focus
-
+        payload = prepared or _prepare_notification_push(user_id, title, body, action_url, urgency, push_image, idempotency_key)
+        if payload.get("app_id") != app_id:
+            return {"state": "failed", "provider": "onesignal", "error": "push_app_configuration_changed"}
         resp = _onesignal_post(
             f"{_ONESIGNAL_BASE}/notifications",
             headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
             payload=payload,
         )
-        ok = resp.status_code in (200, 202)
-        if not ok:
-            logger.warning("OneSignal push error %s for user %s: %s", resp.status_code, user_id, resp.text[:200])
-        _record_delivery(notification_id, "push", {
-            "provider": "onesignal",
-            "state": "accepted" if ok else "rejected",
-            "http_status": resp.status_code,
-            "provider_message_id": (resp.json() or {}).get("id") if ok else None,
-            "error": None if ok else resp.text[:300],
-        }, user_id=user_id)
-    except Exception as e:
-        logger.error("Push dispatch error for user %s: %s", user_id, e)
+        try:
+            detail = resp.json()
+        except (ValueError, TypeError):
+            detail = {}
+        if not isinstance(detail, dict):
+            detail = {}
+        accepted = resp.status_code in (200, 202) and bool(detail.get("id")) and not detail.get("errors") and detail.get("recipients") != 0
+        state = "accepted" if accepted else ("retry" if resp.status_code == 429 or resp.status_code >= 500 else "failed")
+        if resp.status_code in (200, 202) and not accepted:
+            state = "skipped"
+        return {"provider": "onesignal", "state": state, "http_status": resp.status_code,
+                "provider_message_id": detail.get("id") if accepted else None,
+                "error": None if accepted else str(detail.get("errors") or "push_not_accepted")[:300]}
+    except Exception as exc:
+        logger.warning("Push attempt interrupted for %s: %s", user_id, type(exc).__name__)
+        return {"state": "retry", "provider": "onesignal", "error": type(exc).__name__}

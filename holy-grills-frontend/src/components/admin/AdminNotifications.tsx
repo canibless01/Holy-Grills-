@@ -18,6 +18,11 @@ import EmailPreviewModal from './EmailPreviewModal';
 import BlastAnalyticsModal from './BlastAnalyticsModal';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 
+type RecoverableDelivery = {
+  id: string; channel: string; status: string; provider?: string;
+  title?: string; recipient?: string; error_message?: string; attempts: string;
+};
+
 const ROLES = [
   { id: 'all', label: 'All roles' },
   { id: 'student', label: 'Students' },
@@ -52,6 +57,39 @@ const STATUS_STYLE = {
 
 export default function AdminNotifications() {
   const { user } = useHolyGrill();
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveries, setRecoveries] = useState<RecoverableDelivery[]>([]);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [review, setReview] = useState<RecoverableDelivery | null>(null);
+  const [reviewId, setReviewId] = useState('');
+  const [reviewOutcome, setReviewOutcome] = useState('sent');
+  const [reviewProvider, setReviewProvider] = useState('onesignal');
+  const [reviewMessage, setReviewMessage] = useState('');
+  const [reviewEvidence, setReviewEvidence] = useState('');
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const loadRecovery = async () => {
+    setRecoveryLoading(true); setRecoveryError('');
+    try { const result = await apiClient.get('/notifications/dispatch/recovery'); setRecoveries(result.deliveries || []); }
+    catch { setRecoveryError('Delivery recovery could not load. Please retry.'); }
+    finally { setRecoveryLoading(false); }
+  };
+  const openReview = (row: RecoverableDelivery) => {
+    setReview(row); setReviewId(crypto.randomUUID()); setReviewOutcome('sent');
+    setReviewProvider(row.provider || 'onesignal'); setReviewMessage(''); setReviewEvidence(''); setRecoveryError('');
+  };
+  const saveReview = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!review || reviewSaving) return;
+    setReviewSaving(true); setRecoveryError('');
+    try {
+      await apiClient.post(`/notifications/dispatch/${review.id}/review`, {
+        review_id: reviewId, outcome: reviewOutcome, provider: reviewProvider,
+        provider_message_id: reviewMessage.trim() || null, evidence: reviewEvidence.trim(),
+      });
+      setReview(null); await loadRecovery();
+    } catch { setRecoveryError('Review could not be saved. Check the provider evidence and refresh if the delivery changed.'); }
+    finally { setReviewSaving(false); }
+  };
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [bodyHtml, setBodyHtml] = useState('');
@@ -583,6 +621,41 @@ export default function AdminNotifications() {
           {previewCount !== null && <p className="text-sm">{msg('FE_BLAST_AUDIENCE_COUNT', '{count} recipients in this audience.', { count: previewCount })}</p>}
         </div>
       </Card>
+
+      <Card>
+        <button type="button" aria-expanded={recoveryOpen} className="font-bold text-sm text-primary" onClick={() => {
+          if (!recoveryOpen) void loadRecovery(); setRecoveryOpen(!recoveryOpen);
+        }}>Delivery recovery</button>
+        {recoveryOpen && <div className="space-y-3 mt-3">
+          <p className="text-xs text-muted-foreground">Unsent messages recover automatically. An uncertain email needs a provider log review before another attempt, to avoid duplicates.</p>
+          <button type="button" disabled={recoveryLoading} className="text-primary font-bold text-sm disabled:opacity-50" onClick={() => void loadRecovery()}>Refresh deliveries</button>
+          {recoveryLoading && <LoadingSpinner label="Loading deliveries..." />}
+          {recoveryError && !review && <p role="alert" className="text-destructive text-sm">{recoveryError}</p>}
+          {!recoveryLoading && !recoveryError && recoveries.length === 0 && <p className="text-sm">No deliveries need recovery.</p>}
+          {recoveries.map(row => <div key={row.id} className="border border-border rounded-xl p-3 space-y-1 break-words">
+            <p className="font-bold text-sm">{row.title || 'Notification'}</p>
+            <p className="text-xs">{row.channel} · {row.status} · {row.attempts} attempts</p>
+            <p className="text-xs text-muted-foreground">{row.recipient}</p>
+            {row.error_message && <p className="text-xs text-muted-foreground">{row.error_message}</p>}
+            {['uncertain', 'failed'].includes(row.status) && <button type="button" className="text-primary font-bold text-sm" onClick={() => openReview(row)}>Review provider result</button>}
+          </div>)}
+        </div>}
+      </Card>
+      <Modal open={!!review} onClose={() => { if (!reviewSaving) setReview(null); }} title="Review delivery">
+        <form onSubmit={saveReview} className="space-y-4">
+          <p className="text-sm">Check the provider logs for this recipient and message. Requeue only when the provider confirms it did not send.</p>
+          <Field label="Provider"><select value={reviewProvider} onChange={e => { setReviewProvider(e.target.value); setReviewId(crypto.randomUUID()); }} disabled={reviewSaving} className="w-full rounded-xl border border-border p-3 bg-card">
+            <option value="onesignal">OneSignal</option>{review?.channel !== 'push' && <option value="resend">Resend</option>}
+          </select></Field>
+          <Field label="Confirmed result"><select value={reviewOutcome} onChange={e => { setReviewOutcome(e.target.value); setReviewId(crypto.randomUUID()); }} disabled={reviewSaving} className="w-full rounded-xl border border-border p-3 bg-card">
+            <option value="sent">Provider accepted — mark sent</option><option value="not_sent">Provider confirms not sent — queue another attempt</option>
+          </select></Field>
+          <Field label="Provider message ID"><TextInput value={reviewMessage} onChange={e => { setReviewMessage(e.target.value); setReviewId(crypto.randomUUID()); }} required={reviewOutcome === 'sent'} maxLength={300} disabled={reviewSaving} /></Field>
+          <Field label="Provider log evidence"><textarea value={reviewEvidence} onChange={e => { setReviewEvidence(e.target.value); setReviewId(crypto.randomUUID()); }} required minLength={10} maxLength={500} disabled={reviewSaving} className="w-full rounded-xl border border-border p-3 bg-card" /></Field>
+          {recoveryError && <p role="alert" className="text-destructive text-sm">{recoveryError}</p>}
+          <button type="submit" disabled={reviewSaving || reviewEvidence.trim().length < 10 || (reviewOutcome === 'sent' && !reviewMessage.trim())} className="w-full rounded-full bg-gradient-cta text-white font-bold p-3 disabled:opacity-50">{reviewSaving ? 'Saving...' : 'Save provider review'}</button>
+        </form>
+      </Modal>
 
       {/* Recent blasts */}
       <div>

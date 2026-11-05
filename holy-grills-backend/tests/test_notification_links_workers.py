@@ -41,12 +41,12 @@ class NotificationLinksWorkersTests(unittest.TestCase):
             if len(seen)==1: raise requests.Timeout('uncertain')
             return MagicMock(status_code=200)
         with patch.object(service,'_get_onesignal_creds',return_value=('app','key')),patch.object(service.http_requests,'post',side_effect=post),patch('app.utils.retry.time.sleep'):
-            service._dispatch_push_async('user','Title','Body',None,'receipt')
+            service._deliver_push_attempt('user','Title','Body',None,'receipt')
         self.assertEqual(len(seen),2);self.assertEqual(seen[0]['idempotency_key'],seen[1]['idempotency_key']);self.assertEqual(uuid.UUID(seen[0]['idempotency_key']).version,4)
 
     def test_browser_push_carries_the_public_brand_icon(self):
         with patch.dict(service.os.environ,{'FRONTEND_URL':'https://holygrills.online'}),patch.object(service,'_get_onesignal_creds',return_value=('app','key')),patch.object(service,'_onesignal_post',return_value=MagicMock(status_code=200)) as post:
-            service._dispatch_push_async('user','Title','Body','/orders/full-id','receipt')
+            service._deliver_push_attempt('user','Title','Body','/orders/full-id','receipt')
         payload=post.call_args.kwargs['payload']
         self.assertEqual(payload['chrome_web_icon'],'https://holygrills.online/icons/icon-192.png')
         self.assertEqual(payload['url'],'https://holygrills.online/orders/full-id')

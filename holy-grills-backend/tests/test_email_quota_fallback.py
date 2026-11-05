@@ -49,7 +49,7 @@ class EmailQuotaFallback(unittest.TestCase):
   self.assertEqual(route.call_args.kwargs['provider'],'resend')
  def test_notification_override_uses_same_router(self):
   with patch.object(email,'get_user_email_and_name',return_value=('audit@example.invalid','Audit')),patch.object(notifications,'get_email_provider',return_value='onesignal'),patch.object(email,'send_email_routed',return_value=True) as route:
-   notifications._dispatch_email_async('user','Subject','Body','receipt');self.assertEqual(route.call_args.kwargs['provider'],'onesignal')
+   notifications._deliver_email_attempt(notifications._prepare_notification_email('user','Subject','Body'));self.assertEqual(route.call_args.kwargs['provider'],'onesignal')
  def test_one_signal_direct_wrapper_uses_router_without_recursion(self):
   with patch.object(email,'send_email_routed',return_value=True) as route:
    self.assertTrue(notifications._dispatch_email_via_onesignal('audit@example.invalid','Audit','Subject','Body'));self.assertEqual(route.call_args.kwargs['provider'],'onesignal')

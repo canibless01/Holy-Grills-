@@ -24,6 +24,48 @@ notifications_bp = Blueprint("notifications", __name__)
 push_bp = Blueprint("push", __name__)
 
 
+@notifications_bp.route('/dispatch/recovery', methods=['GET'])
+@require_role('admin')
+def notification_recovery_list():
+    campus_id = resolve_scoped_campus_id(request.args.get('campus_id'))
+    rows = get_db().rpc('hg_notification_recovery_list', {
+        'p_actor_id': g.user_id, 'p_campus_id': campus_id,
+    })
+    return jsonify({'deliveries': rows or []})
+
+
+@notifications_bp.route('/dispatch/<delivery_id>/review', methods=['POST'])
+@require_role('admin')
+def notification_recovery_review(delivery_id):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'A provider review is required.'}), 400
+    review_id = data.get('review_id')
+    outcome, provider = data.get('outcome'), data.get('provider')
+    evidence, message_id = data.get('evidence'), data.get('provider_message_id')
+    if (not validate_uuid(delivery_id) or not validate_uuid(review_id)
+        or outcome not in ('sent', 'not_sent') or provider not in ('onesignal', 'resend')
+        or not isinstance(evidence, str) or not 10 <= len(evidence.strip()) <= 500
+        or (message_id is not None and (not isinstance(message_id, str) or len(message_id) > 300))
+        or (outcome == 'sent' and not (message_id or '').strip())):
+        return jsonify({'error': 'Supply the provider outcome, log evidence and sent message ID.'}), 400
+    try:
+        result = get_db().rpc('hg_reconcile_notification_dispatch', {
+            'p_actor_id': g.user_id, 'p_id': delivery_id, 'p_review_id': review_id,
+            'p_outcome': outcome, 'p_provider': provider,
+            'p_message_id': message_id, 'p_evidence': evidence.strip(),
+        })
+    except SupabaseError as exc:
+        if exc.details.get('code') == '42501':
+            return jsonify({'error': 'Delivery review access denied.'}), 403
+        if exc.details.get('code') == 'P0001':
+            return jsonify({'error': 'Delivery changed or evidence is invalid. Refresh before reviewing.'}), 409
+        raise
+    # The existing bounded scheduler picks up approved retries. No extra worker
+    # or thread is needed, and repeating this request cannot create two sends.
+    return jsonify(result)
+
+
 @push_bp.route("/subscribe", methods=["POST"])
 @require_auth
 def push_subscribe():

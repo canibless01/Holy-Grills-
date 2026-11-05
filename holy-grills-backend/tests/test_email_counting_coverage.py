@@ -104,7 +104,7 @@ class EntryPointTests(unittest.TestCase):
              patch.object(notifications, "get_email_provider", return_value="resend"), \
              patch.object(email, "send_email_routed", return_value=True) as routed, \
              patch.object(notifications, "_record_delivery"):
-            notifications._dispatch_email_async("u1", "Subject", "Body", "notif-1")
+            notifications._deliver_email_attempt(notifications._prepare_notification_email("u1", "Subject", "Body"))
         routed.assert_called_once()
 
     def test_every_counted_send_reserves_exactly_one_slot(self):

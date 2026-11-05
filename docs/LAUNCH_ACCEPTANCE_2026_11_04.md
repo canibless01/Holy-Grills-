@@ -89,3 +89,11 @@ Resolved follow-through: [DNS coexistence, owner-confirmed reset receipt/link, f
 
 
 5 November update: [weekly pending-HP payout/tracker/week advancement and notice recovery](WEEKLY_LOGIN_PAYOUT_RECOVERY_2026_11_05.md) now have atomic transaction and replay proof. General external dispatch durability remains separate.
+
+## 5 November: saved notification dispatch recovery
+
+Applied `20261105115039_durable_notification_dispatch.sql` and added durable capture, worker leases, immutable OneSignal push replay and explicit uncertain-email review. Campaigns now has an on-demand Delivery recovery screen with campus/role enforcement, provider-log evidence, message IDs and audited idempotent reviews. The existing bounded scheduled-blast job performs recovery; no service, beat entry, weekly/monthly job or reward amount was removed. Full evidence and limits: [notification dispatch recovery](NOTIFICATION_DISPATCH_RECOVERY_2026_11_05.md).
+
+Database interruption/replay/privacy checks passed before and after applying the migration; all fixtures rolled back and zero audit users retained. Security findings are unchanged. This covers new saved registered-user notifications, not direct guest email utility calls or interruption before a business action creates its notification. Password-reset inbox receipt and reset-page navigation were explicitly confirmed by the owner after Brevo DNS authentication was corrected; that delivery blocker is resolved. Hosted template visual confirmation remains separate.
+
+Integrated verification after rebasing the concurrent campus review/report fixes: **1,093 backend tests passed**, full frontend build and mobile/desktop native recovery form checks passed. The production REST endpoint for the new read-only due-dispatch RPC responds successfully. At 12:45 WAT, the existing scheduled-blast, newsletter and scheduled-order jobs had successful receipts on the then-current `70a621f` revision; this proves continued execution after the earlier resource reductions. The new dispatch revision still needs its own post-deployment receipt. Independent simultaneous-session and killed-process production tests are not claimed.

@@ -1346,6 +1346,8 @@ def send_scheduled_blasts(self, campus_id=None):
     Queries notification_blasts where status = "scheduled" and scheduled_at <= now(),
     and calls send_blast(blast_id) to execute the campaign and set status = "sent".
     """
+    from app.services.notification_outbox import recover_due_notifications
+    recovery = recover_due_notifications()
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "send_scheduled_blasts"})
@@ -1353,7 +1355,7 @@ def send_scheduled_blasts(self, campus_id=None):
         logger.error("send_scheduled_blasts: lock RPC failed, skipping run to be safe: %s", e)
         lock_acquired = False
     if not lock_acquired:
-        return {"skipped": "Lock not acquired"}
+        return {"skipped": "Lock not acquired", "notification_recovery": recovery}
 
     try:
         now = datetime.now(timezone.utc).isoformat()
@@ -1382,7 +1384,7 @@ def send_scheduled_blasts(self, campus_id=None):
             except Exception as e:
                 logger.error("send_scheduled_blasts: blast %s failed: %s", blast_id, e)
 
-        return {"processed": processed, "checked_at": now, "campus_id": campus_id}
+        return {"processed": processed, "checked_at": now, "campus_id": campus_id, "notification_recovery": recovery}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})
