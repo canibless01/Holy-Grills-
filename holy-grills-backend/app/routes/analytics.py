@@ -29,8 +29,17 @@ def _wat_window(from_date: str, to_date: str):
     if not (validate_date(from_date) and validate_date(to_date)):
         raise ValueError("date")
     start = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=_WAT)
-    end = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=_WAT) + timedelta(days=1)
-    return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+    last = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=_WAT)
+    if last < start:
+        raise ValueError("date")
+    try:
+        end = last + timedelta(days=1)
+    except OverflowError as exc:
+        raise ValueError("date") from exc
+    try:
+        return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+    except OverflowError as exc:
+        raise ValueError("date") from exc
 
 
 def _date_range(default_days: int = 30):
@@ -1382,6 +1391,10 @@ def export_csv():
     db = get_user_client(paginate=True)
     export_type = request.args.get("type", "").lower()
     try:
+        row_limit = _int_arg("limit", 5000, 1, 10000)
+    except ValueError:
+        return jsonify({"error": MSG.ANALYTICS_INVALID_NUMBER.format(param="limit")}), 400
+    try:
         from_date, to_date, start_utc, end_utc = _date_range(30)
     except ValueError:
         return jsonify({"error": MSG.ANALYTICS_INVALID_DATE}), 400
@@ -1441,10 +1454,6 @@ def export_csv():
     else:
         return jsonify({"error": MSG.ANALYTICS_UNKNOWN_EXPORT.format(export_type=export_type)}), 400
 
-    try:
-        row_limit = _int_arg("limit", 5000, 1, 10000)
-    except ValueError:
-        return jsonify({"error": MSG.ANALYTICS_INVALID_NUMBER.format(param="limit")}), 400
     capped_rows = rows[:row_limit] if isinstance(rows, list) else rows
 
     def _csv_safe(value):

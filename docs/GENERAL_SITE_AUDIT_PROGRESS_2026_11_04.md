@@ -29,3 +29,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Ingredient lifecycle continuation — 5 November
 
 [Archive/restore evidence](ADMIN_STOCK_LIFECYCLE_EVIDENCE_2026_11_05.md) closes the recorded native lifecycle cases and the preceding metadata browser verification. Balances/ledger are preserved, new archived adjustments are blocked, old receipts replay safely, stale intents cannot reverse newer transitions, and direct lifecycle writes are denied. The launch-chat milestone and check-in recovery changes from main were integrated; the final regression run passed 1,029 backend tests. Reporting and wider notification behavior remain open; this is not full Store or whole-admin sign-off.
+
+## Reporting continuation — 5 November
+
+[Reporting scope/date evidence](ADMIN_REPORTING_SCOPE_EVIDENCE_2026_11_05.md): fixed selected-campus Economics requests, stale replies, partial-failure presentation, recoverable date controls, WAT defaults, reversed/overflowing date validation and early export-limit validation. Native browser checks and 1,049 backend tests pass. Wider report arithmetic/exports and a new native stock reporting screen remain open. Live stock contains no ingredient records, so its zero-mismatch reconciliation is not counted as populated proof.

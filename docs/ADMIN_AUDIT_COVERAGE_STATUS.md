@@ -53,3 +53,7 @@ See the complete [two-workstream assignment](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md)
 ### Store lifecycle follow-up — 5 November 2026
 
 Native ingredient metadata editing and archive/restore have targeted backend, Chromium and rolled-back Supabase evidence. The lifecycle helper is service-only, preserves accounting, and rejects stale transitions; archived ingredients reject new adjustments while retaining receipt replay and ledger access. See [recorded cases and remaining scope](ADMIN_STOCK_LIFECYCLE_EVIDENCE_2026_11_05.md). Reporting/export and wider stock-notification behavior remain open; the entire Store page and whole admin inventory are not marked complete.
+
+### Reporting controls — 5 November 2026
+
+Targeted Economics campus/date/error/retry and Analytics date/CSV controls are now verified through real handlers and a native controlled browser run. See [reporting evidence and explicit remaining scope](ADMIN_REPORTING_SCOPE_EVIDENCE_2026_11_05.md). This does not close every chart, programme arithmetic, concurrent export behavior or whole-page reporting coverage.

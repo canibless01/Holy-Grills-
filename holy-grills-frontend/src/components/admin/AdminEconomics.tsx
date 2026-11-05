@@ -1,4 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCampus } from '@/lib/campusContext';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { msg } from '@/lib/messages';
+import { watDateKey } from '@/lib/watCalendar';
 import { motion } from 'framer-motion';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import {
@@ -10,8 +14,8 @@ import { Card, Skeleton, EmptyState, SectionTitle, StatTile, body } from './ui/A
 
 const FLAME = ['#E70E0E', '#F2B84B', '#FF9500', '#6A1F00', '#A8301A', '#C47B3A'];
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const todayStr = () => watDateKey();
+const daysAgoStr = (n) => { const d = new Date(watDateKey() + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
 
 const num = (v) => (v == null || isNaN(Number(v)) ? 0 : Number(v));
 const pct = (v, digits = 1) => `${(num(v) * 100).toFixed(digits)}%`;
@@ -23,6 +27,13 @@ const pct = (v, digits = 1) => `${(num(v) * 100).toFixed(digits)}%`;
 //   3. Redemption Analytics (cost-by-type donut + totals)
 // Endpoints: GET /admin/economics/overview | /tier-breakdown | /redemption-analytics.
 export default function AdminEconomics() {
+  const { adminCampusId } = useCampus();
+  const { user } = useHolyGrill();
+  const campusId = user?.role === 'super_admin' ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  return <EconomicsWorkspace key={campusId || 'global'} campusId={campusId} />;
+}
+
+function EconomicsWorkspace({ campusId }) {
   const [fromDate, setFromDate] = useState(daysAgoStr(30));
   const [toDate, setToDate] = useState(todayStr());
   const [overview, setOverview] = useState(null);
@@ -31,27 +42,30 @@ export default function AdminEconomics() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
-  const load = async () => {
+  const generation = useRef(0);
+  const load = useCallback(async () => {
+    const current = ++generation.current;
     setLoading(true); setFailed(false);
     // Backend reads start_date / end_date (admin_economics.py). Sending
     // from_date/to_date silently dropped the filter.
-    const params = { start_date: fromDate, end_date: toDate };
+    const params = { start_date: fromDate, end_date: toDate, ...(campusId ? { campus_id: campusId } : {}) };
     const [ov, tb, rd] = await Promise.allSettled([
       liveApi.admin.getEconomicsOverview(params),
       liveApi.admin.getEconomicsTierBreakdown(params),
       liveApi.admin.getEconomicsRedemptionAnalytics(params),
     ]);
+    if (current !== generation.current) return;
     if (ov.status === 'fulfilled') setOverview(body(ov.value)); else setOverview(null);
     if (tb.status === 'fulfilled') {
       const t = body(tb.value);
       setTiers(Array.isArray(t) ? t : (t?.tiers || t?.breakdown || []));
     } else setTiers([]);
     setRedemption(rd.status === 'fulfilled' ? body(rd.value) : null);
-    setFailed(ov.status === 'rejected' && tb.status === 'rejected' && rd.status === 'rejected');
+    setFailed(ov.status === 'rejected' || tb.status === 'rejected' || rd.status === 'rejected');
     setLoading(false);
-  };
+  }, [fromDate, toDate, campusId]);
 
-  useEffect(() => { load(); }, [fromDate, toDate]);
+  useEffect(() => { load(); return () => { generation.current++; }; }, [load]);
 
   if (loading) {
     return (
@@ -63,23 +77,6 @@ export default function AdminEconomics() {
         <Skeleton className="h-64" />
         <Skeleton className="h-48" />
       </div>
-    );
-  }
-
-  if (failed) {
-    return (
-      <Card>
-        <EmptyState
-          icon={AlertCircle}
-          title="Economics data unavailable"
-          body="The HP economics endpoints didn't respond. Check your admin session and retry."
-          action={
-            <button onClick={load} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold active:scale-95 transition">
-              <RefreshCw className="w-3.5 h-3.5" /> Retry
-            </button>
-          }
-        />
-      </Card>
     );
   }
 
@@ -112,11 +109,11 @@ export default function AdminEconomics() {
         <div className="flex gap-2">
           <div className="flex-1">
             <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">From</label>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <input aria-label={msg('FE_ECON_FROM', 'From date')} type="date" max={toDate || undefined} value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
           </div>
           <div className="flex-1">
             <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">To</label>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <input aria-label={msg('FE_ECON_TO', 'To date')} type="date" min={fromDate || undefined} value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
           </div>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-secondary text-secondary-foreground text-xs font-bold hover:bg-primary/10 hover:text-primary active:scale-95 transition shrink-0 lg:ml-auto">
@@ -124,6 +121,18 @@ export default function AdminEconomics() {
         </button>
       </Card>
 
+      {failed ? (<Card>
+        <EmptyState
+          icon={AlertCircle}
+          title={msg('FE_ECON_UNAVAILABLE', 'Economics data unavailable')}
+          body={msg('FE_ECON_RETRY_HELP', 'Some economics data could not be loaded. Retry to get a complete report.')}
+          action={
+            <button onClick={load} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold active:scale-95 transition">
+              <RefreshCw className="w-3.5 h-3.5" /> {msg('FE_PLATFORM_RETRY', 'Retry')}
+            </button>
+          }
+        />
+      </Card>) : <>
       {/* 1. Programme Overview */}
       <Card className="p-5">
         <SectionTitle icon={Coins} title="Programme Overview" sub={`${fromDate} → ${toDate} · GET /admin/economics/overview`} />
@@ -234,6 +243,7 @@ export default function AdminEconomics() {
           </div>
         )}
       </Card>
+      </>}
     </div>
   );
 }
