@@ -5,6 +5,8 @@ import { formatDateTime } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 const RATING_TONE = {
   5: 'tone-success',
@@ -26,12 +28,18 @@ function Stars({ value }) {
 
 /**
  * AdminReviews — lists all order reviews with overall + sub-ratings (kitchen,
- * rider), filterable by star rating. Admins can promote a review to a homepage
- * testimonial via the storefront sections API.
+ * rider), filterable by star rating and flag status within the selected campus.
  *
- * Backend: GET /admin/reviews, POST /admin/reviews/:id/promote
+ * Backend: GET /admin/reviews; homepage testimonials use storefront sections.
  */
 export default function AdminReviews() {
+  const { adminCampusId } = useCampus();
+  const { user } = useHolyGrill();
+  const campusId = user?.role === 'super_admin' ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  return <ReviewsWorkspace key={campusId || 'global'} campusId={campusId} />;
+}
+
+function ReviewsWorkspace({ campusId }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ratingFilter, setRatingFilter] = useState('all');
@@ -49,7 +57,7 @@ export default function AdminReviews() {
     setLoading(true);
     setLoadError(false);
     try {
-      const params: Record<string, unknown> = { limit, offset };
+      const params: Record<string, unknown> = { limit, offset, ...(campusId ? { campus_id: campusId } : {}) };
       if (ratingFilter !== 'all') params.rating = Number(ratingFilter);
       if (flaggedFilter !== 'all') params.is_flagged = flaggedFilter === 'flagged';
       const result = await liveApi.admin.getReviewsPage(params);
@@ -67,7 +75,7 @@ export default function AdminReviews() {
     }
     setLoading(false);
   };
-  useEffect(() => { load(); return () => { latest.current++; }; }, [ratingFilter, flaggedFilter, offset]);
+  useEffect(() => { load(); return () => { latest.current++; }; }, [ratingFilter, flaggedFilter, offset, campusId]);
 
   const filtered = reviews.filter((r) => {
     const text = (r.review_text || r.comment || '').toLowerCase();
@@ -92,14 +100,13 @@ export default function AdminReviews() {
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-border">
           <TrendingUp className="w-4 h-4 text-primary" />
-          <span className="text-sm font-bold text-foreground">{reviews.length} reviews</span>
-          <span className="text-xs text-muted-foreground">· avg {avgRating}★</span>
+          <span className="text-sm font-bold text-foreground">{msg('FE_REVIEWS_PAGE_SUMMARY', 'This page: {count} reviews · average {rating}★', { count: reviews.length, rating: avgRating })}</span>
         </div>
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={msg('FE_REVIEWS_SEARCH_PAGE', 'Search this page…')} className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
+          <input aria-label={msg('FE_REVIEWS_SEARCH_PAGE', 'Search this page…')} value={q} onChange={(e) => setQ(e.target.value)} placeholder={msg('FE_REVIEWS_SEARCH_PAGE', 'Search this page…')} className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
         </div>
-        <select value={ratingFilter} onChange={(e) => { setOffset(0); setRatingFilter(e.target.value); }} className="p-2 rounded-xl border border-border text-sm">
+        <select aria-label={msg('FE_REVIEWS_RATING_FILTER', 'Rating filter')} value={ratingFilter} onChange={(e) => { setOffset(0); setRatingFilter(e.target.value); }} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All ratings</option>
           <option value="5">5 ★</option>
           <option value="4">4 ★</option>
@@ -107,12 +114,12 @@ export default function AdminReviews() {
           <option value="2">2 ★</option>
           <option value="1">1 ★</option>
         </select>
-        <select value={flaggedFilter} onChange={(e) => { setOffset(0); setFlaggedFilter(e.target.value); }} className="p-2 rounded-xl border border-border text-sm">
+        <select aria-label={msg('FE_REVIEWS_FLAG_FILTER', 'Flag filter')} value={flaggedFilter} onChange={(e) => { setOffset(0); setFlaggedFilter(e.target.value); }} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All reviews</option>
           <option value="flagged">🚩 Flagged only</option>
           <option value="unflagged">Unflagged</option>
         </select>
-        <button onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
+        <button aria-label={msg('FE_REVIEWS_REFRESH', 'Refresh reviews')} onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
       </div>
 
       <div className="flex items-center justify-between gap-3 text-sm">

@@ -33,3 +33,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Reporting continuation — 5 November
 
 [Reporting scope/date evidence](ADMIN_REPORTING_SCOPE_EVIDENCE_2026_11_05.md): fixed selected-campus Economics requests, stale replies, partial-failure presentation, recoverable date controls, WAT defaults, reversed/overflowing date validation and early export-limit validation. Native browser checks and 1,049 backend tests pass. Wider report arithmetic/exports and a new native stock reporting screen remain open. Live stock contains no ingredient records, so its zero-mismatch reconciliation is not counted as populated proof.
+
+## Review and arithmetic continuation — 5 November
+
+[Recorded review/report cases](ADMIN_REVIEWS_AND_REPORT_ARITHMETIC_2026_11_05.md): tier report activity is campus-scoped even when a member has other-campus history; controlled overview/redemption/tier arithmetic and multi-chunk reads are verified. Reviews now respects selected campus, resets/discards stale view state, uses stable page order and labels its average as page-specific. The rating fallback no longer weights a review repeatedly for repeated menu lines. Native review read/filter/detail/retry checks and 1,056 backend tests passed. Manual moderation writes, live public rating aggregation/reflection, wider refund/history/chart/export reporting and the remaining role/action pages are still open.

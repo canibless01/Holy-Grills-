@@ -2398,7 +2398,7 @@ def list_reviews():
             q = q.eq(key, value)
         if flagged:
             q = q.eq("is_flagged", flagged == "true")
-        res = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or {}
+        res = q.order("created_at", ascending=False).order("id", ascending=False).limit(limit).offset(offset).execute() or {}
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_reviews")
     reviews = res.get("data") or []

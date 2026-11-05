@@ -57,3 +57,7 @@ Native ingredient metadata editing and archive/restore have targeted backend, Ch
 ### Reporting controls — 5 November 2026
 
 Targeted Economics campus/date/error/retry and Analytics date/CSV controls are now verified through real handlers and a native controlled browser run. See [reporting evidence and explicit remaining scope](ADMIN_REPORTING_SCOPE_EVIDENCE_2026_11_05.md). This does not close every chart, programme arithmetic, concurrent export behavior or whole-page reporting coverage.
+
+### Reviews and tier arithmetic — 5 November 2026
+
+[Targeted evidence](ADMIN_REVIEWS_AND_REPORT_ARITHMETIC_2026_11_05.md) covers the native Reviews read/filter/detail/page/search/retry controls and campus switching, stable backend page order, selected-campus tier activity isolation, controlled report arithmetic, and rating-fallback duplicate handling. No review promotion/manual moderation write workflow is claimed. Full reporting/moderation and whole-admin coverage remain open.

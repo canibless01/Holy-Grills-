@@ -280,13 +280,13 @@ def _review_stats(db, item_ids):
         stats = {}
         for row in rows:
             for review in review_by_order.get(row.get("order_id"), []):
-                bucket = stats.setdefault(row["menu_item_id"], [])
+                bucket = stats.setdefault(row["menu_item_id"], {})
                 if review.get("rating") is not None:
-                    bucket.append((review["id"], float(review["rating"])))
+                    bucket[review["id"]] = float(review["rating"])
         return {
             item_id: {
-                "avg_rating": round(sum(rating for _, rating in values) / len(values), 1),
-                "review_count": len({review_id for review_id, _ in values}),
+                "avg_rating": round(sum(values.values()) / len(values), 1),
+                "review_count": len(values),
             }
             for item_id, values in stats.items() if values
         }

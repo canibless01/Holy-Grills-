@@ -108,6 +108,8 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
                 q = q.gte("created_at", start_date)
             if end_date:
                 q = q.lt("created_at", end_date)
+            if campus_id:
+                q = q.eq("campus_id", campus_id)
             return q
         revenue = sum(float(o["subtotal"] or 0) for o in _in_chunks(_orders, user_ids))
 
@@ -117,6 +119,8 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
                 q = q.gte("created_at", start_date)
             if end_date:
                 q = q.lt("created_at", end_date)
+            if campus_id:
+                q = q.eq("campus_id", campus_id)
             return q
         hp_tx = _in_chunks(_hp, user_ids)
         hp_issued = sum(t["amount"] for t in hp_tx if t.get("type") == "earn" and t.get("source") in _HP_ISSUED_SOURCES and t.get("source") != "hp_transfer_received")
@@ -128,6 +132,8 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
                 q = q.gte("created_at", start_date)
             if end_date:
                 q = q.lt("created_at", end_date)
+            if campus_id:
+                q = q.eq("campus_id", campus_id)
             return q
         actual_cost = sum(float(c["actual_cost"] or 0) for c in _in_chunks(_cost, user_ids))
 
