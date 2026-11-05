@@ -12,7 +12,7 @@ def category_for_notification(kind):
         return 'hp_updates'
     if kind in DELIVERY_TYPES or kind.startswith(('rider_','kitchen_')):
         return 'delivery_updates'
-    if kind in REQUEST_TYPES or kind in ('event_registered','event_catering_submitted','event_catering_status') or kind.startswith(('order_','guest_order','scheduled_order','squad_order','marketplace_purchase','marketplace_code','marketplace_report')):
+    if kind in REQUEST_TYPES or kind in ('event_registered','event_ticket_refunded','event_catering_submitted','event_catering_status') or kind.startswith(('order_','guest_order','scheduled_order','squad_order','marketplace_purchase','marketplace_code','marketplace_report')):
         return 'order_updates'
     if kind.startswith(('hp_','tier_','reward_','free_side','exclusive_spin','milestone_','referral_','squad_','birthday_','checkin_','login_streak','first_order_gift','graduation_','membership_','gift_campaign_','ambassador_grant_','prize_fulfilment','flash_sale_redeemed')):
         return 'hp_updates'

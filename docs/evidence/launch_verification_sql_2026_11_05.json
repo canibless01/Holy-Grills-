@@ -1,6 +1,6 @@
 {
   "date": "2026-11-05",
-  "schema_revision": "20261105122035",
+  "schema_revision": "20261105230200",
   "database": "production with BEGIN/ROLLBACK fixtures",
   "provider_calls": 0,
   "retained_fixtures": 0,
@@ -86,6 +86,10 @@
       "passed": true
     },
     {
+      "file": "paid_event_refunds_rollback.sql",
+      "passed": true
+    },
+    {
       "file": "social_milestone_atomic_rollback.sql",
       "passed": true
     },
@@ -147,6 +151,8 @@
     }
   ],
   "additional_variants": [
-    "notification_dispatch_rollback.sql using hg_claim_notification_dispatch_v2"
+    "notification_dispatch_rollback.sql using hg_claim_notification_dispatch_v2",
+    "paid_event_refunds_rollback.sql after queue-priority follow-up",
+    "event_reservation_financial_recovery.sql with subsidy cost restoration"
   ]
 }

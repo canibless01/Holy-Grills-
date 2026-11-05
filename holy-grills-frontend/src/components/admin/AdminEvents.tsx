@@ -1,7 +1,9 @@
 import { confirmAction } from '@/lib/confirmAction';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Eye, QrCode, Ticket, Download, Mail, BarChart3 } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
+import { useCampus } from '@/lib/campusContext';
+import { apiClient } from '@/lib/apiClient';
 import { safeText } from '@/lib/valueText';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
@@ -14,6 +16,10 @@ const BLANK = { title: '', description: '', location: '', starts_at: '', ends_at
 
 export default function AdminEvents() {
   const { user } = useHolyGrill();
+  const { campusId, adminCampusId } = useCampus();
+  const eventScope = useRef(0);
+  const eventLoad = useRef(0);
+  const historyLoad = useRef(0);
   const canManage = (event) => user?.role === 'super_admin' || !!event.campus_id;
   const [events, setEvents] = useState([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -26,9 +32,58 @@ export default function AdminEvents() {
   const [emailModal, setEmailModal] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [refund, setRefund] = useState<any>(null);
+  const [refundHistory, setRefundHistory] = useState<any>(null);
+  const [refundReview, setRefundReview] = useState<any>(null);
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundError, setRefundError] = useState('');
+  const openRefundHistory = async (eventId: string) => {
+    const version = ++historyLoad.current;
+    setRefundHistory({eventId, rows:[], loading:true, error:false});
+    try {
+      const result = await apiClient.get(`/events/${eventId}/refunds`);
+      if (version !== historyLoad.current) return;
+      setRefundHistory(previous => previous?.eventId === eventId ? {eventId, rows:result.refunds || [], loading:false, error:false} : previous);
+    } catch { if (version !== historyLoad.current) return; setRefundHistory(previous => previous?.eventId === eventId ? {...previous, loading:false, error:true} : previous); }
+  };
+  const requestRefund = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!refund || refundBusy) return;
+    const scope = eventScope.current;
+    setRefundBusy(true); setRefundError('');
+    try {
+      const result = await apiClient.post(`/events/${refund.eventId}/tickets/${refund.ticket.ticket_id}/refund`, {request_id:refund.id,reason:refund.reason.trim()});
+      if (scope !== eventScope.current) return;
+      toast({title:result.destination === 'wallet' ? 'Ticket refunded to wallet' : 'Guest refund queued',description:result.destination === 'wallet' ? 'Cash and spent HP have been returned.' : 'The refund will return to the original payment method after Paystack processes it.'});
+      setRefund(null); setRegs(null); await openRefundHistory(refund.eventId);
+    } catch { if (scope !== eventScope.current) return; setRefundError('Refund could not be confirmed. Retry with this request or refresh the ticket status.'); }
+    finally { setRefundBusy(false); }
+  };
+  const saveRefundReview = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!refundReview || refundBusy) return;
+    const scope = eventScope.current;
+    setRefundBusy(true); setRefundError('');
+    try {
+      await apiClient.post(`/events/${refundReview.eventId}/refunds/${refundReview.row.id}/review`, {
+        review_id:refundReview.id,outcome:refundReview.outcome,provider_refund_id:refundReview.providerId.trim() || null,evidence:refundReview.evidence.trim(),
+      });
+      if (scope !== eventScope.current) return;
+      setRefundReview(null); await openRefundHistory(refundReview.eventId);
+    } catch { if (scope !== eventScope.current) return; setRefundError('Provider review could not be saved. Refresh the refund and check your evidence.'); }
+    finally { setRefundBusy(false); }
+  };
 
-  const load = async () => { setLoading(true); setLoadError(false); try { setEvents(await mockApi.admin.getEvents()); } catch { setLoadError(true); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, []);
+  const load = async () => {
+    const version = ++eventLoad.current; setLoading(true); setLoadError(false);
+    try { const rows = await mockApi.admin.getEvents(); if (version === eventLoad.current) setEvents(rows); }
+    catch { if (version === eventLoad.current) setLoadError(true); }
+    finally { if (version === eventLoad.current) setLoading(false); }
+  };
+  useEffect(() => {
+    eventScope.current++; historyLoad.current++;
+    setRegs(null); setRefund(null); setRefundHistory(null); setRefundReview(null); setRefundError('');
+    void load();
+    return () => {eventLoad.current++;};
+  }, [campusId, adminCampusId]);
 
   const save = async () => {
     setBusy('save');
@@ -136,11 +191,48 @@ export default function AdminEvents() {
           <button disabled={!canManage(e)} onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
           <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-success" /></button>
           <button disabled={!canManage(e)} onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
+          <button disabled={!canManage(e)} onClick={() => void openRefundHistory(e.id)} title="Refund history" className="text-primary text-xs font-bold p-2">Refunds</button>
           <button disabled={!canManage(e)} onClick={() => genQR(e.id)} title="QR" className="p-2 rounded-lg hover:bg-muted"><QrCode className="w-4 h-4 text-muted-foreground" /></button>
           <button disabled={!canManage(e)} onClick={() => setModal({ item: { ...e }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
           <button disabled={!canManage(e)} onClick={() => remove(e.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
         </div>
       ))}
+
+      <Modal open={!!refund} onClose={() => {if (!refundBusy) setRefund(null);}} title="Refund entire ticket">
+        {refund && <form onSubmit={requestRefund} className="space-y-4">
+          <p className="text-sm">{refund.ticket.full_name || refund.ticket.email}</p>
+          <p className="text-sm">₦{Number(refund.ticket.refund_amount || 0).toLocaleString()} {refund.ticket.is_guest ? 'will return to the original payment method after processing.' : 'will return to the Holy Grills wallet.'} {Number(refund.ticket.hp_paid || 0) > 0 && `${refund.ticket.hp_paid} spent HP will also be returned.`}</p>
+          <p className="text-xs text-muted-foreground">The ticket will be cancelled and cannot be used for entry. Refunds are allowed only before check-in.</p>
+          <Field label="Refund reason"><textarea required minLength={10} maxLength={500} disabled={refundBusy} className="w-full rounded-xl border border-border bg-card p-3" value={refund.reason} onChange={e => setRefund({...refund,reason:e.target.value,id:crypto.randomUUID()})} /></Field>
+          {refundError && <p role="alert" className="text-destructive text-sm">{refundError}</p>}
+          <button type="submit" disabled={refundBusy || refund.reason.trim().length < 10} className="rounded-full bg-primary text-white font-bold p-3 w-full disabled:opacity-50">{refundBusy ? 'Submitting...' : 'Confirm full refund'}</button>
+        </form>}
+      </Modal>
+      <Modal open={!!refundHistory} onClose={() => setRefundHistory(null)} title="Ticket refunds">
+        {refundHistory && <div className="space-y-3">
+          <button type="button" disabled={refundHistory.loading} className="text-primary font-bold text-sm" onClick={() => void openRefundHistory(refundHistory.eventId)}>Refresh refunds</button>
+          {refundHistory.loading ? <p>Loading refunds...</p> : refundHistory.error ? <p role="alert">Refunds could not load. Please refresh.</p> : refundHistory.rows.length === 0 ? <p>No refunds for this event.</p> : refundHistory.rows.map(row => <div key={row.id} className="border border-border rounded-xl p-3 space-y-1 break-words">
+            <p className="font-bold text-sm">{row.recipient_name || row.recipient_email}</p>
+            <p className="text-sm">₦{Number(row.amount).toLocaleString()} · {row.destination === 'wallet' ? 'Holy Grills wallet' : 'Original payment method'} · {row.state}</p>
+            {row.provider_refund_id && <p className="text-xs">Paystack refund ID: {row.provider_refund_id}</p>}
+            {row.error && <p className="text-xs text-muted-foreground">{row.error}</p>}
+            {row.destination === 'paystack' && ['uncertain','failed'].includes(row.state) && <button type="button" className="text-primary font-bold text-xs" onClick={() => {setRefundError('');setRefundReview({eventId:refundHistory.eventId,row,id:crypto.randomUUID(),outcome:'lookup',providerId:row.provider_refund_id || '',evidence:''});}}>Review gateway result</button>}
+          </div>)}
+        </div>}
+      </Modal>
+      <Modal open={!!refundReview} onClose={() => {if (!refundBusy) setRefundReview(null);}} title="Review guest refund">
+        {refundReview && <form onSubmit={saveRefundReview} className="space-y-4">
+          <p className="text-sm">Check Paystack before retrying. Supplying a refund ID verifies its original transaction and amount; it does not mark a refund complete on your word alone.</p>
+          <Field label="Provider result"><select disabled={refundBusy} className="w-full p-3 rounded-xl border border-border bg-card" value={refundReview.outcome} onChange={e => setRefundReview({...refundReview,outcome:e.target.value,id:crypto.randomUUID()})}>
+            <option value="lookup">A Paystack refund exists — verify its ID</option>
+            {!refundReview.row.provider_refund_id && <option value="not_sent">Paystack confirms no refund was created — queue again</option>}
+          </select></Field>
+          {refundReview.outcome === 'lookup' && <Field label="Paystack refund ID"><TextInput required pattern="[0-9]{1,30}" maxLength={30} disabled={refundBusy} value={refundReview.providerId} onChange={e => setRefundReview({...refundReview,providerId:e.target.value,id:crypto.randomUUID()})} /></Field>}
+          <Field label="Provider log evidence"><textarea required minLength={10} maxLength={500} disabled={refundBusy} className="w-full p-3 rounded-xl border border-border bg-card" value={refundReview.evidence} onChange={e => setRefundReview({...refundReview,evidence:e.target.value,id:crypto.randomUUID()})} /></Field>
+          {refundError && <p role="alert" className="text-destructive text-sm">{refundError}</p>}
+          <button type="submit" disabled={refundBusy || refundReview.evidence.trim().length < 10} className="rounded-full bg-primary text-white p-3 w-full font-bold disabled:opacity-50">{refundBusy ? 'Saving...' : 'Save gateway review'}</button>
+        </form>}
+      </Modal>
 
       <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.isNew ? 'New Event' : 'Edit Event'}>
         {modal && (
@@ -198,7 +290,7 @@ export default function AdminEvents() {
               {filteredRegs.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">No registrants match your filters.</p>
               ) : filteredRegs.map((r) => (
-                <div key={r.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted text-sm">
+                <div key={r.ticket_id || r.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted text-sm">
                   <div className="min-w-0">
                     <div className="font-bold text-foreground">{r.full_name || r.name || 'Attendee'}</div>
                     <div className="text-xs text-muted-foreground truncate">{r.email || '—'} · {r.ticket_id || '—'}</div>
@@ -206,6 +298,7 @@ export default function AdminEvents() {
                   <div className="flex items-center gap-2 shrink-0">
                     {safeText(r.tier_name || r.tier, '') && <Pill tone="blue">{safeText(r.tier_name || r.tier, '')}</Pill>}
                     {r.checked_in ? <Pill tone="green">✓ Checked in</Pill> : <Pill tone="cocoa">Registered</Pill>}
+                    {r.refundable && <button type="button" className="text-destructive font-bold text-xs" onClick={() => {setRefundError('');setRefund({eventId:regs.eventId,ticket:r,id:crypto.randomUUID(),reason:''});}}>Refund ticket</button>}
                   </div>
                 </div>
               ))}

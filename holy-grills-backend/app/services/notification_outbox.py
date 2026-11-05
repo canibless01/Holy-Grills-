@@ -19,10 +19,12 @@ def dispatch_notification(notification_id):
         def finish(outcome):
             saved=db.rpc('hg_finish_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_outcome':outcome})
             return outcome if saved is True else {'state':'lease_lost'}
-        ticket_email=claim['payload'].get('kind')=='event_ticket_email'
+        refund_email=claim['payload'].get('kind')=='event_refund_email'
+        ticket_email=refund_email or claim['payload'].get('kind')=='event_ticket_email'
         if ticket_email:
             ticket=db.table('event_tickets').select('event_id,user_id,guest_email,status,payment_status').eq('id',claim['payload']['ticket_id']).single().execute() or {}
-            if (ticket.get('status') not in ('confirmed','checked_in') or ticket.get('payment_status') not in ('paid','not_required')
+            valid_ticket_state=(ticket.get('status')=='cancelled' and ticket.get('payment_status')=='refunded') if refund_email else (ticket.get('status') in ('confirmed','checked_in') and ticket.get('payment_status') in ('paid','not_required'))
+            if (not valid_ticket_state
                     or ticket.get('event_id')!=claim['payload']['event_id'] or ticket.get('user_id')!=snapshot.get('user_id')):
                 return finish({'state':'cancelled','error':'ticket_not_payable_or_owner_changed'})
             if ticket.get('user_id'):
@@ -48,7 +50,7 @@ def dispatch_notification(notification_id):
             if str(profile.get('email') or '').strip().lower()!=str(snapshot.get('email') or '').strip().lower():
                 return finish({'state':'skipped','error':'recipient_email_changed'})
             if prepared is None:
-                if ticket_email:
+                if ticket_email and not refund_email:
                     from app.utils.email import _prepare_qr_ticket_email
                     prepared=_prepare_qr_ticket_email(snapshot['email'],snapshot['name'],meta['event_title'],
                         claim['payload']['ticket_id'],claim['payload']['event_id'],meta.get('event_date'),meta.get('event_location'))

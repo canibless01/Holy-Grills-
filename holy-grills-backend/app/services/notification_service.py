@@ -43,6 +43,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "order_cancelled", "order_cancelled_user", "order_cancelled_admin",
     "order_refunded", "order_unclaimed", "order_moved_up", "order_scheduled_deferred", "gift_campaign_granted",
     "order_thank_you", "satisfaction_check", "reengagement_nudge",
+    "event_ticket_refunded",
     # HP
     "hp_earned", "hp_unlocked", "hp_decay_applied", "hp_transfer_recipient", "hp_admin_grant",
     # Tier
@@ -508,6 +509,7 @@ def send_notification(
         if channel in ("email", "push"):
             record["metadata"] = {**merged_meta, "_dispatch_version": 1, "email_provider": email_provider}
         if ((notif_type in REQUEST_TYPES and reference_id)
+                or (notif_type == "event_ticket_refunded" and reference_type == "event_ticket_refund" and reference_id)
                 or (notif_type == "milestone_achieved" and reference_type == "milestone_completion" and reference_id)
                 or (notif_type == "checkin_reclaimed" and reference_type == "streak_reclaim" and reference_id)
                 or (notif_type in ("checkin_streak_week", "streak_cycle_failed") and reference_type == "login_week" and reference_id)

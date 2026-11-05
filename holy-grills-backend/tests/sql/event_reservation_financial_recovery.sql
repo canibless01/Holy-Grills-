@@ -21,6 +21,7 @@ BEGIN
  result:=public.register_for_event_paid(e,u,tier,true,200,promo,'{"answers":{"meal":"rice"}}');
  IF result ? 'error' THEN RAISE EXCEPTION 'registration failed: %',result; END IF;
  t:=(result->>'ticket_id')::uuid;
+ INSERT INTO public.redemption_cost_log(event_ticket_id,user_id,reward_type,hp_spent,actual_cost,campus_id) VALUES(t,u,'event',50,300,c);
  IF result->>'card_amount_used'<>'400.00' OR (SELECT balance FROM public.wallets WHERE user_id=u)<>2800 OR (SELECT hp_balance FROM public.profiles WHERE id=u)<>450 THEN RAISE EXCEPTION 'split/HP/promo reservation calculation incorrect: %',result; END IF;
  again:=public.register_for_event_paid(e,u,tier,true,200,promo,'{}');
  IF NOT (again->>'already_registered')::boolean OR again->>'ticket_id'<>t::text OR (SELECT sold_count FROM public.event_ticket_tiers WHERE id=tier)<>1 THEN RAISE EXCEPTION 'registration replay duplicated reservation'; END IF;
@@ -33,7 +34,9 @@ BEGIN
  IF NOT (result->>'expired')::boolean OR result->'receipt'->>'card_refunded'<>'0'
  OR (SELECT balance FROM public.wallets WHERE user_id=u)<>3000 OR (SELECT hp_balance FROM public.profiles WHERE id=u)<>500
  OR (SELECT sold_count FROM public.event_ticket_tiers WHERE id=tier)<>0 OR (SELECT used_count FROM public.promo_codes WHERE id=promo)<>0
- OR EXISTS(SELECT 1 FROM public.promo_code_uses WHERE ticket_id=t) THEN RAISE EXCEPTION 'expired reservation did not restore precisely'; END IF;
+ OR EXISTS(SELECT 1 FROM public.promo_code_uses WHERE ticket_id=t)
+ OR (SELECT actual_cost FROM public.redemption_cost_log WHERE event_ticket_id=t)<>0
+ OR (SELECT (metadata->'expiry_receipt'->'redemption_cost_before'->0->>'actual_cost')::numeric FROM public.event_tickets WHERE id=t)<>300 THEN RAISE EXCEPTION 'expired reservation did not restore precisely'; END IF;
  IF (public.hg_release_expired_event_reservation(t)->>'expired')::boolean
  OR (SELECT count(*) FROM public.wallet_transactions WHERE reference_type='event_ticket_expiry' AND reference_id=t)<>1
  OR (SELECT count(*) FROM public.hp_transactions WHERE reference_type='event_ticket_expiry' AND reference_id=t AND type='adjustment')<>1

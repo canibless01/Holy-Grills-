@@ -150,7 +150,7 @@ def _confirm_event_ticket_charge(db, metadata, reference, data, provider):
     if not ticket_id:
         raise ValueError("Missing ticket_id in metadata")
     ticket = (db.table("event_tickets")
-              .select("id,user_id,card_amount_used,status,payment_status,campus_id")
+              .select("id,user_id,card_amount_used,status,payment_status,payment_reference,campus_id")
               .eq("id", ticket_id).single().execute())
     if not ticket:
         raise ValueError(f"Ticket {ticket_id} not found")
@@ -163,6 +163,9 @@ def _confirm_event_ticket_charge(db, metadata, reference, data, provider):
             ticket_id, reference,
         )
         return ticket.get("campus_id")
+
+    if ticket.get("payment_status") in ("refund_pending", "refunded") and ticket.get("payment_reference") == reference:
+        return ticket.get("campus_id")  # same original charge, already refunded/reserved
 
     expected_amount = float(ticket.get("card_amount_used") or 0)
     breakdown = validate_charge_amount(data, expected_amount, provider, label="Event ticket")

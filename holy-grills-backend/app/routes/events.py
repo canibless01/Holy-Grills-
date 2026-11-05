@@ -667,7 +667,7 @@ def register_for_event(event_id):
 
         card_amount = float(card_amount_used or 0)
         if card_amount > 0:
-            resp = _initiate_event_card_payment(db, ticket_id, event_id, card_amount, guest_email, data.get("callback_url"))
+            resp = _initiate_event_card_payment(get_db(), ticket_id, event_id, card_amount, guest_email, data.get("callback_url"))
             if "error" in resp:
                 return jsonify({**resp, "ticket_id": ticket_id}), 502
             response.update(resp)
@@ -748,7 +748,7 @@ def register_for_event(event_id):
     if card_amount > 0 and response["payment_status"] not in ("paid", "not_required", "expired", "refunded"):
         profile = db.table("profiles").select("email,full_name").eq("id", user_id).single().execute() or {}
         email = (g.jwt_payload or {}).get("email") or profile.get("email") or ""
-        resp = _initiate_event_card_payment(db, ticket_id, event_id, card_amount, email, data.get("callback_url"), user_id=user_id)
+        resp = _initiate_event_card_payment(get_db(), ticket_id, event_id, card_amount, email, data.get("callback_url"), user_id=user_id)
         if "error" in resp:
             return jsonify({**resp, "ticket_id": ticket_id}), 502
         response.update(resp)
@@ -1633,7 +1633,7 @@ def _registrants_for_event(db, event_id: str, include_unpaid: bool = False) -> t
     tickets = (
         db.table("event_tickets")
         .select("id,user_id,tier_id,status,payment_status,payment_expires_at,"
-                "created_at,qr_code,guest_name,guest_email,guest_phone")
+                "created_at,qr_code,guest_name,guest_email,guest_phone,wallet_amount_used,card_amount_used,hp_amount_paid")
         .eq("event_id", event_id)
         .order("created_at")
         .execute()
@@ -1733,6 +1733,10 @@ def list_event_registrants(event_id):
             "registered_at": t.get("created_at"),
             "checked_in":   bool(checkins.get(t["id"])),
             "checked_in_at": checkins.get(t["id"]),
+            "refundable": t.get("status") == "confirmed" and t.get("payment_status") == "paid" and not checkins.get(t["id"]),
+            "refund_amount": float(t.get("wallet_amount_used") or 0) + float(t.get("card_amount_used") or 0),
+            "hp_paid": int(t.get("hp_amount_paid") or 0),
+            "is_guest": not bool(t.get("user_id")),
         })
 
     fmt = request.args.get("format", "json").lower()
@@ -2069,3 +2073,58 @@ def my_tickets():
         "past": past,
         "checked_in": checked_in,
     }), 200
+
+
+def _event_refund_error(exc):
+    code = str(getattr(exc, 'details', {}).get('code') or '')
+    if code == '42501':
+        return jsonify({'error':'Refund access denied.'}), 403
+    if code in ('P0001','23505'):
+        return jsonify({'error':'The ticket or refund changed, is not refundable, or evidence conflicts. Refresh and check its status.'}), 409
+    raise exc
+
+
+@events_bp.route('/<event_id>/tickets/<ticket_id>/refund', methods=['POST'])
+@require_role('admin')
+def request_event_ticket_refund(event_id, ticket_id):
+    data=request.get_json(silent=True)
+    if not isinstance(data, dict) or not all(validate_uuid(v) for v in (event_id,ticket_id,data.get('request_id'))) or not isinstance(data.get('reason'), str) or not 10 <= len(data['reason'].strip()) <= 500:
+        return jsonify({'error':'Supply the ticket, a request ID and a reason of 10–500 characters.'}), 400
+    try:
+        result=get_db().rpc('hg_request_event_ticket_refund', {'p_actor_id':g.user_id,'p_event_id':event_id,'p_ticket_id':ticket_id,'p_request_id':data['request_id'],'p_reason':data['reason'].strip()})
+    except SupabaseError as exc:
+        return _event_refund_error(exc)
+    try:
+        from app.services.event_refunds import wake_event_refund
+        wake_event_refund(result['id'])
+    except Exception:
+        logger.warning('Immediate refund wake deferred; scheduled recovery remains queued')
+    return jsonify(result), 200
+
+
+@events_bp.route('/<event_id>/refunds', methods=['GET'])
+@require_role('admin')
+def list_event_ticket_refunds(event_id):
+    if not validate_uuid(event_id):
+        return jsonify({'error':'Invalid event.'}),400
+    try:
+        result=get_db().rpc('hg_event_refund_list', {'p_actor_id':g.user_id,'p_event_id':event_id})
+    except SupabaseError as exc:
+        return _event_refund_error(exc)
+    return jsonify({'refunds':result or []})
+
+
+@events_bp.route('/<event_id>/refunds/<refund_id>/review', methods=['POST'])
+@require_role('admin')
+def review_event_ticket_refund(event_id, refund_id):
+    data=request.get_json(silent=True)
+    if (not isinstance(data,dict) or not all(validate_uuid(v) for v in (event_id,refund_id,data.get('review_id')))
+        or data.get('outcome') not in ('lookup','not_sent') or not isinstance(data.get('evidence'),str) or not 10 <= len(data['evidence'].strip()) <= 500
+        or (data.get('outcome')=='lookup' and (not isinstance(data.get('provider_refund_id'),str) or not data['provider_refund_id'].isdigit() or len(data['provider_refund_id'])>30))):
+        return jsonify({'error':'Supply a review ID, provider log evidence and a valid Paystack refund ID for lookup.'}),400
+    try:
+        result=get_db().rpc('hg_review_event_refund',{'p_actor_id':g.user_id,'p_event_id':event_id,'p_id':refund_id,'p_review_id':data['review_id'],
+            'p_outcome':data['outcome'],'p_provider_id':data.get('provider_refund_id') if data['outcome']=='lookup' else None,'p_evidence':data['evidence'].strip()})
+    except SupabaseError as exc:
+        return _event_refund_error(exc)
+    return jsonify(result)
