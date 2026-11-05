@@ -127,7 +127,7 @@ def list_users():
         term = _search_term(request.args.get("q"))
         if term:
             q = q.or_(f"full_name.ilike.*{term}*,email.ilike.*{term}*,phone.ilike.*{term}*,nickname.ilike.*{term}*")
-        users = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+        users = q.order("created_at", ascending=False).order("id", ascending=False).limit(limit).offset(offset).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_users")
     return jsonify(users), 200
@@ -2028,12 +2028,10 @@ def bulk_grant_hp():
     if data is None:
         return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        if isinstance(data.get("amount"), bool):
-            raise _GrantInputError(MSG.ADMIN_AMOUNT_POSITIVE)
-        ok, message = validate_hp_amount(data.get("amount"))
-        if not ok:
-            raise _GrantInputError(message)
-        amount = int(data["amount"])
+        try:
+            amount = as_int(data.get("amount"), 1, 100000)
+        except ValueError as exc:
+            raise _GrantInputError(MSG.HP_GRANT_AMOUNT_INVALID) from exc
         try:
             reason = as_text(data.get("reason"), 200)
         except ValueError:
@@ -2042,6 +2040,8 @@ def bulk_grant_hp():
         if not isinstance(dry_run, bool):
             raise _GrantInputError(MSG.WINDOW_FLAG_INVALID.format(field="dry_run"))
         explicit = data.get("user_ids")
+        if "user_ids" in data and explicit is None:
+            raise ValueError("user_ids")
         if explicit is not None:
             if not isinstance(explicit, list) or len(explicit) > _BULK_GRANT_MAX:
                 raise _GrantInputError(MSG.BULK_GRANT_TOO_MANY.format(max=_BULK_GRANT_MAX))
@@ -2067,7 +2067,9 @@ def bulk_grant_hp():
         return jsonify({"error": MSG.ACCOUNT_NO_CAMPUS}), 400
     skipped = []
     try:
-        if explicit:
+        if explicit is not None and not explicit:
+            profiles = []
+        elif explicit is not None:
             q = db.table("profiles").select("id,full_name,campus_id").in_("id", explicit).eq("is_active", True).neq("id", g.user_id)
             if campus_id:
                 q = q.eq("campus_id", campus_id)

@@ -75,6 +75,9 @@ export interface BulkGrantHpPayload {
 export interface AdminHpAdjustmentPayload {
   user_id?: Uuid;
   amount: number;
+  /** Required for grants; reuse on retry. */
+  grant_id?: Uuid;
+  notes?: string;
   reason?: string;
   [key: string]: unknown;
 }

@@ -1,7 +1,11 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role
 from app.services.hp_service import (get_hp_balance, get_user_tier, award_active_hp)
-from app.db import get_db, get_user_client
+from app.db import get_db, get_user_client, SupabaseError
+from app.utils.admin_helpers import as_int, as_text, as_uuid, db_error_response
+from app.utils.campus_scope import assert_can_modify
+import requests
+import uuid
 from app.messages import MSG, resolve_msg
 from app.utils.logger import get_logger
 
@@ -99,46 +103,73 @@ def admin_grant():
         name: body
         required: true
         schema:
-          required: [user_id, amount]
+          required: [user_id, amount, grant_id]
           properties:
             user_id: {type: string}
+            grant_id: {type: string, format: uuid}
             amount: {type: integer}
             notes: {type: string}
     responses:
       200:
         description: HP granted
     """
-    data = request.get_json(force=True) or {}
-    if not data.get("user_id") or data.get("amount") is None:
-        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
     try:
-        _amount_check = int(data["amount"])
-    except (TypeError, ValueError):
-        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
-    if _amount_check <= 0:
-        return jsonify({"error": "amount must be a positive number — use /admin/expire to reduce HP"}), 400
-
+        user_id, grant_id = as_uuid(data.get("user_id")), as_uuid(data.get("grant_id"))
+        if not user_id or not grant_id:
+            raise ValueError("identity")
+        amount = as_int(data.get("amount"), 1, 100000)
+        notes = as_text(data.get("notes", data.get("reason", MSG.HP_ADMIN_DEFAULT_NOTES)), 200)
+    except ValueError:
+        return jsonify({"error": MSG.HP_ADMIN_GRANT_INPUT}), 400
+    if user_id == g.user_id:
+        return jsonify({"error": MSG.HP_ADMIN_SELF_GRANT}), 403
     db = get_user_client()
-    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
-    if not target:
-        return jsonify({"error": "Target user profile not found"}), 404
-    if getattr(g, "user_role", None) == "admin":
-        if target.get("campus_id") != getattr(g, "campus_id", None):
-            return jsonify({"error": "Cannot grant HP outside your campus"}), 403
+    reference = str(uuid.uuid5(uuid.NAMESPACE_URL, f"holygrills:single-admin-grant:{g.user_id}:{grant_id}"))
+
+    def receipt():
+        return (db.table("hp_transactions").select("id,amount,type,metadata,issued_by_admin_id,balance_after")
+                .eq("user_id", user_id).eq("reference_type", "admin_grant")
+                .eq("reference_id", reference).single().execute())
+
+    def matches(row):
+        return (row.get("amount") == amount and row.get("type") == "earn"
+                and row.get("issued_by_admin_id") == g.user_id
+                and (row.get("metadata") or {}).get("notes") == notes)
 
     try:
+        target = db.table("profiles").select("campus_id,is_active").eq("id", user_id).single().execute()
+        if not target:
+            return jsonify({"error": MSG.HP_ADMIN_TARGET_NOT_FOUND}), 404
+        assert_can_modify(target.get("campus_id"))
+        if not target.get("is_active"):
+            return jsonify({"error": MSG.HP_ADMIN_INACTIVE_TARGET}), 400
+        previous = receipt()
+        if previous:
+            if not matches(previous):
+                return jsonify({"error": MSG.HP_ADMIN_GRANT_CONFLICT}), 409
+            return jsonify({"awarded": 0, "amount": amount, "replayed": True, "grant_id": grant_id, "new_balance": previous.get("balance_after")}), 200
         result = award_active_hp(
-            user_id=data["user_id"],
-            amount=int(data["amount"]),
-            txn_type="earn",
-            notes=data.get("notes", "Admin-issued HP"),
-            issued_by_admin_id=g.user_id,
-            campus_id=target.get("campus_id"),
+            user_id=user_id, amount=amount, txn_type="earn",
+            reference_id=reference, reference_type="admin_grant", source_type="admin_grant",
+            notes=notes, issued_by_admin_id=g.user_id,
+            apply_multiplier=False, campus_id=target.get("campus_id"),
         )
-        _log_admin_action(g.user_id, "profiles", data["user_id"], "hp_grant", {"amount": data["amount"]})
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        # A concurrent reuse with changed notes must not be reported as a new grant.
+        saved = receipt()
+        if not saved:
+            return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+        if not matches(saved):
+            return jsonify({"error": MSG.HP_ADMIN_GRANT_CONFLICT}), 409
+        if not result.get("replayed"):
+            _log_admin_action(g.user_id, "profiles", user_id, "hp_grant", {"amount": amount, "grant_id": grant_id}, campus_id=target.get("campus_id"))
+        return jsonify({**result, "amount": amount, "grant_id": grant_id, "new_balance": saved.get("balance_after")}), 200
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "admin_grant")
+    except ValueError:
+        return jsonify({"error": MSG.HP_ADMIN_GRANT_CONFLICT}), 409
 
 
 @hp_bp.route("/admin/expire", methods=["POST"])

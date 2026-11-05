@@ -1,10 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
+import { useCampus } from '@/lib/campusContext';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
+import { msg } from '@/lib/messages';
 import { Flame, TrendingUp, TrendingDown, Sparkles, Play } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { Field, TextInput, Card, Pill, Toggle, SectionHeader } from './AdminShared';
 
 export default function AdminHp() {
+  const { adminCampusId } = useCampus();
+  const { user } = useHolyGrill();
+  const campusId = user?.role === 'super_admin' ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  return <HpWorkspace key={campusId || 'global'} campusId={campusId} />;
+}
+
+function HpWorkspace({ campusId }) {
+  const grantIntent = useCmsCreateIntent();
+  const bulkIntent = useCmsCreateIntent();
+  const grantWriting = useRef(false);
+  const bulkWriting = useRef(false);
   const [hp, setHp] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +35,7 @@ export default function AdminHp() {
   const [lastOrderAfter, setLastOrderAfter] = useState('');
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [bulkPreviewKey, setBulkPreviewKey] = useState('');
 
   // manual grant
   const [grantUserId, setGrantUserId] = useState('');
@@ -36,7 +52,7 @@ export default function AdminHp() {
   const load = async () => {
     setLoading(true); setLoadError(null);
     try {
-      const [h, u] = await Promise.all([mockApi.admin.getAnalyticsHp(), mockApi.admin.getUsers()]);
+      const [h, u] = await Promise.all([mockApi.admin.getAnalyticsHp(campusId ? { campus_id: campusId } : {}), mockApi.admin.getUsers(campusId ? { campus_id: campusId } : {})]);
       setHp(h || null);
       setUsers(Array.isArray(u) ? u : []);
     } catch (e) { setLoadError(e?.message || 'Failed to load HP analytics.'); }
@@ -45,8 +61,10 @@ export default function AdminHp() {
   useEffect(() => { load(); }, []);
 
   const runBulk = async () => {
+    if (bulkWriting.current) return;
+    bulkWriting.current = true;
     setSubmitting(true);
-    const body: Record<string, unknown> = { amount: Number(amount), reason, dry_run: dryRun };
+    const body: Record<string, unknown> = { amount: Number(amount), reason: reason.trim(), ...(campusId ? { campus_id: campusId } : {}) };
     if (segment !== 'all') {
       body.user_ids = [segment];
     } else {
@@ -55,15 +73,23 @@ export default function AdminHp() {
       if (lastOrderBefore) body.last_order_before = lastOrderBefore;
       if (lastOrderAfter) body.last_order_after = lastOrderAfter;
     }
-    try { setResult(await mockApi.admin.bulkGrantHp(body)); if (!dryRun) await load(); }
-    catch (e) { setResult({ error: e.message }); }
-    setSubmitting(false);
+    try {
+      if (!dryRun && bulkPreviewKey !== JSON.stringify(body)) throw new Error(msg('FE_USER_BULK_PREVIEW_REQUIRED', 'Preview the current recipients and amount before granting.'));
+      const { request_id, ...payload } = bulkIntent.body(body);
+      setResult(await mockApi.admin.bulkGrantHp({ ...payload, grant_id: request_id, dry_run: dryRun }));
+      if (dryRun) setBulkPreviewKey(JSON.stringify(body)); else await load();
+    } catch (e) { setResult({ error: e.message }); }
+    finally { bulkWriting.current = false; setSubmitting(false); }
   };
 
   const runGrant = async () => {
-    if (!grantUserId) return;
-    try { setGrantMsg(await mockApi.admin.grantHpToUser(grantUserId, { amount: Number(grantAmount), reason: grantReason })); await load(); }
-    catch (e) { setGrantMsg({ error: e.message }); }
+    if (!grantUserId || grantWriting.current) return;
+    grantWriting.current = true;
+    try {
+      const { request_id, ...payload } = grantIntent.body({ user_id: grantUserId, amount: Number(grantAmount), notes: grantReason.trim() });
+      setGrantMsg(await mockApi.admin.grantHpToUser(grantUserId, { ...payload, grant_id: request_id })); await load();
+    } catch (e) { setGrantMsg({ error: e.message }); }
+    finally { grantWriting.current = false; }
   };
 
   const runExpire = async () => {
@@ -134,6 +160,7 @@ export default function AdminHp() {
             <button onClick={runBulk} disabled={submitting} className="flex items-center gap-1.5 w-full py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">
               <Play className="w-4 h-4" /> {dryRun ? 'Preview grant' : 'Grant HP'}
             </button>
+            {result && !result.error && !result.dry_run && !result.failed_count && <button onClick={() => { bulkIntent.clear(); setResult(null); setBulkPreviewKey(''); setDryRun(true); }} className="text-xs font-bold text-primary">{msg('FE_USER_NEW_GRANT', 'Start new grant')}</button>}
             {result && (
               <div className="rounded-xl bg-muted border border-border p-3 text-xs space-y-1">
                 {result.error ? <span className="text-destructive">✕ {result.error}</span> : (
@@ -160,19 +187,20 @@ export default function AdminHp() {
           <p className="text-[11px] text-muted-foreground mb-3">Grant HP to one user (POST /hp/admin/grant — body: user_id, amount, notes).</p>
           <div className="space-y-3">
             <Field label="User">
-              <select value={grantUserId} onChange={(e) => setGrantUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
+              <select aria-label={msg('FE_USER_GRANT_RECIPIENT', 'Grant recipient')} value={grantUserId} onChange={(e) => setGrantUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
                 <option value="">Select user…</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} · {u.hp_balance} HP</option>)}
               </select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount (HP)"><TextInput type="number" value={grantAmount} onChange={(e) => setGrantAmount(e.target.value)} /></Field>
-              <Field label="Notes"><TextInput value={grantReason} onChange={(e) => setGrantReason(e.target.value)} /></Field>
+              <Field label="Amount (HP)"><TextInput aria-label={msg('FE_USER_GRANT_LABEL', 'HP amount')} type="number" value={grantAmount} onChange={(e) => setGrantAmount(e.target.value)} /></Field>
+              <Field label="Notes"><TextInput aria-label={msg('FE_USER_GRANT_REASON', 'Grant reason')} value={grantReason} onChange={(e) => setGrantReason(e.target.value)} /></Field>
             </div>
             <button onClick={runGrant} disabled={!grantUserId} className="w-full py-2.5 rounded-full bg-foreground text-white text-sm font-bold disabled:opacity-50">Grant to user</button>
+            {grantMsg && !grantMsg.error && <button onClick={() => { grantIntent.clear(); setGrantMsg(null); }} className="text-xs font-bold text-primary">{msg('FE_USER_NEW_GRANT', 'Start new grant')}</button>}
             {grantMsg && (
               <div className={`rounded-xl p-3 text-xs ${grantMsg.error ? 'tone-error border border-destructive/30 text-destructive' : 'tone-success border border-success/30 text-success'}`}>
-                {grantMsg.error ? `✕ ${grantMsg.error}` : <>✓ {grantMsg.amount} HP granted. New balance: <span className="font-bold">{grantMsg.new_balance?.toLocaleString()}</span> HP</>}
+                {grantMsg.error ? `✕ ${grantMsg.error}` : grantMsg.replayed ? msg('FE_USER_GRANT_REPLAY', 'This grant was already applied.') : <>✓ {grantMsg.amount} HP granted. New balance: <span className="font-bold">{grantMsg.new_balance?.toLocaleString()}</span> HP</>}
               </div>
             )}
           </div>

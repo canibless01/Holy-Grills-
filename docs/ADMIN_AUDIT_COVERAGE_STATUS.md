@@ -65,3 +65,7 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 ### Review follow-up controls — 5 November 2026
 
 [Native mutation and real SQL evidence](ADMIN_REVIEW_FOLLOWUP_EVIDENCE_2026_11_05.md) now covers setting/clearing follow-up flags, repeated/failed/stale writes, campus boundaries and unchanged score/HP. Real public rating aggregation with duplicate item lines is verified in rolled-back fixtures. No review deletion, score censorship or promotion workflow is implied.
+
+### User directory and HP grants — 5 November 2026
+
+[Targeted directory/grant loops](ADMIN_USER_GRANT_CONTROLS_2026_11_05.md) cover campus switches, history failures, role/activation reflection, single/bulk retry identity, explicit recipient safety and partial bulk recovery. Expiry, broader identity/role exceptions and complete programme-page coverage remain open.

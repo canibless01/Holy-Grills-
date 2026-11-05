@@ -1281,8 +1281,8 @@ const admin = {
 
   // --- Analytics (verified: /analytics/sales, /hp, /referrals, /export) ---
   async getSalesTrend(params = {}) { return apiClient.get('/analytics/sales', params); },
-  async getAnalyticsHp() {
-    const r = await apiClient.get('/analytics/hp');
+  async getAnalyticsHp(params = {}) {
+    const r = await apiClient.get('/analytics/hp', params);
     if (!r || typeof r !== 'object' || Array.isArray(r)) return { hp_earned_active: 0, hp_spent: 0, hp_expired: 0, hp_pending: 0, hp_in_circulation: 0, redemption_rate: 0, tier_distribution: {} };
     const sub = r.summary || r.totals || r.hp || r.analytics || r.data || {};
     const pick = (keys) => {

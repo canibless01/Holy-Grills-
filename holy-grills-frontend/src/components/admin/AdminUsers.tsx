@@ -27,6 +27,8 @@ import { toast } from '@/components/ui/use-toast';
 import ModalPortal from '@/components/ModalPortal';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Pill, Pagination, body } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 
 const ROLES = [
   { value: 'student', label: 'Student' },
@@ -55,6 +57,13 @@ const tierLabel = (u) => hpTierName(u?.tier_name ?? u?.tier ?? u?.tier_info);
 // wallet history and order history from their dedicated admin endpoints.
 export default function AdminUsers() {
   const { user: me } = useHolyGrill();
+  const { adminCampusId } = useCampus();
+  const campusId = me?.role === 'super_admin' ? adminCampusId : me?.campus_id || me?.profile?.campus_id;
+  return <UserWorkspace key={campusId || 'global'} campusId={campusId} />;
+}
+
+function UserWorkspace({ campusId }) {
+  const { user: me } = useHolyGrill();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -66,6 +75,7 @@ export default function AdminUsers() {
   const [confirmToggle, setConfirmToggle] = useState(null);
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const selectedRows = useRef(new Map());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const latestLoad = useRef(0);
@@ -79,6 +89,7 @@ export default function AdminUsers() {
     setLoadError(false);
     try {
       const res = await liveApi.admin.getUsers({
+        campus_id: campusId || undefined,
         q: search || undefined,
         role: roleFilter || undefined,
         limit: PAGE_SIZE,
@@ -98,7 +109,7 @@ export default function AdminUsers() {
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
     return () => { clearTimeout(t); latestLoad.current++; };
-  }, [search, roleFilter, page]);
+  }, [search, roleFilter, page, campusId]);
 
   const onSearchInput = (v) => { setSearch(v); if (page !== 0) setPage(0); };
   const onRoleFilter = (v) => { setRoleFilter(v); if (page !== 0) setPage(0); };
@@ -160,7 +171,8 @@ export default function AdminUsers() {
 
   const toggleSelect = (id) => {
     const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.has(id)) { next.delete(id); selectedRows.current.delete(id); }
+    else { next.add(id); selectedRows.current.set(id, users.find(user => user.id === id)); }
     setSelectedIds(next);
   };
 
@@ -175,7 +187,7 @@ export default function AdminUsers() {
           <input
             value={search}
             onChange={(e) => onSearchInput(e.target.value)}
-            placeholder="Search by name, phone or email…"
+            aria-label={msg('FE_USER_SEARCH', 'Search by name, phone or email…')} placeholder={msg('FE_USER_SEARCH', 'Search by name, phone or email…')}
             className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
           />
           {search && (
@@ -185,6 +197,7 @@ export default function AdminUsers() {
           )}
         </div>
         <select
+          aria-label={msg('FE_USER_ROLE_FILTER', 'Role filter')}
           value={roleFilter}
           onChange={(e) => onRoleFilter(e.target.value)}
           className="px-4 py-2.5 rounded-xl border border-border bg-card text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -249,8 +262,9 @@ export default function AdminUsers() {
                     <div className="flex items-center gap-3">
                       {bulkMode && (
                         <button
+                          aria-label={msg('FE_USER_SELECT', 'Select {name}', { name: u.full_name })}
+                          aria-pressed={selectedIds.has(u.id)}
                           onClick={() => toggleSelect(u.id)}
-                          aria-label="Select user"
                           className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 active:scale-95 transition ${selectedIds.has(u.id) ? 'bg-primary border-primary' : 'border-input bg-card'}`}
                         >
                           {selectedIds.has(u.id) && <Check className="w-3 h-3 text-white" />}
@@ -322,13 +336,14 @@ export default function AdminUsers() {
 
       <AnimatePresence>
         {roleChange && <Modal open onClose={() => setRoleChange(null)} title={msg('FE_ROLE_CAMPUS_REQUIRED', "Choose the user's campus")}><div className="space-y-3"><Field label={msg('FE_ROLE_CAMPUS', 'Campus')}><select value={roleCampusId} onChange={e => setRoleCampusId(e.target.value)} className="w-full p-3 border border-border rounded-xl"><option value="">{msg('FE_ROLE_SELECT_CAMPUS', 'Select a campus')}</option>{roleCampuses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><button disabled={!roleCampusId || updating === roleChange.user.id} onClick={() => handleRole(roleChange.user, roleChange.role, roleCampusId)} className="w-full p-3 rounded-full bg-primary text-white font-bold disabled:opacity-50">{msg('FE_ROLE_SAVE', 'Save role')}</button></div></Modal>}
-        {selected && <UserDrawer key={selected.id} user={selected} onClose={() => setSelected(null)} />}
+        {selected && <UserDrawer key={selected.id} user={selected} onClose={() => setSelected(null)} onUserUpdated={load} />}
       </AnimatePresence>
 
       {bulkOpen && (
         <BulkGrantModal
           userIds={[...selectedIds]}
-          users={users.filter((u) => selectedIds.has(u.id))}
+          users={[...selectedIds].map(id => selectedRows.current.get(id)).filter(Boolean)}
+          campusId={campusId}
           onClose={() => setBulkOpen(false)}
           onDone={() => { setBulkOpen(false); setSelectedIds(new Set()); load(); }}
         />
@@ -356,7 +371,7 @@ export default function AdminUsers() {
 // Full user profile + lazy HP / wallet / orders tabs.
 // GET /admin/users/:id (profile) · /hp · /wallet · /orders — each fetched on
 // demand, rendered against the documented response fields with guards.
-function UserDrawer({ user, onClose }) {
+function UserDrawer({ user, onClose, onUserUpdated }) {
   const [tab, setTab] = useState('hp');
   const [profile, setProfile] = useState(null);
   const [hp, setHp] = useState(null);
@@ -364,18 +379,22 @@ function UserDrawer({ user, onClose }) {
   const [orders, setOrders] = useState(null);
   const [grantOpen, setGrantOpen] = useState(false);
   const [tabLoading, setTabLoading] = useState(true);
+  const [tabError, setTabError] = useState(false);
+  const tabGeneration = useRef(0);
 
   const loadTab = async (t) => {
-    setTab(t);
-    setTabLoading(true);
+    const current = ++tabGeneration.current;
+    setTab(t); setTabLoading(true); setTabError(false);
     try {
-      if (t === 'hp') setHp(await liveApi.admin.getUserHp(user.id));
-      else if (t === 'wallet') setWallet(await liveApi.admin.getUserWallet(user.id));
-      else setOrders(await liveApi.admin.getUserOrders(user.id, { limit: 50 }));
+      const value = t === 'hp' ? await liveApi.admin.getUserHp(user.id) : t === 'wallet' ? await liveApi.admin.getUserWallet(user.id) : await liveApi.admin.getUserOrders(user.id, { limit: 50 });
+      if (current !== tabGeneration.current) return;
+      if (t === 'hp') setHp(value); else if (t === 'wallet') setWallet(value); else setOrders(value);
     } catch (e) {
+      if (current !== tabGeneration.current) return;
+      setTabError(true);
       toast({ title: msg('FE_ADMIN_USERS_COULDN_T_LOAD_THIS_TAB', "Couldn't load this tab"), description: e.message, variant: 'destructive' });
     }
-    setTabLoading(false);
+    if (current === tabGeneration.current) setTabLoading(false);
   };
 
   useEffect(() => {
@@ -387,6 +406,7 @@ function UserDrawer({ user, onClose }) {
       } catch { /* profile context is optional — the drawer still works */ }
     })();
     loadTab('hp');
+    return () => { tabGeneration.current++; };
   }, [user.id]);
 
   const walletBalance = wallet ? (wallet.wallet_balance ?? wallet.balance ?? 0) : null;
@@ -408,6 +428,7 @@ function UserDrawer({ user, onClose }) {
       <motion.div
         initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+        role="dialog" aria-modal="true" aria-label={user.full_name || msg('FE_USER_PROFILE', 'User profile')}
         className="w-full sm:max-w-md bg-card h-[88vh] sm:h-full rounded-t-3xl sm:rounded-none overflow-y-auto shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
@@ -420,7 +441,7 @@ function UserDrawer({ user, onClose }) {
             <div className="font-extrabold text-sm text-foreground truncate">{user.full_name || 'Unnamed'}</div>
             <div className="text-[11px] text-muted-foreground truncate">{contact.email || contact.phone || '—'}</div>
           </div>
-          <button onClick={onClose} className="p-2 -mr-2 rounded-xl hover:bg-secondary active:scale-95 transition">
+          <button aria-label={msg('FE_USER_CLOSE_PROFILE', 'Close profile')} onClick={onClose} className="p-2 -mr-2 rounded-xl hover:bg-secondary active:scale-95 transition">
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -454,7 +475,7 @@ function UserDrawer({ user, onClose }) {
           </div>
 
           <button onClick={() => setGrantOpen(true)} className="flex items-center justify-center gap-1.5 w-full py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold active:scale-95 transition shadow-glow">
-            <Plus className="w-4 h-4" /> Adjust HP
+            <Plus className="w-4 h-4" /> {msg('FE_USER_GRANT_BUTTON', 'Grant HP')}
           </button>
 
           {/* Tabs */}
@@ -479,7 +500,7 @@ function UserDrawer({ user, onClose }) {
             <div className="space-y-2">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14" />)}
             </div>
-          ) : tab === 'hp' ? (
+          ) : tabError ? <div role="alert" className="space-y-3 text-sm"><p>{msg('FE_USER_TAB_FAILED', 'This history could not be loaded. Retry to see the current records.')}</p><button onClick={() => loadTab(tab)} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div> : tab === 'hp' ? (
             <div className="space-y-2">
               {hp && (
                 <div className="flex gap-1.5 flex-wrap items-center">
@@ -566,45 +587,45 @@ function UserDrawer({ user, onClose }) {
         </div>
       </motion.div>
 
-      {grantOpen && <GrantModal user={user} onClose={() => setGrantOpen(false)} onDone={() => loadTab('hp')} />}
+      {grantOpen && <GrantModal user={user} onClose={() => setGrantOpen(false)} onDone={() => { loadTab('hp'); onUserUpdated?.(); }} />}
     </motion.div>
     </ModalPortal>
   );
 }
 
-// POST /hp/admin/grant — manual grant/deduct with notes (negative to deduct).
+// POST /hp/admin/grant — positive, explicitly identified grants with notes.
 function GrantModal({ user, onClose, onDone }) {
+  const intent = useCmsCreateIntent();
+  const writing = useRef(false);
+  const [error, setError] = useState('');
   const [amount, setAmount] = useState<string | number>(50);
   const [notes, setNotes] = useState('Manual grant');
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    setSubmitting(true);
+    if (writing.current) return;
+    const value = Number(amount);
+    if (!Number.isSafeInteger(value) || value < 1 || value > 100000 || !notes.trim() || notes.trim().length > 200) { setError(msg('FE_USER_GRANT_INVALID', 'Enter a whole HP amount between 1 and 100000 and a reason of at most 200 characters.')); return; }
+    writing.current = true; setSubmitting(true); setError('');
     try {
-      const res = await liveApi.admin.grantHpToUser(user.id, { amount: Number(amount), notes });
-      toast({
-        title: msg('FE_ADMIN_USERS_HP_ADJUSTED', 'HP adjusted'),
-        description: msg('FE_ADMIN_USERS_HP_GRANT_RESULT', '{hp} HP · new balance {balance}', {
-          hp: res?.amount ?? amount,
-          balance: res?.new_balance != null ? Number(res.new_balance).toLocaleString() : msg('FE_ADMIN_USERS_UPDATED', 'updated'),
-        }),
-      });
-      onDone();
-      onClose();
-    } catch (e) {
-      toast({ title: msg('FE_ADMIN_USERS_HP_ADJUSTMENT_FAILED', 'HP adjustment failed'), description: e.message, variant: 'destructive' });
-    }
-    setSubmitting(false);
+      const { request_id, ...payload } = intent.body({ amount: value, notes: notes.trim(), user_id: user.id });
+      const res = await liveApi.admin.grantHpToUser(user.id, { ...payload, grant_id: request_id });
+      intent.clear();
+      toast({ title: res?.replayed ? msg('FE_USER_GRANT_REPLAY', 'This grant was already applied.') : msg('FE_ADMIN_USERS_HP_ADJUSTED', 'HP adjusted') });
+      onDone(); onClose();
+    } catch (e) { setError(e.message || msg('FE_ADMIN_USERS_HP_ADJUSTMENT_FAILED', 'HP adjustment failed')); }
+    finally { writing.current = false; setSubmitting(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Adjust HP — ${user.full_name}`}>
+    <Modal open onClose={() => { if (!writing.current) onClose(); }} title={msg('FE_USER_GRANT_TITLE', 'Grant HP — {name}', { name: user.full_name })}>
       <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">Grant or deduct HP for this user. A negative amount deducts.</p>
-        <Field label="Amount (HP)"><TextInput type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-        <Field label="Notes"><TextInput value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason for this adjustment" /></Field>
+        <p className="text-xs text-muted-foreground">{msg('FE_USER_GRANT_HELP', 'Grant active HP to this user. Enter a positive whole amount and a reason.')}</p>
+        <Field label="Amount (HP)"><TextInput aria-label={msg('FE_USER_GRANT_LABEL', 'HP amount')} disabled={submitting} min="1" max="100000" step="1" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="Notes"><TextInput aria-label={msg('FE_USER_GRANT_REASON', 'Grant reason')} disabled={submitting} maxLength={200} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <button onClick={submit} disabled={submitting || amount === ''} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold active:scale-95 transition disabled:opacity-50">
-          {submitting ? 'Adjusting…' : 'Apply adjustment'}
+          {submitting ? msg('FE_STOCK_SAVING', 'Saving…') : msg('FE_USER_GRANT_BUTTON', 'Grant HP')}
         </button>
       </div>
     </Modal>
@@ -612,7 +633,11 @@ function GrantModal({ user, onClose, onDone }) {
 }
 
 // POST /admin/hp/bulk-grant — one amount to every selected user.
-function BulkGrantModal({ userIds, users, onClose, onDone }) {
+function BulkGrantModal({ userIds, users, campusId, onClose, onDone }) {
+  const intent = useCmsCreateIntent();
+  const writing = useRef(false);
+  const [error, setError] = useState('');
+  const [previewKey, setPreviewKey] = useState('');
   const [amount, setAmount] = useState<string | number>(50);
   const [reason, setReason] = useState('Bulk HP grant');
   const [submitting, setSubmitting] = useState(false);
@@ -620,34 +645,34 @@ function BulkGrantModal({ userIds, users, onClose, onDone }) {
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);
 
-  // dry_run: true — the backend reports who would be matched WITHOUT awarding
-  // any HP. The backend contract expects a preview step before committing.
-  const runPreview = async () => {
-    setPreviewing(true);
-    try {
-      const res = await liveApi.admin.bulkGrantHp({ user_ids: userIds, amount: Number(amount), reason, dry_run: true });
-      setPreview(res);
-    } catch (e) {
-      toast({ title: msg('FE_ADMIN_USERS_PREVIEW_FAILED', 'Preview failed'), description: e.message, variant: 'destructive' });
-    }
-    setPreviewing(false);
+  const fingerprint = JSON.stringify([userIds, Number(amount), reason.trim(), campusId]);
+  const grantBody = () => {
+    const value = Number(amount);
+    if (!userIds.length || !Number.isSafeInteger(value) || value < 1 || value > 100000 || !reason.trim() || reason.trim().length > 200) throw new Error(msg('FE_USER_GRANT_INVALID', 'Enter a whole HP amount between 1 and 100000 and a reason of at most 200 characters.'));
+    const { request_id, ...payload } = intent.body({ user_ids: userIds, amount: value, reason: reason.trim(), ...(campusId ? { campus_id: campusId } : {}) });
+    return { ...payload, grant_id: request_id };
   };
-
+  const runPreview = async () => {
+    if (writing.current) return;
+    writing.current = true; setPreviewing(true); setError('');
+    try { const res = await liveApi.admin.bulkGrantHp({ ...grantBody(), dry_run: true }); setPreview(res); setPreviewKey(fingerprint); }
+    catch (e) { setError(e.message); }
+    finally { writing.current = false; setPreviewing(false); }
+  };
   const submit = async () => {
-    setSubmitting(true);
+    if (writing.current) return;
+    if (!preview || previewKey !== fingerprint) { setError(msg('FE_USER_BULK_PREVIEW_REQUIRED', 'Preview the current recipients and amount before granting.')); return; }
+    writing.current = true; setSubmitting(true); setError('');
     try {
-      const res = await liveApi.admin.bulkGrantHp({ user_ids: userIds, amount: Number(amount), reason });
-      setResult(res);
-      toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_SENT', 'Bulk grant sent'), description: msg('FE_ADMIN_USERS_COUNT_USERS_GRANTED_AMOUNT_HP_EACH', '{count} users granted {amount} HP each.', { count: res?.awarded_count ?? userIds.length, amount: amount }) });
-      setTimeout(onDone, 1200);
-    } catch (e) {
-      toast({ title: msg('FE_ADMIN_USERS_BULK_GRANT_FAILED', 'Bulk grant failed'), description: e.message, variant: 'destructive' });
-      setSubmitting(false);
-    }
+      const res = await liveApi.admin.bulkGrantHp({ ...grantBody(), dry_run: false }); setResult(res);
+      toast({ title: msg('FE_USER_BULK_RESULT', 'Granted: {awarded} · already applied: {replayed} · failed: {failed} · skipped: {skipped}', { awarded: res.awarded_count ?? 0, replayed: res.already_granted_count ?? 0, failed: res.failed_count ?? 0, skipped: res.skipped_user_ids?.length ?? 0 }) });
+      if (!res.failed_count) { intent.clear(); onDone(); }
+    } catch (e) { setError(e.message); }
+    finally { writing.current = false; setSubmitting(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title="Bulk HP Grant">
+    <Modal open onClose={() => { if (!writing.current) onClose(); }} title="Bulk HP Grant">
       <div className="space-y-3">
         <div className="rounded-xl bg-primary/10 border border-primary/20 p-3 text-xs font-bold text-primary flex items-center gap-1.5">
           <UsersIcon className="w-4 h-4 shrink-0" /> Granting HP to {userIds.length} selected user{userIds.length === 1 ? '' : 's'}
@@ -660,13 +685,15 @@ function BulkGrantModal({ userIds, users, onClose, onDone }) {
             </div>
           ))}
         </div>
-        <Field label="Amount per user (HP)"><TextInput type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-        <Field label="Reason"><TextInput value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <Field label="Amount per user (HP)"><TextInput aria-label={msg('FE_USER_GRANT_LABEL', 'HP amount')} disabled={submitting || previewing} type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setPreview(null); setResult(null); }} /></Field>
+        <Field label="Reason"><TextInput aria-label={msg('FE_USER_GRANT_REASON', 'Grant reason')} disabled={submitting || previewing} maxLength={200} value={reason} onChange={(e) => { setReason(e.target.value); setPreview(null); setResult(null); }} /></Field>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {!preview && <p className="text-xs text-muted-foreground">{msg('FE_USER_BULK_PREVIEW_REQUIRED', 'Preview the current recipients and amount before granting.')}</p>}
         <div className="flex gap-2">
           <button onClick={runPreview} disabled={previewing || submitting || !amount} className="flex-1 py-3 rounded-full bg-secondary text-secondary-foreground font-bold text-sm active:scale-95 transition disabled:opacity-50">
             {previewing ? 'Checking…' : 'Preview (no HP awarded)'}
           </button>
-          <button onClick={submit} disabled={submitting || !amount} className="flex-1 py-3 rounded-full bg-gradient-cta text-white font-bold text-sm active:scale-95 transition disabled:opacity-50">
+          <button onClick={submit} disabled={submitting || previewing || !preview || previewKey !== fingerprint || !preview.matched_count} className="flex-1 py-3 rounded-full bg-gradient-cta text-white font-bold text-sm active:scale-95 transition disabled:opacity-50">
             {submitting ? 'Granting…' : `Grant ${amount} HP`}
           </button>
         </div>
@@ -677,7 +704,7 @@ function BulkGrantModal({ userIds, users, onClose, onDone }) {
         )}
         {result && (
           <div className="rounded-xl bg-success/10 border border-success/25 p-3 text-xs text-success font-bold">
-            ✓ {result.awarded_count ?? userIds.length} users granted {result.amount_per_user ?? amount} HP each. Total: {result.total_hp_awarded ?? (Number(amount) * userIds.length)} HP
+            {msg('FE_USER_BULK_RESULT', 'Granted: {awarded} · already applied: {replayed} · failed: {failed} · skipped: {skipped}', { awarded: result.awarded_count ?? 0, replayed: result.already_granted_count ?? 0, failed: result.failed_count ?? 0, skipped: result.skipped_user_ids?.length ?? 0 })}
           </div>
         )}
       </div>
