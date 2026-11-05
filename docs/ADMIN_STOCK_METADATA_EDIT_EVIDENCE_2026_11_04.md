@@ -20,3 +20,7 @@ Accounting fields are deliberately absent from the update and rejected if submit
 ## Still open
 
 Native archive/restore, stock reporting/reconciliation/export, and execution of the added browser cases in an environment that permits Chromium. The full admin page-by-page audit remains open. Launch acceptance remains owned by the other chat.
+
+## Follow-up — 5 November 2026
+
+The previously blocked metadata browser cases now pass as part of the complete [stock lifecycle browser run](ADMIN_STOCK_LIFECYCLE_EVIDENCE_2026_11_05.md), including matching edit retries, stale/conflicting edit retention and unchanged accounting. Archive/restore is also implemented and verified in that follow-up. The older environment restrictions above describe the original run, not the current acceptance state.

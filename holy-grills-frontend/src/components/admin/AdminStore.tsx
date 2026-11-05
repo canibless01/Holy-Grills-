@@ -42,6 +42,8 @@ function StockWorkspace({ campusId }) {
   const [addModal, setAddModal] = useState(false);
   const [ledgerItem, setLedgerItem] = useState(null);
   const [editItem, setEditItem] = useState(null);
+  const [lifecycleItem, setLifecycleItem] = useState(null);
+  const [view, setView] = useState('active');
 
   // Build a {id: name} lookup so stock cards/modals can show the human-readable
   // unit name. The backend returns usage_unit_id / purchase_unit_id (UUIDs), not
@@ -53,7 +55,7 @@ function StockWorkspace({ campusId }) {
     setLoadError(false);
     try {
       const [stockRes, unitRes] = await Promise.all([
-        liveApi.admin.getStockItems({ campus_id: campusId }),
+        liveApi.admin.getStockItems({ campus_id: campusId, state: 'all' }),
         liveApi.admin.getMeasurementUnits(),
       ]);
       // unwrap() already extracted the rows (or returned []).
@@ -67,7 +69,9 @@ function StockWorkspace({ campusId }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const lowCount = items.filter((i) => i.is_low_stock).length;
+  const activeItems = items.filter(item => !item.archived_at);
+  const visibleItems = items.filter(item => view === 'archived' ? !!item.archived_at : !item.archived_at);
+  const lowCount = activeItems.filter((i) => i.is_low_stock).length;
   if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   if (loading) {
@@ -86,9 +90,9 @@ function StockWorkspace({ campusId }) {
     <div className="space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatTile icon={Boxes} label={msg('FE_STOCK_TRACKED', "Tracked Items")} value={items.length} iconClass="text-primary" iconBg="bg-primary/10" />
+        <StatTile icon={Boxes} label={msg('FE_STOCK_TRACKED', "Tracked Items")} value={activeItems.length} iconClass="text-primary" iconBg="bg-primary/10" />
         <StatTile icon={AlertTriangle} label={msg('FE_STOCK_LOW_STOCK', "Low Stock")} value={lowCount} iconClass="text-destructive" iconBg="bg-destructive/10" />
-        <StatTile icon={PackagePlus} label={msg('FE_STOCK_ITEMS_WITH_STOCK', 'Ingredients with stock')} value={items.filter(i => Number(i.current_balance) > 0).length} iconClass="text-success" iconBg="bg-success/15" />
+        <StatTile icon={PackagePlus} label={msg('FE_STOCK_ITEMS_WITH_STOCK', 'Ingredients with stock')} value={activeItems.filter(i => Number(i.current_balance) > 0).length} iconClass="text-success" iconBg="bg-success/15" />
         <StatTile icon={PackageMinus} label={msg('FE_STOCK_TRACKED_UNITS', "Tracked Units")} value={units.length} iconClass="text-accent-foreground" iconBg="bg-accent/25" />
       </div>
 
@@ -106,23 +110,26 @@ function StockWorkspace({ campusId }) {
         </div>
       </div>
 
+      <div role="group" aria-label={msg('FE_STOCK_TITLE', 'Ingredient Stock')} className="flex flex-wrap gap-2">
+        {(['active', 'archived'] as const).map(state => <button key={state} aria-pressed={view === state} onClick={() => setView(state)} className={`px-4 py-2 rounded-full text-xs font-bold ${view === state ? 'bg-primary text-white' : 'bg-secondary text-foreground'}`}>{state === 'active' ? msg('FE_STOCK_ACTIVE', 'Active ingredients') : msg('FE_STOCK_ARCHIVED', 'Archived ingredients')}</button>)}
+      </div>
       {/* Items list */}
-      {items.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <Card className="p-6">
           <EmptyState
             icon={Boxes}
-            title={msg('FE_STOCK_EMPTY', "No stock items yet")}
-            body={msg('FE_STOCK_EMPTY_HELP', "Add your first ingredient to start tracking purchases and usage.")}
-            action={
+            title={view === 'archived' ? msg('FE_STOCK_ARCHIVED_EMPTY', 'No archived ingredients') : msg('FE_STOCK_EMPTY', "No stock items yet")}
+            body={view === 'archived' ? msg('FE_STOCK_ARCHIVED_EMPTY_HELP', 'Archived ingredients keep their balances and history here until restored.') : msg('FE_STOCK_EMPTY_HELP', "Add your first ingredient to start tracking purchases and usage.")}
+            action={view === 'active' ?
               <button onClick={() => setAddModal(true)} className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold">
                 {msg('FE_STOCK_ADD_FIRST', "Add First Item")}
-              </button>
+              </button> : undefined
             }
           />
         </Card>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <StockCard
               key={item.id}
               item={item}
@@ -131,12 +138,14 @@ function StockWorkspace({ campusId }) {
               onUsage={() => setUsageModal(item)}
               onLedger={() => setLedgerItem(item)}
               onEdit={() => setEditItem(item)}
+              onLifecycle={() => setLifecycleItem(item)}
             />
           ))}
         </div>
       )}
 
       {/* Modals */}
+      {lifecycleItem && <StockLifecycleModal item={lifecycleItem} onClose={() => setLifecycleItem(null)} onDone={() => { setLifecycleItem(null); load(); }} />}
       {editItem && <EditItemModal item={editItem} unitName={unitName} onClose={() => setEditItem(null)} onDone={() => { setEditItem(null); load(); }} />}
       {purchaseModal && (
         <PurchaseModal
@@ -159,7 +168,7 @@ function StockWorkspace({ campusId }) {
           units={units}
           campusId={campusId}
           onClose={() => setAddModal(false)}
-          onDone={() => { setAddModal(false); load(); }}
+          onDone={() => { setAddModal(false); setView('active'); load(); }}
         />
       )}
       {ledgerItem && (
@@ -174,8 +183,8 @@ function StockWorkspace({ campusId }) {
 }
 
 // ── Stock card ──
-function StockCard({ item, unitName, onPurchase, onUsage, onLedger, onEdit }) {
-  const low = item.is_low_stock;
+function StockCard({ item, unitName, onPurchase, onUsage, onLedger, onEdit, onLifecycle }) {
+  const low = !item.archived_at && item.is_low_stock;
   const usageUnitName = unitName(item.usage_unit_id) || msg('FE_ADMIN_STORE_UNITS', 'units');
   return (
     <Card className={`p-4 ${low ? 'border-destructive/40 bg-destructive/5' : ''}`}>
@@ -195,7 +204,8 @@ function StockCard({ item, unitName, onPurchase, onUsage, onLedger, onEdit }) {
         <div className="text-[10px] text-muted-foreground mb-3">{msg('FE_STOCK_THRESHOLD_VALUE', 'Threshold: {threshold} {unit}', { threshold: item.low_stock_threshold, unit: usageUnitName })}</div>
       )}
       <button onClick={onEdit} className="mb-3 text-xs font-bold text-primary hover:underline">{msg('FE_STOCK_EDIT', 'Edit ingredient')}</button>
-      <div className="flex gap-2">
+      <button onClick={onLifecycle} className="ml-3 mb-3 text-xs font-bold text-primary hover:underline">{item.archived_at ? msg('FE_STOCK_RESTORE', 'Restore ingredient') : msg('FE_STOCK_ARCHIVE', 'Archive ingredient')}</button>
+      {!item.archived_at && <div className="flex gap-2">
         <button
           onClick={onPurchase}
           className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-success/10 text-success text-xs font-bold hover:bg-success/15 active:scale-95 transition"
@@ -208,9 +218,35 @@ function StockCard({ item, unitName, onPurchase, onUsage, onLedger, onEdit }) {
         >
           <PackageMinus className="w-3.5 h-3.5" /> {msg('FE_STOCK_USAGE', "Usage")}
         </button>
-      </div>
+      </div>}
     </Card>
   );
+}
+
+function StockLifecycleModal({ item, onClose, onDone }) {
+  const intent = useCmsCreateIntent();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const writing = useRef(false);
+  const archived = !item.archived_at;
+  const title = archived ? msg('FE_STOCK_ARCHIVE', 'Archive ingredient') : msg('FE_STOCK_RESTORE', 'Restore ingredient');
+  const submit = async () => {
+    if (writing.current) return;
+    writing.current = true; setSaving(true); setError('');
+    try {
+      await liveApi.admin.archiveStockItem(item.id, intent.body({ archived, expected_version: item.lifecycle_version }));
+      intent.clear(); toast({ title: msg('FE_STOCK_LIFECYCLE_SAVED', 'Ingredient updated') }); onDone();
+    } catch (e) { setError(e.message || msg('FE_STOCK_LIFECYCLE_FAILED', 'The ingredient could not be updated. Please try again.')); }
+    finally { writing.current = false; setSaving(false); }
+  };
+  return <Modal open onClose={() => { if (!writing.current) onClose(); }} title={title}>
+    <div className="space-y-4" aria-busy={saving}>
+      <p className="font-bold text-foreground">{item.name}</p>
+      <p className="text-sm text-muted-foreground">{archived ? msg('FE_STOCK_ARCHIVE_HELP', 'Archiving stops new purchases and usage. The balance and complete ledger stay available, and you can restore this ingredient later.') : msg('FE_STOCK_RESTORE_HELP', 'Restore this ingredient to the active list. Its existing balance and ledger will be kept.')}</p>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <button disabled={saving} onClick={submit} className="w-full px-4 py-2 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">{saving ? msg('FE_STOCK_SAVING', 'Saving…') : title}</button>
+    </div>
+  </Modal>;
 }
 
 function EditItemModal({ item, unitName, onClose, onDone }) {

@@ -107,9 +107,10 @@ def _stock_adjustment(db, params, request_id):
         return db.rpc("hg_adjust_stock_balance", params), None
     except SupabaseError as exc:
         code = str((exc.details or {}).get("code"))
-        status = {"23514": 400, "23505": 409, "42501": 403, "P0002": 404}.get(code, 503)
+        status = {"23514": 400, "23505": 409, "42501": 403, "P0002": 404, "55000": 409}.get(code, 503)
         message = {"23514": MSG.STOCK_ADJUSTMENT_REJECTED, "23505": MSG.STOCK_INTENT_CONFLICT,
-                   "42501": MSG.RESOURCE_ACCESS_DENIED, "P0002": MSG.STOCK_ITEM_NOT_FOUND}.get(code, MSG.SERVICE_UNAVAILABLE)
+                   "42501": MSG.RESOURCE_ACCESS_DENIED, "P0002": MSG.STOCK_ITEM_NOT_FOUND,
+                   "55000": MSG.STOCK_ARCHIVED_ADJUSTMENT}.get(code, MSG.SERVICE_UNAVAILABLE)
         return None, (jsonify({"error": message}), status)
 
 
@@ -299,7 +300,14 @@ def list_stock_items():
         description: Stock items
     """
     db = get_user_client()
+    state = request.args.get("state", "active")
+    if state not in ("active", "archived", "all"):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     q = db.table("stock_items").select("*")
+    if state == "active":
+        q = q.is_("archived_at", "null")
+    elif state == "archived":
+        q = q.not_.is_("archived_at", "null")
     campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -364,6 +372,37 @@ def edit_stock_item(stock_item_id):
     if not rows:
         return jsonify({"error": MSG.STOCK_EDIT_CONFLICT}), 409
     return jsonify(rows[0] if isinstance(rows, list) else rows), 200
+
+
+@stock_bp.route("/<stock_item_id>/archive", methods=["POST"])
+@require_role("admin")
+def set_stock_archived(stock_item_id):
+    """Reversible lifecycle transition; never delete or zero accounting records."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"archived", "expected_version", "request_id"}:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    if not isinstance(data["archived"], bool) or any(not isinstance(data[k], str) or not validate_uuid(data[k]) for k in ("expected_version", "request_id")):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    db = get_user_client()
+    existing, error = fetch_or_403(db, "stock_items", stock_item_id, not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
+    if error:
+        return error
+    assert_can_modify(existing.get("campus_id"))
+    try:
+        row = get_db().rpc("hg_set_stock_archived", {
+            "p_stock_item_id": stock_item_id, "p_archived": data["archived"],
+            "p_expected_version": data["expected_version"], "p_request_id": data["request_id"],
+            "p_actor_id": g.user_id,
+        })
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get("code", ""))
+        status = {"23505": 409, "23514": 400, "42501": 403, "P0002": 404}.get(code, 503)
+        message = {"23505": MSG.STOCK_LIFECYCLE_CONFLICT, "23514": MSG.INVALID_INPUT,
+                   "42501": MSG.RESOURCE_ACCESS_DENIED, "P0002": MSG.STOCK_ITEM_NOT_FOUND}.get(code, MSG.SERVICE_UNAVAILABLE)
+        return jsonify({"error": message}), status
+    if not row:
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
+    return jsonify(row), 200
 
 
 @stock_bp.route("/<stock_item_id>/purchase", methods=["POST"])

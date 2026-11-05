@@ -49,3 +49,7 @@ See the complete [two-workstream assignment](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md)
 29 October next completed page batch: [Academic Calendar](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) now has native field/type/edit/retire/restore/error/scope checks and real RLS/date/duplicate/graduation-consumer proof. Gates/Hostels and Delivery area are next. This does not close the entire Campus configuration domain.
 
 29 October Delivery → Zones & Fees batch: [gate/hostel evidence](ADMIN_DELIVERY_LOCATIONS_EVIDENCE_2026_10_29.md) covers native inputs/edit/hide/restore, actual same-campus constraints/roles, duplicate protection, fee preview/checkout base-floor correction and historical order preservation. Delivery area is a separate next page. Backend **760 passed**; whole-admin approval remains open.
+
+### Store lifecycle follow-up — 5 November 2026
+
+Native ingredient metadata editing and archive/restore have targeted backend, Chromium and rolled-back Supabase evidence. The lifecycle helper is service-only, preserves accounting, and rejects stale transitions; archived ingredients reject new adjustments while retaining receipt replay and ledger access. See [recorded cases and remaining scope](ADMIN_STOCK_LIFECYCLE_EVIDENCE_2026_11_05.md). Reporting/export and wider stock-notification behavior remain open; the entire Store page and whole admin inventory are not marked complete.

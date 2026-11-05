@@ -1364,6 +1364,7 @@ const admin = {
 
   // --- Stock / Ingredient Tracking (GET/POST /admin/stock-items, POST /:id/purchase, /:id/usage, GET /:id/ledger) ---
   async getStockItems(params = {}) { return unwrap(await apiClient.get('/admin/stock-items', params), 'items', 'stock_items'); },
+  async archiveStockItem(id, body) { return apiClient.post(`/admin/stock-items/${id}/archive`, body); },
   async updateStockItem(id, body) { return apiClient.patch(`/admin/stock-items/${id}`, body); },
   async createStockItem(body) { return apiClient.post('/admin/stock-items', body); },
   async logStockPurchase(id, body) { return apiClient.post(`/admin/stock-items/${id}/purchase`, body); },

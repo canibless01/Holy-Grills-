@@ -8,7 +8,7 @@ The owner assigned the launch-remaining category to a new chat and this chat the
 
 ## Next general-site work
 
-1. Stock lifecycle: archive/restore, reporting/reconciliation/export. Metadata editing now has a native form and protected endpoint, with accounting fields fixed and stale-edit detection; its added browser cases still require execution in an environment that permits Chromium. See the metadata-edit evidence below.
+1. Stock reporting/reconciliation/export and wider low-stock notification delivery/retry behavior. Native metadata editing and archive/restore now have backend, browser and SQL rollback evidence; see [lifecycle closure](ADMIN_STOCK_LIFECYCLE_EVIDENCE_2026_11_05.md).
 2. Remaining dashboard/analytics/economics/leaderboard/report filters, pagination, exports and arithmetic against controlled actions.
 3. Review moderation and customer rating aggregation/reflection.
 4. Remaining user/staff/profile/campus administration and native role/action matrix beyond completed reference-data batches.
@@ -25,3 +25,7 @@ This list is not a statement that all these features are absent or broken. Exist
 Added native name/threshold editing, a list refresh control, strict endpoint validation, own-campus/super-admin authorization, duplicate-name responses, atomic displayed-value comparison, and matching response-loss replay. Units, conversion, balance and ledger rows are never included in the update. This reuses existing columns and grants; no migration, new table or live-data mutation was needed.
 
 Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_METADATA_EDIT_EVIDENCE_2026_11_04.md). The launch chat's worker dependency fix `e704c5c` was integrated before testing. This closes the implementation and backend-contract part of metadata editing; it does not close archive/restore or the entire Store page.
+
+## Ingredient lifecycle continuation — 5 November
+
+[Archive/restore evidence](ADMIN_STOCK_LIFECYCLE_EVIDENCE_2026_11_05.md) closes the recorded native lifecycle cases and the preceding metadata browser verification. Balances/ledger are preserved, new archived adjustments are blocked, old receipts replay safely, stale intents cannot reverse newer transitions, and direct lifecycle writes are denied. The launch-chat milestone and check-in recovery changes from main were integrated; the final regression run passed 1,029 backend tests. Reporting and wider notification behavior remain open; this is not full Store or whole-admin sign-off.

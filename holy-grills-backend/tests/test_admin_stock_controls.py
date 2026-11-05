@@ -117,3 +117,54 @@ class StockControlsTests(unittest.TestCase):
     with patch.object(kitchen,'fetch_or_403',return_value=(None,failure)):
      _,actual=kitchen.edit_stock_item.__wrapped__(R);self.assertEqual(actual,status)
   self.q.update.assert_not_called()
+
+ def archive(self,body=None,row=None,role='admin'):
+  body=body if body is not None else {'archived':True,'expected_version':A,'request_id':R}
+  with self.app.test_request_context(method='POST',json=body),patch.object(kitchen,'get_user_client',return_value=self.db),patch.object(kitchen,'fetch_or_403',return_value=(row or self.previous(),None)),patch.object(kitchen,'get_db',return_value=self.db):
+   g.user_id=U;g.user_role=role;g.campus_id=A
+   return kitchen.set_stock_archived.__wrapped__(R)
+
+ def test_archive_passes_authenticated_actor_and_expected_version_to_private_rpc(self):
+  self.db.rpc.return_value={'id':R,'archived_at':'2026-11-04T00:00:00Z','current_balance':12}
+  response,status=self.archive();self.assertEqual(status,200);self.assertEqual(response.json['current_balance'],12)
+  self.db.rpc.assert_called_once_with('hg_set_stock_archived',{'p_stock_item_id':R,'p_archived':True,'p_expected_version':A,'p_request_id':R,'p_actor_id':U})
+  self.q.update.assert_not_called();self.q.delete.assert_not_called()
+
+ def test_restore_is_explicit_false_not_truthiness(self):
+  self.db.rpc.return_value={'id':R,'archived_at':None}
+  _,status=self.archive({'archived':False,'expected_version':A,'request_id':R});self.assertEqual(status,200);self.assertIs(self.db.rpc.call_args.args[1]['p_archived'],False)
+
+ def test_archive_denies_foreign_campus_and_accepts_super_admin(self):
+  from werkzeug.exceptions import Forbidden
+  with self.assertRaises(Forbidden):self.archive(row={**self.previous(),'campus_id':B})
+  self.db.rpc.assert_not_called();self.db.rpc.return_value={'id':R}
+  _,status=self.archive(row={**self.previous(),'campus_id':B},role='super_admin');self.assertEqual(status,200)
+
+ def test_archive_rejects_malformed_intents_and_client_supplied_actor(self):
+  valid={'archived':True,'expected_version':A,'request_id':R}
+  for body in ([1],{**valid,'archived':'false'},{**valid,'expected_version':'bad'},{**valid,'request_id':None},{**valid,'p_actor_id':B},{'archived':True}):
+   with self.subTest(body=body):_,status=self.archive(body);self.assertEqual(status,400)
+  self.db.rpc.assert_not_called()
+
+ def test_archive_rpc_failures_preserve_conflicts_permissions_and_not_found(self):
+  for code,expected in [('23505',409),('23514',400),('42501',403),('P0002',404),('XX000',503)]:
+   with self.subTest(code=code):
+    self.db.rpc.side_effect=SupabaseError('private detail',500,{'code':code});response,status=self.archive();self.assertEqual(status,expected);self.assertNotIn('private',response.json['error'])
+
+ def test_archived_adjustment_has_restore_guidance_and_conflict_status(self):
+  self.db.rpc.side_effect=SupabaseError('archived',500,{'code':'55000'})
+  with self.app.test_request_context():
+   _,error=kitchen._stock_adjustment(self.db,{},None)
+  response,status=error;self.assertEqual(status,409);self.assertIn('Restore',response.json['error'])
+
+ def test_list_stock_state_is_explicit_and_scoped(self):
+  self.q.is_.return_value=self.q;self.q.not_=self.q;self.q.execute.return_value=[]
+  for state in ('active','archived','all','bad'):
+   self.q.reset_mock()
+   with self.subTest(state=state),self.app.test_request_context('/?state='+state+'&campus_id='+A),patch.object(kitchen,'get_user_client',return_value=self.db):
+    g.user_id=U;g.user_role='admin';g.campus_id=A
+    _,status=kitchen.list_stock_items.__wrapped__()
+   self.assertEqual(status,400 if state=='bad' else 200)
+   if state in ('active','archived'):self.q.is_.assert_called_once_with('archived_at','null')
+   if state=='all':self.q.is_.assert_not_called()
+   if state!='bad':self.q.eq.assert_called_once_with('campus_id',A)
