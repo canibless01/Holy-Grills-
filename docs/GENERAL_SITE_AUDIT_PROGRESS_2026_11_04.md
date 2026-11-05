@@ -45,3 +45,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## User and grant continuation — 5 November
 
 [Directory/grant evidence](ADMIN_USER_GRANT_CONTROLS_2026_11_05.md): fixed campus switching, failed history presentation, selected names across pages, single-grant identities and strict eligibility/values, preview/commit bulk identity reuse, partial-loss retry and explicit empty/null recipient safety. Backend 1,125 tests after notification-recovery integration, plus native controlled browser/real SQL rollback cases, pass. Manual expiry, wider recipient discovery and remaining role/identity cases are next; whole Users/HP coverage remains open.
+
+## Manual expiry continuation — 5 November
+
+[Expiry evidence](ADMIN_HP_EXPIRY_EVIDENCE_2026_11_05.md): native preview/confirmation and service-only ledger receipt support make partial/all-active administrative expiry safe across repeats, lost responses, changed balances and later earnings. Backend 1,161 tests, native browser checks and fresh Supabase rollback cases pass. Recipient discovery, wider staff/profile boundaries, scheduled expiry and remaining settings/feature consumers remain open.

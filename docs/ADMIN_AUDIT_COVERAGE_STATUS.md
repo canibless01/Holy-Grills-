@@ -69,3 +69,7 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 ### User directory and HP grants — 5 November 2026
 
 [Targeted directory/grant loops](ADMIN_USER_GRANT_CONTROLS_2026_11_05.md) cover campus switches, history failures, role/activation reflection, single/bulk retry identity, explicit recipient safety and partial bulk recovery. Expiry, broader identity/role exceptions and complete programme-page coverage remain open.
+
+### Manual HP expiry — 5 November 2026
+
+[Preview, confirmation and receipt evidence](ADMIN_HP_EXPIRY_EVIDENCE_2026_11_05.md) covers native partial/all-mode deductions, failures/retries/stale previews, private grants and role/campus guards with real rolled-back ledger tests. Scheduled expiry and broader programme/identity cases remain separate.

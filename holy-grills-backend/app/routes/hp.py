@@ -184,36 +184,58 @@ def admin_expire():
         name: body
         required: true
         schema:
-          required: [user_id, amount]
+          required: [user_id, request_id, expected_balance, notes]
           properties:
             user_id: {type: string}
-            amount: {type: integer}
+            amount: {type: integer, nullable: true}
+            request_id: {type: string, format: uuid}
+            expected_balance: {type: integer}
             notes: {type: string}
     responses:
       200:
         description: HP expired
     """
-    from app.services.hp_service import expire_hp, get_hp_balance
-    data = request.get_json(force=True) or {}
-    if not data.get("user_id"):
-        return jsonify({"error": MSG.HP_ADMIN_REQUIRED_FIELDS}), 400
-
-    db = get_user_client()
-    target = db.table("profiles").select("campus_id").eq("id", data["user_id"]).single().execute()
-    if not target:
-        return jsonify({"error": "Target user profile not found"}), 404
-    if getattr(g, "user_role", None) == "admin":
-        if target.get("campus_id") != getattr(g, "campus_id", None):
-            return jsonify({"error": "Cannot expire HP outside your campus"}), 403
-
-    amount = data.get("amount")
-    if amount is None:
-        # Expire all active HP if amount not specified
-        balance = get_hp_balance(data["user_id"])
-        amount = int(balance.get("active", 0))
-    if amount <= 0:
-        return jsonify({"message": "No active HP to expire", "expired": 0}), 200
-    result = expire_hp(data["user_id"], int(amount), data.get("notes", "Manual HP expiry"), campus_id=target.get("campus_id"))
+    from app.services.hp_service import recalculate_tier
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+    try:
+        user_id, request_id = as_uuid(data.get("user_id")), as_uuid(data.get("request_id"))
+        if not user_id or not request_id:
+            raise ValueError("identity")
+        expected = as_int(data.get("expected_balance"), 0, 2147483647)
+        amount = as_int(data["amount"], 1, 2147483647) if data.get("amount") is not None else None
+        notes = as_text(data.get("notes"), 200)
+    except ValueError:
+        return jsonify({"error": MSG.HP_ADMIN_EXPIRY_INPUT}), 400
+    try:
+        db = get_user_client()
+        target = db.table("profiles").select("campus_id").eq("id", user_id).single().execute()
+        if not target:
+            return jsonify({"error": MSG.HP_ADMIN_TARGET_NOT_FOUND}), 404
+        assert_can_modify(target.get("campus_id"))
+        reference = str(uuid.uuid5(uuid.NAMESPACE_URL, f"holygrills:admin-expiry:{g.user_id}:{request_id}"))
+        result = get_db().rpc("hg_admin_expire_hp", {
+            "p_actor_id": g.user_id, "p_user_id": user_id, "p_amount": amount,
+            "p_expected_balance": expected, "p_notes": notes, "p_request_id": reference,
+        })
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "admin_expire")
+    if not isinstance(result, dict) or not result.get("success"):
+        code = result.get("error") if isinstance(result, dict) else None
+        errors = {"expiry_forbidden": (MSG.RESOURCE_ACCESS_DENIED, 403), "expiry_target_missing": (MSG.HP_ADMIN_TARGET_NOT_FOUND, 404),
+                  "expiry_conflict": (MSG.HP_ADMIN_EXPIRY_CONFLICT, 409), "expiry_balance_changed": (MSG.HP_ADMIN_EXPIRY_BALANCE_CHANGED, 409),
+                  "nothing_to_expire": (MSG.HP_ADMIN_NO_ACTIVE_HP, 409), "expiry_insufficient": (MSG.HP_ADMIN_EXPIRY_BALANCE_CHANGED, 409),
+                  "invalid_expiry": (MSG.HP_ADMIN_EXPIRY_INPUT, 400)}
+        message, status = errors.get(code, (MSG.SERVICE_UNAVAILABLE, 503))
+        return jsonify({"error": message}), status
+    if not result.get("replayed"):
+        _log_admin_action(g.user_id, "profiles", user_id, "hp_expiry", {"amount": result.get("expired"), "request_id": request_id}, campus_id=target.get("campus_id"))
+    try:
+        recalculate_tier(user_id, campus_id=target.get("campus_id"))
+    except Exception:
+        logger.warning("Manual expiry tier refresh deferred for %s", user_id)
+        result["tier_refresh_pending"] = True
     return jsonify(result), 200
 
 

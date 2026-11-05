@@ -20,6 +20,8 @@ function HpWorkspace({ campusId }) {
   const bulkIntent = useCmsCreateIntent();
   const grantWriting = useRef(false);
   const bulkWriting = useRef(false);
+  const expiryIntent = useCmsCreateIntent();
+  const expiryWriting = useRef(false);
   const [hp, setHp] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +49,9 @@ function HpWorkspace({ campusId }) {
   const [expireUserId, setExpireUserId] = useState('');
   const [expireAmount, setExpireAmount] = useState('');
   const [expireMsg, setExpireMsg] = useState(null);
+  const [expireReason, setExpireReason] = useState('Manual HP expiry');
+  const [expirePreview, setExpirePreview] = useState(null);
+  const [expiryBusy, setExpiryBusy] = useState(false);
 
   // KPIs come from /analytics/hp (the canonical HP analytics endpoint).
   const load = async () => {
@@ -92,10 +97,30 @@ function HpWorkspace({ campusId }) {
     finally { grantWriting.current = false; }
   };
 
+  const expiryKey = JSON.stringify([expireUserId, expireAmount, expireReason.trim()]);
+  const previewExpiry = async () => {
+    if (!expireUserId || expiryWriting.current) return;
+    expiryWriting.current = true; setExpiryBusy(true); setExpireMsg(null); setExpirePreview(null);
+    try {
+      const balance = await mockApi.admin.getUserHp(expireUserId);
+      if (balance.degraded) throw new Error(msg('FE_USER_TAB_FAILED', 'This history could not be loaded. Retry to see the current records.'));
+      const active = Number(balance.active);
+      const requested = expireAmount.trim() ? Number(expireAmount) : null;
+      const remove = requested ?? active;
+      if (!Number.isSafeInteger(active) || active < 0 || !Number.isSafeInteger(remove) || remove < 1 || remove > active || !expireReason.trim() || expireReason.trim().length > 200) throw new Error(msg('FE_HP_EXPIRY_INVALID', 'Choose a user, a positive whole amount within their active balance, and a reason of at most 200 characters.'));
+      setExpirePreview({ key: expiryKey, active, requested, remove });
+    } catch (e) { setExpireMsg({ error: e.message }); }
+    finally { expiryWriting.current = false; setExpiryBusy(false); }
+  };
   const runExpire = async () => {
-    if (!expireUserId) return;
-    try { setExpireMsg(await mockApi.admin.expireHpFromUser(expireUserId, { amount: expireAmount ? Number(expireAmount) : undefined }) || { expired: true }); await load(); }
-    catch (e) { setExpireMsg({ error: e.message }); }
+    if (expiryWriting.current || !expirePreview || expirePreview.key !== expiryKey) return;
+    expiryWriting.current = true; setExpiryBusy(true); setExpireMsg(null);
+    try {
+      const payload = expiryIntent.body({ user_id: expireUserId, amount: expirePreview.requested, expected_balance: expirePreview.active, notes: expireReason.trim() });
+      const res = await mockApi.admin.expireHpFromUser(expireUserId, payload);
+      setExpireMsg(res); setExpirePreview(null); expiryIntent.clear(); await load();
+    } catch (e) { setExpireMsg({ error: e.message }); }
+    finally { expiryWriting.current = false; setExpiryBusy(false); }
   };
 
   if (loading) return <StaffPanelSkeleton />;
@@ -209,19 +234,21 @@ function HpWorkspace({ campusId }) {
 
       <Card>
         <SectionHeader title="Expire HP from User" action={<Pill tone="red">admin</Pill>} />
-        <p className="text-[11px] text-muted-foreground mb-3">Remove active HP from a user. Leave amount blank to expire all (POST /hp/admin/expire).</p>
+        <p className="text-[11px] text-muted-foreground mb-3">{msg('FE_HP_EXPIRY_HELP', 'Preview the deduction before confirming. Leave the amount blank to remove the active HP shown in the preview.')}</p>
         <div className="space-y-3">
           <Field label="User">
-            <select value={expireUserId} onChange={(e) => setExpireUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
+            <select aria-label={msg('FE_HP_EXPIRY_RECIPIENT', 'Deduction recipient')} disabled={expiryBusy} value={expireUserId} onChange={(e) => { setExpireUserId(e.target.value); setExpirePreview(null); }} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
               <option value="">Select user…</option>
               {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} · {u.hp_balance} HP</option>)}
             </select>
           </Field>
-          <Field label="Amount (HP) — leave blank to expire all"><TextInput type="number" value={expireAmount} onChange={(e) => setExpireAmount(e.target.value)} /></Field>
-          <button onClick={runExpire} disabled={!expireUserId} className="w-full py-2.5 rounded-full bg-destructive text-white text-sm font-bold disabled:opacity-50">Expire HP</button>
+          <Field label="Amount (HP) — leave blank to expire all"><TextInput aria-label={msg('FE_HP_EXPIRY_AMOUNT', 'HP to remove (blank for all active HP)')} disabled={expiryBusy} type="number" min="1" step="1" value={expireAmount} onChange={(e) => { setExpireAmount(e.target.value); setExpirePreview(null); }} /></Field>
+          <Field label={msg('FE_HP_EXPIRY_REASON', 'Deduction reason')}><TextInput aria-label={msg('FE_HP_EXPIRY_REASON', 'Deduction reason')} disabled={expiryBusy} maxLength={200} value={expireReason} onChange={e => { setExpireReason(e.target.value); setExpirePreview(null); }} /></Field>
+          <button onClick={previewExpiry} disabled={!expireUserId || expiryBusy} className="w-full py-2.5 rounded-full bg-secondary text-foreground text-sm font-bold disabled:opacity-50">{msg('FE_HP_EXPIRY_PREVIEW', 'Preview deduction')}</button>
+          {expirePreview && expirePreview.key === expiryKey && <div className="space-y-3"><p className="text-xs text-muted-foreground">{msg('FE_HP_EXPIRY_PREVIEW_TEXT', 'Active balance: {balance} HP · amount to remove: {amount} HP. This records a permanent HP ledger entry.', { balance: expirePreview.active, amount: expirePreview.remove })}</p><button onClick={runExpire} disabled={expiryBusy} className="w-full py-2.5 rounded-full bg-destructive text-white text-sm font-bold disabled:opacity-50">{msg('FE_HP_EXPIRY_CONFIRM', 'Confirm removal of {amount} HP', { amount: expirePreview.remove })}</button></div>}
           {expireMsg && (
             <div className={`rounded-xl p-3 text-xs ${expireMsg.error ? 'tone-error border border-destructive/30 text-destructive' : 'tone-success border border-success/30 text-success'}`}>
-              {expireMsg.error ? `✕ ${expireMsg.error}` : `✓ HP expired. ${expireMsg.expired_amount ?? expireMsg.amount ?? 0} HP removed.`}
+              {expireMsg.error ? `✕ ${expireMsg.error}` : expireMsg.replayed ? msg('FE_HP_EXPIRY_REPLAY', 'This deduction was already applied. Current balance: {balance} HP.', { balance: expireMsg.new_balance }) : msg('FE_HP_EXPIRY_DONE', '{amount} HP removed. Current balance: {balance} HP.', { amount: expireMsg.expired, balance: expireMsg.new_balance })}
             </div>
           )}
         </div>
