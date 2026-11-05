@@ -220,7 +220,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     already = _is_already_completed(db, user_id, milestone_id, period_key)
     if already:
         if trigger_type in SELF_DECLARED_TRIGGERS:
-            return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True}
+            return _complete_pending_milestone(get_db(), user_id, milestone, hp_awarded, period_key)
         return _complete_active_milestone(get_db(), user_id, milestone, hp_awarded, period_key)
 
     db = get_db()
@@ -266,46 +266,7 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
     if trigger_type not in SELF_DECLARED_TRIGGERS:
         return _complete_active_milestone(db, user_id, milestone, hp_awarded, period_key, campus_id=campus_id)
 
-    # Record completion first to defend against concurrent race conditions before awarding HP.
-    # The row's own id anchors the HP transaction, so every period gets its own idempotency slot.
-    try:
-        um_result = db.table("user_milestones").insert({
-            "user_id": user_id,
-            "milestone_id": milestone_id,
-            "hp_awarded": hp_awarded,
-            "period_key": period_key,
-            "campus_id": campus_id,
-        })
-        completion_id = _first_id(um_result)
-    except Exception as e:
-        err_str = str(e)
-        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-            return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True, "hp_awarded": 0}
-        logger.warning("check_and_award_milestone: user_milestones insert failed: %s", e)
-        if _is_already_completed(db, user_id, milestone_id, period_key):
-            return {"message": MSG.MILESTONE_ALREADY_COMPLETED, "already_completed": True, "hp_awarded": 0}
-        return {"message": MSG.MILESTONE_CHECK_FAILED, "already_completed": False, "hp_awarded": 0}
-
-    # Award HP (pending for social/self-declared; active for auto-verified challenges and system triggers)
-    hp_destination = "pending" if trigger_type in SELF_DECLARED_TRIGGERS else "active"
-    actual_hp = _award_milestone_hp(
-        db, user_id, milestone_id, milestone.get("title", ""), hp_awarded, hp_destination,
-        campus_id=campus_id, completion_id=completion_id,
-    )
-
-    # Update recorded actual_hp if capped or modified during HP award
-    if actual_hp != hp_awarded:
-        _record_actual_hp(db, user_id, milestone_id, period_key, actual_hp, "check_and_award_milestone")
-
-    notify_milestone_achieved(user_id, milestone_id, hp_awarded=actual_hp)
-
-    return {
-        "milestone": milestone,
-        "hp_awarded": actual_hp,
-        "hp_destination": hp_destination,
-        "period_key": period_key,
-        "already_completed": False,
-    }
+    return _complete_pending_milestone(db, user_id, milestone, hp_awarded, period_key, campus_id=campus_id)
 
 
 def check_milestone_trigger(user_id: str, trigger_type: str, current_value: int) -> None:
@@ -422,6 +383,28 @@ def check_and_award_pwa_push_bonus(user_id: str, *, award: bool = False) -> dict
         "bonus_result": bonus_result,
         "bonus_configured": bool(bonus_m),
     }
+
+
+def _complete_pending_milestone(db, user_id, milestone, hp, period_key, *, campus_id=None):
+    if campus_id is None:
+        campus_id = _get_user_campus_id(db, user_id)
+    if hp > 0:
+        from app.services.hp_service import _get_hp_multiplier
+        multiplier = _get_hp_multiplier(campus_id)
+        if multiplier > 1:
+            hp = round(hp * multiplier)
+    receipt = db.rpc("hg_complete_pending_milestone", {
+        "p_user_id": user_id, "p_milestone_id": milestone["id"],
+        "p_period_key": period_key, "p_hp_amount": hp,
+    })
+    if not isinstance(receipt, dict) or receipt.get("error") or not receipt.get("completed") or not receipt.get("completion_id"):
+        raise RuntimeError(MSG.MILESTONE_CHECK_FAILED)
+    notify_milestone_achieved(user_id, milestone["id"], hp_awarded=receipt.get("recorded_hp_awarded", 0),
+                              completion_id=receipt["completion_id"])
+    result = {**receipt, "milestone": milestone, "already_completed": bool(receipt.get("replayed"))}
+    if receipt.get("replayed"):
+        result["message"] = MSG.MILESTONE_ALREADY_COMPLETED
+    return result
 
 
 def _complete_active_milestone(db, user_id, milestone, hp, period_key, *, campus_id=None, admin_id=None):

@@ -1,6 +1,6 @@
 {
   "date": "2026-11-05",
-  "schema_revision": "20261105121556",
+  "schema_revision": "20261105122035",
   "database": "production with BEGIN/ROLLBACK fixtures",
   "provider_calls": 0,
   "retained_fixtures": 0,
@@ -74,11 +74,19 @@
       "passed": true
     },
     {
+      "file": "admin_hp_grant_receipts.sql",
+      "passed": true
+    },
+    {
       "file": "admin_delivery_area_scope.sql",
       "passed": true
     },
     {
       "file": "weekly_login_payout_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "social_milestone_atomic_rollback.sql",
       "passed": true
     },
     {
@@ -94,6 +102,10 @@
       "passed": true
     },
     {
+      "file": "event_ticket_email_outbox.sql",
+      "passed": true
+    },
+    {
       "file": "notification_dispatch_rollback.sql",
       "passed": true
     },
@@ -103,6 +115,10 @@
     },
     {
       "file": "admin_feature_flag_global_scope.sql",
+      "passed": true
+    },
+    {
+      "file": "event_reservation_financial_recovery.sql",
       "passed": true
     },
     {
@@ -127,14 +143,6 @@
     },
     {
       "file": "review_followup_and_rating_reflection.sql",
-      "passed": true
-    },
-    {
-      "file": "event_reservation_financial_recovery.sql",
-      "passed": true
-    },
-    {
-      "file": "event_ticket_email_outbox.sql",
       "passed": true
     }
   ],
