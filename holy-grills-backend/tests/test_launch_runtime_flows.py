@@ -29,19 +29,6 @@ def test_order_lists_exclude_unpaid_attempts():
         assert any(c.args[0]=='payment_status' and 'pending' not in c.args[1] for c in q.in_.call_args_list)
 
 
-def test_five_checkins_complete_week_but_four_reset_it():
-    with patch.object(streak,'_award_login_streak_hp',return_value=25) as award:
-        assert streak._evaluate_week(None,'user',date(2026,10,26),{str(i):'checked' for i in range(5)},1,0)==(True,2,1,25)
-        assert award.call_args.kwargs['missed_days']==2
-        award.reset_mock()
-        assert streak._evaluate_week(None,'user',date(2026,10,26),{str(i):'checked' for i in range(4)},2,1)==(False,1,0,0)
-        award.assert_not_called()
-
-
-def test_only_valid_checkins_count():
-    assert streak._effective_checkins({'0':'checked','1':'reclaimed','2':'fraud','7':'checked'})==2
-
-
 def test_streak_copy_has_exact_week_and_misses():
     result=render_notification_template('streak_cycle_failed',{'missed_days':4,'week_start':'2026-10-26','name':'Alex'})
     assert '4 days' in result[1] and '2026-10-26' in result[1] and 'Up to 2' in result[1]
@@ -52,6 +39,9 @@ def test_streak_copy_has_exact_week_and_misses():
 def test_skipped_week_does_not_reward_an_older_good_week():
     db,_=query_db()
     previous={'id':'streak','current_week_start':'2026-10-12','week_state':{str(i):'checked' for i in range(7)},'cycle_week_number':2}
+    db.rpc.return_value={'success':True,'hp_awarded':0,'today':'2026-11-04',
+        'receipt':{'previous_week_completed':False,'missed_days':7,'week_start':'2026-10-26','reference_id':'receipt','notified':False},
+        'streak':{'current_week_start':'2026-11-02','cycle_week_number':1,'week_state':{'2':'checked'}}}
     with patch('app.services.notification_service.send_notification') as notify:
         result=streak._process_login_streak_checkin(db,'user',previous,datetime(2026,11,4,tzinfo=timezone.utc),date(2026,11,4))
     assert result['previous_week_completed'] is False

@@ -209,6 +209,7 @@ def process_login_streak(user_id: str, campus_id: str = None) -> dict:
             "week_progress": _build_week_progress({day_offset: "checked"}, week_start, today),
         }
 
+    _deliver_login_week_notice(db, user_id, streak.get("last_week_receipt"))
     return _process_login_streak_checkin(db, user_id, streak, now, today, campus_id)
 
 
@@ -257,171 +258,45 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
             "week_progress": _build_week_progress(saved.get("week_state") or {}, current_week_start, today),
         }
 
-    # New week — evaluate the previous week, then start fresh
-    prev_week_start = current_week_start - timedelta(weeks=1)
-    previous_state = week_state if stored_week_start == prev_week_start else {}
-    missed_days = 7 - _effective_checkins(previous_state)
-    week_completed, cycle_week, consecutive_weeks, hp_awarded = _evaluate_week(
-        db=db,
-        user_id=user_id,
-        prev_week_start=prev_week_start,
-        week_state=previous_state,
-        cycle_week=cycle_week,
-        consecutive_weeks=consecutive_weeks,
-    )
-
-    # Notify user when cycle fails (3+ missed days → reset to Week 1)
-    if not week_completed:
-        try:
-            from app.services.notification_service import send_notification
-            send_notification(
-                user_id=user_id,
-                notif_type="streak_cycle_failed",
-                template_data={"missed_days": missed_days, "week_start": prev_week_start.isoformat()},
-            )
-        except Exception:
-            pass  # non-critical — never block streak processing
-
-    # Start new week
-    new_week_state = {str((today - current_week_start).days): "checked"}
+    # The ledger, monthly tracker and week advancement are one database commit.
     try:
-        db.table("login_streaks").eq("id", streak["id"]).update({
-            "current_week_start": current_week_start.isoformat(),
-            "week_state": new_week_state,
-            "cycle_week_number": cycle_week,
-            "consecutive_weeks": consecutive_weeks,
-            "last_login_date": today.isoformat(),
-            "last_updated": now.isoformat(),
-            "streak_count": 1 if not week_completed else int(streak.get("streak_count") or 1) + 1,
-        })
-    except Exception as ue:
-        logger.warning("process_login_streak: update new_week failed for %s: %s", user_id, ue)
-        return {"action": "failed", "hp_awarded": 0, "streak_week": cycle_week, "error": str(ue)}
+        result = db.rpc("hg_rollover_login_week", {"p_user_id": user_id})
+        if not isinstance(result, dict) or not result.get("success") or not isinstance(result.get("streak"), dict):
+            raise RuntimeError("Weekly check-in recovery remains pending")
+        saved = result["streak"]
+    except Exception as exc:
+        logger.warning("Weekly check-in payout not advanced for %s: %s", user_id, exc)
+        return {"action": "failed", "hp_awarded": 0, "streak_week": cycle_week}
+    _deliver_login_week_notice(db, user_id, result.get("receipt"))
     _touch_last_activity(db, user_id, now)
+    saved_start = date.fromisoformat(saved["current_week_start"])
     return {
-        "action": "new_week_started",
-        "previous_week_completed": week_completed,
-        "hp_awarded": hp_awarded,
-        "streak_week": cycle_week,
-        "week_start": current_week_start.isoformat(),
-        "week_progress": _build_week_progress(new_week_state, current_week_start, today),
+        "action": "same_day" if result.get("replayed") else "new_week_started",
+        "previous_week_completed": bool((result.get("receipt") or {}).get("previous_week_completed")),
+        "hp_awarded": int(result.get("hp_awarded") or 0),
+        "streak_week": int(saved.get("cycle_week_number") or 1),
+        "week_start": saved["current_week_start"],
+        "week_progress": _build_week_progress(saved.get("week_state") or {}, saved_start,
+                                               date.fromisoformat(result.get("today") or today.isoformat())),
     }
 
 
-def _effective_checkins(week_state):
-    return sum(1 for day in range(7) if week_state.get(str(day)) in ("checked", "reclaimed"))
-
-
-def _evaluate_week(
-    db, user_id: str,
-    prev_week_start: date, week_state: dict,
-    cycle_week: int, consecutive_weeks: int,
-) -> tuple:
-    """
-    Evaluate the completed week (Sun passed). Returns:
-      (week_completed: bool, new_cycle_week: int, new_consecutive: int, hp_awarded: int)
-    """
-    # Count effective days (checked + reclaimed) out of 7
-    effective_days = _effective_checkins(week_state)
-    missed_unremedied = 7 - effective_days  # days that passed with NO action
-
-    hp_awarded = 0
-    if missed_unremedied <= 2:
-        # Week completed
-        consecutive_weeks += 1
-        hp_awarded = _award_login_streak_hp(db, user_id, cycle_week, consecutive_weeks, prev_week_start, missed_days=missed_unremedied)
-        # Advance to next week in cycle (capped at 4)
-        new_cycle_week = min(cycle_week + 1, 4) if cycle_week < 4 else 4
-        return True, new_cycle_week, consecutive_weeks, hp_awarded
-    else:
-        # Cycle failed — reset to week 1
-        return False, 1, 0, 0
-
-
-def _streak_reference_id(user_id: str, kind: str, period: str) -> str:
-    """
-    Deterministic UUID for a streak payout's idempotency key.
-
-    record_hp_transaction_atomic's p_reference_id is a uuid. A plain string such as
-    "<user_id>:login_streak:<week>" is rejected with 22P02 (invalid input syntax for type uuid);
-    that error was swallowed by the callers' bare except, so the payout silently never happened.
-    uuid5 gives a valid uuid that is the same for the same (user, kind, period) -- so the database's
-    replay guard still dedupes a retried request for that period -- and different for every other
-    period, so each completed week/streak gets its own payout.
-    """
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"holygrills:{kind}:{user_id}:{period}"))
-
-
-def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks: int, week_start: date, missed_days: int = 0) -> int:
-    """
-    Award HP for completing a check-in week. Reads from login_streak_rewards table.
-    Week 4+ uses the week_number=4 row.
-    HP destination: Pending. Subject to monthly cap.
-    week_start: Monday of the week just completed. Used (not cycle_week) to build the idempotency
-    reference, because cycle_week plateaus at 4 forever once a user gets there. Every week 4+
-    completion paid the same fixed HP amount (see login_streak_rewards), so with cycle_week in the
-    reference every completion after the first was a byte-for-byte replay of the same
-    (user, type, reference, amount) tuple -- record_hp_transaction_atomic's replay guard silently
-    treated it as "already paid" and returned the original transaction with no new HP credited,
-    while the notification below still fired every time. Confirmed live in a rolled-back
-    transaction: three separate week-4 completions produced exactly one hp_transactions row.
-    """
-    week_num = min(cycle_week, 4)
+def _deliver_login_week_notice(db, user_id, receipt):
+    if not receipt or receipt.get("notified"):
+        return
     try:
-        row = (
-            db.table("login_streak_rewards")
-            .select("hp_awarded")
-            .eq("week_number", week_num)
-            .eq("is_active", "true")
-            .single()
-            .execute()
-        )
-        hp = int(row.get("hp_awarded", 0)) if row else 0
-    except Exception:
-        # Fallback defaults
-        try:
-            from flask import current_app
-            defaults = {
-                1: current_app.config.get("LOGIN_STREAK_WEEK1_HP", 25),
-                2: current_app.config.get("LOGIN_STREAK_WEEK2_HP", 40),
-                3: current_app.config.get("LOGIN_STREAK_WEEK3_HP", 60),
-                4: current_app.config.get("LOGIN_STREAK_WEEK4_HP", 80),
-            }
-        except Exception:
-            defaults = {1: 25, 2: 40, 3: 60, 4: 80}
-        hp = defaults.get(week_num, 25)
-
-    if hp <= 0:
-        return 0
-
-    cap_check = check_monthly_cap(user_id, hp)
-    if not cap_check["allowed"]:
-        return 0
-
-    actual_hp = cap_check["capped_amount"]
-    if actual_hp <= 0:
-        return 0
-
-    from app.services.hp_service import earn_pending_hp
-    try:
-        earn_pending_hp(
-            user_id=user_id,
-            amount=actual_hp,
-            source_type="streak",
-            reference_id=_streak_reference_id(user_id, "login_streak", week_start.isoformat()),
-            notes=f"Check-in streak week {cycle_week} completed — {actual_hp} HP pending",
-        )
         from app.services.notification_service import send_notification
-        send_notification(
-            user_id=user_id,
-            notif_type="checkin_streak_week",
-            template_data={"week": cycle_week, "hp": actual_hp, "missed_days": missed_days, "week_start": week_start.isoformat()},
-        )
-    except Exception as e:
-        logger.warning("_award_login_streak_hp: failed for %s: %s", user_id, e)
-        return 0
-
-    return actual_hp
+        completed = bool(receipt["previous_week_completed"])
+        data = {"missed_days": receipt["missed_days"], "week_start": receipt["week_start"]}
+        if completed:
+            data.update(week=receipt["cycle_week"], hp=receipt["hp_awarded"], capped=bool(receipt.get("capped")))
+        send_notification(user_id=user_id,
+                          notif_type="checkin_streak_week" if completed else "streak_cycle_failed",
+                          template_data=data, reference_id=receipt["reference_id"],
+                          reference_type="login_week", strict=True)
+        db.rpc("hg_ack_login_week_notice", {"p_user_id": user_id, "p_reference_id": receipt["reference_id"]})
+    except Exception:
+        logger.warning("Weekly check-in credited; notice remains recoverable for %s", user_id, exc_info=True)
 
 
 def try_reclaim_checkin(user_id: str, reclaim_type: str = "order", reference_id: str = None) -> dict:

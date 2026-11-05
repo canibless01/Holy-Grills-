@@ -286,7 +286,9 @@ class Config:
     ORDER_LOCK_DEFAULT_DISCOUNT_PCT = float(os.environ.get("ORDER_LOCK_DEFAULT_DISCOUNT_PCT", "10"))
 
     # Login streak — weekly completion bonuses (HP to Pending pool).
-    # These are the defaults if the login_streak_rewards DB table is absent/empty.
+    # Legacy configuration names. Weekly payouts now use the persisted
+    # login_streak_rewards JSON setting, with the database reward table as fallback.
+    # These environment values do not override the transactional payout.
     LOGIN_STREAK_WEEK1_HP = int(os.environ.get("LOGIN_STREAK_WEEK1_HP", "25"))
     LOGIN_STREAK_WEEK2_HP = int(os.environ.get("LOGIN_STREAK_WEEK2_HP", "40"))
     LOGIN_STREAK_WEEK3_HP = int(os.environ.get("LOGIN_STREAK_WEEK3_HP", "60"))

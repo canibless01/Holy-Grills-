@@ -1164,6 +1164,7 @@ class MSG:
 
     # ── Login streak week ─────────────────────────────────────────────────────
     LOGIN_STREAK_WEEK_COMPLETE_TITLE = "Week {week} Streak Complete! 🔥"
+    LOGIN_STREAK_MONTHLY_CAP_NOTE = "Your reward was limited by your monthly pending HP cap."
     LOGIN_STREAK_WEEK_COMPLETE_BODY  = "Congratulations! You completed the week of {week_start} with {missed_days} missed days (up to 2 allowed). You earned {hp} pending {currency}. Keep it going!"
 
     # ── Login streak reclaim ──────────────────────────────────────────────────

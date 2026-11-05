@@ -508,6 +508,7 @@ def send_notification(
         if ((notif_type in REQUEST_TYPES and reference_id)
                 or (notif_type == "milestone_achieved" and reference_type == "milestone_completion" and reference_id)
                 or (notif_type == "checkin_reclaimed" and reference_type == "streak_reclaim" and reference_id)
+                or (notif_type in ("checkin_streak_week", "streak_cycle_failed") and reference_type == "login_week" and reference_id)
                 or notif_type.startswith("blast_")):
             # Existing primary-key uniqueness serializes retries per recipient,
             # request and channel, without another ledger/index/table.

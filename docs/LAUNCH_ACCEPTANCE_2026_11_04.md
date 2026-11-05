@@ -86,3 +86,6 @@ Resolved follow-through: [DNS coexistence, owner-confirmed reset receipt/link, f
 
 
 5 November follow-through: [receipt-backed check-in reclamation and same-week attendance merging](CHECKIN_RECLAMATION_RECOVERY_2026_11_05.md) closes the documented source/date/retry gap; weekly pending-HP payout atomicity and external dispatch recovery remain separate work.
+
+
+5 November update: [weekly pending-HP payout/tracker/week advancement and notice recovery](WEEKLY_LOGIN_PAYOUT_RECOVERY_2026_11_05.md) now have atomic transaction and replay proof. General external dispatch durability remains separate.

@@ -33,3 +33,6 @@ Migration `20261105025015_atomic_checkin_reclamation.sql` is applied. No new tab
 This closes receipt/date recovery and same-week attendance merging. The broader weekly login payout still saves pending HP and week advancement separately; its full atomic payout/cap/retry proof remains open. New-week rollover races, all legacy-gift/tier recovery, durable external email/push dispatch, independent simultaneous-session proof and the remaining launch checklist are not certified by this change.
 
 The existing five database maintenance jobs were inventoried without changes: promo deactivation, tier maintenance, abandoned-cart maintenance, HP expiry and unpaid event-ticket expiry. No live job was manually replayed, disabled or removed.
+
+
+5 November update: [weekly pending-HP payout/tracker/week advancement and notice recovery](WEEKLY_LOGIN_PAYOUT_RECOVERY_2026_11_05.md) now have atomic transaction and replay proof. General external dispatch durability remains separate.

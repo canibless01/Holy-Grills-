@@ -140,10 +140,10 @@ These are defaults declared by the backend configuration. Where a corresponding 
 | `ORDER_LOCK_MAX_RESCHEDULES` | `1` | `order_lock_max_reschedules` when consumed by its service |
 | `ORDER_LOCK_MAX_DISCOUNT_PCT` | `50` | No same-name numeric database key currently stored; configure environment if needed |
 | `ORDER_LOCK_DEFAULT_DISCOUNT_PCT` | `10` | `order_lock_default_discount_pct` when consumed by its service |
-| `LOGIN_STREAK_WEEK1_HP` | `25` | No same-name numeric database key currently stored; configure environment if needed |
-| `LOGIN_STREAK_WEEK2_HP` | `40` | No same-name numeric database key currently stored; configure environment if needed |
-| `LOGIN_STREAK_WEEK3_HP` | `60` | No same-name numeric database key currently stored; configure environment if needed |
-| `LOGIN_STREAK_WEEK4_HP` | `80` | No same-name numeric database key currently stored; configure environment if needed |
+| `LOGIN_STREAK_WEEK1_HP` | `25` | Legacy name; since 5 November, edit `login_streak_rewards` JSON in app settings. The database reward table is fallback; this environment value does not override payouts. |
+| `LOGIN_STREAK_WEEK2_HP` | `40` | Legacy name; since 5 November, edit `login_streak_rewards` JSON in app settings. The database reward table is fallback; this environment value does not override payouts. |
+| `LOGIN_STREAK_WEEK3_HP` | `60` | Legacy name; since 5 November, edit `login_streak_rewards` JSON in app settings. The database reward table is fallback; this environment value does not override payouts. |
+| `LOGIN_STREAK_WEEK4_HP` | `80` | Legacy name; since 5 November, edit `login_streak_rewards` JSON in app settings. The database reward table is fallback; this environment value does not override payouts. |
 | `STREAK_MAX_MISSED_DAYS` | `2` | No same-name numeric database key currently stored; configure environment if needed |
 | `STREAK_RECLAIM_MIN_TOPUP` | `1000` | No same-name numeric database key currently stored; configure environment if needed |
 | `NOTIFICATION_GAP_MINUTES` | `30` | `notification_gap_minutes` when consumed by its service |

@@ -1262,6 +1262,9 @@ def render_notification_template(
     if notif_type == "welcome_email" and "welcome_body" in template_data:
         body_tmpl = template_data["welcome_body"]
 
+    if notif_type == "checkin_streak_week" and (template_data or {}).get("capped"):
+        body_tmpl += " " + MSG.LOGIN_STREAK_MONTHLY_CAP_NOTE
+
     # Collect all placeholder keys referenced in title + body
     all_keys = _placeholders(title_tmpl) | _placeholders(body_tmpl)
 
