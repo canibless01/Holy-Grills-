@@ -1,4 +1,6 @@
--- Fixture setup: insert immediately after BEGIN, before a rollback verification script.\n-- Never execute outside its enclosing BEGIN/ROLLBACK transaction.\nSET LOCAL request.jwt.claims='{"role":"service_role"}';
+-- Fixture setup: insert immediately after BEGIN, before a rollback verification script.
+-- Never execute outside its enclosing BEGIN/ROLLBACK transaction.
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
 
 DO $fixtures$ DECLARE c uuid:=gen_random_uuid(); u uuid; i integer; BEGIN
 INSERT INTO public.campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Acceptance','audit-acceptance-'||c);

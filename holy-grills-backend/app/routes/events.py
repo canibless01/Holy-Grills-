@@ -1059,12 +1059,11 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
             email, name = profile.get("email", ""), profile.get("full_name", "")
         else:
             email, name = updated.get("guest_email", ""), updated.get("guest_name", "")
-        send_qr_ticket_email(
+        email_sent = bool(send_qr_ticket_email(
             email=email, name=name, event_title=event.get("title", ""),
             ticket_id=ticket_id, event_id=updated["event_id"],
             event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
-        )
-        email_sent = True
+        ))
     except Exception as exc:
         # The customer has already paid. A silent failure here means no ticket and no way
         # for anyone to notice — log it loudly and record it on the returned row. NOTE:

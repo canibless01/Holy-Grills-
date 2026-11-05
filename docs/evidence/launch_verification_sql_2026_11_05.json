@@ -1,0 +1,137 @@
+{
+  "date": "2026-11-05",
+  "schema_revision": "20261105120840",
+  "database": "production with BEGIN/ROLLBACK fixtures",
+  "provider_calls": 0,
+  "retained_fixtures": 0,
+  "checks": [
+    {
+      "file": "admin_academic_role_loop.sql",
+      "passed": true
+    },
+    {
+      "file": "admin_calendar_consumer_loop.sql",
+      "passed": true
+    },
+    {
+      "file": "admin_delivery_location_loop.sql",
+      "passed": true
+    },
+    {
+      "file": "ambassador_checkout.sql",
+      "passed": true
+    },
+    {
+      "file": "ambassador_role_boundaries.sql",
+      "passed": true
+    },
+    {
+      "file": "backend_financial_helper_privileges.sql",
+      "passed": true
+    },
+    {
+      "file": "batch_delivery_date_isolation.sql",
+      "passed": true
+    },
+    {
+      "file": "capacity_two_order_admission.sql",
+      "passed": true
+    },
+    {
+      "file": "deferred_capacity_move_up.sql",
+      "passed": true
+    },
+    {
+      "file": "delivery_reward_financial_recovery.sql",
+      "passed": true
+    },
+    {
+      "file": "earned_reward_promises.sql",
+      "passed": true
+    },
+    {
+      "file": "kitchen_handoff_and_due_day.sql",
+      "passed": true
+    },
+    {
+      "file": "late_payment_and_refund_conservation.sql",
+      "passed": true
+    },
+    {
+      "file": "multi_gift_campaign_checkout.sql",
+      "passed": true
+    },
+    {
+      "file": "order_streak_atomic_recovery.sql",
+      "passed": true
+    },
+    {
+      "file": "physical_reward_delivery_refund.sql",
+      "passed": true
+    },
+    {
+      "file": "rider_settlement_records.sql",
+      "passed": true
+    },
+    {
+      "file": "admin_delivery_area_scope.sql",
+      "passed": true
+    },
+    {
+      "file": "weekly_login_payout_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "checkin_reclamation_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "admin_ingredient_stock_controls.sql",
+      "passed": true
+    },
+    {
+      "file": "kitchen_stock_availability.sql",
+      "passed": true
+    },
+    {
+      "file": "notification_dispatch_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "launch_order_to_rider_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "admin_feature_flag_global_scope.sql",
+      "passed": true
+    },
+    {
+      "file": "active_milestone_atomic_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "event_admission_atomic_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "admin_ingredient_stock_lifecycle.sql",
+      "passed": true
+    },
+    {
+      "file": "prelaunch_monday_admission_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "monthly_rollover_atomic_rollback.sql",
+      "passed": true
+    },
+    {
+      "file": "review_followup_and_rating_reflection.sql",
+      "passed": true
+    },
+    {
+      "file": "event_reservation_financial_recovery.sql",
+      "passed": true
+    }
+  ]
+}
