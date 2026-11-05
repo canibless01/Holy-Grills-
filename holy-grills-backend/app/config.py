@@ -1,7 +1,37 @@
 import os
+import re
+
 from dotenv import load_dotenv
+from app.utils.redis_url import normalize_broker_url, normalize_redis_url
+
+from app.constants import APP_TAGLINE_DEFAULT
 
 load_dotenv()
+
+
+# Required before the app can start at all.
+#
+# These three were read with os.environ[...] inside the class body, which runs at
+# IMPORT time. With any of them unset the process died with a bare
+# `KeyError: 'SUPABASE_URL'` and no explanation — the service looked like it had
+# deployed fine (pip install succeeds) but gunicorn never came up, so the API
+# list simply never loaded. Fail loudly and name everything that is missing.
+_REQUIRED_ENV = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY")
+
+
+def _assert_required_env():
+    missing = [name for name in _REQUIRED_ENV if not (os.environ.get(name) or "").strip()]
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variable(s): "
+            + ", ".join(missing)
+            + ". The backend cannot start without them — set them on the host "
+            "(Render → your service → Environment) and restart. "
+            "Values come from Supabase → Project Settings → API. See .env.example."
+        )
+
+
+_assert_required_env()
 
 
 class Config:
@@ -12,11 +42,30 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES", 2592000))
     JWT_REFRESH_WINDOW_MINUTES = int(os.environ.get("JWT_REFRESH_WINDOW_MINUTES", 5))
 
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    # Outbound links (password reset, verification) are built from this, so a
+    # stale or unset value mails users a link that does not resolve.
+    # Production MUST set FRONTEND_URL — no silent fallback to a retired domain.
+    _frontend_url_default = ""
+    if os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("NODE_ENV") == "production":
+        _raw = os.environ.get("FRONTEND_URL", "")
+        if not _raw.strip():
+            raise RuntimeError(
+                "FRONTEND_URL is not set. Production deployments must configure it "
+                "(e.g. https://holygrills.online). Password-reset emails, Paystack "
+                "callbacks, referral links, and newsletter unsubscribe URLs all "
+                "depend on this value. Set it on the host (Render → Environment) "
+                "and restart."
+            )
+        _frontend_url_default = _raw.strip()
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", _frontend_url_default)
     AUTH_RESET_REDIRECT_PATH = os.environ.get("AUTH_RESET_REDIRECT_PATH", "/reset-password")
     AUTH_VERIFY_REDIRECT_PATH = os.environ.get("AUTH_VERIFY_REDIRECT_PATH", "/login")
     APP_NAME = os.environ.get("APP_NAME", "Holy Grills")
-    APP_TAGLINE = os.environ.get("APP_TAGLINE", "Holy Grills FUTA")
+    APP_TAGLINE = os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT)
+    # Profile id of the admin that authorizes milestone AUTO-issue grants.
+    # Optional: when unset/invalid, auto milestones still create pending claims
+    # for a manual admin decision instead of writing an unauthorised grant.
+    AMBASSADOR_SYSTEM_ACTOR_ID = os.environ.get("AMBASSADOR_SYSTEM_ACTOR_ID", "")
     HP_CURRENCY_NAME = os.environ.get("HP_CURRENCY_NAME", "HP")
     SWAGGER_CONTACT_EMAIL = os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")
 
@@ -29,15 +78,39 @@ class Config:
     frontend_env = os.environ.get("FRONTEND_URL")
     if frontend_env and frontend_env.strip() != "*":
         origins_set.add(frontend_env.strip())
-    origins_set.update([
-        "https://holy-grill-copy-copy-copy-cop-f435c07e.base44.app",
-        "https://holy-grills-frontend.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ])
-    CORS_ORIGINS = list(origins_set)
+    # Origins are environment-driven, with the known deployments as the default
+    # so the API is not left on a wildcard. CORS_ORIGINS / ALLOWED_ORIGINS /
+    # FRONTEND_URL (comma-separated) override this list entirely; a "*" in any of
+    # them is ignored — pinning the list is the point.
+    #
+    DEFAULT_CORS_ORIGINS = (
+        "https://holygrills.online",
+        "https://www.holygrills.online",
+        # Local dev: vite dev server, vite preview, the static smoke server.
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:4174", "http://127.0.0.1:4174",
+    )
+
+    # The known origins are always allowed; env entries (CORS_ORIGINS /
+    # ALLOWED_ORIGINS / FRONTEND_URL) only ADD to them — so a stale or missing
+    # FRONTEND_URL can never lock the real frontend out of its own API.
+    CORS_ORIGINS = sorted(set(DEFAULT_CORS_ORIGINS) | origins_set)
+
+    # Vercel PREVIEW deployments get a fresh random host per push
+    # (holy-grills-<hash>.vercel.app, holy-grills-git-<branch>-<scope>.vercel.app),
+    # so a fixed allow-list can never keep up and every branch preview was
+    # blocked by CORS — "Failed to fetch" on login, with the API itself fine.
+    #
+    # flask_cors' try_match() calls pattern.match() for any compiled regex in the
+    # origins list, so a pattern covers every preview without opening CORS up.
+    # ON by default: preview deployments are where the app is tested, so they must
+    # reach the API. Turn it off with ALLOW_VERCEL_PREVIEWS=false once testing moves
+    # off previews — it covers every fork and stale preview URL, not just yours.
+    ALLOW_VERCEL_PREVIEWS = os.environ.get("ALLOW_VERCEL_PREVIEWS", "true").strip().lower() != "false"
+    CORS_ORIGIN_PATTERNS = (
+        [re.compile(r"^https://holy-grills[a-z0-9-]*\.vercel\.app$")] if ALLOW_VERCEL_PREVIEWS else []
+    )
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
@@ -50,22 +123,32 @@ class Config:
     FLUTTERWAVE_WEBHOOK_SECRET = os.environ.get("FLUTTERWAVE_WEBHOOK_SECRET", "")
 
     # Cloudinary — used by the direct-upload signature endpoint (admins: any folder; everyone else: their own profile_photos/<user_id> folder).
-    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+    # The cloud name is the account's public identifier, not a secret. It falls back
+    # to the live account so uploads keep working when the env var is absent; a value
+    # in the environment still wins.
+    CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME") or "risvlfhx"
     CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
     CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 
     # Email — Resend (primary); OneSignal kept for push-only
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-    EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@holygrills.ng")
+    EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@holygrills.online")
     EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Holy Grills")
 
     # Push — OneSignal
     ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID", "")
     ONESIGNAL_API_KEY = os.environ.get("ONESIGNAL_API_KEY", "")
 
-    REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    # Normalised so a dashboards' bare host:port works and a misconfigured value
+    # degrades to "" instead of an opaque redis-py/kombu error at first use.
+    REDIS_URL = (normalize_redis_url(os.environ.get("REDIS_URL"))
+                 or "redis://localhost:6379/0")
+    CELERY_BROKER_URL = (normalize_broker_url(os.environ.get("CELERY_BROKER_URL"))
+                         or normalize_redis_url(os.environ.get("REDIS_URL"))
+                         or "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND = (normalize_redis_url(os.environ.get("CELERY_RESULT_BACKEND"))
+                             or normalize_redis_url(os.environ.get("REDIS_URL"))
+                             or "redis://localhost:6379/0")
 
     # ── Registration / validation ──────────────────────────────────────────────
     MINIMUM_AGE = int(os.environ.get("MINIMUM_AGE", "16"))
@@ -203,7 +286,9 @@ class Config:
     ORDER_LOCK_DEFAULT_DISCOUNT_PCT = float(os.environ.get("ORDER_LOCK_DEFAULT_DISCOUNT_PCT", "10"))
 
     # Login streak — weekly completion bonuses (HP to Pending pool).
-    # These are the defaults if the login_streak_rewards DB table is absent/empty.
+    # Legacy configuration names. Weekly payouts now use the persisted
+    # login_streak_rewards JSON setting, with the database reward table as fallback.
+    # These environment values do not override the transactional payout.
     LOGIN_STREAK_WEEK1_HP = int(os.environ.get("LOGIN_STREAK_WEEK1_HP", "25"))
     LOGIN_STREAK_WEEK2_HP = int(os.environ.get("LOGIN_STREAK_WEEK2_HP", "40"))
     LOGIN_STREAK_WEEK3_HP = int(os.environ.get("LOGIN_STREAK_WEEK3_HP", "60"))
@@ -233,28 +318,8 @@ class Config:
     FREE_SIDE_CREDITS_VALIDITY_DAYS = int(os.environ.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", "60"))
 
     # ── Exclusive Spin ────────────────────────────────────────────────────────
-    # Credits are leaderboard rewards only; there is no HP purchase path.
+    # Credits come from leaderboard/tier perks or staff grants; there is no HP purchase path.
     EXCLUSIVE_SPIN_VALIDITY_DAYS = int(os.environ.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", "30"))
-
-    # Exclusive spin prize template — configurable without deploy.
-    # This is only used when the `exclusive_spin_prizes` DB table is empty; the table itself is the
-    # real admin-configurable source of weights (weight column, editable without a deploy). Weights
-    # below are a reasonable placeholder distribution, not a spec value — the rewards doc names the
-    # 7 outcomes but doesn't give exact weights, so adjust via the DB table rather than here.
-    _exc_spin_default = '[{"name":"+300 HP","weight":25},{"name":"+750 HP","weight":8},{"name":"Free Sausage","weight":15},{"name":"Free Gizzard \u00d72","weight":12},{"name":"Free Side of Choice","weight":15},{"name":"Free Chicken Kebab","weight":15},{"name":"Free Delivery","weight":10}]'
-    try:
-        import json as _json
-        EXCLUSIVE_SPIN_TEMPLATE_ITEMS = _json.loads(os.environ.get("EXCLUSIVE_SPIN_TEMPLATE_ITEMS", _exc_spin_default))
-    except Exception:
-        EXCLUSIVE_SPIN_TEMPLATE_ITEMS = [
-            {"name": "+300 HP",              "weight": 25},
-            {"name": "+750 HP",              "weight": 8},
-            {"name": "Free Sausage",         "weight": 15},
-            {"name": "Free Gizzard ×2",      "weight": 12},
-            {"name": "Free Side of Choice",  "weight": 15},
-            {"name": "Free Chicken Kebab",   "weight": 15},
-            {"name": "Free Delivery",        "weight": 10},
-        ]
 
     # Free side options (admin-configurable via system_settings.free_side_options)
     _free_sides_default = '["Fries","Coleslaw","Plantain","Gizzard"]'

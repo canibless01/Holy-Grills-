@@ -1,0 +1,52 @@
+{
+  "origin": "http://127.0.0.1:4174",
+  "mode": "modified local production build; actual deployed CMS and Cloudinary; fresh profiles then real Menu/Home navigation; no response fixtures",
+  "profiles": [
+    {
+      "width": 393,
+      "errors": [],
+      "initial_cms_render_ms": 3388,
+      "slide1": {
+        "width": 192,
+        "height": 192,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "slide2": {
+        "width": 1200,
+        "height": 630,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "stage": "navigate_home",
+      "menu_to_home_ms": 1544,
+      "menu_to_home_without_refresh": true,
+      "pass": true
+    },
+    {
+      "width": 1365,
+      "errors": [],
+      "initial_cms_render_ms": 7383,
+      "slide1": {
+        "width": 192,
+        "height": 192,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "slide2": {
+        "width": 1200,
+        "height": 630,
+        "decoded": true,
+        "copy_visible": true,
+        "cta_visible": true
+      },
+      "stage": "navigate_home",
+      "menu_to_home_ms": 98,
+      "menu_to_home_without_refresh": true,
+      "pass": true
+    }
+  ]
+}

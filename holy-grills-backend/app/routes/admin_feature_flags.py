@@ -16,11 +16,11 @@ PATCH  /api/admin/hall-of-fame-rewards/<user_id> — update status
 GET    /api/admin/exclusive-spin-prizes      — pending exclusive-spin physical prizes (campus-scoped)
 PATCH  /api/admin/exclusive-spin-prizes/<id> — mark one fulfilled
 
-NOTE: feature flags are global by design, not per-campus — confirmed live against
-feature_flags_admin_write (super_admin-only write) and feature_flags_read_scoped (any
-authenticated user may read a global flag). Any admin can view the list; only super_admin
-can create or toggle one. The prize-fulfilment endpoints below are a separate, genuinely
-campus-scoped concern and are unaffected by this.
+NOTE: this API edits global rows only (super_admin write, admin read). Legacy
+campus overrides remain supported by the effective public/backend lookup; the
+list exposes visible overrides read-only. Prize fulfilment endpoints below are
+separate campus-scoped concerns.
+
 """
 
 import re
@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 
 admin_flags_bp = Blueprint("admin_feature_flags", __name__)
 
-_FLAG_NAME_RE = re.compile(r"^[a-z0-9_]{1,64}$")
+_FLAG_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 _PRIZE_STATUSES = ("pending", "fulfilled", "cancelled")
 _HOF_STATUSES = ("pending", "box_prepared", "fulfilled", "cancelled")
 _CLOSED_STATUSES = ("fulfilled", "cancelled")
@@ -87,19 +87,27 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
     so the two never drift apart. create_status is 200 for the PATCH route (matches the fixes doc
     exactly — an upsert that happens to create still says 200) and 201 for the dedicated POST route.
 
-    Feature flags are GLOBAL — there is no per-campus feature flag, and only super_admin may
-    create/toggle one (both routes are gated @require_role("super_admin") below; a campus admin
-    can view flags but never reaches this function). campus_id is never accepted from the request
-    and is always written as NULL, so feature_name alone stays a genuine unique key and a plain
-    .eq("feature_name", ...).single() is always safe — no per-campus lookup complexity needed."""
+    This admin API edits GLOBAL rows. Legacy campus overrides can coexist;
+    every global lookup and mutation must include campus_id IS NULL. A campus
+    override remains effective for that campus and is reported read-only by the list.
+    """
+    if data.get('campus_id') is not None:
+        return jsonify({'error': MSG.FEATURE_FLAG_CAMPUS_INVALID}), 400
     if "is_active" in data and not isinstance(data["is_active"], bool):
         return jsonify({"error": MSG.FEATURE_FLAG_ACTIVE_INVALID}), 400
     if "description" in data and data["description"] is not None and (not isinstance(data["description"], str) or len(data["description"]) > 500):
         return jsonify({"error": MSG.FEATURE_FLAG_DESCRIPTION_INVALID}), 400
 
+    if not _FLAG_NAME_RE.fullmatch(flag_name):
+        return jsonify({'error': MSG.FEATURE_FLAG_NAME_INVALID}), 400
     db = get_user_client()
-    existing = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
+    existing = db.table("feature_flags").select("*").eq("feature_name", flag_name).is_("campus_id", "null").single().execute()
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    def _repeat_create(current):
+        if current.get('campus_id') is None and current.get('is_active') == data.get('is_active', False) and (current.get('description') or None) == (data.get('description') or None):
+            return jsonify({'message': MSG.FEATURE_FLAG_READY, 'flag': current, 'idempotent': True}), 200
+        return jsonify({'error': MSG.FEATURE_FLAG_ALREADY_EXISTS}), 409
 
     def _update_existing(current):
         safe = {k: v for k, v in data.items() if k in {"is_active", "description"}}
@@ -108,7 +116,7 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         safe["updated_at"] = now_iso
         safe["updated_by"] = g.user_id
         try:
-            result = db.table("feature_flags").eq("feature_name", flag_name).update(safe)
+            result = db.table("feature_flags").eq("feature_name", flag_name).is_("campus_id", "null").update(safe)
         except SupabaseError as e:
             logger.info("update_feature_flag: rejected %s: %s", flag_name, e)
             return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
@@ -120,6 +128,8 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         return jsonify({"message": MSG.FEATURE_FLAG_UPDATED, "flag": updated}), 200
 
     if existing:
+        if create_status == 201:
+            return _repeat_create(existing)
         return _update_existing(existing)
 
     if not _FLAG_NAME_RE.match(flag_name):
@@ -136,9 +146,11 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         result = db.table("feature_flags").insert(payload)
     except SupabaseError as e:
         code = str((e.details or {}).get("code", "")) if isinstance(e.details, dict) else ""
-        if code == "23505":   # two super_admins created the same flag at the same moment: the second becomes an update
-            again = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
+        if code == "23505":   # concurrent creates replay matching data, otherwise conflict
+            again = db.table("feature_flags").select("*").eq("feature_name", flag_name).is_("campus_id", "null").single().execute()
             if again:
+                if create_status == 201:
+                    return _repeat_create(again)
                 return _update_existing(again)
         if e.status_code in (401, 403) or code == "42501":
             return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
@@ -146,7 +158,7 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         return jsonify({"error": MSG.FEATURE_FLAG_NAME_INVALID}), 400
     created = result[0] if isinstance(result, list) else result
     _audit_admin("feature_flags", flag_name, "create_feature_flag", after=payload)
-    return jsonify({"message": MSG.FEATURE_FLAG_UPDATED, "flag": created}), create_status
+    return jsonify({'message': MSG.FEATURE_FLAG_CREATED if create_status == 201 else MSG.FEATURE_FLAG_UPDATED, 'flag': created}), create_status
 
 
 @admin_flags_bp.route("/feature-flags", methods=["POST"])
@@ -158,7 +170,10 @@ def create_feature_flag():
     data = _json_body()
     if data is None:
         return jsonify({"error": MSG.ADMIN_REQUEST_BODY_INVALID}), 400
-    flag_name = (data.get("feature_name") or "").strip()
+    raw_name = data.get('feature_name')
+    if raw_name is not None and not isinstance(raw_name, str):
+        return jsonify({'error': MSG.FEATURE_FLAG_NAME_INVALID}), 400
+    flag_name = (raw_name or '').strip()
     if not flag_name:
         return jsonify({"error": MSG.FEATURE_FLAG_NAME_REQUIRED}), 400
     return _upsert_feature_flag(flag_name, data, create_status=201)
@@ -177,7 +192,18 @@ def list_feature_flags():
     """
     db = get_user_client()
     rows = db.table("feature_flags").select("*").order("feature_name").execute() or []
-    return jsonify(rows), 200
+    # Do not render campus overrides as duplicate global switches. Retain their
+    # visibility so an admin knows a global setting is not the effective value
+    # everywhere; this endpoint does not mutate or erase legacy overrides.
+    overrides = {}
+    for row in rows:
+        if row.get("campus_id") is not None:
+            overrides.setdefault(row["feature_name"], []).append({
+                "campus_id": row["campus_id"], "is_active": bool(row["is_active"]),
+            })
+    globals_ = [{**row, "campus_overrides": overrides.get(row["feature_name"], [])}
+                for row in rows if row.get("campus_id") is None]
+    return jsonify(globals_), 200
 
 
 @admin_flags_bp.route("/feature-flags/<flag_name>", methods=["GET"])
@@ -199,7 +225,7 @@ def get_feature_flag(flag_name):
         description: Not found
     """
     db = get_user_client()
-    row = db.table("feature_flags").select("*").eq("feature_name", flag_name).single().execute()
+    row = db.table("feature_flags").select("*").eq("feature_name", flag_name).is_("campus_id", "null").single().execute()
     if not row:
         return jsonify({"error": MSG.FEATURE_FLAG_NOT_FOUND}), 404
     return jsonify(row), 200
@@ -243,6 +269,8 @@ def _list_prizes(table, order_col, profile_fields, allow_month=False):
     db = get_user_client()
     limit, offset = _page()
     q = db.table(table).select("*").order(order_col, ascending=False)
+    if table == 'exclusive_spin_fulfillments':
+        q = q.or_('result_snapshot->>prize_type.is.null,result_snapshot->>prize_type.eq.physical')
     status = request.args.get("status")
     if status:
         q = q.eq("status", status)
@@ -297,11 +325,22 @@ def _fulfil(table, record_id, allowed, not_found_msg, done_msg, label_fn):
     record, err = fetch_or_403(db, table, record_id, "*", not_found_msg)   # 404 unknown / malformed id, 403 another campus
     if err:
         return err
+    if table == 'exclusive_spin_fulfillments' and (record.get('result_snapshot') or {}).get('prize_type', 'physical') != 'physical':
+        return jsonify({'error': MSG.SPIN_AUTOMATIC_FULFILLMENT}), 409
     if "status" in patch and record.get("status") in _CLOSED_STATUSES and patch["status"] != record.get("status"):
         return jsonify({"error": MSG.PRIZE_ALREADY_CLOSED}), 409
-    result, err = update_or_403(db, table, record_id, patch)
-    if err:
-        return err
+    if patch.get('status') == record.get('status') and 'notes' not in patch:
+        return jsonify({'message': done_msg if patch['status'] == 'fulfilled' else MSG.PRIZE_UPDATED,
+                        'record': record, 'idempotent': True}), 200
+    # A second staff click cannot overwrite the first fulfilment timestamp or
+    # announce the same status change twice after a stale pre-read.
+    result = db.table(table).eq('id', record_id).eq('status', record.get('status')).update(patch)
+    if not result:
+        current = db.table(table).select('*').eq('id', record_id).single().execute()
+        if current and patch.get('status') == current.get('status') and 'notes' not in patch:
+            return jsonify({'message': done_msg if patch['status'] == 'fulfilled' else MSG.PRIZE_UPDATED,
+                            'record': current, 'idempotent': True}), 200
+        return jsonify({'error': MSG.PRIZE_ALREADY_CLOSED}), 409
     updated = result[0] if isinstance(result, list) else result
 
     changed_status = "status" in patch and patch["status"] != record.get("status")

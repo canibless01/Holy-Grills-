@@ -184,7 +184,7 @@ class Ctx:
             self.infra.append((table, row_id))
 
     def sweep(self, table: str, column: str, value: str):
-        if self.owns_user:
+        if self.owns_user and value:
             self.sweeps.append((table, column, value))
 
     def note(self, message: str):
@@ -339,6 +339,8 @@ class DB:
         return resp.json() if resp.content else None
 
     def delete(self, table: str, **filters) -> bool:
+        if not filters or any(v is None or str(v) in ("", "None") for v in filters.values()):
+            raise Failed("Refusing fixture cleanup without a concrete record filter")
         params = {c: f"eq.{v}" for c, v in filters.items()}
         resp = self.session.delete(f"{self.url}/rest/v1/{table}", params=params,
                                    headers=self._headers(), timeout=self.timeout)
@@ -363,6 +365,22 @@ class DB:
                                 json={"email_confirm": True},
                                 headers=self._headers(), timeout=self.timeout)
         return resp.status_code < 400
+
+    def create_fixture_user(self, email: str, password: str, name: str) -> str:
+        """Provision disposable actors without consuming the public signup rate limit.
+
+        The registration steps separately exercise the actual public route.
+        Only generated fixture-domain addresses can use this helper.
+        """
+        if not email.startswith("e2e.") or not email.endswith("@" + TEST_EMAIL_DOMAIN):
+            raise Failed("Refusing to provision a non-fixture identity")
+        response = self.session.post(
+            f"{self.url}/auth/v1/admin/users", headers=self._headers(),
+            json={"email": email, "password": password, "email_confirm": True,
+                  "user_metadata": {"full_name": name}}, timeout=self.timeout)
+        if response.status_code >= 400:
+            raise Failed(f"Fixture user creation failed: HTTP {response.status_code}")
+        return str(response.json().get("id") or "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -472,6 +490,7 @@ def s_campuses(ctx: Ctx):
     expect(bool(chosen),
            "none of the candidate campus ids exist in the campuses table: " + ", ".join(ordered), r)
     ctx.ids["campus_id"] = chosen
+    ctx.api.default_headers["X-Campus-ID"] = str(chosen)
     name = next((c.get("name") for c in active if c["id"] == chosen), "?")
     ctx.note(f"campus {chosen} ({name}) verified via {source}; "
              f"{len(active)} active campus(es) listed")
@@ -613,6 +632,9 @@ def s_register(ctx: Ctx):
     r.check(201, allow=(200,))
     ctx.user_id = str(field(r.data or {}, "user_id") or ((r.data or {}).get("user") or {}).get("id")
                       or (r.data or {}).get("id") or "")
+    if not ctx.user_id:
+        profile = ctx.db.select_one("profiles", email=ctx.ids["email"]) or {}
+        ctx.user_id = str(profile.get("id") or "")
     expect(bool(ctx.user_id), f"register returned no user id — {r.snippet()}", r)
     ctx.track("profiles", ctx.user_id)
     # remember any seed rows keyed by the user so cleanup can find them
@@ -632,8 +654,10 @@ def s_register(ctx: Ctx):
 @step("auth", "auth.register_duplicate", "registering the same email is rejected",
       writes=True, route="POST /api/auth/register", needs=("auth.register",))
 def s_register_duplicate(ctx: Ctx):
-    body = {"email": ctx.ids["email"], "password": ctx.ids["password"], "full_name": "E2E Duplicate"}
-    ctx.api.post("/api/auth/register", json_body=body).expect_error(allow=(400, 409, 422))
+    body = {"email": ctx.ids["email"], "password": ctx.ids["password"], "full_name": "E2E Duplicate",
+            "campus_id": ctx.ids["campus_id"]}
+    r = ctx.api.post("/api/auth/register", json_body=body).check(200)
+    expect((r.data or {}).get("status") == "check_email", "duplicate signup must retain the ambiguous response")
 
 
 @step("auth", "auth.login", "POST /api/auth/login returns tokens", route="POST /api/auth/login")
@@ -1025,6 +1049,10 @@ def s_free_side_provision(ctx: Ctx):
 def s_fund(ctx: Ctx):
     amount = float(ctx.opts.fund_wallet)
     if amount <= 0:
+        wallet = ctx.db.select_one("wallets", user_id=ctx.user_id) or {}
+        if float(wallet.get("balance") or 0) > 0:
+            ctx.note("using the isolated account's existing wallet funds; no top-up performed")
+            return
         raise Skip("--fund-wallet 0 — wallet funding disabled")
     try:
         ctx.db.rpc("credit_wallet_atomic", {
@@ -1251,25 +1279,15 @@ def _provision_role_user(ctx: Ctx, role: str, campus: str):
     """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     email = f"e2e.{role}.{stamp}.{uuid.uuid4().hex[:6]}@{TEST_EMAIL_DOMAIN}"
-    r = ctx.api.post("/api/auth/register", json_body={
-        "email": email, "password": DEFAULT_PASSWORD, "full_name": f"E2E {role.title()}",
-        "nickname": f"e2e{role[:3]}", "campus_id": str(campus),
-    })
-    if r.status not in (200, 201):
-        return None, None, f"register failed: {r.status} {r.snippet(100)}"
-    user_id = str(field(r.data or {}, "user_id")
-                  or ((r.data or {}).get("user") or {}).get("id") or "")
+    user_id = ctx.db.create_fixture_user(email, DEFAULT_PASSWORD, f"E2E {role.title()}")
     if not user_id:
         return None, None, "register returned no user id"
     ctx.track("profiles", user_id)
 
-    token = (r.data or {}).get("access_token")
-    if not token:
-        ctx.db.confirm_email(user_id)
+    token = None
     # Registration already creates customer-facing users with profiles.role=student
     # and the requested campus. Only staff roles need an explicit service-role flip.
-    if role != "student" and not ctx.db.update(
-            "profiles", {"role": role, "campus_id": str(campus)}, id=user_id):
+    if not ctx.db.update("profiles", {"role": role, "campus_id": str(campus)}, id=user_id):
         return user_id, None, f"could not set role={role} in profiles"
 
     if not token:
@@ -2241,6 +2259,8 @@ def _drop_user_effects(ctx: Ctx, user_id: str):
     The account is deleted anyway; this is about rows that would survive it — HP ledger
     entries, spin credits, prize fulfilments, push subscriptions, squads, rosters.
     """
+    if not user_id:
+        return
     for table, column in (("hp_transactions", "user_id"),
                           ("exclusive_spins", "user_id"),
                           ("exclusive_spin_fulfillments", "user_id"),
@@ -2953,8 +2973,8 @@ def s_storefront_writes(ctx: Ctx):
                                            f"{unsub.snippet(120)}", unsub)
         ctx.note("newsletter address subscribed, duplicate tolerated, unsubscribed")
     finally:
-        for row in ctx.db.select("newsletter_subscribers", email=email) or []:
-            ctx.db.delete("newsletter_subscribers", id=row["id"])
+        for row in ctx.db.select("newsletter_subscriptions", email=email) or []:
+            ctx.db.delete("newsletter_subscriptions", id=row["id"])
 
     for path in ("/api/storefront/promo-codes/validate", "/api/orders/validate-promo"):
         r = ctx.api.post(path, token=ctx.tokens["access"],

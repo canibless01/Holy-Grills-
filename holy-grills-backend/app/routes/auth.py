@@ -12,7 +12,7 @@ from app.middleware.rate_limit import rate_limit
 from app.services import auth_service, streak_service
 from app.utils.retry import with_retry
 from app.db import get_db, get_user_client, SupabaseError
-from app.messages import MSG, resolve_msg
+from app.messages import MSG
 from app.utils.logger import get_logger
 from app.utils.upload_urls import is_trusted_upload_url
 from app.utils.validators import validate_uuid
@@ -100,11 +100,11 @@ def _streak_checkin(user_id: str) -> None:
         logger.warning("streak check-in failed for %s: %s", user_id, e)
 
 
-def _notify_security(user_id: str, notif_type: str) -> None:
+def _notify_security(user_id: str, notif_type: str, template_data: dict = None) -> None:
     """In-app + email for account-security events (password_changed, welcome_email)."""
     try:
         from app.services.notification_service import send_notification
-        send_notification(user_id=user_id, notif_type=notif_type, template_data={}, channels=["in_app", "email"])
+        send_notification(user_id=user_id, notif_type=notif_type, template_data=template_data or {}, channels=["in_app", "email"])
     except Exception as e:
         logger.warning("security notification %s failed for %s: %s", notif_type, user_id, e)
 
@@ -175,24 +175,38 @@ def register():
         if data.get(field) is not None and not isinstance(data[field], str):
             return jsonify({"error": MSG.AUTH_FIELD_INVALID.format(field=field)}), 400
 
+    required = {"phone": MSG.REGISTER_PHONE_REQUIRED, "date_of_birth": MSG.REGISTER_DOB_REQUIRED,
+                "department": MSG.REGISTER_DEPARTMENT_REQUIRED, "academic_level": MSG.REGISTER_LEVEL_REQUIRED}
+    for field, message in required.items():
+        if not (data.get(field) or "").strip():
+            return jsonify({"error": message, "field": field}), 400
+    if not isinstance(data.get("promotional_emails", False), bool):
+        return jsonify({"error": MSG.AUTH_FIELD_INVALID.format(field="promotional_emails")}), 400
+
     if len(data["password"]) < 8:
         return jsonify({"error": MSG.AUTH_PASSWORD_TOO_SHORT}), 400
 
-    db = get_db()
-    campus_id = (data.get("campus_id") or "").strip() or None
-    if campus_id:
-        if not validate_uuid(campus_id):
-            return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
-        campus_id = campus_id.lower()
-        chosen = db.table("campuses").select("id").eq("id", campus_id).eq("is_active", True).single().execute()
-        if not chosen:
-            return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
-    else:
-        # exactly one active campus: default to it; more than one: the student must choose
-        active = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(2).execute() or []
-        if len(active) > 1:
-            return jsonify({"error": MSG.CAMPUS_REQUIRED}), 400
-        campus_id = active[0]["id"] if active else None
+    try:
+        db = get_db()
+        campus_id = (data.get("campus_id") or "").strip() or None
+        if campus_id:
+            if not validate_uuid(campus_id):
+                return jsonify({"error": MSG.INVALID_CAMPUS_ID}), 400
+            campus_id = campus_id.lower()
+            chosen = db.table("campuses").select("id").eq("id", campus_id).eq("is_active", True).single().execute()
+            if not chosen:
+                return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
+        else:
+            # exactly one active campus: default to it; more than one: the student must choose
+            active = db.table("campuses").select("id").eq("is_active", True).order("created_at").limit(2).execute() or []
+            if len(active) > 1:
+                return jsonify({"error": MSG.CAMPUS_REQUIRED}), 400
+            if not active:
+                return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
+            campus_id = active[0]["id"]
+    except SupabaseError:
+        logger.exception("register: campus lookup unavailable")
+        return jsonify({"error": MSG.REFERENCE_DATA_UNAVAILABLE}), 503
 
     try:
         result = auth_service.register(
@@ -200,18 +214,53 @@ def register():
             phone=data.get("phone"), date_of_birth=data.get("date_of_birth"),
             referred_by_code=data.get("referred_by_code"), department=data.get("department"),
             academic_level=data.get("academic_level"), campus_id=campus_id, nickname=data.get("nickname"),
+            promotional_emails=data.get("promotional_emails", False),
         )
-        result["message"] = resolve_msg(MSG.REGISTER_SUCCESS)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        err_msg = str(e)
+        # Anti-enumeration: existing email returns same 200 shape as a new sign-up
+        if err_msg == MSG.REGISTER_EMAIL_AMBIGUOUS:
+            return jsonify({"status": "check_email", "message": MSG.REGISTER_EMAIL_AMBIGUOUS}), 200
+        return jsonify({"error": err_msg}), 400
     except Exception as e:
         logger.exception("register: unexpected failure: %s", e)
         return jsonify({"error": MSG.AUTH_REGISTRATION_FAILED}), 500
 
     user_id = ((result.get("user") or {}).get("id")) or result.get("id")
     if user_id:
-        _notify_security(user_id, "welcome_email")     # template exists, was never dispatched
-    return jsonify(result), 201
+        # Announce only ledger grants, never first-delivery or configured promises.
+        db = get_db()
+        welcome_hp, free_side_credits = '0', '0'
+        try:
+            rows = db.table('hp_transactions').select('amount').eq('user_id', user_id).eq('reference_type', 'signup_bonus').eq('status', 'active').execute() or []
+            welcome_hp = str(sum(int(row.get('amount') or 0) for row in rows))
+            credits = db.table('free_side_credits').select('credits_remaining').eq('user_id', user_id).eq('source', 'signup').execute() or []
+            free_side_credits = str(sum(int(row.get('credits_remaining') or 0) for row in credits))
+        except Exception:
+            logger.warning('Welcome grant receipt unavailable for %s', user_id)
+
+        # Select the right welcome message variant based on bonuses
+        has_hp = int(welcome_hp) > 0
+        has_sides = int(free_side_credits) > 0
+        if has_hp and has_sides:
+            welcome_body = MSG.NOTIF_WELCOME_BODY_BOTH
+        elif has_hp:
+            welcome_body = MSG.NOTIF_WELCOME_BODY_HP
+        elif has_sides:
+            welcome_body = MSG.NOTIF_WELCOME_BODY_SIDES
+        else:
+            welcome_body = MSG.NOTIF_WELCOME_BODY
+        
+        _notify_security(user_id, "welcome_email", template_data={
+            "welcome_hp": welcome_hp, 
+            "free_side_credits": free_side_credits,
+            "welcome_body": welcome_body
+        })
+    session = result.get('session') or result
+    if session.get('access_token') and session.get('refresh_token'):
+        return jsonify({'access_token': session['access_token'], 'refresh_token': session['refresh_token'], 'user': result.get('user')}), 201
+    # No issued session: preserve the confirmation/duplicate-safe response.
+    return jsonify({"status": "check_email", "message": MSG.REGISTER_EMAIL_AMBIGUOUS}), 200
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -266,10 +315,26 @@ def login():
         except Exception as e:
             prof = None
             logger.warning("login: is_active lookup failed for %s: %s", user_id, e)
-        if prof is not None and prof.get("is_active") is False:
+        if prof is None:
+            # A valid Auth password does not establish an active application identity.
+            get_db().auth_sign_out(result.get("access_token"), scope="local")
+            return jsonify({"error": MSG.AUTH_LOGIN_FAILED}), 503
+        if prof.get("is_active") is False:
             get_db().auth_sign_out(result.get("access_token"), scope="local")   # drop the session just issued
             return jsonify({"error": MSG.ACCOUNT_DEACTIVATED}), 403
-        _streak_checkin(user_id)
+        # Backfill the OneSignal Email Subscription for accounts created before we
+        # registered them: without one, a campaign addressed to the account is
+        # accepted by OneSignal and delivered to nobody. Fire-and-forget so login
+        # latency never depends on OneSignal.
+        try:
+            from app.services.onesignal_email import sync_email_subscription_async
+            email = (result.get("user") or {}).get("email")
+            if email:
+                sync_email_subscription_async(user_id, email, enabled=True)
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning("login: OneSignal email subscription sync unavailable for %s: %s", user_id, e)
+        # Loyalty work runs after authenticated profile hydration. Never delay
+        # delivery of newly issued credentials behind optional streak queries.
 
     result["message"] = MSG.LOGIN_SUCCESS
     return jsonify(result), 200
@@ -365,9 +430,6 @@ def refresh():
         result = auth_service.refresh_token(data["refresh_token"])
         result["rotated"] = True
         result["message"] = MSG.SESSION_REFRESHED
-        refreshed_user_id = (result.get("user") or {}).get("id")
-        if refreshed_user_id:
-            _streak_checkin(refreshed_user_id)
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 401
@@ -385,11 +447,38 @@ def me():
         description: User profile data
     """
     try:
-        user = auth_service.get_current_user(g.jwt_token)
+        user = auth_service.get_current_user(g.jwt_token, verified_auth_user=g.jwt_payload, recover_welcome=request.args.get("session") != "1", include_balances=request.args.get("session") != "1")
         return jsonify(user), 200
     except Exception as e:
         logger.exception("me: failed for %s: %s", g.user_id, e)
         return jsonify({"error": MSG.AUTH_ME_FAILED}), 500
+
+
+@auth_bp.route("/session-activity", methods=["POST"])
+@require_auth
+def recover_session_activity():
+    """Idempotent daily attendance after hydration, outside token rotation."""
+    _streak_checkin(g.user_id)
+    return jsonify({"success": True}), 200
+
+
+@auth_bp.route("/welcome-credit", methods=["POST"])
+@require_auth
+def recover_welcome_credit():
+    """Retry the idempotent signup grant after session hydration, never during it."""
+    from app.services.welcome_credit_service import grant_signup_credit
+    try:
+        result = grant_signup_credit(g.user_id)
+        result = {**result, 'signup_hp': auth_service.hp_service.award_signup_bonus(g.user_id)}
+        try:
+            from app.services.gift_campaigns import claim
+            result = {**result, 'campaign': claim(g.user_id)}
+        except Exception:
+            logger.warning('Gift campaign recovery remains pending for %s', g.user_id)
+        return jsonify(result), 200
+    except Exception:
+        logger.warning("welcome credit recovery unavailable for %s", g.user_id)
+        return jsonify({"error": MSG.WELCOME_CREDIT_UNAVAILABLE}), 503
 
 
 @auth_bp.route("/profile/photo", methods=["POST"])
@@ -398,17 +487,19 @@ def update_profile_photo():
     """Update user profile photo with Cloudinary URL."""
     data = _json_body() or {}
     photo_url = data.get("photo_url")
-    if not isinstance(photo_url, str) or not photo_url.strip():
+    if "photo_url" not in data or (photo_url is not None and not isinstance(photo_url, str)):
         return jsonify({"error": MSG.PHOTO_URL_REQUIRED}), 400
-    photo_url = photo_url.strip()
-    if not is_trusted_upload_url(photo_url, f"profile_photos/{g.user_id}"):
+    photo_url = (photo_url or "").strip() or None
+    if photo_url and not is_trusted_upload_url(photo_url, f"profile_photos/{g.user_id}"):
         return jsonify({"error": MSG.UPLOAD_URL_INVALID}), 400
 
     db = get_user_client()
-    db.table("profiles").eq("id", g.user_id).update({
+    updated = db.table("profiles").eq("id", g.user_id).update({
         "photo_url": photo_url,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+    if not updated:
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
     return jsonify({"photo_url": photo_url, "message": MSG.PROFILE_PHOTO_UPDATED}), 200
 
 
@@ -475,11 +566,55 @@ def list_addresses():
     tags: [Auth]
     responses:
       200:
-        description: List of saved addresses
+        description: |
+          List of saved addresses. Each row carries the persisted
+          `delivery_type` / `delivery_location_id`, plus `delivery_location_name`
+          (the hostel or gate name) so the app can show what the saved selection
+          points at without a second call. Rows saved before these fields were
+          written have neither and are treated as "re-select".
     """
     db = get_user_client()
     rows = db.table("user_addresses").select("*").eq("user_id", g.user_id).order("is_default", ascending=False).execute()
+    rows = rows or []
+    _attach_delivery_location_names(rows)
     return jsonify(rows), 200
+
+
+def _attach_delivery_location_names(rows):
+    """Add `delivery_location_name` to each saved address.
+
+    `delivery_location_id` is a hostel id for on-campus rows and a gate id for
+    off-campus ones, and the address form only stores the name the user typed in
+    `hostel`/`line1` — so without this the app cannot show what the saved
+    selection points at. Rows saved before these fields were written have no id
+    and simply get no name, which the frontend already treats as "re-select".
+    """
+    hostels_ids, gates_ids = set(), set()
+    for r in rows:
+        lid = r.get("delivery_location_id")
+        if not lid:
+            continue
+        (hostels_ids if r.get("delivery_type") == "on_campus" else gates_ids).add(lid)
+    if not hostels_ids and not gates_ids:
+        return
+
+    names = {}
+    sdb = get_db()
+    for table, ids in (("hostels", hostels_ids), ("gates", gates_ids)):
+        if not ids:
+            continue
+        try:
+            found = sdb.table(table).select("id,name").in_("id", sorted(ids)).execute() or []
+        except Exception as exc:                               # noqa: BLE001
+            logger.warning("address delivery-location name lookup failed (%s): %s", table, exc)
+            continue
+        for row in found:
+            if row.get("id") and row.get("name"):
+                names[row["id"]] = row["name"]
+    for r in rows:
+        lid = r.get("delivery_location_id")
+        if lid and lid in names:
+            r["delivery_location_name"] = names[lid]
 
 
 def _clean_coord(value, lo, hi):
@@ -494,10 +629,58 @@ def _clean_coord(value, lo, hi):
 
 
 _ADDR_TEXT = ("label", "line1", "line2", "hostel", "city", "state", "landmark")
+_ADDR_DELIVERY_TYPES = ("on_campus", "off_campus")
 
 
-def _validate_address_fields(data: dict):
-    """Returns (cleaned_dict, error_message|None) for the address keys present in `data`."""
+def _clean_uuid_ref(value):
+    """A uuid reference, or None when absent/blank. "__invalid__" for a malformed
+    id, so the caller answers 400 instead of letting the database reject it."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        return "__invalid__"
+    v = value.strip().lower()
+    if not v:
+        return None
+    return v if validate_uuid(v) else "__invalid__"
+
+
+def _delivery_location_exists(db, delivery_type, location_id, campus_id):
+    """Whether `location_id` is an active hostel (on_campus) or gate (off_campus)
+    of the caller's campus. Uses the service client: `hostels`/`gates` are not
+    readable through the caller's own client for this check.
+
+    A missing campus_id means we cannot prove the row belongs to the caller, so
+    it is treated as not-a-match rather than accepted on trust.
+    """
+    if not location_id or not campus_id:
+        return False
+    table = "hostels" if delivery_type == "on_campus" else "gates"
+    try:
+        row = (
+            db.table(table)
+            .select("id")
+            .eq("id", location_id)
+            .eq("is_active", "true")
+            .eq("campus_id", campus_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:                                   # noqa: BLE001
+        logger.warning("address delivery-location check failed (%s %s): %s", table, location_id, exc)
+        return False
+    return bool(row)
+
+
+def _validate_address_fields(data: dict, db=None, campus_id=None):
+    """Returns (cleaned_dict, error_message|None) for the address keys present in `data`.
+
+    `delivery_type` / `delivery_location_id` are persisted exactly as
+    `user_addresses` stores them (both columns already exist, and
+    `create_order` re-reads them from a saved address). `delivery_location_id`
+    means hostel id for on_campus and gate id for off_campus — the same meaning
+    `orders.delivery_location_id` has.
+    """
     out = {}
     for k in _ADDR_TEXT:
         if k in data:
@@ -507,6 +690,31 @@ def _validate_address_fields(data: dict):
             if isinstance(v, str) and len(v) > 200:
                 return None, MSG.AUTH_FIELD_INVALID.format(field=k)
             out[k] = v.strip() if isinstance(v, str) else v
+
+    # ── the replayable delivery selection ────────────────────────────────────
+    raw_type = data.get("delivery_type", data.get("type"))
+    raw_location = data.get("delivery_location_id")
+    if raw_type not in (None, ""):
+        if raw_type not in _ADDR_DELIVERY_TYPES:
+            return None, MSG.AUTH_FIELD_INVALID.format(field="delivery_type")
+        out["delivery_type"] = raw_type
+    if "delivery_location_id" in data or raw_type:
+        cleaned = _clean_uuid_ref(raw_location)
+        if cleaned == "__invalid__":
+            return None, MSG.AUTH_FIELD_INVALID.format(field="delivery_location_id")
+        out["delivery_location_id"] = cleaned
+
+    # A type with no location, or a location with no type, is not a replayable
+    # pair. Without a type the id has no meaning (hostel? gate?), so it is
+    # dropped rather than stored to be misinterpreted later.
+    saved_type = out.get("delivery_type")
+    saved_location = out.get("delivery_location_id")
+    if saved_type and saved_location:
+        if not _delivery_location_exists(db, saved_type, saved_location, campus_id):
+            return None, MSG.ADDRESS_DELIVERY_LOCATION_INVALID
+    elif not saved_type:
+        out["delivery_location_id"] = None
+
     try:
         if "latitude" in data:
             out["latitude"] = _clean_coord(data["latitude"], -90, 90)
@@ -539,6 +747,9 @@ def add_address():
             latitude: {type: number}
             longitude: {type: number}
             is_default: {type: boolean}
+            delivery_type: {type: string, enum: [on_campus, off_campus], description: "How this address is delivered. Saved so checkout can replay it. Alias: type"}
+            delivery_location_id: {type: string, description: "A hostel id when delivery_type is on_campus, a gate id when it is off_campus. Validated against your campus."}
+            hostel: {type: string, description: "Hostel name (free text). Used as a fallback when an older row has no delivery_location_id."}
     responses:
       201:
         description: Address saved
@@ -551,7 +762,8 @@ def add_address():
         data["line1"] = data["address_line"]
     if not data.get("label") or not data.get("line1") or not data.get("city"):
         return jsonify({"error": MSG.AUTH_ADDRESS_FIELDS_REQUIRED}), 400
-    fields, err = _validate_address_fields(data)
+    fields, err = _validate_address_fields(
+        data, db=get_db(), campus_id=getattr(g, "campus_id", None))
     if err:
         return jsonify({"error": err}), 400
     if not fields.get("label") or not fields.get("line1") or not fields.get("city"):
@@ -566,6 +778,11 @@ def add_address():
         "latitude": fields.get("latitude"), "longitude": fields.get("longitude"),
         "is_default": bool(data.get("is_default", False)),
         "campus_id": getattr(g, "campus_id", None),
+        # Replayable delivery selection — see _validate_address_fields. Both
+        # columns already exist on user_addresses, and create_order re-reads them
+        # from the saved address when the order carries delivery_address_id.
+        "delivery_type": fields.get("delivery_type"),
+        "delivery_location_id": fields.get("delivery_location_id"),
     })
     res = row[0] if isinstance(row, list) and row else row
     if not res:
@@ -598,6 +815,8 @@ def update_address(address_id):
             latitude: {type: number}
             longitude: {type: number}
             is_default: {type: boolean}
+            delivery_type: {type: string, enum: [on_campus, off_campus], description: "How this address is delivered"}
+            delivery_location_id: {type: string, description: "A hostel id when delivery_type is on_campus, a gate id when it is off_campus"}
     responses:
       200:
         description: Address updated
@@ -605,7 +824,7 @@ def update_address(address_id):
         description: Address not found
     """
     db = get_user_client()
-    existing = db.table("user_addresses").select("id").eq("id", address_id).eq("user_id", g.user_id).single().execute()
+    existing = db.table("user_addresses").select("id,delivery_type").eq("id", address_id).eq("user_id", g.user_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.AUTH_ADDRESS_NOT_FOUND}), 404
 
@@ -614,7 +833,13 @@ def update_address(address_id):
         return _bad_body()
     if "address_line" in data and "line1" not in data:
         data["line1"] = data["address_line"]
-    fields, err = _validate_address_fields(data)
+    # A PATCH that changes only `delivery_location_id` does not restate the type,
+    # and an id with no type has no meaning — so inherit the stored one. Without
+    # this the new location was silently dropped.
+    if "delivery_location_id" in data and not data.get("delivery_type") and not data.get("type"):
+        data["delivery_type"] = existing.get("delivery_type")
+    fields, err = _validate_address_fields(
+        data, db=get_db(), campus_id=getattr(g, "campus_id", None))
     if err:
         return jsonify({"error": err}), 400
     for required in ("label", "line1", "city"):
@@ -787,7 +1012,11 @@ def delete_account():
     try:   # email captured BEFORE anonymisation (profile email is scrubbed now)
         from app.services.notification_templates import render_notification_template
         from app.services.notification_service import _dispatch_email_via_onesignal
-        rendered = render_notification_template("account_deleted", {"name": profile.get("full_name") or "there"})
+        from app.services.squad_service import resolve_display_name
+        rendered = render_notification_template(
+            "account_deleted",
+            {"name": resolve_display_name(profile=profile) or "there"},
+        )
         if rendered:
             title, body, _inc, _ch = rendered
             _dispatch_email_via_onesignal(profile["email"], profile.get("full_name") or "", title, f"<p>{body}</p>")
@@ -917,10 +1146,10 @@ def reset_password_confirm():
         return jsonify({"error": MSG.AUTH_RESET_FAILED}), 400
 
     user = res.get("user") or res
-    _revoke_supabase_sessions(access_token)      # a reset must end every other (possibly hostile) session
+    sessions_revoked = _revoke_own_sessions(access_token)
     if user.get("id"):
         _notify_security(user["id"], "password_changed")
-    return jsonify({"message": MSG.PASSWORD_CHANGED, "user": user}), 200
+    return jsonify({"message": MSG.PASSWORD_CHANGED, "user": user, "sessions_revoked": sessions_revoked}), 200
 
 
 @auth_bp.route("/device-token", methods=["POST"])
@@ -1035,7 +1264,7 @@ def get_login_streak():
             last_updated: {type: string, format: date-time}
     """
     from app.services.streak_service import get_streak
-    return jsonify(get_streak(g.user_id)), 200
+    return jsonify(get_streak(g.user_id, getattr(g, "campus_id", None))), 200
 
 
 @auth_bp.route("/logout-all-devices", methods=["POST"])
@@ -1096,20 +1325,22 @@ def search_users():
     if not campus_id and getattr(g, "user_role", None) != "super_admin":
         return jsonify({"results": []}), 200      # fail closed: never search without a campus boundary
 
-    # strip every character that is special inside a PostgREST or=() filter (incl. , . : ) and cap length
-    q_clean = re.sub(r"[%*(),.:\\\"']", "", q_raw).strip()[:50]
+    # Commas, brackets, quotes and wildcard characters can change the filter.
+    # Dots/colons are ordinary characters in its value (and in email addresses).
+    q_clean = re.sub(r"[%*(),\\\"']", "", q_raw).strip()[:100]
     if not q_clean:
         return jsonify({"results": []}), 200
 
     q_pattern = f"*{q_clean}*"
     or_conds = [f"full_name.ilike.{q_pattern}", f"nickname.ilike.{q_pattern}"]
-    if "@" in q_raw:
+    if getattr(g, "user_role", None) in {"admin", "super_admin"} or "@" in q_raw:
         or_conds.append(f"email.ilike.{q_pattern}")
     or_filter = ",".join(or_conds)
 
     def _shape(r):
         return {"id": r.get("id"), "full_name": r.get("full_name") or r.get("nickname") or "Student",
-                "nickname": r.get("nickname"), "email": r.get("email")}
+                "nickname": r.get("nickname"),
+                **({"email": r.get("email")} if getattr(g, "user_role", None) in {"admin", "super_admin"} else {})}
 
     results = []
     try:
@@ -1129,7 +1360,7 @@ def search_users():
             q_lower = q_clean.lower()
             for r in (base_q.limit(100).execute() or []):
                 hay = ((r.get("full_name") or "") + " " + (r.get("nickname") or "")).lower()
-                if q_lower in hay or ("@" in q_raw and q_lower in (r.get("email") or "").lower()):
+                if q_lower in hay or ((getattr(g, "user_role", None) in {"admin", "super_admin"} or "@" in q_raw) and q_lower in (r.get("email") or "").lower()):
                     results.append(_shape(r))
                     if len(results) >= 20:
                         break

@@ -1,0 +1,151 @@
+# Workstream B evidence and integration handoff
+
+Audit date: 14 October 2026 (Africa/Lagos). Project: Test Two, `zaxdkrmzyibkvlsrgmvq`. Started at `8e44508`; fetched main again at `723825e`. This is a draft integration checkpoint, **not complete Workstream B or A–Z sign-off**. The remaining rows below require continued work.
+
+## Evidence matrix
+
+| Domain / controls | Status | Evidence and limits |
+|---|---|---|
+| Native events: create, tier pricing/description/capacity, free registration | Verified for exercised loop | Real admin browser save → API → database → student registration → ticket reload. Zero HP and tier capacity/description retained. Tier editor canonical field mapping fixed. |
+| Event admission rollback, capacity, retry | Verified | Invalid promo previously incremented sold_count without a ticket; now rolls back. Six concurrent guest admissions against capacity one yield one ticket and five capacity errors; replay returns the original ticket. Both live functions reject omitted tiers when tiers exist, with ticket count unchanged. |
+| Event QR, scanner, duplicate admission | Verified for zero-HP tickets | Canonical door payload accepted; unpaid/cancelled/expired/wrong-event/foreign-campus boundaries covered by tests. Live admission succeeds once, duplicate rejected, owner check-in receipt survives reload. Nonzero HP and reward failure recovery remain open. |
+| Door token privacy | Verified | Public event metadata no longer exposes the door token. Anonymous/student/admin direct reads of protected table denied; authorized campus staff generate through backend. Legacy staff writes are stripped and moved by triggers. Deploy backend reader with migration. |
+| Event reports, deletion | Partially verified | Registrants handler authentication corrected; CSV field mismatch and formula injection corrected server-side. Deletion with tickets returns conflict. Attendance counts read authoritative tickets/check-ins for visible parents. Large-result pagination, browser exports, cancellations/refunds and provider-paid admission still open. |
+| Catering customer → admin → kitchen → customer | Verified | Real browser request, admin quote/assignment, assigned kitchen start/complete, customer receipt and reload. Quote zero/null handling, native status names and assignment permissions fixed. API retry reuses exact request UUID; no second row. |
+| Catering negative/role cases | Verified API/tests | Invalid email/phone/date/budget/guest count rejected. Foreign admin denied; kitchen restricted to own assigned requests and allowed transitions. Customer responses omit notes/assignment; email no longer includes internal notes. Last response-redaction/email change regression-verified; provider receipt unverified. |
+| Catering notifications | Partial / shared dependency | First owned admin in-app receipt persisted. Subsequent independent requests can be suppressed by shared type throttling. External emails intentionally suppressed in audit server; transport fix/receipt testing belongs to A. |
+| Marketplace listing and subscription codes | Partial | Real scoped admin subscription listing saved, duplicate uploaded codes deduplicated. API input and code-upload campus restrictions fixed. Initial customer purchase denied by global release gate. Subsequent isolated-campus overrides verified four retries produce one purchase/code, competing buyers produce one winner for the last code, and two purchases create two bonus transactions. Sold-out retry fixed and live-verified; cross-listing intent reuse returns 409. Paid purchases, expiry/refunds/fulfilment and full customer browser loop remain open. Global gates unchanged. |
+| Marketplace trades | Unused/degraded candidate | No complete peer-trade consumer established. Do not infer safe schema removal from this absence. |
+| Identity/profile/preferences | Verified for exercised loops | Eight fresh Auth actors: student/student2/kitchen/rider/admin/foreign-admin/foreign-student/super-admin. User-editable Auth metadata cannot grant role/campus. Deactivation blocks API; reactivation requires renewed login. Real profile UI saves nickname/phone/department/custom level and preserves after reload. Preference UI partial update retains unrelated opt-outs across reload. |
+| Signup, verification, reset, onboarding gifts/badges | Still open / provider blocked | Synthetic accounts were created through Auth admin API; this does not prove customer signup, OTP, verification or reset delivery. Avatar upload/delete, graduation and complete onboarding loops not signed off. |
+| Staff/user administration | Partial | Cross-campus mutation and campus-admin promotion denied; synthetic student role changed to rider and restored; deactivate/reactivate exercised. Every admin form/button and concurrent role changes still require browser coverage. |
+| Campus/department/levels/hostel/gates | Partial | Department and custom level persisted; signed foreign-campus query remains own-campus; custom level consumed by profile UI. Hostel requires active same-campus gate; invalid fee rejected; valid fixture consumed by student list. Campus/calendar full UI/job loops remain open. |
+| Stock store adjustments | Verified API/concurrency | Unit conversion purchase 5→10, usage 2→8; zero/negative/foreign-campus failures do not write ledger. Six matching request UUID retries add four units once with one ledger entry; conflicting payload returns conflict. Create validation fixed. Full browser edit/archive and larger ledger reporting remain open. |
+| Dashboards/analytics/remaining admin reads | Partial | 36 real calls across 28 reporting/admin APIs; selected student access denials and invalid date errors verified. Empty owned campus order counts match database. Error/retry interfaces fixed. This does not establish every filter, button, export, arithmetic or pagination loop. |
+| System settings | Partial / unused fixture | Owned campus object setting persisted; string is_public rejected, global/cross-campus admin mutations denied. Synthetic arbitrary key has no consumer and is unused audit data. Existing setting keys inventoried without publishing values; all consumer semantics not verified. |
+| Blast preview/schedule/cancel/retry | Verified API | Owned campus student preview count two; create/replay produces one row; foreign cancel denied; cancel/replay persisted cancelled. Segment campus override blocked in backend and restrictive database policy. Browser worker/provider delivery remains unverified. |
+| Notification preferences failure/retry | Verified live persistence; synthetic failure UI | Real PATCH/reload preserves unrelated opt-outs. Intercepted browser read failure shows retry and failed PATCH rolls back toggle. Shared transport currently reads different preference fields; actual enforcement needs A. |
+| Historical RLS/grants/definer inventory | Partial | Public table/view and definer signatures, grants, search paths, SQL dependency counts and source references inventoried. Event tier comparison switched to invoker and unpublished tier leak closed. No historical object proved unused or removed. Remaining advisories listed below. |
+
+## Live migrations
+
+Each named migration applied once on Test Two; do not apply again simply because the branch is merged. Four timestamped files were created using the CLI. The two event changes use canonical SQL documents; the later CLI bootstrap failed in this environment, so no invented timestamped filename was added.
+
+1. `make_event_admission_failures_rollback_and_tier_reads_scoped` — [SQL](WORKSTREAM_B_EVENT_ADMISSION_FIX.sql).
+2. `make_stock_adjustments_retry_safe` — backend migration `20261014072355`.
+3. `validate_checkin_admission_and_allow_owned_receipt_reads` — backend migration `20261014072356`.
+4. `enforce_blast_segment_campus_scope` — backend migration `20261014073756`.
+5. `keep_event_door_tokens_private` — backend migration `20261014075026`.
+6. `require_event_tiers_when_tiers_exist` — [SQL](WORKSTREAM_B_EVENT_TIER_REQUIREMENT.sql); preserves current function definitions and adds a guard under existing locks.
+
+No shared wallet, HP ledger, task or role helper was replaced. Stock RPC changes from eight arguments to nine with a default request UUID: existing named-argument calls remain valid. Dependency inventory found no SQL consumers of the old stock signature. New protected door-token table was justified by the public token leak; it has RLS, service-only grants and two compatibility triggers. Existing storage remains Cloudinary only.
+
+## Workstream A integration dependencies
+
+- Deploy event backend with the private-door migration: old backend metadata reads cannot validate new private tokens.
+- Positive-HP event scans still need atomic/recoverable check-in reward handling using A's HP semantics. Successful zero-HP scans do not prove reward recovery.
+- Shared notification transport must enforce notification_preferences, prevent throttling separate catering/marketplace operational requests, and verify actual provider receipts.
+- Shared blast worker needs durable failed/sending recovery and delivery counts; action_url/reference/deep-link consumption still needs coordination. Interface copy now says processed rather than delivered.
+- Shared public-campus helper still permits override in some A challenge consumers; B department/level endpoints bind signed users locally.
+- Resolve shared message registry/router and Kitchen tab changes during integration; kitchen.py edits concern inventory only, delivery.py edits concern hostel/gate setup only. CateringCard now uses the canonical request modal.
+- Marketplace purchase/provider/payment recovery and event refunds must reuse shared transaction infrastructure. Global release flags were not flipped for this audit.
+
+## Historical security notices and removal limits
+
+Latest security advisor: newsletter_deliveries has RLS with no policies; pg_net remains in public; 13 anonymous and 24 authenticated executable SECURITY DEFINER notices; leaked-password protection remains disabled. Some are intentional policy helpers or trigger functions. Their existence alone does not justify revoking shared role helpers. See [inventory](WORKSTREAM_B_SCHEMA_INVENTORY.json); unproven-unused-candidate means review needed, not unused.
+
+Final dependency check: pg_net reports `extrelocatable=false` and 28 catalogue dependents, so a simple ALTER EXTENSION SET SCHEMA is unsuitable; coordinated extension replacement requires more investigation. All current public views report security_invoker=true. Final catalogue checks confirm service-only execute on admission/stock/door functions, invoker tier comparison, exactly one of each added policy and both door triggers. Door table grants are limited to postgres/service_role; public event metadata has zero door-token keys.
+
+Remediation references: [RLS policies](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy), [extension schema](https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public), [anonymous definer grants](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [authenticated definer grants](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
+
+## Validation and fixture handling
+
+Initial B regression: 186 backend tests pass; frontend typecheck and complete build pass, including message/route checks and eight QR parser assertions. Final integrated counts and cleanup results are recorded below after execution. Browser runs used the real local frontend/backend against Test Two with isolated synthetic recipients. Email/push provider sends were suppressed; in-app writes were restricted to owned actors. No real recipients, external payment funding, global release setting changes or Supabase Storage fallback were used. Credentials, tokens and raw fixture manifests remain excluded from Git.
+
+Final integrated backend: **209 passed**. Main merge preserved both sides of the messages.py conflict. Frontend typecheck and complete production build passed after integration. The last profile change preserves deactivated/unresolved reference values on unrelated edits; this edge case is fixed but awaits a live browser rerun.
+
+Cleanup completed and verified by exact key reads: two owned campuses; eight profiles/Auth users and their empty wallets/referral codes; one event/tier, two tickets/check-ins and protected door token; three catering requests; one department/level, gate/hostel, listing/access code, stock item and three ledger entries, cancelled blast/preferences/owned setting; six each owned audit logs, notifications and notification logs. The first pass stopped at system_settings' missing primary key; resumed using the recorded exact key+campus tuple. No broad production or other-chat deletion. Owned profiles were deactivated and logout requested before deletion, and missing fresh profiles deny residual JWT authorization. No temporary global settings needed restoration. [Selected evidence and cleanup counts](WORKSTREAM_B_TEST_EVIDENCE.json).
+
+
+## Continuation checkpoint — 14 October 2026
+
+Workstream A's concrete requests and acceptance criteria are in [A dependencies](WORKSTREAM_A_DEPENDENCIES_FROM_B.md). No additional database migration was applied in this continuation.
+
+- **Verified:** isolated academic calendar creation → student current-period consumption despite foreign query → analytics row with zero owned orders; object description rejected; foreign update denied. Real calendar browser edit/save/reload passes. Intercepted 503 produces Retry, which then uses the real backend successfully.
+- **Verified:** free subscription allocation under four matching retries creates one purchase and assigns one code; two competing buyers for the last code produce one winner, with two total purchases and two bonus HP rows across both purchases. Live sold-out retry now returns the saved receipt with no new purchase; same key against another listing returns 409. This is not paid-provider/refund or bonus-outage recovery evidence.
+- **Fixed, unit-verified, awaiting full browser coverage:** 13 analytics panels now render read failure/Retry instead of zero/empty results. Explicit calendar global selection overrides super-admin's campus header; campus admins remain bound to own campus. This global edge has a role regression test, not a live global production write.
+- **Verified parser:** browser catering CSV export escapes formulas (including leading whitespace/BOM), quotes and zero values. Ten focused assertions are part of the production build; a downloaded real browser CSV remains unverified.
+- **Cleanup verified:** a second distinct fixture prefix/campus pair and eight Auth accounts removed; exact owned calendar, two campus-only release flags, listing, two codes/purchases/bonus transactions/monthly trackers, owned notification/log/audit rows, wallets/profiles/referral codes removed. Global gates/settings unchanged.
+
+Final continuation verification: **212 backend tests pass**, including 17 platform regressions; frontend typecheck and complete production build pass, including CSV formula assertions and route/message checks. Existing open rows remain open; B is not complete.
+
+
+Review administration continuation (14 October): fetched main; it remains `723825e`, so no A dependency was newly resolved. Added 25-row pagination with backend total, filter resets, stale-response protection and error/retry. Search explicitly applies to this page. Intercepted Playwright responses verify outage/retry, pages 1–3, final-page disable and rating-filter reset. This is client-only evidence, not new live review creation/moderation/database sign-off. No accounts, live fixtures, settings or migrations changed. Final typecheck and complete production build pass, including message/route/CSV/QR checks.
+
+## Completion pass in progress — 14 October 2026
+
+PR #66 merged as `0635b21`. The continuation branch is `audit/platform-ecosystem-b-completion-20261014`; it normally merged main through `5015267`. This checkpoint is not whole-domain completion.
+
+| Area | Evidence / change | Current status / remaining work |
+|---|---|---|
+| Positive event HP | Real committed scan with injected award outage; retry creates one active grant; subsequent scan denied with unchanged balance. Uses existing idempotent award primitive. | Verified targeted recovery; event expiry/config-change and broader concurrent cases remain open. |
+| Event card setup | Stable per-ticket provider reference and pending-registration resume; focused unit regressions. | Fixed, live provider journey unverified; cancellations/refunds under review. |
+| Catering | Previous real customer → admin quote/assignment → kitchen start/complete → customer reload. Two independent operational requests and replay receipts verified; A canonical transport now retained. | Downloaded registrant CSV, host provider receipt and remaining reporting/error/race controls still open. |
+| Identity | Recovery fragment parser, correct own-session logout endpoint, truthful revoke result, login profile-read fail closed, campus-dependent reference loads and stable graduation reference. Four backend regressions and six parser cases. | Browser verification in progress; actual Auth email/recovery, signup partial-write and graduation claim-before-award gaps remain open. |
+| Profile photos | Actual signed Cloudinary upload, decoded image, save/reload, removal/save/reload. Header accepts profile photo field. Exact provider asset deleted. | Targeted path verified; no Storage fallback. |
+| User roles | Real super-admin promotion and demotion with required campus selection; reload reflects original student role. | Verified targeted UI/API/persistence/reload; full role matrix still required. |
+| Campus setup | Super-admin create/edit/retire → public discovery/hide → reload; student/campus-admin/guest writes denied; authenticated direct insert denied by existing RLS. Stale timestamp update409 preserves current values. | Targeted live paths verified; default-campus guard has no live production mutation. |
+| Inventory | New stock opens at zero; opening units require existing ledger adjustment. Mixed-unit summary counts stocked ingredients instead of summing unlike units. | Unit-verified; broader native UI/retry/ledger reconciliation remains open. |
+| Onboarding settings | Intercepted read503/retry; enabled toggle saves intended value; sequential field saves; reload. | Client verified only; no global settings changed. |
+| Blasts | Owned real API interruption after first recipient; failed retry completes; repeat adds no receipt; foreign retry denied; active lease409 and stale lease recovery; deep link persisted. Controlled campus-only Celery task processes due campaign and leaves future schedule unchanged. | Targeted verified before latest main integration; integrated live rerun pending. Actual scheduler cadence and external provider delivery remain unverified. |
+| Notification preferences | Main's canonical category/channel policy and atomic legacy reconciliation retained; B duplicate policy removed. | Integrated backend suite251 passes; real email/push provider receipts blocked by missing configured keys. |
+| Historical security / unused schema | Dependency inventory and advisor follow-up delegated to read-only review. | Open; no object is declared unused or removed merely because source search found no caller. |
+
+No additional B migration has been applied in this completion pass. Third isolated fixture batch remains active for verification; cleanup has not yet completed. Work scripts and credentials are excluded from Git. No new continuation PR or merge-to-main is claimed at this checkpoint.
+
+## Release checkpoint — 15 October 2026 (Lagos)
+
+User requested release of completed work to conserve remaining weekly usage. PR #67 now contains the safe implemented subset; remaining audit work is explicitly excluded from completion claims. Current main through `3c71150` was fetched and merged normally, including A's checkout reward fixes and event investigation checkpoint. No force-push, new financial ledger or new B live migration.
+
+**Release checks:** 260 backend regressions pass; frontend typecheck, lint, six recovery parser cases, complete production/prerender build and built-site smoke pass. Four unused imports were removed to satisfy the actual CI lint gate. Native browser download of real owned registrant report CSV and intercepted report-read failure/Retry pass. Intercepted identity browser checks pass for recovery fragment → POST token, URL scrubbing, truthful session-revocation failure, expired link, campus reference reload, cleared stale selections and reference-read retry. This client evidence does not prove a real Auth recovery email or provider password journey. Integrated real blast retry was rerun successfully after canonical A transport integration.
+
+**Event HP boundary:** the released B route uses the existing active-award helper, preserving configured multiplier behavior and avoiding counter increments on an ordinary ledger replay. Its targeted committed-scan/missing-ledger recovery is verified. It does **not** implement the fully atomic admission/snapshot/ledger/counter contract described by A in `EVENT_HP_RECOVERY_CHECKPOINT.md`. Counter failure after ledger commit, immutable zero/positive snapshots, historical receipt linking, changed configuration, expired-event recovery and milestone recovery remain open. A's investigation is preserved; future work should extend this route instead of recreating the old failure path.
+
+**Release/runtime limits:** Vercel reported a successful preview deployment for the earlier PR head; production success must be checked against the merged head. Existing backend `/api/health` responds200 with Supabase connected but Redis reporting an invalid URL scheme. Worker scheduling and real external notifications are not verified. This runtime has no Render management credential, Vercel management credential or configured provider-delivery keys. Direct frontend production smoke is denied by the environment's host policy. Main merge, Vercel production deployment and backend code activation are separate facts; final release notes must distinguish them.
+
+**Still open / resume order:**
+
+1. Events: native cancellation and funded refund policy/atomic boundary; live card initialization/provider return/webhook/reload; guest/account ownership; immutable check-in receipt and expiry/configuration edge cases; complete reporting controls.
+2. Marketplace: serialize report/code replacement; prevent old-code revocation before successful refund; make inventory restoration once-only; paid/HP/mixed provider and bonus-failure recovery with existing transaction contracts. Only strict listing JSON/boolean/integer/date-window validation is added in this release; those financial races are not claimed fixed.
+3. Identity: signup Auth/profile partial-write recovery; graduation claim-before-award recovery and historical receipt ambiguity; real verification/recovery email and own-session revocation proof; full staff/campus/global administration matrix.
+4. Catering: actual host email receipt, remaining cancellation/retry/concurrent status transitions and full guest/restriction matrix. Existing customer/admin/kitchen completed journey and native CSV download are separate verified cases.
+5. Campus/reference/operations: full campus/default/reference/hostel/gate field and role matrix; inventory native opening/adjustment retry and reconciliation; all analytics/admin pages beyond targeted tests. An error/Retry component is not data correctness verification.
+6. Settings/blasts: remaining field-by-field settings controls, campaign cancellation races, actual cron cadence, provider dispatch/receipt recovery. Keep saved/processed receipt counts distinct from external delivery.
+7. Historical security/unused inventory: individual justification of remaining anon/authenticated SECURITY DEFINER execution, dependency-aware `pg_net` remediation, newsletter delivery policy decision and leaked-password protection. Do not remove schema objects based solely on static source absence.
+
+Exact-owned third-batch cleanup and final deployment outcome are appended below once confirmed. The earlier first/second cleanup evidence remains valid for those separate prefixes.
+
+Third-batch cleanup **verified**: eight Auth accounts/profiles and wallets, three owned campuses; exact owned event/ticket/check-in/door token, HP ledger/monthly tracker, two catering requests, six campaigns, nine notifications/logs, preference, referral codes and five audit rows removed. Profiles were deactivated and logout requested before Auth deletion; exact deletion reads verified absence. No global settings changed. Exact Cloudinary asset deletion returned `ok`. Fresh security advisor results remain one no-policy table, one public extension,13 anon/24 authenticated definer-function notices and leaked-password protection disabled; the existing linked remediation inventory remains open.
+
+## Functional continuation — 20 October 2026
+
+Current UI main `7b90cc9` is preserved. The uploaded `skills/` collection is intentionally not read or applied at the user's request. Frontend changes here address failed reads/Retry, refund wording and a blocked report dialog; no visual redesign.
+
+| Feature | Result / evidence | Limit |
+|---|---|---|
+| Report replacement | Live competing reports for the last code yield one replacement/one conflict; six same-report retries replay one outcome/audit. Original code retired, replacement assigned to one purchase, metadata answers preserved. Native customer report → admin replacement → customer new-code reload and exact persisted code/report/customer in-app receipt verified. | Actual email/push provider delivery unverified. |
+| Refund / stock / final status | Native wallet purchase debits100 from a synthetic1000 seed; six concurrent refunds return one100 credit and stock from4 to5 once. A second native admin refund has its committed response replaced with503; UI retry returns the saved receipt, customer sees refunded history and staff final actions disappear after reload. Stale completion returns409. | Real card/provider charge/refund not tested. Existing policy returns recorded card amounts to the wallet, not provider reversal. Historical partial/reversed sagas are blocked for ledger review rather than guessed/repaid. Purchase reward clawback and wider historical repair remain open. |
+| Atomic SQL boundary | New invoker/service-only domain RPC reuses unchanged existing wallet/HP functions; locks buyer/listing/purchase/report and commits code/status/refund/stock/audit together. Fifteen rolled-back checks include exact120 spent HP plus its remaining bucket, callback rollback, scope, replay, backward/final transitions, manual report rejection, and staged mutation grants. | Full proof file requires the three migration files; the final restriction migration is deployment-gated as described below. No new table/column/index/parallel ledger. |
+| Read errors / report dialog | Customer listing/purchase and staff marketplace reads expose Retry. Native report submission was blocked by a portal wrapping only dialog contents; the existing backdrop and dialog now share the portal, preserving styling. | Initial read failures are intercepted client tests; retries consume actual backend rows. Not a full page-by-page sign-off. |
+| Guest event ownership | Real guest contact email matches an existing owned profile: valid ticket+door admits once while ticket remains unlinked, profile unchanged and no event HP ledger. Duplicate and wrong-door calls denied. Bounded service lookup recovers admission visibility despite guest RLS. | Explicit authenticated guest-ticket claim flow, fully atomic check-in/snapshot/counter recovery, event cancellations/funded refunds remain open. Guest copy now promises future rewards instead of automatic linking. |
+| Signup / graduation | Required signup profile persistence must succeed before rewards/referral side effects. Graduation marker follows the existing idempotent award; historical earn receipts across statuses prevent another lifetime grant. Invalid/nonpositive award configuration leaves unawarded claims available. Nine focused identity regressions. | Live Auth/profile partial-account repair and graduation concurrency still unverified; ambiguous historically claimed/no-ledger profiles are not automatically reissued. |
+
+Backend280 tests pass; typecheck, lint and complete production/prerender build pass against the updated UI. Migration1 and2 are live once each; migration3 is staged and rolled-back tested, **not yet applied at this checkpoint**:
+
+1. `serialize_marketplace_report_resolution_and_refund_stock`
+2. `return_marketplace_business_conflicts_as_http_conflicts` — live HTTP testing exposed the original serialization SQLSTATE as503; explicit PT409 now verifies409 without changing final state.
+3. `restrict_marketplace_financial_mutations_to_atomic_backend` — apply only after the new backend routes deploy. Same-value authenticated campus-admin direct purchase PATCH currently returned200; the staged migration removes that bypass, keeps staff reads/customer report insertion, validates report campus/completed ownership and preserves manual-purchase report rejection. Do not apply this policy restriction over the older non-atomic routes.
+
+Fourth owned fixture batch remains active for deployment/grant checks. No global gates/settings changed; marketplace release overrides are campus-only. Security advisor counts remain1 no-policy table,1 public extension,13 anon/24 authenticated definer notices and1 leaked-password notice. This is targeted remediation, not full historic security closure.
+
+Customer listing failure → Retry → actual owned listing is also browser-verified. Latest-request guards prevent older listing/purchase/staff load results from overwriting a newer refresh. Test accounts were refreshed after their original sessions expired; the earlier listing test attempts are not counted as successful evidence.

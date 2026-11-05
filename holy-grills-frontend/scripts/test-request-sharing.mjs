@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
+const temp=await mkdtemp(join(tmpdir(),'hg-reads-'));
+try {
+ const file=join(temp,'client.mjs');
+ await build({entryPoints:['src/lib/apiClient.ts'],bundle:true,format:'esm',platform:'node',outfile:file,define:{'import.meta.env.VITE_API_BASE_URL':'"https://test.invalid/api"'}});
+ const store=()=>{const m=new Map();return{getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,v),removeItem:k=>m.delete(k)}};
+ globalThis.window={localStorage:store(),sessionStorage:store()};
+ const {apiClient,setTokens}=await import(pathToFileURL(file));
+ let calls=[];
+ globalThis.fetch=(url,options)=>new Promise(resolve=>calls.push({url,options,resolve}));
+ const finish=(call,status=200)=>call.resolve(new Response(JSON.stringify(status===200?{ok:true}:{error:'Temporary failure'}),{status,headers:{'content-type':'application/json'}}));
+ const a=apiClient.get('/menu'),b=apiClient.get('/menu');
+ assert.equal(calls.length,1);finish(calls[0]);await Promise.all([a,b]);
+ const fresh=apiClient.get('/menu');assert.equal(calls.length,2);finish(calls[1]);await fresh;
+ const failed=apiClient.get('/kitchen');finish(calls.at(-1),503);await assert.rejects(failed);
+ const retry=apiClient.get('/kitchen');assert.equal(calls.length,4);finish(calls.at(-1));await retry;
+ const scoped1=apiClient.get('/orders',undefined,{'X-Campus-ID':'campus-a'});
+ const scoped2=apiClient.get('/orders',undefined,{'X-Campus-ID':'campus-b'});
+ assert.equal(calls.length,6);finish(calls[4]);finish(calls[5]);await Promise.all([scoped1,scoped2]);
+ setTokens('account-a','refresh-a');const ownA=apiClient.get('/orders');
+ setTokens('account-b','refresh-b');const ownB=apiClient.get('/orders');
+ assert.equal(calls.length,8);finish(calls[6]);finish(calls[7]);await Promise.all([ownA,ownB]);
+ const p1=apiClient.post('/orders',{items:[]}),p2=apiClient.post('/orders',{items:[]});
+ assert.equal(calls.length,10);finish(calls[8]);finish(calls[9]);await Promise.all([p1,p2]);
+ console.log('PASS shared simultaneous reads; fresh reads/retries/account/campus isolation; mutations stay independent');
+}finally{await rm(temp,{recursive:true,force:true})}

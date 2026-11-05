@@ -2,8 +2,6 @@ import uuid
 
 import requests
 from flask import Flask, request
-from flask_cors import CORS
-from flasgger import Swagger
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -11,41 +9,6 @@ from app.config import Config
 from app.db import SupabaseError
 from app.messages import MSG
 from app.utils.logger import get_logger
-from app.routes.health import health_bp
-from app.routes.auth import auth_bp, users_bp
-from app.routes.menu import menu_bp
-from app.routes.orders import orders_bp
-from app.routes.hp import hp_bp
-from app.routes.wallet import wallet_bp
-from app.routes.rewards import rewards_bp
-from app.routes.marketplace import marketplace_bp
-from app.routes.events import events_bp
-from app.routes.referrals import referrals_bp
-from app.routes.notifications import notifications_bp, push_bp
-from app.routes.admin import admin_bp
-from app.routes.kitchen import kitchen_bp, units_bp, stock_bp
-from app.routes.riders import riders_bp
-from app.routes.leaderboard import leaderboard_bp
-from app.routes.challenges import challenges_bp
-from app.routes.webhooks import webhooks_bp
-from app.routes.storefront import storefront_bp
-from app.routes.analytics import analytics_bp
-from app.routes.cart import cart_bp
-from app.routes.saved_for_later import saved_bp
-from app.routes.order_locks import order_locks_bp
-from app.routes.admin_gifts import admin_gifts_bp
-from app.routes.delivery import delivery_bp
-from app.routes.graduation import graduation_bp
-from app.routes.campuses import campuses_bp
-from app.routes.departments import departments_bp, admin_departments_bp
-from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
-from app.routes.academic_calendar import academic_calendar_bp, admin_academic_calendar_bp
-from app.routes.free_sides import free_sides_bp
-from app.routes.exclusive_spin import exclusive_spin_bp
-from app.routes.admin_feature_flags import admin_flags_bp
-from app.routes.uploads import uploads_bp
-from app.routes.squads import squads_bp
-from app.routes.admin_economics import admin_economics_bp
 
 # SQLSTATE codes raised by Postgres/PostgREST that mean "the caller sent something wrong", not "the server is broken":
 # 22P02 bad text representation (e.g. malformed UUID), 22007/22008 bad date/time, 22003 number out of range,
@@ -56,7 +19,7 @@ _CLIENT_ERROR_CODES = {"22P02", "22007", "22008", "22003", "22001", "23502", "23
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 
 
-def create_app(config_class=Config):
+def create_app(config_class=Config, *, background=False):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
@@ -90,17 +53,86 @@ def create_app(config_class=Config):
                     "Set a real secret via the SECRET_KEY / JWT_SECRET environment variables before starting in production."
                 )
 
+    # Scheduled tasks need application config and an isolated Flask context,
+    # while the HTTP API alone needs blueprints, Swagger and CORS middleware.
+    if background:
+        return app
+
+    from flask_cors import CORS
+    from flasgger import Swagger
+    from app.routes.health import health_bp
+    from app.routes.messages import messages_bp
+    from app.routes.auth import auth_bp, users_bp
+    from app.routes.menu import menu_bp
+    from app.routes.orders import orders_bp
+    from app.routes.hp import hp_bp
+    from app.routes.wallet import wallet_bp
+    from app.routes.rewards import rewards_bp
+    from app.routes.marketplace import marketplace_bp
+    from app.routes.events import events_bp
+    from app.routes.referrals import referrals_bp
+    from app.routes.notifications import notifications_bp, push_bp
+    from app.routes.admin import admin_bp
+    from app.routes.kitchen import kitchen_bp, units_bp, stock_bp
+    from app.routes.riders import riders_bp
+    from app.routes.leaderboard import leaderboard_bp
+    from app.routes.challenges import challenges_bp
+    from app.routes.webhooks import webhooks_bp
+    from app.routes.storefront import storefront_bp
+    from app.routes.analytics import analytics_bp
+    from app.routes.cart import cart_bp
+    from app.routes.saved_for_later import saved_bp
+    from app.routes.order_locks import order_locks_bp
+    from app.routes.admin_gifts import admin_gifts_bp
+    from app.routes.delivery import delivery_bp
+    from app.routes.graduation import graduation_bp
+    from app.routes.campuses import campuses_bp
+    from app.routes.departments import departments_bp, admin_departments_bp
+    from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
+    from app.routes.academic_calendar import academic_calendar_bp, admin_academic_calendar_bp
+    from app.routes.free_sides import free_sides_bp
+    from app.routes.exclusive_spin import exclusive_spin_bp
+    from app.routes.admin_feature_flags import admin_flags_bp
+    from app.routes.uploads import uploads_bp
+    from app.routes.squads import squads_bp
+    from app.routes.admin_economics import admin_economics_bp
+    from app.routes.ambassadors import ambassadors_bp
+
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+    # Pinned to the real frontend origins (Config.CORS_ORIGINS, env-overridable)
+    # instead of "*". Requests are Bearer-token based, not cookie based, so this
+    # was hygiene rather than a hole — but a wildcard let any site script calls
+    # against the API from a visitor's browser.
     CORS(
         app,
-        origins="*",
+        origins=[*Config.CORS_ORIGINS, *Config.CORS_ORIGIN_PATTERNS],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "Accept", "Origin", "X-Requested-With"],
         expose_headers=["Authorization", "Deprecation", "Sunset", "Link"],
         supports_credentials=False,
         max_age=86400,
     )
+
+    @app.after_request
+    def security_headers(response):
+        """Baseline hardening for every API response.
+
+        The frontend gets these from vercel.json, but the API answered with none of them:
+        a sniffed JSON body could be rendered as HTML, the API could be framed, and
+        referrers leaked path detail between origins. HSTS is only sent over TLS —
+        browsers ignore it on plain http, and sending it from a local run would pin
+        localhost.
+        """
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy",
+                                    "geolocation=(self), camera=(), microphone=()")
+        if request.is_secure:
+            response.headers.setdefault("Strict-Transport-Security",
+                                        "max-age=31536000; includeSubDomains")
+        return response
 
     @app.before_request
     def handle_options_preflight():
@@ -109,44 +141,57 @@ def create_app(config_class=Config):
             response.status_code = 204
             return response
 
-    swagger_config = {
-        "headers": [],
-        "specs": [
-            {
-                "endpoint": "apispec",
-                "route": "/api/docs/apispec.json",
-                "rule_filter": lambda rule: True,
-                "model_filter": lambda tag: True,
-            }
-        ],
-        "static_url_path": "/api/docs/static",
-        "swagger_ui": True,
-        "specs_route": "/api/docs/",
-    }
+    # ── API documentation is staff-only ───────────────────────────────────────
+    # /api/docs/ publishes every route, parameter, example and admin path in one
+    # page. Nobody needs that at runtime, and serving it hands a stranger a map of
+    # the whole surface, so it is off in production unless explicitly switched on.
+    # Local development and the test suite keep it: DEBUG/TESTING alone opens it.
     import os as _os
-    _app_name = _os.environ.get("APP_NAME", "Holy Grills")
-    swagger_template = {
-        "swagger": "2.0",
-        "info": {
-            "title": f"{_app_name} API",
-            "description": f"Backend API for the {_app_name} platform — HP economy, food ordering, marketplace, events, wallet, and admin operations.",
-            "version": "1.0.0",
-            "contact": {"email": _os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")},
-        },
-        "securityDefinitions": {
-            "BearerAuth": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "Authorization",
-                "description": "JWT Bearer token. Format: 'Bearer <token>'",
-            }
-        },
-        "security": [{"BearerAuth": []}],
-        "basePath": "/api",
-        "consumes": ["application/json"],
-        "produces": ["application/json"],
-    }
-    Swagger(app, config=swagger_config, template=swagger_template)
+    _docs_flag = (_os.environ.get("API_DOCS_ENABLED") or "").strip().lower()
+    _docs_open = bool(
+        app.config.get("DEBUG") or app.config.get("TESTING")
+        or _docs_flag in ("1", "true", "yes", "on")
+    )
+    if _docs_open:
+        _app_name = _os.environ.get("APP_NAME", "Holy Grills")
+        swagger_config = {
+            "headers": [],
+            "specs": [
+                {
+                    "endpoint": "apispec",
+                    "route": "/api/docs/apispec.json",
+                    "rule_filter": lambda rule: True,
+                    "model_filter": lambda tag: True,
+                }
+            ],
+            "static_url_path": "/api/docs/static",
+            "swagger_ui": True,
+            "specs_route": "/api/docs/",
+        }
+        swagger_template = {
+            "swagger": "2.0",
+            "info": {
+                "title": f"{_app_name} API",
+                "description": f"Backend API for the {_app_name} platform — HP economy, food ordering, marketplace, events, wallet, and admin operations.",
+                "version": "1.0.0",
+                "contact": {"email": _os.environ.get("SWAGGER_CONTACT_EMAIL", "dev@example.com")},
+            },
+            "securityDefinitions": {
+                "BearerAuth": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "Authorization",
+                    "description": "JWT Bearer token. Format: 'Bearer <token>'",
+                }
+            },
+            "security": [{"BearerAuth": []}],
+            "basePath": "/api",
+            "consumes": ["application/json"],
+            "produces": ["application/json"],
+        }
+        Swagger(app, config=swagger_config, template=swagger_template)
+    else:
+        app.logger.info("API docs disabled (set API_DOCS_ENABLED=true to expose /api/docs/)")
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(users_bp, url_prefix="/api/users")
@@ -189,7 +234,9 @@ def create_app(config_class=Config):
     app.register_blueprint(uploads_bp, url_prefix="/api/upload")
     app.register_blueprint(squads_bp, url_prefix="/api/squads")
     app.register_blueprint(admin_economics_bp, url_prefix="/api/admin/economics")
+    app.register_blueprint(ambassadors_bp, url_prefix="/api/ambassadors")
     app.register_blueprint(health_bp, url_prefix="/api")
+    app.register_blueprint(messages_bp, url_prefix="/api/messages")
 
     _logger = get_logger("holy_grills.app")
 

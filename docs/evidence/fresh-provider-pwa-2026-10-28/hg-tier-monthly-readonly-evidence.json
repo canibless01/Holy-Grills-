@@ -1,0 +1,121 @@
+{
+  "mode": "read-only configured database tier and monthly grant audit; no grants executed",
+  "tiers": [
+    {
+      "id": "70af441f-4867-4653-a1b4-370383f640d2",
+      "name": "Ember",
+      "min_points": 0,
+      "maintenance_points": 0,
+      "earn_multiplier": 1.0,
+      "benefits": {
+        "description": "Every Holy Grills journey starts here."
+      },
+      "sort_order": 1,
+      "created_at": "2026-08-14T21:41:47.399751+00:00",
+      "slug": "ember",
+      "badge_color_hex": "#561D00",
+      "is_active": true,
+      "campus_id": null
+    },
+    {
+      "id": "24af39f1-1113-4af9-bd3d-bc1e24e5a960",
+      "name": "Flame",
+      "min_points": 2500,
+      "maintenance_points": 300,
+      "earn_multiplier": 1.08,
+      "benefits": {
+        "perk": "8% bonus HP earn rate",
+        "description": "Consistent orders, consistent flame."
+      },
+      "sort_order": 2,
+      "created_at": "2026-08-14T21:41:47.399751+00:00",
+      "slug": "flame",
+      "badge_color_hex": "#E01616",
+      "is_active": true,
+      "campus_id": null
+    },
+    {
+      "id": "026eec0d-af18-4da5-b95b-79556f8f8a83",
+      "name": "Blaze",
+      "min_points": 7500,
+      "maintenance_points": 1000,
+      "earn_multiplier": 1.15,
+      "benefits": {
+        "perk": "15% bonus HP earn rate",
+        "description": "You are part of the regulars now."
+      },
+      "sort_order": 3,
+      "created_at": "2026-08-14T21:41:47.399751+00:00",
+      "slug": "blaze",
+      "badge_color_hex": "#FFC251",
+      "is_active": true,
+      "campus_id": null
+    },
+    {
+      "id": "91fea9a9-0568-4fea-a071-ee08f6cc5240",
+      "name": "Holy",
+      "min_points": 20000,
+      "maintenance_points": 2500,
+      "earn_multiplier": 1.25,
+      "benefits": {
+        "perk": "25% bonus HP earn rate",
+        "description": "Top of the flame. Maximum warmth, maximum rewards."
+      },
+      "sort_order": 4,
+      "created_at": "2026-08-14T21:41:47.399751+00:00",
+      "slug": "holy",
+      "badge_color_hex": "#FFF3DA",
+      "is_active": true,
+      "campus_id": null
+    }
+  ],
+  "perk_overrides": [],
+  "default_perks": {
+    "ember": {
+      "earn_multiplier": 1.0,
+      "monthly_free_delivery": false,
+      "birthday_hp": 100,
+      "free_side_credits_monthly": 0,
+      "exclusive_spins_monthly": 0,
+      "monthly_bonus_hp": 0
+    },
+    "flame": {
+      "earn_multiplier": 1.08,
+      "monthly_free_delivery": false,
+      "birthday_hp": 150,
+      "free_side_credits_monthly": 0,
+      "exclusive_spins_monthly": 0,
+      "monthly_bonus_hp": 50
+    },
+    "blaze": {
+      "earn_multiplier": 1.15,
+      "monthly_free_delivery": false,
+      "birthday_hp": 200,
+      "free_side_credits_monthly": 1,
+      "exclusive_spins_monthly": 0,
+      "monthly_bonus_hp": 0
+    },
+    "holy": {
+      "earn_multiplier": 1.25,
+      "monthly_free_delivery": true,
+      "birthday_hp": 250,
+      "free_side_credits_monthly": 1,
+      "exclusive_spins_monthly": 0,
+      "monthly_bonus_hp": 0
+    }
+  },
+  "free_side_credits": {
+    "sample_limit": 1000,
+    "count": 0,
+    "months": []
+  },
+  "hp_transactions": {
+    "sample_limit": 1000,
+    "count": 0,
+    "months": []
+  },
+  "monthly_job_audit": {
+    "limit": 20,
+    "events": []
+  }
+}

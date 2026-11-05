@@ -1,0 +1,29 @@
+{
+  "order_id": "f67704aa-e141-4706-89b7-96bd6ffd4996",
+  "new_order_created": false,
+  "private_token_redacted": true,
+  "api": [
+    {
+      "identifier": "f67704aa-e141-4706-89b7-96bd6ffd4996",
+      "status": 200,
+      "correct_order": true,
+      "error": null
+    },
+    {
+      "identifier": "F67704AA",
+      "status": 200,
+      "correct_order": true,
+      "error": null
+    },
+    {
+      "identifier": "HG-DEC8E33F72",
+      "status": 200,
+      "correct_order": true,
+      "error": null
+    }
+  ],
+  "browser": {
+    "resolved_full_order_route": true,
+    "rendered_order": true
+  }
+}

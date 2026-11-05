@@ -1,0 +1,24 @@
+{
+  "reference": "hg-provider-audit-20261028-f5da1d4d21c5",
+  "status": "success",
+  "amount": 10153,
+  "currency": "NGN",
+  "fees": 153,
+  "channel": "card",
+  "paid_at": "2026-10-28T15:49:40.000Z",
+  "domain": "test",
+  "requested_amount": 10000,
+  "initialized_amount_naira": 100,
+  "hosted_ui_total_naira": 101.53,
+  "hosted_test_success_completed": true,
+  "callback_return_origin": "https://www.holygrills.online",
+  "application_order_created": false,
+  "application_payment_or_wallet_reconciliation": "NOT EXECUTED",
+  "provider_webhook_delivery": "NOT VERIFIED",
+  "application_amount_validation": {
+    "paid": 10153,
+    "fees": 153,
+    "net": 10000
+  },
+  "verified_net_kobo": 10000
+}

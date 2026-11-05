@@ -1,0 +1,1 @@
+PASS saved address creates zero map loads until explicit edit; local viewport/Places bounds; controlled Google SDK: map tap, draggable pin, GPS, Places search/selection, gate; pin changes create no extra map loads

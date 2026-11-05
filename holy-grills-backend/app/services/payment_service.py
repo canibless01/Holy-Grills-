@@ -46,6 +46,7 @@ def initialize_payment(email: str, amount_naira: float, reference: str, metadata
 
     payload = {
         "email": email,
+        "currency": "NGN",
         "amount": round(amount_naira * 100),
         "reference": reference,
         "metadata": meta,

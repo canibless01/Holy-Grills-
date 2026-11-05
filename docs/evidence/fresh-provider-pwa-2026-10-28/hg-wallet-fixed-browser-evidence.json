@@ -1,0 +1,11 @@
+{
+  "mode": "real Paystack TEST hosted checkout; real local frontend/backend and Supabase; no response fixtures",
+  "case": "wallet",
+  "unpaid_return_has_pending_message": true,
+  "unpaid_return_has_no_success_toast": true,
+  "returned_origin": "http://127.0.0.1:5250",
+  "returned_path": "/wallet",
+  "confirmed_heading": true,
+  "guest_fragment_removed": true,
+  "confirmation_reload_passed": true
+}

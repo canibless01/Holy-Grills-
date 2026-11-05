@@ -1,0 +1,133 @@
+{
+  "checked_at_utc": "2026-10-29T16:56:32Z",
+  "redirects": [
+    {
+      "status": 308,
+      "from": "https://www.holygrills.online/",
+      "to": "https://holygrills.online/"
+    },
+    {
+      "status": 308,
+      "from": "http://holygrills.online/",
+      "to": "https://holygrills.online/"
+    },
+    {
+      "status": 308,
+      "from": "http://www.holygrills.online/",
+      "to": "https://www.holygrills.online/"
+    },
+    {
+      "status": 308,
+      "from": "https://www.holygrills.online/",
+      "to": "https://holygrills.online/"
+    },
+    {
+      "status": 308,
+      "from": "https://www.holygrills.online/menu?audit=origin",
+      "to": "https://holygrills.online/menu?audit=origin"
+    }
+  ],
+  "hosts": [
+    {
+      "requested": "https://holygrills.online/",
+      "final": "https://holygrills.online/",
+      "status": 200
+    },
+    {
+      "requested": "https://www.holygrills.online/",
+      "final": "https://holygrills.online/",
+      "status": 200
+    },
+    {
+      "requested": "http://holygrills.online/",
+      "final": "https://holygrills.online/",
+      "status": 200
+    },
+    {
+      "requested": "http://www.holygrills.online/",
+      "final": "https://holygrills.online/",
+      "status": 200
+    },
+    {
+      "requested": "https://www.holygrills.online/menu?audit=origin",
+      "final": "https://holygrills.online/menu?audit=origin",
+      "status": 200
+    }
+  ],
+  "onesignal": {
+    "read_status": 200,
+    "id": "471bd695-2342-4521-aa0f-8c93d7ce805f",
+    "name": "Holy Grills  App",
+    "chrome_web_origin": "https://holygrills.online",
+    "safari_site_origin": "https://holygrills.online",
+    "transport": "REST environment credential; plugin platform-config read returned 401"
+  },
+  "assets": [
+    {
+      "path": "/service-worker.js",
+      "status": 200,
+      "final_url": "https://holygrills.online/service-worker.js",
+      "headers": {
+        "Content-Type": "application/javascript; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "Service-Worker-Allowed": "/"
+      },
+      "onesignal_worker_import": true
+    },
+    {
+      "path": "/OneSignalSDKWorker.js",
+      "status": 404,
+      "note": "not the configured worker path"
+    },
+    {
+      "path": "/manifest.json",
+      "status": 200,
+      "final_url": "https://holygrills.online/manifest.json",
+      "headers": {
+        "Content-Type": "application/manifest+json; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "Service-Worker-Allowed": null
+      },
+      "onesignal_worker_import": false
+    }
+  ],
+  "cors": {
+    "status": 204,
+    "allow_origin": "https://holygrills.online",
+    "allow_headers": "x-campus-id"
+  },
+  "browser_alias": {
+    "final_url": "https://holygrills.online/menu?audit=origin#top"
+  },
+  "sdk_probe": {
+    "initialized": false,
+    "error": "probe timeout",
+    "globals": {
+      "sdk": "function",
+      "deferredArray": true,
+      "queueLength": 1,
+      "secure": true
+    },
+    "diagnostics": {
+      "console": [
+        {
+          "type": "error",
+          "text": "Loading the script 'https://api.onesignal.com/sync/471bd695-2342-4521-aa0f-8c93d7ce805f/web?callback=__jp0' violates the following Content Security Policy directive: \"script-src 'self' https://cdn.onesignal.com 'sha256-mxK/8VZ+kDICNz+7/rtUULv0pCwJoIyxBpSXBbb0PvI='\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked."
+        }
+      ],
+      "page_errors": [],
+      "failed_requests": [
+        {
+          "url": "https://api.onesignal.com/sync/471bd695-2342-4521-aa0f-8c93d7ce805f/web",
+          "failure": "csp"
+        }
+      ]
+    }
+  },
+  "served_storefront_reader": {
+    "matched_chunks": [
+      "https://holygrills.online/assets/index-BI-EVQGJ.js"
+    ],
+    "present": true
+  }
+}

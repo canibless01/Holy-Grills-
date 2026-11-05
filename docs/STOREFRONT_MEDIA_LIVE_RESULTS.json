@@ -1,0 +1,81 @@
+[
+  {
+    "case": "actual_cloudinary_upload",
+    "passed": false,
+    "signature_status": 503
+  },
+  {
+    "case": "fixture_media_url_only",
+    "note": "Trusted URL persistence only; no rendered asset/provider proof"
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "how_its_made",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "how_its_made",
+    "index": 1,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "whats_inside",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "whats_inside",
+    "index": 1,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "our_story",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "catering",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "promo",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "testimonial",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "share_template",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "tier_icon",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "section_create_replay_edit_public_readback",
+    "section": "popup",
+    "index": 0,
+    "passed": true
+  },
+  {
+    "case": "menu_artwork_only_two_slides_replay_edit_public_readback",
+    "passed": true
+  }
+]

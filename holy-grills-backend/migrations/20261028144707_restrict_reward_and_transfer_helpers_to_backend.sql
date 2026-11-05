@@ -1,0 +1,2 @@
+REVOKE ALL ON FUNCTION public.hg_transfer_hp_atomic(uuid,uuid,integer,text,uuid), public.hg_redeem_reward(uuid,uuid), public.hg_redeem_flash_reward_atomic(uuid,uuid), public.hg_reserve_order_refund(uuid,numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.hg_transfer_hp_atomic(uuid,uuid,integer,text,uuid), public.hg_redeem_reward(uuid,uuid), public.hg_redeem_flash_reward_atomic(uuid,uuid), public.hg_reserve_order_refund(uuid,numeric) TO service_role;

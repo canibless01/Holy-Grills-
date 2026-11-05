@@ -28,14 +28,78 @@ def _abort_on_auth_failure(exc, message):
     abort(503, MSG.SERVICE_UNAVAILABLE)
 
 
+def header_campus_id():
+    """
+    The campus chosen in the admin header switcher, sent as `X-Campus-ID` by the
+    frontend apiClient (super-admins pick a campus to inspect; "All Campuses"
+    sends no header). Guests send the same header from the campus gate — see
+    storefront._get_campus_id, which is the public equivalent of this.
+
+    Returns None for an absent, blank or non-UUID value: the header is client
+    input, so it is validated here rather than trusted at the 60-odd call
+    sites. A junk header must never become a PostgREST filter.
+    """
+    from app.utils.validators import validate_uuid
+
+    raw = (request.headers.get("X-Campus-ID") or "").strip()
+    if not raw:
+        return None
+    return raw.lower() if validate_uuid(raw) else None
+
+
+# Values the frontend sends in X-Campus-Scope (or a body `scope` field) when the
+# super-admin's campus switcher is on "All Campuses". An absent X-Campus-ID is
+# ambiguous on its own (old client, never-touched switcher), so global intent is
+# carried explicitly rather than inferred from the missing campus header.
+GLOBAL_SCOPE_MARKERS = frozenset({"global", "all", "all_campuses", "all-campuses"})
+
+
+def header_global_scope():
+    """True when an admin write explicitly targets the global ("All Campuses")
+    scope via X-Campus-Scope: global."""
+    raw = (request.headers.get("X-Campus-Scope") or "").strip().lower()
+    return raw in GLOBAL_SCOPE_MARKERS
+
+
 def resolve_scoped_campus_id(requested_campus_id=None):
     """
-    For super_admin: requested value (or None = all campuses).
-    For everyone else: always their assigned campus (g.campus_id) — requested value is ignored.
+    For super_admin: the requested `campus_id` query/body value, else the campus
+    selected in the admin header (X-Campus-ID), else None (= all campuses).
+    For everyone else: always their assigned campus (g.campus_id) — the requested
+    value AND the header are ignored.
     """
     if getattr(g, "user_role", None) == "super_admin":
-        return requested_campus_id
+        # ADM-CAMPUS. The admin header switcher used to be cosmetic: nothing on
+        # the server ever read X-Campus-ID, so a super-admin picking "Futa"
+        # kept seeing the unfiltered platform-wide data. The header is the
+        # switcher's whole contract with the backend, so honour it here — the
+        # single place every admin list route resolves its scope.
+        return requested_campus_id or header_campus_id()
     return getattr(g, "campus_id", None)
+
+
+def resolve_admin_write_campus(requested_campus_id=None, global_scope=False):
+    """
+    The campus a NEW admin-written row belongs to.
+
+      non-super_admin : always their own campus (g.campus_id) — every supplied
+                        value, header and scope marker are ignored.
+      super_admin     : 1. an explicit body/query `campus_id` wins;
+                        2. an explicit global scope (X-Campus-Scope: global header,
+                           or global_scope=True from a body `scope` field) -> None,
+                           i.e. a global row (campus_id NULL);
+                        3. the campus selected in the header switcher (X-Campus-ID);
+                        4. with no selector signal at all (legacy/API clients),
+                           the admin's profile campus.
+    """
+    if getattr(g, "user_role", None) != "super_admin":
+        return getattr(g, "campus_id", None)
+    wanted = str(requested_campus_id or "").strip()
+    if wanted:
+        return wanted
+    if global_scope or header_global_scope():
+        return None
+    return header_campus_id() or getattr(g, "campus_id", None)
 
 
 def assert_owns_campus(record_campus_id):
@@ -219,7 +283,7 @@ def require_role(*roles):
             g.campus_id = profile.get("campus_id")
             # Campus-scoped staff must have a campus — silently defaulting them would show an
             # empty dashboard (RLS already scopes them to nothing) instead of a clear error.
-            if not g.campus_id and g.user_role in ("admin", "kitchen", "rider"):
+            if not g.campus_id and g.user_role in ("admin", "kitchen", "rider", "community_manager"):
                 abort(403, MSG.ACCOUNT_NO_CAMPUS)
             if not g.campus_id:
                 g.campus_id = _resolve_default_campus(db, g.user_role)

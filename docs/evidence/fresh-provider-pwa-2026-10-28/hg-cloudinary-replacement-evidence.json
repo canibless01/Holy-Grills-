@@ -1,0 +1,8 @@
+{
+  "mode": "supported admin signer/banner APIs; real Cloudinary; owned audit asset only",
+  "replacement_upload_status": 200,
+  "cms_replacement_status": 200,
+  "anonymous_reload_reflects_replacement": true,
+  "owned_old_asset_destroy_status": 200,
+  "owned_old_asset_destroy_result": "ok"
+}

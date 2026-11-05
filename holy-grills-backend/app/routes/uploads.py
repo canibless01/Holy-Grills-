@@ -5,6 +5,7 @@ Admin-only direct-upload helpers.
 """
 
 import hashlib
+import re
 import time
 
 from flask import Blueprint, current_app, jsonify, request, g
@@ -12,8 +13,30 @@ from flask import Blueprint, current_app, jsonify, request, g
 from app.middleware.auth import require_auth
 from app.constants import ADMIN_ROLES
 from app.messages import MSG
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 uploads_bp = Blueprint("uploads", __name__)
+
+
+@uploads_bp.route("/status", methods=["GET"])
+@require_auth
+def upload_status():
+    """Whether direct uploads are available, and exactly what is missing when
+    they are not. Lets the admin UI explain a disabled uploader (and offer the
+    paste-a-URL fallback) instead of failing on every attempt."""
+    configured = {
+        "CLOUDINARY_CLOUD_NAME": bool(current_app.config.get("CLOUDINARY_CLOUD_NAME")),
+        "CLOUDINARY_API_KEY": bool(current_app.config.get("CLOUDINARY_API_KEY")),
+        "CLOUDINARY_API_SECRET": bool(current_app.config.get("CLOUDINARY_API_SECRET")),
+    }
+    missing = [name for name, ok in configured.items() if not ok]
+    return jsonify({
+        "configured": not missing,
+        "missing": missing,
+        "cloud_name": current_app.config.get("CLOUDINARY_CLOUD_NAME") or None,
+    }), 200
 
 
 @uploads_bp.route("/signature", methods=["POST"])
@@ -25,15 +48,40 @@ def upload_signature():
     cloud_name = current_app.config.get("CLOUDINARY_CLOUD_NAME")
     api_key = current_app.config.get("CLOUDINARY_API_KEY")
     api_secret = current_app.config.get("CLOUDINARY_API_SECRET")
-    if not cloud_name or not api_key or not api_secret:
-        return jsonify({"error": MSG.UPLOAD_NOT_CONFIGURED}), 503
 
-    data = request.get_json(silent=True) or {}
+    # Every image upload in the admin panel failed with one generic toast, which
+    # read like a broken button rather than a missing setting. Name the exact
+    # environment variables that are unset so the failure is fixable without
+    # reading server logs — and tell the caller the service is misconfigured,
+    # not merely busy.
+    missing = [
+        name
+        for name, value in (
+            ("CLOUDINARY_CLOUD_NAME", cloud_name),
+            ("CLOUDINARY_API_KEY", api_key),
+            ("CLOUDINARY_API_SECRET", api_secret),
+        )
+        if not value
+    ]
+    if missing:
+        logger.error("upload/signature: Cloudinary is not configured — missing %s", ", ".join(missing))
+        return jsonify({
+            "error": MSG.UPLOAD_NOT_CONFIGURED,
+            "missing": missing,
+            "hint": MSG.UPLOAD_CONFIGURATION_HINT.format(missing=", ".join(missing)),
+        }), 503
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.ERR_BAD_REQUEST}), 400
     caller_role = getattr(g, "user_role", None)
 
     if caller_role in ADMIN_ROLES:
-        folder = str(data.get("folder") or "general").strip()
-        if not folder or len(folder) > 255 or folder.startswith("/") or ".." in folder:
+        folder = data.get("folder", "general")
+        if not isinstance(folder, str):
+            return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
+        folder = folder.strip()
+        if len(folder) > 255 or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", folder):
             return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
     else:
         folder = f"profile_photos/{g.user_id}"

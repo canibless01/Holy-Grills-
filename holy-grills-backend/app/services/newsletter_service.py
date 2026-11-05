@@ -63,22 +63,26 @@ def unsubscribe_links(token: str):
     frontend = (current_app.config.get("FRONTEND_URL") or "").rstrip("/")
     page = f"{frontend}/newsletter/unsubscribe?token={quote(token, safe='')}"
     api = (os.environ.get("API_PUBLIC_URL") or "").rstrip("/")
-    one_click = f"{api}/api/storefront/newsletter/unsubscribe?token={quote(token, safe='')}" if api else None
+    from app.utils.email import public_api_base
+    one_click = f"{public_api_base()}/storefront/newsletter/unsubscribe?token={quote(token, safe='')}" if api else None
     return page, one_click
 
 
 # ───────────────────────────── email body ─────────────────────────────
 def build_newsletter_html(body_text: str, unsubscribe_url: str, app_name: str, tagline: str) -> str:
-    safe_body = _html.escape(str(body_text or "").strip()).replace("\r\n", "\n").replace("\n", "<br>")
-    safe_url = _html.escape(unsubscribe_url, quote=True)
-    return (
-        "<html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>"
-        f"<div>{safe_body}</div><br>"
-        f"<p style='color:#888;font-size:12px'>— {_html.escape(str(tagline or ''))}</p>"
-        "<hr style='border:none;border-top:1px solid #eee'>"
-        f"<p style='color:#888;font-size:12px'>{_html.escape(MSG.NEWSLETTER_UNSUBSCRIBE_FOOTER.format(app_name=str(app_name or 'Holy Grills')))} "
-        f"<a href='{safe_url}'>{_html.escape(MSG.NEWSLETTER_UNSUBSCRIBE_LINK)}</a></p>"
-        "</body></html>"
+    """Build a branded newsletter HTML using the shared email layout."""
+    from app.utils.email import _build_html
+    # Newsletters are marketing emails, so we keep the "Thank you" message
+    # but skip the shared brand sign-off since newsletters have their own tone
+    # inside the campaign body
+    return _build_html(
+        "there",  # Newsletter doesn't have personal name
+        body_text,
+        tagline,
+        skip_greeting=True,  # Newsletters have their own greeting in body
+        skip_signoff=True,  # Newsletters have their own sign-off in body
+        skip_thank_you=False,  # Keep the "Thank you for being part of our community!"
+        unsubscribe_url=unsubscribe_url,
     )
 
 

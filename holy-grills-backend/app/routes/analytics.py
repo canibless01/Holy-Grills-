@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.db import get_user_client
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from datetime import date, datetime, timezone, timedelta
 from dateutil.parser import isoparse
 from app.utils.tz import today_wat, WAT_OFFSET
@@ -28,8 +29,17 @@ def _wat_window(from_date: str, to_date: str):
     if not (validate_date(from_date) and validate_date(to_date)):
         raise ValueError("date")
     start = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=_WAT)
-    end = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=_WAT) + timedelta(days=1)
-    return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+    last = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=_WAT)
+    if last < start:
+        raise ValueError("date")
+    try:
+        end = last + timedelta(days=1)
+    except OverflowError as exc:
+        raise ValueError("date") from exc
+    try:
+        return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+    except OverflowError as exc:
+        raise ValueError("date") from exc
 
 
 def _date_range(default_days: int = 30):
@@ -763,10 +773,13 @@ def hp_analytics():
     hp_txns = q.execute() or []
 
     # hp_transactions.amount is always positive (CHECK amount > 0); the direction lives in `type`.
-    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn")
-    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend")
+    # B-9: exclude hp_transfer_received from earned and hp_transfer_sent from spent, report transfers separately
+    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn" and t.get("source") != "hp_transfer_received")
+    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
     expired = sum(t["amount"] for t in hp_txns if t.get("type") == "expire")
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
+    transfer_received = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_received")
+    transfer_sent = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_sent")
 
     # All 4 Tiers check
     tiers = db.table("hp_tiers").select("id,name,slug,min_points").order("sort_order").execute() or []
@@ -798,6 +811,8 @@ def hp_analytics():
         "hp_spent": spent,
         "hp_expired": expired,
         "hp_pending": pending,
+        "hp_transfer_received": transfer_received,
+        "hp_transfer_sent": transfer_sent,
         "hp_in_circulation": earned - spent - expired,
         "redemption_rate": round(spent / earned * 100, 1) if earned > 0 else 0,
         "tier_distribution": tier_distribution,
@@ -1174,6 +1189,7 @@ def dashboard_summary():
     q = (
         db.table("orders")
         .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used,card_refund_total,wallet_refund_total")
+        .in_("payment_status", ["paid", "partially_refunded", "refunded"])
         .gte("created_at", today_start)
         .lt("created_at", today_end)
     )
@@ -1375,6 +1391,10 @@ def export_csv():
     db = get_user_client(paginate=True)
     export_type = request.args.get("type", "").lower()
     try:
+        row_limit = _int_arg("limit", 5000, 1, 10000)
+    except ValueError:
+        return jsonify({"error": MSG.ANALYTICS_INVALID_NUMBER.format(param="limit")}), 400
+    try:
         from_date, to_date, start_utc, end_utc = _date_range(30)
     except ValueError:
         return jsonify({"error": MSG.ANALYTICS_INVALID_DATE}), 400
@@ -1434,10 +1454,6 @@ def export_csv():
     else:
         return jsonify({"error": MSG.ANALYTICS_UNKNOWN_EXPORT.format(export_type=export_type)}), 400
 
-    try:
-        row_limit = _int_arg("limit", 5000, 1, 10000)
-    except ValueError:
-        return jsonify({"error": MSG.ANALYTICS_INVALID_NUMBER.format(param="limit")}), 400
     capped_rows = rows[:row_limit] if isinstance(rows, list) else rows
 
     def _csv_safe(value):
@@ -1548,7 +1564,11 @@ def marketplace_analytics():
         q_l = q_l.eq("campus_id", campus_id)
     listings = q_l.execute() or []
     low_stock = []
-    low_stock_threshold = current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5)
+    low_stock_threshold = setting_or_config(
+        db, "low_code_inventory_threshold",
+        current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5),
+        minimum=0, maximum=10000,
+    )
     for l in listings:
         if l.get("listing_type") in _CODE_LISTING_TYPES:
             codes = db.table("marketplace_access_codes").select("id").eq("listing_id", l["id"]).eq("status", "available").execute() or []
