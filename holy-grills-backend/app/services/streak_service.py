@@ -241,24 +241,20 @@ def _process_login_streak_checkin(db, user_id: str, streak: dict, now: datetime,
                 "week_start": current_week_start.isoformat(),
                 "week_progress": _build_week_progress(week_state, current_week_start, today),
             }
-        week_state[day_offset] = "checked"
         try:
-            db.table("login_streaks").eq("id", streak["id"]).update({
-                "week_state": week_state,
-                "last_login_date": today.isoformat(),
-                "last_updated": now.isoformat(),
-                "streak_count": int(streak.get("streak_count") or 1) + 1,
-            })
+            result = db.rpc("hg_mark_current_login_checkin", {"p_user_id": user_id})
+            if not isinstance(result, dict) or not result.get("success"):
+                raise RuntimeError("Check-in state changed; retry attendance")
+            saved = result["streak"]
         except Exception as ue:
-            logger.warning("process_login_streak: update same_week failed for %s: %s", user_id, ue)
-            return {"action": "failed", "hp_awarded": 0, "streak_week": cycle_week, "error": str(ue)}
+            logger.warning("process_login_streak: atomic same-week check-in failed for %s: %s", user_id, ue)
+            return {"action": "failed", "hp_awarded": 0, "streak_week": cycle_week}
         _touch_last_activity(db, user_id, now)
         return {
-            "action": "checked_in",
-            "hp_awarded": 0,
-            "streak_week": cycle_week,
-            "week_start": current_week_start.isoformat(),
-            "week_progress": _build_week_progress(week_state, current_week_start, today),
+            "action": result["action"], "hp_awarded": 0,
+            "streak_week": int(saved.get("cycle_week_number") or 1),
+            "week_start": saved["current_week_start"],
+            "week_progress": _build_week_progress(saved.get("week_state") or {}, current_week_start, today),
         }
 
     # New week — evaluate the previous week, then start fresh
@@ -428,70 +424,33 @@ def _award_login_streak_hp(db, user_id: str, cycle_week: int, consecutive_weeks:
     return actual_hp
 
 
-def try_reclaim_checkin(user_id: str, reclaim_type: str = "order") -> dict:
+def try_reclaim_checkin(user_id: str, reclaim_type: str = "order", reference_id: str = None) -> dict:
+    """Reclaim the activity's actual WAT day from a validated persisted receipt.
+
+    A replay never claims a different day. Current-week attendance is merged by
+    the database; no stale Python week-state snapshot is written back.
     """
-    Called when a food order is delivered OR a qualifying wallet top-up happens.
-    If today is a missed day in the current streak week, marks it as 'reclaimed'.
-    reclaim_type: 'order' | 'wallet_topup'
-
-    Returns {"reclaimed": bool, "day_offset": int | None}
-    """
-    db = get_db()
-    today = today_wat()
-    now = datetime.now(timezone.utc)
-
     try:
-        streak = (
-            db.table("login_streaks")
-            .select("id,current_week_start,week_state,cycle_week_number,consecutive_weeks")
-            .eq("user_id", user_id)
-            .single()
-            .execute()
-        )
-    except Exception:
-        return {"reclaimed": False, "day_offset": None}
-
-    if not streak:
-        return {"reclaimed": False, "day_offset": None}
-
-    week_start_str = streak.get("current_week_start")
-    if not week_start_str:
-        return {"reclaimed": False, "day_offset": None}
-
+        uuid.UUID(str(reference_id))
+    except (TypeError, ValueError, AttributeError):
+        return {"reclaimed": False, "day_offset": None, "reason": "missing_receipt"}
     try:
-        week_start = date.fromisoformat(str(week_start_str)[:10])
-    except Exception:
-        return {"reclaimed": False, "day_offset": None}
-
-    current_week_start = _monday_of_week(today)
-    if week_start != current_week_start:
-        # Not in the current week — nothing to reclaim
-        return {"reclaimed": False, "day_offset": None}
-
-    day_offset = str((today - week_start).days)
-    week_state = streak.get("week_state") or {}
-
-    if day_offset in week_state:
-        # Today is already checked in or reclaimed
-        return {"reclaimed": False, "day_offset": None}
-
-    # Today is a missed day — mark as reclaimed
-    week_state[day_offset] = "reclaimed"
-    try:
-        db.table("login_streaks").eq("id", streak["id"]).update({
-            "week_state": week_state,
-            "last_updated": now.isoformat(),
+        from flask import current_app
+        result = get_db().rpc("hg_reclaim_login_checkin", {
+            "p_user_id": user_id, "p_source_type": reclaim_type,
+            "p_source_id": str(reference_id),
+            "p_min_topup": current_app.config.get("STREAK_RECLAIM_MIN_TOPUP", 1000),
         })
-        from app.services.notification_service import send_notification
-        send_notification(
-            user_id=user_id,
-            notif_type="checkin_reclaimed",
-            template_data={},
-        )
-        return {"reclaimed": True, "day_offset": int(day_offset)}
-    except Exception as e:
-        logger.warning("try_reclaim_checkin: failed for %s: %s", user_id, e)
-        return {"reclaimed": False, "day_offset": None}
+        if not isinstance(result, dict) or "reclaimed" not in result or result.get("error"):
+            raise RuntimeError("Check-in reclamation remains pending")
+        if (result.get("reclaimed") or result.get("already_reclaimed")) and result.get("reference_id"):
+            from app.services.notification_service import send_notification
+            send_notification(user_id=user_id, notif_type="checkin_reclaimed", template_data={},
+                              reference_id=result["reference_id"], reference_type="streak_reclaim")
+        return result
+    except Exception as exc:
+        logger.warning("try_reclaim_checkin: recovery failed for %s: %s", user_id, exc)
+        return {"reclaimed": False, "day_offset": None, "reason": "recovery_pending"}
 
 
 def _build_week_progress(week_state: dict, week_start: date, today: date) -> dict:

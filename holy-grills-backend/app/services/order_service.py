@@ -1942,6 +1942,15 @@ def _notify_recovered_delivery_rewards(order, result):
                 logger.warning('Recovered delivery reward notification pending for %s', order['id'], exc_info=True)
 
 
+def _recover_delivery_checkin(order):
+    try:
+        from app.services.streak_service import try_reclaim_checkin
+        return try_reclaim_checkin(order["user_id"], reference_id=order["id"])
+    except Exception as exc:
+        logger.warning("Delivery check-in recovery remains pending for %s: %s", order.get("id"), exc)
+        return {"reclaimed": False}
+
+
 def _recover_delivery_order_streak(order):
     if float(order.get("subtotal") or 0) > 0:
         from app.services.streak_service import process_order_streak
@@ -1964,6 +1973,7 @@ def _handle_delivery_rewards(order: dict):
     if order.get('hp_credited_at'):
         recovered = complete_delivery_financial_rewards(order)
         _notify_recovered_delivery_rewards(order, recovered)
+        _recover_delivery_checkin(order)
         _recover_delivery_order_streak(order)
         return
 
@@ -2090,12 +2100,7 @@ def _handle_delivery_rewards(order: dict):
 
     _t.Thread(target=_send_delivery_notifications, daemon=True).start()
 
-    # Try to reclaim a missed login-streak day via this order
-    try:
-        from app.services.streak_service import try_reclaim_checkin
-        try_reclaim_checkin(user_id)
-    except Exception as _se:
-        logger.warning("_handle_delivery_rewards: streak hooks failed for %s: %s", user_id, _se)
+    _recover_delivery_checkin(order)
 
     _recover_delivery_order_streak(order)
 

@@ -88,7 +88,7 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
     if amount >= config.get("STREAK_RECLAIM_MIN_TOPUP", 1000) and reference_type in ("topup", "bank_transfer"):
         try:
             from app.services.streak_service import try_reclaim_checkin
-            try_reclaim_checkin(user_id)
+            try_reclaim_checkin(user_id, reclaim_type="wallet_topup", reference_id=txn_id)
         except Exception as exc:
             logger.warning("credit_wallet: streak reclaim check failed for %s: %s", user_id, exc)
 

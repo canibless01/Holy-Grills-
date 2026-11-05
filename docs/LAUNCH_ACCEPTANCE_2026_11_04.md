@@ -83,3 +83,6 @@ Brevo logs provided by the owner show both reset requests as Sent followed by Er
 
 
 Resolved follow-through: [DNS coexistence, owner-confirmed reset receipt/link, fresh worker execution and atomic active milestone grants](DNS_EMAIL_AND_MILESTONE_RECOVERY_2026_11_04.md) supersedes the earlier SMTP rejection and worker-startup observations above. Broader remaining coverage is still explicitly listed.
+
+
+5 November follow-through: [receipt-backed check-in reclamation and same-week attendance merging](CHECKIN_RECLAMATION_RECOVERY_2026_11_05.md) closes the documented source/date/retry gap; weekly pending-HP payout atomicity and external dispatch recovery remain separate work.
